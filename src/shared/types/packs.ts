@@ -111,6 +111,14 @@ export interface PackPermissionSummary {
 export interface PackContributionsSummary {
   /** Native tool names contributed to the model tool list (first-party). */
   toolNames: readonly string[]
+  /** Thread models contributed by an enabled selected pack. */
+  modelRoutes: readonly {
+    id: string
+    label: string
+    group?: string
+    description?: string
+    supportsImages?: boolean
+  }[]
   /** MCP config path a user pack pulls its tools from (mirrors `plugin.json`). */
   mcpServersPath?: string
   /** Blocking (in-loop) function hooks the pack registers, by canonical event. */

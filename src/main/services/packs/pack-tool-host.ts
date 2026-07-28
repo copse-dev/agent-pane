@@ -19,10 +19,15 @@ import {
 } from './pack-tool-source.ts'
 import {
   PACK_TOOL_PROTOCOL_MAX_LINE_BYTES,
+  zPackModelTurn,
   zPackToolRegistrations,
   zPackToolWorkerMessage,
   type PackToolRegistrations,
 } from './pack-tool-protocol.ts'
+import {
+  persistentPackThreadSessionStore,
+  type PackThreadSessionStore,
+} from './pack-thread-session-store.ts'
 import { materializePackToolSnapshot } from './pack-tool-snapshot.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { parseJsonUnknown } from '@shared/unknown-value.ts'
@@ -44,12 +49,14 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>
   signal?: AbortSignal
   onAbort?: () => void
+  threadId?: string
 }
 
 export interface PackToolHostDependencies {
   sandboxAvailable(): boolean
   materialize(candidate: PackToolSourceCandidate): Promise<PackToolSourceCandidate>
   spawn(candidate: PackToolSourceCandidate, workerPath: string): Promise<ChildProcess>
+  sessionStore?: PackThreadSessionStore
 }
 
 function protectedReadRoots(): string[] {
@@ -103,12 +110,16 @@ const defaultDependencies: PackToolHostDependencies = {
 export class PackToolHost {
   private readonly pending = new Map<number, PendingRequest>()
   private readonly proc: ChildProcess
+  private readonly packId: string
+  private readonly sessionStore: PackThreadSessionStore
   private buffer = ''
   private nextId = 1
   private alive = true
 
-  private constructor(proc: ChildProcess) {
+  private constructor(proc: ChildProcess, packId: string, sessionStore: PackThreadSessionStore) {
     this.proc = proc
+    this.packId = packId
+    this.sessionStore = sessionStore
   }
 
   static async start(
@@ -117,7 +128,7 @@ export class PackToolHost {
   ): Promise<PackToolHost> {
     if (!dependencies.sandboxAvailable()) {
       throw new PackToolHostUnavailable(
-        'Executable pack tools require Copse’s active OS sandbox; execution failed closed.',
+        'Executable pack behavior requires Copse’s active OS sandbox; execution failed closed.',
       )
     }
 
@@ -125,7 +136,7 @@ export class PackToolHost {
     // boundary, not a second user approval: a concurrent edit simply retries later.
     const candidate = await discoverPackToolSource(expectedCandidate.sourcePath)
     if (!samePackToolSource(expectedCandidate, candidate)) {
-      throw new PackToolHostUnavailable('Pack content changed while its tools were starting.')
+      throw new PackToolHostUnavailable('Pack content changed while its runtime was starting.')
     }
 
     const snapshot = await dependencies.materialize(candidate)
@@ -137,17 +148,21 @@ export class PackToolHost {
     const proc = await dependencies.spawn(snapshot, workerPath)
     if (!proc.stdin || !proc.stdout) {
       terminateProcessTree(proc)
-      throw new PackToolHostUnavailable('Pack tool worker pipes are unavailable.')
+      throw new PackToolHostUnavailable('Pack runtime worker pipes are unavailable.')
     }
-    const host = new PackToolHost(proc)
+    const host = new PackToolHost(
+      proc,
+      snapshot.manifest.name,
+      dependencies.sessionStore ?? persistentPackThreadSessionStore,
+    )
     host.attach()
     try {
       const result = await host.request(
         {
           op: 'initialize',
           packId: snapshot.manifest.name,
-          entrypoint: join(snapshot.sourcePath, snapshot.toolRuntime.entrypoint),
-          apiVersion: snapshot.toolRuntime.apiVersion,
+          entrypoint: join(snapshot.sourcePath, snapshot.runtime.entrypoint),
+          apiVersion: snapshot.runtime.apiVersion,
         },
         INITIALIZE_TIMEOUT_MS,
       )
@@ -159,7 +174,7 @@ export class PackToolHost {
     }
   }
 
-  registrations: PackToolRegistrations = { tools: [] }
+  registrations: PackToolRegistrations = { tools: [], models: [] }
 
   private attach(): void {
     const stdout = this.proc.stdout
@@ -209,18 +224,71 @@ export class PackToolHost {
       return
     }
     const message = parsed.data
-    const pending = this.pending.get(message.id)
-    if (!pending) return
-    this.pending.delete(message.id)
-    this.clearPending(pending)
-    if (message.ok) pending.resolve(message.result)
-    else pending.reject(new Error(message.error ?? 'Pack tool request failed.'))
+    if (message.type === 'response') {
+      const pending = this.pending.get(message.id)
+      if (!pending) return
+      this.pending.delete(message.id)
+      this.clearPending(pending)
+      if (message.ok) pending.resolve(message.result)
+      else pending.reject(new Error(message.error ?? 'Pack runtime request failed.'))
+      return
+    }
+    void this.handleSessionCall(message.id, message.invocationId, message.op, message.state)
+  }
+
+  private async handleSessionCall(
+    sessionRequestId: number,
+    invocationId: number,
+    op: 'get' | 'set' | 'delete',
+    state: unknown,
+  ): Promise<void> {
+    const invocation = this.pending.get(invocationId)
+    if (!invocation?.threadId) {
+      this.writeSessionResult(sessionRequestId, false, undefined, 'No active model thread.')
+      return
+    }
+    try {
+      let result: unknown = null
+      if (op === 'get') {
+        result = await this.sessionStore.get(this.packId, invocation.threadId)
+      } else if (op === 'set') {
+        await this.sessionStore.set(this.packId, invocation.threadId, state)
+      } else {
+        await this.sessionStore.delete(this.packId, invocation.threadId)
+      }
+      this.writeSessionResult(sessionRequestId, true, result)
+    } catch (err) {
+      this.writeSessionResult(sessionRequestId, false, undefined, errorMessage(err))
+    }
+  }
+
+  private writeSessionResult(
+    sessionRequestId: number,
+    ok: boolean,
+    result?: unknown,
+    error?: string,
+  ): void {
+    if (!this.alive || !this.proc.stdin || this.proc.stdin.destroyed) return
+    try {
+      this.proc.stdin.write(
+        `${JSON.stringify({
+          id: this.nextId++,
+          op: 'session-result',
+          sessionRequestId,
+          ok,
+          ...(result !== undefined ? { result } : {}),
+          ...(error !== undefined ? { error: error.slice(0, 8_192) } : {}),
+        })}\n`,
+      )
+    } catch (err) {
+      this.fail(new PackToolHostUnavailable(errorMessage(err)))
+    }
   }
 
   private request(
     body: Record<string, unknown>,
     timeoutMs: number,
-    signal?: AbortSignal,
+    options?: { signal?: AbortSignal; threadId?: string },
   ): Promise<unknown> {
     if (!this.alive || !this.proc.stdin || this.proc.stdin.destroyed) {
       return Promise.reject(new PackToolHostUnavailable('Pack tools are not running.'))
@@ -249,10 +317,11 @@ export class PackToolHost {
         resolve,
         reject,
         timer,
-        ...(signal ? { signal, onAbort } : {}),
+        ...(options?.signal ? { signal: options.signal, onAbort } : {}),
+        ...(options?.threadId ? { threadId: options.threadId } : {}),
       })
-      signal?.addEventListener('abort', onAbort, { once: true })
-      if (signal?.aborted) {
+      options?.signal?.addEventListener('abort', onAbort, { once: true })
+      if (options?.signal?.aborted) {
         onAbort()
         return
       }
@@ -285,8 +354,21 @@ export class PackToolHost {
     }
   }
 
-  invoke(registrationId: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
-    return this.request({ op: 'invoke', registrationId, input }, INVOCATION_TIMEOUT_MS, signal)
+  invokeTool(registrationId: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
+    return this.request(
+      { op: 'invoke', kind: 'tool', registrationId, input },
+      INVOCATION_TIMEOUT_MS,
+      { ...(signal ? { signal } : {}) },
+    )
+  }
+
+  invokeModel(registrationId: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
+    const turn = zPackModelTurn.parse(input)
+    return this.request(
+      { op: 'invoke', kind: 'model', registrationId, input: turn },
+      INVOCATION_TIMEOUT_MS,
+      { ...(signal ? { signal } : {}), threadId: turn.threadId },
+    )
   }
 
   async stop(): Promise<void> {

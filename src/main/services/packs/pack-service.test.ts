@@ -55,8 +55,8 @@ async function makeToolPack(): Promise<string> {
       name: 'personal.local-tools',
       tools: {
         provides: ['personal_judge'],
-        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
     }),
   )
   return root
@@ -230,7 +230,8 @@ describe('PackService', () => {
       },
       isRunning: () => running,
       registrations: () => null,
-      invoke: () => Promise.resolve(null),
+      invokeTool: () => Promise.resolve(null),
+      invokeModel: () => Promise.resolve(null),
     }
     setPackToolRuntimeController(controller)
     const registry = makeRegistry()

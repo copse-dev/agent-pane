@@ -25,6 +25,8 @@ contract is `PackManifest` in
 ```
 pack manifest
 ├── tools      native tool names (first-party) or an MCP config path (user packs)
+├── models     selected-pack whole-thread routes shown in the thread picker
+├── runtime    shared isolated entrypoint for selected-pack tools/models
 ├── hooks      command-hook declarations (user packs); first-party function hooks are typed runtime contributions
 ├── prompt     skills / steering blocks (with trust framing: trusted vs untrusted)
 ├── ui         contributions — level 1 (cards) / 2 (named panel slot) / 3 (real renderer view)
@@ -39,7 +41,7 @@ First-party packs additionally supply typed runtime contributions —
 is why the executable bits (function hooks, native tool registrations) live on
 the runtime `RegisteredPack.contributions`, not in the serializable manifest.
 The one user-code exception is an explicitly selected pack's isolated
-`tools.runtime`; it never imports code into Electron main.
+shared `runtime`; it never imports code into Electron main.
 
 `packManifestFromPluginJson()` maps a discovered `plugin.json` into a
 `PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
@@ -51,17 +53,31 @@ packs into the registry is **not wired yet** — until it is, skills/MCP from a
 [`docs/adding-a-pack.md`](adding-a-pack.md)).
 
 An explicitly selected pack directory is an ordinary **user** pack, not a new
-trust tier. Its `copse-pack.json` can currently declare one supported behavior:
-tool names under `tools.provides`, implemented by a versioned `tools.runtime`.
+trust tier. Its `copse-pack.json` can declare tool names under `tools.provides`,
+whole-thread model metadata under `models.provides`, or both, implemented by one
+versioned `runtime`.
 The host validates the manifest/tree, rejects symlinks and escaping entrypoints,
 and computes a deterministic content hash. Adding the directory is the current
 explicit opt-in; behavior-derived installation consent is future product work.
 At startup the host re-hashes the source, materializes and validates a
 content-addressed snapshot, and executes only that snapshot in a standalone
 API-v1 worker. The sandbox denies direct network and filesystem writes, and the
-worker can register only the tool names declared by the manifest. Model routes,
-browser access, attachments, sessions, renderer contributions, and host gateways
-have no declarations in this phase. Without the OS sandbox, execution fails closed.
+worker can register only the tool names and model ids declared by the manifest.
+Without the OS sandbox, execution fails closed.
+
+Selected-pack models are whole-thread routes, like remote and ACP agents rather
+than task-role models. Enabled routes appear in the footer picker. The host sends
+the current prompt, bounded validated current-turn images when declared, and a
+bounded text-only prior-conversation handoff. The worker also receives only the
+concrete durable-session operations `get`, `set`, and `delete`; the host binds
+them mechanically to the active pack and Copse thread. This lets a pack reuse an
+external conversation id and use the transcript handoff only when rebuilding a
+missing session. Disabling the pack removes its routes from new selections while
+preserving the stored session and a disabled current selection's display metadata.
+
+The worker has no generic `host.call`, origin grant, browser-panel access, or
+renderer slot. Those remain P4 behaviors and will be added only with concrete
+host-owned gateways and consent semantics.
 
 ## Registry and lifecycle
 
@@ -187,7 +203,7 @@ settings the manifest declares. This is the `about:addons` of Copse.
 - **Renderer.** The Settings dialog gains a `Packs` nav section
   (`src/renderer/views/settings-dialog.ts`). Each row shows the pack's name +
   version + trust badge, an enable toggle, a description, contribution chips
-  (`Tools × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
+  (`Tools × N`, `Models × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
   identifiers in a hover title, and generic form fields for the manifest's
   `settings` schema. Disabled rows are visually greyed via `pack-row-disabled`
   so the effect of the toggle is immediately visible; per-pack settings stay

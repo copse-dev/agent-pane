@@ -1,5 +1,7 @@
 import {
+  zPackModelTurn,
   zPackToolRegistration,
+  type PackModelTurn,
   type PackToolRegistration,
   type PackToolRegistrations,
 } from './pack-tool-protocol.ts'
@@ -8,15 +10,32 @@ export interface PackToolInvocationContext {
   readonly signal: AbortSignal
 }
 
+export interface PackModelSessionApi {
+  get(): Promise<unknown>
+  set(state: unknown): Promise<void>
+  delete(): Promise<void>
+}
+
+export interface PackModelInvocationContext {
+  readonly signal: AbortSignal
+  readonly session: PackModelSessionApi
+}
+
 export type PackToolInvocationHandler = (
   input: unknown,
   context: PackToolInvocationContext,
+) => unknown
+
+export type PackModelInvocationHandler = (
+  turn: PackModelTurn,
+  context: PackModelInvocationContext,
 ) => unknown
 
 export interface PackToolActivationApi {
   readonly apiVersion: 1
   readonly packId: string
   registerTool(definition: PackToolRegistration, handler: PackToolInvocationHandler): void
+  registerModelRoute(id: string, handler: PackModelInvocationHandler): void
 }
 
 export interface PackToolModule {
@@ -25,7 +44,13 @@ export interface PackToolModule {
 
 export interface ActivatedPackTools {
   readonly registrations: PackToolRegistrations
-  invoke(registrationId: string, input: unknown, signal: AbortSignal): Promise<unknown>
+  invokeTool(registrationId: string, input: unknown, signal: AbortSignal): Promise<unknown>
+  invokeModel(
+    registrationId: string,
+    input: unknown,
+    signal: AbortSignal,
+    session: PackModelSessionApi,
+  ): Promise<unknown>
 }
 
 function moduleActivate(value: unknown): PackToolModule['activate'] {
@@ -59,6 +84,7 @@ export async function activatePackTools(
     string,
     { definition: PackToolRegistration; handler: PackToolInvocationHandler }
   >()
+  const models = new Map<string, PackModelInvocationHandler>()
   const api: PackToolActivationApi = Object.freeze({
     apiVersion,
     packId,
@@ -68,6 +94,12 @@ export async function activatePackTools(
       if (typeof handler !== 'function') throw new Error(`Tool ${parsed.name} has no handler.`)
       tools.set(parsed.name, { definition: parsed, handler })
     },
+    registerModelRoute(id: string, handler: PackModelInvocationHandler): void {
+      if (!id || id.length > 128) throw new Error('Pack model route id is invalid.')
+      if (models.has(id)) throw new Error(`Duplicate pack model route: ${id}`)
+      if (typeof handler !== 'function') throw new Error(`Model route ${id} has no handler.`)
+      models.set(id, handler)
+    },
   })
 
   await moduleActivate(moduleValue)(api)
@@ -75,11 +107,17 @@ export async function activatePackTools(
   return {
     registrations: {
       tools: [...tools.values()].map((entry) => entry.definition),
+      models: [...models.keys()].map((id) => ({ id })),
     },
-    async invoke(registrationId, input, signal): Promise<unknown> {
+    async invokeTool(registrationId, input, signal): Promise<unknown> {
       const entry = tools.get(registrationId)
       if (!entry) throw new Error(`Unknown pack tool: ${registrationId}`)
       return await entry.handler(input, { signal })
+    },
+    async invokeModel(registrationId, input, signal, session): Promise<unknown> {
+      const handler = models.get(registrationId)
+      if (!handler) throw new Error(`Unknown pack model route: ${registrationId}`)
+      return await handler(zPackModelTurn.parse(input), { signal, session })
     },
   }
 }

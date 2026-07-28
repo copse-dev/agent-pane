@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
-import { fetchModelOptions } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface MockOpts {
@@ -16,6 +16,8 @@ interface MockOpts {
   openRouterZdrOnlySetting?: boolean
   openRouterAllowTrainingSetting?: boolean
   acpAgents?: AcpAgentConfig[]
+  packModels?: Array<{ id: string; label: string; group?: string }>
+  packEnabled?: boolean
 }
 
 // availableProviders() returns explicit booleans for every provider; mirror that
@@ -66,6 +68,34 @@ function mockApi(opts: MockOpts = {}): ApiClient {
       lmStudio: {
         ...base['lmStudio'],
         models: async () => opts.lmStudioModels ?? [],
+      },
+      packs: {
+        ...base['packs'],
+        list: async () => ({
+          packs:
+            opts.packModels === undefined
+              ? []
+              : [
+                  {
+                    id: 'personal.reference-model',
+                    trust: 'user',
+                    name: 'personal.reference-model',
+                    enabled: opts.packEnabled ?? true,
+                    contributions: {
+                      toolNames: [],
+                      modelRoutes: opts.packModels,
+                      blockingHooks: [],
+                      asyncHooks: [],
+                      commandHooks: [],
+                      promptBlocks: [],
+                      ui: [],
+                      capabilities: [],
+                      permissions: [],
+                    },
+                    settings: [],
+                  },
+                ],
+        }),
       },
     } satisfies ApiClient
   })()
@@ -381,6 +411,42 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(options.some((option) => option.value === 'claude-haiku-4-5'))
     assert.ok(!options.some((option) => option.value.startsWith('remote-agent:')))
     assert.ok(!options.some((option) => option.value.startsWith('acp:')))
+  })
+
+  it('shows enabled selected-pack models only in whole-thread pickers', async () => {
+    const api = mockApi({
+      packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+    })
+    const options = await fetchModelOptions(api, '')
+    assert.deepEqual(
+      options.find((option) => option.group === 'Personal models'),
+      {
+        value: 'pack-model:personal.reference-model:judge%3Adefault',
+        label: 'Reference judge',
+        group: 'Personal models',
+      },
+    )
+    assert.equal(
+      modelDisplayLabel('pack-model:personal.reference-model:judge%3Adefault'),
+      'judge:default',
+    )
+    const roles = await fetchModelOptions(api, '', { includeAgentModels: false })
+    assert.ok(!roles.some((option) => option.value.startsWith('pack-model:')))
+  })
+
+  it('keeps a disabled pack model visible but unavailable', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        packEnabled: false,
+        packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+      }),
+      'pack-model:personal.reference-model:judge%3Adefault',
+    )
+    const selected = options.find((option) => option.value.startsWith('pack-model:'))
+    assert.ok(selected)
+    assert.equal(selected.disabled, true)
+    assert.equal(selected.label, 'Reference judge (pack disabled)')
+    assert.equal(selected.group, 'Personal models')
   })
 
   it('groups hosted cloud models under a heading', async () => {

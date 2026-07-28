@@ -25,13 +25,14 @@ OpenAI `store: false`).
 | Environment-key scan           | The local main process only                                                                           | Nothing during the scan                                                                                                                                                                                                                                                                                                                                     | The scan runs only after the user chooses it. It reads `process.env` and a fixed allow-list of shell startup files, then sends only masked previews to the renderer. Importing a discovered key stores it under the same rules as a manually entered key. |
 | Automatic updates              | GitHub Releases configured in the packaged macOS app                                                  | The normal metadata of a GitHub update request, including network address and current app/version information required by the updater                                                                                                                                                                                                                       | Packaged macOS builds check on launch. Copse asks before downloading; a downloaded update installs on restart or the next quit. Development builds do not check the feed.                                                                                 |
 | Custom tools and hooks         | User-installed JavaScript modules or configured command processes                                     | Whatever the module or command is written to read or transmit                                                                                                                                                                                                                                                                                               | Custom tools always prompt before execution. Hooks and tools can run local code with the documented trust and permission boundaries; their authors control any additional network or storage behavior.                                                    |
+| Selected personal pack models  | An explicitly selected pack worker inside Copse's OS sandbox                                          | Current prompt; up to eight current-turn images (8 MB decoded total) when declared; and up to 32 prior text messages / 64 KiB as a session-recovery handoff                                                                                                                                                                                                 | Copse stores at most 256 KiB of JSON session state per pack and thread. The worker has no direct network, browser, filesystem-write, renderer, or generic host-call authority in P3.                                                                      |
 
 Personal pack directories are selected explicitly and remain ordinary user
-packs. The P1/P2 runtime executes a revalidated Copse-owned snapshot in the
+packs. The P1–P3 runtime executes a revalidated Copse-owned snapshot in the
 macOS sandbox with direct network and filesystem writes denied; only tool names
-declared by `tools.provides` are available. Later remote model, browser,
-attachment, session, renderer, and host-gateway data flows are not part of this
-phase.
+and model ids declared by the manifest are available. P3's model input and
+session flow is bounded as above. Browser, renderer, origin, and generic host
+gateway data flows are not part of this phase.
 
 ## Provider requests
 

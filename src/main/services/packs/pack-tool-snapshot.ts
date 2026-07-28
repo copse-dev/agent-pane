@@ -59,8 +59,12 @@ function isExactSnapshot(
   return (
     snapshot.manifest.name === source.manifest.name &&
     snapshot.contentHash === source.contentHash &&
-    snapshot.toolRuntime.entrypoint === source.toolRuntime.entrypoint &&
-    sameStrings(snapshot.manifest.tools?.provides ?? [], source.manifest.tools?.provides ?? [])
+    snapshot.runtime.entrypoint === source.runtime.entrypoint &&
+    sameStrings(snapshot.manifest.tools?.provides ?? [], source.manifest.tools?.provides ?? []) &&
+    sameStrings(
+      snapshot.manifest.models?.provides.map((route) => route.id) ?? [],
+      source.manifest.models?.provides.map((route) => route.id) ?? [],
+    )
   )
 }
 

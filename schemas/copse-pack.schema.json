@@ -2,10 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://copse.dev/schemas/copse-pack.schema.json",
   "title": "Copse feature-pack manifest",
-  "description": "The declarative manifest for a Copse feature pack. A pack bundles behaviors such as tools, hooks, prompt, UI, settings, and storage on top of the plugin.json shape Copse already loads. An explicitly selected user pack may provide tools through Copse's isolated versioned runtime. See docs/packs.md and docs/plans/hooks-and-feature-packs.md.",
+  "description": "The declarative manifest for a Copse feature pack. A pack bundles behaviors such as tools, thread models, hooks, prompt, UI, settings, and storage on top of the plugin.json shape Copse already loads. An explicitly selected user pack may provide executable behaviors through Copse's isolated versioned runtime. See docs/packs.md and docs/plans/hooks-and-feature-packs.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name"],
+  "allOf": [
+    {
+      "if": { "required": ["models"] },
+      "then": { "required": ["runtime"] }
+    },
+    {
+      "if": {
+        "required": ["tools"],
+        "properties": { "tools": { "required": ["provides"] } }
+      },
+      "then": { "required": ["runtime"] }
+    }
+  ],
   "properties": {
     "name": {
       "description": "Pack id / name (plugin.json `name`). Also the grouping key across all slots.",
@@ -45,24 +58,48 @@
           "minItems": 1,
           "uniqueItems": true
         },
-        "runtime": {
-          "description": "Versioned isolated runtime for this pack's tool behavior.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["entrypoint", "apiVersion"],
-          "properties": {
-            "entrypoint": {
-              "description": "Relative tool entrypoint; absolute paths and pack-root escapes are rejected.",
-              "type": "string",
-              "minLength": 1
-            },
-            "apiVersion": { "const": 1 }
-          }
-        },
         "mcpServers": {
           "description": "Path to an MCP config file (user packs), like the plugin.json `mcpServers` field.",
           "type": "string"
         }
+      }
+    },
+    "models": {
+      "description": "Thread-model behavior supplied by an explicitly selected pack.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provides"],
+      "properties": {
+        "provides": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "group": { "type": "string", "minLength": 1 },
+              "description": { "type": "string" },
+              "supportsImages": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "description": "Versioned isolated runtime shared by this selected pack's executable behaviors.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entrypoint", "apiVersion"],
+      "properties": {
+        "entrypoint": {
+          "description": "Relative runtime entrypoint; absolute paths and pack-root escapes are rejected.",
+          "type": "string",
+          "minLength": 1
+        },
+        "apiVersion": { "const": 1 }
       }
     },
     "hooks": {
