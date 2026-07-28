@@ -35,4 +35,19 @@ describe('renderSnapshot', () => {
     })
     assert.match(out, /snapshot truncated/)
   })
+
+  it('preserves substantial page text while bounding the rendered snapshot', () => {
+    const substantial = 'answer '.repeat(500)
+    const out = renderSnapshot({
+      title: 'Chat',
+      url: 'https://example.test/',
+      nodes: [
+        { role: 'text', name: substantial, depth: 0 },
+        ...Array.from({ length: 20 }, () => ({ role: 'text', name: substantial, depth: 0 })),
+      ],
+    })
+    assert.ok(out.length > 120)
+    assert.ok(out.length <= 64 * 1_024)
+    assert.match(out, /snapshot truncated/)
+  })
 })

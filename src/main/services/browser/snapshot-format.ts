@@ -55,8 +55,11 @@ export function parsePageSnapshot(value: unknown): PageSnapshot {
   }
 }
 
-function quote(text: string): string {
-  const clipped = text.length > 120 ? `${text.slice(0, 117)}…` : text
+const MAX_RENDERED_CHARS = 64 * 1_024
+const MAX_NODE_NAME_CHARS = 16 * 1_024
+
+function quote(text: string, maxChars = 120): string {
+  const clipped = text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text
   return JSON.stringify(clipped)
 }
 
@@ -66,15 +69,24 @@ export function renderSnapshot(snapshot: PageSnapshot): string {
   if (snapshot.nodes.length === 0) {
     return [...header, '(no visible accessible content)'].join('\n')
   }
-  const lines = snapshot.nodes.map((node) => {
+  const lines: string[] = []
+  let renderedChars = header.join('\n').length + 2
+  let renderTruncated = false
+  for (const node of snapshot.nodes) {
     const indent = '  '.repeat(Math.max(0, node.depth))
     const parts = [`- ${node.role}`]
-    if (node.name) parts.push(quote(node.name))
+    if (node.name) parts.push(quote(node.name, MAX_NODE_NAME_CHARS))
     if (node.value) parts.push(`= ${quote(node.value)}`)
     if (node.ref) parts.push(`[ref=${node.ref}]`)
-    return `${indent}${parts.join(' ')}`
-  })
-  if (snapshot.truncated) lines.push('… (snapshot truncated)')
+    const line = `${indent}${parts.join(' ')}`
+    if (renderedChars + line.length + 1 > MAX_RENDERED_CHARS) {
+      renderTruncated = true
+      break
+    }
+    lines.push(line)
+    renderedChars += line.length + 1
+  }
+  if (snapshot.truncated || renderTruncated) lines.push('… (snapshot truncated)')
   return [...header, '', ...lines].join('\n')
 }
 
@@ -86,6 +98,11 @@ export function renderSnapshot(snapshot: PageSnapshot): string {
 export const DOM_SNAPSHOT_SCRIPT = `(() => {
   const MAX_NODES = 400;
   const interactiveTags = new Set(['A','BUTTON','INPUT','SELECT','TEXTAREA']);
+  const interactiveRoles = new Set([
+    'button','checkbox','link','menuitem','menuitemcheckbox','menuitemradio',
+    'option','radio','switch','tab','treeitem',
+  ]);
+  const textTags = new Set(['BLOCKQUOTE','CAPTION','DD','DT','LI','P','PRE','TD','TH']);
   const roleFor = (el) => {
     const aria = el.getAttribute('role');
     if (aria) return aria;
@@ -96,6 +113,7 @@ export const DOM_SNAPSHOT_SCRIPT = `(() => {
     if (tag === 'TEXTAREA') return 'textbox';
     if (tag === 'INPUT') {
       const t = (el.getAttribute('type') || 'text').toLowerCase();
+      if (t === 'file') return 'file';
       if (t === 'checkbox') return 'checkbox';
       if (t === 'radio') return 'radio';
       if (t === 'submit' || t === 'button') return 'button';
@@ -113,6 +131,18 @@ export const DOM_SNAPSHOT_SCRIPT = `(() => {
   const accessibleName = (el) => {
     const label = el.getAttribute('aria-label');
     if (label) return label.trim();
+    const labelledBy = el.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const text = labelledBy.split(/\\s+/).map((id) => document.getElementById(id)?.textContent || '')
+        .join(' ').replace(/\\s+/g, ' ').trim();
+      if (text) return text;
+    }
+    const labels = Array.from(el.labels || []);
+    if (labels.length > 0) {
+      const text = labels.map((candidate) => candidate.textContent || '').join(' ')
+        .replace(/\\s+/g, ' ').trim();
+      if (text) return text;
+    }
     if (el.tagName === 'INPUT') {
       const ph = el.getAttribute('placeholder');
       if (ph) return ph.trim();
@@ -125,11 +155,14 @@ export const DOM_SNAPSHOT_SCRIPT = `(() => {
   let truncated = false;
   const walk = (el, depth) => {
     if (nodes.length >= MAX_NODES) { truncated = true; return; }
-    if (!(el instanceof Element) || !visible(el)) return;
+    if (!(el instanceof Element)) return;
+    const hiddenFileInput = el instanceof HTMLInputElement && el.type === 'file';
+    if (!hiddenFileInput && !visible(el)) return;
     const role = roleFor(el);
     let nextDepth = depth;
     if (role) {
-      const interactive = interactiveTags.has(el.tagName) || el.getAttribute('role') === 'button';
+      const interactive = interactiveTags.has(el.tagName) || interactiveRoles.has(role) ||
+        window.getComputedStyle(el).cursor === 'pointer';
       let ref;
       if (interactive) {
         ref = 'e' + (++refCounter);
@@ -137,11 +170,22 @@ export const DOM_SNAPSHOT_SCRIPT = `(() => {
       }
       const node = { role, name: accessibleName(el), depth };
       if (ref) node.ref = ref;
-      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+      if ((el.tagName === 'INPUT' && el.type !== 'file') || el.tagName === 'TEXTAREA') {
         if (el.value) node.value = String(el.value).slice(0, 120);
       }
       nodes.push(node);
       nextDepth = depth + 1;
+    } else if (textTags.has(el.tagName) || el.children.length === 0) {
+      const name = accessibleName(el);
+      if (name) {
+        const node = { role: 'text', name, depth };
+        if (window.getComputedStyle(el).cursor === 'pointer') {
+          const ref = 'e' + (++refCounter);
+          el.setAttribute('data-copse-ref', ref);
+          node.ref = ref;
+        }
+        nodes.push(node);
+      }
     }
     for (const child of el.children) walk(child, nextDepth);
   };

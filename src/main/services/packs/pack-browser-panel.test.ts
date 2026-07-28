@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import {
-  PackBrowserPanelService,
-  type PackBrowserOwner,
-  type PackBrowserPanelDependencies,
-} from './pack-browser-panel.ts'
+import { PackBrowserPanelService, type PackBrowserPanelDependencies } from './pack-browser-panel.ts'
+import type { PackBrowserOwner } from './pack-browser-service.ts'
 
 class FakeContents {
   destroyed = false
