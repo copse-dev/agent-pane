@@ -96,8 +96,10 @@ describe('discoverAndRegisterUserPacks', () => {
     const registry = createFirstPartyPackRegistry()
     const result = discoverAndRegisterUserPacks(registry, tempRoot)
     assert.equal(result.entries.length, 1)
-    assert.equal(result.entries[0]?.status, 'skipped')
-    assert.match(result.entries[0]?.reason ?? '', /duplicate pack id/)
+    const entry = result.entries[0]
+    assert.ok(entry)
+    assert.equal(entry.status, 'skipped')
+    assert.match(entry.reason ?? '', /duplicate pack id/)
     assert.equal(registry.get('copse.todos')?.trust, 'first-party')
   })
 
