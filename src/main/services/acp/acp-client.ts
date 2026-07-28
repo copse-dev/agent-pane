@@ -586,12 +586,10 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
       if (open.suppressChunks) continue
       try {
         // Dismiss a permission modal as soon as the agent marks that tool call
-        // terminal — including `cancelled`, which has no UI chunk.
+        // terminal (completed/failed) without waiting for our answer.
         if (
           update.sessionUpdate === 'tool_call_update' &&
-          (update.status === 'completed' ||
-            update.status === 'failed' ||
-            update.status === 'cancelled')
+          (update.status === 'completed' || update.status === 'failed')
         ) {
           cancelApprovalsForAcpToolCall(update.toolCallId)
         }
