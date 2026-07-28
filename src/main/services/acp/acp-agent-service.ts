@@ -114,6 +114,13 @@ export interface RunAcpAgentOptions {
    * relying on the agent to already know the skill.
    */
   invokedSkills?: string[]
+  /**
+   * Aborted when the Copse turn ends (success, error, or Stop). Merged into
+   * bridged tool execution so an agent that abandons an MCP call and finishes
+   * the prompt cannot leave Copse's approval modal orphaned underneath a
+   * completed transcript.
+   */
+  bridgeTurnSignal?: AbortSignal
 }
 
 export interface RunAcpAgentResult {
@@ -420,6 +427,7 @@ export async function runAcpAgentFromSettings(
       registry: options.registry,
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
+    entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
@@ -451,6 +459,7 @@ export async function runAcpAgentFromSettings(
       throw err
     } finally {
       entry.bridge?.setAdvisorContext(null)
+      entry.bridge?.setTurnSignal(null)
       entry.lastUsedAt = Date.now()
     }
   }

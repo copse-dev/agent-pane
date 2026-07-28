@@ -56,7 +56,7 @@ import {
   isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
-import { requestApproval } from './approval.ts'
+import { requestApproval, cancelApprovalsForThread } from './approval.ts'
 import {
   reviewSpendApprovalBody,
   runParentContinuationTurn,
@@ -627,6 +627,9 @@ export async function runAgent(
     // (and other host-side waits) are open so a long user think cannot abort the
     // ACP turn underneath the still-visible prompt.
     registerRunDeadline(threadId, runAbort.deadline)
+    // Aborted in finally so bridged tools / orphaned approval modals cancel when
+    // the external agent finishes the turn without waiting for them.
+    const bridgeTurn = new AbortController()
     // The advisor works both ways for ACP: an external executor can consult it
     // through the native-tool bridge. Unlike the native loop (context set around
     // each call), bridged calls arrive over HTTP at any point in the turn, so
@@ -661,6 +664,7 @@ export async function runAgent(
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
+        bridgeTurnSignal: bridgeTurn.signal,
         onChunk: acpChunkSink,
         registry,
         ...(advisorContext ? { advisorContext } : {}),
@@ -703,6 +707,8 @@ export async function runAgent(
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+      bridgeTurn.abort()
+      cancelApprovalsForThread(threadId)
       runAbort.clear()
       clearRunDeadline(threadId, runAbort.deadline)
       endHookRunRecording(threadId)
@@ -1533,6 +1539,7 @@ export async function runAgent(
     // across the turn tree and re-seeds the spent count on the next run, so the
     // per-run seed here need not persist — this keeps the ledger map bounded.
     budgetLedger.forget(turnTreeId)
+    cancelApprovalsForThread(threadId)
     runAbort.clear()
     clearRunDeadline(threadId, runAbort.deadline)
     clearAgentRunTodos()

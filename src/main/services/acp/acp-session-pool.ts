@@ -159,6 +159,7 @@ export async function acquireAcpSession(
   const bridge = opts.registry
     ? await startAcpNativeBridge(opts.registry, bridgeAbort.signal, {
         networkScopeAlreadyApplies: shareNetworkScope,
+        threadId: opts.threadId,
       }).catch(() => null)
     : null
   const config: AcpAgentSpawnConfig = {

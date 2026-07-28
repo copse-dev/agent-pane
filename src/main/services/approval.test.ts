@@ -2,6 +2,7 @@ import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   approvalDedupeKey,
+  cancelApprovalsForThread,
   requestApproval,
   setApprovalHandler,
   startDockAttention,
@@ -165,6 +166,27 @@ describe('requestApproval pluggable transport', () => {
         showWhileSettingsOpen: false,
       }),
     )
+  })
+
+  it('cancelApprovalsForThread dismisses waiters for that thread only', async () => {
+    let releaseOther!: (response: { approved: boolean; remember: boolean }) => void
+    setApprovalHandler(
+      (req) =>
+        new Promise((resolve) => {
+          if (req.body === 'other-thread') releaseOther = resolve
+        }),
+    )
+    const orphaned = runWithActiveRunIdentity('thread-ending', () =>
+      requestApproval({ title: 'Run outside sandbox?', body: 'git submodule', type: 'shell' }),
+    )
+    const other = runWithActiveRunIdentity('thread-other', () =>
+      requestApproval({ title: 'Run outside sandbox?', body: 'other-thread', type: 'shell' }),
+    )
+    await Promise.resolve()
+    assert.equal(cancelApprovalsForThread('thread-ending'), 1)
+    assert.deepEqual(await orphaned, { approved: false, remember: false })
+    releaseOther({ approved: true, remember: false })
+    assert.deepEqual(await other, { approved: true, remember: false })
   })
 })
 

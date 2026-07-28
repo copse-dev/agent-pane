@@ -79,6 +79,8 @@ interface InflightWaiter {
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
   onAbort: () => void
+  /** Thread that opened this waiter; used to dismiss orphans when the turn ends. */
+  threadId: string | null
 }
 
 const inflight = new Map<string, InflightApproval>()
@@ -110,6 +112,28 @@ function settleInflight(key: string, entry: InflightApproval, response: Approval
 }
 
 /**
+ * Dismiss every in-flight approval waiter owned by `threadId` (deny + tear down
+ * the dialog when no other threads remain on the shared prompt).
+ *
+ * Called when an agent turn ends while a prompt is still open — e.g. an ACP
+ * agent abandoned a bridged `run_shell` MCP call, streamed a summary, and
+ * stopped the turn, leaving Copse's "Run outside sandbox?" modal orphaned.
+ * Detectable in the UI as completed turn output (incl. Sandbox Network Audit)
+ * behind a still-modal approval.
+ */
+export function cancelApprovalsForThread(threadId: string): number {
+  let cancelled = 0
+  for (const entry of [...inflight.values()]) {
+    for (const waiter of [...entry.waiters]) {
+      if (waiter.threadId !== threadId) continue
+      waiter.onAbort()
+      cancelled++
+    }
+  }
+  return cancelled
+}
+
+/**
  * Ask the user (or registered handler) for approval. Identical in-flight requests
  * share one underlying prompt — the first call opens it; later duplicates wait on
  * the same answer. The prompt stays open until the user responds, the window
@@ -131,13 +155,16 @@ export function requestApproval(
   if (!activeHandler) return Promise.resolve(DENIED)
 
   const threadId = getActiveRunThread() ?? undefined
-  return withRunDeadlinePaused(threadId, () => requestApprovalUnpaused(req, activeHandler, signal))
+  return withRunDeadlinePaused(threadId, () =>
+    requestApprovalUnpaused(req, activeHandler, signal, threadId ?? null),
+  )
 }
 
 function requestApprovalUnpaused(
   req: ApprovalRequest,
   activeHandler: ApprovalHandler,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  threadId: string | null,
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
 
@@ -162,6 +189,7 @@ function requestApprovalUnpaused(
     const waiter: InflightWaiter = {
       resolve,
       signal,
+      threadId,
       onAbort: () => {
         if (!active.waiters.has(waiter)) return
         active.waiters.delete(waiter)

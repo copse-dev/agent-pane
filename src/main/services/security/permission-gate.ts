@@ -194,11 +194,16 @@ function readScriptForHarm(path: string): string | null {
 }
 
 /** Prompt when a sandboxed command failed and may succeed unsandboxed. */
-export async function promptUnsandboxedShell(command: string, reasons: string[]): Promise<boolean> {
+export async function promptUnsandboxedShell(
+  command: string,
+  reasons: string[],
+  signal?: AbortSignal,
+): Promise<boolean> {
   return requestEscalationApproval(
     command,
     'Run outside sandbox?',
     formatUnsandboxedPromptBody(command, reasons),
+    signal,
   )
 }
 
@@ -210,12 +215,16 @@ export async function promptUnsandboxedShell(command: string, reasons: string[])
 export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  const { approved } = await requestApproval({
-    title: 'Run outside sandbox?',
-    body: formatExpectedSandboxBlockPromptBody(command, reasons),
-    type: 'shell',
-  })
+  const { approved } = await requestApproval(
+    {
+      title: 'Run outside sandbox?',
+      body: formatExpectedSandboxBlockPromptBody(command, reasons),
+      type: 'shell',
+    },
+    signal,
+  )
   return approved
 }
 

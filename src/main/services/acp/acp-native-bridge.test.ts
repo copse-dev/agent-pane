@@ -120,7 +120,9 @@ describe('startAcpNativeBridge', () => {
       permissionChecks.push(check.toolName)
       return Promise.resolve(true)
     })
-    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal)
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
     assert.ok(bridge, 'bridge should start when a bridgeable tool is registered')
 
     for (const init of initialized()) await rpc(bridge, init)
@@ -166,7 +168,9 @@ describe('startAcpNativeBridge', () => {
       parameters: z.object({}),
       execute: () => Promise.resolve('Advice: do the smallest slice first.'),
     })
-    bridge = await startAcpNativeBridge(registry, new AbortController().signal)
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
     assert.ok(bridge)
 
     for (const init of initialized()) await rpc(bridge, init)
@@ -199,8 +203,12 @@ describe('startAcpNativeBridge', () => {
         return `${context?.executorModel ?? 'missing'}:${first?.role ?? 'missing'}`
       },
     })
-    const bridgeA = await startAcpNativeBridge(registry, new AbortController().signal)
-    const bridgeB = await startAcpNativeBridge(registry, new AbortController().signal)
+    const bridgeA = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    const bridgeB = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
     assert.ok(bridgeA)
     assert.ok(bridgeB)
     try {
@@ -242,7 +250,9 @@ describe('startAcpNativeBridge', () => {
 
   it('refuses tools outside the curated list even when registered', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
-    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal)
+    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
     assert.ok(bridge)
     assert.ok(!BRIDGE_TOOL_NAMES.includes('ask_user'))
     const call = await rpc(bridge, {
@@ -258,7 +268,9 @@ describe('startAcpNativeBridge', () => {
 
   it('rejects requests without the per-turn bearer token', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
-    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal)
+    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
     assert.ok(bridge)
     const unauthorized = await rpc(bridge, LIST_TOOLS, 'wrong-token')
     assert.equal(unauthorized.status, 401)
@@ -266,7 +278,9 @@ describe('startAcpNativeBridge', () => {
 
   it('does not start when no bridgeable tool is registered', async () => {
     const empty = new ToolRegistry()
-    bridge = await startAcpNativeBridge(empty, new AbortController().signal)
+    bridge = await startAcpNativeBridge(empty, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
     assert.equal(bridge, null)
   })
 })

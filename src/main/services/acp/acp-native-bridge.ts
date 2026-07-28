@@ -9,6 +9,7 @@ import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
+import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
@@ -160,6 +161,12 @@ export interface AcpNativeBridge {
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
   setAdvisorContext: (context: AdvisorRunnerContext | null) => void
+  /**
+   * Bind the current turn's abort signal so in-flight bridged tools (and their
+   * approval prompts) cancel when the turn ends — including the case where the
+   * external agent abandons an MCP call and finishes the prompt on its own.
+   */
+  setTurnSignal: (signal: AbortSignal | null) => void
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
 }
@@ -174,11 +181,30 @@ function bridgedTools(
   return registry.toMcpTools().filter((tool) => offered.has(tool.name))
 }
 
+interface BridgeExecuteContext {
+  /** Session-lifetime abort (dispose). */
+  sessionSignal: AbortSignal
+  /** Live reader for the in-flight turn abort; null between turns. */
+  getTurnSignal: () => AbortSignal | null
+  /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
+  threadId: string
+  networkScopeAlreadyApplies: boolean
+}
+
+function mergeBridgeExecuteSignal(
+  sessionSignal: AbortSignal,
+  turnSignal: AbortSignal | null,
+): AbortSignal {
+  if (!turnSignal) return sessionSignal
+  if (turnSignal.aborted) return turnSignal
+  if (sessionSignal.aborted) return sessionSignal
+  return AbortSignal.any([sessionSignal, turnSignal])
+}
+
 function buildMcpServer(
   registry: ToolRegistry,
-  signal: AbortSignal,
-  advisorContext: AdvisorRunnerContext | null,
-  networkScopeAlreadyApplies: boolean,
+  advisorContext: { current: AdvisorRunnerContext | null },
+  ctx: BridgeExecuteContext,
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- low-level Server is the right fit: bridge tools carry pre-built JSON schemas from ToolRegistry.toMcpTools(), while the high-level McpServer wants zod shapes it converts itself
 ): McpBridgeServer {
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- see the note on the signature
@@ -196,15 +222,22 @@ function buildMcpServer(
       }
     }
     try {
+      const executeSignal = mergeBridgeExecuteSignal(ctx.sessionSignal, ctx.getTurnSignal())
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        registry.executeNormalized(name, request.params.arguments, signal)
-      const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        networkScopeAlreadyApplies
+        registry.executeNormalized(name, request.params.arguments, executeSignal)
+      const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
+        ctx.networkScopeAlreadyApplies
           ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
           : execute()
+      // Bridge HTTP handlers are a separate async chain from the ACP turn — rebind
+      // the thread identity so approval prompts / idle-deadline pauses attribute
+      // to the owning thread (and cancelApprovalsForThread can find them).
+      const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
+        runWithActiveRunIdentity(ctx.threadId, withPermissionContext)
+      const advisor = advisorContext.current
       const { result } =
-        name === 'advisor' && advisorContext
-          ? await runWithAdvisorContext(advisorContext, runExecute)
+        name === 'advisor' && advisor
+          ? await runWithAdvisorContext(advisor, runExecute)
           : await runExecute()
       return { content: [{ type: 'text', text: result }] }
     } catch (err) {
@@ -271,7 +304,7 @@ function compatibleServerTransport(transport: StreamableHTTPServerTransport): Tr
 }
 
 /**
- * Start the per-turn bridge server. Returns `null` when the feature is off
+ * Start the per-session bridge server. Returns `null` when the feature is off
  * (`acpNativeBridgeEnabled`, default on) or no bridgeable tool is registered.
  * Stateless MCP: each POST gets a fresh server+transport pair, so the external
  * agent needs no session handshake and GET/DELETE degrade per spec.
@@ -279,11 +312,13 @@ function compatibleServerTransport(transport: StreamableHTTPServerTransport): Tr
  * @param networkScopeAlreadyApplies - when the owning ACP session is sandboxed,
  *   bridged shell calls share that session's widened network scope instead of
  *   prompting as if they were an unrelated overlapping process (#803).
+ * @param threadId - Copse thread that owns this bridge; rebound into ALS on every
+ *   tool call so approvals attribute to the right thread.
  */
 export async function startAcpNativeBridge(
   registry: ToolRegistry,
   signal: AbortSignal,
-  opts: { networkScopeAlreadyApplies?: boolean } = {},
+  opts: { networkScopeAlreadyApplies?: boolean; threadId: string },
 ): Promise<AcpNativeBridge | null> {
   if (!getSetting<boolean>('acpNativeBridgeEnabled', true)) return null
   if (bridgedTools(registry).length === 0) return null
@@ -293,7 +328,8 @@ export async function startAcpNativeBridge(
   // The server is pooled per ACP thread, so its context is also per bridge.
   // Capture it at request start and bind it with AsyncLocalStorage during the
   // advisor call; simultaneous bridges can never see one another's transcript.
-  let advisorContext: AdvisorRunnerContext | null = null
+  const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
+  let turnSignal: AbortSignal | null = null
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -305,7 +341,12 @@ export async function startAcpNativeBridge(
       const body = await readBody(req).catch(() => undefined)
       // No sessionIdGenerator → stateless mode: every POST is self-contained.
       const transport = new StreamableHTTPServerTransport({})
-      const server = buildMcpServer(registry, signal, advisorContext, networkScopeAlreadyApplies)
+      const server = buildMcpServer(registry, advisorContext, {
+        sessionSignal: signal,
+        getTurnSignal: () => turnSignal,
+        threadId: opts.threadId,
+        networkScopeAlreadyApplies,
+      })
       res.on('close', () => {
         void transport.close()
         void server.close()
@@ -337,7 +378,10 @@ export async function startAcpNativeBridge(
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
     setAdvisorContext: (context): void => {
-      advisorContext = context
+      advisorContext.current = context
+    },
+    setTurnSignal: (next): void => {
+      turnSignal = next
     },
     close: () =>
       new Promise<void>((resolve) => {
