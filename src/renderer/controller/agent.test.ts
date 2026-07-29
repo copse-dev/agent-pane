@@ -273,6 +273,35 @@ test('tool_call then tool_result transitions the tool card running -> done', () 
   assert.equal(tc.result, 'file body')
 })
 
+test('tool_call_update patches ACP arguments, output, and status in place', () => {
+  const { send, messages } = setup()
+  send({
+    type: 'tool_call',
+    toolCall: { id: 'tc1', name: 'mcp.copse.run_shell', args: {}, kind: 'execute' },
+  })
+  send({
+    type: 'tool_call_update',
+    toolCallId: 'tc1',
+    name: 'Run shell',
+    args: { command: 'npm test' },
+    status: 'running',
+    result: 'starting',
+    resultFormat: 'markdown',
+  })
+
+  let tc = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(tc.name, 'Run shell')
+  assert.deepEqual(tc.args, { command: 'npm test' })
+  assert.equal(tc.status, 'running')
+  assert.equal(tc.result, 'starting')
+  assert.equal(tc.resultFormat, 'markdown')
+
+  send({ type: 'tool_call_update', toolCallId: 'tc1', status: 'done' })
+  tc = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(tc.status, 'done')
+  assert.equal(tc.result, 'starting')
+})
+
 test('tool_result with isError marks the tool card as error', () => {
   const { send, messages } = setup()
   send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'read_file', args: {} } })
