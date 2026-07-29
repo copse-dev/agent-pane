@@ -279,21 +279,7 @@ async function boot(): Promise<void> {
   // window own the agent loop and config autosave so the two don't race.
   if (!popoutMode) {
     startAgentController(store, api)
-    const autosave = attachAutosave(store, api)
-    if (__COPSE_TEST_DIRECTIVES__) {
-      // Seeded e2e fixtures replace config.json while the initial blank app is
-      // alive. Let them detach first so pagehide cannot flush stale state over
-      // the fixture during reloadSession(). Release builds remove this branch.
-      window.addEventListener(
-        'copse-e2e-detach-autosave',
-        () => {
-          autosave.detach()
-        },
-        {
-          once: true,
-        },
-      )
-    }
+    attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
   }

@@ -11,11 +11,6 @@ describe('user prompt markdown in transcript', () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
-    // Prevent the initial blank app from flushing stale state over the fixture
-    // while reloadSession() tears it down on slower hosted runners.
-    await browser.execute(() => {
-      window.dispatchEvent(new Event('copse-e2e-detach-autosave'))
-    })
     resetUserData()
     seedUserPromptMarkdownFixture(process.cwd())
     await browser.reloadSession()

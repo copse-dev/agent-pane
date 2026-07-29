@@ -1044,6 +1044,7 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
           },
         ],
         todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now,
       },
