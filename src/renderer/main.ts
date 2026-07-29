@@ -284,9 +284,15 @@ async function boot(): Promise<void> {
       // Seeded e2e fixtures replace config.json while the initial blank app is
       // alive. Let them detach first so pagehide cannot flush stale state over
       // the fixture during reloadSession(). Release builds remove this branch.
-      window.addEventListener('copse-e2e-detach-autosave', () => autosave.detach(), {
-        once: true,
-      })
+      window.addEventListener(
+        'copse-e2e-detach-autosave',
+        () => {
+          autosave.detach()
+        },
+        {
+          once: true,
+        },
+      )
     }
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
