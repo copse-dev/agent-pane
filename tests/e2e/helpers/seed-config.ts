@@ -71,6 +71,11 @@ function e2eWorkspaceDir(): string {
   return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
 }
 
+/** Remove a rebuildable per-project thread catalog after an app relaunch. */
+export function invalidateThreadCatalog(projectId: string): void {
+  rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
+}
+
 // Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
 // real store explode path requires (`toolCalls`, tool `result`). Fill those in
 // so the seed matches what the app would have persisted.
@@ -130,9 +135,11 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
 export function writeSeedConfig(config: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
+  const seededProjectIds = new Set<string>()
   for (const [key, value] of Object.entries(config)) {
     const match = /^threads:(.+)$/.exec(key)
     if (match && Array.isArray(value)) {
+      seededProjectIds.add(match[1])
       for (const thread of value) {
         seedThreadDir(match[1], thread as Record<string, unknown>)
       }
@@ -141,6 +148,12 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
     }
   }
   writeFileSync(CONFIG_PATH, JSON.stringify(remaining), 'utf8')
+  // The app process that exists before a fixture calls reloadSession() can
+  // already have created an empty derived catalog. Remove it after writing the
+  // seed so the replacement process rebuilds from the thread directories.
+  for (const projectId of seededProjectIds) {
+    invalidateThreadCatalog(projectId)
+  }
 }
 
 export function resetUserData(): void {
@@ -1031,6 +1044,7 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
           },
         ],
         todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now,
       },
