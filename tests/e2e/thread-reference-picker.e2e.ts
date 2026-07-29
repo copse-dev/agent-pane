@@ -1,7 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedThreadReferenceFixture } from './helpers/seed-config.ts'
+import {
+  invalidateThreadCatalog,
+  resetUserData,
+  seedThreadReferenceFixture,
+} from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -10,9 +14,13 @@ describe('@-reference past threads (#644)', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedThreadReferenceFixture(process.cwd())
+    const { projectId } = seedThreadReferenceFixture(process.cwd())
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    // The outgoing Electron process may recreate an empty derived catalog
+    // during reloadSession(). Invalidate it after the replacement process has
+    // restored the seeded project so the picker rebuilds from its thread dirs.
+    invalidateThreadCatalog(projectId)
   })
 
   after(() => {

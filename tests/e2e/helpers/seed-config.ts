@@ -71,6 +71,11 @@ function e2eWorkspaceDir(): string {
   return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
 }
 
+/** Remove a rebuildable per-project thread catalog after an app relaunch. */
+export function invalidateThreadCatalog(projectId: string): void {
+  rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
+}
+
 // Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
 // real store explode path requires (`toolCalls`, tool `result`). Fill those in
 // so the seed matches what the app would have persisted.
@@ -147,7 +152,7 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
   // already have created an empty derived catalog. Remove it after writing the
   // seed so the replacement process rebuilds from the thread directories.
   for (const projectId of seededProjectIds) {
-    rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
+    invalidateThreadCatalog(projectId)
   }
 }
 
