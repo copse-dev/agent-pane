@@ -71,20 +71,25 @@ describe('promote-develop.yml workflow invariants', () => {
     assert.match(workflow, /const base = 'main'/)
     assert.match(workflow, /const head = 'develop'/)
 
-    const noChangesExit = workflow.indexOf(
-      'baseCommit.data.commit.tree.sha === headCommit.data.commit.tree.sha',
-    )
+    const noChangesExit = workflow.indexOf('comparison.data.ahead_by === 0')
     const pullRequestLookup = workflow.indexOf('github.paginate')
-    assert.ok(noChangesExit >= 0, 'expected an explicit equal-tree exit')
+    assert.match(workflow, /compare\/\{basehead\}/)
+    assert.ok(noChangesExit >= 0, 'expected an explicit no-unpromoted-commits exit')
     assert.ok(
       noChangesExit < pullRequestLookup,
       'the no-changes exit must run before looking up or creating a promotion PR',
     )
+    assert.doesNotMatch(
+      workflow,
+      /commit\.tree\.sha/,
+      'tree equality must not hide commits discarded by a squash merge',
+    )
   })
 
-  it('enables squash auto-merge through the existing required CI gate', () => {
+  it('enables merge-commit auto-merge through the existing required CI gate', () => {
     assert.match(workflow, /enablePullRequestAutoMerge/)
-    assert.match(workflow, /mergeMethod: SQUASH/)
+    assert.match(workflow, /mergeMethod: MERGE/)
+    assert.doesNotMatch(workflow, /mergeMethod: SQUASH/)
     assert.match(workflow, /github-token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
   })
 })
