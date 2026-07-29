@@ -44,16 +44,15 @@ jobs:
             const base = 'main';
             const head = 'develop';
 
-            const [baseCommit, headCommit] = await Promise.all([
-              github.rest.repos.getCommit({ owner, repo, ref: base }),
-              github.rest.repos.getCommit({ owner, repo, ref: head }),
-            ]);
-
-            // Promotions are squash-merged, so the two branches intentionally
-            // have different commit IDs after a successful promotion. Compare
-            // their trees instead: equal trees mean there is no content to PR.
-            if (baseCommit.data.commit.tree.sha === headCommit.data.commit.tree.sha) {
-              core.info(`${head} has no content to promote.`);
+            // A promotion is complete only when every develop commit is an
+            // ancestor of main. Comparing trees would mistake a squash merge
+            // for a complete promotion even though it discards that ancestry.
+            const comparison = await github.request(
+              'GET /repos/{owner}/{repo}/compare/{basehead}',
+              { owner, repo, basehead: `${base}...${head}` },
+            );
+            if (comparison.data.ahead_by === 0) {
+              core.info(`${head} has no commits to promote.`);
               return;
             }
 
@@ -82,7 +81,7 @@ jobs:
                   'Daily automated promotion of `develop` to the release-ready `main` branch.',
                   '',
                   'The repository ruleset requires the full `CI Passed` gate. This PR will',
-                  'squash-merge automatically when that gate is green; failures leave it open',
+                  'merge automatically when that gate is green; failures leave it open',
                   'until the underlying issue is fixed on `develop`.',
                 ].join('\n'),
               });
@@ -105,11 +104,11 @@ jobs:
               `mutation EnablePromotionAutoMerge($pullRequestId: ID!) {
                 enablePullRequestAutoMerge(input: {
                   pullRequestId: $pullRequestId
-                  mergeMethod: SQUASH
+                  mergeMethod: MERGE
                 }) {
                   pullRequest { number }
                 }
               }`,
               { pullRequestId: pull.node_id },
             );
-            core.info(`Enabled squash auto-merge on PR #${pull.number}.`);
+            core.info(`Enabled merge auto-merge on PR #${pull.number}.`);
