@@ -10,6 +10,7 @@ import {
   lmStudioTestSchema,
   zHttpUrl,
   zModelId,
+  zProjectId,
   zThreadId,
 } from './ipc-guards.ts'
 
@@ -37,6 +38,21 @@ describe('ipc-guards zThreadId', () => {
     assert.equal(zThreadId.safeParse('../etc').success, false)
     assert.equal(zThreadId.safeParse('llm-history:x').success, false)
     assert.equal(zThreadId.safeParse('a'.repeat(129)).success, false)
+  })
+})
+
+describe('ipc-guards zProjectId', () => {
+  it('accepts opaque project ids used as store directory names', () => {
+    assert.equal(zProjectId.safeParse('project-123').success, true)
+    assert.equal(zProjectId.safeParse('abc_DEF-09').success, true)
+  })
+
+  it('rejects values that could escape the project store', () => {
+    assert.equal(zProjectId.safeParse('../target').success, false)
+    assert.equal(zProjectId.safeParse('nested/project').success, false)
+    assert.equal(zProjectId.safeParse('/absolute/path').success, false)
+    assert.equal(zProjectId.safeParse('').success, false)
+    assert.equal(zProjectId.safeParse('a'.repeat(129)).success, false)
   })
 })
 

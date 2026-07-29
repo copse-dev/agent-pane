@@ -1,5 +1,8 @@
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   approvalDedupeKey,
   cancelApprovalsForThread,
@@ -13,6 +16,7 @@ import {
   type ApprovalRequest,
   type DockAttention,
 } from './approval.ts'
+import { readDecisionLog } from './security/decision-log-store.ts'
 import {
   registerRunDeadline,
   clearRunDeadline,
@@ -23,14 +27,34 @@ import { runWithActiveRunIdentity } from './thread-models.ts'
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
 
 describe('requestApproval pluggable transport', () => {
+  let auditRoot: string
+  let previousRoot: string | undefined
+
+  beforeEach(() => {
+    previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-audit-'))
+    process.env['COPSE_WORKSPACE_DIR'] = auditRoot
+  })
+
   afterEach(() => {
     setApprovalHandler(null)
     resetRunDeadlinesForTest()
+    if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    rmSync(auditRoot, { recursive: true, force: true })
   })
 
   it('denies (without hanging) when no handler is registered', async () => {
     setApprovalHandler(null)
-    assert.deepEqual(await requestApproval(req), { approved: false, remember: false })
+    assert.deepEqual(await requestApproval(req), {
+      approved: false,
+      remember: false,
+      resolution: 'unavailable',
+    })
+    const events = await readDecisionLog('_global')
+    assert.equal(events.at(-1)?.actor, 'system')
+    assert.equal(events.at(-1)?.verdict, 'cancelled')
+    assert.equal(events.at(-1)?.source, 'unavailable')
   })
 
   it('routes the request to the registered handler', async () => {
@@ -74,6 +98,30 @@ describe('requestApproval pluggable transport', () => {
     await Promise.resolve()
     controller.abort()
     assert.deepEqual(await pending, { approved: false, remember: false })
+  })
+
+  it('distinguishes timeout and window closure from user denial in the audit log', async () => {
+    setApprovalHandler(async () => ({
+      approved: false,
+      remember: false,
+      resolution: 'timeout',
+    }))
+    await requestApproval(req)
+    setApprovalHandler(async () => ({
+      approved: false,
+      remember: false,
+      resolution: 'window-closed',
+    }))
+    await requestApproval(req)
+
+    const events = await readDecisionLog('_global')
+    assert.deepEqual(
+      events.slice(-2).map(({ actor, verdict, source }) => ({ actor, verdict, source })),
+      [
+        { actor: 'system', verdict: 'timeout', source: 'timeout' },
+        { actor: 'system', verdict: 'cancelled', source: 'window-closed' },
+      ],
+    )
   })
 
   it('coalesces identical in-flight requests into one handler call', async () => {
@@ -287,7 +335,7 @@ describe('startDockAttention', () => {
     assert.deepEqual(calls.cancel, [42])
   })
 
-  it('cancels at most once even if stopped repeatedly', () => {
+  it('is idempotent: a second stop is a no-op', () => {
     const { dock, calls } = fakeDock()
     const stop = startDockAttention(dock)
     stop()
