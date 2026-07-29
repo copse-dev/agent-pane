@@ -541,7 +541,6 @@
 }
 .footer-checkout-menu {
   position: absolute;
-  z-index: 40;
   left: 0;
   bottom: calc(100% + var(--spacing-xs));
   display: grid;
@@ -635,7 +634,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
-  z-index: 100;
   padding: 4px 0;
 }
 .branch-picker-option {
@@ -695,7 +693,6 @@
   display: none;
 }
 .footer-overflow-trigger {
-  anchor-name: --footer-overflow-trigger;
   display: inline-flex;
   align-items: center;
   line-height: 1;
@@ -705,22 +702,8 @@
 .footer-overflow-trigger:hover {
   color: var(--text-secondary);
 }
-.footer-overflow-boundary {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  anchor-name: --footer-overflow-boundary;
-}
 .footer-overflow-menu {
-  position: absolute;
-  position-anchor: --footer-overflow-trigger;
-  z-index: 20;
-  bottom: calc(anchor(top) + var(--spacing-xs));
-  right: anchor(--footer-overflow-boundary right);
-  box-sizing: border-box;
-  width: max-content;
-  min-width: min(120px, anchor-size(--footer-overflow-boundary width));
-  max-width: anchor-size(--footer-overflow-boundary width);
+  --footer-popup-min-width: 120px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -758,11 +741,7 @@
   position: relative;
 }
 .context-wheel-popover {
-  position: absolute;
-  z-index: 30;
-  bottom: calc(100% + 8px);
-  right: 0;
-  min-width: 210px;
+  --footer-popup-min-width: 210px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -771,6 +750,103 @@
   font-size: 11px;
   color: var(--text-primary);
   pointer-events: none;
+}
+
+/* Footer popovers share the footer as their collision boundary while each
+   stays attached to its own trigger. Anchor names must remain distinct:
+   Chromium resolves duplicate names to another eligible footer anchor, which
+   can throw a menu against the end of the field instead of its own control. */
+.footer-model-host {
+  --footer-popup-anchor: --footer-model-trigger;
+}
+.footer-checkout-host {
+  --footer-popup-anchor: --footer-checkout-trigger;
+}
+.footer-branch-host {
+  --footer-popup-anchor: --footer-branch-trigger;
+}
+.footer-overflow {
+  --footer-popup-anchor: --footer-overflow-trigger;
+}
+.context-wheel {
+  --footer-popup-anchor: --footer-context-trigger;
+}
+.footer-model-host .model-picker,
+.footer-checkout-host,
+.footer-branch-host .branch-picker,
+.footer-overflow,
+.context-wheel {
+  position: static;
+}
+.footer-model-host .model-picker-trigger,
+.footer-checkout-btn,
+.footer-branch-host .branch-picker-trigger,
+.footer-overflow-trigger,
+.context-wheel {
+  anchor-name: var(--footer-popup-anchor);
+}
+@position-try --footer-popup-clamp-left {
+  left: 0;
+  right: auto;
+}
+@position-try --footer-popup-clamp-right {
+  left: auto;
+  right: 0;
+}
+
+.footer-model-host .model-picker-menu,
+.footer-checkout-menu,
+.footer-branch-host .branch-picker-menu,
+.footer-overflow-menu,
+.context-wheel-popover {
+  position: absolute;
+  z-index: 100;
+  position-anchor: var(--footer-popup-anchor);
+  bottom: calc(anchor(top) + var(--spacing-xs));
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(var(--footer-popup-min-width, 0px), 100%);
+  max-width: min(var(--footer-popup-max-width, 100vw), 100%);
+}
+.footer-model-host .model-picker-menu,
+.footer-checkout-menu,
+.footer-branch-host .branch-picker-menu {
+  left: anchor(left);
+  right: auto;
+  position-try-fallbacks: --footer-popup-clamp-right;
+}
+.footer-overflow-menu,
+.context-wheel-popover {
+  left: auto;
+  right: anchor(right);
+  position-try-fallbacks: --footer-popup-clamp-left;
+}
+.input-footer.is-compact .footer-model-host .model-picker-menu,
+.input-footer.is-compact .footer-checkout-menu,
+.input-footer.is-compact .footer-branch-host .branch-picker-menu {
+  left: 0;
+  right: auto;
+  position-try-fallbacks: none;
+}
+.input-footer.is-compact .footer-overflow-menu,
+.input-footer.is-compact .context-wheel-popover {
+  left: auto;
+  right: 0;
+  position-try-fallbacks: none;
+}
+.footer-model-host .model-picker-menu {
+  --footer-popup-min-width: 220px;
+  --footer-popup-max-width: 420px;
+}
+.footer-model-host .model-picker-filter {
+  min-width: min(220px, 100%);
+  box-sizing: border-box;
+}
+.footer-checkout-menu {
+  --footer-popup-min-width: 154px;
+}
+.footer-branch-host .branch-picker-menu {
+  --footer-popup-min-width: 180px;
 }
 .context-wheel-popover[hidden] {
   display: none;
