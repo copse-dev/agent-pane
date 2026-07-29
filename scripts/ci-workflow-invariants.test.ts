@@ -47,6 +47,40 @@ describe('ci.yml workflow invariants', () => {
     }
   })
 
+  it('forces promotion PRs through full e2e before consulting the oracle', () => {
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    assert.ok(planStep, 'expected the e2e planning step in ci.yml')
+    assert.match(planStep, /BASE_REF: \$\{\{ github\.base_ref \}\}/)
+
+    const promotionGate = planStep.indexOf(
+      'if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then',
+    )
+    const oracle = planStep.indexOf('node scripts/test-oracle.mts --plan')
+    assert.ok(promotionGate >= 0, 'promotion PRs must explicitly select mode=full')
+    assert.ok(oracle >= 0, 'expected the e2e oracle invocation')
+    assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
+  })
+
+  it('does not let a cheap develop push satisfy the promotion aggregate gate', () => {
+    const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
+    assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
+    assert.match(
+      aggregate,
+      /name: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/develop' && 'Develop CI Passed' \|\| 'CI Passed' \}\}/,
+      'develop pushes need a distinct aggregate check context',
+    )
+    assert.match(
+      aggregate,
+      /PROMOTION_PR=\$\{\{ github\.event_name == 'pull_request' && github\.base_ref == 'main'/,
+      'the aggregate must identify same-repository promotion PRs',
+    )
+    assert.match(
+      aggregate,
+      /\$PROMOTION_PR && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
+      'promotion PRs must fail closed unless e2e succeeds',
+    )
+  })
+
   it('has no merge_group trigger (queue needs Enterprise Cloud; org is on Team)', () => {
     // Re-adding the trigger would look harmless but can never fire, and its
     // presence previously justified `github.event_name != 'merge_group'` guards

@@ -193,6 +193,7 @@ jobs:
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
           # PR base on pull_request; previous-tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           # Real PR head commit (not the merge ref this job checks out), used to
@@ -233,6 +234,16 @@ jobs:
               { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
+          fi
+          # A promotion is the release gate for the whole develop batch. Always
+          # exercise the complete e2e suite here rather than allowing the oracle
+          # to thin or skip it. Keep this after the screenshot-only escape above:
+          # the bot's reference-only follow-up has already inherited a successful
+          # e2e run from its parent and must not start a render/commit loop.
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then
+            echo "PR targets main -> full e2e suite (promotion gate)"
+            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
             echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
@@ -1405,7 +1416,10 @@ jobs:
   # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
   # after a real shard failure still fail because `ANY_FAILURE` is true first.
   ci-passed:
-    name: CI Passed
+    # A push to develop intentionally skips the expensive tier. Give that run a
+    # distinct check context so its green result on the same head SHA cannot
+    # satisfy main's required `CI Passed` check before promotion e2e has run.
+    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'Develop CI Passed' || 'CI Passed' }}
     if: always()
     needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
@@ -1487,6 +1501,12 @@ jobs:
             fi
             echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
             exit 0
+          fi
+          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository }}
+          if $PROMOTION_PR && [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "Promotion PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
+            echo '${{ toJSON(needs) }}'
+            exit 1
           fi
           if $ANY_FAILURE; then
             echo "One or more CI jobs failed:"
