@@ -29,6 +29,7 @@ import {
   positiveInt,
   type Options,
 } from './lib/cloud-hosts.mts'
+import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 
 type Command = 'list' | 'fetch' | 'thread' | 'help'
 
@@ -112,7 +113,7 @@ function config(options: Options): DebugConfig {
   const region = optionWithDefault(
     options,
     'region',
-    process.env['SCW_OBJECT_STORAGE_REGION']?.trim() || 'fr-par',
+    nonEmptyStringOr(process.env['SCW_OBJECT_STORAGE_REGION']?.trim(), 'fr-par'),
   )
   return {
     bucket: requiredValue(
@@ -157,8 +158,10 @@ function downloadObject(
   )
   if (!result.error && result.status === 0) return true
   if (optional) return false
-  const detail =
-    result.stderr.trim() || result.error?.message || `aws exited ${String(result.status)}`
+  const detail = nonEmptyStringOr(
+    firstNonEmptyString(result.stderr.trim(), result.error?.message),
+    `aws exited ${String(result.status)}`,
+  )
   throw new Error(`unable to retrieve s3://${configured.bucket}/${key}: ${detail}`)
 }
 

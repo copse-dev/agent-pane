@@ -13,6 +13,7 @@ import {
   ensureProviderHostApproved,
 } from './approved-provider-hosts.ts'
 import { parseContextFromModelRecord, stripTrailingSlash } from './lm-studio-models.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export interface FetchedProviderModel {
   id: string
@@ -85,12 +86,12 @@ export async function fetchOpenAiCompatibleModels(
       }
     }
     const json: unknown = await res.json()
-    const data = (json as { data?: unknown } | null | undefined)?.data
+    const data = isRecord(json) ? json['data'] : undefined
     if (!Array.isArray(data)) return { ok: true, models: [] }
     const models: FetchedProviderModel[] = []
     for (const row of data) {
-      if (!row || typeof row !== 'object') continue
-      const rec = row as Record<string, unknown>
+      if (!isRecord(row)) continue
+      const rec = row
       const id =
         typeof rec['id'] === 'string'
           ? rec['id']

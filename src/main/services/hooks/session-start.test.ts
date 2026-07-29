@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { runSessionStartHooks } from './session-start.ts'
 import { runToolGateHooks } from './tool-gate.ts'
 import { getSessionEnv, resetSessionEnvForTest } from './session-env.ts'
@@ -82,14 +83,10 @@ describe('sessionStart fire site (H4)', () => {
     await result.settled
 
     assert.equal(existsSync(stdinFile), true)
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as {
-      session_id?: string
-      composer_mode?: string
-      is_background_agent?: boolean
-    }
-    assert.equal(stdin.session_id, threadId)
-    assert.equal(stdin.composer_mode, 'agent')
-    assert.equal(stdin.is_background_agent, false)
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['session_id'], threadId)
+    assert.equal(stdin['composer_mode'], 'agent')
+    assert.equal(stdin['is_background_agent'], false)
   })
 
   it('is detached — a slow sessionStart hook does not block the caller (decision 3)', async () => {

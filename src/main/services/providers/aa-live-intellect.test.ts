@@ -5,6 +5,8 @@ import {
   liveCacheTtlMs,
   requestLiveIntellectModels,
 } from './aa-live-intellect.ts'
+import { expectStringRecord } from '@shared/unknown-value.ts'
+import { jsonResponse } from './test-response.ts'
 
 /** A fake fetch that records the request init and returns a canned response. */
 function fakeFetch(response: {
@@ -20,12 +22,7 @@ function fakeFetch(response: {
     calls.push(init ?? {})
     if (response.throwErr) throw response.throwErr
     const status = response.status ?? 200
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      statusText: response.statusText ?? '',
-      json: async () => response.body ?? {},
-    } as Response
+    return jsonResponse(response.body ?? {}, status, response.statusText)
   }) as typeof fetch
   return { fetch: fn, calls, urls }
 }
@@ -54,7 +51,7 @@ describe('requestLiveIntellectModels', () => {
   it('sends the key as the x-api-key header', async () => {
     const { fetch, calls } = fakeFetch({ body: { data: [] } })
     await requestLiveIntellectModels('secret-key', fetch)
-    assert.deepEqual((calls[0]?.headers as Record<string, string>)['x-api-key'], 'secret-key')
+    assert.deepEqual(expectStringRecord(calls[0]?.headers)['x-api-key'], 'secret-key')
   })
 
   it('reduces a 200 payload to scored, priced models and reads the index version', async () => {
@@ -95,7 +92,7 @@ describe('requestLiveIntellectModels', () => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       urls.push(url)
       const page = Number(new URL(url).searchParams.get('page'))
-      return { ok: true, status: 200, statusText: '', json: async () => pages[page] } as Response
+      return jsonResponse(pages[page])
     }) as typeof globalThis.fetch
     const result = await requestLiveIntellectModels('key', fetch)
     assert.deepEqual(

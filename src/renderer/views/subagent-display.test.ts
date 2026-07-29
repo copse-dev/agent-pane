@@ -11,6 +11,8 @@ import {
 import type { ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 // Component-level port of the former seeded `subagent display` e2e coverage.
 // Its live-mock describe OOM-crashed the constrained runner, while the seeded
@@ -24,25 +26,48 @@ import { mountConversation } from './conversation.ts'
 // integration and is dropped, not ported.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-    // The explore message renders `Reading **README.md**`; README.md is a
-    // file-reference candidate, so stub the resolver the markdown post-pass calls.
-    index: { resolveFileReferences: () => Promise.resolve([]) },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+      // The explore message renders `Reading **README.md**`; README.md is a
+      // file-reference candidate, so stub the resolver the markdown post-pass calls.
+      index: {
+        ...base['index'],
+        resolveFileReferences: () => Promise.resolve([]),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function apiWithFiles(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
 ): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-    index: {
-      resolveFileReferences: () =>
-        Promise.resolve(resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) }))),
-    },
-    fs: { readFile: () => Promise.resolve('') },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+      index: {
+        ...base['index'],
+        resolveFileReferences: () =>
+          Promise.resolve(resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) }))),
+      },
+      fs: {
+        ...base['fs'],
+        readFile: () => Promise.resolve(''),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 // One assistant message with a done `explore` tool call whose subagent session
@@ -219,8 +244,8 @@ describe('subagent display (component)', () => {
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
-    const card = document.querySelector('.tool-card-subagent') as HTMLDetailsElement
-    const inner = card.querySelector('[data-tool-id="inner-read-1"]') as HTMLDetailsElement
+    const card = qsRequired<HTMLDetailsElement>(document, '.tool-card-subagent')
+    const inner = qsRequired<HTMLDetailsElement>(card, '[data-tool-id="inner-read-1"]')
     card.open = true
     inner.setAttribute('open', '')
 
@@ -291,12 +316,13 @@ describe('subagent display (component)', () => {
     // Allow async annotateFileReferences to complete
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    const links = host.querySelectorAll('.subagent-inner-tool .tool-result a.file-reference-link')
-    assert.equal(links.length, 2)
-    assert.equal((links[0] as HTMLAnchorElement).dataset['fileReferencePath'], 'src/main/index.ts')
-    assert.equal(
-      (links[1] as HTMLAnchorElement).dataset['fileReferencePath'],
-      'src/renderer/index.ts',
+    const links = host.querySelectorAll<HTMLAnchorElement>(
+      '.subagent-inner-tool .tool-result a.file-reference-link',
     )
+    assert.equal(links.length, 2)
+    const firstLink = links.item(0)
+    const secondLink = links.item(1)
+    assert.equal(firstLink.dataset['fileReferencePath'], 'src/main/index.ts')
+    assert.equal(secondLink.dataset['fileReferencePath'], 'src/renderer/index.ts')
   })
 })

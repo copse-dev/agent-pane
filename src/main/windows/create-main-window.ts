@@ -4,6 +4,8 @@ import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 
 let mainWin: BrowserWindow | null = null
 
@@ -95,4 +97,23 @@ export function registerDevtoolsShortcut(win: BrowserWindow): void {
 /** Unregister the Ctrl+Shift+I DevTools shortcut. */
 export function unregisterDevtoolsShortcut(): void {
   globalShortcut.unregister(DEVTOOLS_SHORTCUT)
+}
+
+/**
+ * Register or unregister the DevTools shortcut to match the current enablement
+ * of the `copse.devtools-shortcut` first-party pack's `devtools-shortcut`
+ * capability. Called at boot (via `registerAllHandlers`) and again whenever the
+ * pack is toggled from Settings > Packs (see `ipc/register-handlers.ts`
+ * `packs:setEnabled`), so the shortcut appears or disappears live — the atomic
+ * pack disable unregisters it in the same flag flip that drops the pack's
+ * capability from the Settings pack list. Replaces the retired
+ * `devtoolsShortcutEnabled` standalone setting: the pack capability is now the
+ * single source of truth.
+ */
+export function syncDevtoolsShortcut(win: BrowserWindow): void {
+  if (getDefaultPackRegistry().isCapabilityActive(DEVTOOLS_SHORTCUT_CAPABILITY)) {
+    registerDevtoolsShortcut(win)
+  } else {
+    unregisterDevtoolsShortcut()
+  }
 }

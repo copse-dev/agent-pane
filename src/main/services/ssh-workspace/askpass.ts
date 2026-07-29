@@ -4,6 +4,11 @@ import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { classifySshPrompt, requestSshPrompt } from './ssh-prompt.ts'
+import {
+  clearSshCredentialCache,
+  releaseSshCredentialNonce,
+  resolveSshSecret,
+} from './ssh-credential-cache.ts'
 
 export const COPSE_SSH_ASKPASS_SOCKET = 'COPSE_SSH_ASKPASS_SOCKET'
 export const COPSE_SSH_ASKPASS_NONCE = 'COPSE_SSH_ASKPASS_NONCE'
@@ -115,9 +120,18 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
   }
 
   const kind = classifySshPrompt(message.prompt)
-  const { value } = await requestSshPrompt({ prompt: message.prompt, kind })
-  const response = kind === 'confirm' ? (value ? 'yes' : null) : value || null
-  socket.end(JSON.stringify({ response }) + '\n')
+  if (kind === 'confirm') {
+    // Host-key trust is recorded by OpenSSH in known_hosts; nothing to cache.
+    const { value } = await requestSshPrompt({ prompt: message.prompt, kind })
+    socket.end(JSON.stringify({ response: value ? 'yes' : null }) + '\n')
+    return
+  }
+
+  const value = await resolveSshSecret(message.nonce, message.prompt, async () => {
+    const answer = await requestSshPrompt({ prompt: message.prompt, kind })
+    return { value: answer.value, remember: answer.remember ?? false }
+  })
+  socket.end(JSON.stringify({ response: value || null }) + '\n')
 }
 
 export function initSshAskpassServer(userDataDirectory?: string): void {
@@ -158,6 +172,7 @@ export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv): SshAskpassLease 
     released = true
     clearTimeout(timer)
     sessionsByNonce.delete(nonce)
+    releaseSshCredentialNonce(nonce)
   }
 
   const timer = setTimeout(release, ASKPASS_SESSION_TIMEOUT_MS)
@@ -183,6 +198,7 @@ export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv): SshAskpassLease 
 export function resetSshAskpassForTests(): void {
   for (const session of sessionsByNonce.values()) session.release()
   sessionsByNonce.clear()
+  clearSshCredentialCache()
   if (server) {
     server.close()
     server = null

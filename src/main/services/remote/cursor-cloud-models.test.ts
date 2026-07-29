@@ -22,6 +22,7 @@ describe('parseCursorCloudModelsPayload', () => {
         { displayName: 'missing id' },
         { id: 'claude-4.6-sonnet-thinking', displayName: 'Claude 4.6 Sonnet (Thinking)' },
         null,
+        [],
       ],
     })
     assert.deepEqual(models, [

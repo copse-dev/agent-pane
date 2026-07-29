@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { expectRecord } from '@shared/unknown-value.ts'
 import {
   serializedSet,
   attachAutosave,
@@ -9,6 +10,8 @@ import {
 import { createStore } from '@shared/store/store.ts'
 import type { Message, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { optionalRecord } from '@shared/unknown-value.ts'
 
 // attachAutosave registers a pagehide listener; provide a minimal window stub
 // (node test env has no DOM).
@@ -43,38 +46,44 @@ function fakeApi(
     metas: [],
     deletes: [],
   }
-  const api = {
-    storage: {
-      get: async (): Promise<unknown> => null,
-      set:
-        handlers.set ??
-        (async (key, value): Promise<void> => {
-          calls.storageSets.push([key, value])
-        }),
-    },
-    threads: {
-      loadProject: async (): Promise<Thread[]> => [],
-      create:
-        handlers.create ??
-        (async (projectId: string, thread: Thread): Promise<void> => {
-          calls.creates.push({ projectId, thread })
-        }),
-      appendMessage: async (
-        projectId: string,
-        threadId: string,
-        message: Message,
-      ): Promise<void> => {
-        calls.appends.push({ projectId, threadId, message })
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      storage: {
+        ...base['storage'],
+        get: async (): Promise<unknown> => null,
+        set:
+          handlers.set ??
+          (async (key, value): Promise<void> => {
+            calls.storageSets.push([key, value])
+          }),
       },
-      updateMeta: async (projectId: string, threadId: string, patch: unknown): Promise<void> => {
-        calls.metas.push({ projectId, threadId, patch })
+      threads: {
+        ...base['threads'],
+        loadProject: async (): Promise<Thread[]> => [],
+        create:
+          handlers.create ??
+          (async (projectId: string, thread: Thread): Promise<void> => {
+            calls.creates.push({ projectId, thread })
+          }),
+        appendMessage: async (
+          projectId: string,
+          threadId: string,
+          message: Message,
+        ): Promise<void> => {
+          calls.appends.push({ projectId, threadId, message })
+        },
+        updateMeta: async (projectId: string, threadId: string, patch: unknown): Promise<void> => {
+          calls.metas.push({ projectId, threadId, patch })
+        },
+        delete: async (projectId: string, threadId: string): Promise<void> => {
+          calls.deletes.push({ projectId, threadId })
+        },
+        catalog: async (): Promise<never[]> => [],
       },
-      delete: async (projectId: string, threadId: string): Promise<void> => {
-        calls.deletes.push({ projectId, threadId })
-      },
-      catalog: async (): Promise<never[]> => [],
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
   return { api, calls }
 }
 
@@ -202,7 +211,7 @@ test('a metadata change on a known thread emits updateMeta, not create', async (
 
   assert.equal(calls.creates.length, 1) // unchanged
   assert.deepEqual(
-    calls.metas.map((m) => [m.threadId, (m.patch as { draftPrompt?: string }).draftPrompt]),
+    calls.metas.map((m) => [m.threadId, expectRecord(m.patch)['draftPrompt']]),
     [['t1', 'typing']],
   )
   autosave.detach()
@@ -233,7 +242,7 @@ test('clearing an optional field sends an explicit undefined so it is deleted on
   store.emit('threads_changed')
   await waitDebounce()
 
-  const patch = calls.metas.at(-1)?.patch as Record<string, unknown> | undefined
+  const patch = optionalRecord(calls.metas.at(-1)?.patch)
   assert.ok(patch, 'a meta patch should be emitted')
   // The removed keys are present with `undefined` so the on-disk merge clears
   // them, rather than absent (which would let the stale value linger).
@@ -273,7 +282,7 @@ test('clearing a comparison persists via comparison_changed with an explicit und
   store.emit('comparison_changed', 't1')
   await waitDebounce()
 
-  const patch = calls.metas.at(-1)?.patch as Record<string, unknown> | undefined
+  const patch = optionalRecord(calls.metas.at(-1)?.patch)
   assert.ok(patch, 'a meta patch should be emitted')
   assert.ok('comparison' in patch)
   assert.equal(patch['comparison'], undefined)

@@ -8,21 +8,28 @@ import {
   bindFileReferenceClicks,
   findFileReferenceCandidates,
 } from './file-links.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function apiWithFileReferences(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
   fileContent = 'file contents',
 ): ApiClient {
-  return {
-    index: {
-      query: async () => [],
-      resolveFileReferences: async () =>
-        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
-    },
-    fs: {
-      readFile: async () => fileContent,
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      index: {
+        ...base['index'],
+        query: async () => [],
+        resolveFileReferences: async () =>
+          resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
+      },
+      fs: {
+        ...base['fs'],
+        readFile: async () => fileContent,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 describe('markdown file links', () => {
@@ -105,7 +112,12 @@ describe('markdown file links', () => {
     const root = document.createElement('div')
     root.innerHTML =
       '<a href="#" data-file-reference-path="src/main/index.ts">src/main/index.ts</a>'
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'terminal' })
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'terminal',
+    })
     const unbind = bindFileReferenceClicks(root, store, apiWithFileReferences([], 'export {}\n'))
 
     const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })

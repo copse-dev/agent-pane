@@ -1,0 +1,23 @@
+{
+  "taskId": "task-waiting-wake",
+  "projectId": "proj-demo",
+  "threadId": "thread-bbb",
+  "handler": "long_horizon_continue",
+  "provenance": "system",
+  "state": "waiting",
+  "createdAt": 1700000000000,
+  "updatedAt": 1700000002000,
+  "trigger": { "kind": "wake_at", "wakeAt": 1700003600000 },
+  "permissionSnapshot": {
+    "capturedAt": 1700000000000,
+    "autoRunSandboxCommands": false,
+    "projectSandboxEnabled": false,
+    "workspaceTargetKind": "ssh",
+    "executionRoot": "/home/user/proj"
+  },
+  "reapproveOnWake": true,
+  "concurrencyClass": "agent",
+  "attempt": 1,
+  "maxAttempts": 5,
+  "turnId": "turn-9"
+}

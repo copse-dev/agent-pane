@@ -165,6 +165,28 @@ describe('acp-session-pool', () => {
     assert.equal(afterReap.entry.open.resumed, false)
   })
 
+  it('does not idle-reap a session with an in-flight turn (blocked on permission)', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeTransportFactory(log)
+    const { entry } = await acquireAcpSession({
+      threadId: 't-busy',
+      config: CONFIG,
+      createTransport,
+    })
+    // Simulate an open turn the way runAcpSessionPrompt does — turnStop non-null
+    // means the session is actively serving a prompt (including one waiting on
+    // session/request_permission).
+    entry.open.turnStop = {
+      resolve: (): void => {},
+      reject: (): void => {},
+    }
+    entry.lastUsedAt = Date.now() - 120_000
+    assert.deepEqual(await reapIdleAcpSessions(Date.now(), 60_000), [])
+    assert.equal(acpSessionPoolSize(), 1)
+    entry.open.turnStop = null
+    assert.deepEqual(await reapIdleAcpSessions(Date.now(), 60_000), ['t-busy'])
+  })
+
   it('idle-reaps a resumable session then restores it via session/resume (#830)', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const createTransport = makeResumableTransportFactory(log)

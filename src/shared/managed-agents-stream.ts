@@ -1,5 +1,6 @@
 import type { StreamChunk } from './types/index.ts'
 import type { SseEvent } from './remote-agent-stream.ts'
+import { expectRecord, isRecord, optionalString } from './unknown-value.ts'
 
 /**
  * Claude Managed Agents stream events differ from Cursor's: the discriminator is
@@ -22,26 +23,26 @@ export function createManagedAgentStreamState(): ManagedAgentStreamState {
 }
 
 interface ManagedTextBlock {
-  type?: string
-  text?: string
+  type?: string | undefined
+  text?: string | undefined
 }
 
 interface ManagedEventPayload {
-  type?: string
+  type?: string | undefined
   // agent.message — array of content blocks (text/thinking/…)
   content?: unknown
   // agent.tool_use / agent.mcp_tool_use
-  id?: string
-  name?: string
+  id?: string | undefined
+  name?: string | undefined
   input?: unknown
   // agent.tool_result / agent.mcp_tool_result
-  tool_use_id?: string
-  is_error?: boolean
+  tool_use_id?: string | undefined
+  is_error?: boolean | undefined
   result?: unknown
   // session.status_idle
-  stop_reason?: { type?: string }
+  stop_reason?: { type?: string | undefined } | undefined
   // session.error
-  error?: { message?: string; type?: string }
+  error?: { message?: string | undefined; type?: string | undefined } | undefined
 }
 
 function formatJson(value: unknown): string {
@@ -55,14 +56,36 @@ function extractText(content: unknown): string {
   if (!Array.isArray(content)) return ''
   return content
     .filter(
-      (block): block is { type: 'text'; text: string } =>
-        !!block &&
-        typeof block === 'object' &&
-        (block as ManagedTextBlock).type === 'text' &&
-        typeof (block as ManagedTextBlock).text === 'string',
+      (block): block is ManagedTextBlock & { type: 'text'; text: string } =>
+        isRecord(block) && block['type'] === 'text' && typeof block['text'] === 'string',
     )
     .map((block) => block.text)
     .join('')
+}
+
+function parseManagedEventPayload(value: unknown): ManagedEventPayload {
+  const record = expectRecord(value, 'managed-agent stream event')
+  const stopReason = isRecord(record['stop_reason'])
+    ? { type: optionalString(record['stop_reason']['type']) }
+    : undefined
+  const error = isRecord(record['error'])
+    ? {
+        message: optionalString(record['error']['message']),
+        type: optionalString(record['error']['type']),
+      }
+    : undefined
+  return {
+    type: optionalString(record['type']),
+    content: record['content'],
+    id: optionalString(record['id']),
+    name: optionalString(record['name']),
+    input: record['input'],
+    tool_use_id: optionalString(record['tool_use_id']),
+    is_error: record['is_error'] === true,
+    result: record['result'],
+    ...(stopReason !== undefined ? { stop_reason: stopReason } : {}),
+    ...(error !== undefined ? { error } : {}),
+  }
 }
 
 const TOOL_USE_TYPES = new Set(['agent.tool_use', 'agent.mcp_tool_use', 'agent.custom_tool_use'])
@@ -80,7 +103,7 @@ export function managedAgentEventToChunks(
 ): StreamChunk[] {
   let payload: ManagedEventPayload
   try {
-    payload = JSON.parse(event.data) as ManagedEventPayload
+    payload = parseManagedEventPayload(JSON.parse(event.data) as unknown)
   } catch {
     return []
   }

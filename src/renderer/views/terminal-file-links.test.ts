@@ -6,6 +6,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ILink, ILinkProvider } from '@xterm/xterm'
 import { installTerminalFileLinks } from './terminal-file-links.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface FakeTerm {
   rows: number
@@ -43,14 +44,22 @@ function apiWith(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
   fileContent = 'x',
 ): ApiClient {
-  return {
-    index: {
-      query: async () => [],
-      resolveFileReferences: async () =>
-        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
-    },
-    fs: { readFile: async () => fileContent },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      index: {
+        ...base['index'],
+        query: async () => [],
+        resolveFileReferences: async () =>
+          resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
+      },
+      fs: {
+        ...base['fs'],
+        readFile: async () => fileContent,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function provideLinksAt(term: FakeTerm, bufferLineNumber: number): ILink[] | undefined {
@@ -67,6 +76,8 @@ describe('terminal file links', () => {
   beforeEach(() => {
     store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
       filesPaneOpen: false,
       rightPanelMode: 'terminal',
     })
@@ -75,7 +86,7 @@ describe('terminal file links', () => {
   it('only links references resolved against the index', async () => {
     const term = fakeTerm(['edit src/main/index.ts and notafile.zzz here'])
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       store,
       apiWith([{ candidate: 'src/main/index.ts', path: 'src/main/index.ts' }]),
     )
@@ -99,7 +110,7 @@ describe('terminal file links', () => {
       revealed = path
     })
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       store,
       apiWith([{ candidate: 'src/renderer/views', path: 'src/renderer/views', kind: 'directory' }]),
     )
@@ -119,7 +130,7 @@ describe('terminal file links', () => {
   it('cmd-click opens the file at the parsed line/col; plain click is ignored', async () => {
     const term = fakeTerm(['  at src/foo.ts:42:7 in stack'])
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       store,
       apiWith([{ candidate: 'src/foo.ts', path: 'src/foo.ts' }], 'export {}\n'),
     )
@@ -147,7 +158,7 @@ describe('terminal file links', () => {
     const term = fakeTerm(['src/main/index.ts'])
     const noWorkspace = createStore({ workspaceRoot: null, rightPanelMode: 'terminal' })
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       noWorkspace,
       apiWith([{ candidate: 'src/main/index.ts', path: 'src/main/index.ts' }]),
     )

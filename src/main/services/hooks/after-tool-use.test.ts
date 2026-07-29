@@ -27,6 +27,7 @@ import {
 import { runAfterToolUseHooks, capToolOutput, AFTER_TOOL_USE_OUTPUT_CAP } from './after-tool-use.ts'
 import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import { expectRecord, expectString, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 let threadCounter = 0
 
@@ -107,16 +108,11 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     await result.settled
 
     assert.equal(existsSync(stdinFile), true)
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as {
-      command?: string
-      output?: string
-      duration?: number
-      hook_event_name?: string
-    }
-    assert.equal(stdin.command, 'echo hi')
-    assert.equal(stdin.output, 'hi\n')
-    assert.equal(stdin.duration, 42)
-    assert.equal(stdin.hook_event_name, 'afterShellExecution')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['command'], 'echo hi')
+    assert.equal(stdin['output'], 'hi\n')
+    assert.equal(stdin['duration'], 42)
+    assert.equal(stdin['hook_event_name'], 'afterShellExecution')
   })
 
   it('fires after an MCP tool — afterMCPExecution flavor with tool_name/tool_input/result_json', async () => {
@@ -135,19 +131,13 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.equal(result.ran, 1)
     await result.settled
 
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as {
-      tool_name?: string
-      tool_input?: string
-      result_json?: string
-      duration?: number
-      hook_event_name?: string
-    }
-    assert.equal(stdin.tool_name, 'mcp__db__query')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['tool_name'], 'mcp__db__query')
     // tool_input is a JSON *string* of the params (vendor contract).
-    assert.equal(stdin.tool_input, JSON.stringify({ sql: 'SELECT 1' }))
-    assert.equal(stdin.result_json, '{"rows":[1]}')
-    assert.equal(stdin.duration, 7)
-    assert.equal(stdin.hook_event_name, 'afterMCPExecution')
+    assert.equal(stdin['tool_input'], JSON.stringify({ sql: 'SELECT 1' }))
+    assert.equal(stdin['result_json'], '{"rows":[1]}')
+    assert.equal(stdin['duration'], 7)
+    assert.equal(stdin['hook_event_name'], 'afterMCPExecution')
   })
 
   it('fires generic postToolUse after any successful tool with the Cursor wire payload', async () => {
@@ -166,7 +156,7 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.equal(result.ran, 1)
     await result.settled
 
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as Record<string, unknown>
+    const stdin = expectRecord(JSON.parse(readFileSync(stdinFile, 'utf-8')) as unknown)
     assert.equal(stdin['hook_event_name'], 'postToolUse')
     assert.equal(stdin['tool_name'], 'Read')
     assert.deepEqual(stdin['tool_input'], { path: 'README.md' })
@@ -200,7 +190,7 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.equal(failed.ran, 1)
     await failed.settled
 
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as Record<string, unknown>
+    const stdin = expectRecord(JSON.parse(readFileSync(stdinFile, 'utf-8')) as unknown)
     assert.equal(stdin['hook_event_name'], 'postToolUseFailure')
     assert.equal(stdin['tool_name'], 'Shell')
     assert.deepEqual(stdin['tool_input'], { command: 'false' })
@@ -226,15 +216,15 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.equal(result.ran, 1)
     await result.settled
 
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { output?: string }
-    assert.ok(stdin.output !== undefined)
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    const output = expectString(stdin['output'])
     // Capped to the slice plus a short truncation marker — never the full output.
-    assert.ok(stdin.output.length < huge.length, 'output must be truncated below the raw length')
+    assert.ok(output.length < huge.length, 'output must be truncated below the raw length')
     assert.ok(
-      stdin.output.startsWith('x'.repeat(AFTER_TOOL_USE_OUTPUT_CAP)),
+      output.startsWith('x'.repeat(AFTER_TOOL_USE_OUTPUT_CAP)),
       'the capped output keeps the leading slice',
     )
-    assert.match(stdin.output, /output truncated/)
+    assert.match(output, /output truncated/)
   })
 
   it('is detached — a slow afterToolUse hook does not block the caller (decision 3)', async () => {

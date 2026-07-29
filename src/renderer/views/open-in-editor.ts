@@ -5,6 +5,7 @@ import { showToast } from './toast.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ExternalEditor } from '@shared/types/editors.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 function editorIcon(): SVGSVGElement {
   // A generic "code window" glyph — the dropdown lists editors by name, so the
@@ -89,7 +90,9 @@ export function mountOpenInEditor(
 
   function launch(editorId: string): void {
     setOpen(false)
-    void api.editors.open(editorId).then(
+    const owner = getActiveThreadOwner(store)
+    if (!owner) return
+    void api.editors.open(owner.projectId, owner.threadId, editorId).then(
       () => {
         // Optimistically make the launched editor the sticky default so the
         // next primary click reuses it, without waiting for a fresh list scan.
@@ -173,7 +176,7 @@ export function mountOpenInEditor(
     // Fallback for clicks the backdrop doesn't cover (e.g. inside a webview
     // pane); the backdrop handles the titlebar's drag region, which this can't.
     on(document, 'click', (e) => {
-      if (open && !wrap.contains(e.target as Node)) setOpen(false)
+      if (open && !wrap.contains(e.target instanceof Node ? e.target : null)) setOpen(false)
     }),
     on(document, 'keydown', (e) => {
       if (e.key === 'Escape' && open) setOpen(false)

@@ -350,7 +350,8 @@ export function mountPanelModeControls(
     cleanups.push(
       on(document, 'click', (e) => {
         if (!overflowOpen) return
-        if (!overflowWrap.contains(e.target as Node)) setOverflowOpen(false)
+        if (!overflowWrap.contains(e.target instanceof Node ? e.target : null))
+          setOverflowOpen(false)
       }),
       on(document, 'keydown', (e) => {
         if (e.key === 'Escape' && overflowOpen) setOverflowOpen(false)

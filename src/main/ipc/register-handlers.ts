@@ -1,14 +1,19 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
+import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
+import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectId,
   getActiveProjectSshHost,
+  getProjectById,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
+  resolvePathWithinRoot,
   resolveSshHostForWorkspaceRoot,
-  resolveWorkspacePath,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
@@ -28,7 +33,9 @@ import {
   zNonEmptyString,
   zPathString,
   zProjectId,
+  zThreadId,
 } from './ipc-guards.ts'
+import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
 import {
@@ -72,6 +79,11 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import {
+  describeWorkspaceVideo,
+  storeVideoAttachment,
+  readVideoForPlayback,
+} from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
@@ -105,6 +117,7 @@ import {
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
   syncModelComparisonTools,
+  syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncPiiTools,
   syncReadTerminalTools,
@@ -117,6 +130,9 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { getAutomationService } from '../services/automations/automation-service.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -128,6 +144,7 @@ import {
   setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
+
 import {
   deleteAllKnowledgeAttachments,
   deleteKnowledgeAttachmentFiles,
@@ -156,6 +173,8 @@ import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
+import { buildRoadmapExport } from '../services/roadmap-export.ts'
+import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
 import {
   abortRoadmapReview,
   completeRoadmapReview,
@@ -197,11 +216,7 @@ import {
   type MockScriptStep,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import {
-  getMainWindow,
-  registerDevtoolsShortcut,
-  unregisterDevtoolsShortcut,
-} from '../windows/create-main-window.ts'
+import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
@@ -228,6 +243,7 @@ import {
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
+
 import {
   gatewayListDir,
   gatewayReadFile,
@@ -242,20 +258,43 @@ import {
   onGuardedYoloChanged,
 } from '../services/security/guarded-yolo.ts'
 
+const zAutomationScheduleInput = z.object({
+  id: z.string().min(1).max(256).optional(),
+  name: z.string().trim().min(1).max(160),
+  cron: z.string().trim().min(1).max(160),
+  prompt: z.string().trim().min(1).max(100_000),
+  model: z.string().trim().min(1).max(1024),
+  enabled: z.boolean(),
+})
+
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
   'bundledCursorSkillsEnabled',
   'skillPluginPaths',
 ])
 
+function storedWorkspaceProjects(): WorkspaceProjectRef[] {
+  return recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+    const path = project['path']
+    const sshHost = project['sshHost']
+    if (typeof path !== 'string') return []
+    return [typeof sshHost === 'string' ? { path, sshHost } : { path }]
+  })
+}
+
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
+  // pack is enabled. The pack ships off (`defaultEnabled: false`) and
+  // getPackService() has already layered the user's explicit choices on top, so
+  // this is a no-op unless they opted in.
+  syncDevtoolsShortcut(win)
   const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
     if (!win.isDestroyed()) {
       win.webContents.send('security:guardedYoloChanged', getGuardedYoloState(threadId))
     }
   })
   win.once('closed', stopGuardedYoloEvents)
-  const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+  const storedProjects = storedWorkspaceProjects()
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
     const persistedRoot = getWorkspaceRoot()
@@ -288,7 +327,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
-    const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+    const projects = storedWorkspaceProjects()
     await seedAllowedWorkspaceRoots(projects)
     const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
@@ -315,35 +354,46 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return canonical
   })
 
-  ipcMain.handle('fs:readFile', async (event, path: unknown) => {
+  const threadPathArgs = z.tuple([zProjectId, zThreadId, zPathString])
+
+  ipcMain.handle('fs:readFile', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const relPath = parseIpcArgs(zPathString, [path])
-    const abs = await resolveWorkspacePath(relPath)
-    return gatewayReadFile(abs)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return gatewayReadFile(abs, root)
   })
 
-  ipcMain.handle('fs:writeFile', async (event, path: unknown, content: unknown) => {
+  ipcMain.handle('fs:writeFile', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const relPath = parseIpcArgs(zPathString, [path])
-    if (typeof content !== 'string') throw new IpcValidationError('File content must be a string')
+    const [projectId, threadId, relPath, content] = parseIpcArgs(
+      z.tuple([zProjectId, zThreadId, zPathString, z.string()]),
+      rawArgs,
+    )
     assertFsWriteContent(content)
-    const abs = await resolveWorkspacePath(relPath)
-    await gatewayWriteFile(abs, content)
-    scheduleIndexRebuild()
+    const context = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, context.root)
+    await gatewayWriteFile(abs, content, context.root)
+    if (context.checkoutMode === 'shared') scheduleIndexRebuild()
   })
 
-  ipcMain.handle('fs:readdir', async (event, path: unknown) => {
+  ipcMain.handle('fs:readdir', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const relPath = parseIpcArgs(zPathString, [path])
-    const abs = await resolveWorkspacePath(relPath)
-    return gatewayReaddir(abs)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return gatewayReaddir(abs, root)
   })
 
-  ipcMain.handle('fs:listDir', async (event, path: unknown) => {
+  ipcMain.handle('fs:listDir', async (event, projectIdArg, threadIdArg, pathArg) => {
     assertMainFrameSender(event, win)
-    const relPath = parseIpcArgs(zPathString.optional(), [path])
-    const abs = await resolveWorkspacePath(relPath || '.')
-    const dirents = await gatewayListDir(abs)
+    const [projectId, threadId, relPath] = parseIpcArgs(
+      z.tuple([zProjectId, zThreadId, zPathString.optional()]),
+      [projectIdArg, threadIdArg, pathArg],
+    )
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(nonEmptyStringOr(relPath, '.'), root)
+    const dirents = await gatewayListDir(abs, root)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
@@ -431,6 +481,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
+  const zRoadmapExportFormat = z.enum(ROADMAP_EXPORT_FORMATS)
   // Attachments arrive as base64 data URLs (what the pane's paste/drop/picker
   // produce); ~14 MB of base64 ≈ 10 MB decoded per attachment.
   const zRoadmapAttachmentAdds = z
@@ -766,6 +817,27 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return deleted
   })
 
+  // Deterministic export of the active project's roadmap (RoadmapExporter,
+  // shared/roadmap/export.ts) as a downloadable md/html/mhtml/jsonl document —
+  // zipped with its attachments under relative paths when any are present.
+  ipcMain.handle('roadmap:export', (event, rawFormat: unknown) => {
+    assertMainFrameSender(event, win)
+    const format = parseIpcArgs(zRoadmapExportFormat, [rawFormat])
+    const activeProjectId = getActiveProjectId()
+    const project = activeProjectId ? getProjectById(activeProjectId) : null
+    if (!project) {
+      throw new IpcValidationError('No active project to export a roadmap for.')
+    }
+    const result = buildRoadmapExport(project, format, new Date().toISOString())
+    return {
+      filename: result.filename,
+      mimeType: result.mimeType,
+      dataUrl: `data:${result.mimeType};base64,${Buffer.from(result.data).toString('base64')}`,
+      bundled: result.bundled,
+      files: result.files,
+    }
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -790,16 +862,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
-    }
-    // Toggle the DevTools shortcut registration when the setting changes.
-    if (k === 'devtoolsShortcutEnabled') {
-      const win = getMainWindow()
-      const enabled = typeof value === 'boolean' && value
-      if (enabled) {
-        if (win) registerDevtoolsShortcut(win)
-      } else {
-        unregisterDevtoolsShortcut()
-      }
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
@@ -923,7 +985,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
-    return saveExtraProvider(parsed as Parameters<typeof saveExtraProvider>[0])
+    const provider: Parameters<typeof saveExtraProvider>[0] = {}
+    if (parsed.slug !== undefined) provider.slug = parsed.slug
+    if (parsed.label !== undefined) provider.label = parsed.label
+    if (parsed.baseUrl !== undefined) provider.baseUrl = parsed.baseUrl
+    if (parsed.keyPrefix !== undefined) provider.keyPrefix = parsed.keyPrefix
+    if (parsed.models !== undefined) {
+      provider.models = parsed.models.map((model) => {
+        const result: NonNullable<Parameters<typeof saveExtraProvider>[0]['models']>[number] = {
+          id: model.id,
+        }
+        if (model.contextWindow !== undefined) result.contextWindow = model.contextWindow
+        if (model.inputPricePerMTok !== undefined) {
+          result.inputPricePerMTok = model.inputPricePerMTok
+        }
+        if (model.outputPricePerMTok !== undefined) {
+          result.outputPricePerMTok = model.outputPricePerMTok
+        }
+        return result
+      })
+    }
+    if (parsed.fallbackContextWindow !== undefined) {
+      provider.fallbackContextWindow = parsed.fallbackContextWindow
+    }
+    if (parsed.includeUsage !== undefined) provider.includeUsage = parsed.includeUsage
+    if (parsed.extraBody !== undefined) provider.extraBody = parsed.extraBody
+    return saveExtraProvider(provider)
   })
   ipcMain.handle('settings:deleteExtraProvider', async (event, slug: unknown) => {
     assertMainFrameSender(event, win)
@@ -977,15 +1064,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     storageSet(k, value)
   })
 
-  const zThreadId = zNonEmptyString.max(256)
+  const zGuardedYoloThreadId = zNonEmptyString.max(256)
   ipcMain.handle('security:getGuardedYolo', (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zThreadId, [threadId])
+    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getGuardedYoloState(id)
   })
   ipcMain.handle('security:enableGuardedYolo', async (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zThreadId, [threadId])
+    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     const current = getGuardedYoloState(id)
     if (current.phase !== 'off') return current
     const containment =
@@ -993,15 +1080,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         ? 'The project sandbox remains in use where possible, but external commands may run unsandboxed.'
         : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
     const { approved } = await requestApproval({
-      title: 'Enable Guarded YOLO for the next turn?',
+      title: 'Enable Guarded YOLO for this thread?',
       body: [
-        'Routine shell commands, including network and outside-workspace commands, will run without approval for this thread’s next agent turn.',
+        'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
         '',
         containment,
         '',
         'A deterministic host-owned checker will still ask about bounded destructive work and permanently block obvious catastrophic commands. It reduces obvious harm, but it is not a complete security boundary and cannot understand every script or obfuscation.',
         '',
-        'The grant expires after the next agent turn, after 15 minutes unused, or when the app restarts.',
+        'Guarded YOLO stays enabled for this thread until you disable it or restart the app.',
       ].join('\n'),
       type: 'shell',
       allowRemember: false,
@@ -1011,7 +1098,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('security:disableGuardedYolo', (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zThreadId, [threadId])
+    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     disableGuardedYolo(id)
     return getGuardedYoloState(id)
   })
@@ -1026,7 +1113,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       projectId,
       thread,
     ])
-    return createThread(id, payload as unknown as import('@shared/types').Thread)
+    const parsed = parseThreadValue(payload)
+    if (parsed === null) throw new IpcValidationError('Invalid thread payload')
+    return createThread(id, parsed)
   })
   ipcMain.handle(
     'threads:appendMessage',
@@ -1036,7 +1125,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
         [projectId, threadId, message],
       )
-      return appendMessage(pid, tid, payload as unknown as import('@shared/types').Message)
+      const parsed = parseMessageValue(payload)
+      if (parsed === null) throw new IpcValidationError('Invalid message payload')
+      return appendMessage(pid, tid, parsed)
     },
   )
   ipcMain.handle(
@@ -1083,13 +1174,54 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     return loadProjectCatalog(pid, q)
   })
+  // A video attached in the composer. It is stored, never inlined — the
+  // renderer gets back a path to hand the agent (see video-attachment-store).
+  ipcMain.handle(
+    'video:attach',
+    async (event, projectId: unknown, threadId: unknown, video: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            name: zNonEmptyString.max(255),
+            mimeType: z.string().max(128),
+            bytes: z.instanceof(Uint8Array).optional(),
+            path: zPathString.optional(),
+          }),
+        ]),
+        [projectId, threadId, video],
+      )
+      if (payload.path !== undefined) {
+        // Already on disk in the workspace: reference it in place rather than
+        // storing a second copy of a potentially very large file.
+        return describeWorkspaceVideo(payload.path, payload.name, payload.mimeType)
+      }
+      if (!payload.bytes) throw new IpcValidationError('A video needs either bytes or a path')
+      return storeVideoAttachment(pid, tid, {
+        name: payload.name,
+        mimeType: payload.mimeType,
+        bytes: payload.bytes,
+      })
+    },
+  )
+
+  // Read an attached video back so the preview modal can play it. Authorised to
+  // the chat store and the workspace only — see readVideoForPlayback.
+  ipcMain.handle('video:read', async (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const videoPath = parseIpcArgs(zPathString, [path])
+    return readVideoForPlayback(videoPath)
+  })
+
   ipcMain.handle('threads:listOrphans', (event) => {
     assertMainFrameSender(event, win)
-    const projects =
-      (storageGet('projects') as Array<{ id?: unknown }> | null)?.filter(
-        (p): p is { id: string } => typeof p.id === 'string' && p.id.length > 0,
-      ) ?? []
-    return listOrphanProjectStores(projects.map((p) => p.id))
+    const projectIds = recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+      const id = project['id']
+      return typeof id === 'string' && id.length > 0 ? [id] : []
+    })
+    return listOrphanProjectStores(projectIds)
   })
 
   ipcMain.handle('skills:list', () => listSkills())
@@ -1175,6 +1307,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (id === PII_REDACTION_PACK_ID) {
       syncPiiTools(registry)
     }
+    // The `copse.devtools-shortcut` pack contributes no tool — it owns the
+    // `devtools-shortcut` capability. Toggling the pack registers/unregisters the
+    // global Ctrl+Shift+I shortcut so the atomic pack-disable turns it off
+    // without an app restart (mirrors the tool syncs above).
+    if (id === DEVTOOLS_SHORTCUT_PACK_ID) {
+      syncDevtoolsShortcut(win)
+    }
+    // Same for the `copse.background-tasks` pack's `run_background` tool — the
+    // atomic pack-disable also revokes the pack's declared `loopback-bind`
+    // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
+    if (id === BACKGROUND_TASKS_PACK_ID) {
+      syncBackgroundTasksTools(registry)
+    }
     return { packs: getPackService().list() }
   })
   ipcMain.handle(
@@ -1192,6 +1337,50 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       )
       await getPackService().setSetting(id, key, value)
       return { packs: getPackService().list() }
+    },
+  )
+
+  // Local cron automation prototype (`copse.automations`). Every operation is
+  // project-scoped; the service repeats that ownership check for update/delete
+  // so a renderer cannot address a schedule through another project id.
+  ipcMain.handle('automations:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAutomationService().list(projectId)
+  })
+  ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const input = parseIpcArgs(zAutomationScheduleInput, [rawInput])
+    return getAutomationService().upsert(projectId, {
+      ...(input.id !== undefined ? { id: input.id } : {}),
+      name: input.name,
+      cron: input.cron,
+      prompt: input.prompt,
+      model: input.model,
+      enabled: input.enabled,
+    })
+  })
+  ipcMain.handle(
+    'automations:remove',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      await getAutomationService().remove(projectId, scheduleId)
+    },
+  )
+  ipcMain.handle(
+    'automations:runNow',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().runNow(projectId, scheduleId)
     },
   )
 
@@ -1217,46 +1406,77 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return toCursorRuleSummaries(await discoverCursorRules(root))
   })
 
-  ipcMain.handle(
-    'git:isAvailable',
-    async () => (await isGitAvailableForTarget()) && (await isInsideGitWorkTree()),
-  )
-  ipcMain.handle('git:status', () => getGitStatus())
-  ipcMain.handle('git:changeStats', () => getGitChangeStats())
-  ipcMain.handle('git:fileDiff', (event, path: unknown, staged: unknown) => {
+  const threadOwnerArgs = z.tuple([zProjectId, zThreadId])
+
+  ipcMain.handle('git:isAvailable', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const filePath = parseIpcArgs(zPathString, [path])
-    const isStaged = parseIpcArgs(z.boolean(), [staged])
-    return getGitFileDiff(filePath, isStaged)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    return (await isGitAvailableForTarget()) && (await isInsideGitWorkTree(root))
   })
-  ipcMain.handle('git:workingFileDiff', (event, path: unknown) => {
+  ipcMain.handle('git:status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const filePath = parseIpcArgs(zPathString, [path])
-    return getGitWorkingFileDiff(filePath)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getGitStatus((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
-  ipcMain.handle('git:branchStatus', (event, forBranch: unknown) => {
+  ipcMain.handle('git:changeStats', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getGitChangeStats((await resolveThreadExecutionContext(projectId, threadId)).root)
+  })
+  ipcMain.handle('git:fileDiff', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath, isStaged] = parseIpcArgs(
+      z.tuple([zProjectId, zThreadId, zPathString, z.boolean()]),
+      rawArgs,
+    )
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    return getGitFileDiff(filePath, isStaged, root)
+  })
+  ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    return getGitWorkingFileDiff(filePath, root)
+  })
+  ipcMain.handle('git:branchStatus', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     // Git-ref charset only, no leading dash: the branch reaches `gh pr list
     // --head <branch>` and must never be option-shaped (#580).
-    const branch =
-      forBranch === undefined
-        ? undefined
-        : parseIpcArgs(
-            z
-              .string()
-              .max(256)
-              .regex(/^[A-Za-z0-9_][A-Za-z0-9_\-./]*$/),
-            [forBranch],
-          )
-    return getGitBranchStatus(branch)
+    const [projectId, threadId, branch] = parseIpcArgs(
+      z.tuple([
+        zProjectId,
+        zThreadId,
+        z
+          .string()
+          .max(256)
+          .regex(/^[A-Za-z0-9_][A-Za-z0-9_\-./]*$/)
+          .optional(),
+      ]),
+      rawArgs,
+    )
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    return getGitBranchStatus(branch, root)
   })
-  ipcMain.handle('git:checkoutBranch', async (event, branch: unknown) => {
+  ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const targetBranch = parseIpcArgs(z.string().min(1).max(256), [branch])
-    await checkoutGitBranch(targetBranch)
+    const [projectId, threadId, targetBranch] = parseIpcArgs(
+      z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
+      rawArgs,
+    )
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    await checkoutGitBranch(targetBranch, root)
   })
-  ipcMain.handle('git:listBranches', () => getBranches())
-  ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
+  ipcMain.handle('git:listBranches', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getBranches((await resolveThreadExecutionContext(projectId, threadId)).root)
+  })
+  ipcMain.handle('git:getDefaultBranch', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getDefaultBranch((await resolveThreadExecutionContext(projectId, threadId)).root)
+  })
   ipcMain.handle('git:sessionBackup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [projectIdArg])
@@ -1384,23 +1604,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return listExternalEditors()
   })
-  ipcMain.handle('editors:open', (event, editorId: unknown) => {
+  ipcMain.handle('editors:open', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    // Only a known editor id crosses this boundary; the folder to open is the
-    // main process's own workspace root, never renderer-supplied.
-    const parsedId = parseIpcArgs(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), [editorId])
-    const root = getWorkspaceRoot()
-    if (!root) throw new IpcValidationError('No workspace open')
+    const [projectId, threadId, parsedId] = parseIpcArgs(
+      z.tuple([zProjectId, zThreadId, z.string().regex(/^[a-z][a-z0-9-]{0,63}$/)]),
+      rawArgs,
+    )
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
     return openWorkspaceInExternalEditor(parsedId, root)
   })
 
-  ipcMain.handle('panes:popout', (event, mode: unknown) => {
+  ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
       z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
       [mode],
     )
-    createPanePopoutWindow(parsed)
+    createPanePopoutWindow(parsed, seed)
+  })
+
+  ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsed = parseIpcArgs(
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      [mode],
+    )
+    return takePopoutSeed(parsed)
   })
 
   ipcMain.handle('mcp:list', (event) => {
@@ -1473,7 +1702,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:setMockScript', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
       const steps = parseIpcArgs(z.array(mockScriptStepSchema).max(32), [raw])
-      setMockScript(steps as MockScriptStep[])
+      const script: MockScriptStep[] = steps.map((step) => ({
+        when: step.when,
+        ...(step.tool ? { tool: step.tool } : {}),
+        ...(step.text === undefined ? {} : { text: step.text }),
+      }))
+      setMockScript(script)
       return { steps: steps.length, cursor: mockScriptCursorForTests() }
     })
     ipcMain.handle('test:clearMockScript', (event) => {

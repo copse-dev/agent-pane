@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   dryRunHook,
   dryRunPlanFor,
@@ -217,8 +218,8 @@ describe('dry-run — dryRunHook end-to-end', () => {
     // stdin is the pretty-printed marshalled payload; stdout is what cat echoed.
     assert.ok(res.stdin && res.stdin.includes('copse hook dry-run'))
     assert.ok(res.stdin.includes('conversation_id'))
-    const echoed = JSON.parse(res.stdout ?? '{}') as { command?: string }
-    assert.equal(echoed.command, 'echo "copse hook dry-run"')
+    const echoed = expectRecord(parseJsonUnknown(res.stdout ?? '{}'))
+    assert.equal(echoed['command'], 'echo "copse hook dry-run"')
     // The echoed request is not a valid hook *response*, so no decision applies.
     assert.equal(res.outcomeSummary, 'no opinion')
   })

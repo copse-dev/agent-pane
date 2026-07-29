@@ -20,6 +20,7 @@ import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   userCopseHooksConfigPath,
   resetCopseHookSessionErrorsForTest,
@@ -37,7 +38,12 @@ import { setSetting } from '../storage/settings.ts'
 
 let threadCounter = 0
 
-/** Poll until `path` exists (a detached hook wrote it) or the deadline passes. */
+/**
+ * Poll until `path` exists (a detached hook wrote it) or the deadline passes.
+ *
+ * Existence is a safe completion signal only because `writeCaptureHook` renames
+ * the file into place once its stdin is fully copied.
+ */
 async function waitForFile(path: string, timeoutMs = 3_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -88,10 +94,22 @@ describe('diff-apply Copse-native events (F2)', () => {
     return path
   }
 
-  /** Executable script that copies its stdin to `stdinFile`. */
+  /**
+   * Executable script that copies its stdin to `stdinFile`.
+   *
+   * Writes to a sibling temp path and renames, so `stdinFile` only ever appears
+   * complete: a plain `cat > stdinFile` creates the file when the shell sets up
+   * the redirect, before any bytes are copied, and the detached-hook tests below
+   * poll for existence — they would otherwise read an empty file and fail in
+   * `JSON.parse`.
+   */
   async function writeCaptureHook(name: string, stdinFile: string): Promise<string> {
     const path = join(tempHome, name)
-    await writeFile(path, `#!/bin/sh\ncat > '${stdinFile}'\n`, 'utf-8')
+    await writeFile(
+      path,
+      `#!/bin/sh\ncat > '${stdinFile}.partial'\nmv '${stdinFile}.partial' '${stdinFile}'\n`,
+      'utf-8',
+    )
     await chmod(path, 0o755)
     return path
   }
@@ -182,12 +200,9 @@ describe('diff-apply Copse-native events (F2)', () => {
       )
       assert.equal(result.ran, 1)
       await result.settled
-      const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as {
-        applied?: boolean
-        file_path?: string
-      }
-      assert.equal(stdin.applied, false)
-      assert.equal(stdin.file_path, '/abs/src/app.ts')
+      const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+      assert.equal(stdin['applied'], false)
+      assert.equal(stdin['file_path'], '/abs/src/app.ts')
     })
   })
 
@@ -230,8 +245,8 @@ describe('diff-apply Copse-native events (F2)', () => {
 
       await stageDiff('src/app.ts', '', 'export const x = 1\n', 'typescript')
       assert.equal(await waitForFile(stdinFile), true)
-      const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { applied?: boolean }
-      assert.equal(stdin.applied, false)
+      const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+      assert.equal(stdin['applied'], false)
     })
 
     ownedIt(
@@ -245,8 +260,8 @@ describe('diff-apply Copse-native events (F2)', () => {
 
         await stageDiff('src/ok.ts', '', 'export const y = 2\n', 'typescript')
         assert.equal(await waitForFile(stdinFile), true)
-        const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { applied?: boolean }
-        assert.equal(stdin.applied, true)
+        const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+        assert.equal(stdin['applied'], true)
       },
     )
   })

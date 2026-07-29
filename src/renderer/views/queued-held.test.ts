@@ -11,6 +11,7 @@ import {
 } from '../controller/message-queue.ts'
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // C2 held-state UI (decisions 5 & 16). A hook-originated message downgraded to
 // held renders with a distinct "Held" badge and a "Release" action (not the plain
@@ -28,20 +29,25 @@ function createProjectStore(): ReturnType<typeof createStore> {
 function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[] } {
   const runs: Array<[string, string]> = []
   const aborts: string[] = []
-  return {
-    runs,
-    aborts,
-    agent: {
-      run: (_projectId: string, threadId: string, payload: string) => {
-        runs.push([threadId, payload])
-        return Promise.resolve()
+  return ((): ApiClient & { runs: Array<[string, string]>; aborts: string[] } => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      runs,
+      aborts,
+      agent: {
+        ...base['agent'],
+        run: (_projectId: string, threadId: string, payload: string): Promise<void> => {
+          runs.push([threadId, payload])
+          return Promise.resolve()
+        },
+        abort: (threadId: string): Promise<void> => {
+          aborts.push(threadId)
+          return Promise.resolve()
+        },
       },
-      abort: (threadId: string) => {
-        aborts.push(threadId)
-        return Promise.resolve()
-      },
-    },
-  } as unknown as ApiClient & { runs: Array<[string, string]>; aborts: string[] }
+    } satisfies ApiClient & { runs: Array<[string, string]>; aborts: string[] }
+  })()
 }
 
 afterEach(() => {

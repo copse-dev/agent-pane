@@ -39,6 +39,7 @@ import type {
   DialectInterpretation,
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
+import { expectRecord, expectStringArray, isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Cursor's per-hook timeout default (decision 13; H4). Cursor's own docs give a
@@ -176,18 +177,15 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
     return { hooks: [], warnings }
   }
 
-  // parsed comes from JSON.parse and can legitimately be null (e.g. `null`/`false`);
-  // the cast type hides that, so the optional chain guards the real runtime case.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const hooks = (parsed as { hooks?: unknown })?.hooks
-  if (typeof hooks !== 'object' || hooks === null) {
+  const hooks = isRecord(parsed) ? parsed['hooks'] : undefined
+  if (!isRecord(hooks)) {
     warn('hooks.json has no "hooks" object — file ignored')
     return { hooks: [], warnings }
   }
 
   const cwd = dirname(path)
   const out: DiscoveredCursorHook[] = []
-  for (const [event, entries] of Object.entries(hooks as Record<string, unknown>)) {
+  for (const [event, entries] of Object.entries(hooks)) {
     if (!isHookEvent(event)) {
       warn(`Unknown hook event "${event}" — entries skipped`)
       continue
@@ -197,22 +195,23 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
       continue
     }
     entries.forEach((entry, index) => {
-      // entry is an element of a parsed JSON array and can be null; the cast type
-      // hides that, so the optional chain guards the genuine runtime case.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const command = (entry as { command?: unknown })?.command
+      if (!isRecord(entry)) {
+        warn(`"${event}" entry ${String(index + 1)} has a missing or empty "command" — skipped`)
+        return
+      }
+      const command = entry['command']
       if (typeof command !== 'string' || !command.trim()) {
         warn(`"${event}" entry ${String(index + 1)} has a missing or empty "command" — skipped`)
         return
       }
-      const failClosed = (entry as { failClosed?: unknown }).failClosed === true
-      const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
-      const matcherRaw = (entry as { matcher?: unknown }).matcher
+      const failClosed = entry['failClosed'] === true
+      const glob = normalizeGlobField(entry['glob'])
+      const matcherRaw = entry['matcher']
       const matcher =
         typeof matcherRaw === 'string' && matcherRaw.trim().length > 0
           ? matcherRaw.trim()
           : undefined
-      const timeoutMs = normalizeTimeoutField((entry as { timeout?: unknown }).timeout)
+      const timeoutMs = normalizeTimeoutField(entry['timeout'])
       out.push({
         event,
         command: command.trim(),
@@ -616,8 +615,8 @@ function afterFileEditMatches(
   }
   return candidates.some(
     (c) =>
-      micromatch.isMatch(c, hook.glob as string[], { dot: true }) ||
-      micromatch.isMatch(c, hook.glob as string[], { dot: true, basename: true }),
+      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
+      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
   )
 }
 
@@ -803,7 +802,9 @@ export async function cursorAfterToolUseHooks(
   return hooks
     .filter(
       (h): h is DiscoveredCursorHook & { event: CursorAfterToolHookEvent } =>
-        events.has(h.event as CursorAfterToolHookEvent) && cursorMatcherMatches(h, matcherCtx),
+        isCursorAfterToolHookEvent(h.event) &&
+        events.has(h.event) &&
+        cursorMatcherMatches(h, matcherCtx),
     )
     .map((h) => {
       auditProjectHook(h)
@@ -878,16 +879,6 @@ interface CursorHookResponse {
    */
   additionalContext?: unknown
   additional_context?: unknown
-}
-
-/**
- * Cursor `subagentStop` stdout: an optional `followup_message` that auto-
- * continues the parent (consumed only on `status: completed`). Snake and camel
- * spellings accepted, mirroring the other Cursor response parsers.
- */
-interface CursorSubagentStopResponse {
-  followup_message?: string
-  followupMessage?: string
 }
 
 /** Cursor `postToolUse` stdout fields that remain meaningful on detached dispatch. */
@@ -966,7 +957,7 @@ function outcomeFromResponse(parsed: unknown): {
 /** A tool-input rewrite is only valid as a plain object (arrays/scalars ignored). */
 function asInputRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? expectRecord(value)
     : null
 }
 
@@ -1328,10 +1319,9 @@ export const cursorAdapter: DialectAdapter = {
       // (nothing to block post-hoc); record parseOk:false for the spine only.
       return { ...base, failed: false, parseOk: false }
     }
-    const followup = firstString(
-      (parsed as CursorSubagentStopResponse).followup_message,
-      (parsed as CursorSubagentStopResponse).followupMessage,
-    )
+    const followup = isRecord(parsed)
+      ? firstString(parsed['followup_message'], parsed['followupMessage'])
+      : undefined
     // The vendor consumes `followup_message` only on a completed subagent.
     if (followup !== undefined && payload.status === 'completed') {
       const spineDecision: SpineHookRunDecision = { queuedMessageChars: followup.length }
@@ -1551,7 +1541,7 @@ function sessionEnvFromResponse(parsed: unknown): Record<string, string> | null 
   const raw = (parsed as { env?: unknown }).env
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(expectRecord(raw))) {
     if (typeof value === 'string') out[key] = value
   }
   return Object.keys(out).length > 0 ? out : null

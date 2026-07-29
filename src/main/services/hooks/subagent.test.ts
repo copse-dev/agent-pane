@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   userHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
@@ -124,8 +125,8 @@ describe('subagent hooks (D1 fire sites)', () => {
     // Matching type: the hook fires and receives the subagent type on stdin.
     await runSubagentStartHooks('investigate_ci', discover)
     assert.equal(existsSync(stdinFile), true)
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { subagent_type?: string }
-    assert.equal(stdin.subagent_type, 'investigate_ci')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['subagent_type'], 'investigate_ci')
   })
 
   // --- failClosed on the blocking gate ---
@@ -171,12 +172,9 @@ describe('subagent hooks (D1 fire sites)', () => {
     const result = await fireStop('explore', 'completed')
     assert.equal(result.ran, 1)
     await result.settled
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as {
-      subagent_type?: string
-      status?: string
-    }
-    assert.equal(stdin.subagent_type, 'explore')
-    assert.equal(stdin.status, 'completed')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['subagent_type'], 'explore')
+    assert.equal(stdin['status'], 'completed')
   })
 
   it('routes a subagentStop followup_message through the queue channel (completed)', async () => {

@@ -40,9 +40,9 @@ describe('composer editor value serialization', () => {
   it('drops the block when its chip is removed via the ✕ button', () => {
     const editor = mountComposerEditor()
     editor.insertPasteChip('to be removed')
-    const remove = editor.el.querySelector('.inline-paste-chip-remove')
-    assert.ok(remove instanceof Element)
-    ;(remove as HTMLButtonElement).click()
+    const remove = editor.el.querySelector<HTMLButtonElement>('button.inline-paste-chip-remove')
+    assert.ok(remove)
+    remove.click()
     assert.equal(editor.value, '')
     assert.equal(editor.getBlocks().length, 0)
   })

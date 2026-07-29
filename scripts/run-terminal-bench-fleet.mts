@@ -41,6 +41,7 @@ import {
   parseTerminalBenchProfileSelectionId,
   type TerminalBenchProfileSelectionId,
 } from './lib/terminal-bench-profiles.mts'
+import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 
 const DEFAULT_NAME = 'copse-terminal-bench'
 const DEFAULT_INSTANCES = 10
@@ -239,22 +240,25 @@ function envLine(name: string, value: string): string {
 
 function workerEnvironment(config: RunConfig, shardIndex: number): string {
   const generativeKey = envValue('SCW_GENERATIVE_API_KEY')
-  const objectRegion = process.env['SCW_OBJECT_STORAGE_REGION']?.trim() || 'fr-par'
-  const runId = process.env['COPSE_BENCH_RUN_ID']?.trim() || `manual-${Date.now().toString(36)}`
+  const objectRegion = nonEmptyStringOr(process.env['SCW_OBJECT_STORAGE_REGION']?.trim(), 'fr-par')
+  const runId = nonEmptyStringOr(
+    process.env['COPSE_BENCH_RUN_ID']?.trim(),
+    `manual-${Date.now().toString(36)}`,
+  )
   const profiles = config.profiles
   const firstProfile = profiles[0]
   if (!firstProfile) throw new Error('at least one Terminal-Bench profile is required')
   const values: Array<[string, string]> = [
     [
       'LM_STUDIO_URL',
-      process.env['SCW_GENERATIVE_API_URL']?.trim() || 'https://api.scaleway.ai/v1',
+      nonEmptyStringOr(process.env['SCW_GENERATIVE_API_URL']?.trim(), 'https://api.scaleway.ai/v1'),
     ],
     ['LM_STUDIO_MODEL', envValue('LM_STUDIO_MODEL')],
     ['LM_STUDIO_API_KEY', generativeKey],
     ['SCW_GENERATIVE_API_KEY', generativeKey],
     [
       'COPSE_BENCH_AGENT_VERSION',
-      process.env['COPSE_BENCH_AGENT_VERSION']?.trim() || 'scaleway-fleet',
+      nonEmptyStringOr(process.env['COPSE_BENCH_AGENT_VERSION']?.trim(), 'scaleway-fleet'),
     ],
     ['COPSE_BENCH_RUN_ID', `${runId}-shard-${String(shardIndex)}`],
     ['COPSE_TERMINAL_MAX_TASKS', String(config.maxTasks)],
@@ -271,7 +275,7 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
     ['COPSE_TERMINAL_STEERED_RERUN', config.steeredRerun ? '1' : '0'],
     [
       'COPSE_TERMINAL_WORKSPACE_CAP_MB',
-      process.env['COPSE_TERMINAL_WORKSPACE_CAP_MB']?.trim() || '500',
+      nonEmptyStringOr(process.env['COPSE_TERMINAL_WORKSPACE_CAP_MB']?.trim(), '500'),
     ],
     ['AWS_ACCESS_KEY_ID', envValue('SCW_OBJECT_STORAGE_ACCESS_KEY_ID')],
     ['AWS_SECRET_ACCESS_KEY', envValue('SCW_OBJECT_STORAGE_SECRET_KEY')],
@@ -286,9 +290,12 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
       'SCW_OBJECT_STORAGE_PREFIX',
       `${cleanPrefix(config.objectPrefix)}/shard-${String(shardIndex)}`,
     ],
-    ['GITHUB_REPOSITORY', process.env['GITHUB_REPOSITORY']?.trim() || 'manual/local'],
-    ['GITHUB_SHA', process.env['GITHUB_SHA']?.trim() || 'manual'],
-    ['GITHUB_REF', process.env['GITHUB_REF']?.trim() || 'manual'],
+    [
+      'GITHUB_REPOSITORY',
+      nonEmptyStringOr(process.env['GITHUB_REPOSITORY']?.trim(), 'manual/local'),
+    ],
+    ['GITHUB_SHA', nonEmptyStringOr(process.env['GITHUB_SHA']?.trim(), 'manual')],
+    ['GITHUB_REF', nonEmptyStringOr(process.env['GITHUB_REF']?.trim(), 'manual')],
   ]
   if (config.taskNames.length > 0) {
     values.push(['COPSE_TERMINAL_TASK_NAMES', config.taskNames.join(',')])
@@ -305,12 +312,19 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
   if (analystModel) {
     values.push(
       ['BENCH_ANALYST_MODEL', analystModel],
-      ['BENCH_ANALYST_API_KEY', process.env['BENCH_ANALYST_API_KEY']?.trim() || generativeKey],
+      [
+        'BENCH_ANALYST_API_KEY',
+        nonEmptyStringOr(process.env['BENCH_ANALYST_API_KEY']?.trim(), generativeKey),
+      ],
       [
         'BENCH_ANALYST_API_URL',
-        process.env['BENCH_ANALYST_API_URL']?.trim() ||
-          process.env['SCW_GENERATIVE_API_URL']?.trim() ||
+        nonEmptyStringOr(
+          firstNonEmptyString(
+            process.env['BENCH_ANALYST_API_URL']?.trim(),
+            process.env['SCW_GENERATIVE_API_URL']?.trim(),
+          ),
           'https://api.scaleway.ai/v1',
+        ),
       ],
     )
   }

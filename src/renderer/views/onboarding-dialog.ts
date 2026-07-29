@@ -36,7 +36,7 @@ export function isOnboardingDialogOpen(): boolean {
 }
 
 export async function shouldShowOnboarding(api: ApiClient): Promise<boolean> {
-  const completed = (await api.settings.get('onboardingCompleted')) as boolean | null
+  const completed = await api.settings.get('onboardingCompleted')
   return completed !== true
 }
 
@@ -162,7 +162,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         })
         status.append(
           inlineStatus(
-            r.reachable ? 'ok' : 'pending',
+            r.reachable ? 'ok' : 'idle',
             r.reachable ? `running — ${String(r.models.length)} model(s)` : 'not found',
           ),
         )
@@ -243,8 +243,10 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
 
   stepBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const step = btn.dataset['step'] as OnboardingStep | undefined
-      if (step) showStep(step)
+      const step = btn.dataset['step']
+      if (step === 'welcome' || step === 'cloud' || step === 'local' || step === 'routing') {
+        showStep(step)
+      }
     })
   })
 

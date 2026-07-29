@@ -15,8 +15,17 @@ function fakeTerm(hasSelection: boolean, selection: string): TerminalSelectionSo
   }
 }
 
-function fakeKey(init: Partial<KeyboardEvent>): KeyboardEvent {
-  return { code: 'KeyL', ...init } as KeyboardEvent
+function fakeKey(
+  init: Partial<Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'metaKey' | 'shiftKey'>>,
+): Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'metaKey' | 'shiftKey'> {
+  return {
+    altKey: false,
+    code: 'KeyL',
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    ...init,
+  }
 }
 
 describe('terminal selection-to-chat', () => {
@@ -57,6 +66,7 @@ describe('terminal selection-to-chat', () => {
         attachedLabel = label
       },
       attachImage: () => {},
+      attachVideo: () => Promise.resolve(),
       focusComposer: () => {
         focused = true
       },

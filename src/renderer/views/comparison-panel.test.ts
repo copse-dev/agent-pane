@@ -4,16 +4,22 @@ import assert from 'node:assert/strict'
 import type { ModelComparison } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function fakeApi(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[] = [],
 ): ApiClient {
-  return {
-    index: {
-      resolveFileReferences: async () =>
-        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      index: {
+        ...base['index'],
+        resolveFileReferences: async () =>
+          resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 const done: ModelComparison = {

@@ -83,7 +83,8 @@ describe('cached-store (storage read-complexity contract)', () => {
     // mutate their copy. The cache must preserve that isolation.
     const { backing } = countingBacking({ list: [1, 2, 3] })
     const store = createCachedStore(backing)
-    const first = store.get('list') as number[]
+    const first = store.get('list')
+    assert.ok(Array.isArray(first))
     first.push(999)
     assert.deepEqual(store.get('list'), [1, 2, 3])
   })

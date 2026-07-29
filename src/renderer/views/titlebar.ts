@@ -3,6 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountOpenInEditor } from './open-in-editor.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 function basename(p: string): string {
   return p.split('/').pop() ?? p
@@ -69,12 +70,13 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   function syncBranch(): void {
     const token = ++branchToken
     const rootPath = store.getState().workspaceRoot
-    if (!rootPath) {
+    const owner = getActiveThreadOwner(store)
+    if (!rootPath || !owner) {
       workspaceBranch.hidden = true
       workspaceBranch.textContent = ''
       return
     }
-    void api.git.branchStatus().then(
+    void api.git.branchStatus(owner.projectId, owner.threadId).then(
       (s) => {
         if (token !== branchToken) return
         const branch = s.currentBranch
@@ -106,6 +108,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
       syncBranch()
     }),
     store.on('projects_changed', syncName),
+    store.on('threads_changed', syncBranch),
     store.on('git_branch_changed', syncBranch),
     api.fs.onChanged(scheduleBranchSync),
   ]

@@ -16,6 +16,7 @@ import {
   terminalBenchCapsulesRoot,
   terminalBenchResultsRoot,
 } from './lib/terminal-bench.mts'
+import { firstNonEmptyString, isRecord, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 
 const RESULTS_ROOT = terminalBenchResultsRoot()
 const CAPSULES_ROOT = terminalBenchCapsulesRoot()
@@ -44,8 +45,8 @@ function nested(value: unknown, ...keys: string[]): unknown {
 }
 
 function errorCode(value: unknown): string | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const code = (value as Record<string, unknown>)['code']
+  if (!isRecord(value)) return undefined
+  const code = value['code']
   return typeof code === 'string' ? code : undefined
 }
 
@@ -70,7 +71,7 @@ async function sha256File(path: string): Promise<string> {
 }
 
 function trialId(resultPath: string, result: unknown): string {
-  const namespace = process.env['COPSE_BENCH_RUN_ID']?.trim() || 'local'
+  const namespace = nonEmptyStringOr(process.env['COPSE_BENCH_RUN_ID']?.trim(), 'local')
   const identity = JSON.stringify({
     namespace,
     path: relative(RESULTS_ROOT, resultPath),
@@ -181,8 +182,8 @@ function reusableCapsuleEntry(
     trialId: string
   },
 ): CapsuleEntry | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const entry = value as Record<string, unknown>
+  if (!isRecord(value)) return undefined
+  const entry = value
   const outcome = entry['outcome']
   if (
     entry['trialId'] !== expected.trialId ||
@@ -349,7 +350,7 @@ for (const { resultPath, result } of storedTrials) {
   const manifest = {
     schemaVersion: 2,
     trialId: id,
-    suiteRunId: process.env['COPSE_BENCH_RUN_ID']?.trim() || 'local',
+    suiteRunId: nonEmptyStringOr(process.env['COPSE_BENCH_RUN_ID']?.trim(), 'local'),
     createdAt: new Date().toISOString(),
     task: {
       name: taskName,
@@ -359,7 +360,13 @@ for (const { resultPath, result } of storedTrials) {
       reward: nested(result, 'verifier_result', 'rewards', 'reward') ?? null,
       exception: nested(result, 'exception_info') ?? null,
     },
-    model: process.env['LM_STUDIO_MODEL']?.trim() || nested(result, 'config', 'model') || null,
+    model:
+      firstNonEmptyString(
+        process.env['LM_STUDIO_MODEL']?.trim(),
+        typeof nested(result, 'config', 'model') === 'string'
+          ? String(nested(result, 'config', 'model'))
+          : undefined,
+      ) ?? null,
     dataset: {
       id: TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId,
       version: TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetVersion,
@@ -377,23 +384,37 @@ for (const { resultPath, result } of storedTrials) {
       contentHash: profile.contentHash,
     },
     source: {
-      repository: process.env['GITHUB_REPOSITORY']?.trim() || null,
-      commit: process.env['GITHUB_SHA']?.trim() || git(['rev-parse', 'HEAD']),
-      ref: process.env['GITHUB_REF']?.trim() || git(['branch', '--show-current']),
+      repository: firstNonEmptyString(process.env['GITHUB_REPOSITORY']?.trim()) ?? null,
+      commit: nonEmptyStringOr(process.env['GITHUB_SHA']?.trim(), git(['rev-parse', 'HEAD'])),
+      ref: nonEmptyStringOr(process.env['GITHUB_REF']?.trim(), git(['branch', '--show-current'])),
       status: git(['status', '--short']),
     },
     configuration: {
-      maxSteps: process.env['COPSE_TERMINAL_MAX_STEPS']?.trim() || '80',
-      maxLlmCalls: process.env['COPSE_TERMINAL_MAX_LLM_CALLS']?.trim() || 'maxSteps+3',
-      contextTokens: process.env['COPSE_TERMINAL_CONTEXT_TOKENS']?.trim() || '32768',
-      maxStreamOutputTokens:
-        process.env['COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS']?.trim() || '2048',
-      commandTimeoutSeconds: process.env['COPSE_TERMINAL_COMMAND_TIMEOUT_SEC']?.trim() || '120',
-      maxCommandTimeoutSeconds:
-        process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim() || '600',
+      maxSteps: nonEmptyStringOr(process.env['COPSE_TERMINAL_MAX_STEPS']?.trim(), '80'),
+      maxLlmCalls: nonEmptyStringOr(
+        process.env['COPSE_TERMINAL_MAX_LLM_CALLS']?.trim(),
+        'maxSteps+3',
+      ),
+      contextTokens: nonEmptyStringOr(
+        process.env['COPSE_TERMINAL_CONTEXT_TOKENS']?.trim(),
+        '32768',
+      ),
+      maxStreamOutputTokens: nonEmptyStringOr(
+        process.env['COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS']?.trim(),
+        '2048',
+      ),
+      commandTimeoutSeconds: nonEmptyStringOr(
+        process.env['COPSE_TERMINAL_COMMAND_TIMEOUT_SEC']?.trim(),
+        '120',
+      ),
+      maxCommandTimeoutSeconds: nonEmptyStringOr(
+        process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim(),
+        '600',
+      ),
     },
     infrastructure: {
-      instanceType: process.env['COPSE_TERMINAL_INSTANCE_TYPE']?.trim() || null,
+      instanceType:
+        firstNonEmptyString(process.env['COPSE_TERMINAL_INSTANCE_TYPE']?.trim()) ?? null,
       instanceCount: environmentNonNegativeInteger('COPSE_TERMINAL_INSTANCE_COUNT'),
       workersPerInstance: environmentNonNegativeInteger('COPSE_TERMINAL_WORKERS_PER_INSTANCE'),
       volumeSizeGb: environmentNonNegativeInteger('COPSE_TERMINAL_VOLUME_SIZE_GB'),
@@ -453,12 +474,12 @@ try {
 }
 const index = {
   schemaVersion: 2,
-  suiteRunId: process.env['COPSE_BENCH_RUN_ID']?.trim() || 'local',
+  suiteRunId: nonEmptyStringOr(process.env['COPSE_BENCH_RUN_ID']?.trim(), 'local'),
   createdAt: new Date().toISOString(),
   source: {
-    repository: process.env['GITHUB_REPOSITORY']?.trim() || null,
-    commit: process.env['GITHUB_SHA']?.trim() || git(['rev-parse', 'HEAD']),
-    ref: process.env['GITHUB_REF']?.trim() || git(['branch', '--show-current']),
+    repository: firstNonEmptyString(process.env['GITHUB_REPOSITORY']?.trim()) ?? null,
+    commit: nonEmptyStringOr(process.env['GITHUB_SHA']?.trim(), git(['rev-parse', 'HEAD'])),
+    ref: nonEmptyStringOr(process.env['GITHUB_REF']?.trim(), git(['branch', '--show-current'])),
     patch: 'source.patch',
   },
   analysisPlan,

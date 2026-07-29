@@ -90,10 +90,13 @@ changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e
 ### Type-safety & lint discipline
 
 Minimise `as` casts, never cast object literals, and never reach for `eslint-disable` /
-`@ts-expect-error` to silence a real error. Two high-churn rules (`no-unsafe-type-assertion`,
-`prefer-nullish-coalescing`) run against a shrink-only baseline in `eslint-suppressions.json`: new
-violations fail `npm run lint`, and when you fix a baselined site run `npm run lint:prune` and commit
-the result. Conventions and the rules behind them: [`docs/type-safety.md`](docs/type-safety.md).
+`@ts-expect-error` to silence a real error. `no-unsafe-type-assertion` and `prefer-nullish-coalescing`
+are now enforced outright — `eslint-suppressions.json` is empty (#1307) and must stay that way, so a
+new unsafe assertion fails `npm run lint` with no baseline to absorb it. Parse untrusted JSON with a
+decoder (`safeJsonParse(text, decodeWithSchema(schema))`), never a type argument. An **exported type
+predicate needs a test in the same PR** — nothing verifies that `x is T` follows from the body, and
+no lint rule flags it. Conventions and the rules behind them:
+[`docs/type-safety.md`](docs/type-safety.md).
 
 ### Visual changes require evals
 
@@ -211,6 +214,51 @@ For _which tier a test belongs in_ — favour unit/component tests, reserve e2e 
 and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) — read
 [`docs/testing-strategy.md`](docs/testing-strategy.md). The per-spec e2e→component migration backlog
 is in [`docs/e2e-component-migration.md`](docs/e2e-component-migration.md).
+
+### Run the smallest set of tests
+
+A full `npm test` is ~3 minutes over 530 files. While iterating, run the tests your change can
+actually break — the full `npm run check` stays the gate before you commit, not the loop you
+iterate in. Full guidance (including the confidence levels) is in
+[`docs/testing-strategy.md`](docs/testing-strategy.md#run-the-smallest-set-of-tests).
+
+```bash
+npm test -- thread-store        # filter: path substring, base name, or glob
+npm run oracle                  # which tests can your diff break, and how sure is it?
+npm run oracle -- --run unit    # run exactly those unit tests
+npm run oracle -- --run e2e     # run exactly those e2e specs
+```
+
+Three rules that keep the subset honest:
+
+- **Read the oracle's confidence line.** `HIGH` means the subset covers the diff. `LOW` means some
+  changed file maps to nothing — the unmapped files it lists are a blind spot the subset cannot
+  see. `broad` means run everything. A subset run on a `LOW` verdict is not evidence.
+- **A filter that matches nothing is an error, not a pass.** `npm test -- <typo>` exits non-zero
+  rather than reporting a green on zero tests. Never read "0 tests" as success.
+- **A green subset is not a green suite.** The oracle maps imports and DOM selectors, so anything
+  reached dynamically — a string key, an IPC channel name, a registry lookup — is invisible to it.
+  `npm run check` before committing, always.
+
+### The post-edit hook formats and lints for you
+
+Every file you edit in this repo is **reformatted and lint-checked automatically**, in about 2s,
+via the `afterFileEdit` / `PostToolUse` hook wired in `.copse/hooks.json`, `.cursor/hooks.json` and
+`.claude/settings.json` (all three run `scripts/hook-file-check.mts`, so it works whichever agent
+you are). **Don't spend a turn running Prettier on a file you just edited** — the hook already
+did, and if it said nothing at all, the file is clean.
+
+**When the hook says it rewrote a file, re-read it before your next edit.** Prettier is auto-applied
+(deterministic, semantically neutral), so your copy of the file is stale the moment that message
+appears — an edit matching against remembered text will fail. ESLint findings are _not_ auto-fixed:
+`eslint --fix` makes real code changes, and those are yours to make deliberately, so the hook
+reports them with the command to run.
+
+What the hook covers is deliberately narrow: Prettier, plus the **type-unaware** ESLint rules
+(`eslint.hook.config.mjs`). The type-aware rules and `tsc` need the whole TypeScript program —
+~10s per file — which is too slow to run on every edit, so they stay in `npm run check`. A silent
+hook means "no cheap problems", not "verified". Run it by hand with
+`node scripts/hook-file-check.mts <file> [--fix]`.
 
 ### Visual validation (tool UI / screenshots)
 

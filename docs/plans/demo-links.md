@@ -92,14 +92,16 @@ found:
 
 - **Main-branch gallery first**: extend `pages.yml` to build `--demo` and
   publish under `copse.dev/demo/`. Trivial, trusted content only.
-- **Per-PR previews are deliberately deferred.** GitHub Pages allows one
-  deployment per repo, so per-PR means either subdirectory-per-PR rebuilds of
-  the whole site, an external preview host (Cloudflare Pages), or a
+- **Per-PR previews are specified separately in
+  [demo-links-per-pr-previews.md](demo-links-per-pr-previews.md).** GitHub Pages
+  allows one deployment per repo, so per-PR means either subdirectory-per-PR
+  rebuilds of the whole site, an external preview host (Cloudflare Pages), or a
   downloadable artifact linked from the existing sticky screenshot comment
   (`<!-- copse-e2e-screenshots -->` in `ci.yml`'s `commit-screenshots` job).
   Deploying bundles built from untrusted PR branches to copse.dev is also a
-  real security/phishing consideration — decide separately. The artifact link
-  is the safe default.
+  real security/phishing consideration. The follow-up plan resolves this in
+  favour of the **Pages subdirectory** approach (`copse.dev/pr-<n>/`, same-repo
+  PRs only) with the downloadable artifact as the fork-PR fallback.
 
 ### M4 — browser test tier (wdio, not Playwright)
 

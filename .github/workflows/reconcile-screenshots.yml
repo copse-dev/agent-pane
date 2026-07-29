@@ -162,7 +162,7 @@ jobs:
       # recursion-guarded and wouldn't fire `synchronize`, leaving ci-passed stale
       # on the new head). Falls back to github.token: the conflict still clears,
       # just without the CI re-trigger.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         if: steps.pr.outputs.open == 'true'
         with:
           ref: ${{ matrix.pr.head }}
@@ -279,31 +279,54 @@ jobs:
             fi
           done <<< "$conflicts"
           git add tests/e2e/screenshots/
-          # The reconcile push authenticates with SCREENSHOTS_PAT, a classic PAT
-          # without `workflow` scope. If main advanced a file under
-          # .github/workflows/, the merge folds that change in and GitHub rejects
-          # the push ("refusing to allow a Personal Access Token to create or
-          # update workflow ... without workflow scope"), hard-failing the job. We
-          # can't drop main's workflow change either — reverting it to --ours would
-          # undo it when the PR merges — so hand these off to a human instead of
-          # failing red. Granting the PAT `workflow` scope lets CI resolve these
-          # automatically. `--cached` diff vs HEAD lists what the merge would push.
+          # If the base advanced a file under .github/workflows/, the merge folds
+          # that change in, and a token without `workflow` scope has its push
+          # rejected ("refusing to allow a Personal Access Token to create or
+          # update workflow ... without workflow scope").
+          #
+          # This used to bail BEFORE pushing whenever the merge touched a workflow
+          # file at all — which made the hand-off unconditional and unfixable: it
+          # fired even once SCREENSHOTS_PAT *had* the scope, so the note telling
+          # people that granting it "lets CI resolve these automatically" was
+          # false. It also scaled badly. A single base commit touching
+          # .github/workflows/ puts that change in EVERY stale branch's merge, so
+          # one such commit hands off every open PR at once (observed: 11 PRs in
+          # one run, none with a real conflict — `manual-files` was empty).
+          #
+          # Try the push instead, and only hand off if it is actually refused.
+          # `--cached` diff vs HEAD lists what the merge would push, captured
+          # before the commit so it can be reported if the push fails.
           wf="$(git diff --cached --name-only -- .github/workflows/ || true)"
+          git commit --no-edit
+          if git push; then
+            echo "resolved=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Push refused. Undo the merge so the branch is left exactly as found,
+          # then hand off. A workflow-file change is the expected cause and gets
+          # the specific message; anything else (a race pushing to the head
+          # branch, a protected-branch rule) still needs a human, so report it
+          # rather than failing red or silently dropping the reconcile.
+          echo "PR #$PR_NUMBER: push refused; reverting the local merge."
+          git reset --hard HEAD~1
           if [ -n "$wf" ]; then
-            echo "PR #$PR_NUMBER: merge updates workflow files the PAT can't push — needs a human:"
+            echo "Merge updates workflow files the token cannot push — needs a human:"
             printf '%s\n' "$wf"
-            git merge --abort
             {
               echo "workflow=true"
               echo "workflow-files<<EOF"
               printf '%s\n' "$wf"
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "Push refused for a non-workflow reason — needs a human."
+            {
+              echo "manual=true"
+              echo "manual-files<<EOF"
+              echo "(push refused; see the reconcile job log)"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           fi
-          git commit --no-edit
-          git push
-          echo "resolved=true" >> "$GITHUB_OUTPUT"
       - name: Comment when manual resolution is needed
         if: >-
           steps.pr.outputs.open == 'true' &&

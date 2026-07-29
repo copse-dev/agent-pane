@@ -1,5 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -87,8 +88,8 @@ describe('sandbox-fs-server', () => {
       assert.equal(listing.ok, true)
       assert.equal(file.ok, true)
       assert.equal(file['data'], 'hello')
-      const dirents = listing['dirents'] as { name: string }[]
-      assert.ok(dirents.some((d) => d.name === 'a.txt'))
+      const dirents = recordArrayOrEmpty(listing['dirents'])
+      assert.ok(dirents.some((d) => d['name'] === 'a.txt'))
       assert.equal(isSandboxFsServerLive(), true)
     } finally {
       restore()

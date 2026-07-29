@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
-import { anthropicMaxOutputTokens } from './model-catalog.ts'
+import { anthropicMaxOutputTokens, supportsMidConversationSystem } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { toolResultContentBlocks } from './tool-result-images.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -21,9 +22,19 @@ export class AnthropicProvider implements LLMProvider {
   ): AsyncIterable<ProviderStreamChunk> {
     const { client, model } = this
     const self = this
-    const systemMsg = messages.find((m) => m.role === 'system')
-    const apiMessages = toAnthropicMessages(messages.filter((m) => m.role !== 'system'))
+    const { systemPrompt, conversation } = splitSystemPrompt(messages)
+    const midSystem = supportsMidConversationSystem(model)
+    // Any system message *after* the first is an operator instruction that
+    // arrived mid-conversation (turn steering, hook-injected context). It is
+    // volatile — regenerated every turn and never persisted into the thread's
+    // history — so it is converted last and the cache breakpoint goes *before*
+    // it. That keeps the entry this request writes a byte-identical prefix of
+    // the next turn's request, instead of contaminating it with text that turn
+    // will not resend (#1286).
+    const operatorStart = trailingSystemStart(conversation)
+    const apiMessages = toAnthropicMessages(conversation.slice(0, operatorStart), midSystem)
     markTrailingCacheBreakpoint(apiMessages)
+    apiMessages.push(...toAnthropicMessages(conversation.slice(operatorStart), midSystem))
     const maxTokens = anthropicMaxOutputTokens(model)
 
     return yieldStreamWithRetry(
@@ -32,12 +43,12 @@ export class AnthropicProvider implements LLMProvider {
           {
             model,
             max_tokens: maxTokens,
-            ...(systemMsg
+            ...(systemPrompt !== undefined
               ? {
                   system: [
                     {
                       type: 'text' as const,
-                      text: systemMsg.content,
+                      text: systemPrompt,
                       cache_control: { type: 'ephemeral' as const },
                     },
                   ],
@@ -46,10 +57,10 @@ export class AnthropicProvider implements LLMProvider {
             messages: apiMessages,
             // The last tool gets a cache breakpoint so the (large, stable) tool
             // schemas are cached instead of re-sent every loop iteration (#582).
-            tools: tools.map((t, i) => ({
+            tools: tools.map((t, i): Anthropic.Messages.Tool => ({
               name: t.name,
               description: t.description,
-              input_schema: t.parameters as Anthropic.Messages.Tool['input_schema'],
+              input_schema: { ...t.parameters, type: 'object' },
               ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
             })),
           },
@@ -149,6 +160,53 @@ export class AnthropicProvider implements LLMProvider {
 }
 
 /**
+ * Split the leading system message (the stable system prompt, which becomes the
+ * top-level `system` parameter) from the rest of the conversation. Later system
+ * messages stay in `conversation` — they are mid-conversation operator
+ * instructions, not the system prompt, and are handled by
+ * {@link toAnthropicMessages}.
+ *
+ * `systemPrompt` is `undefined` only when there is no system message at all; an
+ * empty-string prompt still produces the `system` parameter, matching the
+ * behaviour callers have always had.
+ */
+function splitSystemPrompt(messages: LLMMessage[]): {
+  systemPrompt?: string
+  conversation: LLMMessage[]
+} {
+  const index = messages.findIndex((m) => m.role === 'system')
+  const leading = index >= 0 ? messages[index] : undefined
+  if (!leading || leading.role !== 'system') return { conversation: messages }
+  return {
+    systemPrompt: leading.content,
+    conversation: messages.filter((_, i) => i !== index),
+  }
+}
+
+/**
+ * Index where the trailing run of system messages starts (`length` when the
+ * conversation does not end in one). Returns `length` when *every* message is a
+ * system message, so a degenerate input still converts as a normal body rather
+ * than producing a request with no messages.
+ */
+function trailingSystemStart(conversation: LLMMessage[]): number {
+  let start = conversation.length
+  while (start > 0 && conversation[start - 1]?.role === 'system') start--
+  return start === 0 ? conversation.length : start
+}
+
+/**
+ * Fallback channel for models without mid-conversation system messages: the
+ * instruction rides a user turn wrapped in `<system-reminder>` tags. Same
+ * caching profile — it lands after the last breakpoint either way — but without
+ * the operator authority of a real system turn, so it is only used when the
+ * model cannot accept one.
+ */
+function systemReminder(text: string): string {
+  return `<system-reminder>\n${text}\n</system-reminder>`
+}
+
+/**
  * Put a cache breakpoint on the final content block of the final message, so
  * the whole conversation prefix is cached across agent-loop iterations instead
  * of only the system prompt (#582). Each request's breakpoint lands one turn
@@ -156,6 +214,10 @@ export class AnthropicProvider implements LLMProvider {
  * cached prefix. String contents are converted to a single text block, which
  * the API treats identically. With the system + last-tool breakpoints this
  * stays within the 4-breakpoint API limit.
+ *
+ * Called with the conversation *body* only — trailing operator instructions are
+ * appended after it, so the breakpoint marks the last message the next turn will
+ * resend verbatim (#1286).
  */
 export function markTrailingCacheBreakpoint(apiMessages: Anthropic.MessageParam[]): void {
   const last = apiMessages.at(-1)
@@ -173,8 +235,19 @@ export function markTrailingCacheBreakpoint(apiMessages: Anthropic.MessageParam[
   block.cache_control = { type: 'ephemeral' }
 }
 
-function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
+function toAnthropicMessages(
+  messages: LLMMessage[],
+  midConversationSystem: boolean,
+): Anthropic.MessageParam[] {
   return messages.flatMap((m): Anthropic.MessageParam[] => {
+    if (m.role === 'system') {
+      // An empty block would be rejected by the API, and an empty operator
+      // instruction says nothing anyway.
+      if (!m.content) return []
+      return midConversationSystem
+        ? [{ role: 'system', content: m.content }]
+        : [{ role: 'user', content: [{ type: 'text', text: systemReminder(m.content) }] }]
+    }
     if (m.role === 'user' && typeof m.content === 'string') {
       return [{ role: 'user', content: m.content }]
     }
@@ -197,7 +270,7 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
             type: 'tool_use' as const,
             id: tc.id,
             name: tc.name,
-            input: tc.args as Record<string, unknown>,
+            input: tc.args,
           })),
         },
       ]
@@ -206,11 +279,16 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
       return [
         {
           role: 'user',
-          content: m.toolResults.map((tr) => ({
-            type: 'tool_result' as const,
-            tool_use_id: tr.toolCallId,
-            content: tr.result,
-          })),
+          content: m.toolResults.map((tr) => {
+            // Anthropic accepts text + image blocks inside a tool_result, so a
+            // tool's images stay attributed to the call that produced them.
+            const blocks = toolResultContentBlocks(tr)
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: tr.toolCallId,
+              content: blocks ? toAnthropicContent(blocks) : tr.result,
+            }
+          }),
         },
       ]
     }
@@ -218,17 +296,30 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
   })
 }
 
+// Narrower than ContentBlockParam on purpose: text and image are the only
+// shapes produced here, and a tool_result's content accepts exactly those two.
 function toAnthropicContent(
   content: Array<{ type: string; text?: string; dataUrl?: string }>,
-): Anthropic.ContentBlockParam[] {
+): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
   return content.map((c) => {
     if (c.type === 'text') return { type: 'text', text: c.text ?? '' }
     if (c.type === 'image' && c.dataUrl) {
       const [header, data] = c.dataUrl.split(',')
-      const mediaType = (header?.match(/:(.*?);/)?.[1] ?? 'image/png') as
-        'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+      const parsedMediaType = header?.match(/:(.*?);/)?.[1]
+      const mediaType = isImageMediaType(parsedMediaType) ? parsedMediaType : 'image/png'
       return { type: 'image', source: { type: 'base64', media_type: mediaType, data: data ?? '' } }
     }
     return { type: 'text', text: '' }
   })
+}
+
+function isImageMediaType(
+  value: unknown,
+): value is 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' {
+  return (
+    value === 'image/png' ||
+    value === 'image/jpeg' ||
+    value === 'image/gif' ||
+    value === 'image/webp'
+  )
 }

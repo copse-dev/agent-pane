@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import type { LLMTool } from '@shared/types'
 import { fingerprintToolset } from './toolset-fingerprint.ts'
+import { expectArray, expectRecord, expectString } from '../unknown-value.ts'
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
@@ -61,16 +62,14 @@ describe('toolset fingerprint (decision 6)', () => {
 
   it('lists sorted tool names with per-tool schema hashes in the blob body', () => {
     const { contents, hash } = fingerprintToolset([runShell, readFile], sha256)
-    const parsed = JSON.parse(contents) as {
-      v: number
-      tools: { name: string; schemaHash: string }[]
-    }
-    assert.equal(parsed.v, 1)
+    const parsed = expectRecord(JSON.parse(contents) as unknown)
+    const tools = expectArray(parsed['tools']).map((tool) => expectRecord(tool))
+    assert.equal(parsed['v'], 1)
     assert.deepEqual(
-      parsed.tools.map((t) => t.name),
+      tools.map((tool) => expectString(tool['name'])),
       ['read_file', 'run_shell'],
     )
-    for (const tool of parsed.tools) assert.match(tool.schemaHash, /^[0-9a-f]{64}$/)
+    for (const tool of tools) assert.match(expectString(tool['schemaHash']), /^[0-9a-f]{64}$/)
     // Content-addressed: the hash is the hash of the blob body itself.
     assert.equal(hash, sha256(contents))
   })

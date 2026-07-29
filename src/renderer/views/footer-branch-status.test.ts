@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
@@ -45,15 +46,23 @@ function createApi(
   branches: GitBranchInfo[] = [],
   defaultBranch: string | null = 'main',
 ): ApiClient {
-  return {
-    fs: { onChanged: () => () => {} },
-    git: {
-      branchStatus: async () => status,
-      listBranches: async () => branches,
-      getDefaultBranch: async () => defaultBranch,
-      checkoutBranch: async () => {},
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      fs: {
+        ...base['fs'],
+        onChanged: () => () => {},
+      },
+      git: {
+        ...base['git'],
+        branchStatus: async () => status,
+        listBranches: async () => branches,
+        getDefaultBranch: async () => defaultBranch,
+        checkoutBranch: async (): Promise<void> => {},
+      },
+    } satisfies ApiClient
+  })()
 }
 
 async function settle(): Promise<void> {
@@ -79,6 +88,7 @@ describe('footer branch status', () => {
 
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread('feature/footer-copy', true)],
     })
@@ -117,6 +127,7 @@ describe('footer branch status', () => {
 
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread('feature/with-pr', true)],
     })
@@ -160,6 +171,7 @@ describe('footer branch status', () => {
   it('shows the branch picker for new chats without a copy action', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread()],
     })

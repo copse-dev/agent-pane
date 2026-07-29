@@ -2,12 +2,15 @@ import { attachMermaidExpand } from './mermaid-expand.ts'
 import { renderMermaidFallback } from './mermaid-fallback.ts'
 import { mermaidSourceCandidates, prepareMermaidSource } from '@copse/streaming-markdown'
 
-type MermaidModule = typeof import('mermaid').default
+interface MermaidRenderer {
+  initialize(config: Parameters<typeof import('mermaid').default.initialize>[0]): void
+  run(options: Parameters<typeof import('mermaid').default.run>[0]): Promise<void>
+}
 
-let mermaidPromise: Promise<MermaidModule> | null = null
+let mermaidPromise: Promise<MermaidRenderer> | null = null
 let initialized = false
 
-const defaultMermaidLoader = (): Promise<MermaidModule> =>
+const defaultMermaidLoader = (): Promise<MermaidRenderer> =>
   import('mermaid').then((mod) => mod.default)
 let mermaidLoader = defaultMermaidLoader
 
@@ -16,20 +19,18 @@ let mermaidLoader = defaultMermaidLoader
  * browser-only dynamic import) and reset the memoized instance so unit tests
  * can inject a fake and stay isolated. Pass `null` to restore the real loader.
  */
-export function setMermaidLoaderForTests(loader: (() => Promise<MermaidModule>) | null): void {
+export function setMermaidLoaderForTests(loader: (() => Promise<MermaidRenderer>) | null): void {
   mermaidLoader = loader ?? defaultMermaidLoader
   mermaidPromise = null
   initialized = false
 }
 
-async function loadMermaid(): Promise<MermaidModule> {
-  if (!mermaidPromise) {
-    mermaidPromise = mermaidLoader()
-  }
+async function loadMermaid(): Promise<MermaidRenderer> {
+  mermaidPromise ??= mermaidLoader()
   return mermaidPromise
 }
 
-function initMermaid(mermaid: MermaidModule): void {
+function initMermaid(mermaid: MermaidRenderer): void {
   if (initialized) return
   mermaid.initialize({
     startOnLoad: false,
@@ -52,20 +53,20 @@ function diagramRenderFailed(container: HTMLElement): boolean {
   return !svg
 }
 
-async function runMermaidNodes(mermaid: MermaidModule, nodes: HTMLElement[]): Promise<void> {
+async function runMermaidNodes(mermaid: MermaidRenderer, nodes: HTMLElement[]): Promise<void> {
   if (nodes.length === 0) return
   await mermaid.run({ nodes, suppressErrors: true })
 }
 
 /** Render pending `.mermaid` blocks inside `root`. No-op when none are present. */
 export async function renderMermaidIn(root: ParentNode): Promise<void> {
-  const nodes = root.querySelectorAll('pre.mermaid:not([data-processed])')
+  const nodes = root.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed])')
   if (nodes.length === 0) return
 
   const mermaid = await loadMermaid()
   initMermaid(mermaid)
 
-  const elements = Array.from(nodes) as HTMLElement[]
+  const elements = Array.from(nodes)
   const sourceByNode = new Map<HTMLElement, string>()
 
   for (const node of elements) {

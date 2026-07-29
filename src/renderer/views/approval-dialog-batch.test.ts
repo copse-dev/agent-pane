@@ -11,6 +11,8 @@ import { mountApprovalDialog } from './approval-dialog.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { resetAttention } from '../controller/attention.ts'
+import { qsRequired } from '../dom/helpers.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 interface EmitReq {
   id: string
@@ -33,28 +35,18 @@ function makeApi(): {
 } {
   let handler: (req: Record<string, unknown>) => void = () => {}
   const responses: Responded[] = []
-  const overrides: Record<string, unknown> = {
-    'agent.onApprovalRequest': (h: (req: Record<string, unknown>) => void) => {
+  const overrides = {
+    'agent.onApprovalRequest': (h: (req: Record<string, unknown>) => void): (() => void) => {
       handler = h
       return () => {}
     },
-    'approval.respond': (id: string, approved: boolean, remember: boolean) => {
+    'approval.respond': (id: string, approved: boolean, remember: boolean): Promise<void> => {
       responses.push({ id, approved, remember })
       return Promise.resolve()
     },
   }
-  const make = (path: string): unknown =>
-    new Proxy(() => new Promise(() => {}), {
-      get: (_t, prop) => make(path ? `${path}.${String(prop)}` : String(prop)),
-      apply: (_t, _this, args): unknown => {
-        const override = overrides[path]
-        if (typeof override === 'function')
-          return (override as (...a: unknown[]) => unknown)(...(args as unknown[]))
-        return new Promise(() => {})
-      },
-    })
   return {
-    api: make('') as ApiClient,
+    api: createPendingApi(overrides),
     emit: (req): void => {
       handler({
         id: req.id,
@@ -137,7 +129,7 @@ describe('approval dialog coalescing', () => {
         }
       },
     })
-    dialog = document.getElementById('approval-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
     spy = shimModal(dialog)
   })
 
@@ -260,7 +252,7 @@ describe('approval dialog coalescing', () => {
   })
 
   it('shows the remember checkbox only when the batch shares one grant', () => {
-    const remember = dialog.querySelector('.approval-remember') as HTMLElement
+    const remember = qsRequired(dialog, '.approval-remember')
     // Same agent+kind grant across the batch → checkbox offered, applied to all.
     emit({ id: 'a', allowRemember: true, rememberLabel: 'Always allow Codex terminal commands' })
     emit({ id: 'b', allowRemember: true, rememberLabel: 'Always allow Codex terminal commands' })
@@ -274,7 +266,7 @@ describe('approval dialog coalescing', () => {
   })
 
   it('hides the remember checkbox for a mixed-grant batch', () => {
-    const remember = dialog.querySelector('.approval-remember') as HTMLElement
+    const remember = qsRequired(dialog, '.approval-remember')
     emit({ id: 'a', allowRemember: true, rememberLabel: 'Always allow Codex terminal commands' })
     emit({ id: 'b', allowRemember: true, rememberLabel: 'Always allow Codex web fetches' })
     fireWindow()

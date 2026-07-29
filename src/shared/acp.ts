@@ -1,5 +1,6 @@
 import type { AcpAgentConfig } from './types/acp.ts'
 import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
+import { isRecord, recordArrayOrEmpty, stringRecordOrEmpty } from './unknown-value.mts'
 
 /**
  * Model-picker plumbing for the ACP **client** role: Copse drives an external,
@@ -25,6 +26,78 @@ const ACP_MODEL_SEP = '#'
  */
 export const ACP_UNSUPPORTED_ON_SSH_MESSAGE =
   'ACP agents run locally on this device and are not available in SSH workspaces. Switch to a local folder or pick a cloud/local model.'
+
+function parseChoices(
+  value: unknown,
+  includeDescription: boolean,
+): NonNullable<AcpAgentConfig['availableModels']> {
+  return recordArrayOrEmpty(value).flatMap((entry) => {
+    const choiceValue = entry['value']
+    const label = entry['label']
+    if (typeof choiceValue !== 'string' || typeof label !== 'string') return []
+    const description = entry['description']
+    return [
+      includeDescription && typeof description === 'string'
+        ? { value: choiceValue, label, description }
+        : { value: choiceValue, label },
+    ]
+  })
+}
+
+/** Validate ACP agent settings read across the IPC/storage boundary. */
+export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
+  return recordArrayOrEmpty(value).flatMap((entry) => {
+    const id = entry['id']
+    const title = entry['title']
+    const command = entry['command']
+    const enabled = entry['enabled']
+    if (
+      typeof id !== 'string' ||
+      typeof title !== 'string' ||
+      typeof command !== 'string' ||
+      typeof enabled !== 'boolean'
+    ) {
+      return []
+    }
+    const agent: AcpAgentConfig = { id, title, command, enabled }
+    if (Array.isArray(entry['args']) && entry['args'].every((arg) => typeof arg === 'string')) {
+      agent.args = entry['args']
+    }
+    if (isRecord(entry['env'])) agent.env = stringRecordOrEmpty(entry['env'])
+    if (typeof entry['model'] === 'string') agent.model = entry['model']
+    if (Array.isArray(entry['availableModels'])) {
+      agent.availableModels = parseChoices(entry['availableModels'], false)
+    }
+    if (typeof entry['modelsProbedAt'] === 'number') agent.modelsProbedAt = entry['modelsProbedAt']
+    if (typeof entry['permissionMode'] === 'string') agent.permissionMode = entry['permissionMode']
+    if (Array.isArray(entry['availablePermissionModes'])) {
+      agent.availablePermissionModes = parseChoices(entry['availablePermissionModes'], true)
+    }
+    const sandbox = entry['sandbox']
+    if (sandbox === false) {
+      agent.sandbox = false
+    } else if (
+      isRecord(sandbox) &&
+      Array.isArray(sandbox['allowedDomains']) &&
+      sandbox['allowedDomains'].every((domain) => typeof domain === 'string')
+    ) {
+      agent.sandbox = { allowedDomains: sandbox['allowedDomains'] }
+      if (
+        Array.isArray(sandbox['homeDirs']) &&
+        sandbox['homeDirs'].every((dir) => typeof dir === 'string')
+      ) {
+        agent.sandbox.homeDirs = sandbox['homeDirs']
+      }
+      if (
+        Array.isArray(sandbox['scratchPaths']) &&
+        sandbox['scratchPaths'].every((path) => typeof path === 'string')
+      ) {
+        agent.sandbox.scratchPaths = sandbox['scratchPaths']
+      }
+    }
+    return [agent]
+  })
+}
 
 /** An `acp:<id>` model value decoded into its agent id and optional model. */
 export interface AcpModelSelection {

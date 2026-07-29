@@ -37,22 +37,58 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     ...initial,
   }
 
-  type AnyHandler = (...args: unknown[]) => void
-  const listeners = new Map<keyof StoreEvents, Set<AnyHandler>>()
+  const listeners: { [K in keyof StoreEvents]: Set<EventHandler<K>> } = {
+    message_added: new Set(),
+    message_queued: new Set(),
+    message_token: new Set(),
+    message_reasoning: new Set(),
+    message_done: new Set(),
+    tool_call_started: new Set(),
+    tool_call_updated: new Set(),
+    thread_status_changed: new Set(),
+    agent_activity: new Set(),
+    threads_changed: new Set(),
+    thread_draft_changed: new Set(),
+    new_thread_opened: new Set(),
+    panel_changed: new Set(),
+    explorer_reveal: new Set(),
+    workspace_changed: new Set(),
+    projects_changed: new Set(),
+    files_pane_changed: new Set(),
+    right_panel_mode_changed: new Set(),
+    git_change_navigate: new Set(),
+    roadmap_reveal: new Set(),
+    browser_url_requested: new Set(),
+    pr_open_requested: new Set(),
+    canvas_artefact_requested: new Set(),
+    settings_changed: new Set(),
+    theme_changed: new Set(),
+    staged_diffs_changed: new Set(),
+    usage_updated: new Set(),
+    context_updated: new Set(),
+    todos_changed: new Set(),
+    review_changed: new Set(),
+    hook_card_added: new Set(),
+    comparison_changed: new Set(),
+    git_branch_changed: new Set(),
+    composer_draft_flush: new Set(),
+    composer_checkout_preferred: new Set(),
+    agent_task_selected: new Set(),
+    shell_tab_activated: new Set(),
+    request_terminal_command: new Set(),
+    attention_changed: new Set(),
+  }
 
   function on<K extends keyof StoreEvents>(event: K, handler: EventHandler<K>): Unsubscribe {
-    let set = listeners.get(event)
-    if (!set) {
-      set = new Set()
-      listeners.set(event, set)
+    listeners[event].add(handler)
+    return () => {
+      listeners[event].delete(handler)
     }
-    set.add(handler as AnyHandler)
-    return () => listeners.get(event)?.delete(handler as AnyHandler)
   }
 
   function emit<K extends keyof StoreEvents>(event: K, ...args: StoreEvents[K]): void {
-    listeners.get(event)?.forEach((h) => {
-      ;(h as (...a: StoreEvents[K]) => void)(...args)
+    listeners[event].forEach((handler) => {
+      handler(...args)
     })
   }
 

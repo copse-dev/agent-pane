@@ -2,6 +2,7 @@ import type * as Monaco from 'monaco-editor'
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -27,6 +28,7 @@ import {
   disposeDiffModels,
   observeDiffHostLayout,
   setGitFileDiffModel,
+  type GitDiffEditor,
 } from '../monaco/git-diff-viewer.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
@@ -131,7 +133,7 @@ export function mountPrPane(
   // Changed-files list starts collapsed so the PR description gets the full
   // column until the user actually wants to browse files.
   let filesExpanded = false
-  let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
+  let diffEditor: GitDiffEditor | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let pendingOpen: PrRef | null = null
@@ -193,7 +195,7 @@ export function mountPrPane(
       })
   }
 
-  function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
+  function ensureDiffEditor(): GitDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
       diffEditor = createGitChangesDiffEditor(
@@ -874,7 +876,21 @@ export function mountPrPane(
   // catch up to the current state here. See #459.
   if (prsModeActive(store)) void refresh()
 
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('prs', {
+    capture: () => ({ selectedPr, selectedFile }),
+    apply: (seed) => {
+      if (!seed || typeof seed !== 'object') return
+      const next = seed as { selectedPr?: PrRef | null; selectedFile?: string | null }
+      if (next.selectedPr) {
+        pendingOpen = next.selectedPr
+        if (prsModeActive(store)) void refresh()
+      }
+      if (next.selectedFile) selectedFile = next.selectedFile
+    },
+  })
+
   return () => {
+    unregisterPopoutSeed()
     stopObservingLayout()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

@@ -50,13 +50,17 @@ function withFakeStream(
   capture: (request: CapturedRequest, options?: { signal?: AbortSignal }) => void,
   events: readonly TestEvent[],
 ): void {
-  ;(provider as unknown as ResponsesProviderForTest).client.responses.create = async (
+  const create: ResponsesProviderForTest['client']['responses']['create'] = async (
     request,
     options,
   ): Promise<AsyncIterable<TestEvent>> => {
     capture(request, options)
     return streamEvents(events)
   }
+  Object.defineProperty(provider, 'client', {
+    value: { responses: { create } },
+    configurable: true,
+  })
 }
 
 async function collect(

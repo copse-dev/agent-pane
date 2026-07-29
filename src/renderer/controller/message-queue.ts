@@ -67,12 +67,25 @@ function newEpoch(): string {
  * process's dispatch epoch is C3. Returns the new epoch.
  */
 export function startHumanTurnTree(store: AppStore, threadId: string): string {
+  return startRootTurnTree(store, threadId)
+}
+
+/**
+ * Start a fresh root turn for a scheduled automation. A schedule is its own
+ * user-authorized root (not a continuation of another chat), so it receives a
+ * new epoch and the normal full continuation budget.
+ */
+export function startAutomationTurnTree(store: AppStore, threadId: string): string {
+  return startRootTurnTree(store, threadId)
+}
+
+function startRootTurnTree(store: AppStore, threadId: string): string {
   const epoch = newEpoch()
   const threads = store
     .getState()
     // A fresh turn tree resets the auto-continuation budget (decision 5): a
-    // human-initiated submission is the floor, and the machine-turn counter
-    // starts over.
+    // user-authorized root is the floor, and the machine-turn counter starts
+    // over.
     .threads.map((t) =>
       t.id !== threadId ? t : { ...t, currentEpoch: epoch, continuationUsed: 0 },
     )
@@ -163,7 +176,7 @@ function refreshPayload(
 
 export function dispatchAgentRun(
   store: AppStore,
-  api: ApiClient,
+  api: { agent: Pick<ApiClient['agent'], 'run'> },
   threadId: string,
   payload: AgentRunPayload,
 ): void {

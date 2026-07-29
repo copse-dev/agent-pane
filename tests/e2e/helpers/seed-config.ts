@@ -47,8 +47,11 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
  */
 const DEFAULT_DISABLED_PACK_IDS = [
   'copse.advisor-strategy',
+  'copse.background-tasks',
   'copse.ci-investigator',
+  'copse.devtools-shortcut',
   'copse.long-horizon-tasks',
+  'copse.mcp-ui-canvas',
   'copse.model-comparison',
   'copse.okf-memories',
   'copse.pii-redaction',
@@ -66,6 +69,11 @@ const sha256 = (input: string): string => createHash('sha256').update(input, 'ut
 function e2eWorkspaceDir(): string {
   const override = process.env.COPSE_WORKSPACE_DIR?.trim()
   return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
+}
+
+/** Remove a rebuildable per-project thread catalog after an app relaunch. */
+export function invalidateThreadCatalog(projectId: string): void {
+  rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
 }
 
 // Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
@@ -127,9 +135,11 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
 export function writeSeedConfig(config: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
+  const seededProjectIds = new Set<string>()
   for (const [key, value] of Object.entries(config)) {
     const match = /^threads:(.+)$/.exec(key)
     if (match && Array.isArray(value)) {
+      seededProjectIds.add(match[1])
       for (const thread of value) {
         seedThreadDir(match[1], thread as Record<string, unknown>)
       }
@@ -138,6 +148,12 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
     }
   }
   writeFileSync(CONFIG_PATH, JSON.stringify(remaining), 'utf8')
+  // The app process that exists before a fixture calls reloadSession() can
+  // already have created an empty derived catalog. Remove it after writing the
+  // seed so the replacement process rebuilds from the thread directories.
+  for (const projectId of seededProjectIds) {
+    invalidateThreadCatalog(projectId)
+  }
 }
 
 export function resetUserData(): void {
@@ -997,6 +1013,40 @@ export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: Date.now(),
         updatedAt: Date.now(),
+      },
+    ],
+  })
+}
+
+/** User prompt with newlines and inline markdown for transcript rendering eval. */
+export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-user-prompt-markdown-project'
+  const threadId = 'e2e-user-prompt-markdown-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'User prompt markdown',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-markdown',
+            role: 'user',
+            content: 'line one\nline two\n\n**bold item**',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
       },
     ],
   })

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { expectArray, expectRecord } from '@shared/unknown-value.ts'
 import { sanitizeMcpInputSchema, flattenMcpContent, extractUiResources } from './mcp-schema.ts'
 
 describe('sanitizeMcpInputSchema', () => {
@@ -19,6 +20,7 @@ describe('sanitizeMcpInputSchema', () => {
     assert.deepEqual(sanitizeMcpInputSchema(undefined), { type: 'object', properties: {} })
     assert.deepEqual(sanitizeMcpInputSchema(null), { type: 'object', properties: {} })
     assert.deepEqual(sanitizeMcpInputSchema('nope'), { type: 'object', properties: {} })
+    assert.deepEqual(sanitizeMcpInputSchema([]), { type: 'object', properties: {} })
   })
 
   it('forces type:object and ensures properties exists', () => {
@@ -43,8 +45,9 @@ describe('sanitizeMcpInputSchema', () => {
       type: 'object',
       properties: { k: { type: 'number', enum: big } },
     })
-    const props = out['properties'] as Record<string, { enum: number[] }>
-    assert.equal(props['k']?.enum.length, 100)
+    const props = expectRecord(out['properties'])
+    const keySchema = expectRecord(props['k'])
+    assert.equal(expectArray(keySchema['enum']).length, 100)
   })
 
   it('truncates deeply nested schemas without throwing (#107)', () => {

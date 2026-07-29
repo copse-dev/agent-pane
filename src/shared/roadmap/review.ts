@@ -10,14 +10,15 @@ export const ROADMAP_REVIEW_VERDICTS = ['resolved', 'likely', 'partial', 'open']
 export type RoadmapReviewVerdict = (typeof ROADMAP_REVIEW_VERDICTS)[number]
 
 export function isRoadmapReviewVerdict(value: unknown): value is RoadmapReviewVerdict {
-  return typeof value === 'string' && (ROADMAP_REVIEW_VERDICTS as readonly string[]).includes(value)
+  return typeof value === 'string' && ROADMAP_REVIEW_VERDICTS.some((entry) => entry === value)
 }
 
 /** Extract the verdict from model output: the first review word in the first line. */
 export function parseReviewVerdict(text: string): RoadmapReviewVerdict | null {
   const firstLine = (text.trim().split('\n')[0] ?? '').toLowerCase()
   const match = /\b(resolved|likely|partial|open)\b/.exec(firstLine)
-  return match ? (match[1] as RoadmapReviewVerdict) : null
+  const word = match?.[1]
+  return isRoadmapReviewVerdict(word) ? word : null
 }
 
 /**

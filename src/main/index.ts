@@ -1,8 +1,9 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
-import { app, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
+  getAgentBrowserSession,
   getInAppBrowserSession,
   isBrowserWebContents,
 } from './windows/browser-web-contents.ts'
@@ -10,11 +11,18 @@ import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
+import { setShellOutputSink } from './services/exec/shell-output-context.ts'
+import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
-import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
+import {
+  createRegistry,
+  registerSkillTools,
+  syncCiInvestigatorTools,
+  syncGhTools,
+} from './services/registry-bootstrap.ts'
 import { getPackService } from './services/packs/pack-service.ts'
 import {
   loadMcpServers,
@@ -67,7 +75,10 @@ import { getMainWindow } from './windows/create-main-window.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
-import { shutdownBrowserSession } from './services/browser/session-manager.ts'
+import {
+  setBrowserSessionPlatform,
+  shutdownBrowserSession,
+} from './services/browser/session-manager.ts'
 import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
@@ -87,8 +98,10 @@ import {
   startEventLoopWatchdog,
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
+import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -98,6 +111,43 @@ import {
   prepareThreadCheckout,
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
+import { getAutomationService } from './services/automations/automation-service.ts'
+import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
+import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
+
+// Settings encrypts API keys through whichever cipher is installed rather than
+// importing `safeStorage` itself, which is what keeps `createRegistry()` and
+// everything under it loadable without Electron (#1313). Installed at module
+// scope, before anything can read a key: this only stores the reference, and
+// `safeStorage` is not called until a key is actually read or written.
+setSecretCipher({
+  isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+  encryptString: (plainText) => safeStorage.encryptString(plainText),
+  decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+})
+
+setBrowserSessionPlatform({
+  createWindow: (options) => new BrowserWindow(options),
+  getAgentSession: () => getAgentBrowserSession(),
+})
+
+setVideoDecoderPlatform({
+  createWindow: (options) => new BrowserWindow(options),
+  ipcMain,
+  attachWebContentsLockdown,
+})
+
+setCanvasArtefactSink((artefact) => {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
+})
+
+setContextEstimateRefreshSink(() => {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  win.webContents.send('agent:refresh_context_estimate')
+})
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -174,28 +224,38 @@ app
     recordStartupPhase('reap-gortex')
     await reapOversizedGortexDaemon()
 
-    recordStartupPhase('tool-availability')
-    await checkToolAvailability()
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
-    // Move provider-format history out of electron-store into per-thread
-    // sidecars (issue #993). Must run before the first window so ownership is
-    // resolved against the thread store the renderer is about to read.
-    recordStartupPhase('llm-history-migration')
-    const { migrateLlmHistory } = await import('./services/llm-history-migration.ts')
-    const historyMigration = await migrateLlmHistory()
-    if (historyMigration.scanned > 0) {
-      console.log(
-        `[llm-history-migration] scanned ${String(historyMigration.scanned)}, migrated ${String(historyMigration.migrated)}, removed ${String(historyMigration.legacyKeysRemoved)} legacy key(s)`,
-      )
-    }
-
     recordStartupPhase('window-create')
     const win = createMainWindow()
+    // The shell tool streams child output through a sink rather than reaching
+    // for the window itself, so `createRegistry()` stays importable without
+    // Electron (#1313). Read the window per chunk rather than capturing `win`,
+    // so output still lands if the window is ever recreated.
+    setShellOutputSink((chunk, taskId) => {
+      getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
+    })
     applyAppIcon([win])
     buildAppMenu(win)
     initUpdatePrompt(win)
+    // Probe for rg/git/gh and the search backends only now: these are ~9 process
+    // spawns (one of them, `gh auth status`, a network round trip), and run
+    // before the window they cost the user seconds of blank screen. The window
+    // is already loading its renderer while they run.
+    //
+    // Started here but NOT awaited until every IPC handler is registered below.
+    // `createMainWindow()` has already fired `loadFile`, so the renderer boots
+    // concurrently and invokes `settings:get` / `ssh-workspace:getStates` on
+    // first paint — awaiting a multi-second probe before registration left those
+    // invokes hitting "No handler registered", which rejects the unguarded
+    // `await api.settings.get('model')` in the renderer's boot() and aborts the
+    // layout mount.
+    //
+    // #523's invariant (read-only GitHub tools exposed only when `gh` probed
+    // usable) is preserved by re-syncing them once the probe resolves, rather
+    // than by ordering the probe ahead of `createRegistry()`.
+    const toolAvailability = checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     // P5: boot the pack service before `createRegistry()` so persisted
@@ -220,16 +280,19 @@ app
       if (!win.isDestroyed()) win.webContents.send('agent:hook_queue_message', payload)
     })
 
-    initApproval(win)
-    initAskUser(win)
+    initApproval(win, ipcMain, app.dock)
+    initAskUser(win, ipcMain)
     initSshAskpassServer(app.getPath('userData'))
-    initSshPrompt(win)
+    initSshPrompt(win, ipcMain)
     initSshWorkspaceIpc(win)
-    initDiffQueue(win)
+    initDiffQueue(win, ipcMain)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
+    getAutomationService().start((event) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -258,7 +321,7 @@ app
           url,
           apiKey,
         ])
-        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        const baseUrl = parsedUrl ?? 'http://127.0.0.1:1234/v1'
         const result = await downloadLmStudioModel(parsedModelId, baseUrl, parsedApiKey)
         if (result.ok) invalidateLmStudioModelsCache()
         return result
@@ -274,7 +337,7 @@ app
           url,
           apiKey,
         ])
-        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        const baseUrl = parsedUrl ?? 'http://127.0.0.1:1234/v1'
         return getLmStudioDownloadStatus(parsedJobId, baseUrl, parsedApiKey)
       },
     )
@@ -540,6 +603,20 @@ app
       return suggestFollowUps(parsed.data)
     })
 
+    // Every channel the renderer can invoke is registered by here, so it is now
+    // safe to block on the probe. Both syncs read `isGhAvailable()`, which only
+    // answers truthfully once this resolves — `createRegistry()` ran while the
+    // probe was still out and saw a null (false) result, so this is the call
+    // that actually exposes the `gh`-backed tools.
+    //
+    // The phase marker sits here rather than at the call above so it measures
+    // what the probe still *costs* boot — the residual wait after handler
+    // registration overlapped it — not its total duration.
+    recordStartupPhase('tool-availability')
+    await toolAvailability
+    syncGhTools(registry)
+    syncCiInvestigatorTools(registry)
+
     recordStartupPhase('skills-mcp')
     await initSkillsRegistry()
     registerSkillTools(registry)
@@ -548,6 +625,11 @@ app
     await loadCustomTools(registry)
 
     recordStartupPhase('boot-complete')
+    // Print the boot timeline and flag any phase over its ceiling (#994). Every
+    // expensive thing above scales with something CI does not have — profile
+    // size, workspace size, MCP server count — so this is the one place the
+    // number is observable on a real machine.
+    reportStartupBudget()
     disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)
@@ -558,6 +640,7 @@ let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
+  getAutomationService().stop()
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -576,6 +659,9 @@ app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
+  // The hidden video-decoder window is not the main window, so nothing else
+  // closes it — left open it would keep the app alive past the last quit.
+  closeVideoDecoder()
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true

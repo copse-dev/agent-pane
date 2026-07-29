@@ -67,7 +67,10 @@ export const config: Options.Testrunner = {
   // Four workers keep a growing geometry tier to two startup waves on the
   // standard check runner without approaching the e2e shard's process load.
   maxInstances: 4,
-  specFileRetries: 0,
+  // A Chrome session can occasionally wedge while loading a demo scenario, before the
+  // spec body runs. Retry the whole spec once so WebdriverIO starts a fresh worker;
+  // deterministic failures still fail on the second attempt.
+  specFileRetries: 1,
   logLevel: 'warn',
   bail: 0,
   waitforTimeout: 15_000,
@@ -91,7 +94,11 @@ export const config: Options.Testrunner = {
   ],
   framework: 'mocha',
   reporters: ['spec'],
-  mochaOpts: { ui: 'bdd', timeout: 30_000 },
+  // Match wdio.ci.conf.ts headroom: under CI load the build job runs four
+  // headless Chromes while `check` is still bundling/testing on the same
+  // ~6 GB runner. A mid-suite remount that is fine locally (~1s) can stall
+  // past 30s (develop tip 3f7a2961 / chat-layout-styling.demo.ts).
+  mochaOpts: { ui: 'bdd', timeout: 90_000 },
   onPrepare: startDemoServer,
   onComplete: stopDemoServer,
   before() {

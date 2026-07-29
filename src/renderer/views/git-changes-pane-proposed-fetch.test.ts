@@ -1,12 +1,13 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type * as Monaco from 'monaco-editor'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
 import type { ActiveDiff } from '@shared/types/state.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
+import type { GitDiffEditor, GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Regression: a proposed diff must render even when this pane never received the
 // `agent:show_diff` push carrying its content. The pane mounts a turn after the
@@ -21,11 +22,12 @@ const emptyStatus: GitStatusResult = { staged: [], unstaged: [] }
 interface StubModel {
   value: string
   dispose(): void
+  getValue(): string
   isDisposed(): boolean
 }
 
 interface StubDiffEditor {
-  models: { original: StubModel; modified: StubModel } | null
+  models: ReturnType<GitDiffEditor['getModel']>
   revealLineCalls: number[]
   activeDiffComputations: number
   maxActiveDiffComputations: number
@@ -34,13 +36,16 @@ interface StubDiffEditor {
 function makeMonacoStub(
   capture: { editor: StubDiffEditor | null },
   diffDelayMs: (modifiedValue: string) => number = () => 0,
-): typeof Monaco {
+): GitDiffMonaco {
   const noopEditor = {
     onKeyDown: (): { dispose(): void } => ({ dispose(): void {} }),
+    getModel: (): null => null,
+    getSelection: (): null => null,
   }
   const createModel = (value: string): StubModel => ({
     value,
     dispose(): void {},
+    getValue: () => value,
     isDisposed: () => false,
   })
   return {
@@ -50,12 +55,12 @@ function makeMonacoStub(
       }),
     },
     editor: {
-      createDiffEditor: (): unknown => {
+      createDiffEditor: (): StubDiffEditor & GitDiffEditor => {
         const listeners = new Set<() => void>()
         const notify = (): void => {
           for (const cb of [...listeners]) cb()
         }
-        const self: StubDiffEditor & Record<string, unknown> = {
+        const self: StubDiffEditor & GitDiffEditor = {
           models: null,
           revealLineCalls: [],
           activeDiffComputations: 0,
@@ -81,12 +86,7 @@ function makeMonacoStub(
             }
           },
           getModel: () => self.models,
-          setModel: (
-            models:
-              | { original: StubModel; modified: StubModel }
-              | { model: { original: StubModel; modified: StubModel } }
-              | null,
-          ) => {
+          setModel: (models: Parameters<GitDiffEditor['setModel']>[0]) => {
             if (models && 'model' in models) {
               self.models = models.model
             } else if (models && 'original' in models) {
@@ -97,7 +97,7 @@ function makeMonacoStub(
             // Mirror Monaco: the diff recomputes asynchronously after setModel.
             queueMicrotask(notify)
           },
-          createViewModel: (model: { original: StubModel; modified: StubModel }) => ({
+          createViewModel: (model) => ({
             model,
             waitForDiff: async (): Promise<void> => {
               self.activeDiffComputations++
@@ -106,7 +106,7 @@ function makeMonacoStub(
                 self.activeDiffComputations,
               )
               try {
-                const delayMs = diffDelayMs(model.modified.value)
+                const delayMs = diffDelayMs(model.modified.getValue())
                 if (delayMs > 0) {
                   await new Promise<void>((resolve) => {
                     setTimeout(resolve, delayMs)
@@ -137,8 +137,10 @@ function makeMonacoStub(
         return self
       },
       createModel: (value: string): StubModel => createModel(value),
+      setTheme(): void {},
     },
-  } as unknown as typeof Monaco
+    KeyCode: { KeyL: 42 },
+  }
 }
 
 interface DiffListeners {
@@ -158,33 +160,44 @@ function makeApi(
   listeners?: DiffListeners,
 ): ApiClient {
   const noopUnsub = (): (() => void) => () => {}
-  return {
-    git: {
-      isAvailable: async () => true,
-      status: async () => emptyStatus,
-      fileDiff: async () => null,
-      sessionBackup: async () => null,
-    },
-    diff: {
-      approve: async () => {},
-      reject: async () => {},
-      approveAll: async () => {},
-      rejectAll: async () => {},
-      content: async (_projectId: string, _threadId: string, path: string) => {
-        contentCalls.push(path)
-        return stagedContent[path] ?? null
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      git: {
+        ...base['git'],
+        isAvailable: async () => true,
+        status: async () => emptyStatus,
+        fileDiff: async () => null,
+        sessionBackup: async () => null,
       },
-      onShowDiff: (handler: NonNullable<DiffListeners['showDiff']>) => {
-        if (listeners) listeners.showDiff = handler
-        return noopUnsub()
+      diff: {
+        ...base['diff'],
+        approve: async (): Promise<void> => {},
+        reject: async (): Promise<void> => {},
+        approveAll: async (): Promise<void> => {},
+        rejectAll: async (): Promise<void> => {},
+        content: async (
+          _projectId: string,
+          _threadId: string,
+          path: string,
+        ): Promise<ActiveDiff | null> => {
+          contentCalls.push(path)
+          return stagedContent[path] ?? null
+        },
+        onShowDiff: (handler: NonNullable<DiffListeners['showDiff']>): (() => void) => {
+          if (listeners) listeners.showDiff = handler
+          return noopUnsub()
+        },
+        onQueued: noopUnsub,
+        onConflict: noopUnsub,
       },
-      onQueued: noopUnsub(),
-      onConflict: noopUnsub(),
-    },
-    fs: {
-      onChanged: noopUnsub(),
-    },
-  } as unknown as ApiClient
+      fs: {
+        ...base['fs'],
+        onChanged: noopUnsub,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 before(() => {
@@ -243,7 +256,7 @@ async function waitForModifiedValue(
 ): Promise<void> {
   const deadline = Date.now() + 2_000
   while (Date.now() < deadline) {
-    if (capture.editor?.models?.modified.value === expected) return
+    if (capture.editor?.models?.modified.getValue() === expected) return
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 5)
     })
@@ -281,8 +294,8 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
     assert.deepEqual(contentCalls, ['x.ts'], 'should fetch the uncached proposed content once')
     const models = capture.editor?.models
     assert.ok(models, 'diff editor should have a model set')
-    assert.equal(models.original.value, 'old\n', 'before content rendered')
-    assert.equal(models.modified.value, 'new\n', 'after content rendered')
+    assert.equal(models.original.getValue(), 'old\n', 'before content rendered')
+    assert.equal(models.modified.getValue(), 'new\n', 'after content rendered')
     assert.ok(
       (capture.editor?.revealLineCalls.length ?? 0) >= 1,
       'should reveal the first change after the model is ready',
@@ -364,8 +377,8 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
     await waitForModifiedValue(capture, 'a-after\n')
     const models = capture.editor?.models
     assert.ok(models, 'expected thread-a models to be restored')
-    assert.equal(models.original.value, 'a-before\n')
-    assert.equal(models.modified.value, 'a-after\n')
+    assert.equal(models.original.getValue(), 'a-before\n')
+    assert.equal(models.modified.getValue(), 'a-after\n')
   })
 
   it('serializes proposed model computation and only attaches the latest selection', async () => {
@@ -426,7 +439,7 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
       1,
       'Monaco view-model computations must not overlap',
     )
-    assert.equal(models.original.value, 'fast-before\n')
-    assert.equal(models.modified.value, 'fast-after\n')
+    assert.equal(models.original.getValue(), 'fast-before\n')
+    assert.equal(models.modified.getValue(), 'fast-after\n')
   })
 })

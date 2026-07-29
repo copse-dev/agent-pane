@@ -26,10 +26,14 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
+import { runWithAcpBridgePermissionContext } from '../acp/acp-bridge-permission-context.ts'
 import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
 } from '../mcp/custom-tools-registry.ts'
+import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 
 describe('isStructurallyReadOnlyShellCommand', () => {
   it('accepts simple read commands and read-only pipelines', () => {
@@ -167,6 +171,36 @@ describe('ensureToolPermitted', () => {
           autoRun: true,
           networkScopeAlreadyApplies: true,
         }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('shares the active network scope with sandboxed ACP bridge shell calls', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/acp-bridge-network-scope-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+    })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, () =>
+          ensureShellCommandPermitted('git status --short', {
+            sandboxEnabled: true,
+            autoRun: true,
+          }),
+        ),
         true,
       )
       assert.equal(prompted, false)
@@ -359,6 +393,45 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
+    }
+  })
+
+  // Issue #1190: the loopback port-binding relaxation is an authority the
+  // `copse.background-tasks` pack DECLARES. The gate resolves it through the pack
+  // registry, so it is grantable ONLY while the pack declares it — disabling the
+  // pack revokes the relaxation in one flag flip.
+  it('only offers the loopback grant while the background-tasks pack declares it', async () => {
+    setPermissionGateForTests(null)
+    // A fresh first-party seed enables every pack (default-OFF is a pack-service
+    // migration concern, not the raw seed), so background-tasks declares
+    // loopback-bind here.
+    const registry = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(registry)
+    const restore = setWorkspaceRootForTest('/tmp/loopback-gated-project')
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    try {
+      const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
+      // Pack enabled → the relaxation is declared → the grant is offered and, on
+      // approval, the start proceeds.
+      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
+
+      // Disable the pack → `isPermissionDeclared('loopback-bind')` flips false in
+      // the same flag flip, so the gate refuses the relaxation (a thrown error
+      // surfaces the reason to the agent). The task could still run without
+      // allow_port_binding.
+      registry.disable(BACKGROUND_TASKS_PACK_ID)
+      await assert.rejects(
+        () =>
+          ensureToolPermitted({
+            toolName: 'run_background',
+            args: { action: 'start', command: 'npm run dev', allow_port_binding: true },
+          }),
+        /copse\.background-tasks|loopback|disabled/i,
+      )
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      setDefaultPackRegistry(null)
     }
   })
 })

@@ -4,6 +4,8 @@
  * facing text is rendered here so it can be unit-tested without Electron.
  */
 
+import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
+
 export interface AxNode {
   /** ARIA-ish role (heading, link, button, textbox, text, …). */
   role: string
@@ -22,6 +24,35 @@ export interface PageSnapshot {
   url: string
   nodes: AxNode[]
   truncated?: boolean
+}
+
+export function parsePageSnapshot(value: unknown): PageSnapshot {
+  if (!isRecord(value)) throw new TypeError('Browser snapshot must be an object')
+  const title = value['title']
+  const url = value['url']
+  if (typeof title !== 'string' || typeof url !== 'string') {
+    throw new TypeError('Browser snapshot must include a title and URL')
+  }
+  const nodes: AxNode[] = []
+  for (const rawNode of recordArrayOrEmpty(value['nodes'])) {
+    const role = rawNode['role']
+    const name = rawNode['name']
+    const depth = rawNode['depth']
+    if (typeof role !== 'string' || typeof name !== 'string' || typeof depth !== 'number') continue
+    nodes.push({
+      role,
+      name,
+      depth,
+      ...(typeof rawNode['ref'] === 'string' ? { ref: rawNode['ref'] } : {}),
+      ...(typeof rawNode['value'] === 'string' ? { value: rawNode['value'] } : {}),
+    })
+  }
+  return {
+    title,
+    url,
+    nodes,
+    ...(typeof value['truncated'] === 'boolean' ? { truncated: value['truncated'] } : {}),
+  }
 }
 
 function quote(text: string): string {

@@ -40,6 +40,11 @@ import {
   type SchemaNode,
   type UnknownFieldFinding,
 } from '../packages/plan-usage/src/index.ts'
+import {
+  expectRecord,
+  firstNonEmptyString,
+  nonEmptyStringOr,
+} from '../src/shared/unknown-value.mts'
 
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
@@ -127,6 +132,10 @@ const PROVIDERS: ReadonlyArray<'all' | PlanProviderId> = [
   'cursor',
 ]
 
+function isRequestedProvider(value: unknown): value is Args['provider'] {
+  return typeof value === 'string' && PROVIDERS.some((provider) => provider === value)
+}
+
 function parseArgs(argv: string[]): Args {
   const args: Args = {
     provider: 'all',
@@ -144,12 +153,12 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--no-strict') args.strict = false
     else if (arg === '--provider') {
       const value = argv[++i]
-      if (!PROVIDERS.includes(value as (typeof PROVIDERS)[number])) {
+      if (!isRequestedProvider(value)) {
         throw new Error(
           `--provider must be all|claude|codex|huggingface|cursor (got ${String(value)})`,
         )
       }
-      args.provider = value as Args['provider']
+      args.provider = value
     } else if (arg === '--fixture') {
       const value = argv[++i]
       if (!value) throw new Error('--fixture requires a path')
@@ -209,18 +218,18 @@ function readHuggingFaceTokenFromSettings(): {
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
     return { token: null, encryptedPresent: false }
   }
-  const root = settings as Record<string, unknown>
+  const root = expectRecord(settings)
   const apiKeyRoot = root['apiKey']
   const nested =
     apiKeyRoot && typeof apiKeyRoot === 'object' && !Array.isArray(apiKeyRoot)
-      ? (apiKeyRoot as Record<string, unknown>)['huggingface']
+      ? expectRecord(apiKeyRoot)['huggingface']
       : undefined
   const flat = root['apiKey.huggingface']
   const record = nested ?? flat
   if (!record || typeof record !== 'object' || Array.isArray(record)) {
     return { token: null, encryptedPresent: false }
   }
-  const stored = record as Record<string, unknown>
+  const stored = expectRecord(record)
   const enc = stored['enc']
   if (typeof enc !== 'string' || !enc) {
     return { token: null, encryptedPresent: false }
@@ -241,10 +250,16 @@ function discoverHuggingFaceToken(): {
   settingsEncrypted: boolean
 } {
   const fromEnv =
-    process.env['HF_TOKEN']?.trim() || process.env['HUGGINGFACE_API_KEY']?.trim() || null
+    firstNonEmptyString(
+      process.env['HF_TOKEN']?.trim(),
+      process.env['HUGGINGFACE_API_KEY']?.trim(),
+    ) ?? null
   if (fromEnv) return { token: fromEnv, settingsEncrypted: false }
 
-  const home = process.env['HF_HOME']?.trim() || join(homedir(), '.cache', 'huggingface')
+  const home = nonEmptyStringOr(
+    process.env['HF_HOME']?.trim(),
+    join(homedir(), '.cache', 'huggingface'),
+  )
   try {
     const fromFile = parseHuggingFaceToken(readFileSync(join(home, 'token'), 'utf8'))
     if (fromFile) return { token: fromFile, settingsEncrypted: false }
@@ -261,10 +276,12 @@ function discoverHuggingFaceToken(): {
 
 function discoverCursorSessionToken(): string | null {
   return (
-    parseCursorSessionToken(process.env['CURSOR_SESSION_TOKEN'] ?? null) ||
-    parseCursorSessionToken(process.env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null) ||
-    readCursorKeychainAccessToken() ||
-    readCursorAccessTokenFromStateDb()
+    firstNonEmptyString(
+      parseCursorSessionToken(process.env['CURSOR_SESSION_TOKEN'] ?? null),
+      parseCursorSessionToken(process.env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null),
+      readCursorKeychainAccessToken(),
+      readCursorAccessTokenFromStateDb(),
+    ) ?? null
   )
 }
 

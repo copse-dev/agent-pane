@@ -68,6 +68,25 @@ describe('sshExecArgs / ControlPath', () => {
     },
   )
 
+  it(
+    'persists the multiplexed master well past a pause between agent turns',
+    {
+      skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
+    },
+    () => {
+      // A short ControlPersist means the next command re-authenticates — a
+      // password dialog on password-auth hosts. Keepalives bound the other
+      // direction: a master whose peer vanished must die, not hang.
+      const args = sshExecArgs(host, 'true')
+      const persist = args.find((arg) => arg.startsWith('ControlPersist='))
+      assert.ok(persist, 'expected a ControlPersist option')
+      const seconds = Number.parseInt(persist.split('=')[1] ?? '', 10)
+      assert.ok(seconds >= 3600, `ControlPersist too short for a work session: ${persist}`)
+      assert.ok(args.some((arg) => arg.startsWith('ServerAliveInterval=')))
+      assert.ok(args.some((arg) => arg.startsWith('ServerAliveCountMax=')))
+    },
+  )
+
   it('does not emit -p/-i/user@ when host only has an ssh-config alias', () => {
     // Imported ProxyCommand hosts must be invoked as the bare alias so OpenSSH
     // applies Port/User/IdentityFile/ProxyCommand from ~/.ssh/config.
