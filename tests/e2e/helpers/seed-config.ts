@@ -130,9 +130,11 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
 export function writeSeedConfig(config: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
+  const seededProjectIds = new Set<string>()
   for (const [key, value] of Object.entries(config)) {
     const match = /^threads:(.+)$/.exec(key)
     if (match && Array.isArray(value)) {
+      seededProjectIds.add(match[1])
       for (const thread of value) {
         seedThreadDir(match[1], thread as Record<string, unknown>)
       }
@@ -141,6 +143,12 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
     }
   }
   writeFileSync(CONFIG_PATH, JSON.stringify(remaining), 'utf8')
+  // The app process that exists before a fixture calls reloadSession() can
+  // already have created an empty derived catalog. Remove it after writing the
+  // seed so the replacement process rebuilds from the thread directories.
+  for (const projectId of seededProjectIds) {
+    rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
+  }
 }
 
 export function resetUserData(): void {
