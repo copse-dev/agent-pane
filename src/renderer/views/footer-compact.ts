@@ -2,14 +2,21 @@ const SHRINKING_FOOTER_ITEMS = '.footer-model-host, .footer-branch-host, .footer
 
 function footerNaturalWidth(footer: HTMLElement): number {
   const items = footer.querySelectorAll<HTMLElement>(SHRINKING_FOOTER_ITEMS)
-  const prev = [...items].map((el) => el.style.flexShrink)
+  const previousShrink = [...items].map((el) => el.style.flexShrink)
+  const usage = footer.querySelector<HTMLElement>('.footer-usage')
+  const previousUsageDisplay = usage?.style.display
+
   items.forEach((el) => {
     el.style.flexShrink = '0'
   })
+  if (usage) usage.style.display = 'inline'
+
   const width = footer.scrollWidth
+
   items.forEach((el, index) => {
-    el.style.flexShrink = prev[index] ?? ''
+    el.style.flexShrink = previousShrink[index] ?? ''
   })
+  if (usage) usage.style.display = previousUsageDisplay ?? ''
   return width
 }
 
@@ -31,9 +38,8 @@ export function bindFooterCompactLayout(
   const sync = (): void => {
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(() => {
-      footer.classList.remove('is-compact')
       const nextCompact = footerNeedsCompact(footer)
-      if (nextCompact) footer.classList.add('is-compact')
+      footer.classList.toggle('is-compact', nextCompact)
       if (nextCompact !== compact) {
         compact = nextCompact
         onChange?.(compact)
