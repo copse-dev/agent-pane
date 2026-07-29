@@ -1,10 +1,10 @@
 import { errorMessage } from '@shared/errors.ts'
-import { BrowserWindow, app } from 'electron'
+import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { getAgentBrowserSession } from '../../windows/browser-web-contents.ts'
 import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -13,6 +13,22 @@ const DEFAULT_HEIGHT = 800
 interface Tab {
   id: string
   window: BrowserWindow
+}
+
+export interface BrowserSessionPlatform {
+  createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
+  getAgentSession(): Session
+}
+
+let platform: BrowserSessionPlatform | null = null
+
+export function setBrowserSessionPlatform(next: BrowserSessionPlatform | null): void {
+  platform = next
+}
+
+function requirePlatform(): BrowserSessionPlatform {
+  if (!platform) throw new Error('Browser tools require the Electron browser-session platform.')
+  return platform
 }
 
 export interface NavigateResult {
@@ -42,7 +58,8 @@ export class BrowserSessionManager {
       throw new Error(`browser tab limit reached (${String(MAX_TABS)}); close a tab first`)
     }
     const id = `tab-${String(++this.counter)}`
-    const window = new BrowserWindow({
+    const browserPlatform = requirePlatform()
+    const window = browserPlatform.createWindow({
       show: false,
       width: DEFAULT_WIDTH,
       height: DEFAULT_HEIGHT,
@@ -52,7 +69,7 @@ export class BrowserSessionManager {
         // cookies/storage and the user never browses under the agent (#467).
         // Still recognized by isBrowserWebContents, so guest lockdown — not the
         // renderer lockdown meant for app pages — applies to these tabs.
-        session: getAgentBrowserSession(),
+        session: browserPlatform.getAgentSession(),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -116,7 +133,7 @@ export class BrowserSessionManager {
   async screenshot(viewId?: string): Promise<{ path: string; viewId: string }> {
     const tab = this.resolveTab(viewId)
     const image = await tab.window.webContents.capturePage()
-    const dir = join(app.getPath('userData'), 'browser-screenshots')
+    const dir = join(getElectronUserDataPath(), 'browser-screenshots')
     await mkdir(dir, { recursive: true })
     const path = join(dir, `${tab.id}-${String(Date.now())}.png`)
     await writeFile(path, image.toPNG())

@@ -6,7 +6,6 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import * as fs from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { app } from 'electron'
 import { z } from 'zod'
 import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
@@ -37,6 +36,7 @@ import {
   resolvePluginMcpConfigPath,
 } from '../skills/cursor-plugins.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -127,7 +127,7 @@ function projectMcpSourcePaths(workspace: string): string[] {
 }
 
 function userMcpSourcePaths(): string[] {
-  return [join(homedir(), '.cursor', 'mcp.json'), join(app.getPath('userData'), 'mcp.json')]
+  return [join(homedir(), '.cursor', 'mcp.json'), join(getElectronUserDataPath(), 'mcp.json')]
 }
 
 async function readPluginMcpConfigs(): Promise<McpServerConfig[]> {
@@ -197,7 +197,7 @@ function isUserMcpSource(source: string | undefined): boolean {
   return (
     source === CURATED_MCP_SOURCE ||
     source === join(homedir(), '.cursor', 'mcp.json') ||
-    source === join(app.getPath('userData'), 'mcp.json') ||
+    source === join(getElectronUserDataPath(), 'mcp.json') ||
     isCursorPluginMcpSource(source)
   )
 }

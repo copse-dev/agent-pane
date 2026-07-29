@@ -1,5 +1,4 @@
-import type { BrowserWindow } from 'electron'
-import { app, ipcMain } from 'electron'
+import type { BrowserWindow, IpcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import {
   approvalRespondSchema,
@@ -302,7 +301,7 @@ export function startDockAttention(dock: DockAttention | undefined): () => void 
   }
 }
 
-export function initApproval(win: BrowserWindow): void {
+export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAttention): void {
   const pending = new Map<string, (response: ApprovalResponse) => void>()
   const settle = (id: string, response: ApprovalResponse): void => {
     const resolve = pending.get(id)
@@ -350,7 +349,7 @@ export function initApproval(win: BrowserWindow): void {
         // Bounce the dock until the user returns to answer (macOS only; app.dock
         // is undefined elsewhere). macOS auto-stops the bounce on focus, and we
         // also stop it when the approval settles for any reason.
-        const stopDockAttention = startDockAttention(app.dock)
+        const stopDockAttention = startDockAttention(dock)
         // No wall-clock timeout: the prompt stays until the user answers, the
         // window closes, or the caller's abort signal fires (Stop / cancel).
         // Auto-deny after 5 minutes previously let the agent keep turning under
