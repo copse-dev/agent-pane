@@ -31,7 +31,7 @@ describes it to the agent, so changing the layout means updating that preamble.
     audit.jsonl                      # append-only lifecycle transitions
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
-    events.jsonl                     # append-only spine: message + hook/audit lines
+    events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
@@ -40,6 +40,11 @@ describes it to the agent, so changing the layout means updating that preamble.
     blobs/<hookRunId>.stdout.txt     # raw hook stdout (command hooks)
     blobs/<hookRunId>.stderr.txt     # raw hook stderr (command hooks)
     blobs/toolset-<hash>.json        # content-addressed toolset fingerprint (deduped)
+    plans/<planId>/                  # Plan Mode artifacts (issue #1080); optional
+      meta.json                      # plan identity, status, current revision
+      revision-<n>.md                # versioned plan body (markdown)
+      comments.json                  # inline comments on revisions
+      approval.json                  # present after approve (revision + profile + hash)
     subagents/<subagentId>/          # nested subagent session, same structure recursively
 ```
 
@@ -55,7 +60,7 @@ describes it to the agent, so changing the layout means updating that preamble.
   pure reconcile only.
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
-  (plus interleaved `hook_run` and `permission_decision` observability lines, below), oldest first. It is
+  (plus interleaved `hook_run`, `permission_decision` and Plan Mode `plan` lifecycle lines, below), oldest first. It is
   the source of ordering and structure; prose and large/opaque content live in
   referenced files (`messages/*.md`, `blobs/*`) so a draft keystroke rewrites
   one tiny file, not the whole thread.
@@ -75,7 +80,9 @@ describes it to the agent, so changing the layout means updating that preamble.
   trimming replaces the whole file via an atomic write. Corrupt JSON, a missing
   file, or an unsupported future `v` fail closed to fresh provider history
   without damaging the human transcript in `events.jsonl` / `messages/`. Do not
-  log history values.
+  log history values. Legacy electron-store keys `llm-history:<threadId>` are
+  migrated once at startup (after legacy thread import, before the first window)
+  when ownership resolves to exactly one `(projectId, threadId)`.
 
 ## Spine line schema
 
@@ -182,6 +189,16 @@ Guarded YOLO shell authorization appends a host-owned audit line after each
 allow/prompt/deny result. This is observability only: a failed append is logged but
 cannot weaken or change the authorization result.
 
+## Plan lifecycle line schema (`type: "plan"`)
+
+Plan Mode artifacts (issue [#1080](https://github.com/copse-dev/agent-pane/issues/1080),
+contract in [`plans/plan-mode-and-rewind.md`](./plans/plan-mode-and-rewind.md))
+are thread-owned under `plans/<planId>/`. Each lifecycle transition appends one
+spine line after the referenced files exist (same commit-point rule as messages
+and hook runs). Zod source of truth:
+[`plan-schema.ts`](../src/shared/threads/plan-schema.ts); published mirror:
+[`schemas/copse-plan.schema.json`](../schemas/copse-plan.schema.json).
+
 ```jsonc
 {
   "v": 1,
@@ -205,6 +222,29 @@ cannot weaken or change the authorization result.
 Like `hook_run`, these lines are skipped by transcript folding/export, preserved
 verbatim through full saves, and remain readable for audits even after the
 session-only capability expires.
+"type": "plan",
+"action": "create" | "revise" | "comment" | "approve" | "abandon",
+"id": "<eventId>",
+"planId": "<planId>",
+"revision": 2, // when the action touches a revision
+"createdAt": 1712345678901,
+"artifact": { "ref": "plans/<planId>/revision-2.md", "sha256": "…" }, // create/revise/approve
+"commentId": "<commentId>", // comment
+"executionProfileId": "implementation", // approve
+"contentHash": "<hex sha256 of body>" // approve
+}
+
+```
+
+- **Human-readable artifacts.** Revision bodies are markdown files; `meta.json`,
+  `comments.json`, and `approval.json` are small JSON validated by the zod
+  schemas. Plan drafts stay in the thread directory — not project knowledge —
+  unless the user explicitly promotes them (#1068).
+- **Forward tolerance.** `parseSpine` skips non-`message` lines, so plan events
+  are invisible to fold/display until a consumer reads them explicitly.
+- **Full-save refs.** `rebuildSpinePreservingNonMessageLines` keeps `plan` lines
+  and exempts their `artifact.ref` paths from stale-file pruning (same as
+  `hook_run` blobs).
 
 ## Catalog
 
@@ -222,3 +262,4 @@ thread directories.
 `thread` header line then one `message` line per message, using the **same field
 names** as the spine but **inlining** the values the spine stores as refs (prose,
 tool results, full nested subagents) so the export is one portable file.
+```

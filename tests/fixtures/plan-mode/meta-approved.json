@@ -1,0 +1,13 @@
+{
+  "planId": "plan-auth-retry",
+  "threadId": "thread-fixture-1",
+  "title": "Add auth retry with backoff",
+  "status": "approved",
+  "currentRevision": 2,
+  "createdAt": 1720000000000,
+  "updatedAt": 1720000005000,
+  "approvedAt": 1720000005000,
+  "approvedRevision": 2,
+  "executionProfileId": "implementation",
+  "contentHash": "PLACEHOLDER_FILLED_BY_TEST"
+}
