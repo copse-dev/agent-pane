@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
+import { workspaceRoot as copseStoreRoot } from './storage/copse-paths.ts'
 import { getActivePathBackend } from './workspace-fs/get-path-backend.ts'
 import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
 import type { PathBackend } from './workspace-fs/path-backend.ts'
@@ -444,8 +444,7 @@ export async function resolvePathWithinRoot(
  * existing file tools, never write to them.
  */
 function chatStoreDir(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  return override && override.length > 0 ? override : join(homedir(), '.copse', 'workspace')
+  return copseStoreRoot()
 }
 
 /** Sync chat-store root for seatbelt overlay assembly (overlay builder stays sync). */

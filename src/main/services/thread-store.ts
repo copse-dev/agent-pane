@@ -10,7 +10,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
   LLMMessage,
@@ -51,6 +50,7 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { storageGet } from './storage/storage.ts'
+import { projectStoreDir, workspaceRoot } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**
@@ -85,21 +85,10 @@ const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
-/** Root of the chat store. `COPSE_WORKSPACE_DIR` overrides it (tests, relocation). */
-function workspaceRoot(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  if (override) return override
-  return join(homedir(), '.copse', 'workspace')
-}
+const projectDir = projectStoreDir
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
-export function chatStoreRoot(): string {
-  return workspaceRoot()
-}
-
-function projectDir(projectId: string): string {
-  return join(workspaceRoot(), projectId)
-}
+export const chatStoreRoot = workspaceRoot
 
 function threadDir(projectId: string, threadId: string): string {
   return join(projectDir(projectId), threadId)
@@ -998,8 +987,8 @@ export function agentHistoryExists(projectId: string, threadId: string): Promise
 
 /**
  * Project store ids that own a thread directory for `threadId` (have
- * `meta.json`). Resolves a bare thread id to the project that holds it when the
- * caller has no project context.
+ * `meta.json`). Used by the #993 legacy `llm-history:*` migration to resolve
+ * exactly one owner before writing a sidecar.
  */
 export function findThreadOwners(threadId: string): Promise<string[]> {
   return runSerialized('thread-store:owners', () => {
