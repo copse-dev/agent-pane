@@ -20,9 +20,9 @@ describe('@-reference past threads (#644)', () => {
   })
 
   it('shows past threads in the @ picker and attaches a thread chip on select', async () => {
-    // Empty query after `@` still resolves via a shared token in the seeded
-    // thread titles/digests ("the"), which keeps the file list short too.
-    await setComposerValue('@the')
+    // Filter on the seeded title so this interaction test does not also depend
+    // on catalog digest extraction (covered by thread-store unit tests).
+    await setComposerValue('@auth')
 
     const threadItem = await $('.mention-picker .mention-item-thread')
     await threadItem.waitForDisplayed({ timeout: 10_000 })
