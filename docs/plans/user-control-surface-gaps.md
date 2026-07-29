@@ -35,7 +35,12 @@ building surface, not engine.
 
 The audit was done by reading `src/`, `packages/`, and `docs/`. It is not
 runtime-verified, so anything marked missing could be a false negative under vocabulary
-the audit did not guess. Three items are flagged for re-checking before work starts:
+the audit did not guess. Findings were re-checked against `develop` on 2026-07-29 after a
+rebase: no cited issue had closed, and the load-bearing claims still hold — nothing in
+`src/main` constructs a `Notification`, `ThreadStatus` is still `idle | running | error`,
+`before-quit` is still cleanup-only, and no hyperparameter reaches the settings surface.
+
+Three items are flagged for re-checking before work starts:
 
 - **Pending-approval persistence** — the thread store already keeps an append-only event
   log per thread, so the durable half may exist and only the restore path be missing.
@@ -224,7 +229,7 @@ leads Phase 2 on a dependency.
 - **R-07 — Pending tool calls persist across restart.** Verify first; if a pending
   approval does not survive a quit, file it as a data-loss defect. Sequence behind #1153
   and #1222.
-- **R-08 — Confirm before quitting with active chats.** `src/main/index.ts:609`'s
+- **R-08 — Confirm before quitting with active chats.** `src/main/index.ts:658`'s
   `before-quit` is cleanup-only. Fix `a6bb72a1` first — a confirmation on top of a slow
   stop makes quitting worse. `7f284ad5` is the same family.
 - **R-09 — "Use my existing subscription" onboarding.** Already works technically; not
