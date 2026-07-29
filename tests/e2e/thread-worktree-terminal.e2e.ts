@@ -151,10 +151,10 @@ describe('isolated thread terminal cwd', () => {
     const changesBtn = await $('#titlebar .titlebar-btn[aria-label="Open changes"]')
     await changesBtn.click()
 
-    await browser.waitUntil(
-      async () => (await gitChangePaths()).includes('worktree-only.md'),
-      { timeout: 30_000, timeoutMsg: 'expected the worktree-only change in the Changes pane' },
-    )
+    await browser.waitUntil(async () => (await gitChangePaths()).includes('worktree-only.md'), {
+      timeout: 30_000,
+      timeoutMsg: 'expected the worktree-only change in the Changes pane',
+    })
     assert.ok(!(await gitChangePaths()).includes('project-only.md'))
     await expect(changesBtn).toHaveElementClass('active')
   })
