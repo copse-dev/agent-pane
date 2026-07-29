@@ -119,6 +119,13 @@ and unknown fields, and **skips any non-`message` line**, for forward
 compatibility. The round-trip is 1:1:
 `foldThread(explodeThread(messages)) === messages`.
 
+A finalized message may be written again with the same id when a late ACP tool
+update supplies its arguments, response, or terminal status (including an update
+that arrives between turns). The writer replaces that message's spine line in
+place without reordering history, and rewrites its referenced result blob before
+the spine commit. In-progress tools are not re-finalized because v1 deliberately
+persists only terminal `done` / `error` tool states.
+
 ## Hook-run line schema (`type: "hook_run"`)
 
 Always-on spine recording of hook executions — decision 6 of

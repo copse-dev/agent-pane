@@ -112,7 +112,7 @@ describe('acp between-turn updates (issue #588)', () => {
       result: 'found 2 issues',
       isError: false,
     })
-    await until(() => chunks.some((c) => c.type === 'tool_result'))
+    await until(() => chunks.some((c) => c.type === 'tool_call_update'))
 
     const idle = chunks.slice(idleChunkCount)
     assert.deepEqual(
@@ -120,8 +120,66 @@ describe('acp between-turn updates (issue #588)', () => {
       { id: 'bg1', name: 'background_review', args: { scope: 'diff' } },
       'the background tool call must surface while idle',
     )
-    const result = idle.find((c) => c.type === 'tool_result')
+    const result = idle.find((c) => c.type === 'tool_call_update')
     assert.equal(result?.result, 'found 2 issues')
+  })
+
+  it('surfaces arguments carried only by a permission request', async () => {
+    const runner: AcpTurnRunner = async (ctx) => {
+      // Codex-style ACP notifications can announce the tool with no raw input,
+      // then provide the authoritative arguments only when asking permission.
+      await ctx.emit({
+        type: 'tool_call',
+        toolCall: { id: 'shell1', name: 'run_shell', args: {} },
+      })
+      const decision = await ctx.requestPermission({
+        toolCallId: 'shell1',
+        title: 'mcp.copse.run_shell',
+        rawInput: { command: 'npm run check', timeout_ms: 120_000 },
+      })
+      assert.equal(decision, 'allow')
+      await ctx.emit({
+        type: 'tool_result',
+        toolCallId: 'shell1',
+        result: 'checks passed',
+        isError: false,
+      })
+      return { stopReason: 'end_turn' }
+    }
+    const { entry } = await acquireAcpSession({
+      threadId: 'permission-input',
+      config: CONFIG,
+      createTransport: runnerTransport(runner),
+    })
+    const chunks: StreamChunk[] = []
+    entry.open.handlers.current = {
+      ...sink(chunks),
+      requestPermission: (): ReturnType<AcpClientHandlers['requestPermission']> =>
+        Promise.resolve({ outcome: { outcome: 'selected' as const, optionId: 'allow' } }),
+    }
+
+    const turn = await runAcpSessionPrompt(entry.open, 'run checks', undefined)
+    assert.equal(turn.stopReason, 'end_turn')
+    await until(() =>
+      chunks.some((chunk) => chunk.type === 'tool_call_update' && chunk.result === 'checks passed'),
+    )
+
+    const toolCallIndex = chunks.findIndex((chunk) => chunk.type === 'tool_call')
+    const argumentUpdateIndex = chunks.findIndex(
+      (chunk) => chunk.type === 'tool_call_update' && chunk.args !== undefined,
+    )
+    const resultUpdateIndex = chunks.findIndex(
+      (chunk) => chunk.type === 'tool_call_update' && chunk.result === 'checks passed',
+    )
+    assert.ok(toolCallIndex >= 0)
+    assert.ok(argumentUpdateIndex > toolCallIndex)
+    assert.ok(resultUpdateIndex > argumentUpdateIndex)
+    const argumentUpdate = chunks[argumentUpdateIndex]
+    assert.ok(argumentUpdate?.type === 'tool_call_update')
+    assert.deepEqual(argumentUpdate.args, {
+      command: 'npm run check',
+      timeout_ms: 120_000,
+    })
   })
 
   it('keeps between-turn updates suppressed after a cancelled turn, until the next turn', async () => {
