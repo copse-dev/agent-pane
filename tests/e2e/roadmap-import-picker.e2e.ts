@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -9,13 +12,25 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 // the global label { flex-direction: column } rule). Uses the mock GitHub
 // backend's open-issue fixtures (#41, #52).
 describe('roadmap import picker', () => {
+  let workspaceRoot: string | undefined
+
   before(async function () {
     this.timeout(120_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    // Real repo root so getGithubRepoSlug() resolves an origin for openIssues.
-    seedEmptyProject(process.cwd(), 'e2e-roadmap-import', {
+    // Keep .git inside the seeded workspace. The source checkout may itself be
+    // a linked worktree whose external gitdir is correctly hidden by the app's
+    // project sandbox, which would make origin detection environment-dependent.
+    workspaceRoot = join(tmpdir(), 'copse-roadmap-import-workspace')
+    rmSync(workspaceRoot, { recursive: true, force: true })
+    mkdirSync(workspaceRoot, { recursive: true })
+    execFileSync('git', ['init', '-q'], { cwd: workspaceRoot, stdio: 'pipe' })
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/copse-mock/demo.git'], {
+      cwd: workspaceRoot,
+      stdio: 'pipe',
+    })
+    seedEmptyProject(workspaceRoot, 'e2e-roadmap-import', {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
     })
@@ -24,6 +39,7 @@ describe('roadmap import picker', () => {
 
   after(() => {
     resetUserData()
+    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('lists open issues with inline checkboxes', async function () {
