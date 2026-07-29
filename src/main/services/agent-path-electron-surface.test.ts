@@ -1,51 +1,18 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { dirname, join, normalize } from 'node:path'
 import { describe, it } from 'node:test'
 
 // Benchmarks reach the model through their own bridge rather than the path a
 // user's work takes (#1272), and the first thing blocking a shared path is that
 // the product's own agent construction cannot be imported without Electron
-// (#1313). This pins that surface so it can only shrink.
-//
-// A count alone would not do: an edge removed here and re-added there nets to
-// zero. Pinning the exact set makes both directions visible.
+// (#1313). This pins the runtime surface at zero. Type-only Electron imports
+// are harmless here: TypeScript erases them, so Node never resolves Electron.
 
 const ROOTS = [
   'src/main/services/registry-bootstrap.ts',
   'src/main/services/agent-system-prompt.ts',
-]
-
-/**
- * Files reachable from the roots that import Electron directly. Each one is
- * either a feature a headless caller does not need, a prompt no headless caller
- * can answer, or a layering slip. Removing one is progress on #1313 — update
- * this list when you do.
- */
-const ELECTRON_SURFACE = [
-  // Prompts a human. A non-interactive run never reaches these.
-  'src/main/services/approval.ts',
-  'src/main/services/ask-user.ts',
-  'src/main/services/ssh-workspace/ssh-prompt.ts',
-  // Optional features, each behind an enablement check already.
-  'src/main/services/browser/session-manager.ts',
-  'src/main/services/diagnostics/checkup.ts',
-  'src/main/services/mcp/custom-tools-registry.ts',
-  'src/main/services/mcp/mcp-registry.ts',
-  'src/main/services/search/semantic-index.ts',
-  'src/main/services/video/video-decoder.ts',
-  // Renderer plumbing pulled in by the file tools; 7 importers, so the fix is
-  // to make the module Electron-free rather than to cut the edges.
-  'src/main/services/diff-queue.ts',
-  'src/main/ipc/ipc-guards.ts',
-  // Window/UI, reachable only through the three above. Layering slips rather
-  // than things a tool genuinely needs.
-  'src/main/app-icon.ts',
-  'src/main/windows/app-frames.ts',
-  'src/main/windows/boot-theme.ts',
-  'src/main/windows/browser-web-contents.ts',
-  'src/main/windows/create-main-window.ts',
-  'src/main/windows/web-contents-lockdown.ts',
 ]
 
 const ALIASES: [string, string][] = [
@@ -66,25 +33,49 @@ function resolveImport(specifier: string, from: string): string | null {
   return existsSync(path) ? path : null
 }
 
-function electronImporters(roots: string[]): string[] {
+interface StaticImport {
+  specifier: string
+  typeOnly: boolean
+}
+
+function staticImports(source: string): StaticImport[] {
+  const imports: StaticImport[] = []
+  const pattern = /import\s+['"]([^'"]+)['"]|import\s+(type\s+)?[\s\S]*?\sfrom\s+['"]([^'"]+)['"]/g
+  for (const match of source.matchAll(pattern)) {
+    const sideEffectSpecifier = match[1]
+    const fromSpecifier = match[3]
+    const specifier = sideEffectSpecifier ?? fromSpecifier
+    if (specifier !== undefined) {
+      imports.push({
+        specifier,
+        typeOnly: sideEffectSpecifier === undefined && match[2] !== undefined,
+      })
+    }
+  }
+  return imports
+}
+
+function electronImportPaths(roots: string[]): string[] {
   const seen = new Set(roots)
-  const queue = [...roots]
+  const queue = roots.map((file) => ({ file, path: [file] }))
   const found: string[] = []
   while (queue.length > 0) {
-    const file = queue.shift()
-    if (file === undefined) break
+    const current = queue.shift()
+    if (current === undefined) break
+    const { file, path } = current
     let source: string
     try {
       source = readFileSync(file, 'utf8')
     } catch {
       continue
     }
-    if (/from 'electron'/.test(source)) found.push(file)
-    for (const match of source.matchAll(/from '([^']+)'/g)) {
-      const resolved = resolveImport(match[1] ?? '', file)
+    const imports = staticImports(source).filter((entry) => !entry.typeOnly)
+    if (imports.some((entry) => entry.specifier === 'electron')) found.push(path.join(' -> '))
+    for (const entry of imports) {
+      const resolved = resolveImport(entry.specifier, file)
       if (resolved !== null && !seen.has(resolved)) {
         seen.add(resolved)
-        queue.push(resolved)
+        queue.push({ file: resolved, path: [...path, resolved] })
       }
     }
   }
@@ -92,24 +83,21 @@ function electronImporters(roots: string[]): string[] {
 }
 
 describe('agent construction Electron surface', () => {
-  it('reaches exactly the Electron imports we have not yet cut', () => {
-    const actual = electronImporters(ROOTS)
-    const expected = [...ELECTRON_SURFACE].sort()
-    const added = actual.filter((file) => !expected.includes(file))
-    const removed = expected.filter((file) => !actual.includes(file))
+  it('constructs a registry and prompt under plain Node with Electron blocked', () => {
+    const result = spawnSync(process.execPath, ['scripts/verify-agent-path-import.mts'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    })
+    assert.equal(result.status, 0, [result.stdout, result.stderr].filter(Boolean).join('\n'))
+  })
+
+  it('has no runtime Electron import reachable from either construction root', () => {
+    const actual = electronImportPaths(ROOTS)
     assert.deepEqual(
-      added,
+      actual,
       [],
-      `New Electron dependency reachable from the product's agent construction. ` +
-        `This blocks running benchmarks on the real agent path (#1313). Inject the ` +
-        `dependency the way secret-cipher.ts and shell-output-context.ts do, or ` +
-        `import it lazily behind its enablement check.`,
-    )
-    assert.deepEqual(
-      removed,
-      [],
-      `An Electron dependency was removed — good. Delete it from ELECTRON_SURFACE ` +
-        `so the surface cannot silently grow back.`,
+      `Runtime Electron dependency reachable from the product's agent construction. ` +
+        `Inject the desktop capability at the Electron entry point; type-only imports are safe.`,
     )
   })
 
