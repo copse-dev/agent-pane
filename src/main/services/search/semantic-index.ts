@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
-import { app } from 'electron'
 import { getBundledGortexPath } from './bundled-semantic.ts'
 import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
 import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
@@ -16,6 +15,7 @@ import {
   setSemanticIndexUnavailable,
 } from './index-status.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -241,7 +241,7 @@ function gortexCmd(): string {
 
 /** Synthetic HOME so gortex daemon state/indexes live under Copse userData, not the workspace. */
 export function gortexHomeDir(): string {
-  return join(app.getPath('userData'), 'gortex')
+  return join(getElectronUserDataPath(), 'gortex')
 }
 
 function gortexRunOpts(

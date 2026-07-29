@@ -3,7 +3,6 @@ import * as fs from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app } from 'electron'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
@@ -14,6 +13,7 @@ import {
   type RawCustomTool,
 } from './custom-tools-config.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 export { CUSTOM_TOOL_PREFIX, customToolLabel } from './custom-tools-config.ts'
 
@@ -71,7 +71,7 @@ export function rememberCustomTool(toolName: string): Promise<void> {
  * full-privilege in-process tools come only from the user's own machine.
  */
 export function getCustomToolsDir(): string {
-  return join(app.getPath('userData'), 'tools')
+  return join(getElectronUserDataPath(), 'tools')
 }
 
 // Hidden behind `new Function` so esbuild's CJS output leaves it as a native
