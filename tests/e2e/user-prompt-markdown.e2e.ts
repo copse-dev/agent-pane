@@ -11,20 +11,16 @@ describe('user prompt markdown in transcript', () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
-    // The app from the previous spec is still alive while this fixture is
-    // written and can race by persisting its old project once more. Reinforce
-    // the seed across one fresh-session retry on slower hosted runners.
-    for (const timeout of [10_000, 30_000]) {
-      resetUserData()
-      seedUserPromptMarkdownFixture(process.cwd())
-      await browser.reloadSession()
-      try {
-        await $('[data-message-id="msg-user-markdown"] .message-text').waitForExist({ timeout })
-        return
-      } catch (error) {
-        if (timeout === 30_000) throw error
-      }
-    }
+    // Stop the outgoing app before seeding. Otherwise its pagehide autosave can
+    // overwrite the fixture while reloadSession() is tearing it down, which is
+    // reproducible on slower hosted runners.
+    await browser.deleteSession({ shutdownDriver: false })
+    resetUserData()
+    seedUserPromptMarkdownFixture(process.cwd())
+    await browser.reloadSession()
+    await $('[data-message-id="msg-user-markdown"] .message-text').waitForExist({
+      timeout: 30_000,
+    })
   })
 
   after(() => {
