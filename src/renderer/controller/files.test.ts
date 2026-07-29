@@ -3,13 +3,24 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { detectLanguage, openWorkspaceFile } from './files.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function apiWithFile(content: string): ApiClient {
-  return {
-    fs: {
-      readFile: async () => content,
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      fs: {
+        ...base['fs'],
+        readFile: async (projectId: string, threadId: string, path: string): Promise<string> => {
+          assert.equal(projectId, 'project-1')
+          assert.equal(threadId, 'thread-1')
+          assert.equal(path, 'README.md')
+          return content
+        },
+      },
+    } satisfies ApiClient
+  })()
 }
 
 describe('files controller', () => {
@@ -20,7 +31,12 @@ describe('files controller', () => {
   })
 
   it('opens a workspace file in the explorer panel', async () => {
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'terminal' })
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'terminal',
+    })
     let panelEvents = 0
     let paneEvents = 0
     let modeEvents = 0

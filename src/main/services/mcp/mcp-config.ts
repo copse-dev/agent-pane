@@ -1,4 +1,5 @@
 import type { McpServerConfig, McpTransportKind } from '@shared/types/mcp.ts'
+import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 /**
  * Pure (no Electron / fs) parsing and normalization for MCP server configuration.
@@ -19,24 +20,15 @@ interface RawStdioOrHttp {
   disabled?: unknown
 }
 
-interface LegacyServerEntry extends RawStdioOrHttp {
-  name?: unknown
-}
-
-interface RawConfigFile {
-  mcpServers?: Record<string, RawStdioOrHttp>
-  servers?: LegacyServerEntry[]
-}
-
 export interface McpConfigParseResult {
   servers: McpServerConfig[]
   errors: string[]
 }
 
 function asStringRecord(value: unknown): Record<string, string> | undefined {
-  if (value === null || typeof value !== 'object') return undefined
+  if (!isRecord(value)) return undefined
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(value)) {
     if (typeof v === 'string') out[k] = v
     else if (typeof v === 'number' || typeof v === 'boolean') out[k] = String(v)
   }
@@ -108,38 +100,36 @@ function normalizeOne(
 /** Parse a single config file's raw JSON text into normalized server definitions. */
 export function parseMcpConfig(rawText: string, source?: string): McpConfigParseResult {
   const errors: string[] = []
-  let parsed: RawConfigFile
+  let parsed: Record<string, unknown>
   try {
-    parsed = JSON.parse(rawText) as RawConfigFile
+    const value = parseJsonUnknown(rawText)
+    if (!isRecord(value)) throw new TypeError('config must be an object')
+    parsed = value
   } catch (err) {
     return { servers: [], errors: [`Invalid JSON${source ? ` in ${source}` : ''}: ${String(err)}`] }
   }
 
   const servers: McpServerConfig[] = []
 
-  if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
-    for (const [name, raw] of Object.entries(parsed.mcpServers)) {
-      // raw is typed as RawStdioOrHttp but originates from JSON.parse: a value of
-      // `null` (e.g. {"mcpServers":{"foo":null}}) is genuinely possible at runtime.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (!raw || typeof raw !== 'object') {
+  const mcpServers = parsed['mcpServers']
+  const legacyServers = parsed['servers']
+  if (isRecord(mcpServers)) {
+    for (const [name, raw] of Object.entries(mcpServers)) {
+      if (!isRecord(raw)) {
         errors.push(`Server "${name}" is not an object.`)
         continue
       }
       const cfg = normalizeOne(name, raw, source, errors)
       if (cfg) servers.push(cfg)
     }
-  } else if (Array.isArray(parsed.servers)) {
+  } else if (Array.isArray(legacyServers)) {
     // Legacy copse-panel shape.
-    for (const entry of parsed.servers) {
-      // entry is typed as LegacyServerEntry but comes from JSON.parse: a `null`
-      // array element is genuinely possible at runtime.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string') {
+    for (const entry of legacyServers) {
+      if (!isRecord(entry) || typeof entry['name'] !== 'string') {
         errors.push('Legacy server entry missing a string "name".')
         continue
       }
-      const cfg = normalizeOne(entry.name, entry, source, errors)
+      const cfg = normalizeOne(entry['name'], entry, source, errors)
       if (cfg) servers.push(cfg)
     }
   } else if (rawText.trim()) {

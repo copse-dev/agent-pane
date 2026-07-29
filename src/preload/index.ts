@@ -51,15 +51,29 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   fs: {
-    readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
-    writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:writeFile', path, content),
-    readdir: (path: string) => ipcRenderer.invoke('fs:readdir', path),
-    listDir: (path: string) => ipcRenderer.invoke('fs:listDir', path),
-    watch: (path: string) => ipcRenderer.invoke('fs:watch', path),
-    unwatch: (path: string) => ipcRenderer.invoke('fs:unwatch', path),
-    onChanged: (handler: (path: string, content: string | null) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, p: string, c: string | null): void => {
-        handler(p, c)
+    readFile: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('fs:readFile', projectId, threadId, path),
+    writeFile: (projectId: string, threadId: string, path: string, content: string) =>
+      ipcRenderer.invoke('fs:writeFile', projectId, threadId, path, content),
+    readdir: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('fs:readdir', projectId, threadId, path),
+    listDir: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('fs:listDir', projectId, threadId, path),
+    watch: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('fs:watch', projectId, threadId, path),
+    unwatch: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('fs:unwatch', projectId, threadId, path),
+    onChanged: (
+      handler: (projectId: string, threadId: string, path: string, content: string | null) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
+        path: string,
+        content: string | null,
+      ): void => {
+        handler(projectId, threadId, path, content)
       }
       ipcRenderer.on('fs:changed', listener)
       return (): void => {
@@ -118,6 +132,7 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => {
@@ -139,6 +154,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('agent:approval_request', listener)
       return (): void => {
         ipcRenderer.off('agent:approval_request', listener)
+      }
+    },
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('agent:approval_cancelled', listener)
+      return (): void => {
+        ipcRenderer.off('agent:approval_cancelled', listener)
       }
     },
     onAskUserRequest: (
@@ -284,7 +308,8 @@ contextBridge.exposeInMainWorld('api', {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
   },
   sshPrompt: {
-    respond: (id: string, value: string) => ipcRenderer.invoke('ssh-prompt:respond', id, value),
+    respond: (id: string, value: string, remember = false) =>
+      ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
     onRequest: (
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
     ) => {
@@ -435,6 +460,14 @@ contextBridge.exposeInMainWorld('api', {
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
+  },
+  video: {
+    attach: (
+      projectId: string,
+      threadId: string,
+      video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
+    ) => ipcRenderer.invoke('video:attach', projectId, threadId, video),
+    read: (path: string) => ipcRenderer.invoke('video:read', path),
   },
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
@@ -670,6 +703,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('roadmap:attachmentData', id, attachmentId),
     setStatus: (id: string, status: string) => ipcRenderer.invoke('roadmap:setStatus', id, status),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
+    export: (format: string) => ipcRenderer.invoke('roadmap:export', format),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
     openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
@@ -712,6 +746,27 @@ contextBridge.exposeInMainWorld('api', {
     setSetting: (id: string, key: string, value: unknown) =>
       ipcRenderer.invoke('packs:setSetting', id, key, value),
   },
+  automations: {
+    list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
+    upsert: (projectId: string, input: unknown) =>
+      ipcRenderer.invoke('automations:upsert', projectId, input),
+    remove: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:remove', projectId, scheduleId),
+    runNow: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:runNow', projectId, scheduleId),
+    onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: import('@shared/types').AutomationTriggerEvent,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('automations:triggered', listener)
+      return (): void => {
+        ipcRenderer.off('automations:triggered', listener)
+      }
+    },
+  },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
   },
@@ -719,8 +774,11 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('cursorRules:list'),
   },
   terminal: {
-    create: (cols: number, rows: number, meta?: { label?: string; threadId?: string | null }) =>
-      ipcRenderer.invoke('terminal:create', cols, rows, meta),
+    create: (
+      cols: number,
+      rows: number,
+      meta: { label?: string; projectId: string; threadId: string | null },
+    ) => ipcRenderer.invoke('terminal:create', cols, rows, meta),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) =>
@@ -749,15 +807,24 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   git: {
-    isAvailable: () => ipcRenderer.invoke('git:isAvailable'),
-    status: () => ipcRenderer.invoke('git:status'),
-    changeStats: () => ipcRenderer.invoke('git:changeStats'),
-    fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
-    workingFileDiff: (path: string) => ipcRenderer.invoke('git:workingFileDiff', path),
-    branchStatus: (forBranch?: string) => ipcRenderer.invoke('git:branchStatus', forBranch),
-    checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
-    listBranches: () => ipcRenderer.invoke('git:listBranches'),
-    getDefaultBranch: () => ipcRenderer.invoke('git:getDefaultBranch'),
+    isAvailable: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:isAvailable', projectId, threadId),
+    status: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:status', projectId, threadId),
+    changeStats: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:changeStats', projectId, threadId),
+    fileDiff: (projectId: string, threadId: string, path: string, staged: boolean) =>
+      ipcRenderer.invoke('git:fileDiff', projectId, threadId, path, staged),
+    workingFileDiff: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
+    branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
+      ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
+    checkoutBranch: (projectId: string, threadId: string, branch: string) =>
+      ipcRenderer.invoke('git:checkoutBranch', projectId, threadId, branch),
+    listBranches: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:listBranches', projectId, threadId),
+    getDefaultBranch: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:getDefaultBranch', projectId, threadId),
     sessionBackup: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:sessionBackup', projectId, threadId),
     restoreBackup: (projectId: string, threadId: string) =>
@@ -789,10 +856,21 @@ contextBridge.exposeInMainWorld('api', {
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),
-    open: (editorId: string) => ipcRenderer.invoke('editors:open', editorId),
+    open: (projectId: string, threadId: string, editorId: string) =>
+      ipcRenderer.invoke('editors:open', projectId, threadId, editorId),
   },
   panes: {
-    popout: (mode: string) => ipcRenderer.invoke('panes:popout', mode),
+    popout: (mode: string, seed?: unknown) => ipcRenderer.invoke('panes:popout', mode, seed),
+    takePopoutSeed: (mode: string) => ipcRenderer.invoke('panes:takePopoutSeed', mode),
+    onSwitchMode: (handler: (mode: string) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, mode: string): void => {
+        handler(mode)
+      }
+      ipcRenderer.on('popout:switch-mode', listener)
+      return () => {
+        ipcRenderer.removeListener('popout:switch-mode', listener)
+      }
+    },
   },
 })
 

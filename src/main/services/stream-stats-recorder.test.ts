@@ -8,6 +8,7 @@ import { getThreadMeta } from './thread-store.ts'
 import { recordStreamCut } from './stream-stats-recorder.ts'
 import type { StreamCutRecord } from '@copse/agent/stream-cut-record.ts'
 import { storageSet } from './storage/storage.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 const PROJECT = 'proj-stream-stats'
 const THREAD = 'thread-stream-stats'
@@ -60,7 +61,7 @@ describe('stream-stats-recorder', () => {
     await getThreadMeta(PROJECT, THREAD).catch(() => undefined)
     const statsPath = join(root, PROJECT, 'stream-stats.jsonl')
     const raw = readFileSync(statsPath, 'utf8').trim()
-    const line = JSON.parse(raw) as Record<string, unknown>
+    const line = expectRecord(JSON.parse(raw) as unknown)
     assert.equal(line['schemaVersion'], 1)
     assert.equal(line['threadId'], THREAD)
     assert.equal(line['model'], 'lmstudio:qwen/qwen3.6-35b-a3b')

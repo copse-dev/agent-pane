@@ -5,7 +5,7 @@ import type { z } from 'zod'
 // crosses the provider contract). Re-exported here so `@shared/types`
 // consumers are unchanged.
 import type { ToolExecuteResult } from '@copse/agent/wire-types.ts'
-export type { ToolEditStats, ToolExecuteResult } from '@copse/agent/wire-types.ts'
+export type { ToolEditStats, ToolExecuteResult, ToolResultImage } from '@copse/agent/wire-types.ts'
 export { normalizeToolExecuteResult } from '@copse/agent/wire-types.ts'
 export type { LLMTool } from '@copse/llm/wire-types.ts'
 

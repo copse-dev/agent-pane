@@ -1,13 +1,14 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import type { ApiClient } from '../../preload/api.d.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import type { ApiClient } from '../../preload/api.d.ts'
 import type { StreamChunk } from '@shared/types'
 import { el } from '../dom/helpers.ts'
 import { at } from '@shared/array-utils.ts'
 import { mountAgentTasks } from './agent-tasks.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 type ChunkHandler = (threadId: string, chunk: StreamChunk) => void
 type OutputHandler = (data: string, toolCallId: string | null) => void
@@ -33,18 +34,23 @@ function mount(): Harness {
   store.setState({ activeThreadId: 't1' })
   let chunkHandler: ChunkHandler = () => {}
   let outputHandler: OutputHandler = () => {}
-  const api = {
-    agent: {
-      onChunk: (h: ChunkHandler): (() => void) => {
-        chunkHandler = h
-        return () => {}
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        onChunk: (h: ChunkHandler): (() => void) => {
+          chunkHandler = h
+          return () => {}
+        },
+        onShellOutput: (h: OutputHandler): (() => void) => {
+          outputHandler = h
+          return () => {}
+        },
       },
-      onShellOutput: (h: OutputHandler): (() => void) => {
-        outputHandler = h
-        return () => {}
-      },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
   const dispose = mountAgentTasks(listRoot, viewerHost, store, api)
   return {
     listRoot,

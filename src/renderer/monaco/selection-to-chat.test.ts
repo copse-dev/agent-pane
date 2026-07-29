@@ -1,6 +1,5 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type * as Monaco from 'monaco-editor'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import {
   attachMonacoSelectionToChat,
@@ -15,14 +14,15 @@ function fakeEditor(
     isEmpty(): boolean
   } | null,
   content: string,
-): Monaco.editor.IStandaloneCodeEditor {
+): Parameters<typeof buildMonacoSelectionAttachment>[0] {
+  const resolvedSelection = selection ? { ...selection, startColumn: 1, endColumn: 1 } : null
   return {
-    getSelection: () => selection,
+    getSelection: () => resolvedSelection,
     getModel: () => ({
       isDisposed: () => false,
       getValueInRange: () => content,
     }),
-  } as unknown as Monaco.editor.IStandaloneCodeEditor
+  }
 }
 
 describe('selection-to-chat', () => {
@@ -72,6 +72,7 @@ describe('selection-to-chat', () => {
         attachedLabel = label
       },
       attachImage: () => {},
+      attachVideo: () => Promise.resolve(),
       focusComposer: () => {
         focused = true
       },

@@ -6,6 +6,7 @@ import { getThreadById, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { maybeNameThread } from './thread-naming.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function requireThread(store: AppStore, id: string): Thread {
   const found = getThreadById(store, id)
@@ -40,14 +41,19 @@ function apiWithTitle(suggest: (text: string) => Promise<string | null>): {
   titleCalls: string[]
 } {
   const titleCalls: string[] = []
-  const api = {
-    agent: {
-      suggestTitle: async (text: string) => {
-        titleCalls.push(text)
-        return suggest(text)
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        suggestTitle: async (text: string): Promise<string | null> => {
+          titleCalls.push(text)
+          return suggest(text)
+        },
       },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
   return { api, titleCalls }
 }
 

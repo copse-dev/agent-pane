@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { glob, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import OpenAI from 'openai'
+import { nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import { parseTerminalBenchSteering } from './lib/terminal-bench-steering.mts'
 import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchAnalysisPlanPath, terminalBenchResultsRoot } from './lib/terminal-bench.mts'
@@ -52,7 +53,7 @@ function positiveIntEnv(name: string, fallback: number): number {
 }
 
 function trialId(resultPath: string, value: unknown): string {
-  const namespace = process.env['COPSE_BENCH_RUN_ID']?.trim() || 'local'
+  const namespace = nonEmptyStringOr(process.env['COPSE_BENCH_RUN_ID']?.trim(), 'local')
   const identity = JSON.stringify({
     namespace,
     path: relative(RESULTS_ROOT, resultPath),
@@ -148,7 +149,10 @@ function parseJsonResponse(content: string): unknown {
 
 const apiKey = requiredEnv('BENCH_ANALYST_API_KEY')
 const model = requiredEnv('BENCH_ANALYST_MODEL')
-const baseURL = process.env['BENCH_ANALYST_API_URL']?.trim() || 'https://api.openai.com/v1'
+const baseURL = nonEmptyStringOr(
+  process.env['BENCH_ANALYST_API_URL']?.trim(),
+  'https://api.openai.com/v1',
+)
 const maxInputChars = positiveIntEnv('BENCH_ANALYST_MAX_INPUT_CHARS', DEFAULT_MAX_INPUT_CHARS)
 const maxOutputTokens = positiveIntEnv('BENCH_ANALYST_MAX_OUTPUT_TOKENS', 4_096)
 const client = new OpenAI({ apiKey, baseURL })

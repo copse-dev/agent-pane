@@ -49,6 +49,7 @@ import type {
   DialectInterpretation,
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
+import { expectRecord, expectStringArray, isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Copse's per-hook timeout default (decision 13; H4). Copse-native hooks are our
@@ -227,18 +228,15 @@ async function parseCopseConfig(path: string, scope: HookScope): Promise<ParsedC
     return { hooks: [], warnings }
   }
 
-  // parsed comes from JSON.parse and can legitimately be null; the optional
-  // chain guards the real runtime case.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const hooks = (parsed as { hooks?: unknown })?.hooks
-  if (typeof hooks !== 'object' || hooks === null) {
+  const hooks = isRecord(parsed) ? parsed['hooks'] : undefined
+  if (!isRecord(hooks)) {
     warn('.copse/hooks.json has no "hooks" object — file ignored')
     return { hooks: [], warnings }
   }
 
   const cwd = dirname(path)
   const out: DiscoveredCopseHook[] = []
-  for (const [event, entries] of Object.entries(hooks as Record<string, unknown>)) {
+  for (const [event, entries] of Object.entries(hooks)) {
     if (!isCanonicalEvent(event)) {
       warn(`Unknown hook event "${event}" — entries skipped`, event)
       continue
@@ -266,30 +264,32 @@ function parseCopseEntry(
   warn: (message: string, event?: string) => void,
 ): DiscoveredCopseHook | null {
   const position = `"${event}" entry ${String(index + 1)}`
-  // entry is an element of a parsed JSON array and can be null.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const command = (entry as { command?: unknown })?.command
+  if (!isRecord(entry)) {
+    warn(`${position} has a missing or empty "command" — skipped`, event)
+    return null
+  }
+  const command = entry['command']
   if (typeof command !== 'string' || !command.trim()) {
     warn(`${position} has a missing or empty "command" — skipped`, event)
     return null
   }
 
   // onFailure — default open (fail-open), `closed` blocks on failure (decision 9).
-  const onFailureRaw = (entry as { onFailure?: unknown }).onFailure
+  const onFailureRaw = entry['onFailure']
   let onFailure: CommandHookFailureMode = 'open'
   if (onFailureRaw === 'closed' || onFailureRaw === 'open') onFailure = onFailureRaw
   else if (onFailureRaw !== undefined)
     warn(`${position} "onFailure" must be "open" or "closed" — defaulting to "open"`, event)
 
   // sandbox — default true (sandbox-by-default, decision 7); `false` is the escape.
-  const sandboxRaw = (entry as { sandbox?: unknown }).sandbox
+  const sandboxRaw = entry['sandbox']
   let sandbox = true
   if (typeof sandboxRaw === 'boolean') sandbox = sandboxRaw
   else if (sandboxRaw !== undefined)
     warn(`${position} "sandbox" must be a boolean — defaulting to sandboxed (true)`, event)
 
   // async — opt-in detached dispatch, honoured only on asyncOptIn events (decision 2).
-  const asyncRaw = (entry as { async?: unknown }).async
+  const asyncRaw = entry['async']
   let async = false
   if (typeof asyncRaw === 'boolean') async = asyncRaw
   else if (asyncRaw !== undefined) warn(`${position} "async" must be a boolean — ignored`, event)
@@ -303,7 +303,7 @@ function parseCopseEntry(
 
   // loop_limit — tighten-only (decision 5). A non-negative integer, or null
   // (unlimited → clamped to the global budget with a warning).
-  const loopLimitRaw = (entry as { loop_limit?: unknown }).loop_limit
+  const loopLimitRaw = entry['loop_limit']
   let loopLimit: number | null | undefined
   if (loopLimitRaw === null) {
     loopLimit = null
@@ -318,9 +318,9 @@ function parseCopseEntry(
     warn(`${position} "loop_limit" must be a non-negative integer or null — ignored`, event)
   }
 
-  const timeoutMs = normalizeTimeoutField((entry as { timeout?: unknown }).timeout)
-  const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
-  const matcherRaw = (entry as { matcher?: unknown }).matcher
+  const timeoutMs = normalizeTimeoutField(entry['timeout'])
+  const glob = normalizeGlobField(entry['glob'])
+  const matcherRaw = entry['matcher']
   const matcher =
     typeof matcherRaw === 'string' && matcherRaw.trim().length > 0 ? matcherRaw.trim() : undefined
 
@@ -508,8 +508,8 @@ function afterFileEditMatches(
   }
   return candidates.some(
     (c) =>
-      micromatch.isMatch(c, hook.glob as string[], { dot: true }) ||
-      micromatch.isMatch(c, hook.glob as string[], { dot: true, basename: true }),
+      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
+      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
   )
 }
 
@@ -788,7 +788,7 @@ function firstString(...values: unknown[]): string | undefined {
 /** A tool-input rewrite is only valid as a plain object (arrays/scalars ignored). */
 function asInputRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? expectRecord(value)
     : null
 }
 
@@ -874,7 +874,7 @@ function copseSessionEnv(parsed: unknown): Record<string, string> | null {
   const raw = (parsed as CopseHookResponse).sessionEnv
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(expectRecord(raw))) {
     if (typeof value === 'string') out[key] = value
   }
   return Object.keys(out).length > 0 ? out : null

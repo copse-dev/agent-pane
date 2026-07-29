@@ -34,7 +34,7 @@ import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
-import { browserTools } from '../tools/browser-tools.ts'
+import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { listSkills } from './skills/skills-registry.ts'
@@ -60,7 +60,7 @@ import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
-import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
@@ -68,6 +68,7 @@ import {
 } from '@shared/terminal/read-terminal.ts'
 import { readTerminalTool } from '../tools/read-terminal-tool.ts'
 import { runCheckupTool } from '../tools/checkup-tool.ts'
+import { videoFramesTool } from '../tools/video-frames-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -89,28 +90,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitLogTool)
   registry.register(gitShowTool)
   registry.register(gitCommitTool)
-  // GitHub-backed tools shell out to `gh`. Only expose them to the model when
-  // we've deterministically probed `gh` as available (checkToolAvailability runs
-  // before createRegistry); otherwise every call would just return "gh is not
-  // available", so advertising them is misleading. checkToolAvailability also
-  // treats a `gh` that can't authenticate as unavailable, keeping read-only GH
-  // tools hidden when access is unauthorized.
-  const ghAvailable = isGhAvailable()
-  if (ghAvailable) {
-    registry.register(ghPrListTool)
-    registry.register(ghPrViewTool)
-    registry.register(ghPrFilesTool)
-    registry.register(getCiStatusTool)
-    registry.register(waitForCiChecksTool)
-    registry.register(getCiFailureLogsTool)
-  }
-  // PR lifecycle write tools work through the swappable GitHub backend, so they
-  // are available whenever *either* `gh` is usable or an API token is present —
-  // not gated on `gh` alone like the read tools above. They mutate GitHub state,
-  // so they stay out of the read-only allow-list and go through the approval gate.
-  if (ghAvailable || hasGitHubApiToken()) {
-    for (const tool of ghPrActionTools) registry.register(tool)
-  }
+  syncGhTools(registry)
   registry.register(runShellTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gated by the
@@ -163,14 +143,16 @@ export function createRegistry(): ToolRegistry {
   // is the atomic master switch (it also gates the renderer's Roadmap pane).
   // Live toggles route through {@link syncRoadmapPlanTools} on `packs:setEnabled`.
   syncRoadmapPlanTools(registry)
-  // Experimental background tasks (off by default, issue #691). Lets the agent
-  // run a long-lived command (dev server, watcher, build) that stays alive
-  // across turns. A task may opt into loopback port binding, which prompts for a
-  // per-workspace grant (permission-gate) and escalates the sandbox to allow
-  // binding for that process's lifetime; without it the task stays contained.
-  if (getSetting<boolean>(BACKGROUND_TASKS_ENABLED_SETTING, false)) {
-    registry.register(runBackgroundTool)
-  }
+  // Experimental background tasks (off by default, issue #691). Gated by the
+  // `copse.background-tasks` first-party pack — the pack toggle in Settings >
+  // Packs is the atomic master switch. Lets the agent run a long-lived command
+  // (dev server, watcher, build) that stays alive across turns. A task may opt
+  // into loopback port binding, which the pack DECLARES as its `loopback-bind`
+  // permission relaxation (issue #1190): the permission-gate only grants it
+  // while the pack is enabled, prompting for a per-project grant and escalating
+  // the sandbox to allow binding for that process's lifetime. Live toggles route
+  // through {@link syncBackgroundTasksTools} on `packs:setEnabled`.
+  syncBackgroundTasksTools(registry)
   // User Shells → agent read (on by default). The tool is still withheld per
   // turn when no shell is open for the chat thread (see parentTools).
   syncReadTerminalTools(registry)
@@ -182,6 +164,11 @@ export function createRegistry(): ToolRegistry {
   // approval. Live toggles route through {@link syncPiiTools} on
   // `packs:setEnabled`.
   syncPiiTools(registry)
+  // Reading a video as stills. Registered unconditionally because a video can
+  // be attached to any thread at any time, but withheld per turn from threads
+  // that have never had one (see `parentTools`) — most threads never will, and
+  // the schema is not free.
+  registry.register(videoFramesTool)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
@@ -190,7 +177,7 @@ export function createRegistry(): ToolRegistry {
   // returns a report; the agent proposes any fixes for the user to approve.
   registry.register(runCheckupTool)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
-    for (const tool of browserTools) registry.register(tool)
+    registerBrowserTools(registry)
   }
   return registry
 }
@@ -288,6 +275,51 @@ export function syncAdvisorStrategyTools(registry: ToolRegistry): void {
 }
 
 /**
+ * Register or unregister the `gh`-backed GitHub tools to match the current
+ * probe result.
+ *
+ * GitHub-backed tools shell out to `gh`. Only expose them to the model when
+ * we've deterministically probed `gh` as available; otherwise every call would
+ * just return "gh is not available", so advertising them is misleading.
+ * `checkToolAvailability` also treats a `gh` that can't authenticate as
+ * unavailable, keeping read-only GH tools hidden when access is unauthorized.
+ *
+ * Called twice on the startup path: once from {@link createRegistry}, which now
+ * runs *before* the probe so IPC handlers can register without waiting on it
+ * (#523's invariant is preserved by the second call, not by the ordering), and
+ * again from `index.ts` once `checkToolAvailability()` resolves. The first call
+ * lands on a null probe result — `isGhAvailable()` reads false — so the tools
+ * simply appear a beat later, once the probe has actually answered.
+ */
+export function syncGhTools(registry: ToolRegistry): void {
+  const ghAvailable = isGhAvailable()
+  if (ghAvailable) {
+    if (!registry.has('gh_pr_list')) registry.register(ghPrListTool)
+    if (!registry.has('gh_pr_view')) registry.register(ghPrViewTool)
+    if (!registry.has('gh_pr_files')) registry.register(ghPrFilesTool)
+    if (!registry.has('get_ci_status')) registry.register(getCiStatusTool)
+    if (!registry.has('wait_for_ci_checks')) registry.register(waitForCiChecksTool)
+    if (!registry.has('get_ci_failure_logs')) registry.register(getCiFailureLogsTool)
+  } else {
+    registry.unregister('gh_pr_list')
+    registry.unregister('gh_pr_view')
+    registry.unregister('gh_pr_files')
+    registry.unregister('get_ci_status')
+    registry.unregister('wait_for_ci_checks')
+    registry.unregister('get_ci_failure_logs')
+  }
+  // PR lifecycle write tools work through the swappable GitHub backend, so they
+  // are available whenever *either* `gh` is usable or an API token is present —
+  // not gated on `gh` alone like the read tools above. They mutate GitHub state,
+  // so they stay out of the read-only allow-list and go through the approval gate.
+  if (ghAvailable || hasGitHubApiToken()) {
+    for (const tool of ghPrActionTools) if (!registry.has(tool.name)) registry.register(tool)
+  } else {
+    for (const tool of ghPrActionTools) registry.unregister(tool.name)
+  }
+}
+
+/**
  * Register or unregister the experimental CI investigator tools — the
  * `investigate_ci` entry tool and its deep-log `gh_run_list` / `gh_run_view`
  * helpers — to match the current enablement of the `copse.ci-investigator`
@@ -331,6 +363,25 @@ export function syncPiiTools(registry: ToolRegistry): void {
     if (!registry.has('reveal_pii')) registry.register(revealPiiTool)
   } else {
     registry.unregister('reveal_pii')
+  }
+}
+
+/**
+ * Register or unregister the experimental `run_background` tool to match the
+ * current enablement of the `copse.background-tasks` first-party pack (issue
+ * #691). Called at startup (via createRegistry) and again whenever the pack is
+ * toggled from Settings > Packs (see `ipc/register-handlers.ts`
+ * `packs:setEnabled`), so the tool appears or disappears live — the atomic pack
+ * disable drops the tool from the model tool list in the same flag flip that
+ * drops the pack's `activeToolNames()` entry from the Settings pack list AND
+ * revokes the pack's declared `loopback-bind` sandbox relaxation (the
+ * permission-gate reads `isPermissionDeclared('loopback-bind')`, issue #1190).
+ */
+export function syncBackgroundTasksTools(registry: ToolRegistry): void {
+  if (getDefaultPackRegistry().isEnabled(BACKGROUND_TASKS_PACK_ID)) {
+    if (!registry.has('run_background')) registry.register(runBackgroundTool)
+  } else {
+    registry.unregister('run_background')
   }
 }
 

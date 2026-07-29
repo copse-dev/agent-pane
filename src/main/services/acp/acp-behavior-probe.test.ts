@@ -5,6 +5,7 @@ import {
   methods,
   ndJsonStream,
   PROTOCOL_VERSION,
+  RequestError,
   type PromptRequest,
 } from '@agentclientprotocol/sdk'
 import {
@@ -22,7 +23,7 @@ import { buildBehaviorMatrixJson, renderBehaviorMatrixMarkdown } from './acp-beh
  * write routing, permission payloads, and mid-turn `_meta`.
  */
 
-type BehaviorScript = 'fs-write' | 'shell-execute' | 'permission-meta' | 'both'
+type BehaviorScript = 'fs-write' | 'shell-execute' | 'permission-meta' | 'both' | 'prompt-error'
 
 type TransportFactory = NonNullable<AcpBehaviorProbeOptions['createTransport']>
 
@@ -46,6 +47,12 @@ function fakeBehaviorTransport(script: BehaviorScript): TransportFactory {
         const peer = ctx.client
         const sessionId = ctx.params.sessionId
         const promptText = promptToText(ctx.params.prompt)
+
+        if (script === 'prompt-error') {
+          throw new RequestError(-32603, 'Internal error', {
+            details: 'adapter prompt exploded',
+          })
+        }
 
         await peer.notify(methods.client.session.update, {
           sessionId,
@@ -247,6 +254,15 @@ describe('probeAgentBehavior (in-memory agent)', () => {
     assert.ok(report.snapshot)
     assert.equal(report.snapshot.writeRouting, 'both')
     assert.ok(report.snapshot.midTurnMetaKeys.includes('fs/write_text_file:vendor.com/write'))
+  })
+
+  it('reports prompt request failures without waiting for the update timeout', async () => {
+    const report = await probeAgentBehavior(CONFIG, {
+      createTransport: fakeBehaviorTransport('prompt-error'),
+      timeoutMs: 5_000,
+    })
+    assert.equal(report.ok, false)
+    assert.match(report.error ?? '', /adapter prompt exploded/)
   })
 })
 

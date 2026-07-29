@@ -8,6 +8,7 @@ import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { createWorktreeBackup } from './github/git-service.ts'
 import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 const DISABLE_GIT_HOOKS = ['-c', 'core.hooksPath=/dev/null']
@@ -159,7 +160,7 @@ function assertOwnerId(label: string, value: string): void {
 
 function worktreesRoot(): string {
   const override = process.env['COPSE_WORKTREES_DIR']?.trim()
-  const configured = resolve(override || join(homedir(), '.copse', 'worktrees'))
+  const configured = resolve(nonEmptyStringOr(override, join(homedir(), '.copse', 'worktrees')))
   const missing: string[] = []
   let existing = configured
   for (;;) {
@@ -425,11 +426,7 @@ export async function validateThreadWorktree(
   assertWorktreeMetadata(input.worktree)
   const location = await repositoryLocation(input.projectRoot)
   const projectRoot = location.repositoryRoot
-  await assertBranchName(projectRoot, input.worktree.branch, 'Thread branch')
   await assertBranchName(projectRoot, input.worktree.baseBranch, 'Base branch')
-  if (input.worktree.branch === input.worktree.baseBranch) {
-    throw new Error('Thread worktree branch must differ from its recorded base branch')
-  }
   if (!/^[0-9a-f]{40,64}$/i.test(input.worktree.baseCommit)) {
     throw new Error('Thread worktree base commit is malformed')
   }
@@ -456,10 +453,16 @@ export async function validateThreadWorktree(
     }
   })
   if (!record) throw new Error('Thread worktree is not registered with Git')
-  if (record.branch !== input.worktree.branch) {
-    throw new Error(
-      `Thread worktree branch mismatch: expected ${input.worktree.branch}, found ${record.branch ?? 'detached HEAD'}`,
-    )
+  // Path is the durable identity. Agents commonly `git checkout -b` inside the
+  // linked checkout; treat Git's live branch as authoritative and adopt it so
+  // reopen / continue is not bricked by stale meta (detached HEAD still fails).
+  const liveBranch = record.branch
+  if (!liveBranch || record.detached) {
+    throw new Error('Thread worktree is on a detached HEAD')
+  }
+  await assertBranchName(projectRoot, liveBranch, 'Thread branch')
+  if (liveBranch === input.worktree.baseBranch) {
+    throw new Error('Thread worktree branch must differ from its recorded base branch')
   }
 
   const executionRoot = await realpath(resolve(canonicalPath, location.projectRelativePath)).catch(
@@ -474,6 +477,7 @@ export async function validateThreadWorktree(
   }
   return {
     ...input.worktree,
+    branch: liveBranch,
     path: canonicalPath,
     root: executionRoot,
     gitDir: registration.gitDir,

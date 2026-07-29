@@ -7,12 +7,15 @@ interface SshPromptRequest {
   kind: 'confirm' | 'secret'
 }
 
+/** The only slice of the preload API this dialog touches. */
+export type SshPromptApi = Pick<ApiClient, 'sshPrompt'>
+
 /**
  * Modal for SSH/GIT askpass prompts (passphrase, host-key confirmation, etc.).
  * Runs outside the agent thread-attention model — these prompts are tied to a
  * local subprocess, not an agent run.
  */
-export function mountSshPromptDialog(api: ApiClient): void {
+export function mountSshPromptDialog(api: SshPromptApi): void {
   const promptEl = el('pre', { class: 'ssh-prompt-body' })
   const secretInput = el('input', {
     type: 'password',
@@ -20,6 +23,13 @@ export function mountSshPromptDialog(api: ApiClient): void {
     autocomplete: 'off',
   })
   const secretField = el('div', { class: 'ssh-prompt-secret-field' }, secretInput)
+  const rememberInput = el('input', { type: 'checkbox', class: 'ssh-prompt-remember-input' })
+  const rememberField = el(
+    'label',
+    { class: 'ssh-prompt-remember' },
+    rememberInput,
+    'Remember for this session',
+  )
   const form = el('form', { id: 'ssh-prompt-form', method: 'dialog' })
   const dialog = el('dialog', { id: 'ssh-prompt-dialog' }, form)
   document.body.append(dialog)
@@ -35,6 +45,7 @@ export function mountSshPromptDialog(api: ApiClient): void {
     el('h3', { class: 'ssh-prompt-title' }, 'SSH authentication'),
     promptEl,
     secretField,
+    rememberField,
     confirmButtons,
     secretButtons,
   )
@@ -45,6 +56,8 @@ export function mountSshPromptDialog(api: ApiClient): void {
   function showKind(kind: SshPromptRequest['kind']): void {
     const confirm = kind === 'confirm'
     secretField.hidden = confirm
+    // Host-key answers are persisted by OpenSSH itself — nothing to remember.
+    rememberField.hidden = confirm
     secretButtons.hidden = confirm
     confirmButtons.hidden = !confirm
   }
@@ -53,18 +66,20 @@ export function mountSshPromptDialog(api: ApiClient): void {
     if (!active) return
     promptEl.textContent = active.prompt
     secretInput.value = ''
+    // Default on: typing a host password once per app session is the point.
+    rememberInput.checked = true
     showKind(active.kind)
     dialog.showModal()
     if (active.kind === 'secret') secretInput.focus()
     else confirmApprove.focus()
   }
 
-  function finish(value: string): void {
+  function finish(value: string, remember = false): void {
     if (!active) return
     const id = active.id
     active = null
     dialog.close()
-    void api.sshPrompt.respond(id, value)
+    void api.sshPrompt.respond(id, value, remember)
     if (queue.length > 0) {
       active = queue.shift() ?? null
       renderActive()
@@ -74,7 +89,7 @@ export function mountSshPromptDialog(api: ApiClient): void {
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     if (!active || active.kind !== 'secret') return
-    finish(secretInput.value)
+    finish(secretInput.value, rememberInput.checked)
   })
   dialog.addEventListener('cancel', (event) => {
     event.preventDefault()

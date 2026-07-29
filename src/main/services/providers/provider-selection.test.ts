@@ -14,6 +14,8 @@ import {
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
+import { expectStringRecord } from '@shared/unknown-value.ts'
+import { jsonResponse } from './test-response.ts'
 
 const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/providers/lm-studio-models.ts')
 
@@ -28,7 +30,7 @@ function stubFetch(impl: typeof fetch): () => void {
 function authHeader(init?: RequestInit): string | undefined {
   const headers = init?.headers
   if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return undefined
-  return (headers as Record<string, string>)['Authorization']
+  return expectStringRecord(headers)['Authorization']
 }
 
 describe('lm-studio-models source integrity', () => {
@@ -89,16 +91,8 @@ describe('subagent local model routing', () => {
 
   it('routes cloud chat models to the configured subagent local model', async () => {
     setSetting('subagentModel', 'explore-model')
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({
-            data: [{ id: 'explore-model', context_length: 32_768 }],
-          }),
-        }) as Response,
+    restoreFetch = stubFetch(async () =>
+      jsonResponse({ data: [{ id: 'explore-model', context_length: 32_768 }] }),
     )
 
     const route = await buildSubagentRoute('claude-sonnet-4-6')
@@ -117,15 +111,7 @@ describe('subagent local model routing', () => {
 
   it('falls back to the default local model when subagent model is auto', async () => {
     setSetting('localDefaultModel', 'default-local')
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({ data: [{ id: 'default-local' }] }),
-        }) as Response,
-    )
+    restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
 
     const route = await buildSubagentRoute('gpt-4o')
     assert.ok(route)
@@ -133,15 +119,7 @@ describe('subagent local model routing', () => {
   })
 
   it('defaults review to an on-device model', async () => {
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({ data: [{ id: 'default-local' }] }),
-        }) as Response,
-    )
+    restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
     setSetting('localDefaultModel', 'default-local')
     const route = await buildReviewRoute()
     assert.ok(route)
@@ -260,15 +238,10 @@ describe('testLmStudio', () => {
   })
 
   it('returns model ids from a successful /models response', async () => {
-    const fetchMock = mock.fn(async (_url: string, _init?: RequestInit) => ({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async (): Promise<{ data: { id: string }[] }> => ({
-        data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }],
-      }),
-    }))
-    restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
+    const fetchMock = mock.fn<typeof fetch>(async () =>
+      jsonResponse({ data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }] }),
+    )
+    restoreFetch = stubFetch(fetchMock)
 
     const result = await testLmStudio('http://127.0.0.1:1234/v1/', 'test-key')
     assert.deepEqual(result, { ok: true, models: ['qwen2.5-3b', 'llama-3'] })
@@ -276,18 +249,11 @@ describe('testLmStudio', () => {
     const call = fetchMock.mock.calls[0]
     assert.ok(call)
     assert.equal(call.arguments[0], 'http://127.0.0.1:1234/v1/models')
-    assert.equal(authHeader(call.arguments[1] as RequestInit), 'Bearer test-key')
+    assert.equal(authHeader(call.arguments[1]), 'Bearer test-key')
   })
 
   it('surfaces HTTP errors without throwing', async () => {
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: false,
-          status: 503,
-          statusText: 'Service Unavailable',
-        }) as Response,
-    )
+    restoreFetch = stubFetch(async () => jsonResponse({}, 503, 'Service Unavailable'))
 
     const result = await testLmStudio('http://127.0.0.1:1234/v1')
     assert.equal(result.ok, false)
@@ -296,20 +262,15 @@ describe('testLmStudio', () => {
 })
 
 describe('listLmStudioModels cache', () => {
-  let fetchMock: ReturnType<typeof mock.fn>
+  let fetchMock: ReturnType<typeof mock.fn<typeof fetch>>
   let restoreFetch: (() => void) | undefined
 
   beforeEach(() => {
     invalidateLmStudioModelsCache()
     setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
     setApiKey('lmstudio', 'cache-test-key')
-    fetchMock = mock.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async (): Promise<{ data: { id: string }[] }> => ({ data: [{ id: 'local-model' }] }),
-    }))
-    restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
+    fetchMock = mock.fn<typeof fetch>(async () => jsonResponse({ data: [{ id: 'local-model' }] }))
+    restoreFetch = stubFetch(fetchMock)
   })
 
   afterEach(() => {

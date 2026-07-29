@@ -1,4 +1,4 @@
-import type { Terminal, ILink, ILinkProvider, IBufferRange } from '@xterm/xterm'
+import type { ILink, ILinkProvider, IBufferRange } from '@xterm/xterm'
 import type { AppStore } from '@shared/store/store.ts'
 import { fileReferenceMatches, resolveFileReferencesInBatches } from '@shared/fs/file-reference.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -6,6 +6,18 @@ import { activateWorkspaceReference } from '../controller/files.ts'
 import { showErrorToast } from './toast.ts'
 
 const RESOLVE_DEBOUNCE_MS = 250
+
+interface TerminalFileLinkHost {
+  rows: number
+  registerLinkProvider(provider: ILinkProvider): { dispose(): void }
+  buffer: {
+    active: {
+      viewportY: number
+      length: number
+      getLine(index: number): { translateToString(trimRight: boolean): string } | undefined
+    }
+  }
+}
 
 export interface TerminalFileLinks {
   /** Re-scan the viewport and resolve newly-seen file references (debounced). */
@@ -18,7 +30,7 @@ export interface TerminalFileLinks {
  * file-path-shaped token. Wide (CJK) glyphs are rare in paths, so byte/cell
  * offsets are treated as 1:1 with string offsets.
  */
-function collectVisibleCandidates(term: Terminal): string[] {
+function collectVisibleCandidates(term: TerminalFileLinkHost): string[] {
   const buf = term.buffer.active
   const top = buf.viewportY
   const bottom = Math.min(buf.length, top + term.rows)
@@ -48,7 +60,7 @@ function collectVisibleCandidates(term: Terminal): string[] {
  * `docs/plans/terminal-file-links-improvements.md` for cwd-aware resolution.
  */
 export function installTerminalFileLinks(
-  term: Terminal,
+  term: TerminalFileLinkHost,
   store: AppStore,
   api: ApiClient,
 ): TerminalFileLinks {

@@ -13,6 +13,7 @@ import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { PackSummary, PacksListResult } from '@shared/types/packs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 /** Records the last mutation the stub received so click-through assertions can inspect it. */
 interface StubApiSpy {
@@ -22,58 +23,44 @@ interface StubApiSpy {
 
 function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
   let current = initial
-  const fallback: unknown = new Proxy(() => new Promise(() => {}), {
-    get: () => fallback,
-    apply: () => new Promise(() => {}),
+  return createPendingApi({
+    'instructions.list': () => Promise.resolve([]),
+    'cursorRules.list': () => Promise.resolve([]),
+    'skills.list': () => Promise.resolve([]),
+    'plugins.list': () => Promise.resolve([]),
+    'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
+    'packs.list': () => Promise.resolve(current),
+    'packs.setEnabled': (id: string, enabled: boolean) => {
+      spy.lastSetEnabled = { id, enabled }
+      current = {
+        packs: current.packs.map((p) => (p.id === id ? { ...p, enabled } : p)),
+      }
+      return Promise.resolve(current)
+    },
+    'packs.setSetting': (id: string, key: string, value: unknown) => {
+      spy.lastSetSetting = { id, key, value }
+      current = {
+        packs: current.packs.map((p) => {
+          if (p.id !== id) return p
+          return {
+            ...p,
+            settings: p.settings.map((f) => {
+              if (f.id !== key) return f
+              if (
+                typeof value === 'boolean' ||
+                typeof value === 'number' ||
+                typeof value === 'string'
+              ) {
+                return { ...f, value }
+              }
+              return f
+            }),
+          }
+        }),
+      }
+      return Promise.resolve(current)
+    },
   })
-  const overrides: Record<string, unknown> = {
-    instructions: { list: () => Promise.resolve([]) },
-    cursorRules: { list: () => Promise.resolve([]) },
-    skills: { list: () => Promise.resolve([]) },
-    plugins: { list: () => Promise.resolve([]) },
-    hooks: { list: () => Promise.resolve({ hooks: [], warnings: [] }) },
-    packs: {
-      list: () => Promise.resolve(current),
-      setEnabled: (id: string, enabled: boolean) => {
-        spy.lastSetEnabled = { id, enabled }
-        current = {
-          packs: current.packs.map((p) => (p.id === id ? { ...p, enabled } : p)),
-        }
-        return Promise.resolve(current)
-      },
-      setSetting: (id: string, key: string, value: unknown) => {
-        spy.lastSetSetting = { id, key, value }
-        current = {
-          packs: current.packs.map((p) => {
-            if (p.id !== id) return p
-            return {
-              ...p,
-              settings: p.settings.map((f) => {
-                if (f.id !== key) return f
-                if (
-                  typeof value === 'boolean' ||
-                  typeof value === 'number' ||
-                  typeof value === 'string'
-                ) {
-                  return { ...f, value }
-                }
-                return f
-              }),
-            }
-          }),
-        }
-        return Promise.resolve(current)
-      },
-    },
-  }
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get: (_target, prop) =>
-        typeof prop === 'string' && prop in overrides ? overrides[prop] : fallback,
-    },
-  )
-  return proxy as ApiClient
 }
 
 const demoPack: PackSummary = {
@@ -90,6 +77,8 @@ const demoPack: PackSummary = {
     commandHooks: [],
     promptBlocks: [{ id: 'demo-steer', trust: 'trusted' }],
     ui: [{ id: 'demo-panel', level: 2, slot: 'sidebar', title: 'Demo panel', panelKind: 'list' }],
+    capabilities: [],
+    permissions: [],
     storageNamespace: 'copse.demo',
   },
   settings: [
@@ -110,6 +99,32 @@ const demoPack: PackSummary = {
   ],
 }
 
+const modelFieldPack: PackSummary = {
+  id: 'copse.model-demo',
+  trust: 'first-party',
+  name: 'copse.model-demo',
+  enabled: true,
+  contributions: {
+    toolNames: [],
+    blockingHooks: [],
+    asyncHooks: [],
+    commandHooks: [],
+    promptBlocks: [],
+    ui: [],
+    capabilities: [],
+    permissions: [],
+  },
+  settings: [
+    {
+      id: 'advisorModel',
+      kind: 'model',
+      title: 'Advisor model',
+      value: 'claude-opus-4-8',
+      default: 'claude-opus-4-8',
+    },
+  ],
+}
+
 const disabledUserPack: PackSummary = {
   id: 'sample.user',
   trust: 'user',
@@ -122,6 +137,8 @@ const disabledUserPack: PackSummary = {
     commandHooks: [{ event: 'toolGate', command: './guard.sh' }],
     promptBlocks: [],
     ui: [],
+    capabilities: [],
+    permissions: [],
   },
   settings: [],
 }
@@ -208,6 +225,54 @@ describe('settings → packs list', () => {
     assert.deepEqual(chipTexts, ['Tools × 1', 'Hooks × 1', 'Prompt blocks × 1', 'UI × 1'])
   })
 
+  it('enumerates a capability-only pack as a Capabilities chip', async () => {
+    const capabilityPack: PackSummary = {
+      id: 'copse.mcp-ui-canvas',
+      trust: 'first-party',
+      name: 'copse.mcp-ui-canvas',
+      enabled: false,
+      contributions: {
+        toolNames: [],
+        blockingHooks: [],
+        asyncHooks: [],
+        commandHooks: [],
+        promptBlocks: [],
+        ui: [],
+        capabilities: [{ name: 'mcp-ui-canvas', title: 'MCP-UI canvas rendering' }],
+        permissions: [],
+      },
+      settings: [],
+    }
+    const list = await openPacks({ packs: [capabilityPack] }, spy)
+    const chipTexts = Array.from(list.querySelectorAll('.pack-chip')).map((el) => el.textContent)
+    assert.deepEqual(chipTexts, ['Capabilities × 1'])
+    // A capability-only pack contributes something — no skeleton note.
+    assert.doesNotMatch(list.textContent, /Contributes nothing yet/)
+  })
+
+  it('enumerates a declared permission / sandbox relaxation as a Permissions chip', async () => {
+    const permissionPack: PackSummary = {
+      id: 'copse.background-tasks',
+      trust: 'first-party',
+      name: 'copse.background-tasks',
+      enabled: false,
+      contributions: {
+        toolNames: ['run_background'],
+        blockingHooks: [],
+        asyncHooks: [],
+        commandHooks: [],
+        promptBlocks: [],
+        ui: [],
+        capabilities: [],
+        permissions: [{ name: 'loopback-bind', title: 'Bind a loopback port', scope: 'project' }],
+      },
+      settings: [],
+    }
+    const list = await openPacks({ packs: [permissionPack] }, spy)
+    const chipTexts = Array.from(list.querySelectorAll('.pack-chip')).map((el) => el.textContent)
+    assert.deepEqual(chipTexts, ['Tools × 1', 'Permissions × 1'])
+  })
+
   it('shows a "contributes nothing" note for skeleton packs', async () => {
     const skeleton: PackSummary = {
       ...demoPack,
@@ -219,6 +284,8 @@ describe('settings → packs list', () => {
         commandHooks: [],
         promptBlocks: [],
         ui: [],
+        capabilities: [],
+        permissions: [],
       },
       settings: [],
     }
@@ -236,6 +303,40 @@ describe('settings → packs list', () => {
     const stringInput = list.querySelector<HTMLInputElement>('.pack-setting-string')
     assert.ok(stringInput)
     assert.equal(stringInput.value, 'hi')
+  })
+
+  it('renders a model setting field with the shared searchable picker', async () => {
+    const list = await openPacks({ packs: [modelFieldPack] }, spy)
+    const modelSelect = list.querySelector<HTMLSelectElement>('.pack-setting-model')
+    assert.ok(modelSelect, 'a model field must retain its form-owned select')
+    assert.equal(modelSelect.tagName, 'SELECT')
+    assert.equal(modelSelect.dataset['settingKey'], 'advisorModel')
+    assert.ok(list.querySelector('.model-picker-field'))
+    assert.ok(list.querySelector('.model-picker-filter'))
+    // It is not misrendered as the plain string/enum inputs.
+    assert.equal(list.querySelector('.pack-setting-string'), null)
+    assert.equal(list.querySelector('.pack-setting-enum'), null)
+  })
+
+  it('editing a model field persists the chosen id via packs:setSetting', async () => {
+    const list = await openPacks({ packs: [modelFieldPack] }, spy)
+    const modelSelect = list.querySelector<HTMLSelectElement>('.pack-setting-model')
+    assert.ok(modelSelect)
+    // The live catalogue is fetched async (and never resolves under the stub api),
+    // so add the target option ourselves before selecting it — the change handler
+    // reads select.value regardless of how the option got there.
+    const option = document.createElement('option')
+    option.value = 'lmstudio:qwen3-32b'
+    option.textContent = 'qwen3-32b'
+    modelSelect.append(option)
+    modelSelect.value = 'lmstudio:qwen3-32b'
+    modelSelect.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(spy.lastSetSetting, {
+      id: 'copse.model-demo',
+      key: 'advisorModel',
+      value: 'lmstudio:qwen3-32b',
+    })
   })
 
   it('toggling calls packs:setEnabled with the flipped state', async () => {

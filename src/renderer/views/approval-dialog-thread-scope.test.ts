@@ -11,6 +11,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 import { isThreadAwaitingAttention, resetAttention } from '../controller/attention.ts'
+import { qsRequired } from '../dom/helpers.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 type ApprovalHandler = (req: {
   id: string
@@ -32,28 +34,18 @@ function makeApi(): {
 } {
   let handler: ApprovalHandler = () => {}
   const responses: Responded[] = []
-  const overrides: Record<string, unknown> = {
-    'agent.onApprovalRequest': (h: ApprovalHandler) => {
+  const overrides = {
+    'agent.onApprovalRequest': (h: ApprovalHandler): (() => void) => {
       handler = h
       return () => {}
     },
-    'approval.respond': (id: string, approved: boolean) => {
+    'approval.respond': (id: string, approved: boolean): Promise<void> => {
       responses.push({ id, approved })
       return Promise.resolve()
     },
   }
-  const make = (path: string): unknown =>
-    new Proxy(() => new Promise(() => {}), {
-      get: (_t, prop) => make(path ? `${path}.${String(prop)}` : String(prop)),
-      apply: (_t, _this, args): unknown => {
-        const override = overrides[path]
-        if (typeof override === 'function')
-          return (override as (...a: unknown[]) => unknown)(...(args as unknown[]))
-        return new Promise(() => {})
-      },
-    })
   return {
-    api: make('') as ApiClient,
+    api: createPendingApi(overrides),
     emit: (req): void => {
       handler({ id: req.id, threadId: req.threadId, title: 't', body: 'b', type: 'shell' })
     },
@@ -120,7 +112,7 @@ describe('approval dialog thread scoping', () => {
         return () => {}
       },
     })
-    dialog = document.getElementById('approval-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
     spy = shimModal(dialog)
   })
 

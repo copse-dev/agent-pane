@@ -1,4 +1,11 @@
-import { safeJsonParse } from '@shared/safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
+
+const classificationPayloadSchema = z.object({
+  scope: z.string().optional(),
+  confidence: z.unknown().optional(),
+  reason: z.string().optional(),
+})
 
 export interface ClassificationResult {
   scope: 'sandbox' | 'external'
@@ -18,11 +25,7 @@ export interface ClassificationResult {
 export function parseClassification(text: string): ClassificationResult | null {
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return null
-  const parsed = safeJsonParse<{
-    scope?: string
-    confidence?: number
-    reason?: string
-  }>(jsonMatch[0])
+  const parsed = safeJsonParse(jsonMatch[0], decodeWithSchema(classificationPayloadSchema))
   if (!parsed) return null
   if (parsed.scope !== 'sandbox' && parsed.scope !== 'external') return null
   const confidence =

@@ -1,5 +1,6 @@
 import { spawnPtyInProjectSandbox } from './project-sandbox/index.ts'
 import { loadProjectThreads, saveProjectThread } from './services/thread-store.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Hard deadline for the packaged PTY marker to appear. */
 const PTY_SMOKE_TIMEOUT_MS = 15_000
@@ -50,7 +51,7 @@ export async function runReleaseSmokeTest(): Promise<void> {
 }
 
 async function smokeTestPty(): Promise<void> {
-  const shell = process.env['SHELL'] || '/bin/bash'
+  const shell = nonEmptyStringOr(process.env['SHELL'], '/bin/bash')
   const marker = 'copse-release-smoke-pty'
   const child = await spawnPtyInProjectSandbox(shell, {
     cols: 80,

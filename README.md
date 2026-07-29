@@ -4,136 +4,123 @@
 
 # Copse
 
-Electron desktop app (`copse-panel`): an AI coding assistant that chats with LLMs and uses tools against opened project folders. Three-pane UI with agent chat, Monaco editor, terminal, git, semantic search, built-in browser, MCP, and subagents — writes and shell commands wait for your approval.
+**An open-source AI coding assistant that lives alongside your code.**
 
-The supported general-availability build requires **macOS 26 or newer** on an
-Apple Silicon (`arm64`) or Intel (`x64`) Mac. Linux and Windows may be useful for
-source development, but they are not supported GA targets. Building from source
-requires Node ≥ 22.18.
+Copse brings agent chat, an editor, terminal, git tools, and a browser into one desktop app. Ask it to understand a codebase, make a change, run tests, or investigate a problem while you follow its work and stay in control of what it can do.
 
-## Quick start
+Copse has no hosted backend of its own. Connect your preferred cloud provider directly, use a local model, or combine the two.
+
+<p align="center">
+  <a href="https://github.com/copse-dev/agent-pane"><strong>View on GitHub</strong></a>
+  ·
+  <a href="https://copse.dev/">Website</a>
+  ·
+  <a href="https://github.com/copse-dev/agent-pane/issues">Issues</a>
+</p>
+
+![Copse showing a project, agent conversation, and editor](site/screenshots/chat-layout-three-pane.png)
+
+> Copse is currently distributed from source. The supported app target is macOS 26 or newer on Apple Silicon and Intel Macs. Linux and Windows can be used for source development, but are not supported release targets yet.
+
+## Why Copse?
+
+- **Everything in one workspace.** Chat with an agent beside a Monaco editor, terminal, file explorer, git changes, and an in-app browser.
+- **Bring the models you want.** Use Anthropic, OpenAI, OpenRouter, and other hosted providers, or connect local models through LM Studio, Ollama, llama.cpp, Jan, vLLM, and OpenAI-compatible endpoints.
+- **See the work, not just the answer.** Tool activity, diffs, commands, subagents, and failures stay visible in the conversation.
+- **Keep meaningful control.** Review proposed file edits and approve actions that need access beyond the project sandbox. Copse sends requests directly to the provider you select and does not add its own cloud service in the middle.
+- **Extend the agent.** Add reusable skills, MCP servers, custom tools, hooks, and compatible ACP coding agents. Copse can also reuse supported skills and MCP servers from your existing Cursor setup.
+- **Work your way.** Attach files, editor selections, or screen recordings; search code by meaning; fork conversations; queue follow-up messages; and hand exploration to subagents.
+
+## Get started
+
+You need [Node.js](https://nodejs.org/) 22.18 or newer. On macOS, install the Xcode command-line tools too.
 
 ```bash
-npm install
+git clone https://github.com/copse-dev/agent-pane.git
+cd agent-pane
+npm ci
 npm run dev
 ```
 
-### Hardened npm profiles (`ignore-scripts`)
+Then:
 
-If your npm is configured with `ignore-scripts=true` (a common supply-chain hardening setting in `~/.npmrc`), `npm install` **skips this project's `postinstall`** — including the step that makes node-pty's `spawn-helper` executable. The published `node-pty` prebuild ships `spawn-helper` as mode `0644`, and nothing in node-pty's own install flow adds the execute bit, so without our `postinstall` the integrated terminal fails to launch with:
+1. Open a project folder.
+2. Choose a model during setup. You can enter a provider API key, scan your environment for an existing key, or connect a local model server.
+3. Start with a concrete request such as “explain how authentication works,” “fix the failing tests,” or “add this feature and show me the diff.”
 
+API keys entered in Copse are encrypted with the operating system's secure storage when it is available. Environment-only keys are not written to Copse's settings. See [Privacy and data flow](docs/privacy-data-flow.md) and [Provider data policies](docs/provider-data-policies.md) before choosing a hosted provider.
+
+## What’s included
+
+| Area       | Highlights                                                                           |
+| ---------- | ------------------------------------------------------------------------------------ |
+| Agent      | Multi-turn chat, plans, tool calls, message queueing, thread forks, and subagents    |
+| Code       | Monaco editing, file, selection and video attachments, diffs, and semantic search    |
+| Workspace  | Integrated terminal, git status and changes, file explorer, and web browser          |
+| Models     | Direct cloud providers, OpenRouter, local servers, and ACP coding agents             |
+| Extensions | Skills, Cursor-compatible hooks and plugin sources, MCP, and JavaScript custom tools |
+| Control    | Edit review, permission prompts, macOS project sandboxing, and per-tool approvals    |
+
+## Contributing
+
+No model key is required to explore the development build: when no provider is configured, Copse uses a small built-in mock agent.
+
+Before submitting a change, run:
+
+```bash
+npm run check
 ```
-Failed to start terminal: ... 'terminal:create': Error: posix_spawnp failed.
+
+Changes to the Electron UI should also be built and covered by a focused end-to-end visual test. See [AGENTS.md](AGENTS.md) and the [testing strategy](docs/testing-strategy.md) for the full contributor workflow.
+
+<details>
+<summary><strong>Common development commands</strong></summary>
+
+| Command            | Purpose                                                      |
+| ------------------ | ------------------------------------------------------------ |
+| `npm run dev`      | Build in watch mode and launch Electron                      |
+| `npm run build`    | Create the application bundle in `dist/`                     |
+| `npm start`        | Launch an existing build                                     |
+| `npm test`         | Run unit and component tests                                 |
+| `npm run test:e2e` | Run Electron end-to-end tests                                |
+| `npm run check`    | Run typecheck, lint, formatting, dead-code checks, and tests |
+
+</details>
+
+<details>
+<summary><strong>Install troubleshooting</strong></summary>
+
+Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. If npm is configured with `ignore-scripts=true`, allow scripts for this install:
+
+```bash
+npm ci --ignore-scripts=false
 ```
 
-Keep `ignore-scripts` on if you want it — just run the native postinstall once after each install (the chmod runs before the electron rebuild, so you can skip that):
+Or run the native setup manually after installing dependencies:
 
 ```bash
 SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
 ```
 
-Or let scripts run for a single install without changing your global config:
+Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-search binary.
 
-```bash
-npm install --ignore-scripts=false
-```
+</details>
 
-Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER_API_KEY` (Settings → API Keys) to reach Claude, GPT, Gemini, Llama and more through [OpenRouter](https://openrouter.ai), or configure a local provider in Settings. For cheap/free tiers you can also add a `MISTRAL_API_KEY` (Mistral's free Experiment tier), `GEMINI_API_KEY` (Google's free-tier Gemini Flash models), or `DEEPSEEK_API_KEY` (low-cost DeepSeek) — each appears as its own group in the model picker. Without keys, the app falls back to a built-in mock LLM for development.
+## Learn more
 
-### How API keys are stored
+- [Support and known issues](SUPPORT.md)
+- [Security policy](SECURITY.md)
+- [Privacy and data flow](docs/privacy-data-flow.md)
+- [Provider retention and training policies](docs/provider-data-policies.md)
+- [Backup and recovery](docs/recovery.md)
+- [MCP example configuration](mcp.json.example)
+- [Custom tools](docs/custom-tools.md)
+- [Skills and feature packs](docs/packs.md)
+- [ACP agent setup](docs/acp-setup-guide.md)
+- [Screen recording support](docs/video-frames.md)
+- [Conversation storage format](docs/thread-store-format.md)
+- [Changelog and releases](CHANGELOG.md)
 
-API keys entered in **Settings → API Keys** are persisted in the app's `settings.json` (inside the `copse-panel` userData directory). When an OS secure-storage backend is available they are encrypted at rest via Electron's [`safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage) — the macOS Keychain, Windows DPAPI, or a Linux keyring (gnome-keyring / kwallet via libsecret).
+## License
 
-If **no keyring is available** — common on a headless or minimal Linux install —
-`safeStorage` cannot encrypt. Copse refuses to persist the key until you
-explicitly consent to storing it as **base64 plaintext**. Base64 is not
-encryption; anyone with read access to your profile directory can recover the
-key. To get encryption at rest on Linux, install and unlock a keyring such as
-`gnome-keyring` (with `libsecret`) before launching the app. Prefer not to store
-a key on disk at all? Provide it via the matching environment variable (for
-example `ANTHROPIC_API_KEY`) instead — environment-only keys are never written to
-`settings.json`.
-
-### Where chat threads are stored
-
-Conversations live in a filesystem-native store under `~/.copse/workspace/<projectId>/<threadId>/` — one directory per thread (a tiny `meta.json`, an append-only `events.jsonl` history, and Markdown message files), not in `config.json`. This makes each thread greppable and lets the agent `@`-reference a past conversation and explore it read-only with its file tools. Set `COPSE_WORKSPACE_DIR` to relocate the store. Format details: [docs/thread-store-format.md](docs/thread-store-format.md).
-
-### Detecting keys from your environment
-
-If you already export provider keys in your shell (e.g. `ANTHROPIC_API_KEY` in `~/.zshrc`), Copse can pick them up for you. This is **opt-in**: click **Scan environment** in first-run setup or under **Settings → General**. Copse reads `process.env` plus a fixed allow-list of your own start-up files (`~/.zshrc`, `~/.bashrc`, `~/.profile`, `~/.config/fish/config.fish`, …), shows a masked preview of any keys it recognises (Anthropic, OpenAI, Cursor, OpenRouter, Mistral, Gemini, DeepSeek, Hugging Face, LM Studio), and lets you import the ones you don't already have configured. Nothing is read until you click Scan, raw secret values never leave the main process, and existing saved keys are never overwritten.
-
-### LM Studio context length resets on restart
-
-LM Studio reloads local models at a small default context length after a reboot, which trips Copse's low-context advisory. Copse reads the loaded context but can't safely reload the model at your machine's maximum — see [`docs/lm-studio-context-persistence.md`](./docs/lm-studio-context-persistence.md) for how to make your chosen context length restart-proof (save a per-model default, or script `lms load --context-length` at login).
-
-## Security, privacy, support, and releases
-
-- [Security policy and private vulnerability reporting](SECURITY.md)
-- [Privacy and complete data-flow inventory](docs/privacy-data-flow.md)
-- [Provider data retention & training policies, and Copse's ZDR defaults](docs/provider-data-policies.md)
-- [Support, known issues, and safe diagnostics](SUPPORT.md)
-- [Changelog and GitHub Release note process](CHANGELOG.md)
-- [Backup, migration, and forward recovery](docs/recovery.md)
-- [General release checklist](docs/release-checklist.md)
-
-## Commands
-
-| Command            | Purpose                                  |
-| ------------------ | ---------------------------------------- |
-| `npm run dev`      | Dev build + Electron                     |
-| `npm run build`    | Production bundle to `dist/`             |
-| `npm start`        | Run built app                            |
-| `npm test`         | Unit tests                               |
-| `npm run test:e2e` | WebdriverIO Electron e2e                 |
-| `npm run check`    | typecheck, lint, format, dead-code, test |
-
-## Shell command permissions
-
-On **macOS** with the project sandbox (seatbelt) active, sandbox-contained commands auto-run inside the sandbox; external commands (network, `gh`, `git push`, etc.) prompt and run outside when approved.
-
-On **Linux / Windows** (no OS sandbox), every agent-proposed shell command requires approval unless you explicitly add its binary to the trusted-command allow-list. The optional local safety classifier can only add a strict-mode block for a dangerous external command; it can never authorize host execution.
-
-## Layout
-
-```
-src/
-  main/          Electron main: window, IPC, agent service, tool registry, workspace, MCP, project sandbox
-  preload/       `contextBridge` API exposed to the renderer
-  renderer/      DOM UI (views, controllers, styles), Monaco setup
-  shared/        Agent loop, reactive store, LLM providers, shared types
-scripts/         esbuild dev/build and test runner
-```
-
-Path alias `@shared/*` maps to `src/shared/*` (see tsconfig).
-
-## MCP servers
-
-The agent is an MCP (Model Context Protocol) host and ships with no servers connected. Add them in `.cursor/mcp.json` / `.mcp.json` (project) or `~/.cursor/mcp.json` (global), using the standard `mcpServers` format (same as Cursor / Claude Desktop); reference secrets with `${env:VAR}`. See [`mcp.json.example`](./mcp.json.example) for optional MCP servers. Status, reload, and approval settings live under **Settings → MCP servers**.
-
-## Custom tools
-
-For a one-off capability that doesn't justify standing up a whole MCP server, drop
-an in-process **custom tool** into `<userData>/tools/` (`*.js` / `*.mjs` / `*.cjs`).
-Each module default-exports a tool object (or an array, or a factory returning
-either):
-
-```js
-export default {
-  name: 'lookup_user',
-  description: 'Look up a user by id',
-  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-  async execute({ id }) {
-    return `user ${id}`
-  },
-}
-```
-
-They register into the same tool registry as built-in and MCP tools (namespaced
-`custom__<name>`) and **always prompt for approval** before running, since they
-execute with full Node privilege. They are loaded **only** from the user's trusted
-directory — never from the workspace, so a cloned repo can't inject one. See
-[`docs/custom-tools.md`](./docs/custom-tools.md).
-
-## Semantic search
-
-On supported platforms, `npm install` downloads a bundled [`gortex`](https://github.com/zzet/gortex) binary to `vendor/gortex/` (postinstall; skip with `SKIP_GORTEX_FETCH=1`) — a daemon-based code-intelligence engine that indexes the repo into a queryable graph. Native tools (`semantic_search`, `search_codebase` semantic mode) probe gortex, then fall back to `vera` on PATH — preferring a system install over the bundled copy — and keep the index in sync with the workspace. gortex runs a per-user daemon (`gortex daemon`) whose sqlite store and index live under Copse app data (`gortex/` inside the `copse-panel` userData directory) via a sandboxed `HOME`, not in the project tree.
+Copse is available under the [Apache License 2.0](LICENSE).

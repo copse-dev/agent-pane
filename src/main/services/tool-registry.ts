@@ -5,8 +5,18 @@ import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
+
+interface RegisteredTool {
+  name: string
+  description: string
+  parameters: z.ZodType
+  rawParameters?: Record<string, unknown>
+  parse: (rawArgs: unknown) => unknown
+  execute: (args: unknown, signal: AbortSignal) => ToolExecuteResult | Promise<ToolExecuteResult>
+}
 
 let permissionGateOverride: PermissionGateFn | null = null
 let permissionGateDefault: PermissionGateFn | null = null
@@ -36,13 +46,17 @@ function appendInjectedContext(result: ToolExecuteResult, block: string): ToolEx
 }
 
 export class ToolRegistry {
-  private tools = new Map<string, ToolDefinition>()
+  private tools = new Map<string, RegisteredTool>()
 
   register<TArgs>(tool: ToolDefinition<TArgs>): void {
-    // Erase the per-tool arg type for uniform storage. ToolDefinition<TArgs> is
-    // invariant in TArgs, so this widening can't be expressed without a cast;
-    // execute() is only ever called with args validated by this tool's own schema.
-    this.tools.set(tool.name, tool as ToolDefinition)
+    this.tools.set(tool.name, {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      ...(tool.rawParameters ? { rawParameters: tool.rawParameters } : {}),
+      parse: (rawArgs) => tool.parameters.parse(rawArgs),
+      execute: (args, signal) => tool.execute(tool.parameters.parse(args), signal),
+    })
   }
 
   unregister(name: string): void {
@@ -92,13 +106,13 @@ export class ToolRegistry {
     if (!tool) return null
     const parsed = tool.parameters.safeParse(rawArgs)
     if (!parsed.success) return null
-    return parsed.data as Record<string, unknown>
+    return expectRecord(parsed.data)
   }
 
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
-    const parsed = tool.parameters.parse(rawArgs)
+    const parsed = tool.parse(rawArgs)
     if (isAgentRunReadonly()) {
       const blockReason = getReadonlyToolBlockReason(name, {
         mcpAnnotations: name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined,
@@ -110,7 +124,7 @@ export class ToolRegistry {
     const check: PermissionCheck = { toolName: name, args: parsed }
     const permitted = await ensurePermitted(check)
     if (!permitted) return `User rejected the ${name} tool call.`
-    const result = await tool.execute(parsed, signal)
+    const result = await tool.execute(rawArgs, signal)
     // H2: a `toolGate` hook injected context into the current turn. Append the
     // pre-built system-reminder block (10k-capped) to this call's textual
     // result so the model reads it right after the tool output.

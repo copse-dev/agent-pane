@@ -124,6 +124,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         }
       },
       onApprovalRequest: subscribe,
+      onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -233,7 +234,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       detect: () =>
         resolved({
           serverRunning: false,
-          serverUrl: 'http://localhost:1234/v1',
+          serverUrl: 'http://127.0.0.1:1234/v1',
           installDetected: false,
           models: [],
           modelContexts: {},
@@ -381,6 +382,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       update: () => resolved(null),
       setStatus: () => resolved(null),
       delete: () => resolved(false),
+      export: unsupported,
       issueUrl: () => resolved(null),
       openIssues: () => resolved({ slug: 'copse-dev/agent-pane', issues: [] }),
       importIssues: emptyArray,
@@ -410,6 +412,13 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ packs: [] }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
+    },
+    automations: {
+      list: emptyArray,
+      upsert: unsupported,
+      remove: unsupported,
+      runNow: unsupported,
+      onTriggered: subscribe,
     },
     instructions: { list: emptyArray },
     cursorRules: { list: emptyArray },
@@ -474,7 +483,17 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid,
     },
-    panes: { popout: resolvedVoid },
+    panes: {
+      popout: resolvedVoid,
+      takePopoutSeed: () => Promise.resolve(null),
+      onSwitchMode: () => () => {},
+    },
+    // The demo build has no main process to store a file, so attaching a video
+    // rejects rather than handing back a path nothing could read.
+    video: {
+      attach: () => Promise.reject(new Error('Video attachments are unavailable in the demo')),
+      read: () => Promise.reject(new Error('Video playback is unavailable in the demo')),
+    },
   }
 
   return api

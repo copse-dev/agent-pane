@@ -11,18 +11,26 @@ import type { Message, Thread } from '../../src/shared/types/thread.ts'
 import { threadToJsonl } from '../../src/shared/threads/export-jsonl.ts'
 import { explodeThread } from '../../src/shared/threads/fold.ts'
 import { serializeSpine } from '../../src/shared/threads/spine-schema.ts'
+import { nonEmptyStringOr } from '../../src/shared/unknown-value.mts'
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 const CHARS_PER_TOKEN = 4
 
 function titleFromInstruction(instruction: string): string {
-  const firstLine = instruction.trim().split('\n', 1)[0]?.trim() || 'Terminal benchmark'
+  const firstLine = nonEmptyStringOr(instruction.trim().split('\n', 1)[0]?.trim(), 'Benchmark task')
   return firstLine.slice(0, 80)
 }
 
-export class TerminalBenchTranscript {
+/**
+ * Builds a real Copse `Thread` from an agent's stream and writes it as the same
+ * spine the product stores, so a benchmark trial can be replayed and inspected
+ * rather than reduced to a scalar reward. Shared by Terminal-Bench and
+ * SkillsBench; `projectId` tags which one a sidecar row came from.
+ */
+export class BenchTranscript {
   private readonly directory: string
   private readonly idFactory: () => string
+  private readonly projectId: string
   private readonly thread: Thread
   private readonly turnId: string
   private currentAssistantId: string | null = null
@@ -33,11 +41,12 @@ export class TerminalBenchTranscript {
     directory: string,
     instruction: string,
     model: string,
-    options: { now?: number; idFactory?: () => string } = {},
+    options: { now?: number; idFactory?: () => string; projectId?: string } = {},
   ) {
     const now = options.now ?? Date.now()
     this.directory = directory
     this.idFactory = options.idFactory ?? randomUUID
+    this.projectId = options.projectId ?? 'terminal-bench'
     const threadId = this.idFactory()
     this.turnId = this.idFactory()
     this.thread = {
@@ -202,7 +211,7 @@ export class TerminalBenchTranscript {
       `${JSON.stringify({
         schemaVersion: 1,
         timestamp: new Date().toISOString(),
-        projectId: 'terminal-bench',
+        projectId: this.projectId,
         threadId: this.thread.id,
         turnId: this.turnId,
         model: this.thread.model ?? 'unknown',
@@ -220,7 +229,7 @@ export class TerminalBenchTranscript {
       `${JSON.stringify({
         schemaVersion: 1,
         timestamp: new Date().toISOString(),
-        projectId: 'terminal-bench',
+        projectId: this.projectId,
         threadId: this.thread.id,
         turnId: this.turnId,
         model: this.thread.model ?? 'unknown',
@@ -236,7 +245,7 @@ export class TerminalBenchTranscript {
       `${JSON.stringify({
         schemaVersion: 1,
         timestamp: new Date(record.startedAt).toISOString(),
-        projectId: 'terminal-bench',
+        projectId: this.projectId,
         threadId: this.thread.id,
         turnId: this.turnId,
         model: this.thread.model ?? 'unknown',
@@ -252,7 +261,7 @@ export class TerminalBenchTranscript {
       `${JSON.stringify({
         schemaVersion: 1,
         timestamp: new Date().toISOString(),
-        projectId: 'terminal-bench',
+        projectId: this.projectId,
         threadId: this.thread.id,
         turnId: this.turnId,
         model: this.thread.model ?? 'unknown',

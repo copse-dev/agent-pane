@@ -6,10 +6,11 @@ import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { at } from '../../src/shared/array-utils.ts'
 import { foldThread } from '../../src/shared/threads/fold.ts'
-import { parseSpine, type ThreadMeta } from '../../src/shared/threads/spine-schema.ts'
+import { parseSpine } from '../../src/shared/threads/spine-schema.ts'
+import { parseThreadMetaValue } from '../../src/shared/threads/thread-boundary.ts'
 import type { StreamCutRecord } from '../../packages/agent/src/stream-cut-record.ts'
 import type { ReasoningCheckpointRecord } from '../../packages/agent/src/reasoning-circle-detector.ts'
-import { TerminalBenchTranscript } from './terminal-bench-transcript.mts'
+import { BenchTranscript } from './bench-transcript.mts'
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8').trim()) as unknown
@@ -33,7 +34,7 @@ describe('terminal benchmark transcript', () => {
   it('writes the normal thread-store layout and portable export', () => {
     let nextId = 0
     const directory = join(root, 'thread')
-    const transcript = new TerminalBenchTranscript(directory, 'Solve the task', 'local/model', {
+    const transcript = new BenchTranscript(directory, 'Solve the task', 'local/model', {
       now: 100,
       idFactory: (): string => `id-${String(++nextId)}`,
     })
@@ -98,7 +99,8 @@ describe('terminal benchmark transcript', () => {
     })
     transcript.write()
 
-    const meta = asRecord(readJson(join(directory, 'meta.json'))) as ThreadMeta
+    const meta = parseThreadMetaValue(readJson(join(directory, 'meta.json')))
+    assert.ok(meta)
     const spine = parseSpine(readFileSync(join(directory, 'events.jsonl'), 'utf8'))
     const hash = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
     const folded = foldThread(meta, spine, (ref) => readFileSync(join(directory, ref), 'utf8'), {
@@ -120,9 +122,9 @@ describe('terminal benchmark transcript', () => {
     const exported = readFileSync(join(directory, 'thread.jsonl'), 'utf8')
       .trimEnd()
       .split('\n')
-      .map((line) => asRecord(JSON.parse(line) as unknown) as { type: string; content?: string })
-    assert.equal(exported[0]?.type, 'thread')
-    assert.equal(exported.at(-1)?.content, 'Completed.')
+      .map((line) => asRecord(JSON.parse(line) as unknown))
+    assert.equal(exported[0]?.['type'], 'thread')
+    assert.equal(exported.at(-1)?.['content'], 'Completed.')
 
     const streamStat = asRecord(readJson(join(root, 'stream-stats.jsonl')))
     assert.equal(streamStat['schemaVersion'], 1)

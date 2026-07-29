@@ -1,9 +1,10 @@
 import { errorMessage } from '@shared/errors.ts'
-import { BrowserWindow, app } from 'electron'
+import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { getAgentBrowserSession } from '../../windows/browser-web-contents.ts'
-import { DOM_SNAPSHOT_SCRIPT, renderSnapshot, type PageSnapshot } from './snapshot-format.ts'
+import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
+import { expectBoolean } from '@shared/unknown-value.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -12,6 +13,22 @@ const DEFAULT_HEIGHT = 800
 interface Tab {
   id: string
   window: BrowserWindow
+}
+
+export interface BrowserSessionPlatform {
+  createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
+  getAgentSession(): Session
+}
+
+let platform: BrowserSessionPlatform | null = null
+
+export function setBrowserSessionPlatform(next: BrowserSessionPlatform | null): void {
+  platform = next
+}
+
+function requirePlatform(): BrowserSessionPlatform {
+  if (!platform) throw new Error('Browser tools require the Electron browser-session platform.')
+  return platform
 }
 
 export interface NavigateResult {
@@ -41,7 +58,8 @@ export class BrowserSessionManager {
       throw new Error(`browser tab limit reached (${String(MAX_TABS)}); close a tab first`)
     }
     const id = `tab-${String(++this.counter)}`
-    const window = new BrowserWindow({
+    const browserPlatform = requirePlatform()
+    const window = browserPlatform.createWindow({
       show: false,
       width: DEFAULT_WIDTH,
       height: DEFAULT_HEIGHT,
@@ -51,7 +69,7 @@ export class BrowserSessionManager {
         // cookies/storage and the user never browses under the agent (#467).
         // Still recognized by isBrowserWebContents, so guest lockdown — not the
         // renderer lockdown meant for app pages — applies to these tabs.
-        session: getAgentBrowserSession(),
+        session: browserPlatform.getAgentSession(),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -108,17 +126,14 @@ export class BrowserSessionManager {
 
   async snapshot(viewId?: string): Promise<string> {
     const tab = this.resolveTab(viewId)
-    const raw = (await tab.window.webContents.executeJavaScript(
-      DOM_SNAPSHOT_SCRIPT,
-      true,
-    )) as PageSnapshot
-    return renderSnapshot(raw)
+    const raw: unknown = await tab.window.webContents.executeJavaScript(DOM_SNAPSHOT_SCRIPT, true)
+    return renderSnapshot(parsePageSnapshot(raw))
   }
 
   async screenshot(viewId?: string): Promise<{ path: string; viewId: string }> {
     const tab = this.resolveTab(viewId)
     const image = await tab.window.webContents.capturePage()
-    const dir = join(app.getPath('userData'), 'browser-screenshots')
+    const dir = join(getElectronUserDataPath(), 'browser-screenshots')
     await mkdir(dir, { recursive: true })
     const path = join(dir, `${tab.id}-${String(Date.now())}.png`)
     await writeFile(path, image.toPNG())
@@ -127,24 +142,27 @@ export class BrowserSessionManager {
 
   async click(ref: string, viewId?: string): Promise<string> {
     const tab = this.resolveTab(viewId)
-    const ok = (await tab.window.webContents.executeJavaScript(
-      `(() => {
+    const ok = expectBoolean(
+      await tab.window.webContents.executeJavaScript(
+        `(() => {
         const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
         if (!el) return false;
         el.scrollIntoView({ block: 'center' });
         el.click();
         return true;
       })()`,
-      true,
-    )) as boolean
+        true,
+      ),
+    )
     if (!ok) throw new Error(`no element with ref ${ref} (run browser_snapshot first)`)
     return `Clicked [ref=${ref}]`
   }
 
   async type(ref: string, text: string, viewId?: string): Promise<string> {
     const tab = this.resolveTab(viewId)
-    const ok = (await tab.window.webContents.executeJavaScript(
-      `(() => {
+    const ok = expectBoolean(
+      await tab.window.webContents.executeJavaScript(
+        `(() => {
         const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
         if (!el) return false;
         el.focus();
@@ -155,8 +173,9 @@ export class BrowserSessionManager {
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
       })()`,
-      true,
-    )) as boolean
+        true,
+      ),
+    )
     if (!ok) throw new Error(`no element with ref ${ref} (run browser_snapshot first)`)
     return `Typed into [ref=${ref}]`
   }
@@ -189,7 +208,7 @@ export class BrowserSessionManager {
 let singleton: BrowserSessionManager | null = null
 
 export function getBrowserSession(): BrowserSessionManager {
-  if (!singleton) singleton = new BrowserSessionManager()
+  singleton ??= new BrowserSessionManager()
   return singleton
 }
 

@@ -1,3 +1,5 @@
+import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
+
 /**
  * Pure helpers for turning an MCP tool's `inputSchema` into the JSON Schema
  * object copse-panel hands to LLM providers, plus result flattening.
@@ -29,11 +31,11 @@ function sanitizeNode(value: unknown, depth: number): unknown {
   if (Array.isArray(value)) {
     return value.slice(0, MAX_ARRAY_ENTRIES).map((v) => sanitizeNode(v, depth + 1))
   }
-  if (!value || typeof value !== 'object') return value
+  if (!isRecord(value)) return value
 
   const out: Record<string, unknown> = {}
   let propCount = 0
-  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, v] of Object.entries(value)) {
     if (STRIPPED_KEYS.has(key)) continue
     if (propCount >= MAX_PROPERTIES) break
     propCount++
@@ -54,24 +56,16 @@ function sanitizeNode(value: unknown, depth: number): unknown {
  * providers never reject the tool.
  */
 export function sanitizeMcpInputSchema(inputSchema: unknown): Record<string, unknown> {
-  if (!inputSchema || typeof inputSchema !== 'object') {
+  if (!isRecord(inputSchema)) {
     return { ...EMPTY_OBJECT_SCHEMA }
   }
-  const out = sanitizeNode(inputSchema, 0) as Record<string, unknown>
+  const sanitized = sanitizeNode(inputSchema, 0)
+  const out = isRecord(sanitized) ? sanitized : { ...EMPTY_OBJECT_SCHEMA }
 
   if (out['type'] !== 'object') out['type'] = 'object'
   if (!out['properties'] || typeof out['properties'] !== 'object') out['properties'] = {}
 
   return out
-}
-
-interface McpContentBlock {
-  type?: string
-  text?: string
-  data?: string
-  mimeType?: string
-  resource?: { uri?: string; text?: string; mimeType?: string }
-  [key: string]: unknown
 }
 
 // Embedded `resource` blocks the MCP-UI / "MCP Apps" convention uses to ship
@@ -94,8 +88,11 @@ export interface McpUiResource {
   text: string
 }
 
-function uiResourceMimeType(resource: { mimeType?: string } | undefined): string | null {
-  const mime = typeof resource?.mimeType === 'string' ? resource.mimeType.toLowerCase() : ''
+function uiResourceMimeType(resource: unknown): string | null {
+  const mime =
+    isRecord(resource) && typeof resource['mimeType'] === 'string'
+      ? resource['mimeType'].toLowerCase()
+      : ''
   return UI_RESOURCE_MIME_TYPES.has(mime) ? mime : null
 }
 
@@ -108,16 +105,17 @@ function uiResourceMimeType(resource: { mimeType?: string } | undefined): string
 export function extractUiResources(content: unknown): McpUiResource[] {
   if (!Array.isArray(content)) return []
   const out: McpUiResource[] = []
-  for (const raw of content as McpContentBlock[]) {
-    // raw comes from an untrusted MCP server via an `as`-cast, so it may be null/undefined at runtime.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!raw || typeof raw !== 'object' || raw.type !== 'resource') continue
-    const mime = uiResourceMimeType(raw.resource)
+  const blocks: unknown[] = content
+  for (const raw of blocks) {
+    if (!isRecord(raw) || raw['type'] !== 'resource') continue
+    const resource = raw['resource']
+    const mime = uiResourceMimeType(resource)
     if (!mime) continue
-    const text = typeof raw.resource?.text === 'string' ? raw.resource.text : ''
+    if (!isRecord(resource)) continue
+    const text = typeof resource['text'] === 'string' ? resource['text'] : ''
     if (!text || Buffer.byteLength(text, 'utf8') > MAX_UI_RESOURCE_BYTES) continue
     out.push({
-      uri: typeof raw.resource?.uri === 'string' ? raw.resource.uri : '',
+      uri: typeof resource['uri'] === 'string' ? resource['uri'] : '',
       mimeType: mime,
       text,
     })
@@ -126,10 +124,13 @@ export function extractUiResources(content: unknown): McpUiResource[] {
 }
 
 /** Short, model-facing descriptor for a UI resource rendered in the canvas. */
-function describeUiResource(resource: { uri?: string; mimeType?: string; text?: string }): string {
-  const label = resource.uri || resource.mimeType || 'ui resource'
-  const bytes = typeof resource.text === 'string' ? Buffer.byteLength(resource.text, 'utf8') : 0
-  const size = bytes ? ` (${resource.mimeType ?? 'unknown'}, ${(bytes / 1024).toFixed(1)} KB)` : ''
+function describeUiResource(resource: Record<string, unknown>): string {
+  const uri = typeof resource['uri'] === 'string' ? resource['uri'] : undefined
+  const mimeType = typeof resource['mimeType'] === 'string' ? resource['mimeType'] : undefined
+  const text = typeof resource['text'] === 'string' ? resource['text'] : undefined
+  const label = firstNonEmptyString(uri, mimeType) ?? 'ui resource'
+  const bytes = text === undefined ? 0 : Buffer.byteLength(text, 'utf8')
+  const size = bytes ? ` (${mimeType ?? 'unknown'}, ${(bytes / 1024).toFixed(1)} KB)` : ''
   return `[ui resource: ${label}${size} — rendered in the canvas]`
 }
 
@@ -150,36 +151,42 @@ export function flattenMcpContent(content: unknown, options: FlattenOptions = {}
   }
 
   const parts: string[] = []
-  for (const raw of content as McpContentBlock[]) {
-    // raw comes from an untrusted MCP server via an `as`-cast, so it may be null/undefined at runtime.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!raw || typeof raw !== 'object') continue
-    switch (raw.type) {
+  const blocks: unknown[] = content
+  for (const raw of blocks) {
+    if (!isRecord(raw)) continue
+    switch (raw['type']) {
       case 'text':
-        if (typeof raw.text === 'string') parts.push(raw.text)
+        if (typeof raw['text'] === 'string') parts.push(raw['text'])
         break
       case 'image':
-        parts.push(`[image${raw.mimeType ? ` ${raw.mimeType}` : ''} omitted]`)
+        parts.push(
+          `[image${typeof raw['mimeType'] === 'string' ? ` ${raw['mimeType']}` : ''} omitted]`,
+        )
         break
       case 'audio':
-        parts.push(`[audio${raw.mimeType ? ` ${raw.mimeType}` : ''} omitted]`)
+        parts.push(
+          `[audio${typeof raw['mimeType'] === 'string' ? ` ${raw['mimeType']}` : ''} omitted]`,
+        )
         break
       case 'resource_link': {
         const uri = typeof raw['uri'] === 'string' ? raw['uri'] : ''
         parts.push(`[resource link: ${uri}]`)
         break
       }
-      case 'resource':
-        if (options.summarizeUiResources && raw.resource && uiResourceMimeType(raw.resource)) {
-          parts.push(describeUiResource(raw.resource))
-        } else if (raw.resource?.text) {
-          parts.push(raw.resource.text)
-        } else if (raw.resource?.uri) {
-          parts.push(`[resource: ${raw.resource.uri}]`)
+      case 'resource': {
+        const resource = raw['resource']
+        if (!isRecord(resource)) break
+        if (options.summarizeUiResources && uiResourceMimeType(resource)) {
+          parts.push(describeUiResource(resource))
+        } else if (typeof resource['text'] === 'string' && resource['text']) {
+          parts.push(resource['text'])
+        } else if (typeof resource['uri'] === 'string' && resource['uri']) {
+          parts.push(`[resource: ${resource['uri']}]`)
         }
         break
+      }
       default:
-        if (typeof raw.text === 'string') parts.push(raw.text)
+        if (typeof raw['text'] === 'string') parts.push(raw['text'])
     }
   }
 

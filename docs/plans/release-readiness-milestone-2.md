@@ -315,6 +315,29 @@ Plan:
 Exit: both boots reach an interactive thread, search and send-message smoke checks pass, migration
 is durable, and time/memory stay within a reviewed budget with useful failure diagnostics.
 
+**Why this is the gate that was missing.** In July 2026 startup reached roughly 8.3s on a real
+profile and was reported by a user, not by CI. Nothing was wrong with the tests — every dominant
+cost is proportional to something a pristine profile does not have, so all of them measure ~0 in CI
+and the regression is invisible by construction:
+
+| Cost                                        | Scales with                    | Measured in CI today                |
+| ------------------------------------------- | ------------------------------ | ----------------------------------- |
+| Folding every thread on project open (#998) | threads × messages × blob size | ~0 — no threads                     |
+| `llm-history` migration scan (#993)         | thread count                   | ~0 — no history                     |
+| Project skill scan                          | workspace tree size            | ~0 — small checkout                 |
+| MCP connect (30s/server timeout)            | configured servers             | ~0 — none configured                |
+| Tool-availability probes                    | fixed (~9 process spawns)      | measured, but off the critical path |
+
+Only the last row is size-independent, and it was the one cost anyone could have caught. Step 2's
+fixture is what makes the other four observable, so it is the load-bearing part of this plan rather
+than setup detail.
+
+`reportStartupBudget` (`src/main/services/diagnostics/startup-budget.ts`) is the interim half: it
+consumes #995's phase timeline, logs the boot breakdown on every launch, and warns on a phase over
+its ceiling. That gives a real machine a number to report and a paste-ready timeline, but it is not
+a gate — it cannot fail a build, and CI still never boots a profile large enough to trip it. The
+fixture above remains the actual prevention.
+
 ### #806 Artifact-size budget and packaged footprint
 
 **Issue:** [Set an artifact-size budget and reduce the packaged app footprint](https://github.com/copse-dev/agent-pane/issues/806)

@@ -1,7 +1,7 @@
-// Verifies the approval dialog stays *behind* the settings dialog (issue #501):
-// while Settings is open, an approval request arriving from a background chat is
-// queued rather than stacked on top of the settings modal, and is surfaced once
-// the user leaves Settings.
+// Verifies ordinary approvals stay *behind* the settings dialog (issue #501),
+// while the provider-host approval caused by a Settings save is the deliberate
+// exception: it stacks above Settings without pulling unrelated queued requests
+// into the same prompt.
 //
 // happy-dom has no modal-dialog implementation, so we shim showModal/close/open
 // on both dialogs. The shim's close() dispatches the native `close` event the
@@ -15,6 +15,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog, openSettingsDialog, closeSettingsDialog } from './settings-dialog.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 import { resetAttention } from '../controller/attention.ts'
+import { qsRequired } from '../dom/helpers.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 type ApprovalHandler = (req: {
   id: string
@@ -24,37 +26,35 @@ type ApprovalHandler = (req: {
   type: string
   allowRemember?: boolean
   rememberLabel?: string
+  showWhileSettingsOpen?: boolean
 }) => void
 
 // Recursive never-settling stub for the settings dialog's background loads, with
 // the two approval surfaces the approval dialog actually touches captured.
 function makeApi(): {
   api: ApiClient
-  emit: (req: { id: string; threadId?: string }) => void
+  emit: (req: { id: string; threadId?: string; showWhileSettingsOpen?: boolean }) => void
 } {
   let handler: ApprovalHandler = () => {}
-  const overrides: Record<string, unknown> = {
-    'agent.onApprovalRequest': (h: ApprovalHandler) => {
+  const overrides = {
+    'agent.onApprovalRequest': (h: ApprovalHandler): (() => void) => {
       handler = h
       return () => {}
     },
-    'approval.respond': () => Promise.resolve(),
+    'approval.respond': (): Promise<void> => Promise.resolve(),
   }
-  const make = (path: string): unknown =>
-    new Proxy(() => new Promise(() => {}), {
-      get: (_t, prop) => make(path ? `${path}.${String(prop)}` : String(prop)),
-      apply: (_t, _this, args): unknown => {
-        const override = overrides[path]
-        if (typeof override === 'function')
-          return (override as (...a: unknown[]) => unknown)(...(args as unknown[]))
-        return new Promise(() => {})
-      },
-    })
-  const api = make('') as ApiClient
+  const api = createPendingApi(overrides)
   return {
     api,
     emit: (req): void => {
-      handler({ id: req.id, threadId: req.threadId, title: 't', body: 'b', type: 'shell' })
+      handler({
+        id: req.id,
+        threadId: req.threadId,
+        title: req.showWhileSettingsOpen ? 'Provider host' : 'Shell command',
+        body: req.showWhileSettingsOpen ? 'provider.example' : 'echo hello',
+        type: req.showWhileSettingsOpen ? 'web' : 'shell',
+        ...(req.showWhileSettingsOpen ? { showWhileSettingsOpen: true } : {}),
+      })
     },
   }
 }
@@ -88,7 +88,7 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
 describe('approval dialog vs settings (issue #501)', () => {
   let approvalDialog: HTMLDialogElement
   let approvalSpy: { showModalCalls: number }
-  let emit: (req: { id: string }) => void
+  let emit: (req: { id: string; showWhileSettingsOpen?: boolean }) => void
 
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -98,7 +98,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     const store = createStore()
     // Settings must mount first: the approval dialog subscribes to its close event.
     mountSettingsDialog(store, made.api)
-    const settings = document.getElementById('settings-dialog') as HTMLDialogElement
+    const settings = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     shimModal(settings)
     // openSettingsDialog also dispatches `settings-open`, kicking off async loads
     // against the never-settling stub api: those awaits never resolve, so nothing
@@ -113,7 +113,7 @@ describe('approval dialog vs settings (issue #501)', () => {
         return () => {}
       },
     })
-    approvalDialog = document.getElementById('approval-dialog') as HTMLDialogElement
+    approvalDialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
     approvalSpy = shimModal(approvalDialog)
   })
 
@@ -133,5 +133,23 @@ describe('approval dialog vs settings (issue #501)', () => {
     closeSettingsDialog()
     assert.equal(approvalSpy.showModalCalls, 1)
     assert.equal(approvalDialog.open, true)
+  })
+
+  it('shows a provider-host approval above settings without surfacing unrelated requests', () => {
+    openSettingsDialog()
+    emit({ id: 'shell' })
+    emit({ id: 'provider', showWhileSettingsOpen: true })
+
+    assert.equal(approvalSpy.showModalCalls, 1)
+    assert.equal(approvalDialog.open, true)
+    assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Provider host')
+    assert.equal(qsRequired(approvalDialog, '.approval-body').textContent, 'provider.example')
+
+    qsRequired<HTMLButtonElement>(approvalDialog, '.approval-reject').click()
+    assert.equal(approvalDialog.open, false)
+
+    closeSettingsDialog()
+    assert.equal(approvalSpy.showModalCalls, 2)
+    assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Shell command')
   })
 })

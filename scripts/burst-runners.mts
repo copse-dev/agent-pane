@@ -56,6 +56,7 @@ import {
   scalewayArgs,
   shellQuote,
   sshRunAsync,
+  type SshConfig,
   sshTarget,
   terminateAwsInstances,
   terminateScalewayServer,
@@ -601,6 +602,12 @@ function drainScript(timeoutMinutes: number): string {
   ].join('\n')
 }
 
+function sshHostOption(options: Options): SshConfig['sshHost'] {
+  const value = optionWithDefault(options, 'ssh-host', 'public')
+  if (value === 'public' || value === 'private') return value
+  throw new Error("--ssh-host must be 'public' or 'private'")
+}
+
 async function scalewayDrain(options: Options): Promise<void> {
   requireScalewayTool()
   const fleet = listScalewayFleet(
@@ -616,7 +623,7 @@ async function scalewayDrain(options: Options): Promise<void> {
   const sshConfig = {
     keyPath: option(options, 'key-path') ?? '',
     remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_SCW_REMOTE_USER),
-    sshHost: optionWithDefault(options, 'ssh-host', 'public') as 'public' | 'private',
+    sshHost: sshHostOption(options),
   }
   const timeoutMinutes = positiveInt(
     optionWithDefault(options, 'drain-timeout-minutes', String(DEFAULT_DRAIN_TIMEOUT_MINUTES)),

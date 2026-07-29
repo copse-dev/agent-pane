@@ -32,6 +32,8 @@ import {
 } from './message-queue.ts'
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
 
@@ -62,26 +64,35 @@ function fakeApi(): ApiClient & {
   const runs: Array<[string, string]> = []
   const projectIds: string[] = []
   const aborts: string[] = []
-  return {
-    runs,
-    projectIds,
-    aborts,
-    agent: {
-      run: (projectId: string, threadId: string, payload: string) => {
-        projectIds.push(projectId)
-        runs.push([threadId, payload])
-        return Promise.resolve()
-      },
-      abort: (threadId: string) => {
-        aborts.push(threadId)
-        return Promise.resolve()
-      },
-    },
-  } as unknown as ApiClient & {
+  return ((): ApiClient & {
     runs: Array<[string, string]>
     projectIds: string[]
     aborts: string[]
-  }
+  } => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      runs,
+      projectIds,
+      aborts,
+      agent: {
+        ...base['agent'],
+        run: (projectId: string, threadId: string, payload: string): Promise<void> => {
+          projectIds.push(projectId)
+          runs.push([threadId, payload])
+          return Promise.resolve()
+        },
+        abort: (threadId: string): Promise<void> => {
+          aborts.push(threadId)
+          return Promise.resolve()
+        },
+      },
+    } satisfies ApiClient & {
+      runs: Array<[string, string]>
+      projectIds: string[]
+      aborts: string[]
+    }
+  })()
 }
 
 function getThread(store: ReturnType<typeof createStore>, threadId: string): Thread {
@@ -195,8 +206,8 @@ test('drainMessageQueue refreshes priorTodos from the live thread state', () => 
 
   drainMessageQueue(store, api, threadId)
 
-  const payload = JSON.parse(firstRun(api)[1]) as { priorTodos: Array<{ id: string }> }
-  assert.deepEqual(payload.priorTodos, [{ id: 'live', content: 'live', status: 'pending' }])
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.deepEqual(payload['priorTodos'], [{ id: 'live', content: 'live', status: 'pending' }])
 })
 
 test('dispatchAgentRun sends the per-thread model so the run honours the picker', () => {
@@ -207,8 +218,8 @@ test('dispatchAgentRun sends the per-thread model so the run honours the picker'
 
   dispatchAgentRun(store, api, threadId, { content: 'go' })
 
-  const payload = JSON.parse(firstRun(api)[1]) as { model?: string }
-  assert.equal(payload.model, 'claude-opus-4-8')
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(payload['model'], 'claude-opus-4-8')
 })
 
 test('dispatchAgentRun omits model when the thread has none, so main uses the global default', () => {
@@ -218,7 +229,7 @@ test('dispatchAgentRun omits model when the thread has none, so main uses the gl
 
   dispatchAgentRun(store, api, threadId, { content: 'go' })
 
-  const payload = JSON.parse(firstRun(api)[1]) as Record<string, unknown>
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
   assert.equal('model' in payload, false)
 })
 
@@ -784,12 +795,9 @@ test('budget-ledger increments (decision 5): drain seeds the run payload with th
 
   drainMessageQueue(store, api, threadId)
 
-  const payload = JSON.parse(firstRun(api)[1]) as {
-    turnTreeId?: string
-    continuationBudgetUsed?: number
-  }
-  assert.equal(payload.turnTreeId, 'tree-1', 'the turn-tree epoch is threaded to main')
-  assert.equal(payload.continuationBudgetUsed, 3, 'seed reflects this drain (2 prior + 1)')
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(payload['turnTreeId'], 'tree-1', 'the turn-tree epoch is threaded to main')
+  assert.equal(payload['continuationBudgetUsed'], 3, 'seed reflects this drain (2 prior + 1)')
 })
 
 test('held-on-exhaustion (decision 5): a machine follow-up over budget flips to held + a visible note', () => {

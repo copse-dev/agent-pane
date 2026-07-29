@@ -26,6 +26,9 @@ describes it to the agent, so changing the layout means updating that preamble.
 ~/.copse/workspace/<projectId>/
   catalog.jsonl                      # 1 line/thread index (rebuildable): {id, title,
                                      #   createdAt, updatedAt, digest, path}
+  tasks/<taskId>/                    # supervised background tasks (#1081); not a thread
+    meta.json                        # mutable task record (state, trigger, permissions)
+    audit.jsonl                      # append-only lifecycle transitions
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit lines
@@ -39,6 +42,17 @@ describes it to the agent, so changing the layout means updating that preamble.
     blobs/toolset-<hash>.json        # content-addressed toolset fingerprint (deduped)
     subagents/<subagentId>/          # nested subagent session, same structure recursively
 ```
+
+- **`tasks/<taskId>/`** holds operational supervisor records for delayed / long-lived
+  work ([#1081](https://github.com/copse-dev/agent-pane/issues/1081);
+  [`background-supervisor.md`](plans/background-supervisor.md)). These are **not**
+  transcript spine lines (#1068): active-task narrative stays in the thread; the
+  supervisor store is queue/state/handle telemetry. Schema:
+  [`task-schema.ts`](../src/shared/supervisor/task-schema.ts) /
+  [`copse-supervisor-task.schema.json`](../schemas/copse-supervisor-task.schema.json).
+  The reserved directory name `tasks` must not be used as a thread id (thread ids are
+  UUIDs). Writers and the main-process singleton land in later phases; P1 is schema +
+  pure reconcile only.
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
   (plus interleaved `hook_run` and `permission_decision` observability lines, below), oldest first. It is
@@ -61,9 +75,7 @@ describes it to the agent, so changing the layout means updating that preamble.
   trimming replaces the whole file via an atomic write. Corrupt JSON, a missing
   file, or an unsupported future `v` fail closed to fresh provider history
   without damaging the human transcript in `events.jsonl` / `messages/`. Do not
-  log history values. Legacy electron-store keys `llm-history:<threadId>` are
-  migrated once at startup (after legacy thread import, before the first window)
-  when ownership resolves to exactly one `(projectId, threadId)`.
+  log history values.
 
 ## Spine line schema
 

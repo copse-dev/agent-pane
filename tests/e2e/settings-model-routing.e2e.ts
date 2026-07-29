@@ -57,7 +57,8 @@ async function scrollSettingsToLegend(legendText: string): Promise<void> {
   await browser.pause(100)
 }
 
-describe('settings model routing placement', () => {
+describe('settings model routing placement', function () {
+  this.timeout(90_000)
   let lmStudio: { url: string; close: () => Promise<void> } | null = null
 
   before(async () => {
@@ -87,13 +88,34 @@ describe('settings model routing placement', () => {
     await $('select[name="model"] option[value="auto:best-value"]').waitForExist({
       timeout: 30_000,
     })
-    await expect($('select[name="model"] option[value="auto:best-value"]')).toHaveText(
+    const chatModelPicker = $('[data-model-picker-for="model"]')
+    await expect(chatModelPicker.$('.model-picker-trigger')).toHaveText(
       expect.stringContaining('Best value'),
     )
+    assert.equal(
+      await $('#settings-models-section').$$('.model-picker-field-host').length,
+      6,
+      'every model control in the Settings model section should use the shared picker',
+    )
+    await scrollSettingsToLegend('Models')
     await saveElementScreenshot(
-      '[data-testid="settings-chat-model"]',
+      '[data-model-picker-for="model"]',
       'settings-chat-model-best-value.png',
     )
+
+    await chatModelPicker.$('.model-picker-trigger').click()
+    const modelFilter = chatModelPicker.$('.model-picker-filter')
+    await expect(modelFilter).toBeFocused()
+    await modelFilter.setValue('qwen3.6')
+    await browser.waitUntil(
+      async () => (await chatModelPicker.$$('.model-picker-option')).length === 1,
+      { timeout: 2_000, timeoutMsg: 'settings model picker did not filter after typing' },
+    )
+    await expect(chatModelPicker.$('.model-picker-option')).toHaveText(
+      expect.stringContaining('qwen/qwen3.6-35b-a3b'),
+    )
+    await saveElementScreenshot('#settings-models-section', 'settings-model-picker-search.png')
+    await chatModelPicker.$('.model-picker-trigger').click()
 
     await $(
       'select[name="localDefaultModel"] option[value="lmstudio:qwen/qwen3.6-35b-a3b"]',

@@ -1,7 +1,18 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AnthropicProvider, markTrailingCacheBreakpoint } from './anthropic-provider.ts'
-import type { ProviderStreamChunk } from './wire-types.ts'
+import type { LLMMessage, ProviderStreamChunk } from './wire-types.ts'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function recordAt(value: unknown, index: number): Record<string, unknown> {
+  assert.ok(Array.isArray(value))
+  const entry: unknown = value[index]
+  assert.ok(isRecord(entry))
+  return entry
+}
 
 /**
  * Build a fake SDK stream event sequence and inject it into the provider's
@@ -26,7 +37,7 @@ function withFakeStream(
       },
     },
   }
-  ;(provider as unknown as { client: unknown }).client = fakeClient
+  Object.defineProperty(provider, 'client', { value: fakeClient, configurable: true })
   return capture
 }
 
@@ -142,22 +153,53 @@ describe('AnthropicProvider prompt caching (#582)', () => {
     }
 
     assert.ok(capture.params)
-    const sentTools = capture.params['tools'] as Array<Record<string, unknown>>
-    assert.equal(sentTools[0]?.['cache_control'], undefined)
-    assert.deepEqual(sentTools[1]?.['cache_control'], { type: 'ephemeral' })
-    const sentMessages = capture.params['messages'] as Array<{
-      content: string | Array<Record<string, unknown>>
-    }>
+    const sentTools = capture.params['tools']
+    assert.equal(recordAt(sentTools, 0)['cache_control'], undefined)
+    assert.deepEqual(recordAt(sentTools, 1)['cache_control'], { type: 'ephemeral' })
+    const sentMessages = capture.params['messages']
     // Earlier messages keep their plain string content …
-    assert.equal(sentMessages[0]?.content, 'question')
+    assert.equal(recordAt(sentMessages, 0)['content'], 'question')
     // … while the final message's final block carries the breakpoint.
-    const lastContent = sentMessages.at(-1)?.content
+    assert.ok(Array.isArray(sentMessages))
+    const lastMessage: unknown = sentMessages.at(-1)
+    assert.ok(isRecord(lastMessage))
+    const lastContent = lastMessage['content']
     assert.ok(Array.isArray(lastContent))
     assert.deepEqual(lastContent.at(-1), {
       type: 'text',
       text: 'answer',
       cache_control: { type: 'ephemeral' },
     })
+  })
+
+  it('keeps the breakpoint on the last body message, not on trailing steering', async () => {
+    // The operator instruction is regenerated per turn and never persisted, so
+    // the entry this request writes must stop before it — otherwise the next
+    // turn's prefix (which lacks the instruction) cannot match it (#1286).
+    const provider = new AnthropicProvider('claude-opus-4-8', { apiKey: 'test' })
+    const capture = withFakeStream(provider, doneEvents)
+    for await (const _ of provider.stream(
+      [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'question' },
+        { role: 'system', content: 'steer me' },
+      ],
+      [],
+    )) {
+      void _
+    }
+
+    assert.ok(capture.params)
+    assert.deepEqual(capture.params['messages'], [
+      // The breakpoint marks the user turn — the last message the next turn
+      // will resend verbatim …
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'question', cache_control: { type: 'ephemeral' } }],
+      },
+      // … and the steering trails it, uncached.
+      { role: 'system', content: 'steer me' },
+    ])
   })
 
   it('markTrailingCacheBreakpoint handles block-array and empty inputs', () => {
@@ -168,15 +210,96 @@ describe('AnthropicProvider prompt caching (#582)', () => {
       },
     ]
     markTrailingCacheBreakpoint(toolResult)
-    assert.deepEqual(
-      (toolResult[0]?.content[0] as unknown as Record<string, unknown>)['cache_control'],
-      { type: 'ephemeral' },
-    )
+    const content: unknown = toolResult[0]?.content[0]
+    assert.ok(isRecord(content))
+    assert.deepEqual(content['cache_control'], { type: 'ephemeral' })
 
     // Empty conversation and empty-string content are left untouched.
     markTrailingCacheBreakpoint([])
     const empty = [{ role: 'user' as const, content: '' }]
     markTrailingCacheBreakpoint(empty)
     assert.equal(empty[0]?.content, '')
+  })
+})
+
+describe('AnthropicProvider mid-conversation system messages (#1286)', () => {
+  const doneEvents = [
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
+  ]
+
+  /** Run one turn against the fake stream and return the request body sent. */
+  async function requestFor(
+    model: string,
+    messages: LLMMessage[],
+  ): Promise<Record<string, unknown>> {
+    const provider = new AnthropicProvider(model, { apiKey: 'test' })
+    const capture = withFakeStream(provider, doneEvents)
+    for await (const _ of provider.stream(messages, [])) void _
+    assert.ok(capture.params)
+    return capture.params
+  }
+
+  const cachedQuestion = {
+    role: 'user',
+    content: [{ type: 'text', text: 'question', cache_control: { type: 'ephemeral' } }],
+  }
+
+  it('sends a real system turn on a model that supports it', async () => {
+    const params = await requestFor('claude-opus-4-8', [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'question' },
+      { role: 'system', content: 'terse mode' },
+    ])
+
+    // The leading system message is still the top-level prompt, not a turn.
+    assert.deepEqual(params['system'], [
+      { type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } },
+    ])
+    assert.deepEqual(params['messages'], [
+      cachedQuestion,
+      { role: 'system', content: 'terse mode' },
+    ])
+  })
+
+  it('falls back to a user-turn system-reminder on a model that does not', async () => {
+    // claude-sonnet-4-6 is the default cloud model and rejects system turns, so
+    // this is the common path rather than an edge case. The reminder still lands
+    // after the breakpoint, exactly as the system-turn path does.
+    const params = await requestFor('claude-sonnet-4-6', [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'question' },
+      { role: 'system', content: 'terse mode' },
+    ])
+
+    assert.deepEqual(params['messages'], [
+      cachedQuestion,
+      {
+        role: 'user',
+        content: [{ type: 'text', text: '<system-reminder>\nterse mode\n</system-reminder>' }],
+      },
+    ])
+  })
+
+  it('drops an empty operator instruction rather than sending an empty block', async () => {
+    const params = await requestFor('claude-opus-4-8', [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'question' },
+      { role: 'system', content: '' },
+    ])
+
+    assert.deepEqual(params['messages'], [cachedQuestion])
+  })
+
+  it('still sends the system parameter when the only system message is empty', async () => {
+    // Pre-existing behaviour: a leading system message produces the parameter
+    // even when its text is empty. Splitting it out must not change that.
+    const params = await requestFor('claude-test', [
+      { role: 'system', content: '' },
+      { role: 'user', content: 'question' },
+    ])
+
+    assert.deepEqual(params['system'], [
+      { type: 'text', text: '', cache_control: { type: 'ephemeral' } },
+    ])
   })
 })

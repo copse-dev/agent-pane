@@ -11,6 +11,37 @@ export interface MonacoSelectionContext {
   detail?: string
 }
 
+export interface MonacoSelectionSource {
+  getSelection(): Pick<
+    Monaco.Selection,
+    'endColumn' | 'endLineNumber' | 'isEmpty' | 'startColumn' | 'startLineNumber'
+  > | null
+  getModel(): {
+    getValueInRange(
+      range: Pick<
+        Monaco.Selection,
+        'endColumn' | 'endLineNumber' | 'isEmpty' | 'startColumn' | 'startLineNumber'
+      >,
+    ): string
+    isDisposed(): boolean
+  } | null
+}
+
+export interface MonacoShortcutSource extends MonacoSelectionSource {
+  onKeyDown(
+    listener: (event: {
+      browserEvent: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>
+      keyCode: number
+      preventDefault(): void
+      stopPropagation(): void
+    }) => void,
+  ): { dispose(): void }
+}
+
+export interface MonacoShortcutApi {
+  KeyCode: { KeyL: number }
+}
+
 export function selectionLineRangeLabel(startLineNumber: number, endLineNumber: number): string {
   return startLineNumber === endLineNumber
     ? String(startLineNumber)
@@ -18,7 +49,7 @@ export function selectionLineRangeLabel(startLineNumber: number, endLineNumber: 
 }
 
 export function buildMonacoSelectionAttachment(
-  editor: Monaco.editor.IStandaloneCodeEditor,
+  editor: MonacoSelectionSource,
   path: string,
   detail?: string,
 ): MonacoSelectionAttachment | null {
@@ -38,7 +69,7 @@ export function buildMonacoSelectionAttachment(
 }
 
 export function attachMonacoSelectionToChat(
-  editor: Monaco.editor.IStandaloneCodeEditor,
+  editor: MonacoSelectionSource,
   path: string,
   detail?: string,
 ): boolean {
@@ -54,10 +85,10 @@ export function attachMonacoSelectionToChat(
 }
 
 export function registerMonacoSelectionToChatShortcut(
-  editor: Monaco.editor.IStandaloneCodeEditor,
-  monaco: typeof Monaco,
+  editor: MonacoShortcutSource,
+  monaco: MonacoShortcutApi,
   getContext: () => MonacoSelectionContext | null,
-): Monaco.IDisposable {
+): { dispose(): void } {
   return editor.onKeyDown((event) => {
     const browserEvent = event.browserEvent
     const meta = browserEvent.ctrlKey || browserEvent.metaKey

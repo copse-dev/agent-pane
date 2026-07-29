@@ -9,7 +9,9 @@
 // whenever live data renders.
 
 import type { LiveAaModel } from '@copse/llm/live-intellect.ts'
+import { z } from 'zod'
 import { getApiKey } from '../storage/settings.ts'
+import { optionalRecord } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and the stored AA key. */
 const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
@@ -36,41 +38,57 @@ export interface LiveIntellectFetch {
   error?: string
 }
 
-interface AaApiModel {
-  id?: string
-  slug?: string
-  name?: string
-  evaluations?: {
-    artificial_analysis_intelligence_index?: number
-    artificial_analysis_intelligence_index_version?: string | number
-  }
-  /**
-   * Documented AA Data API shape for Intelligence Index cost-per-task (USD).
-   * Free tier exposes `total_cost` plus nested `cost_per_task.total_cost`.
-   */
-  artificial_analysis_intelligence_index_cost?: {
-    total_cost?: number
-    cost_per_task?: {
-      total_cost?: number
-    }
-  }
-  pricing?: {
-    price_1m_input_tokens?: number
-    price_1m_output_tokens?: number
-    /** Legacy / alternate spellings — prefer the model-level cost object above. */
-    price_per_intelligence_index_task?: number
-    cost_per_task?: number
-  }
-}
+const aaApiModelSchema = z
+  .object({
+    id: z.string().optional(),
+    slug: z.string().optional(),
+    name: z.string().optional(),
+    evaluations: z
+      .object({
+        artificial_analysis_intelligence_index: z.number().optional(),
+        artificial_analysis_intelligence_index_version: z
+          .union([z.string(), z.number()])
+          .optional(),
+      })
+      .optional(),
+    /**
+     * Documented AA Data API shape for Intelligence Index cost-per-task (USD).
+     * Free tier exposes `total_cost` plus nested `cost_per_task.total_cost`.
+     */
+    artificial_analysis_intelligence_index_cost: z
+      .object({
+        total_cost: z.number().optional(),
+        cost_per_task: z.object({ total_cost: z.number().optional() }).optional(),
+      })
+      .optional(),
+    pricing: z
+      .object({
+        price_1m_input_tokens: z.number().optional(),
+        price_1m_output_tokens: z.number().optional(),
+        /** Legacy / alternate spellings — prefer the model-level cost object above. */
+        price_per_intelligence_index_task: z.number().optional(),
+        cost_per_task: z.number().optional(),
+      })
+      .optional(),
+  })
+  .loose()
 
-interface AaApiPayload extends Record<string, unknown> {
-  data?: AaApiModel[]
-  pagination?: {
-    page?: number
-    total_pages?: number
-    has_more?: boolean
-  }
-}
+type AaApiModel = z.infer<typeof aaApiModelSchema>
+
+const aaApiPayloadSchema = z
+  .object({
+    data: z.array(aaApiModelSchema).optional(),
+    pagination: z
+      .object({
+        page: z.number().optional(),
+        total_pages: z.number().optional(),
+        has_more: z.boolean().optional(),
+      })
+      .optional(),
+  })
+  .loose()
+
+type AaApiPayload = z.infer<typeof aaApiPayloadSchema>
 
 /**
  * The index version the payload declares — the docs place it as a version
@@ -85,7 +103,7 @@ function reportedIndexVersion(
     'artificial_analysis_intelligence_index_version',
     'intelligence_index_version',
   ]) {
-    const v = payload[key] ?? (payload['metadata'] as Record<string, unknown> | undefined)?.[key]
+    const v = payload[key] ?? optionalRecord(payload['metadata'])?.[key]
     if (typeof v === 'string' || typeof v === 'number') return v
   }
   for (const m of models) {
@@ -171,7 +189,7 @@ export async function requestLiveIntellectModels(
             : ''
         return { ok: false, models: [], error: `Artificial Analysis API: ${status}${hint}` }
       }
-      const payload = (await res.json()) as AaApiPayload
+      const payload = aaApiPayloadSchema.parse(await res.json())
       if (page === 1) firstPayload = payload
       apiModels.push(...(payload.data ?? []))
       const pagination = payload.pagination

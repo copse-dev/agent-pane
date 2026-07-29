@@ -12,6 +12,7 @@ import {
 } from '@shared/hooks/vendored-hook-schemas.ts'
 import { CURSOR_WIRED_HOOK_EVENTS } from '@shared/types/cursor-hooks.ts'
 import { CLAUDE_WIRED_HOOK_EVENTS } from './claude-adapter.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 // G3 — Vendored schemas + CI drift detector.
 //
@@ -29,7 +30,7 @@ import { CLAUDE_WIRED_HOOK_EVENTS } from './claude-adapter.ts'
 async function readVendoredSchema(relPath: string): Promise<Record<string, unknown>> {
   const abs = join(process.cwd(), relPath)
   await stat(abs) // exists (fails loudly if the pin file was removed)
-  return JSON.parse(await readFile(abs, 'utf-8')) as Record<string, unknown>
+  return expectRecord(JSON.parse(await readFile(abs, 'utf-8')) as unknown)
 }
 
 /** The event names a hook schema publishes = the keys of its `hooks` object's `properties`. */

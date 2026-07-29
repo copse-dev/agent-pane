@@ -17,16 +17,19 @@
  */
 
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // The former `MODEL_COMPARISON_ENABLED_SETTING` (top-level
 // `modelComparisonEnabled`) was retired in P5: the pack toggle
 // (`copse.model-comparison`) is now the atomic master switch consulted by the
 // tool registration in `registry-bootstrap.ts` and the auto-on-review trigger
 // in `agent-service.ts` / `isAutoComparisonEnabled()`.
+//
+// The three model choices (reviewer A / reviewer B / judge) are now the pack's
+// own `model` setting fields (see `model-comparison-pack.ts`), read by
+// `model-comparison-runner.ts`; the former top-level `comparisonModel*` store
+// keys are retired. The `modelComparisonAutoOnReview` opt-in stays top-level.
 export const MODEL_COMPARISON_AUTO_ON_REVIEW_SETTING = 'modelComparisonAutoOnReview'
-export const COMPARISON_MODEL_A_SETTING = 'comparisonModelA'
-export const COMPARISON_MODEL_B_SETTING = 'comparisonModelB'
-export const COMPARISON_JUDGE_MODEL_SETTING = 'comparisonJudgeModel'
 
 /** Default second reviewer and judge when the settings are left blank (a frontier Claude). */
 export const DEFAULT_COMPARISON_MODEL_B = 'claude-opus-4-8'
@@ -52,16 +55,16 @@ export function resolveComparisonModels(opts: {
   judge?: string | null
   chatModel: string
 }): ComparisonModels {
-  const a = opts.modelA?.trim() || opts.chatModel
+  const a = nonEmptyStringOr(opts.modelA?.trim(), opts.chatModel)
   const configuredB = opts.modelB?.trim()
-  let b = configuredB || DEFAULT_COMPARISON_MODEL_B
+  let b = nonEmptyStringOr(configuredB, DEFAULT_COMPARISON_MODEL_B)
   // When B falls back to its default and would collide with A, pick a different
   // frontier so the default-on experience isn't a silent no-op — e.g. an Opus
   // chat model (A) against the Opus default (B) would otherwise make A === B.
   // An *explicit* B === A is left alone: that is the user's own misconfiguration
   // and the distinct-reviewer check surfaces it.
   if (!configuredB && b === a) b = DEFAULT_CLOUD_MODEL
-  const judge = opts.judge?.trim() || DEFAULT_COMPARISON_JUDGE_MODEL
+  const judge = firstNonEmptyString(opts.judge?.trim()) ?? DEFAULT_COMPARISON_JUDGE_MODEL
   return { a, b, judge }
 }
 

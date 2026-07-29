@@ -166,11 +166,10 @@ export function mountConversationSearch(root: HTMLElement): void {
     }
     // The current match sits in both sets; a higher priority makes its dedicated
     // style win the overlap so it reads as the active match, not just a match.
-    const HighlightCtor = (globalThis as unknown as { Highlight: typeof Highlight }).Highlight
-    CSS.highlights.set(BASE_HIGHLIGHT, new HighlightCtor(...ranges))
+    CSS.highlights.set(BASE_HIGHLIGHT, new Highlight(...ranges))
     const current = ranges[currentIdx]
     if (current) {
-      const currentHighlight = new HighlightCtor(current)
+      const currentHighlight = new Highlight(current)
       currentHighlight.priority = 1
       CSS.highlights.set(CURRENT_HIGHLIGHT, currentHighlight)
     } else {

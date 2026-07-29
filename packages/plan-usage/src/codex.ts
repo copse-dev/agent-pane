@@ -175,7 +175,11 @@ export async function fetchCodexPlanUsage(
 
   const fetchImpl: FetchLike = options.fetch ?? globalThis.fetch.bind(globalThis)
   const now = options.now ?? Date.now
-  const url = auth.usageUrl?.trim() || DEFAULT_CODEX_USAGE_URL
+  const configuredUrl = auth.usageUrl?.trim()
+  const url =
+    configuredUrl === undefined || configuredUrl.length === 0
+      ? DEFAULT_CODEX_USAGE_URL
+      : configuredUrl
 
   try {
     const headers: Record<string, string> = {

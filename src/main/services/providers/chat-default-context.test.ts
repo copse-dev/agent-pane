@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { evaluateChatDefaultContext } from './chat-default-context.ts'
 import { invalidateLmStudioModelsCache } from './lm-studio-models.ts'
 import { setApiKey, deleteApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { jsonResponse } from './test-response.ts'
 
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input
@@ -16,20 +17,14 @@ function stubLmStudio(contexts: Record<string, number | null>): () => void {
   const impl: typeof fetch = async (input) => {
     const url = requestUrl(input)
     if (url.includes('/api/v1/models')) {
-      return {
-        ok: true,
-        json: async () => ({
-          models: Object.entries(contexts).map(([key, ctx]) => ({
-            key,
-            ...(ctx ? { max_context_length: ctx } : {}),
-          })),
-        }),
-      } as Response
+      return jsonResponse({
+        models: Object.entries(contexts).map(([key, ctx]) => ({
+          key,
+          ...(ctx ? { max_context_length: ctx } : {}),
+        })),
+      })
     }
-    return {
-      ok: true,
-      json: async () => ({ data: Object.keys(contexts).map((id) => ({ id })) }),
-    } as Response
+    return jsonResponse({ data: Object.keys(contexts).map((id) => ({ id })) })
   }
   globalThis.fetch = impl
   return () => {

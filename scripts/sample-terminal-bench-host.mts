@@ -1,10 +1,14 @@
 import { spawnSync } from 'node:child_process'
+import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import { appendFileSync, mkdirSync, statfsSync } from 'node:fs'
 import { freemem, loadavg, totalmem } from 'node:os'
 import { dirname, resolve } from 'node:path'
 
 const outputPath = resolve(process.argv[2] ?? 'bench-results/terminal-bench-host-metrics.jsonl')
-const rawInterval = process.env['COPSE_TERMINAL_HOST_METRICS_INTERVAL_SECONDS']?.trim() || '30'
+const rawInterval = nonEmptyStringOr(
+  process.env['COPSE_TERMINAL_HOST_METRICS_INTERVAL_SECONDS']?.trim(),
+  '30',
+)
 if (!/^[1-9][0-9]*$/.test(rawInterval)) {
   throw new Error('COPSE_TERMINAL_HOST_METRICS_INTERVAL_SECONDS must be a positive integer')
 }
@@ -18,8 +22,10 @@ function dockerStats(): unknown[] {
   if (result.error || result.status !== 0) {
     return [
       {
-        error:
-          result.error?.message || result.stderr.trim() || `docker exited ${String(result.status)}`,
+        error: nonEmptyStringOr(
+          firstNonEmptyString(result.error?.message, result.stderr.trim()),
+          `docker exited ${String(result.status)}`,
+        ),
       },
     ]
   }

@@ -9,7 +9,7 @@ export async function execOnSshHost(
 ): Promise<SshExecResult> {
   const mgr = getSshConnectionManager()
   let conn = mgr.getConnection(hostId)
-  if (!conn) conn = await mgr.connect(hostId)
+  conn ??= await mgr.connect(hostId)
   const options: { cwd: string; stdin?: string } = { cwd: remoteRoot }
   if (stdin !== undefined) options.stdin = stdin
   return conn.execShell(shellCommand, options)

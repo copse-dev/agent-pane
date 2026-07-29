@@ -1,14 +1,16 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import type { AddressInfo } from 'node:net'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
+import { runWithActiveRunIdentity } from '../thread-models.ts'
+import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 /**
@@ -159,6 +161,12 @@ export interface AcpNativeBridge {
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
   setAdvisorContext: (context: AdvisorRunnerContext | null) => void
+  /**
+   * Bind the current turn's abort signal so in-flight bridged tools (and their
+   * approval prompts) cancel when the turn ends — including the case where the
+   * external agent abandons an MCP call and finishes the prompt on its own.
+   */
+  setTurnSignal: (signal: AbortSignal | null) => void
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
 }
@@ -173,10 +181,37 @@ function bridgedTools(
   return registry.toMcpTools().filter((tool) => offered.has(tool.name))
 }
 
+interface BridgeExecuteContext {
+  /** Session-lifetime abort (dispose). */
+  sessionSignal: AbortSignal
+  /** Live reader for the in-flight turn abort; null between turns. */
+  getTurnSignal: () => AbortSignal | null
+  /** Live reader for this HTTP MCP call's abort (agent disconnect). */
+  getCallSignal: () => AbortSignal
+  /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
+  threadId: string
+  networkScopeAlreadyApplies: boolean
+}
+
+function mergeBridgeExecuteSignal(
+  sessionSignal: AbortSignal,
+  turnSignal: AbortSignal | null,
+  callSignal?: AbortSignal,
+): AbortSignal {
+  const parts: AbortSignal[] = [sessionSignal]
+  if (turnSignal) parts.push(turnSignal)
+  if (callSignal) parts.push(callSignal)
+  if (parts.some((part) => part.aborted)) {
+    return parts.find((part) => part.aborted) ?? sessionSignal
+  }
+  if (parts.length === 1) return sessionSignal
+  return AbortSignal.any(parts)
+}
+
 function buildMcpServer(
   registry: ToolRegistry,
-  signal: AbortSignal,
-  advisorContext: AdvisorRunnerContext | null,
+  advisorContext: { current: AdvisorRunnerContext | null },
+  ctx: BridgeExecuteContext,
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- low-level Server is the right fit: bridge tools carry pre-built JSON schemas from ToolRegistry.toMcpTools(), while the high-level McpServer wants zod shapes it converts itself
 ): McpBridgeServer {
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- see the note on the signature
@@ -194,12 +229,27 @@ function buildMcpServer(
       }
     }
     try {
+      const executeSignal = mergeBridgeExecuteSignal(
+        ctx.sessionSignal,
+        ctx.getTurnSignal(),
+        ctx.getCallSignal(),
+      )
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        registry.executeNormalized(name, request.params.arguments, signal)
+        registry.executeNormalized(name, request.params.arguments, executeSignal)
+      const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
+        ctx.networkScopeAlreadyApplies
+          ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
+          : execute()
+      // Bridge HTTP handlers are a separate async chain from the ACP turn — rebind
+      // the thread identity so approval prompts / idle-deadline pauses attribute
+      // to the owning thread (and cancelApprovalsForThread can find them).
+      const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
+        runWithActiveRunIdentity(ctx.threadId, withPermissionContext)
+      const advisor = advisorContext.current
       const { result } =
-        name === 'advisor' && advisorContext
-          ? await runWithAdvisorContext(advisorContext, execute)
-          : await execute()
+        name === 'advisor' && advisor
+          ? await runWithAdvisorContext(advisor, runExecute)
+          : await runExecute()
       return { content: [{ type: 'text', text: result }] }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
@@ -229,23 +279,68 @@ function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 /**
- * Start the per-turn bridge server. Returns `null` when the feature is off
+ * SDK 1.29's HTTP transport declares optional callbacks as `T | undefined`,
+ * which is structurally incompatible with its own `Transport` interface under
+ * exactOptionalPropertyTypes. Forward the same live properties through an
+ * interface-correct adapter until the upstream declarations converge.
+ */
+function compatibleServerTransport(transport: StreamableHTTPServerTransport): Transport {
+  const adapter: Transport = {
+    start: () => transport.start(),
+    send: (message, options) => transport.send(message, options),
+    close: () => transport.close(),
+  }
+  Object.defineProperties(adapter, {
+    onclose: {
+      get: () => transport.onclose,
+      set: (callback: () => void) => {
+        transport.onclose = callback
+      },
+    },
+    onerror: {
+      get: () => transport.onerror,
+      set: (callback: (error: Error) => void) => {
+        transport.onerror = callback
+      },
+    },
+    onmessage: {
+      get: () => transport.onmessage,
+      set: (callback: NonNullable<Transport['onmessage']>) => {
+        transport.onmessage = callback
+      },
+    },
+    sessionId: { get: () => transport.sessionId },
+  })
+  return adapter
+}
+
+/**
+ * Start the per-session bridge server. Returns `null` when the feature is off
  * (`acpNativeBridgeEnabled`, default on) or no bridgeable tool is registered.
  * Stateless MCP: each POST gets a fresh server+transport pair, so the external
  * agent needs no session handshake and GET/DELETE degrade per spec.
+ *
+ * @param networkScopeAlreadyApplies - when the owning ACP session is sandboxed,
+ *   bridged shell calls share that session's widened network scope instead of
+ *   prompting as if they were an unrelated overlapping process (#803).
+ * @param threadId - Copse thread that owns this bridge; rebound into ALS on every
+ *   tool call so approvals attribute to the right thread.
  */
 export async function startAcpNativeBridge(
   registry: ToolRegistry,
   signal: AbortSignal,
+  opts: { networkScopeAlreadyApplies?: boolean; threadId: string },
 ): Promise<AcpNativeBridge | null> {
   if (!getSetting<boolean>('acpNativeBridgeEnabled', true)) return null
   if (bridgedTools(registry).length === 0) return null
 
   const token = randomBytes(32).toString('hex')
+  const networkScopeAlreadyApplies = opts.networkScopeAlreadyApplies === true
   // The server is pooled per ACP thread, so its context is also per bridge.
   // Capture it at request start and bind it with AsyncLocalStorage during the
   // advisor call; simultaneous bridges can never see one another's transcript.
-  let advisorContext: AdvisorRunnerContext | null = null
+  const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
+  let turnSignal: AbortSignal | null = null
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -257,12 +352,27 @@ export async function startAcpNativeBridge(
       const body = await readBody(req).catch(() => undefined)
       // No sessionIdGenerator → stateless mode: every POST is self-contained.
       const transport = new StreamableHTTPServerTransport({})
-      const server = buildMcpServer(registry, signal, advisorContext)
+      // Per-HTTP-call abort: when the agent abandons this MCP request (timeout /
+      // disconnect) while Copse is blocked on an approval, cancel that prompt
+      // immediately instead of waiting for turn end.
+      const callAbort = new AbortController()
+      const onHttpClose = (): void => {
+        callAbort.abort()
+      }
+      req.on('close', onHttpClose)
+      const server = buildMcpServer(registry, advisorContext, {
+        sessionSignal: signal,
+        getTurnSignal: () => turnSignal,
+        getCallSignal: () => callAbort.signal,
+        threadId: opts.threadId,
+        networkScopeAlreadyApplies,
+      })
       res.on('close', () => {
+        onHttpClose()
         void transport.close()
         void server.close()
       })
-      await server.connect(transport as unknown as Parameters<typeof server.connect>[0])
+      await server.connect(compatibleServerTransport(transport))
       await transport.handleRequest(req, res, body)
     })().catch((err: unknown) => {
       console.error('[acp-bridge] request failed:', errorMessage(err))
@@ -276,12 +386,23 @@ export async function startAcpNativeBridge(
     httpServer.once('error', reject)
     httpServer.listen(0, '127.0.0.1', resolve)
   })
-  const address = httpServer.address() as AddressInfo
+  const address = httpServer.address()
+  if (address === null || typeof address === 'string') {
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        resolve()
+      })
+    })
+    throw new Error('ACP native bridge did not bind a TCP port')
+  }
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
     setAdvisorContext: (context): void => {
-      advisorContext = context
+      advisorContext.current = context
+    },
+    setTurnSignal: (next): void => {
+      turnSignal = next
     },
     close: () =>
       new Promise<void>((resolve) => {

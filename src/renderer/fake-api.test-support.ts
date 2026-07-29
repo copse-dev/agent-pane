@@ -31,3 +31,21 @@ const EMPTY_SCENARIO: DemoScenario = {
 export function createFakeApi(): ApiClient {
   return createDemoApi(EMPTY_SCENARIO)
 }
+
+/** Complete API proxy whose unoverridden methods stay pending for synchronous mount tests. */
+export function createPendingApi(
+  overrides: Readonly<Record<string, (...args: never[]) => unknown>> = {},
+): ApiClient {
+  const wrap = <T extends object>(target: T, path: string): T =>
+    new Proxy(target, {
+      get(object, property, receiver): unknown {
+        const nextPath = path ? `${path}.${String(property)}` : String(property)
+        const override = overrides[nextPath]
+        if (override !== undefined) return override
+        const value: unknown = Reflect.get(object, property, receiver)
+        if (typeof value === 'function') return () => new Promise(() => {})
+        return typeof value === 'object' && value !== null ? wrap(value, nextPath) : value
+      },
+    })
+  return wrap(createFakeApi(), '')
+}

@@ -26,6 +26,8 @@
 // A detached afterFileEdit observer's `queueMessage` routes through the pending-
 // message queue (decision 4). The detached dispatch's thread / epoch are derived
 // from the agent-session identity (the same convention `subagent.ts` uses).
+
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 //
 // Cursor + Copse (F1) declare an `afterFileEdit` hook (wired here); Claude has no
 // post-edit equivalent, so no Claude hooks participate — matching the vendor audit.
@@ -131,8 +133,8 @@ export async function runAfterFileEditHooks(
     const registry = new HookRegistry()
     for (const hook of asyncHooks) registry.registerCommand(hook)
     const dispatcher = opts.dispatcher ?? getAsyncHookDispatcher()
-    const threadId = opts.agentSession?.conversationId || 'afterFileEdit'
-    const turnTreeId = asTurnTreeId(opts.agentSession?.generationId || threadId)
+    const threadId = nonEmptyStringOr(opts.agentSession?.conversationId, 'afterFileEdit')
+    const turnTreeId = asTurnTreeId(nonEmptyStringOr(opts.agentSession?.generationId, threadId))
     registry.emitAsync('afterFileEdit', payload, {
       dispatcher,
       threadId,

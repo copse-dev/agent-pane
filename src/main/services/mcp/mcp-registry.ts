@@ -6,13 +6,11 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import * as fs from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { app } from 'electron'
 import { z } from 'zod'
 import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
-import { getSetting } from '../storage/settings.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import {
@@ -27,6 +25,8 @@ import {
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { createBundledMcpServers } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { MCP_UI_CANVAS_CAPABILITY } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from '../exec/subprocess-output-cap.ts'
@@ -35,6 +35,8 @@ import {
   isCursorPluginMcpSource,
   resolvePluginMcpConfigPath,
 } from '../skills/cursor-plugins.ts'
+import { isRecord } from '@shared/unknown-value.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -125,7 +127,7 @@ function projectMcpSourcePaths(workspace: string): string[] {
 }
 
 function userMcpSourcePaths(): string[] {
-  return [join(homedir(), '.cursor', 'mcp.json'), join(app.getPath('userData'), 'mcp.json')]
+  return [join(homedir(), '.cursor', 'mcp.json'), join(getElectronUserDataPath(), 'mcp.json')]
 }
 
 async function readPluginMcpConfigs(): Promise<McpServerConfig[]> {
@@ -195,7 +197,7 @@ function isUserMcpSource(source: string | undefined): boolean {
   return (
     source === CURATED_MCP_SOURCE ||
     source === join(homedir(), '.cursor', 'mcp.json') ||
-    source === join(app.getPath('userData'), 'mcp.json') ||
+    source === join(getElectronUserDataPath(), 'mcp.json') ||
     isCursorPluginMcpSource(source)
   )
 }
@@ -232,7 +234,38 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
       new URL(cfg.url),
       cfg.headers ? { requestInit: { headers: cfg.headers } } : undefined,
     )
-    return { transport: transport as unknown as Transport, stderrOutput: () => '' }
+    const compatible: Transport = {
+      start: () => transport.start(),
+      send: (message, options) => transport.send(message, options),
+      close: async () => {
+        await transport.close()
+      },
+      setProtocolVersion: (version) => {
+        transport.setProtocolVersion(version)
+      },
+    }
+    Object.defineProperties(compatible, {
+      onclose: {
+        get: () => transport.onclose,
+        set: (callback: () => void) => {
+          transport.onclose = callback
+        },
+      },
+      onerror: {
+        get: () => transport.onerror,
+        set: (callback: (error: Error) => void) => {
+          transport.onerror = callback
+        },
+      },
+      onmessage: {
+        get: () => transport.onmessage,
+        set: (callback: NonNullable<Transport['onmessage']>) => {
+          transport.onmessage = callback
+        },
+      },
+      sessionId: { get: () => transport.sessionId },
+    })
+    return { transport: compatible, stderrOutput: () => '' }
   }
   if (cfg.command === undefined) {
     throw new Error(`MCP server "${cfg.name}" uses stdio transport but has no command`)
@@ -274,7 +307,23 @@ async function registerClientTools(
     toolNames.push(tool.name)
     const meta: McpToolMeta = { server: serverName }
     if (bundled) meta.bundled = true
-    if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
+    if (tool.annotations) {
+      const annotations: McpToolAnnotations = {}
+      if (typeof tool.annotations.title === 'string') annotations.title = tool.annotations.title
+      if (typeof tool.annotations.readOnlyHint === 'boolean') {
+        annotations.readOnlyHint = tool.annotations.readOnlyHint
+      }
+      if (typeof tool.annotations.destructiveHint === 'boolean') {
+        annotations.destructiveHint = tool.annotations.destructiveHint
+      }
+      if (typeof tool.annotations.idempotentHint === 'boolean') {
+        annotations.idempotentHint = tool.annotations.idempotentHint
+      }
+      if (typeof tool.annotations.openWorldHint === 'boolean') {
+        annotations.openWorldHint = tool.annotations.openWorldHint
+      }
+      meta.annotations = annotations
+    }
     toolMeta.set(fullName, meta)
     registry.register({
       name: fullName,
@@ -283,14 +332,17 @@ async function registerClientTools(
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
       async execute(args, signal) {
         const result = await client.callTool(
-          { name: tool.name, arguments: (args ?? {}) as Record<string, unknown> },
+          { name: tool.name, arguments: isRecord(args) ? args : {} },
           undefined,
           { signal },
         )
         // Experimental MCP-UI canvas: when enabled, recognised UI resources are
         // rendered as a sandboxed artefact and summarised for the model (raw
-        // body kept out of context) rather than inlined as tool output.
-        const summarizeUiResources = getSetting<boolean>('mcpUiArtefactsEnabled', false)
+        // body kept out of context) rather than inlined as tool output. Gated by
+        // the `copse.mcp-ui-canvas` first-party pack's capability — the pack
+        // toggle in Settings > Packs is the atomic master switch.
+        const summarizeUiResources =
+          getDefaultPackRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
         if (summarizeUiResources) dispatchCanvasArtefacts(result.content)
         const text = flattenMcpContent(result.content, { summarizeUiResources })
         if (result.isError) {
@@ -313,7 +365,7 @@ async function connectBundledServers(
   registry: ToolRegistry,
   generation: number,
 ): Promise<McpServerStatus[]> {
-  if (!getSetting<boolean>('mcpUiArtefactsEnabled', false)) return []
+  if (!getDefaultPackRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)) return []
   const bundled = await createBundledMcpServers()
   if (generation !== loadGeneration) {
     await Promise.allSettled(bundled.map((b) => b.client.close()))

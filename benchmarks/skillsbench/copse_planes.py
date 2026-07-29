@@ -34,6 +34,109 @@ AGENT_CONFIG = AgentConfig(
 )
 
 
+#: Every rollout in this spike runs with task-container egress off, whichever
+#: plane stack it uses. Copse calls the model from the worker host, so unlike an
+#: in-container ACP CLI it never needs egress for provider access. Applied even
+#: when an upstream task declares ``network_mode=public``.
+NETWORK_POLICY = "no-network"
+
+
+def freeze_no_network(task: Any) -> None:
+    """Pin the spike's network condition onto a task config, in place."""
+    task.config.environment.network_mode = NetworkMode.NO_NETWORK
+    task.config.environment.allowed_hosts = None
+    task.config.environment.allow_internet = False
+
+
+#: Inventory of what each upstream verifier fetches at grading time. 74 of the 87
+#: v1.1 verifiers bootstrap their own test runner — `curl | sh` for `uv`, then
+#: `uvx --with pytest==...`, or a bare `pip install`. Under the spike's
+#: no-network run condition those fetches fail and the verifier scores 0 even
+#: when the task's own `solve.sh` is correct: an oracle sweep measured 1 of 9
+#: sampled tasks eligible, and the one that passed is among the 13 whose
+#: verifier installs nothing at test time.
+VERIFIER_DEPS_PATH = Path(__file__).with_name("verifier-deps.json")
+
+#: Where the pre-warmed uv cache lives inside the task image.
+UV_CACHE_DIR = "/opt/copse/uv-cache"
+
+
+def _verifier_deps(task_name: str) -> dict[str, list[str]] | None:
+    """Pinned test-time dependencies for one task, or None when it needs none."""
+    try:
+        doc = json.loads(VERIFIER_DEPS_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    entry = doc.get("tasks", {}).get(task_name)
+    return entry if isinstance(entry, dict) else None
+
+
+def verifier_prebake_layer(task_name: str) -> str:
+    """Dockerfile lines that pre-install a verifier's test-time dependencies.
+
+    The image build has network; the rollout does not. Installing the pinned
+    dependencies here lets the verifier's own bootstrap become a no-op at
+    grading time — `apt-get install` finds the package already newest, `pip
+    install` reports it already satisfied, the `curl | sh` fetch fails
+    harmlessly (only 4 of the 45 uv verifiers use `set -e`), and `uvx --with`
+    resolves out of the warmed cache under ``UV_OFFLINE``.
+
+    Returns an empty string when the task's verifier fetches nothing, so
+    self-contained tasks keep a byte-identical Dockerfile.
+    """
+    deps = _verifier_deps(task_name)
+    if not deps:
+        return ""
+    lines = [
+        "",
+        "# --- copse skillsbench: pre-baked verifier test-time dependencies.",
+        "# The verifier bootstraps its own runner from the network, which the",
+        "# rollout forbids. Staged here, at build time, so grading works offline.",
+    ]
+    apt = deps.get("apt") or []
+    if apt:
+        lines.append(
+            "RUN apt-get update && apt-get install -y --no-install-recommends "
+            + " ".join(sorted(apt))
+            + " && rm -rf /var/lib/apt/lists/*"
+        )
+    # `pipUnpinned` is upstream's own choice, not ours: some verifiers run a bare
+    # `pip install pytest`. Installing the current version at build time still
+    # makes the grading-time install report the requirement already satisfied,
+    # which is all that is needed offline.
+    pip = (deps.get("pip") or []) + (deps.get("pipUnpinned") or [])
+    if pip:
+        lines.append(
+            "RUN pip3 install --break-system-packages --no-cache-dir "
+            + " ".join(shlex.quote(p) for p in sorted(pip))
+        )
+    uv_versions = deps.get("uv") or []
+    uvx_with = deps.get("uvxWith") or []
+    if uv_versions:
+        version = sorted(uv_versions)[0]
+        lines.append(f"ENV UV_CACHE_DIR={UV_CACHE_DIR}")
+        # Install to $HOME/.local/bin so the verifier's `source
+        # $HOME/.local/bin/env` keeps working unchanged.
+        lines.append(
+            "RUN curl -LsSf https://astral.sh/uv/"
+            + version
+            + "/install.sh | sh"
+        )
+        if uvx_with:
+            # Warm the cache by resolving the exact pins the verifier will ask
+            # for. Done before UV_OFFLINE is set, so this step may use network.
+            warm = " ".join(shlex.quote(p) for p in sorted(uvx_with))
+            lines.append(
+                'RUN . "$HOME/.local/bin/env" && uv venv /tmp/copse-warm '
+                f"&& uv pip install --python /tmp/copse-warm/bin/python {warm} "
+                "&& rm -rf /tmp/copse-warm"
+            )
+        # Only now pin offline, so the rollout cannot silently reach the network
+        # even if the container's policy were ever relaxed by mistake.
+        lines.append("ENV UV_OFFLINE=1")
+    return "\n".join(lines) + "\n"
+
+
 class _SessionAdapter:
     def on_ask_user(self, _handler: Any) -> None:
         return None
@@ -49,6 +152,7 @@ class _CopseClient:
     bundle: Path
     profile: str
     skills: list[dict[str, str]]
+    thread_dir: str | None = None
     process: asyncio.subprocess.Process | None = None
 
     def on_ask_user(self, _handler: Any) -> None:
@@ -270,6 +374,8 @@ async def _run_prompt(client: _CopseClient, prompt: str) -> dict[str, Any]:
         "profile": client.profile,
         "skills": client.skills,
     }
+    if client.thread_dir:
+        start["threadDir"] = client.thread_dir
     process.stdin.write((json.dumps(start) + "\n").encode())
     await process.stdin.drain()
     stderr: list[str] = []
@@ -326,12 +432,56 @@ async def _run_prompt(client: _CopseClient, prompt: str) -> dict[str, Any]:
         client.process = None
 
 
-class CopseRolloutPlanes(DefaultRolloutPlanes):
-    def __init__(self, *, bundle: Path, profile: str) -> None:
+class _PrebakeVerifierDepsMixin:
+    """Stage each verifier's test-time dependencies into the task image.
+
+    Applied to both plane stacks: the oracle only calibrates the agent trials if
+    it grades under the same image and the same network condition.
+    """
+
+    #: Marker that makes the append idempotent across trials on one worker.
+    PREBAKE_MARKER = "copse skillsbench: pre-baked verifier"
+
+    def prebake_verifier_deps(self, task_path: Path) -> bool:
+        """Append the pre-bake layer to a task's Dockerfile. Returns whether it did.
+
+        Called from ``create_environment`` rather than ``stage_dockerfile_deps``:
+        BenchFlow only invokes the latter when ``RolloutConfig.context_root`` is
+        set, which this spike never sets, so hooking it silently did nothing.
+        ``create_environment`` runs unconditionally for every rollout.
+        """
+        layer = verifier_prebake_layer(task_path.name)
+        if not layer:
+            return False
+        dockerfile = task_path / "environment" / "Dockerfile"
+        if not dockerfile.is_file():
+            return False
+        existing = dockerfile.read_text()
+        if self.PREBAKE_MARKER in existing:
+            return False
+        separator = "" if existing.endswith("\n") else "\n"
+        dockerfile.write_text(existing + separator + layer)
+        return True
+
+    def stage_dockerfile_deps(self, task_path: Path, context_root: Path) -> None:
+        # Kept for the context_root case; the append is guarded, so whichever
+        # hook fires first wins and the other is a no-op.
+        super().stage_dockerfile_deps(task_path, context_root)  # type: ignore[misc]
+        self.prebake_verifier_deps(task_path)
+
+
+class CopseRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
+    def __init__(
+        self, *, bundle: Path, profile: str, thread_dir: Path | None = None
+    ) -> None:
         super().__init__()
         self.bundle = bundle
         self.profile = profile
         self.base_profile = profile.split("@", 1)[0]
+        #: Where the bridge writes the trial's thread spine. It sits inside the
+        #: rollout directory the capsule is copied from, so the trajectory
+        #: travels with the reward instead of dying with the fleet.
+        self.thread_dir = thread_dir
         self.last_result: dict[str, Any] | None = None
 
     def agent_launch(self, agent: str, *, disallow_web_tools: bool) -> str:
@@ -359,14 +509,9 @@ class CopseRolloutPlanes(DefaultRolloutPlanes):
         preserve_agent_network: bool,
         environment_manifest: Any,
     ) -> Any:
-        # Copse calls the model from the worker host, so unlike an in-container
-        # ACP CLI it never needs task-container egress for provider access.
-        # Freeze the spike's safety condition even when an upstream task says
-        # network_mode=public.
         del preserve_agent_network
-        task.config.environment.network_mode = NetworkMode.NO_NETWORK
-        task.config.environment.allowed_hosts = None
-        task.config.environment.allow_internet = False
+        self.prebake_verifier_deps(task_path)
+        freeze_no_network(task)
         return super().create_environment(
             environment,
             task,
@@ -416,6 +561,7 @@ class CopseRolloutPlanes(DefaultRolloutPlanes):
             bundle=self.bundle,
             profile=self.profile,
             skills=skills,
+            thread_dir=str(self.thread_dir) if self.thread_dir else None,
         )
         return client, session, _SessionAdapter(), "copse-skillsbench"
 
@@ -439,3 +585,52 @@ class CopseRolloutPlanes(DefaultRolloutPlanes):
                 self.last_result = await _run_prompt(client, prompt)
             session.mark_prompt_end()
         return _capture_session_trajectory(session), len(session.tool_calls)
+
+
+class OracleRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
+    """Stock planes with only the spike's network condition applied.
+
+    The oracle runs the task's own ``solve.sh`` through BenchFlow's normal agent
+    plane, so none of the Copse overrides above apply to it. It must still see
+    the *same* environment the agent trials saw, or it is not a control for
+    them: an oracle with egress calibrates nothing about trials without it.
+    """
+
+    def create_environment(
+        self,
+        environment: str,
+        task: Any,
+        task_path: Path,
+        rollout_name: str | None,
+        rollout_paths: Any,
+        *,
+        preserve_agent_network: bool,
+        environment_manifest: Any,
+    ) -> Any:
+        del preserve_agent_network
+        self.prebake_verifier_deps(task_path)
+        freeze_no_network(task)
+        return super().create_environment(
+            environment,
+            task,
+            task_path,
+            rollout_name,
+            rollout_paths,
+            preserve_agent_network=False,
+            environment_manifest=environment_manifest,
+        )
+
+
+#: The agent plane this spike exists to replace. A refactor once moved these off
+#: `CopseRolloutPlanes` and onto `OracleRolloutPlanes`; BenchFlow then fell back
+#: to its own ACP path, launched an empty `agent_launch`, and every trial died at
+#: `bash -c` before running a single tool — while the oracle kept passing,
+#: because `agent="oracle"` never touches ACP. Fail at import instead.
+_REQUIRED_AGENT_PLANE = ("connect_acp", "execute_prompts", "install_agent", "agent_launch")
+
+_missing = [name for name in _REQUIRED_AGENT_PLANE if name not in vars(CopseRolloutPlanes)]
+if _missing:
+    raise RuntimeError(
+        "CopseRolloutPlanes must define the agent plane it overrides; missing: "
+        + ", ".join(_missing)
+    )

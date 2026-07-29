@@ -1,5 +1,8 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   createTerminalSession,
   __testInjectTerminalSession,
@@ -9,13 +12,14 @@ import {
   listTerminalSessions,
   resizeTerminalSession,
   writeTerminalSession,
+  type TerminalWindow,
 } from './terminal-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 const OWNER = 1
 const OTHER_OWNER = 2
 
-function mockWindow(): import('electron').BrowserWindow & {
+function mockWindow(): TerminalWindow & {
   sent: Array<[string, ...unknown[]]>
   markDestroyed: () => void
 } {
@@ -34,10 +38,7 @@ function mockWindow(): import('electron').BrowserWindow & {
     },
     sent,
   }
-  return win as unknown as import('electron').BrowserWindow & {
-    sent: typeof sent
-    markDestroyed: () => void
-  }
+  return win
 }
 
 async function ptySpawnAvailable(): Promise<boolean> {
@@ -76,6 +77,45 @@ describe('terminal-service', () => {
     } finally {
       if (sessionId) destroyTerminalSession(sessionId, OWNER)
       restore()
+    }
+  })
+
+  it('starts a session in its explicit thread execution root', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('POSIX shell assertion')
+      return
+    }
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
+    const projectRoot = await mkdtemp(join(tmpdir(), 'copse-terminal-project-'))
+    const threadRoot = await mkdtemp(join(tmpdir(), 'copse-terminal-worktree-'))
+    const restore = setWorkspaceRootForTest(projectRoot)
+    const win = mockWindow()
+    let sessionId = ''
+    try {
+      sessionId = await createTerminalSession(
+        win,
+        OWNER,
+        80,
+        24,
+        { threadId: 'thread-1' },
+        threadRoot,
+      )
+      writeTerminalSession(sessionId, OWNER, 'printf \'__COPSE_CWD__:%s\\n\' "$PWD"\n')
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      const combined = win.sent
+        .filter(([channel]) => channel === 'terminal:output')
+        .map(([, , data]) => data)
+        .join('')
+      assert.match(combined, new RegExp(`__COPSE_CWD__:${threadRoot}`))
+      assert.doesNotMatch(combined, new RegExp(`__COPSE_CWD__:${projectRoot}`))
+    } finally {
+      if (sessionId) destroyTerminalSession(sessionId, OWNER)
+      restore()
+      await rm(projectRoot, { recursive: true, force: true })
+      await rm(threadRoot, { recursive: true, force: true })
     }
   })
 

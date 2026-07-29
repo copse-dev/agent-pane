@@ -50,6 +50,9 @@ describe('acpAgentSandboxOverlay', () => {
       assert.ok(list.includes(`${claudeDir}/**`))
       assert.ok(list.includes(join(homedir(), '.claude.json')))
     }
+    assert.ok(overlay.filesystem?.allowRead?.includes(homedir()))
+    assert.ok(!overlay.filesystem?.allowRead?.includes(`${homedir()}/**`))
+    assert.ok(!overlay.filesystem?.allowWrite.includes(homedir()))
     // Base workspace rules survive: home still deny-read, workspace still writable.
     assert.deepEqual(overlay.filesystem?.denyRead, base.filesystem?.denyRead)
     for (const path of base.filesystem?.allowWrite ?? []) {

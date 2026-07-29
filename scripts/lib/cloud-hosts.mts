@@ -18,6 +18,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
+import { nonEmptyStringOr } from '../../src/shared/unknown-value.mts'
 
 export const AWS_REGION_ENV = 'AWS_REGION'
 export const DEFAULT_AMI_SSM_PARAMETER =
@@ -1404,11 +1405,11 @@ export function printHosts(hosts: CloudHost[]): void {
       [
         host.providerId,
         host.state,
-        host.zone || '-',
-        host.publicIp || '-',
-        host.privateIp || '-',
-        host.name || '-',
-        host.launchTime || '-',
+        nonEmptyStringOr(host.zone, '-'),
+        nonEmptyStringOr(host.publicIp, '-'),
+        nonEmptyStringOr(host.privateIp, '-'),
+        nonEmptyStringOr(host.name, '-'),
+        nonEmptyStringOr(host.launchTime, '-'),
       ].join('\t'),
     )
   }

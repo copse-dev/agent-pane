@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
-import { app } from 'electron'
 import { getBundledGortexPath } from './bundled-semantic.ts'
 import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
 import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
@@ -15,6 +14,8 @@ import {
   indexBuildFinished,
   setSemanticIndexUnavailable,
 } from './index-status.ts'
+import { isRecord } from '@shared/unknown-value.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -240,7 +241,7 @@ function gortexCmd(): string {
 
 /** Synthetic HOME so gortex daemon state/indexes live under Copse userData, not the workspace. */
 export function gortexHomeDir(): string {
-  return join(app.getPath('userData'), 'gortex')
+  return join(getElectronUserDataPath(), 'gortex')
 }
 
 function gortexRunOpts(
@@ -644,7 +645,7 @@ function pidIsAlive(pid: number): boolean {
     return true
   } catch (err) {
     // ESRCH → gone; EPERM → exists but not signal-able by us (still "alive").
-    return (err as NodeJS.ErrnoException).code === 'EPERM'
+    return isRecord(err) && err['code'] === 'EPERM'
   }
 }
 
@@ -865,9 +866,9 @@ function parseJsonPayload(stdout: string): unknown {
 
 function extractResultItems(parsed: unknown): unknown[] {
   if (Array.isArray(parsed)) return parsed
-  if (typeof parsed !== 'object' || parsed === null) return []
+  if (!isRecord(parsed)) return []
 
-  const record = parsed as Record<string, unknown>
+  const record = parsed
   if (Array.isArray(record['results'])) return record['results']
   if (Array.isArray(record['matches'])) return record['matches']
   if (Array.isArray(record['hits'])) return record['hits']
@@ -882,8 +883,8 @@ function extractResultItems(parsed: unknown): unknown[] {
  * symbols (no end_line/snippet); `doc` is the symbol's docstring when indexed.
  */
 async function normalizeGortexHit(item: unknown): Promise<SemanticSearchHit | null> {
-  if (typeof item !== 'object' || item === null) return null
-  const record = item as Record<string, unknown>
+  if (!isRecord(item)) return null
+  const record = item
   const path = readString(record, ['absolute_file_path', 'file_path', 'path', 'file'])
   if (!path) return null
 
@@ -906,8 +907,8 @@ async function normalizeGortexHit(item: unknown): Promise<SemanticSearchHit | nu
 }
 
 async function normalizeVeraHit(item: unknown): Promise<SemanticSearchHit | null> {
-  if (typeof item !== 'object' || item === null) return null
-  const record = item as Record<string, unknown>
+  if (!isRecord(item)) return null
+  const record = item
   const path = readString(record, ['path', 'file', 'filename'])
   if (!path) return null
 

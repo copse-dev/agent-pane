@@ -5,9 +5,11 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountMemoriesPane } from './memories-pane.ts'
 import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
 
 // Minimal KnowledgeNote (Memory) factory; only the fields the pane reads matter.
-function makeNote(id: string, title: string, body: string, tags: string[] = []): unknown {
+function makeNote(id: string, title: string, body: string, tags: string[] = []): KnowledgeNote {
   return {
     id,
     type: 'Memory',
@@ -31,43 +33,51 @@ interface MemoryCalls {
 
 /** A fake api whose memories methods mutate an in-memory list, like the store. */
 function makeApi(seed: ReturnType<typeof makeNote>[]): { api: ApiClient; calls: MemoryCalls } {
-  const notes = [...seed] as { id: string; title: string; body: string; tags: string[] }[]
+  const notes = [...seed]
   const calls: MemoryCalls = { list: 0, create: [], update: [], delete: [] }
-  const api = {
-    panes: { popout: async (): Promise<void> => {} },
-    memories: {
-      list: async () => {
-        calls.list++
-        return notes.map((n) => ({ ...n }))
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      panes: {
+        ...base['panes'],
+        popout: async (): Promise<void> => {},
       },
-      create: async (title: string, body: string, tags?: string[]) => {
-        calls.create.push({ title, body, tags })
-        const note = makeNote(`new-${String(notes.length)}`, title, body, tags ?? []) as {
-          id: string
-          title: string
-          body: string
-          tags: string[]
-        }
-        notes.push(note)
-        return note
+      memories: {
+        ...base['memories'],
+        list: async (): Promise<KnowledgeNote[]> => {
+          calls.list++
+          return notes.map((n) => ({ ...n }))
+        },
+        create: async (title: string, body: string, tags?: string[]): Promise<KnowledgeNote> => {
+          calls.create.push({ title, body, tags })
+          const note = makeNote(`new-${String(notes.length)}`, title, body, tags ?? [])
+          notes.push(note)
+          return note
+        },
+        update: async (
+          id: string,
+          title: string,
+          body: string,
+          tags?: string[],
+        ): Promise<KnowledgeNote | null> => {
+          calls.update.push({ id, title, body, tags })
+          const note = notes.find((n) => n.id === id)
+          if (!note) return null
+          note.title = title
+          note.body = body
+          note.tags = tags ?? []
+          return { ...note }
+        },
+        delete: async (id: string): Promise<boolean> => {
+          calls.delete.push(id)
+          const i = notes.findIndex((n) => n.id === id)
+          if (i >= 0) notes.splice(i, 1)
+          return i >= 0
+        },
       },
-      update: async (id: string, title: string, body: string, tags?: string[]) => {
-        calls.update.push({ id, title, body, tags })
-        const note = notes.find((n) => n.id === id)
-        if (!note) return null
-        note.title = title
-        note.body = body
-        note.tags = tags ?? []
-        return { ...note }
-      },
-      delete: async (id: string) => {
-        calls.delete.push(id)
-        const i = notes.findIndex((n) => n.id === id)
-        if (i >= 0) notes.splice(i, 1)
-        return i >= 0
-      },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
   return { api, calls }
 }
 

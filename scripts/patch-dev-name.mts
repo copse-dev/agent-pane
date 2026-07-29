@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { expectRecord, expectString, parseJsonUnknown } from '../src/shared/unknown-value.mts'
 
 const ELECTRON_DIST = join('node_modules', 'electron', 'dist')
 const SOURCE_APP = join(ELECTRON_DIST, 'Electron.app')
@@ -45,7 +46,11 @@ if (process.platform !== 'darwin') {
 const sourcePlist = join(SOURCE_APP, 'Contents', 'Info.plist')
 
 function readElectronPackageVersion(): string {
-  return (JSON.parse(readFileSync(ELECTRON_PKG_JSON, 'utf8')) as { version: string }).version
+  const packageJson = expectRecord(
+    parseJsonUnknown(readFileSync(ELECTRON_PKG_JSON, 'utf8')),
+    'electron package.json',
+  )
+  return expectString(packageJson['version'], 'electron package version')
 }
 
 function readDistVersion(): string | undefined {

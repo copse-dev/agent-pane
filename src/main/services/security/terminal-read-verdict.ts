@@ -1,4 +1,11 @@
-import { safeJsonParse } from '@shared/safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
+
+const terminalReadPayloadSchema = z.object({
+  risk: z.string().optional(),
+  confidence: z.unknown().optional(),
+  reason: z.string().optional(),
+})
 
 /**
  * Pure verdict logic for the `read_terminal` scrollback screen (see
@@ -22,9 +29,7 @@ export interface TerminalReadVerdict {
 export function parseTerminalReadVerdict(text: string): TerminalReadVerdict | null {
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return null
-  const parsed = safeJsonParse<{ risk?: string; confidence?: number; reason?: string }>(
-    jsonMatch[0],
-  )
+  const parsed = safeJsonParse(jsonMatch[0], decodeWithSchema(terminalReadPayloadSchema))
   if (!parsed) return null
   if (parsed.risk !== 'safe' && parsed.risk !== 'risky') return null
   const confidence =

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; media-src blob:; img-src blob: data:;"
+    />
+    <title>Copse video decoder</title>
+  </head>
+  <body>
+    <!--
+      Never shown. This page exists only so `video_frames` can borrow Chromium's
+      video decoders and canvas: it is driven entirely over IPC from the main
+      process and renders nothing a user would see. See
+      src/shared/video/decode-contract.ts for why decoding lives here.
+    -->
+    <script src="./decoder.js"></script>
+  </body>
+</html>

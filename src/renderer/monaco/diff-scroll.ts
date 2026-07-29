@@ -7,6 +7,25 @@ const HIDE_UNCHANGED_REGIONS = {
   revealLineCount: 20,
 }
 
+interface DiffUpdateEditor {
+  onDidUpdateDiff(listener: () => void): { dispose(): void }
+}
+
+interface DiffViewModel {
+  waitForDiff(): Promise<unknown>
+}
+
+interface DiffRevealEditor {
+  getLineChanges(): Array<{
+    originalStartLineNumber: number
+    originalEndLineNumber: number
+    modifiedStartLineNumber: number
+    modifiedEndLineNumber: number
+  }> | null
+  getModifiedEditor(): { revealLineInCenterIfOutsideViewport(line: number): void }
+  getOriginalEditor(): { revealLineInCenterIfOutsideViewport(line: number): void }
+}
+
 /** Diff editor options for the git Changes panel. */
 export const GIT_CHANGES_DIFF_EDITOR_OPTIONS: Monaco.editor.IDiffEditorConstructionOptions = {
   readOnly: true,
@@ -29,7 +48,7 @@ function nextAnimationFrame(): Promise<void> {
 
 /** Resolve on the next `onDidUpdateDiff`, or after `timeoutMs` — whichever first. */
 export function waitForDidUpdateDiff(
-  diffEditor: Monaco.editor.IStandaloneDiffEditor,
+  diffEditor: DiffUpdateEditor,
   timeoutMs: number,
 ): Promise<void> {
   return new Promise((resolve) => {
@@ -51,7 +70,7 @@ export function waitForDidUpdateDiff(
  * still attaches and a later reveal can retry once the worker is up.
  */
 export async function waitForViewModelDiff(
-  viewModel: Monaco.editor.IDiffEditorViewModel,
+  viewModel: DiffViewModel,
   timeoutMs: number,
 ): Promise<void> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -71,7 +90,10 @@ export async function waitForViewModelDiff(
 
 /** Re-apply collapse after setModel; Monaco can drop hidden regions until options refresh (#4903). */
 export async function refreshGitChangesDiffCollapse(
-  diffEditor: Monaco.editor.IStandaloneDiffEditor,
+  diffEditor: DiffUpdateEditor & {
+    layout(): void
+    updateOptions(options: Monaco.editor.IDiffEditorOptions): void
+  },
 ): Promise<void> {
   diffEditor.updateOptions({
     ...GIT_CHANGES_DIFF_EDITOR_OPTIONS,
@@ -102,7 +124,7 @@ function firstPositive(...values: number[]): number | null {
  * `waitForDiff()` and surfaces unhandled "Canceled" rejections when
  * `hideUnchangedRegions` refresh cancels an in-flight compute.
  */
-export function revealFirstDiffChange(diffEditor: Monaco.editor.IStandaloneDiffEditor): void {
+export function revealFirstDiffChange(diffEditor: DiffRevealEditor): void {
   const [firstChange] = diffEditor.getLineChanges() ?? []
   if (!firstChange) return
 

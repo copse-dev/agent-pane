@@ -51,6 +51,9 @@ describe('SSH prompt dialog', () => {
       expect.stringContaining('id_ed25519'),
     )
     await expect(await dialog.$('.ssh-prompt-input')).toHaveAttribute('type', 'password')
+    // Session caching is opt-out, so the box is offered and pre-selected.
+    await expect(await dialog.$('.ssh-prompt-remember')).toBeDisplayed()
+    await expect(await dialog.$('.ssh-prompt-remember-input')).toBeSelected()
     await saveElementScreenshot('#ssh-prompt-dialog', 'ssh-prompt-secret.png')
 
     await browser.keys(['Escape'])
@@ -67,6 +70,8 @@ describe('SSH prompt dialog', () => {
       expect.stringContaining('authenticity of host github.com'),
     )
     await expect(await dialog.$('.ssh-prompt-secret-field')).not.toBeDisplayed()
+    // Host-key trust is recorded in known_hosts by OpenSSH — nothing to remember.
+    await expect(await dialog.$('.ssh-prompt-remember')).not.toBeDisplayed()
     await expect(await dialog.$('.ssh-prompt-submit')).toHaveText('Continue')
     await saveElementScreenshot('#ssh-prompt-dialog', 'ssh-prompt-host-key.png')
 
