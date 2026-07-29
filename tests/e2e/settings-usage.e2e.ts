@@ -80,6 +80,12 @@ describe('settings usage panel', function () {
     await expect(
       $('.usage-plan-provider[data-provider="cursor"][data-status="ok"]'),
     ).toBeDisplayed()
+    const cursorCredits = $('.usage-plan-provider[data-provider="cursor"] .usage-credit-grant')
+    await expect(cursorCredits).toBeDisplayed()
+    await expect(cursorCredits.$('.usage-plan-window-stats')).toHaveText(
+      '$67.03 remaining of $100.00',
+    )
+    await expect(cursorCredits.$('[role="progressbar"]')).toHaveAttribute('aria-valuenow', '33')
     await expect($('.usage-plan-bar')).toBeDisplayed()
     await expect(
       $(
@@ -97,6 +103,26 @@ describe('settings usage panel', function () {
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-limits.png')
+
+    await browser.execute(() => {
+      document.querySelector('.usage-credit-grant')?.scrollIntoView({ block: 'center' })
+    })
+    await browser.pause(100)
+    const creditClearance = await browser.execute(() => {
+      const credit = document.querySelector('.usage-credit-grant')
+      const footer = document.querySelector('.settings-buttons')
+      if (!credit || !footer) return null
+      return {
+        creditBottom: credit.getBoundingClientRect().bottom,
+        footerTop: footer.getBoundingClientRect().top,
+      }
+    })
+    assert.ok(creditClearance, 'expected credits and sticky settings footer geometry')
+    assert.ok(
+      creditClearance.creditBottom <= creditClearance.footerTop,
+      'credits row must remain fully visible above the sticky settings footer',
+    )
+    await saveElementScreenshot('#settings-dialog', 'settings-usage-cursor-credits.png')
   })
 
   it('keeps the right-edge value-map hover card wide and inside the panel', async () => {

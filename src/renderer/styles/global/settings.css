@@ -755,7 +755,8 @@ dialog.settings-overlay::backdrop {
 .usage-plan-signin-btn:hover {
   filter: brightness(1.05);
 }
-.usage-plan-window {
+.usage-plan-window,
+.usage-credit-grant {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1135,12 +1136,23 @@ dialog.settings-overlay::backdrop {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
+  min-width: 0;
 }
 .sources-row-title {
   font-weight: 600;
   flex: 1;
   min-width: 0;
   word-break: break-word;
+}
+/* When a hover origin is showing, keep the title to content width so the path
+   can claim the header gutter without wrapping the row taller. */
+.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
+.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
 }
 .sources-badge {
   flex: none;
@@ -1193,6 +1205,25 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   word-break: break-word;
   margin-top: 2px;
+}
+/* Skills (and similar): filesystem origin in the header gutter on hover —
+   never a second line. Elide from the left so the leaf stays readable. */
+.sources-row-hover-detail {
+  display: none;
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.sources-row:hover .sources-row-hover-detail,
+.sources-row:focus-within .sources-row-hover-detail {
+  display: block;
 }
 .sources-empty {
   color: var(--text-muted);
@@ -1397,4 +1428,180 @@ dialog.settings-overlay::backdrop {
 .pack-setting-input.pack-setting-string,
 .pack-setting-input.pack-setting-number {
   min-width: 180px;
+}
+
+/* First-party level-3 detail for copse.automations. It lives inside the pack
+   row so scope, enablement, and configuration remain one coherent surface. */
+.automation-pack-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-sm);
+}
+.automation-pack-heading,
+.automation-row,
+.automation-row-meta,
+.automation-row-actions,
+.automation-form-actions {
+  display: flex;
+  align-items: center;
+}
+.automation-pack-heading {
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+.automation-add-btn,
+.automation-save-btn,
+.automation-cancel-btn,
+.automation-row-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
+}
+.automation-add-btn:hover:not(:disabled),
+.automation-cancel-btn:hover:not(:disabled),
+.automation-row-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.automation-add-btn:disabled,
+.automation-row-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.automation-scope,
+.automation-notice,
+.automation-status,
+.automation-empty,
+.automation-row-last-run,
+.automation-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.automation-notice {
+  color: var(--text-secondary);
+}
+.automation-status {
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--success);
+}
+.automation-status-error {
+  color: var(--error);
+}
+.automation-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.automation-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  text-align: center;
+}
+.automation-row {
+  gap: var(--spacing-md);
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  background: var(--bg-base);
+}
+.automation-row-paused {
+  opacity: 0.7;
+}
+.automation-row-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.automation-row-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.automation-row-meta {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.automation-row-meta code {
+  color: var(--accent);
+}
+.automation-row-actions,
+.automation-form-actions {
+  flex: none;
+  gap: var(--spacing-sm);
+}
+.automation-run-btn,
+.automation-save-btn {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+.automation-remove-btn {
+  color: var(--error);
+}
+.automation-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  background: var(--bg-base);
+}
+.automation-form[hidden] {
+  display: none;
+}
+.automation-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.automation-label:has(.automation-prompt-input),
+.automation-enabled-label,
+.automation-form-actions {
+  grid-column: 1 / -1;
+}
+.automation-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: var(--spacing-sm);
+  font: inherit;
+}
+.automation-prompt-input {
+  min-height: 88px;
+  resize: vertical;
+}
+.automation-enabled-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-self: start;
+  gap: var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.automation-enabled-input {
+  width: auto;
+}
+.automation-form-actions {
+  justify-content: flex-end;
 }

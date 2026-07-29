@@ -146,10 +146,17 @@ Moving parts:
    the same `SSH_ASKPASS`/`GIT_ASKPASS` vars to the shell tool's child env
    (`shell-tool.ts:306`) so `sh -c "git push"` can prompt too. The integrated
    terminal already has a real tty and needs nothing.
-4. **Passphrase caching (optional, later).** Offer "remember passphrase"
-   backed by the `apiKey.<slug>` secret store, feeding the askpass response;
-   or simply document ssh-agent as the recommended path and detect
-   `SSH_AUTH_SOCK` to skip prompting.
+4. **Secret caching (done — session-scoped, memory only).**
+   `ssh-workspace/ssh-credential-cache.ts` sits between the bridge and the
+   modal: the dialog's "Remember for this session" box (on by default, hidden
+   for host-key confirmations) lets the main process replay the answer to every
+   later spawn, and concurrent asks for the same prompt collapse into one
+   dialog instead of one per racing `ssh`. Nothing is persisted — no
+   `apiKey.<slug>` entry, no `safeStorage` record — so the secret dies with the
+   app, and it is dropped as soon as the client that received it asks again
+   (OpenSSH's way of reporting a rejected password). ssh-agent remains the
+   recommended path for key-based hosts; this is for password auth and
+   passphrase-protected keys not loaded into an agent.
 
 Sizing: small (days). No architectural change; fully local.
 
@@ -345,10 +352,11 @@ maxBytes})`, `execPty(...)`, and `sftp()` handles; watches liveness and
   (approval-gated, no auto-run except the trusted-command allow-list, which
   stays valid because classification runs on the original command text).
 - **New assets to protect**: SSH credentials (delegated to ssh-agent/OpenSSH
-  where possible; passphrases via `safeStorage` if stored at all), host-key
-  trust decisions (recorded in the user's own `known_hosts` by OpenSSH —
-  don't build a parallel store), and the askpass bridge (nonce-gated,
-  per-spawn, deny-on-timeout).
+  where possible; a remembered password or passphrase lives in main-process
+  memory for the app session only — never `safeStorage`, never the settings
+  store, never back over IPC to the renderer), host-key trust decisions
+  (recorded in the user's own `known_hosts` by OpenSSH — don't build a parallel
+  store), and the askpass bridge (nonce-gated, per-spawn, deny-on-timeout).
 - **Don't leak local secrets remotely**: explicit env allow-list on remote
   exec (never inherit `process.env`); LLM keys never leave the main process
   today and that invariant must hold.

@@ -1,7 +1,6 @@
 import { errorMessage } from '@shared/errors.ts'
 import { dirname } from 'node:path'
-import type { BrowserWindow } from 'electron'
-import { ipcMain } from 'electron'
+import type { BrowserWindow, IpcMain } from 'electron'
 import {
   assertWriteTargetWithinRoot,
   getActiveProjectId,
@@ -691,7 +690,7 @@ async function applyMkdir(entry: QueueEntry, root: string): Promise<ApplyResult>
   return { status: 'written' }
 }
 
-export function initDiffQueue(win: BrowserWindow): void {
+export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
   mainWindow = win
 
   function parseOwner(projectIdArg: unknown, threadIdArg: unknown): ThreadExecutionOwner {

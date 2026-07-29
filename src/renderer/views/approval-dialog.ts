@@ -98,6 +98,7 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    showWhileSettingsOpen: boolean | undefined
     comparisonModels?: ComparisonModelSelection
   }
 
@@ -132,6 +133,7 @@ export function mountApprovalDialog(
   // switches to that thread or restores the window.
   function isShowable(req: PendingApproval): boolean {
     if (isWindowHidden()) return false
+    if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false
     return !req.threadId || req.threadId === store.getState().activeThreadId
   }
 
@@ -247,10 +249,9 @@ export function mountApprovalDialog(
 
   /** Pop the dialog with whatever is showable now (no-op if nothing/blocked). */
   function show(): void {
-    // The settings dialog is itself a top-layer modal <dialog>. A second
-    // showModal() while it is open stacks the approval prompt *above* settings
-    // (issue #501). Keep requests queued; onSettingsDialogClose() flushes them.
-    if (isSettingsDialogOpen()) return
+    // isShowable() keeps ordinary requests queued behind Settings (issue #501),
+    // while Settings-owned provider-host approvals may intentionally stack above
+    // it so the save flow can finish without first closing Settings.
     if (active) return
     if (cancelCoalesce) {
       cancelCoalesce()
@@ -301,6 +302,25 @@ export function mountApprovalDialog(
     syncAttention()
   }
 
+  function removeCancelled(id: string): void {
+    const queueIdx = queue.findIndex((req) => req.id === id)
+    if (queueIdx >= 0) queue.splice(queueIdx, 1)
+    const wasInBatch = batch.some((req) => req.id === id)
+    batch = batch.filter((req) => req.id !== id)
+    if (wasInBatch && active) {
+      if (batch.length === 0) {
+        dialog.close()
+        active = false
+        readComparisonModels = null
+        clearSettle()
+        show()
+      } else {
+        renderBatch()
+      }
+    }
+    syncAttention()
+  }
+
   function resolve(approved: boolean, remember: boolean): void {
     if (!active || batch.length === 0) return
     const answered = batch
@@ -324,7 +344,17 @@ export function mountApprovalDialog(
   }
 
   api.agent.onApprovalRequest(
-    ({ id, threadId, title, body, type, allowRemember, rememberLabel, comparisonModels }) => {
+    ({
+      id,
+      threadId,
+      title,
+      body,
+      type,
+      allowRemember,
+      rememberLabel,
+      showWhileSettingsOpen,
+      comparisonModels,
+    }) => {
       const pending: PendingApproval = {
         id,
         threadId,
@@ -333,6 +363,7 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        showWhileSettingsOpen,
       }
       if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)
@@ -343,6 +374,10 @@ export function mountApprovalDialog(
       syncAttention()
     },
   )
+
+  api.agent.onApprovalCancelled(({ id }) => {
+    removeCancelled(id)
+  })
 
   // When the user switches threads, a previously-backgrounded request for the
   // now-focused thread should surface. `threads_changed` also fires on project

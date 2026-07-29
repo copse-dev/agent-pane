@@ -101,7 +101,7 @@ jobs:
     steps:
       # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
       # / previous main tip.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
@@ -193,6 +193,7 @@ jobs:
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
           # PR base on pull_request; previous-tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           # Real PR head commit (not the merge ref this job checks out), used to
@@ -233,6 +234,16 @@ jobs:
               { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
+          fi
+          # A promotion is the release gate for the whole develop batch. Always
+          # exercise the complete e2e suite here rather than allowing the oracle
+          # to thin or skip it. Keep this after the screenshot-only escape above:
+          # the bot's reference-only follow-up has already inherited a successful
+          # e2e run from its parent and must not start a render/commit loop.
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then
+            echo "PR targets main -> full e2e suite (promotion gate)"
+            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
             echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
@@ -352,7 +363,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
@@ -409,11 +420,15 @@ jobs:
     # headroom if it recurs.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       - run: npm run coverage:ci
+        env:
+          # c8 retains V8 coverage until the suite exits; the default ~2 GB heap
+          # can OOM while finalizing a fully green run on the 6 GB check fleet.
+          NODE_OPTIONS: --max-old-space-size=3072
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).
@@ -465,7 +480,7 @@ jobs:
     # when unset. No Electron/display need.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Guarantee the gortex binary independently of the setup action. On a
       # self-hosted runner whose baked image predates gortex, the baked-deps seed
@@ -522,7 +537,7 @@ jobs:
        contains(github.event.pull_request.labels.*.name, 'bench-agent'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Resolve the pinned instance ids into task files (network required).
       - run: npm run bench:swe-tasks
@@ -565,7 +580,7 @@ jobs:
     # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
     # get a byte-identical dist without each rebuilding it.
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       - run: npm run build
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
@@ -652,18 +667,23 @@ jobs:
     # Runner is picked by TRUST and fails closed. The label set requires BOTH
     # `self-hosted` AND `copse-e2e`, so trusted push/same-repo PR jobs land only
     # on the Linux Docker runners (never the macOS `self-hosted` boxes, which
-    # lack `copse-e2e`). Nightly `schedule` uses GitHub-hosted ubuntu-latest.
+    # lack `copse-e2e`). Nightly `schedule` uses GitHub-hosted ubuntu-latest. A
+    # repo-level E2E_RUNNER=ubuntu-latest override is the break-glass path when
+    # the self-hosted fleet is offline; delete it after the fleet recovers.
     # Fork PRs are skipped by the `if` guard above and must never run on any
     # runner — there is no hosted fallback; if that guard were ever removed, the
     # expression below evaluates to a falsy value (not a runner label) so the
     # job fails closed instead of dispatching untrusted code anywhere. NOTE:
-    # requires a registered `copse-e2e` runner or PR/push e2e queues forever.
+    # Without the explicit hosted override, a registered `copse-e2e` runner is
+    # required or PR/push e2e queues until the fleet returns.
     runs-on: >-
       ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
           ((github.event_name == 'push' ||
             (github.event_name == 'pull_request' &&
              github.event.pull_request.head.repo.full_name == github.repository))
-           && fromJSON('["self-hosted", "copse-e2e"]')) }}
+           && (vars.E2E_RUNNER == 'ubuntu-latest'
+               && fromJSON('["ubuntu-latest"]')
+               || fromJSON('["self-hosted", "copse-e2e"]'))) }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
@@ -690,7 +710,7 @@ jobs:
     env:
       SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Reclaim ~20-30 GB of runner-preloaded toolchains (dotnet/android/ghc/
       # CodeQL/swift) and cached Docker images. The e2e shards have hit "No space
@@ -929,7 +949,7 @@ jobs:
               exit 1
               ;;
           esac
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         if: steps.head.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}
@@ -1401,7 +1421,10 @@ jobs:
   # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
   # after a real shard failure still fail because `ANY_FAILURE` is true first.
   ci-passed:
-    name: CI Passed
+    # A push to develop intentionally skips the expensive tier. Give that run a
+    # distinct check context so its green result on the same head SHA cannot
+    # satisfy main's required `CI Passed` check before promotion e2e has run.
+    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'Develop CI Passed' || 'CI Passed' }}
     if: always()
     needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
@@ -1483,6 +1506,12 @@ jobs:
             fi
             echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
             exit 0
+          fi
+          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository }}
+          if $PROMOTION_PR && [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "Promotion PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
+            echo '${{ toJSON(needs) }}'
+            exit 1
           fi
           if $ANY_FAILURE; then
             echo "One or more CI jobs failed:"

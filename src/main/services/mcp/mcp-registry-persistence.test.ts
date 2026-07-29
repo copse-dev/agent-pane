@@ -2,6 +2,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { isMcpToolRemembered, rememberMcpTool, setMcpServerUserEnabled } from './mcp-registry.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
+import { expectStringArray } from '@shared/unknown-value.ts'
 
 // These exercise the serialized read-modify-write path for the shared
 // electron-store keys. `storage.ts` is replaced by the in-memory test shim,
@@ -22,7 +23,7 @@ describe('mcp-registry persistence (serialized + validated)', () => {
       rememberMcpTool('mcp__b__tool'),
       rememberMcpTool('mcp__c__tool'),
     ])
-    const stored = storageGet(GRANTS_KEY) as string[]
+    const stored = expectStringArray(storageGet(GRANTS_KEY))
     assert.deepEqual([...stored].sort(), ['mcp__a__tool', 'mcp__b__tool', 'mcp__c__tool'])
   })
 

@@ -3,6 +3,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { createSshWorkspaceSection } from './ssh-workspace-section.ts'
+import { createFakeApi } from '../../fake-api.test-support.ts'
 
 function mockApi(initial: { enabled?: boolean; hosts?: unknown[]; strict?: string }): {
   api: ApiClient
@@ -14,18 +15,24 @@ function mockApi(initial: { enabled?: boolean; hosts?: unknown[]; strict?: strin
     ['sshStrictHostKeys', initial.strict ?? 'accept-new'],
   ])
   const sets: Array<{ key: string; value: unknown }> = []
-  const api = {
-    settings: {
-      get: async (key: string): Promise<unknown> => store.get(key) ?? null,
-      set: async (key: string, value: unknown): Promise<void> => {
-        sets.push({ key, value })
-        store.set(key, value)
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      settings: {
+        ...base['settings'],
+        get: async (key: string): Promise<unknown> => store.get(key) ?? null,
+        set: async (key: string, value: unknown): Promise<void> => {
+          sets.push({ key, value })
+          store.set(key, value)
+        },
       },
-    },
-    sshWorkspace: {
-      listConfigAliases: async (): Promise<unknown[]> => [],
-    },
-  } as unknown as ApiClient
+      sshWorkspace: {
+        ...base['sshWorkspace'],
+        listConfigAliases: async () => [],
+      },
+    } satisfies ApiClient
+  })()
   return { api, sets }
 }
 

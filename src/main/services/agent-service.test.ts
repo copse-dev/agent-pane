@@ -6,7 +6,7 @@ import { suggestThreadTitle } from './title-generator.ts'
 import { setSetting } from './storage/settings.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
-import type { ToolRegistry } from './tool-registry.ts'
+import { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 
@@ -48,7 +48,7 @@ describe('runAgent AgentHost decoupling', () => {
     const host: AgentHost<StreamChunk> = {
       emit: (threadId, chunk) => received.push({ threadId, chunk }),
     }
-    const registry = { toLLMTools: () => [] } as unknown as ToolRegistry
+    const registry = new ToolRegistry()
 
     try {
       await runWithThreadExecutionContext(

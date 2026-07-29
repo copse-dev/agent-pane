@@ -45,7 +45,12 @@ import {
   presentPermissionRequest,
 } from './acp-approval-presentation.ts'
 import { isBridgedNativeToolTitle } from './acp-native-bridge.ts'
-import { requestApproval } from '../approval.ts'
+import {
+  requestApproval,
+  trackAcpPermissionToolCall,
+  pendingApprovalCountForThread,
+  cancelApprovalsForAcpToolCall,
+} from '../approval.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -114,6 +119,13 @@ export interface RunAcpAgentOptions {
    * relying on the agent to already know the skill.
    */
   invokedSkills?: string[]
+  /**
+   * Aborted when the Copse turn ends (success, error, or Stop). Merged into
+   * bridged tool execution so an agent that abandons an MCP call and finishes
+   * the prompt cannot leave Copse's approval modal orphaned underneath a
+   * completed transcript.
+   */
+  bridgeTurnSignal?: AbortSignal
 }
 
 export interface RunAcpAgentResult {
@@ -154,11 +166,47 @@ export function acpTurnUsage(
   }
 }
 
+const ACP_ERROR_DETAIL_LIMIT = 2_000
+
+function truncateAcpErrorDetail(value: string): string {
+  return value.length <= ACP_ERROR_DETAIL_LIMIT
+    ? value
+    : `${value.slice(0, ACP_ERROR_DETAIL_LIMIT)}...`
+}
+
+function acpErrorDataDetail(err: unknown): string | null {
+  if (typeof err === 'object' && err !== null && 'data' in err) {
+    const data = Reflect.get(err, 'data')
+    if (typeof data === 'string') return truncateAcpErrorDetail(data)
+    if (typeof data === 'object' && data !== null && 'details' in data) {
+      const details = Reflect.get(data, 'details')
+      if (typeof details === 'string') return truncateAcpErrorDetail(details)
+    }
+    try {
+      const encoded = JSON.stringify(data)
+      return typeof encoded === 'string' ? truncateAcpErrorDetail(encoded) : null
+    } catch {
+      return null
+    }
+  }
+  if (err instanceof Error && err.cause) return acpErrorDataDetail(err.cause)
+  return null
+}
+
+export function acpErrorMessage(err: unknown): string {
+  const message = errorMessage(err)
+  const detail = acpErrorDataDetail(err)
+  if (!detail || message.includes(detail)) return message
+  return `${message}: ${detail}`
+}
+
 /**
  * A failed ACP turn, carrying whatever the turn streamed before it died so the
  * caller can keep the partial assistant text in thread history and attribute
- * the (estimated) token spend instead of silently zeroing both. `message` is
- * the underlying failure's message so `classifyAgentError` still sees it.
+ * the (estimated) token spend instead of silently zeroing both. `message` keeps
+ * JSON-RPC `error.data` details when the adapter supplies them, so
+ * `classifyAgentError` and the UI don't collapse actionable subprocess stderr
+ * into a bare "Internal error".
  */
 export class AcpTurnFailure extends Error {
   readonly partial: {
@@ -170,7 +218,7 @@ export class AcpTurnFailure extends Error {
     cause: unknown,
     partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
   ) {
-    super(errorMessage(cause), { cause })
+    super(acpErrorMessage(cause), { cause })
     this.name = 'AcpTurnFailure'
     this.partial = partial
   }
@@ -184,7 +232,7 @@ export class AcpTurnFailure extends Error {
  * and 5xx server errors.
  */
 export function isTransientProviderError(err: unknown): boolean {
-  const msg = errorMessage(err)
+  const msg = acpErrorMessage(err)
   if (/\boverloaded\b/i.test(msg)) return true
   if (/\brate[ _-]?limit/i.test(msg)) return true
   if (/\b(?:429|500|502|503|504|529)\b/.test(msg)) return true
@@ -204,11 +252,15 @@ export function isTransientProviderError(err: unknown): boolean {
  * user with no recovery path.
  */
 export function isAcpConnectionDropped(err: unknown): boolean {
-  const msg = errorMessage(err)
+  const msg = acpErrorMessage(err)
   if (/connection (?:closed|reset|lost)/i.test(msg)) return true
   if (/\b(?:EPIPE|ECONNRESET)\b/.test(msg)) return true
   if (/premature close/i.test(msg)) return true
   if (/write after end/i.test(msg)) return true
+  if (/process(?:transport)? is not ready for writing/i.test(msg)) return true
+  if (/query closed before response received/i.test(msg)) return true
+  if (/process exited with (?:code|signal)/i.test(msg)) return true
+  if (/ACP agent .+ exited with (?:code|signal)/i.test(msg)) return true
   return false
 }
 
@@ -327,9 +379,33 @@ export async function runAcpAgentFromSettings(
   // duplicate streamed text and re-execute tool calls.
   let assistantText = ''
   let sawChunk = false
+  // Text streamed while an approval modal is open for this thread — hold it so
+  // the agent cannot appear to "reason underneath" the prompt. Flush when the
+  // last pending approval settles (or the turn ends).
+  let heldText = ''
+  const flushHeldText = (): void => {
+    if (!heldText) return
+    const flush = heldText
+    heldText = ''
+    options.onChunk({ type: 'text', text: flush })
+  }
   const onChunk = (chunk: StreamChunk): void => {
     sawChunk = true
-    if (chunk.type === 'text') assistantText += chunk.text
+    if (chunk.type === 'tool_result') {
+      // Agent finished/failed this tool without waiting for our permission answer
+      // — dismiss that specific modal now, not at turn end.
+      cancelApprovalsForAcpToolCall(chunk.toolCallId)
+    }
+    if (chunk.type === 'text') {
+      assistantText += chunk.text
+      if (pendingApprovalCountForThread(options.threadId) > 0) {
+        heldText += chunk.text
+        return
+      }
+      flushHeldText()
+    } else if (pendingApprovalCountForThread(options.threadId) === 0) {
+      flushHeldText()
+    }
     options.onChunk(chunk)
   }
 
@@ -339,8 +415,14 @@ export async function runAcpAgentFromSettings(
   const queueWrites = new Set<string>()
   const handlers: AcpClientHandlers = {
     onChunk,
-    requestPermission: (req) =>
-      respondToPermission({ id: agent.id, title: agent.title, sandboxed }, req, cwd, projectRoot),
+    requestPermission: (req, rpcSignal) =>
+      respondToPermission(
+        { id: agent.id, title: agent.title, sandboxed },
+        req,
+        cwd,
+        projectRoot,
+        mergeAcpPermissionAbortSignals(options.signal, rpcSignal),
+      ),
     readTextFile: (req) => readTextFile(req, cwd),
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites, cwd),
   }
@@ -374,6 +456,7 @@ export async function runAcpAgentFromSettings(
       registry: options.registry,
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
+    entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
@@ -405,6 +488,7 @@ export async function runAcpAgentFromSettings(
       throw err
     } finally {
       entry.bridge?.setAdvisorContext(null)
+      entry.bridge?.setTurnSignal(null)
       entry.lastUsedAt = Date.now()
     }
   }
@@ -417,6 +501,7 @@ export async function runAcpAgentFromSettings(
       hasProgress: () => sawChunk,
     }))
   } catch (err) {
+    flushHeldText()
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
@@ -443,6 +528,7 @@ export async function runAcpAgentFromSettings(
     })
   }
 
+  flushHeldText()
   emitNetworkDenialAudit(denialMark, options.onChunk)
   await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
 
@@ -516,14 +602,26 @@ export function shouldAutoApproveLowRiskAcpPermission(
   return READ_ONLY_ACP_TOOL_KINDS.has(kind)
 }
 
+export function mergeAcpPermissionAbortSignals(
+  turnSignal: AbortSignal | undefined,
+  rpcSignal: AbortSignal,
+): AbortSignal {
+  if (!turnSignal) return rpcSignal
+  if (turnSignal.aborted) return turnSignal
+  if (rpcSignal.aborted) return rpcSignal
+  return AbortSignal.any([turnSignal, rpcSignal])
+}
+
 async function respondToAcpExecutePermission(
   agent: { sandboxed: boolean },
   req: RequestPermissionRequest,
   root: string | null,
   projectRoot: string | null,
+  signal?: AbortSignal,
 ): Promise<RequestPermissionResponse | null> {
   const command = acpExecuteCommandText(req.toolCall)
   if (!command) return null
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const readOnly = agent.sandboxed && isStructurallyReadOnlyShellCommand(command)
   const approved = await ensureShellCommandPermitted(command, {
     sandboxEnabled: agent.sandboxed,
@@ -531,7 +629,9 @@ async function respondToAcpExecutePermission(
     networkScopeAlreadyApplies: agent.sandboxed,
     executionRoot: root,
     projectRoot,
+    ...(signal ? { signal } : {}),
   })
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   return permissionResponseFor(req.options, approved)
 }
 
@@ -550,7 +650,9 @@ async function respondToPermission(
   req: RequestPermissionRequest,
   root: string | null = getAgentExecutionRoot(),
   projectRoot: string | null = getAgentProjectRoot(),
+  signal?: AbortSignal,
 ): Promise<RequestPermissionResponse> {
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const kind = req.toolCall.kind ?? 'other'
   if (isAcpPermissionRemembered(agent.id, kind)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
@@ -574,8 +676,25 @@ async function respondToPermission(
     return permissionResponseFor(req.options, true)
   }
   if (kind === 'execute') {
-    const executeResponse = await respondToAcpExecutePermission(agent, req, root, projectRoot)
-    if (executeResponse) return executeResponse
+    const toolCallId = req.toolCall.toolCallId
+    const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
+    const approvalSignal = tracked
+      ? signal
+        ? AbortSignal.any([signal, tracked.signal])
+        : tracked.signal
+      : signal
+    try {
+      const executeResponse = await respondToAcpExecutePermission(
+        agent,
+        req,
+        root,
+        projectRoot,
+        approvalSignal,
+      )
+      if (executeResponse) return executeResponse
+    } finally {
+      tracked?.unregister()
+    }
   }
   // File-mutating kinds (edit/delete/move) are auto-approved once a durable
   // backup of the user's worktree exists — the same safety net the native tools
@@ -587,14 +706,30 @@ async function respondToPermission(
       return permissionResponseFor(req.options, true)
     }
   }
-  const presentation = presentPermissionRequest(agent.title, req)
-  const { approved, remember } = await requestApproval({
-    ...presentation,
-    allowRemember: true,
-    rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
-  })
-  if (approved && remember) void rememberAcpPermission(agent.id, kind)
-  return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
+  const toolCallId = req.toolCall.toolCallId
+  const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
+  const approvalSignal = tracked
+    ? signal
+      ? AbortSignal.any([signal, tracked.signal])
+      : tracked.signal
+    : signal
+  try {
+    const presentation = presentPermissionRequest(agent.title, req)
+    const { approved, remember } = await requestApproval(
+      {
+        ...presentation,
+        allowRemember: true,
+        rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+      },
+      approvalSignal,
+    )
+    if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
+    if (approved && remember) void rememberAcpPermission(agent.id, kind)
+    return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+  } finally {
+    tracked?.unregister()
+  }
 }
 
 /**
@@ -909,4 +1044,15 @@ function messageLine(message: LLMMessage): string {
   // System prompts, tool results, and raw assistant tool-call turns are dropped
   // to keep the handoff compact and free of local-only tooling noise.
   return ''
+}
+
+/** @internal Test seam for permission-cancel wiring (PR1). */
+export function respondToPermissionForTest(
+  agent: { id: string; title: string; sandboxed: boolean },
+  req: RequestPermissionRequest,
+  root: string | null,
+  projectRoot: string | null,
+  signal?: AbortSignal,
+): Promise<RequestPermissionResponse> {
+  return respondToPermission(agent, req, root, projectRoot, signal)
 }

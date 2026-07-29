@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { SshConnectionState } from '@shared/types/ssh-workspace.ts'
 import {
   attachProjectThreadCache,
   getSidebarThreads,
@@ -17,6 +18,7 @@ import {
   switchProject,
   switchProjectThread,
 } from './projects.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function thread(id: string, title = id): Thread {
   return {
@@ -45,36 +47,47 @@ function makeApi(handlers: {
   storageSet?: (key: string, value: unknown) => Promise<void>
   loadProjectThreads?: (projectId: string) => Promise<Thread[]>
   settingsGet?: (key: string) => Promise<unknown>
-  sshStates?: () => Promise<Array<{ hostId: string; status: string }>>
+  sshStates?: () => Promise<SshConnectionState[]>
   sshConnect?: (hostId: string) => Promise<void>
 }): ApiClient {
-  return {
-    workspace: {
-      open: handlers.workspaceOpen ?? (async (): Promise<string | null> => null),
-      set: handlers.workspaceSet ?? (async (path): Promise<string> => path),
-    },
-    storage: {
-      get: handlers.storageGet ?? (async (): Promise<unknown> => null),
-      set: handlers.storageSet ?? (async (): Promise<void> => undefined),
-    },
-    threads: {
-      loadProject: handlers.loadProjectThreads ?? (async (): Promise<Thread[]> => []),
-      create: async (): Promise<void> => undefined,
-      appendMessage: async (): Promise<void> => undefined,
-      updateMeta: async (): Promise<void> => undefined,
-      delete: async (): Promise<void> => undefined,
-      catalog: async (): Promise<never[]> => [],
-      listOrphans: async (): Promise<never[]> => [],
-    },
-    settings: {
-      get: handlers.settingsGet ?? (async (): Promise<unknown> => null),
-    },
-    sshWorkspace: {
-      getStates:
-        handlers.sshStates ?? (async (): Promise<Array<{ hostId: string; status: string }>> => []),
-      connect: handlers.sshConnect ?? (async (): Promise<void> => undefined),
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      workspace: {
+        ...base['workspace'],
+        open: handlers.workspaceOpen ?? (async (): Promise<string | null> => null),
+        set: handlers.workspaceSet ?? (async (path): Promise<string> => path),
+      },
+      storage: {
+        ...base['storage'],
+        get: handlers.storageGet ?? (async (): Promise<unknown> => null),
+        set: handlers.storageSet ?? (async (): Promise<void> => undefined),
+      },
+      threads: {
+        ...base['threads'],
+        loadProject: handlers.loadProjectThreads ?? (async (): Promise<Thread[]> => []),
+        create: async (): Promise<void> => undefined,
+        appendMessage: async (): Promise<void> => undefined,
+        updateMeta: async (): Promise<void> => undefined,
+        delete: async (): Promise<void> => undefined,
+        catalog: async (): Promise<never[]> => [],
+        listOrphans: async (): Promise<never[]> => [],
+      },
+      settings: {
+        ...base['settings'],
+        get: handlers.settingsGet ?? (async (): Promise<unknown> => null),
+      },
+      sshWorkspace: {
+        ...base['sshWorkspace'],
+        getStates: handlers.sshStates ?? (async (): Promise<SshConnectionState[]> => []),
+        connect: async (hostId: string): Promise<SshConnectionState[]> => {
+          await handlers.sshConnect?.(hostId)
+          return handlers.sshStates?.() ?? []
+        },
+      },
+    } satisfies ApiClient
+  })()
 }
 
 async function waitUntil(fn: () => boolean, timeoutMs = 500): Promise<void> {
@@ -505,9 +518,9 @@ test('restoreProject quarantines a missing project instead of deleting it (#997)
   assert.equal(projects.find((p) => p.id === 'a')?.missing, true)
   assert.equal(store.getState().activeProjectId, 'b')
   assert.equal(store.getState().workspaceRoot, '/b')
-  const lastProjects = [...persisted].reverse().find((p) => p.key === 'projects')?.value as
-    Array<{ id: string }> | undefined
-  assert.equal(lastProjects?.length, 2)
+  const lastProjects: unknown = [...persisted].reverse().find((p) => p.key === 'projects')?.value
+  assert.ok(Array.isArray(lastProjects))
+  assert.equal(lastProjects.length, 2)
 })
 
 test('restoreProject keeps an SSH project active when connect fails (disconnect banner)', async () => {
@@ -522,7 +535,9 @@ test('restoreProject keeps an SSH project active when connect fails (disconnect 
   })
   const api = makeApi({
     settingsGet: async () => true,
-    sshStates: async () => [{ hostId: 'host-a', status: 'disconnected' }],
+    sshStates: async () => [
+      { hostId: 'host-a', status: 'disconnected', label: 'Host A', target: 'host-a' },
+    ],
     sshConnect: async () => {
       throw new Error('host unavailable')
     },
@@ -550,7 +565,9 @@ test('restoreProject quarantines an SSH project when the remote folder cannot op
   })
   const api = makeApi({
     settingsGet: async () => true,
-    sshStates: async () => [{ hostId: 'host-a', status: 'connected' }],
+    sshStates: async () => [
+      { hostId: 'host-a', status: 'connected', label: 'Host A', target: 'host-a' },
+    ],
     workspaceSet: async (path) => {
       if (path === '/gone') throw new Error('remote path missing')
       return path

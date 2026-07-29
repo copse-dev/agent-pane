@@ -18,7 +18,9 @@ describe('terminateProcessTree', () => {
     await once(proc, 'spawn')
 
     const cancelKill = terminateProcessTree(proc, 1_000)
-    const [code, signalName] = (await once(proc, 'exit')) as [number | null, NodeJS.Signals | null]
+    const exit = await once(proc, 'exit')
+    const code: unknown = exit[0]
+    const signalName: unknown = exit[1]
     cancelKill()
 
     assert.equal(code, null)
@@ -44,7 +46,9 @@ describe('terminateProcessTree', () => {
     await once(proc.stdout, 'data')
 
     terminateProcessTree(proc, 100)
-    const [code, signalName] = (await once(proc, 'exit')) as [number | null, NodeJS.Signals | null]
+    const exit = await once(proc, 'exit')
+    const code: unknown = exit[0]
+    const signalName: unknown = exit[1]
 
     assert.equal(code, null)
     assert.equal(signalName, 'SIGKILL')
@@ -66,7 +70,8 @@ describe('terminateProcessTree', () => {
     })
     await once(proc, 'spawn')
 
-    const [chunk] = (await once(proc.stdout, 'data')) as [Buffer]
+    const chunk: unknown = (await once(proc.stdout, 'data'))[0]
+    assert.ok(Buffer.isBuffer(chunk))
     const grandchildPid = Number(chunk.toString().trim())
     assert.ok(grandchildPid > 0)
 

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from './internal-utils.ts'
-import type { ProviderStreamChunk } from './wire-types.ts'
+import type { LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 
 interface CapturedChatCompletionRequest {
@@ -10,6 +10,10 @@ interface CapturedChatCompletionRequest {
   stream_options?: { include_usage?: boolean }
   provider?: { require_parameters?: boolean }
   prompt_cache_key?: string
+  tools?: Array<{
+    type: 'function'
+    function: { name: string; description: string; parameters: Record<string, unknown> }
+  }>
 }
 
 interface ChatCompletionChunk {
@@ -50,7 +54,10 @@ function withFakeCreate(
   provider: OpenAIProvider,
   create: OpenAIProviderForTest['client']['chat']['completions']['create'],
 ): void {
-  ;(provider as unknown as OpenAIProviderForTest).client.chat.completions.create = create
+  Object.defineProperty(provider, 'client', {
+    value: { chat: { completions: { create } } },
+    configurable: true,
+  })
 }
 
 /**
@@ -64,9 +71,12 @@ function withFakeStream(provider: OpenAIProvider, events: ChatCompletionChunk[])
   withFakeCreate(provider, () => streamEvents(events))
 }
 
-async function collect(provider: OpenAIProvider): Promise<ProviderStreamChunk[]> {
+async function collect(
+  provider: OpenAIProvider,
+  tools: LLMTool[] = [],
+): Promise<ProviderStreamChunk[]> {
   const out: ProviderStreamChunk[] = []
-  for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+  for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], tools)) {
     out.push(chunk)
   }
   return out
@@ -168,6 +178,49 @@ describe('OpenAIProvider request options', () => {
     await collect(provider)
 
     assert.equal(captured.request?.prompt_cache_key, undefined)
+  })
+
+  it('normalizes legacy boolean exclusive bounds for OpenAI-compatible servers', async () => {
+    const provider = new OpenAIProvider('poolside-model', {
+      baseURL: 'https://example.test/v1',
+      apiKey: 'test-key',
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+    const parameters = {
+      type: 'object',
+      properties: {
+        count: { type: 'integer', minimum: 0, exclusiveMinimum: true },
+        ratio: { type: 'number', maximum: 1, exclusiveMaximum: false },
+        nested: {
+          type: 'array',
+          items: { type: 'number', minimum: -1, exclusiveMinimum: true },
+        },
+      },
+    }
+    const tools: LLMTool[] = [{ name: 'calculate', description: 'Calculate', parameters }]
+
+    await collect(provider, tools)
+
+    assert.deepEqual(captured.request?.tools?.[0]?.function.parameters, {
+      type: 'object',
+      properties: {
+        count: { type: 'integer', exclusiveMinimum: 0 },
+        ratio: { type: 'number', maximum: 1 },
+        nested: {
+          type: 'array',
+          items: { type: 'number', exclusiveMinimum: -1 },
+        },
+      },
+    })
+    assert.deepEqual(parameters.properties.count, {
+      type: 'integer',
+      minimum: 0,
+      exclusiveMinimum: true,
+    })
   })
 })
 

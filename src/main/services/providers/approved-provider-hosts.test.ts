@@ -5,7 +5,7 @@ import {
   getApprovedProviderHosts,
   setApprovedProviderHosts,
 } from './approved-provider-hosts.ts'
-import { setApprovalHandler } from '../approval.ts'
+import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
 
 describe('approved-provider-hosts', () => {
@@ -48,14 +48,14 @@ describe('approved-provider-hosts', () => {
     assert.equal(prompted, true)
   })
 
-  it('prompts and persists on ensureProviderHostApproved', async () => {
-    let prompted = false
-    setApprovalHandler(async () => {
-      prompted = true
+  it('prompts above Settings and persists on ensureProviderHostApproved', async () => {
+    let request: ApprovalRequest | undefined
+    setApprovalHandler(async (next) => {
+      request = next
       return { approved: true, remember: true }
     })
     await ensureProviderHostApproved('https://api.acme.example/v1')
-    assert.equal(prompted, true)
+    assert.equal(request?.showWhileSettingsOpen, true)
     assert.ok(getApprovedProviderHosts().includes('api.acme.example'))
   })
 

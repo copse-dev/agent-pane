@@ -1,3 +1,5 @@
+import type { LLMMessage } from '@copse/llm/wire-types.ts'
+
 // Current-turn context injection (H2 of the hooks platform).
 //
 // A *blocking* hook may return `injectContext` (the canonical vocabulary field —
@@ -14,9 +16,11 @@
 //     command hooks always blob their full raw stdout (decision 6 / A3), which
 //     is where the un-truncated `additionalContext` lives, so nothing is lost.
 //
-// The fire-site wiring (append to a tool result for `toolGate`, fold into the
-// composed prompt for `beforeSubmitPrompt`) is host-side; this module only turns
-// a raw injected string into the exact block that enters the turn.
+// The fire-site wiring (append to a tool result for `toolGate`, compose the turn
+// for `beforeSubmitPrompt`) is host-side; this module turns a raw injected
+// string into the exact block that enters the turn — and, for the turn-composition
+// path, owns *where* that block lands, because the position is a caching
+// invariant rather than a formatting detail (see `appendOperatorInstruction`).
 
 /**
  * Character cap for context a blocking hook injects into the current turn (H2).
@@ -77,4 +81,35 @@ export function buildInjectedContextBlock(
       `${String(capped.fullLength)} characters; the full text is preserved in the thread spine]`
     : capped.text
   return formatSystemReminder(body)
+}
+
+/**
+ * Append this turn's operator instructions — `turnStart` steering (M0.2) and any
+ * `beforeSubmitPrompt` injected context (H2) — to `messages` as a single
+ * trailing system message. Returns whether anything was appended.
+ *
+ * **Placement is a caching invariant, not a style choice.** These blocks are
+ * regenerated every turn, so folding them into the leading system prompt (as
+ * this used to) puts per-turn text at the very front of the rendered prompt.
+ * Prompt caching is a prefix match, so that invalidated the entire cached
+ * prefix — tool schemas and system prompt included — on every turn a hook fired
+ * (#1286, `docs/prompt-caching.md`). As the last entry they land *after* the
+ * last cache breakpoint, leaving the prefix byte-stable across turns.
+ *
+ * Trailing placement also satisfies the Messages API rule for mid-conversation
+ * system messages: the entry follows the user turn and is last.
+ *
+ * Empty and whitespace-only blocks are dropped, so a hook that fires but injects
+ * nothing leaves `messages` untouched — and therefore leaves the prefix intact.
+ */
+export function appendOperatorInstruction(
+  messages: LLMMessage[],
+  blocks: ReadonlyArray<string | undefined>,
+): boolean {
+  const present = blocks.filter(
+    (block): block is string => block !== undefined && block.trim().length > 0,
+  )
+  if (present.length === 0) return false
+  messages.push({ role: 'system', content: present.join('\n\n') })
+  return true
 }

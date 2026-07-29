@@ -11,16 +11,28 @@ import {
 import type { ModelComparison } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // The model-comparison card mirrors the post-turn review card: it renders inside
 // the scrolling message list (not a pinned sibling host) as a trailing card, and
 // new messages arriving after it are inserted above it.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-    index: { resolveFileReferences: () => Promise.resolve([]) },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+      index: {
+        ...base['index'],
+        resolveFileReferences: () => Promise.resolve([]),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 const comparison: ModelComparison = {

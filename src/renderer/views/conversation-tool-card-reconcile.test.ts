@@ -11,6 +11,7 @@ import {
 import type { SubagentSession, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Regression cover for #728: `tool_call_updated` fires continuously while a
 // subagent runs. The old renderer removed every `.tool-card` and rebuilt the
@@ -20,10 +21,21 @@ import { mountConversation } from './conversation.ts'
 // running subagent's streaming message element (hence its renderer) survives.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-    index: { resolveFileReferences: () => Promise.resolve([]) },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+      index: {
+        ...base['index'],
+        resolveFileReferences: () => Promise.resolve([]),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 // A sibling in a different group ('writing') so it stays its own individual
@@ -106,9 +118,9 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     const cardBefore = host.querySelector('.tool-card-subagent')
     assert.ok(cardBefore)
     const streamBefore = cardBefore.querySelector('.subagent-message-assistant')
-    assert.ok(streamBefore, 'expected a streaming subagent message element')
+    assert.ok(streamBefore instanceof HTMLElement, 'expected a streaming subagent message element')
     // Tag the element so recreation (not just a moved node) is detectable.
-    ;(streamBefore as HTMLElement).dataset['sentinel'] = 'kept'
+    streamBefore.dataset['sentinel'] = 'kept'
 
     updateToolCall(store, messageId, 'tc-sub-1', {
       subagent: subagentSession('Analyzing the code'),
@@ -122,7 +134,8 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     )
     const streamAfter = cardAfter.querySelector('.subagent-message-assistant')
     assert.strictEqual(streamAfter, streamBefore, 'streaming message element was recreated')
-    assert.equal((streamAfter as HTMLElement).dataset['sentinel'], 'kept')
+    assert.ok(streamAfter instanceof HTMLElement)
+    assert.equal(streamAfter.dataset['sentinel'], 'kept')
     assert.match(streamAfter.textContent, /Analyzing the code/)
   })
 

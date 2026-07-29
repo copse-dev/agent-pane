@@ -25,6 +25,14 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('keeps the e2e hosted-runner fallback explicit and inside the trusted-event guard', () => {
+    const e2eJob = workflow.match(/^ {2}e2e:\n(?: {4}.*\n)+/m)?.[0]
+    assert.ok(e2eJob, 'expected an `e2e:` job in ci.yml')
+    assert.match(e2eJob, /vars\.E2E_RUNNER == 'ubuntu-latest'/)
+    assert.match(e2eJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/)
+    assert.match(e2eJob, /fromJSON\('\["self-hosted", "copse-e2e"\]'\)/)
+  })
+
   it('keeps the heavy tier off `develop` so day-to-day PRs stay cheap', () => {
     // The develop model only pays for itself if e2e/bench run once per PROMOTION
     // rather than once per PR. Both guards are easy to lose when someone edits an
@@ -47,6 +55,40 @@ describe('ci.yml workflow invariants', () => {
     }
   })
 
+  it('forces promotion PRs through full e2e before consulting the oracle', () => {
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    assert.ok(planStep, 'expected the e2e planning step in ci.yml')
+    assert.match(planStep, /BASE_REF: \$\{\{ github\.base_ref \}\}/)
+
+    const promotionGate = planStep.indexOf(
+      'if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then',
+    )
+    const oracle = planStep.indexOf('node scripts/test-oracle.mts --plan')
+    assert.ok(promotionGate >= 0, 'promotion PRs must explicitly select mode=full')
+    assert.ok(oracle >= 0, 'expected the e2e oracle invocation')
+    assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
+  })
+
+  it('does not let a cheap develop push satisfy the promotion aggregate gate', () => {
+    const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
+    assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
+    assert.match(
+      aggregate,
+      /name: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/develop' && 'Develop CI Passed' \|\| 'CI Passed' \}\}/,
+      'develop pushes need a distinct aggregate check context',
+    )
+    assert.match(
+      aggregate,
+      /PROMOTION_PR=\$\{\{ github\.event_name == 'pull_request' && github\.base_ref == 'main'/,
+      'the aggregate must identify same-repository promotion PRs',
+    )
+    assert.match(
+      aggregate,
+      /\$PROMOTION_PR && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
+      'promotion PRs must fail closed unless e2e succeeds',
+    )
+  })
+
   it('has no merge_group trigger (queue needs Enterprise Cloud; org is on Team)', () => {
     // Re-adding the trigger would look harmless but can never fire, and its
     // presence previously justified `github.event_name != 'merge_group'` guards
@@ -60,6 +102,64 @@ describe('ci.yml workflow invariants', () => {
       /^ {4}branches: \[main, develop\]$/m,
       'push must cover develop (where merges land) and main (where promotions land)',
     )
+  })
+})
+
+describe('promote-develop.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
+
+  it('runs daily and only opens a PR when develop has commits to promote', () => {
+    assert.match(workflow, /- cron: '[^']+ \* \* \*'/)
+    assert.match(workflow, /const base = 'main'/)
+    assert.match(workflow, /const head = 'develop'/)
+
+    const noChangesExit = workflow.indexOf('comparison.data.ahead_by === 0')
+    const pullRequestLookup = workflow.indexOf('github.paginate')
+    assert.match(workflow, /compare\/\{basehead\}/)
+    assert.ok(noChangesExit >= 0, 'expected an explicit no-unpromoted-commits exit')
+    assert.ok(
+      noChangesExit < pullRequestLookup,
+      'the no-changes exit must run before looking up or creating a promotion PR',
+    )
+    assert.doesNotMatch(
+      workflow,
+      /commit\.tree\.sha/,
+      'tree equality must not hide commits discarded by a squash merge',
+    )
+  })
+
+  it('enables merge-commit auto-merge through the existing required CI gate', () => {
+    assert.match(workflow, /enablePullRequestAutoMerge/)
+    assert.match(workflow, /mergeMethod: MERGE/)
+    assert.doesNotMatch(workflow, /mergeMethod: SQUASH/)
+    assert.match(workflow, /github-token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
+  })
+})
+
+describe('reconcile-screenshots.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/reconcile-screenshots.yml'), 'utf8')
+
+  it('attempts the push before handing a workflow-file merge to a human', () => {
+    // The hand-off must be driven by a REFUSED push, never by merely noticing a
+    // .github/workflows change in the merge. Bailing pre-emptively made the
+    // hand-off unconditional: it fired even when the token had `workflow` scope,
+    // and because one base commit under .github/workflows/ lands in every stale
+    // branch's merge, a single such commit handed off every open PR at once
+    // (11 in one run, none with a real conflict).
+    const step = workflow.match(/git add tests\/e2e\/screenshots\/[\s\S]*?(?=\n {6}- name:)/)?.[0]
+    assert.ok(step, 'expected the reconcile merge step in reconcile-screenshots.yml')
+    assert.match(step, /if git push; then/, 'the push must be attempted, not assumed to fail')
+    assert.doesNotMatch(
+      step,
+      /wf="\$\([^)]*\)"\s*\n\s*if \[ -n "\$wf" \]; then\s*\n[\s\S]{0,200}?git merge --abort/,
+      'must not abort the merge on workflow-file detection alone',
+    )
+  })
+
+  it('leaves the branch untouched when the push is refused', () => {
+    // A refused push must not leave a local merge commit behind or half-apply the
+    // reconcile; the branch has to end up exactly as it was found.
+    assert.match(workflow, /git reset --hard HEAD~1/)
   })
 })
 

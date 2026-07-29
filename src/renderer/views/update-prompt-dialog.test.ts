@@ -3,6 +3,8 @@ import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountUpdatePromptDialog } from './update-prompt-dialog.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 type UpdatePromptHandler = (req: {
   id: string
@@ -16,19 +18,24 @@ type UpdatePromptHandler = (req: {
 const responses: { id: string; buttonIndex: number }[] = []
 let emit: UpdatePromptHandler = (): void => {}
 
-const api = {
-  updatePrompt: {
-    respond: (id: string, buttonIndex: number): Promise<void> => {
-      responses.push({ id, buttonIndex })
-      return Promise.resolve()
+const api = ((): ApiClient => {
+  const base = createFakeApi()
+  return {
+    ...base,
+    updatePrompt: {
+      ...base['updatePrompt'],
+      respond: (id: string, buttonIndex: number): Promise<void> => {
+        responses.push({ id, buttonIndex })
+        return Promise.resolve()
+      },
+      onRequest: (handler: UpdatePromptHandler): (() => void) => {
+        emit = handler
+        return (): void => {}
+      },
+      onDevNotice: (): (() => void) => (): void => {},
     },
-    onRequest: (handler: UpdatePromptHandler): (() => void) => {
-      emit = handler
-      return (): void => {}
-    },
-    onDevNotice: (): (() => void) => (): void => {},
-  },
-} as unknown as ApiClient
+  } satisfies ApiClient
+})()
 
 afterEach((): void => {
   document.getElementById('update-prompt-dialog')?.remove()
@@ -49,7 +56,7 @@ describe('update-prompt-dialog', () => {
       cancelIndex: 1,
     })
 
-    const dialog = document.getElementById('update-prompt-dialog') as HTMLDialogElement
+    const dialog = qsRequired<HTMLDialogElement>(document, '#update-prompt-dialog')
     assert.ok(dialog.open)
     assert.match(dialog.textContent, /Copse 1\.2\.3 is available/)
     assert.match(dialog.textContent, /Download the update now/)

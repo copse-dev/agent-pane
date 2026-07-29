@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline'
+import { BenchTranscript } from './lib/bench-transcript.mts'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
 import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
 import type {
@@ -23,6 +24,12 @@ interface StartMessage {
   model: string
   profile: SkillsBenchProfileSelectionId
   skills: SkillsBenchSkill[]
+  /**
+   * Where to write the trial's thread spine. Optional so an older harness that
+   * does not send it still runs; without it a trial leaves nothing behind but
+   * its scalar reward.
+   */
+  threadDir?: string
 }
 
 interface ToolResultMessage {
@@ -166,69 +173,86 @@ export async function runSkillsBenchAgent(): Promise<void> {
     maxStreamOutputTokens,
   )
   const reasoningCheckpoints: ReasoningCheckpointRecord[] = []
+  const threadDir = nonEmptyTrimmed(parsed.threadDir)
+  const transcript = threadDir
+    ? new BenchTranscript(threadDir, parsed.instruction, parsed.model, {
+        projectId: 'skillsbench',
+      })
+    : undefined
 
-  await runAgentLoop({
-    provider,
-    messages: [
-      { role: 'system', content: profile.systemPrompt },
-      { role: 'user', content: parsed.instruction },
-    ],
-    tools,
-    maxSteps: envPositiveInt('COPSE_SKILLSBENCH_MAX_STEPS', 80),
-    maxLlmCalls: envPositiveInt('COPSE_SKILLSBENCH_MAX_LLM_CALLS', 83),
-    maxContextTokens: envPositiveInt('COPSE_SKILLSBENCH_CONTEXT_TOKENS', 32_768),
-    maxStreamOutputTokens,
-    ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
-    usageModel: parsed.model.startsWith('lmstudio:') ? parsed.model : `lmstudio:${parsed.model}`,
-    onLlmCall: (count) => {
-      usage.llmCalls = count
-    },
-    recordReasoningCheckpoint: (record) => {
-      reasoningCheckpoints.push(record)
-      writeProtocol({ type: 'reasoning_checkpoint', record })
-    },
-    onChunk: (chunk: AgentStreamChunk) => {
-      if (chunk.type === 'tool_call') usage.toolCalls += 1
-      if (chunk.type === 'usage') {
-        usage.inputTokens += chunk.inputTokens
-        usage.outputTokens += chunk.outputTokens
-      }
-      if (chunk.type === 'text') assistantText += chunk.text
-      if (chunk.type === 'text_replace') assistantText = chunk.text
-      if (chunk.type === 'done') stopReason = chunk.stopReason
-      writeProtocol({ type: 'event', event: chunk })
-    },
-    executeTool: async (name, args, _signal, id) => {
-      if (name === 'run_shell') {
-        const command = stringProperty(args, 'command')
-        if (!command?.trim()) throw new Error('run_shell requires a non-empty command.')
-        const timeoutSec = numberProperty(args, 'timeout_sec')
-        if (
-          timeoutSec !== undefined &&
-          (!Number.isInteger(timeoutSec) || timeoutSec < 1 || timeoutSec > 600)
-        ) {
-          throw new Error('run_shell timeout_sec must be an integer from 1 through 600.')
+  try {
+    await runAgentLoop({
+      provider,
+      messages: [
+        { role: 'system', content: profile.systemPrompt },
+        { role: 'user', content: parsed.instruction },
+      ],
+      tools,
+      maxSteps: envPositiveInt('COPSE_SKILLSBENCH_MAX_STEPS', 80),
+      maxLlmCalls: envPositiveInt('COPSE_SKILLSBENCH_MAX_LLM_CALLS', 83),
+      maxContextTokens: envPositiveInt('COPSE_SKILLSBENCH_CONTEXT_TOKENS', 32_768),
+      maxStreamOutputTokens,
+      ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
+      usageModel: parsed.model.startsWith('lmstudio:') ? parsed.model : `lmstudio:${parsed.model}`,
+      onLlmCall: (count) => {
+        usage.llmCalls = count
+      },
+      recordReasoningCheckpoint: (record) => {
+        reasoningCheckpoints.push(record)
+        transcript?.recordReasoningCheckpoint(record)
+        writeProtocol({ type: 'reasoning_checkpoint', record })
+      },
+      onChunk: (chunk: AgentStreamChunk) => {
+        transcript?.record(chunk)
+        if (chunk.type === 'tool_call') usage.toolCalls += 1
+        if (chunk.type === 'usage') {
+          usage.inputTokens += chunk.inputTokens
+          usage.outputTokens += chunk.outputTokens
         }
-        writeProtocol({ type: 'tool_request', id, tool: 'run_shell', command, timeoutSec })
-      } else if (name === 'read_skill' && profile.id !== 'skills-none') {
-        const skill = stringProperty(args, 'name')
-        const path = stringProperty(args, 'path') ?? 'SKILL.md'
-        if (!skill?.trim()) throw new Error('read_skill requires a name.')
-        writeProtocol({ type: 'tool_request', id, tool: 'read_skill', skill, path })
-      } else {
-        throw new Error(`Unsupported SkillsBench tool '${name}'.`)
-      }
+        if (chunk.type === 'text') assistantText += chunk.text
+        if (chunk.type === 'text_replace') assistantText = chunk.text
+        if (chunk.type === 'done') stopReason = chunk.stopReason
+        writeProtocol({ type: 'event', event: chunk })
+      },
+      executeTool: async (name, args, _signal, id) => {
+        if (name === 'run_shell') {
+          const command = stringProperty(args, 'command')
+          if (!command?.trim()) throw new Error('run_shell requires a non-empty command.')
+          const timeoutSec = numberProperty(args, 'timeout_sec')
+          if (
+            timeoutSec !== undefined &&
+            (!Number.isInteger(timeoutSec) || timeoutSec < 1 || timeoutSec > 600)
+          ) {
+            throw new Error('run_shell timeout_sec must be an integer from 1 through 600.')
+          }
+          writeProtocol({ type: 'tool_request', id, tool: 'run_shell', command, timeoutSec })
+        } else if (name === 'read_skill' && profile.id !== 'skills-none') {
+          const skill = stringProperty(args, 'name')
+          const path = stringProperty(args, 'path') ?? 'SKILL.md'
+          if (!skill?.trim()) throw new Error('read_skill requires a name.')
+          writeProtocol({ type: 'tool_request', id, tool: 'read_skill', skill, path })
+        } else {
+          throw new Error(`Unsupported SkillsBench tool '${name}'.`)
+        }
 
-      const next = await input.next()
-      if (next.done) throw new Error(`SkillsBench bridge closed while tool '${id}' was running.`)
-      const response: unknown = JSON.parse(next.value)
-      if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
-        throw new Error(`SkillsBench bridge received an invalid result for tool '${id}'.`)
-      }
-      if (response.isError) throw new Error(response.result)
-      return response.result
-    },
-  })
+        const next = await input.next()
+        if (next.done) throw new Error(`SkillsBench bridge closed while tool '${id}' was running.`)
+        const response: unknown = JSON.parse(next.value)
+        if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
+          throw new Error(`SkillsBench bridge received an invalid result for tool '${id}'.`)
+        }
+        if (response.isError) throw new Error(response.result)
+        return response.result
+      },
+    })
+  } catch (error) {
+    transcript?.fail(error)
+    throw error
+  } finally {
+    // Written on the failure path too: a trial that died partway is exactly the
+    // one whose trajectory is worth reading.
+    transcript?.write()
+  }
 
   writeProtocol({
     type: 'result',

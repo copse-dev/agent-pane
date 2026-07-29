@@ -6,6 +6,7 @@ import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-
 import type { ApiClient } from '../../preload/api.d.ts'
 import { drainMessageQueue, enqueueUserMessage } from '../controller/message-queue.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Component port of tests/e2e/message-queue.e2e.ts. A follow-up queued while the
 // agent runs renders in the pinned panel, then — once the turn finishes and the
@@ -22,16 +23,21 @@ function createProjectStore(): ReturnType<typeof createStore> {
 
 function fakeApi(): ApiClient & { runs: Array<[string, string]> } {
   const runs: Array<[string, string]> = []
-  return {
-    runs,
-    agent: {
-      run: (_projectId: string, threadId: string, payload: string) => {
-        runs.push([threadId, payload])
-        return Promise.resolve()
+  return ((): ApiClient & { runs: Array<[string, string]> } => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      runs,
+      agent: {
+        ...base['agent'],
+        run: (_projectId: string, threadId: string, payload: string): Promise<void> => {
+          runs.push([threadId, payload])
+          return Promise.resolve()
+        },
+        abort: () => Promise.resolve(),
       },
-      abort: () => Promise.resolve(),
-    },
-  } as unknown as ApiClient & { runs: Array<[string, string]> }
+    } satisfies ApiClient & { runs: Array<[string, string]> }
+  })()
 }
 
 afterEach(() => {

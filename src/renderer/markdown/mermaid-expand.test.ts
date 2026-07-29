@@ -7,19 +7,22 @@ import { qs, qsRequired } from '../dom/helpers.ts'
 // happy-dom doesn't implement <dialog> modality or pointer capture; stub the
 // few methods the expand lightbox calls so the interaction wiring can run.
 function patchEnv(): void {
-  const proto = window.HTMLElement.prototype as unknown as Record<string, unknown>
-  proto['setPointerCapture'] ??= function (): void {}
-  proto['hasPointerCapture'] ??= function (): boolean {
+  const proto = window.HTMLElement.prototype
+  const define = (name: string, value: unknown): void => {
+    if (!(name in proto)) Object.defineProperty(proto, name, { configurable: true, value })
+  }
+  define('setPointerCapture', function (): void {})
+  define('hasPointerCapture', function (): boolean {
     return false
-  }
-  proto['releasePointerCapture'] ??= function (): void {}
-  proto['showModal'] ??= function (this: HTMLElement): void {
-    ;(this as unknown as { open: boolean }).open = true
-  }
-  proto['close'] ??= function (this: HTMLElement): void {
-    ;(this as unknown as { open: boolean }).open = false
+  })
+  define('releasePointerCapture', function (): void {})
+  define('showModal', function (this: HTMLElement): void {
+    Object.defineProperty(this, 'open', { configurable: true, value: true, writable: true })
+  })
+  define('close', function (this: HTMLElement): void {
+    Object.defineProperty(this, 'open', { configurable: true, value: false, writable: true })
     this.dispatchEvent(new window.Event('close'))
-  }
+  })
 }
 
 function diagram(withSvg = true): HTMLElement {
@@ -99,8 +102,7 @@ describe('attachMermaidExpand', () => {
     const zoomLabel = qsRequired(dialog, '.mermaid-expand-zoom-label')
 
     // Give the viewport/stage real geometry so fitToViewport takes its full path.
-    viewport.getBoundingClientRect = (): DOMRect =>
-      ({ left: 0, top: 0, width: 400, height: 300, right: 400, bottom: 300, x: 0, y: 0 }) as DOMRect
+    viewport.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 400, 300)
     Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 400 })
     Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 300 })
     Object.defineProperty(stage, 'offsetWidth', { configurable: true, value: 200 })

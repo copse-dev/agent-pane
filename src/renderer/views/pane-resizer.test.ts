@@ -6,6 +6,7 @@ import { DEFAULT_LAYOUT, LAYOUT_LIMITS } from '@shared/types/layout.ts'
 import { PORTRAIT_RIGHT_PANEL_CLASS } from './portrait-right-panel-layout.ts'
 import { applyLayout, mountPaneResizers, parseSavedLayout } from './pane-resizer.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function dispatchPointer(target: EventTarget, type: string, init: MouseEventInit): void {
   const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, ...init })
@@ -38,11 +39,16 @@ function mountResizableDom(): HTMLElement {
 }
 
 function apiStub(): ApiClient {
-  return {
-    settings: {
-      set: async () => {},
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      settings: {
+        ...base['settings'],
+        set: async (): Promise<void> => {},
+      },
+    } satisfies ApiClient
+  })()
 }
 
 afterEach(() => {
@@ -62,6 +68,7 @@ describe('pane resizer', () => {
   })
 
   it('falls back for invalid saved stacked files pane heights', () => {
+    assert.deepEqual(parseSavedLayout([]), DEFAULT_LAYOUT)
     assert.equal(
       parseSavedLayout({ filesPaneHeight: 100 }).filesPaneHeight,
       LAYOUT_LIMITS.filesStacked.min,

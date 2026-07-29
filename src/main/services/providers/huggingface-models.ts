@@ -18,6 +18,7 @@
 
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import type { ExtraProviderModel } from '@copse/llm/extra-providers.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** OpenAI-compatible base URL of the HF Inference Providers router. */
 export const HUGGINGFACE_ROUTER_BASE_URL = 'https://router.huggingface.co/v1'
@@ -43,8 +44,8 @@ function num(value: unknown): number | null {
 
 function readPricing(rec: Record<string, unknown>): { input: number; output: number } | null {
   const pricing = rec['pricing']
-  if (!pricing || typeof pricing !== 'object') return null
-  const p = pricing as Record<string, unknown>
+  if (!isRecord(pricing)) return null
+  const p = pricing
   const input = num(p['input'] ?? p['input_per_million'] ?? p['prompt'])
   if (input === null) return null
   const output = num(p['output'] ?? p['output_per_million'] ?? p['completion'])
@@ -71,8 +72,8 @@ export function selectBestHfProvider(providers: unknown): HfProviderEntry | null
   if (!Array.isArray(providers)) return null
   let best: HfProviderEntry | null = null
   for (const raw of providers) {
-    if (!raw || typeof raw !== 'object') continue
-    const rec = raw as Record<string, unknown>
+    if (!isRecord(raw)) continue
+    const rec = raw
     const name =
       typeof rec['provider'] === 'string'
         ? rec['provider']
@@ -106,12 +107,12 @@ export function selectBestHfProvider(providers: unknown): HfProviderEntry | null
  * Each model id is rewritten to `org/model:<provider>` so the route is fixed.
  */
 export function parseHuggingFaceModels(json: unknown): ExtraProviderModel[] {
-  const data = (json as { data?: unknown } | null)?.data
+  const data = isRecord(json) ? json['data'] : undefined
   if (!Array.isArray(data)) return []
   const out: ExtraProviderModel[] = []
   for (const row of data) {
-    if (!row || typeof row !== 'object') continue
-    const rec = row as Record<string, unknown>
+    if (!isRecord(row)) continue
+    const rec = row
     const id =
       typeof rec['id'] === 'string'
         ? rec['id']

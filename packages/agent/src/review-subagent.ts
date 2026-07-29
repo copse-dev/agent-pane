@@ -5,6 +5,7 @@
 // Electron main process.
 
 import type { TodoItem, TodoUpdateInput } from './wire-types.ts'
+import { z } from 'zod'
 
 /** Tools the parent agent uses to mutate files. A turn that runs any of these
  * changed the workspace and is therefore eligible for a post-turn review. */
@@ -69,6 +70,20 @@ export interface ParsedReviewVerdict {
 }
 
 const REVIEW_JSON_PREFIX = 'REVIEW_JSON:'
+const reviewVerdictSchema = z.object({
+  issuesFound: z.boolean().optional(),
+  requestFollowUp: z.boolean().optional(),
+  todoUpdates: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        content: z.string(),
+        status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+      }),
+    )
+    .optional(),
+  followUpPrompt: z.string().optional(),
+})
 
 /** Split review subagent output into user-facing summary and structured verdict. */
 export function parseReviewVerdict(raw: string): ParsedReviewVerdict {
@@ -103,13 +118,8 @@ export function parseReviewVerdict(raw: string): ParsedReviewVerdict {
 
   const jsonText = (lines[jsonLineIndex] ?? '').slice(REVIEW_JSON_PREFIX.length).trim()
   try {
-    const parsed = JSON.parse(jsonText) as {
-      issuesFound?: boolean
-      requestFollowUp?: boolean
-      todoUpdates?: TodoUpdateInput[]
-      followUpPrompt?: string
-    }
-    const todoUpdates = Array.isArray(parsed.todoUpdates) ? parsed.todoUpdates : []
+    const parsed = reviewVerdictSchema.parse(JSON.parse(jsonText) as unknown)
+    const todoUpdates = parsed.todoUpdates ?? []
     const issuesFound = parsed.issuesFound === true
     const requestFollowUp =
       parsed.requestFollowUp === true || (parsed.requestFollowUp !== false && issuesFound)

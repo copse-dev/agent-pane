@@ -4,6 +4,16 @@ import {
   truncateCommandOutput,
 } from '../exec/subprocess-output-cap.ts'
 import { parseGhJson, runGh } from './gh-service.ts'
+import { firstNonEmptyString } from '@shared/unknown-value.ts'
+import { decodeWithSchema } from '@shared/safe-json.ts'
+import {
+  ghPrViewSchema,
+  optionalNumber,
+  optionalString,
+  type GhPrView,
+  type GhStatusCheckRollup,
+} from './gh-json-schemas.ts'
+import { z } from 'zod'
 
 export type CiOverallState = 'pending' | 'success' | 'failure' | 'no_checks'
 
@@ -27,51 +37,45 @@ export interface CiStatus {
   latestRunUrl: string | null
 }
 
-interface GhPrView {
-  state?: string
-  number?: number
-  title?: string
-  url?: string
-  headRefName?: string
-  headRefOid?: string
-  statusCheckRollup?: Array<{
-    __typename?: string
-    name?: string
-    context?: string
-    status?: string
-    conclusion?: string
-    state?: string
-    detailsUrl?: string
-  }>
-}
+const ghPrChecksSchema = z.array(
+  z.object({
+    name: optionalString,
+    state: optionalString,
+    bucket: optionalString,
+    link: optionalString,
+    workflow: optionalString,
+  }),
+)
+const ghWorkflowRunsSchema = z.array(
+  z.object({
+    databaseId: optionalNumber,
+    headSha: optionalString,
+    conclusion: optionalString,
+    status: optionalString,
+    url: optionalString,
+    name: optionalString,
+    displayTitle: optionalString,
+  }),
+)
 
-interface GhPrCheckRow {
-  name?: string
-  state?: string
-  bucket?: string
-  link?: string
-  workflow?: string
-}
-
-interface GhWorkflowRun {
-  databaseId?: number
-  headSha?: string
-  conclusion?: string
-  status?: string
-  url?: string
-  name?: string
-  displayTitle?: string
-}
-
-const CHECK_BUCKET_VALUES = new Set(['pass', 'fail', 'pending', 'skipping', 'cancel'])
+type GhPrCheckRow = z.infer<typeof ghPrChecksSchema>[number]
+type GhWorkflowRun = z.infer<typeof ghWorkflowRunsSchema>[number]
 
 export function normalizeCheckBucket(raw: string | undefined): CiCheck['bucket'] {
   const bucket = (raw ?? '').toLowerCase()
-  if (CHECK_BUCKET_VALUES.has(bucket)) return bucket as CiCheck['bucket']
-  return 'unknown'
+  switch (bucket) {
+    case 'pass':
+    case 'fail':
+    case 'pending':
+    case 'skipping':
+    case 'cancel':
+      return bucket
+    default:
+      return 'unknown'
+  }
 }
 
-export function rollupToCiChecks(rollup: GhPrView['statusCheckRollup']): CiCheck[] {
+export function rollupToCiChecks(rollup: GhStatusCheckRollup): CiCheck[] {
   const checks: CiCheck[] = []
   for (const item of rollup ?? []) {
     const name = item.name ?? item.context
@@ -128,7 +132,7 @@ export function deriveOverallState(
 }
 
 export function parseGhPrChecks(raw: string): CiCheck[] {
-  const rows = parseGhJson<GhPrCheckRow[]>(raw)
+  const rows = parseGhJson(raw, decodeWithSchema(ghPrChecksSchema))
   if (!Array.isArray(rows)) return []
   return rows
     .filter(
@@ -183,7 +187,7 @@ async function loadOpenPr(prNumber?: number): Promise<GhPrView | null> {
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr view failed')
   }
-  const pr = parseGhJson<GhPrView>(result.stdout)
+  const pr = parseGhJson(result.stdout, decodeWithSchema(ghPrViewSchema))
   if (!pr || pr.state !== 'OPEN') return null
   return pr
 }
@@ -229,7 +233,7 @@ async function loadLatestRun(
     'databaseId,headSha,conclusion,status,url,name,displayTitle',
   ])
   if (result.code !== 0) return null
-  const runs = parseGhJson<GhWorkflowRun[]>(result.stdout)
+  const runs = parseGhJson(result.stdout, decodeWithSchema(ghWorkflowRunsSchema))
   if (!Array.isArray(runs)) return null
   return pickLatestRunForHead(runs, headSha)
 }
@@ -243,7 +247,7 @@ function buildCiStatus(
   const mergedChecks = prChecks.checks.length > 0 ? prChecks.checks : rollupChecks
   return {
     prNumber: typeof pr?.number === 'number' ? pr.number : null,
-    prTitle: pr?.title?.trim() || null,
+    prTitle: firstNonEmptyString(pr?.title?.trim()) ?? null,
     prUrl: pr?.url ?? null,
     branch: pr?.headRefName ?? null,
     headSha: pr?.headRefOid ?? null,

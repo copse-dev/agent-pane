@@ -5,6 +5,7 @@
 @import './global/layout.css';
 @import './global/titlebar.css';
 @import './global/forms.css';
+@import './global/model-picker.css';
 @import './global/conversation.css';
 @import './global/markdown.css';
 @import './global/tool-cards.css';
@@ -22,6 +23,7 @@
 @import './global/mcp.css';
 @import './global/composer-extras.css';
 @import './global/image-expand.css';
+@import './global/video-expand.css';
 @import './global/file-search.css';
 @import './global/keyboard-shortcuts.css';
 @import './global/conversation-search.css';

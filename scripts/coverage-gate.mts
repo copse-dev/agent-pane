@@ -15,6 +15,7 @@
 //
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { expectRecord } from '../src/shared/unknown-value.mts'
 
 const SUMMARY = resolve('coverage/coverage-summary.json')
 const BASELINE = resolve('coverage-baseline.json')
@@ -26,7 +27,7 @@ const update = process.argv.includes('--update')
 
 async function readJson(path: string): Promise<Record<string, unknown>> {
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+    return expectRecord(JSON.parse(await readFile(path, 'utf8')) as unknown)
   } catch (err) {
     console.error(
       `coverage-gate: could not read ${path}: ${err instanceof Error ? err.message : String(err)}`,
@@ -36,14 +37,15 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
 }
 
 const summary = await readJson(SUMMARY)
-const total = (summary['total'] as { lines?: { pct?: number } } | undefined)?.lines
-if (typeof total?.pct !== 'number') {
+const total = expectRecord(summary['total'], 'coverage total')
+const lines = expectRecord(total['lines'], 'coverage total.lines')
+if (typeof lines['pct'] !== 'number') {
   console.error(
     `coverage-gate: ${SUMMARY} has no total.lines.pct — run \`npm run coverage\` first.`,
   )
   process.exit(1)
 }
-const current = total.pct
+const current = lines['pct']
 
 if (update) {
   await writeFile(BASELINE, JSON.stringify({ lines: current }, null, 2) + '\n')

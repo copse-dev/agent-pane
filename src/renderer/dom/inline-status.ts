@@ -1,7 +1,7 @@
 import { el } from './helpers.ts'
-import { checkIcon, circleIcon, closeIcon, dotIcon, warningIcon } from './icons.ts'
+import { checkIcon, circleIcon, closeIcon, dotIcon, minusIcon, warningIcon } from './icons.ts'
 
-export type InlineStatusKind = 'ok' | 'error' | 'pending' | 'filled' | 'warn'
+export type InlineStatusKind = 'ok' | 'error' | 'pending' | 'filled' | 'warn' | 'idle'
 
 function statusIcon(kind: InlineStatusKind): SVGSVGElement {
   switch (kind) {
@@ -10,11 +10,15 @@ function statusIcon(kind: InlineStatusKind): SVGSVGElement {
     case 'error':
       return closeIcon('ui-icon ui-icon-sm')
     case 'pending':
+      // In-progress marker; `.ui-inline-status[data-status-kind='pending'] .ui-icon` spins.
       return circleIcon('ui-icon ui-icon-sm')
     case 'filled':
       return dotIcon('ui-icon ui-icon-sm')
     case 'warn':
       return warningIcon('ui-icon ui-icon-sm')
+    case 'idle':
+      // Settled absence (Not loaded / not found) — must not share the pending spinner.
+      return minusIcon('ui-icon ui-icon-sm')
   }
 }
 

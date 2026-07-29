@@ -1,11 +1,11 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type * as Monaco from 'monaco-editor'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Regression for #459 ("Changeset viewer doesn't render the diff currently").
 //
@@ -26,35 +26,40 @@ const emptyStatus: GitStatusResult = { staged: [], unstaged: [] }
 
 function makeApi(calls: { isAvailable: number; status: number }): ApiClient {
   const noopUnsub = (): (() => void) => () => {}
-  return {
-    git: {
-      isAvailable: async () => {
-        calls.isAvailable++
-        return true
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      git: {
+        ...base['git'],
+        isAvailable: async (): Promise<boolean> => {
+          calls.isAvailable++
+          return true
+        },
+        status: async (): Promise<GitStatusResult | null> => {
+          calls.status++
+          return emptyStatus
+        },
+        fileDiff: async () => null,
+        sessionBackup: async () => null,
       },
-      status: async () => {
-        calls.status++
-        return emptyStatus
+      diff: {
+        ...base['diff'],
+        approve: async (): Promise<void> => {},
+        reject: async (): Promise<void> => {},
+        approveAll: async (): Promise<void> => {},
+        rejectAll: async (): Promise<void> => {},
+        onShowDiff: noopUnsub,
+        onQueued: noopUnsub,
+        onConflict: noopUnsub,
       },
-      fileDiff: async () => null,
-      sessionBackup: async () => null,
-    },
-    diff: {
-      approve: async () => {},
-      reject: async () => {},
-      approveAll: async () => {},
-      rejectAll: async () => {},
-      onShowDiff: noopUnsub(),
-      onQueued: noopUnsub(),
-      onConflict: noopUnsub(),
-    },
-    fs: {
-      onChanged: noopUnsub(),
-    },
-  } as unknown as ApiClient
+      fs: {
+        ...base['fs'],
+        onChanged: noopUnsub,
+      },
+    } satisfies ApiClient
+  })()
 }
-
-const monacoStub = {} as unknown as typeof Monaco
 
 // observeDiffHostLayout / whenDiffHostVisible construct ResizeObserver at mount,
 // which happy-dom doesn't expose as a global; a noop is enough for these
@@ -92,7 +97,7 @@ describe('git changes pane catches up on async mount (#459)', () => {
     // Mounting alone — without emitting any store event — must kick off the
     // initial refresh, because the deferred (async) mount missed the original
     // right_panel_mode_changed event.
-    mountGitChangesPane(listRoot, viewerRoot, store, api, monacoStub)
+    mountGitChangesPane(listRoot, viewerRoot, store, api, null)
 
     // refresh() awaits isAvailable() then status(); let those microtasks settle.
     await Promise.resolve()
@@ -116,7 +121,7 @@ describe('git changes pane catches up on async mount (#459)', () => {
     const viewerRoot = document.createElement('div')
     document.body.append(listRoot, viewerRoot)
 
-    mountGitChangesPane(listRoot, viewerRoot, store, api, monacoStub)
+    mountGitChangesPane(listRoot, viewerRoot, store, api, null)
 
     await Promise.resolve()
     await Promise.resolve()

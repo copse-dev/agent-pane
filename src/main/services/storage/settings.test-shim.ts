@@ -1,7 +1,17 @@
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
+import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.ts'
+import { getSettingSchema } from './settings-schema.ts'
 
 const settings = new Map<string, unknown>()
 const apiKeys = new Map<string, string>()
+
+function schemaAccepts<T>(
+  schema: NonNullable<ReturnType<typeof getSettingSchema>>,
+  value: unknown,
+  _fallback: T,
+): value is T {
+  return schema.safeParse(value).success
+}
 
 export type KeyProvider = string
 
@@ -38,7 +48,8 @@ export function deleteApiKey(provider: KeyProvider): void {
 
 export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   const envVar = ENV_VARS[provider]
-  return !!((envVar && process.env[envVar]) || hasApiKey(provider))
+  const environmentKey = envVar ? firstNonEmptyString(process.env[envVar]) : undefined
+  return environmentKey !== undefined || hasApiKey(provider)
 }
 
 export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
@@ -49,7 +60,7 @@ export function resolveApiKey(provider: KeyProvider): string | null {
   const stored = getApiKey(provider)
   if (stored) return stored
   const envVar = ENV_VARS[provider]
-  return (envVar && process.env[envVar]) || null
+  return envVar ? (firstNonEmptyString(process.env[envVar]) ?? null) : null
 }
 
 export function getLmStudioApiKey(): string {
@@ -57,7 +68,12 @@ export function getLmStudioApiKey(): string {
 }
 
 export function getSetting<T>(key: string, fallback: T): T {
-  return (settings.get(key) as T | undefined) ?? fallback
+  const value = settings.get(key)
+  const schema = getSettingSchema(key)
+  if (schema) {
+    return schemaAccepts(schema, value, fallback) ? value : fallback
+  }
+  return matchesFallbackType(value, fallback) ? value : fallback
 }
 
 export function getSettingTrimmed(key: string, fallback = ''): string {

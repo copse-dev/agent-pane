@@ -19,6 +19,7 @@ import {
   type HaltDisposition,
 } from './halt-run.ts'
 import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
+import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 
 const CURRENT: TurnTreeId = asTurnTreeId('turn-tree-current')
 const STALE: TurnTreeId = asTurnTreeId('turn-tree-stale')
@@ -205,12 +206,15 @@ describe('stale halts record against the fire-site snapshot (decisions 3/6/16)',
       snapshots.push(snapshot)
       void input
     })
-    const fireSiteSnapshot = { projectId: 'p', threadId: THREAD, turnId: 'turn-old' }
+    const fireSiteSnapshot: HookRunRecordingSnapshot = {
+      projectId: 'p',
+      threadId: THREAD,
+      turnId: 'turn-old',
+      step: 0,
+      toolset: null,
+    }
 
-    const sink = hookQueueOutcomeSink(
-      THREAD,
-      fireSiteSnapshot as unknown as Parameters<typeof hookQueueOutcomeSink>[1],
-    )
+    const sink = hookQueueOutcomeSink(THREAD, fireSiteSnapshot)
     sink(asyncRecord(STALE, { reason: 'late stop' }))
 
     assert.equal(snapshots.length, 1, 'suppressed halt still records')

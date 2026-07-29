@@ -1,5 +1,4 @@
-import type { BrowserWindow } from 'electron'
-import { ipcMain } from 'electron'
+import type { BrowserWindow, IpcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
 import {
@@ -43,7 +42,7 @@ export function requestUserAnswers(req: AskUserRequest): Promise<AskUserResult> 
   return handler(req)
 }
 
-export function initAskUser(win: BrowserWindow): void {
+export function initAskUser(win: BrowserWindow, ipcMain: IpcMain): void {
   const pending = new Map<string, (result: AskUserResult) => void>()
   const settle = (id: string, result: AskUserResult): void => {
     const resolve = pending.get(id)

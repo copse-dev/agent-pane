@@ -28,6 +28,8 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { z } from 'zod'
+import { optionalString } from '../src/shared/unknown-value.mts'
 
 const execFileAsync = promisify(execFile)
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -45,6 +47,15 @@ interface Query {
 interface Fixtures {
   queries: Query[]
 }
+
+const fixturesSchema: z.ZodType<Fixtures> = z.object({
+  queries: z.array(
+    z.object({ id: z.string(), query: z.string(), expectedPaths: z.array(z.string()) }),
+  ),
+})
+const searchResultsSchema = z.object({
+  results: z.array(z.record(z.string(), z.unknown())).nullish(),
+})
 
 interface QueryResult {
   id: string
@@ -203,9 +214,9 @@ async function benchGortex(
     ])
     const latencyMs = performance.now() - start
     // parseGortexJson keys on absolute_file_path/file_path.
-    const parsed = JSON.parse(stdout) as { results?: Array<Record<string, unknown>> | null }
+    const parsed = searchResultsSchema.parse(JSON.parse(stdout) as unknown)
     const paths = (parsed.results ?? [])
-      .map((r) => (r['absolute_file_path'] ?? r['file_path'] ?? r['path']) as string | undefined)
+      .map((r) => optionalString(r['absolute_file_path'] ?? r['file_path'] ?? r['path']))
       .filter((p): p is string => typeof p === 'string')
       .slice(0, k)
       .map((p) => toRepoRelative(repo, p))
@@ -277,7 +288,7 @@ function printReport(report: BackendReport, k: number): void {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
-  const fixtures = JSON.parse(readFileSync(FIXTURES_PATH, 'utf8')) as Fixtures
+  const fixtures = fixturesSchema.parse(JSON.parse(readFileSync(FIXTURES_PATH, 'utf8')) as unknown)
 
   // Fail loudly on a stale gold target (a file that was moved/renamed) rather
   // than letting it silently count as a miss and quietly erode recall.

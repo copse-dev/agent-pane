@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { resolveContextWindow, fetchLmStudioModelContextLength } from './resolve-context-window.ts'
 import { invalidateLmStudioModelsCache } from './lm-studio-models.ts'
 import { setApiKey } from '../storage/settings.test-shim.ts'
+import { jsonResponse } from './test-response.ts'
 
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input
@@ -40,23 +41,17 @@ describe('resolveContextWindow', () => {
     const restoreFetch = stubFetch(async (input) => {
       const url = requestUrl(input)
       if (url.includes('/api/v1/models')) {
-        return {
-          ok: true,
-          json: async () => ({
-            models: [
-              {
-                key: 'qwen',
-                max_context_length: 262144,
-                loaded_instances: [{ config: { context_length: 16384 } }],
-              },
-            ],
-          }),
-        } as Response
+        return jsonResponse({
+          models: [
+            {
+              key: 'qwen',
+              max_context_length: 262144,
+              loaded_instances: [{ config: { context_length: 16384 } }],
+            },
+          ],
+        })
       }
-      return {
-        ok: true,
-        json: async () => ({ data: [{ id: 'qwen' }] }),
-      } as Response
+      return jsonResponse({ data: [{ id: 'qwen' }] })
     })
     try {
       assert.equal(await resolveContextWindow('lmstudio:qwen'), 16384)
@@ -69,12 +64,9 @@ describe('resolveContextWindow', () => {
     const restoreFetch = stubFetch(async (input) => {
       const url = requestUrl(input)
       if (url.includes('/api/v1/models')) {
-        return { ok: true, json: async () => ({ models: [{ key: 'qwen' }] }) } as Response
+        return jsonResponse({ models: [{ key: 'qwen' }] })
       }
-      return {
-        ok: true,
-        json: async () => ({ data: [{ id: 'qwen' }] }),
-      } as Response
+      return jsonResponse({ data: [{ id: 'qwen' }] })
     })
     try {
       assert.equal(await resolveContextWindow('lmstudio:qwen'), 8192)
@@ -105,17 +97,11 @@ describe('fetchLmStudioModelContextLength', () => {
     restoreFetch = stubFetch(async (input) => {
       const url = requestUrl(input)
       if (url.includes('/api/v1/models')) {
-        return {
-          ok: true,
-          json: async () => ({
-            models: [{ key: 'qwen', max_context_length: 32768, loaded_instances: [] }],
-          }),
-        } as Response
+        return jsonResponse({
+          models: [{ key: 'qwen', max_context_length: 32768, loaded_instances: [] }],
+        })
       }
-      return {
-        ok: true,
-        json: async () => ({ data: [{ id: 'qwen' }] }),
-      } as Response
+      return jsonResponse({ data: [{ id: 'qwen' }] })
     })
     assert.equal(await fetchLmStudioModelContextLength('http://127.0.0.1:1234/v1', 'qwen'), 32768)
   })

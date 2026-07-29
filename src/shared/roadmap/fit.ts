@@ -11,7 +11,7 @@ export const ROADMAP_FITS = ['likely', 'partial', 'unlikely'] as const
 export type RoadmapFit = (typeof ROADMAP_FITS)[number]
 
 export function isRoadmapFit(value: unknown): value is RoadmapFit {
-  return typeof value === 'string' && (ROADMAP_FITS as readonly string[]).includes(value)
+  return typeof value === 'string' && ROADMAP_FITS.some((entry) => entry === value)
 }
 
 /**
@@ -21,5 +21,6 @@ export function isRoadmapFit(value: unknown): value is RoadmapFit {
 export function parseFitVerdict(text: string): RoadmapFit | null {
   const firstLine = (text.trim().split('\n')[0] ?? '').toLowerCase()
   const match = /\b(likely|partial|unlikely)\b/.exec(firstLine)
-  return match ? (match[1] as RoadmapFit) : null
+  const word = match?.[1]
+  return isRoadmapFit(word) ? word : null
 }

@@ -4,6 +4,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { shellCommandLabel } from '@shared/tools/tool-display.ts'
 import { at } from '@shared/array-utils.ts'
 import { isTabVisibleForScope } from './scoped-tabs.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 // How many finished tasks to keep around before the oldest are dropped. The
 // running task (and recent history) stay viewable; ancient ones are pruned so
@@ -40,8 +41,8 @@ interface AgentTask {
 }
 
 function shellCommandFromArgs(args: unknown): string | null {
-  if (!args || typeof args !== 'object') return null
-  const command = (args as Record<string, unknown>)['command']
+  if (!isRecord(args)) return null
+  const command = args['command']
   return typeof command === 'string' && command.trim() ? command : null
 }
 

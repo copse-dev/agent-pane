@@ -13,10 +13,11 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { createStore } from '@shared/store/store.ts'
 import { mountAskUserDialog } from './ask-user-dialog.ts'
 import { resetAttention } from '../controller/attention.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface AskUserRequest {
   id: string
-  threadId?: string | undefined
+  threadId?: string
   questions: { question: string; options?: string[] }[]
 }
 
@@ -30,14 +31,18 @@ interface Harness {
 function stubApi(): { api: ApiClient; harness: Harness } {
   let listener: ((req: AskUserRequest) => void) | null = null
   const responses: { id: string; answers: string[] }[] = []
-  const api = {
+  const base = createFakeApi()
+  const api: ApiClient = {
+    ...base,
     agent: {
+      ...base.agent,
       onAskUserRequest: (handler: (req: AskUserRequest) => void): (() => void) => {
         listener = handler
         return (): void => {}
       },
     },
     ask: {
+      ...base.ask,
       respond: (id: string, answers: string[]): Promise<void> => {
         responses.push({ id, answers })
         return Promise.resolve()
@@ -47,11 +52,15 @@ function stubApi(): { api: ApiClient; harness: Harness } {
   const harness: Harness = {
     emit: (req) => {
       if (!listener) throw new Error('no ask_user listener registered')
-      listener(req)
+      listener({
+        id: req.id,
+        questions: req.questions,
+        ...(req.threadId === undefined ? {} : { threadId: req.threadId }),
+      })
     },
     responses,
   }
-  return { api: api as unknown as ApiClient, harness }
+  return { api, harness }
 }
 
 function shimModal(el: HTMLDialogElement): void {

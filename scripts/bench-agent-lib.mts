@@ -33,22 +33,28 @@ import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
+import {
+  expectRecord,
+  firstNonEmptyString,
+  nonEmptyStringOr,
+} from '../src/shared/unknown-value.mts'
+import { z } from 'zod'
 
 export interface BenchTask {
   id: string
-  description?: string
+  description?: string | undefined
   prompt: string
   /** Directory (repo-relative) copied into a fresh temp workspace; omitted → empty workspace. */
-  fixture?: string
+  fixture?: string | undefined
   /** Git checkout into the temp workspace (SWE-bench-style tasks). Mutually exclusive with fixture. */
-  repo?: { url: string; commit: string }
+  repo?: { url: string; commit: string } | undefined
   /** Shell command run in the workspace before the agent starts (dependency install etc.). */
-  setup?: string
+  setup?: string | undefined
   grade:
-    | { kind: 'shell'; command: string; applyPatch?: string }
+    | { kind: 'shell'; command: string; applyPatch?: string | undefined }
     | { kind: 'file-contains'; path: string; needle: string }
-  maxSteps?: number
-  timeoutMs?: number
+  maxSteps?: number | undefined
+  timeoutMs?: number | undefined
 }
 
 export interface TaskResult {
@@ -87,6 +93,27 @@ interface BaselineEntry {
   total: number
   outputTokensPerSolve: number | null
 }
+
+const benchTaskSchema: z.ZodType<BenchTask> = z.object({
+  id: z.string(),
+  description: z.string().optional(),
+  prompt: z.string(),
+  fixture: z.string().optional(),
+  repo: z.object({ url: z.string(), commit: z.string() }).optional(),
+  setup: z.string().optional(),
+  grade: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('shell'), command: z.string(), applyPatch: z.string().optional() }),
+    z.object({ kind: z.literal('file-contains'), path: z.string(), needle: z.string() }),
+  ]),
+  maxSteps: z.number().optional(),
+  timeoutMs: z.number().optional(),
+})
+const baselineEntrySchema: z.ZodType<BaselineEntry> = z.object({
+  solved: z.number(),
+  total: z.number(),
+  outputTokensPerSolve: z.number().nullable(),
+})
+const baselinesSchema = z.record(z.string(), baselineEntrySchema)
 
 const TOOLS: LLMTool[] = [
   {
@@ -141,27 +168,29 @@ function jailPath(workspace: string, path: string): string {
 }
 
 async function executeTool(workspace: string, name: string, args: unknown): Promise<string> {
-  const a = args as { path?: string; content?: string; command?: string }
+  const a = expectRecord(args)
+  const path = typeof a['path'] === 'string' ? a['path'] : ''
   if (name === 'list_dir') {
-    const dir = jailPath(workspace, a.path ?? '.')
+    const dir = jailPath(workspace, path || '.')
     return readdirSync(dir)
       .slice(0, 200)
       .map((n) => `${statSync(join(dir, n)).isDirectory() ? 'd' : 'f'} ${n}`)
       .join('\n')
   }
   if (name === 'read_file') {
-    const file = jailPath(workspace, a.path ?? '')
+    const file = jailPath(workspace, path)
     return (await readFile(file, 'utf8')).slice(0, MAX_TOOL_OUTPUT)
   }
   if (name === 'write_file') {
-    const file = jailPath(workspace, a.path ?? '')
-    const content = a.content ?? ''
+    const file = jailPath(workspace, path)
+    const content = typeof a['content'] === 'string' ? a['content'] : ''
     mkdirSync(dirname(file), { recursive: true })
     await writeFile(file, content, 'utf8')
-    return `Wrote ${String(content.length)} chars to ${a.path ?? ''}`
+    return `Wrote ${String(content.length)} chars to ${path}`
   }
   if (name === 'run_shell') {
-    const out = spawnSync(a.command ?? '', {
+    const command = typeof a['command'] === 'string' ? a['command'] : ''
+    const out = spawnSync(command, {
       cwd: workspace,
       shell: true,
       encoding: 'utf8',
@@ -215,9 +244,12 @@ function buildProvider(): { provider: LLMProvider; model: string } {
   if (process.argv.includes('--mock') || process.env['COPSE_BENCH_USE_MOCK'] === '1') {
     return { provider: new MockLLMProvider(), model: 'mock' }
   }
-  const url = process.env['LM_STUDIO_URL']?.trim() || 'http://localhost:1234/v1'
+  const url = nonEmptyStringOr(process.env['LM_STUDIO_URL']?.trim(), 'http://localhost:1234/v1')
   const model = process.env['LM_STUDIO_MODEL']?.trim()
-  const apiKey = process.env['LM_STUDIO_API_KEY']?.trim() || process.env['LM_API_TOKEN']?.trim()
+  const apiKey = firstNonEmptyString(
+    process.env['LM_STUDIO_API_KEY']?.trim(),
+    process.env['LM_API_TOKEN']?.trim(),
+  )
   if (!model || !apiKey) {
     console.error(
       'bench:agent needs LM_STUDIO_MODEL and LM_STUDIO_API_KEY (or pass --mock for the deterministic harness self-test).',
@@ -231,7 +263,9 @@ function loadTasks(tasksDir: string, only?: string): BenchTask[] {
   const files = readdirSync(tasksDir)
     .filter((f) => f.endsWith('.json'))
     .sort()
-  const tasks = files.map((f) => JSON.parse(readFileSync(join(tasksDir, f), 'utf8')) as BenchTask)
+  const tasks = files.map((f) =>
+    benchTaskSchema.parse(JSON.parse(readFileSync(join(tasksDir, f), 'utf8')) as unknown),
+  )
   return only ? tasks.filter((t) => t.id === only) : tasks
 }
 
@@ -448,7 +482,7 @@ export async function runBench(): Promise<void> {
 
 function readBaselines(): Record<string, BaselineEntry> {
   try {
-    return JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) as Record<string, BaselineEntry>
+    return baselinesSchema.parse(JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) as unknown)
   } catch {
     return {}
   }

@@ -6,6 +6,7 @@ import { addHookCard, createThread } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { HookCard, Message } from '@shared/types'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Component-tier coverage of the decision-10 hook-card family: the pure model +
 // spine mapping is unit-tested in shared/hooks/hook-card.test.ts and the fold
@@ -14,9 +15,17 @@ import { mountConversation } from './conversation.ts'
 // origin marker on a hook-originated turn — without Electron.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function seedThread(store: ReturnType<typeof createStore>, messages: Message[]): string {

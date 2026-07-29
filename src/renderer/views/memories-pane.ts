@@ -4,6 +4,7 @@ import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { knowledgeDate } from './knowledge-date.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // A memory is one `Memory`-typed knowledge note. Derive the shape from the IPC
 // surface so this view never imports main-process types directly.
@@ -274,7 +275,7 @@ export function mountMemoriesPane(
     const note = memories.find((m) => m.id === selectedId)
     if (
       !(await showConfirmDialog({
-        message: `Delete memory "${note?.title || 'untitled'}"?`,
+        message: `Delete memory "${nonEmptyStringOr(note?.title, 'untitled')}"?`,
         confirmLabel: 'Delete',
         danger: true,
       }))

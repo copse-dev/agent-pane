@@ -16,6 +16,7 @@ import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
 import { ensureProviderHostApproved } from './approved-provider-hosts.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
+import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 /** Built-in slug of the Hugging Face Inference Providers provider. */
 export const HUGGINGFACE_SLUG = 'huggingface'
@@ -92,7 +93,7 @@ export async function saveExtraProvider(
 export async function refreshHuggingFaceModels(
   apiKey?: string,
 ): Promise<{ ok: boolean; count: number; error?: string }> {
-  const key = apiKey?.trim() || resolveApiKey(HUGGINGFACE_SLUG) || ''
+  const key = firstNonEmptyString(apiKey?.trim(), resolveApiKey(HUGGINGFACE_SLUG)) ?? ''
   const res = await fetchHuggingFaceModels(key)
   if (!res.ok) return { ok: false, count: 0, ...(res.error ? { error: res.error } : {}) }
   await saveExtraProvider({ slug: HUGGINGFACE_SLUG, models: res.models })

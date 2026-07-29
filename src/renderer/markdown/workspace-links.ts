@@ -17,8 +17,8 @@ export function bindWorkspaceLinkClicks(
 ): () => void {
   const onClick = (event: MouseEvent): void => {
     const target = event.target
-    if (!target || typeof (target as Element).closest !== 'function') return
-    const link = (target as Element).closest<HTMLAnchorElement>('a[data-workspace-link]')
+    if (!(target instanceof Element)) return
+    const link = target.closest<HTMLAnchorElement>('a[data-workspace-link]')
     if (!link || !root.contains(link)) return
     if (link.dataset['fileReferencePath']) return
 

@@ -1,6 +1,10 @@
 import { runCommand } from './exec/command-runner.ts'
-import { probeIndexedGrepBackends } from './search/indexed-grep.ts'
-import { isSemanticBackendBundled, probeSemanticBackends } from './search/semantic-index.ts'
+import { probeIndexedGrepBackends, type IndexedGrepBackend } from './search/indexed-grep.ts'
+import {
+  isSemanticBackendBundled,
+  probeSemanticBackends,
+  type SemanticBackend,
+} from './search/semantic-index.ts'
 import type { ExecutionTarget } from './ssh-workspace/execution-target.ts'
 import {
   getActiveExecutionTarget,
@@ -13,7 +17,51 @@ let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null
 let ghAvail: boolean | null = null
 
-export async function checkToolAvailability(): Promise<void> {
+/**
+ * The probes {@link checkToolAvailability} runs, injectable so a test can drive
+ * them without spawning processes. Mirrors the `LlmHistoryMigrationDeps` shape
+ * used by the other startup-path module.
+ */
+export interface ToolAvailabilityDeps {
+  probeRg: () => Promise<boolean>
+  probeGit: () => Promise<boolean>
+  probeGh: () => Promise<boolean>
+  probeGrepBackend: () => Promise<IndexedGrepBackend>
+  probeSemanticBackend: () => Promise<SemanticBackend | null>
+}
+
+const defaultDeps: ToolAvailabilityDeps = {
+  probeRg: () => probe('rg', ['--version']),
+  probeGit: () => probe('git', ['--version']),
+  probeGh: probeGhAccessible,
+  probeGrepBackend: probeIndexedGrepBackends,
+  probeSemanticBackend: probeSemanticBackends,
+}
+
+/**
+ * In-flight probe, so the target-aware helpers below can wait for a result
+ * rather than read `null` as "unavailable".
+ *
+ * Startup registers IPC handlers *before* awaiting the probe (the renderer is
+ * already loading and would otherwise invoke unregistered channels), which means
+ * a first-paint git or search request can land while the probe is still out. The
+ * synchronous getters collapse `null` to false, so without this those requests
+ * would get a durable false "git is not available". Stays null until the first
+ * `checkToolAvailability()` call, so unit tests that never probe are unaffected.
+ */
+let probing: Promise<void> | null = null
+
+/** Resolve once the startup probe has answered — a no-op if none was started. */
+export async function whenToolAvailabilityProbed(): Promise<void> {
+  if (probing) await probing
+}
+
+export function checkToolAvailability(deps: ToolAvailabilityDeps = defaultDeps): Promise<void> {
+  probing = runToolAvailabilityProbes(deps)
+  return probing
+}
+
+async function runToolAvailabilityProbes(deps: ToolAvailabilityDeps): Promise<void> {
   // The e2e app relaunches Electron once per spec (~47×/full run); these probes
   // run before the window opens on every launch. Under e2e, skip them: ripgrep
   // and git are provisioned in the e2e environment, so assume them present (the
@@ -26,11 +74,21 @@ export async function checkToolAvailability(): Promise<void> {
     ghAvail = false
     return
   }
-  rgAvail = await probe('rg', ['--version'])
-  gitAvail = await probe('git', ['--version'])
-  ghAvail = await probeGhAccessible()
-  const grepBackend = await probeIndexedGrepBackends()
-  const semanticBackend = await probeSemanticBackends()
+  // Five independent probes, so run them concurrently rather than paying the sum
+  // of their process spawns. (`probeIndexedGrepBackends` and
+  // `probeSemanticBackends` still walk their own candidate lists in order —
+  // each picks the first backend that answers, so that part is inherently
+  // sequential.) `gh auth status` is the slow one: it makes a network call.
+  const [rg, git, gh, grepBackend, semanticBackend] = await Promise.all([
+    deps.probeRg(),
+    deps.probeGit(),
+    deps.probeGh(),
+    deps.probeGrepBackend(),
+    deps.probeSemanticBackend(),
+  ])
+  rgAvail = rg
+  gitAvail = git
+  ghAvail = gh
   if (!rgAvail)
     console.warn('[copse-panel] ripgrep (rg) not found — search_code will use slow fallback')
   else if (grepBackend !== 'rg')
@@ -63,7 +121,10 @@ export const isGhAvailable = (): boolean => ghAvail === true
 export async function isGitAvailableForTarget(
   target: ExecutionTarget = getActiveExecutionTarget(),
 ): Promise<boolean> {
-  if (!isSshExecutionTarget(target)) return isGitAvailable()
+  if (!isSshExecutionTarget(target)) {
+    await whenToolAvailabilityProbed()
+    return isGitAvailable()
+  }
   if (!isSshWorkspaceExecutionEnabled()) return false
   const mgr = getSshConnectionManager()
   const existing = mgr.getConnection(target.hostId)
@@ -84,7 +145,10 @@ export async function isGitAvailableForTarget(
 export async function isRgAvailableForTarget(
   target: ExecutionTarget = getActiveExecutionTarget(),
 ): Promise<boolean> {
-  if (!isSshExecutionTarget(target)) return isRgAvailable()
+  if (!isSshExecutionTarget(target)) {
+    await whenToolAvailabilityProbed()
+    return isRgAvailable()
+  }
   if (!isSshWorkspaceExecutionEnabled()) return false
   const mgr = getSshConnectionManager()
   const existing = mgr.getConnection(target.hostId)
@@ -95,6 +159,11 @@ export async function isRgAvailableForTarget(
   } catch {
     return false
   }
+}
+
+/** Test hook — forget any probe, restoring the never-probed state. */
+export function resetToolAvailabilityProbeForTest(): void {
+  probing = null
 }
 
 /** Test hook — force ripgrep availability without probing PATH. */
@@ -139,9 +208,16 @@ async function probe(cmd: string, args: string[]): Promise<boolean> {
  * accessible. This keeps the gh_pr_* / read-only CI tools hidden from the model
  * unless GitHub is genuinely accessible — see issue #523.
  */
-async function probeGhAccessible(): Promise<boolean> {
+export async function probeGhAccessible(run: typeof runCommand = runCommand): Promise<boolean> {
   try {
-    const { code } = await runCommand('gh', ['auth', 'status'], {
+    const { code } = await run('gh', ['auth', 'status'], {
+      // This host-owned startup probe must be able to read gh's user config and
+      // reach GitHub to validate the credential. Since #1213 moved it after
+      // project-sandbox initialization, omitting this flag confines it to the
+      // workspace seatbelt: network is denied, the probe records a false
+      // negative, and the PR panel stays disabled for the whole app session.
+      // Normal GitHub calls already use this same unsandboxed boundary in runGh.
+      unsandboxed: true,
       env: { PATH: `${probePathPrefix()}${process.env['PATH'] ?? ''}` },
     })
     return code === 0

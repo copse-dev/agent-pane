@@ -8,6 +8,7 @@ import type { GhPrDetails } from '@shared/types/git.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Mirror gh-pr-mock fixtures (keep renderer tests free of main-process imports).
 const OWNER = 'copse-dev'
@@ -55,14 +56,20 @@ function details(number: number, state: string): GhPrDetails {
 function apiWithPrDetails(
   resolve: (owner: string, repo: string, number: number) => Promise<GhPrDetails | null>,
 ): ApiClient {
-  return {
-    threads: {
-      listOrphans: async (): Promise<never[]> => [],
-    },
-    gh: {
-      prDetails: resolve,
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      threads: {
+        ...base['threads'],
+        listOrphans: async (): Promise<never[]> => [],
+      },
+      gh: {
+        ...base['gh'],
+        prDetails: resolve,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 afterEach(() => {

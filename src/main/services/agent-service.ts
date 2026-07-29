@@ -22,7 +22,7 @@ import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
-import { classifyAgentError } from './agent-errors.ts'
+import { classifyAgentError, classifyProviderAccessFailure } from './agent-errors.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
@@ -35,6 +35,7 @@ import {
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
+import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import {
   beginHookRunRecording,
   clearHookRunLiveSink,
@@ -55,7 +56,7 @@ import {
   isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
-import { requestApproval } from './approval.ts'
+import { requestApproval, cancelApprovalsForThread } from './approval.ts'
 import {
   reviewSpendApprovalBody,
   runParentContinuationTurn,
@@ -87,6 +88,8 @@ import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
+import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
+import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
@@ -144,9 +147,14 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
+import {
+  offerAcpClaudeFallback,
+  type CloudAgentBlockReason,
+} from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -238,6 +246,7 @@ function parentTools(
   readonlyMode: boolean,
   executorModel: string,
   threadId: string,
+  threadVideos: readonly VideoAttachmentRef[],
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -282,6 +291,9 @@ function parentTools(
   if (!hasTerminalSessions(threadId)) {
     tools = tools.filter((t) => t.name !== 'read_terminal')
   }
+  // Withhold video_frames from threads that have never had a video attached,
+  // and name the attached ones in its description when they have.
+  tools = applyVideoToolAvailability(tools, threadVideos)
   return tools
 }
 
@@ -493,10 +505,7 @@ function fireAfterToolUseHook(args: {
   // the live context, and its `hook_run` line must still attribute to the
   // emitting turn (decision 3/6).
   const recordingSnapshot = snapshotHookRunContext()
-  const input =
-    typeof args.input === 'object' && args.input !== null
-      ? (args.input as Record<string, unknown>)
-      : undefined
+  const input = isRecord(args.input) ? args.input : undefined
   void runAfterToolUseHooks(
     {
       toolName: args.toolName,
@@ -594,7 +603,16 @@ export async function runAgent(
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
   }
 
-  if (acpAgentId) {
+  // Running an ACP turn is reachable two ways: the user picked an `acp:<id>`
+  // model outright, or a blocked Claude Cloud Agent turn was re-routed here
+  // after the user accepted the offer to switch. Both need the identical run —
+  // abort registration, advisor bridge, partial-transcript salvage — so it lives
+  // in one closure rather than being duplicated down the remote-agent path.
+  const runAcpTurn = async (
+    acpRunAgentId: string,
+    acpRunModel: string | undefined,
+    executorModel: string,
+  ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> => {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
@@ -605,6 +623,13 @@ export async function runAgent(
     beginHookRunRecording(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
+    // Same idle-deadline registry as the local loop: pause while approval dialogs
+    // (and other host-side waits) are open so a long user think cannot abort the
+    // ACP turn underneath the still-visible prompt.
+    registerRunDeadline(threadId, runAbort.deadline)
+    // Aborted in finally so bridged tools / orphaned approval modals cancel when
+    // the external agent finishes the turn without waiting for them.
+    const bridgeTurn = new AbortController()
     // The advisor works both ways for ACP: an external executor can consult it
     // through the native-tool bridge. Unlike the native loop (context set around
     // each call), bridged calls arrive over HTTP at any point in the turn, so
@@ -613,13 +638,15 @@ export async function runAgent(
     // agent has streamed so far.
     let acpAssistantText = ''
     const acpChunkSink = (chunk: StreamChunk): void => {
+      runAbort.deadline.recordActivity()
+      runAbort.schedule()
       if (chunk.type === 'text') acpAssistantText += chunk.text
       sendChunk(chunk)
     }
     const advisorContext = registry.has('advisor')
       ? {
           advisorModel: resolveAdvisorModelId(),
-          executorModel: model,
+          executorModel,
           onChunk: sendChunk,
           getTranscript: (): LLMMessage[] => [
             ...priorMessages,
@@ -633,15 +660,16 @@ export async function runAgent(
     try {
       const result = await runAcpAgentFromSettings({
         threadId,
-        agentId: acpAgentId,
+        agentId: acpRunAgentId,
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
+        bridgeTurnSignal: bridgeTurn.signal,
         onChunk: acpChunkSink,
         registry,
         ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
-        ...(acpSelection?.model ? { model: acpSelection.model } : {}),
+        ...(acpRunModel ? { model: acpRunModel } : {}),
       })
       sendChunk({ type: 'done', stopReason: result.stopReason })
       return {
@@ -658,7 +686,7 @@ export async function runAgent(
       // its estimated usage is reported instead of a silent zero. The error
       // text is separated from any streamed text so the bubble stays readable.
       const partial = err instanceof AcpTurnFailure ? err.partial : null
-      const msg = classifyAgentError(err, { acpAgentId })
+      const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       sendChunk({ type: 'done' })
       return {
@@ -679,59 +707,125 @@ export async function runAgent(
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+      bridgeTurn.abort()
+      cancelApprovalsForThread(threadId)
       runAbort.clear()
+      clearRunDeadline(threadId, runAbort.deadline)
       endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
     }
   }
 
-  if (remoteSelection) {
-    const controller = new AbortController()
-    abortMap.set(threadId, controller)
-    setActiveRunThread(threadId)
-    const runAbort = createAgentRunAbortScheduler(controller)
-    runAbort.schedule()
-    try {
-      const result = await runRemoteAgentFromSettings({
-        threadId,
-        provider: remoteSelection.provider,
-        ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
-        userPrompt: outboundPrompt,
-        priorMessages,
-        signal: controller.signal,
-        onChunk: sendChunk,
+  if (acpAgentId) return runAcpTurn(acpAgentId, acpSelection?.model, model)
+
+  // The user picked a remote agent but its key is unusable, so `model` is the
+  // local stand-in `resolveAgentChatModel` fell back to. Before accepting that
+  // demotion, offer the subscription-billed ACP path — the notice above already
+  // told them the Cloud Agent could not run.
+  if (resolved.blockedRemoteAgent) {
+    const choice = await offerAcpClaudeFallback({
+      provider: resolved.blockedRemoteAgent.provider,
+      reason: 'no-key',
+      ...(resolved.blockedRemoteAgent.model ? { model: resolved.blockedRemoteAgent.model } : {}),
+    })
+    if (choice) {
+      const switched = parseAcpModelSelection(choice.modelValue)
+      recordThreadModel(threadId, choice.modelValue)
+      setActiveRunModel(choice.modelValue)
+      sendChunk({
+        type: 'text',
+        text: `_Running this turn on **${choice.agentTitle}** instead — subscription-billed, against this worktree._\n\n`,
       })
-      return {
-        usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
-        messages: [
-          ...priorMessages,
-          { role: 'user' as const, content: outboundPrompt },
-          ...result.messages,
-        ],
-      }
-    } catch (err) {
-      // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
-      // emits CANCELLED `done` when it handles the signal; if an abort still
-      // escapes here, don't paint it as a provider error in the transcript.
-      if (controller.signal.aborted) {
-        sendChunk({ type: 'done', stopReason: 'CANCELLED' })
-      } else {
+      return runAcpTurn(choice.agentId, switched?.model, choice.modelValue)
+    }
+  }
+
+  if (remoteSelection) {
+    const emptyTurn = {
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
+    }
+    // A credentials / billing failure is the one case worth offering an
+    // alternative billing path for, and the offer has to happen *outside* this
+    // block: its `finally` tears down the run's abort registration, which a
+    // follow-on ACP run then re-establishes for itself. So the run reports the
+    // block instead of writing the error to the transcript, and the caller
+    // below either re-routes or prints it.
+    const outcome = await (async (): Promise<
+      | { kind: 'done'; result: typeof emptyTurn }
+      | { kind: 'blocked'; reason: CloudAgentBlockReason; message: string }
+    > => {
+      const controller = new AbortController()
+      abortMap.set(threadId, controller)
+      setActiveRunThread(threadId)
+      const runAbort = createAgentRunAbortScheduler(controller)
+      runAbort.schedule()
+      try {
+        const result = await runRemoteAgentFromSettings({
+          threadId,
+          provider: remoteSelection.provider,
+          ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
+          userPrompt: outboundPrompt,
+          priorMessages,
+          signal: controller.signal,
+          onChunk: sendChunk,
+        })
+        return {
+          kind: 'done',
+          result: {
+            usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+            messages: [
+              ...priorMessages,
+              { role: 'user' as const, content: outboundPrompt },
+              ...result.messages,
+            ],
+          },
+        }
+      } catch (err) {
+        // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
+        // emits CANCELLED `done` when it handles the signal; if an abort still
+        // escapes here, don't paint it as a provider error in the transcript.
+        if (controller.signal.aborted) {
+          sendChunk({ type: 'done', stopReason: 'CANCELLED' })
+          return { kind: 'done', result: emptyTurn }
+        }
         const msg = classifyAgentError(err)
+        const access = classifyProviderAccessFailure(err)
+        if (access) return { kind: 'blocked', reason: access, message: msg }
         sendChunk({ type: 'text', text: msg })
         sendChunk({ type: 'done' })
+        return { kind: 'done', result: emptyTurn }
+      } finally {
+        // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
+        fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+        runAbort.clear()
+        clearActiveRunThread(threadId)
+        abortMap.delete(threadId)
       }
-      return {
-        usage: { inputTokens: 0, outputTokens: 0 },
-        messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
-      }
-    } finally {
-      // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
-      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
-      runAbort.clear()
-      clearActiveRunThread(threadId)
-      abortMap.delete(threadId)
+    })()
+
+    if (outcome.kind === 'done') return outcome.result
+
+    const choice = await offerAcpClaudeFallback({
+      provider: remoteSelection.provider,
+      reason: outcome.reason,
+      ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
+    })
+    if (!choice) {
+      sendChunk({ type: 'text', text: outcome.message })
+      sendChunk({ type: 'done' })
+      return emptyTurn
     }
+
+    const switched = parseAcpModelSelection(choice.modelValue)
+    recordThreadModel(threadId, choice.modelValue)
+    setActiveRunModel(choice.modelValue)
+    sendChunk({
+      type: 'text',
+      text: `_Retrying this turn on **${choice.agentTitle}** — subscription-billed, against this worktree._\n\n`,
+    })
+    return runAcpTurn(choice.agentId, switched?.model, choice.modelValue)
   }
 
   let trimmed: LLMMessage[] = [...priorMessages, { role: 'user', content: outboundPrompt }]
@@ -852,30 +946,51 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, model, threadId)
+    const threadVideos = await getThreadVideos()
+    const parentLoopTools = parentTools(
+      registry,
+      subagentsEnabled,
+      readonlyMode,
+      model,
+      threadId,
+      threadVideos,
+    )
     setHookRunToolset(parentLoopTools)
 
     const turnStart = await createHookRegistry().emit(
       'turnStart',
-      { userText: userTextForSteering, priorTodos },
+      {
+        userText: userTextForSteering,
+        priorTodos,
+        // The resolved run model + the tool list the model will actually see, so
+        // a steering hook can condition on which model is running (the
+        // forced-planning pack thresholds on its measured capability) and never
+        // name a tool this turn filtered out.
+        model,
+        toolNames: parentLoopTools.map((tool) => tool.name),
+      },
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolvePackSetting: (packId, key) => getPackService().getSetting(packId, key),
         recordHookRun: recordFunctionHookRun,
       },
     )
-    // Fold both the `turnStart` steering (M0.2) and any `beforeSubmitPrompt`
-    // injected context (H2, already a system-reminder block) into messages[0].
+    // Both the `turnStart` steering (M0.2) and any `beforeSubmitPrompt` injected
+    // context (H2, already a system-reminder block) ride a *trailing* system
+    // message rather than being folded into messages[0].
+    //
+    // Appending to the system prompt put per-turn text at the very front of the
+    // prompt, which invalidated the whole cached prefix — tools and system
+    // prompt included — on every turn steering fired. As the last entry it sits
+    // after the last cache breakpoint instead, so the prefix stays byte-stable
+    // across turns (#1286). Placement satisfies the API rule for
+    // mid-conversation system messages: it follows the user turn and is last.
+    // It never persists into the thread's history — the `role !== 'system'`
+    // filter on the returned messages strips it — so steering stays turn-local
+    // exactly as before.
     const turnStartInjected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
-    const injectedBlocks = [turnStartInjected, submitInjectContext].filter(
-      (block): block is string => block !== undefined && block.length > 0,
-    )
-    if (injectedBlocks.length > 0 && messages[0]?.role === 'system') {
-      messages[0] = {
-        role: 'system',
-        content: messages[0].content + `\n\n${injectedBlocks.join('\n\n')}`,
-      }
-    }
+    appendOperatorInstruction(messages, [turnStartInjected, submitInjectContext])
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed
@@ -1424,6 +1539,7 @@ export async function runAgent(
     // across the turn tree and re-seeds the spent count on the next run, so the
     // per-run seed here need not persist — this keeps the ledger map bounded.
     budgetLedger.forget(turnTreeId)
+    cancelApprovalsForThread(threadId)
     runAbort.clear()
     clearRunDeadline(threadId, runAbort.deadline)
     clearAgentRunTodos()

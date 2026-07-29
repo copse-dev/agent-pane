@@ -321,7 +321,8 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     id: 'ollama',
     label: 'Ollama',
     prefix: 'ollama:',
-    baseUrl: 'http://localhost:11434/v1',
+    // IPv4 loopback (not `localhost`) — see DEFAULT_LM_STUDIO_URL / preferIpv4LoopbackUrl.
+    baseUrl: 'http://127.0.0.1:11434/v1',
     builtin: true,
     local: true,
     keyLabel: 'Ollama API key',
@@ -336,7 +337,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     id: 'llamacpp',
     label: 'llama.cpp',
     prefix: 'llamacpp:',
-    baseUrl: 'http://localhost:8080/v1',
+    baseUrl: 'http://127.0.0.1:8080/v1',
     builtin: true,
     local: true,
     keyLabel: 'llama.cpp API key',
@@ -351,7 +352,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     id: 'jan',
     label: 'Jan',
     prefix: 'jan:',
-    baseUrl: 'http://localhost:1337/v1',
+    baseUrl: 'http://127.0.0.1:1337/v1',
     builtin: true,
     local: true,
     keyLabel: 'Jan API key',
@@ -366,7 +367,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     id: 'vllm',
     label: 'vLLM',
     prefix: 'vllm:',
-    baseUrl: 'http://localhost:8000/v1',
+    baseUrl: 'http://127.0.0.1:8000/v1',
     builtin: true,
     local: true,
     keyLabel: 'vLLM API key',
@@ -493,13 +494,14 @@ export function extraProviderPricingMap(
 function normalizeModels(models: unknown): ExtraProviderModel[] {
   if (!Array.isArray(models)) return []
   const out: ExtraProviderModel[] = []
-  for (const raw of models) {
-    if (!raw || typeof raw !== 'object') continue
-    const id = (raw as ExtraProviderModel).id
+  const values: unknown[] = models
+  for (const raw of values) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const id = 'id' in raw ? raw.id : undefined
     if (typeof id !== 'string' || !id.trim()) continue
-    const contextWindow = (raw as ExtraProviderModel).contextWindow
-    const inputPrice = (raw as ExtraProviderModel).inputPricePerMTok
-    const outputPrice = (raw as ExtraProviderModel).outputPricePerMTok
+    const contextWindow = 'contextWindow' in raw ? raw.contextWindow : undefined
+    const inputPrice = 'inputPricePerMTok' in raw ? raw.inputPricePerMTok : undefined
+    const outputPrice = 'outputPricePerMTok' in raw ? raw.outputPricePerMTok : undefined
     const entry: ExtraProviderModel = {
       id: id.trim(),
       ...(typeof contextWindow === 'number' && contextWindow > 0 ? { contextWindow } : {}),

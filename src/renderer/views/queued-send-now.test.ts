@@ -6,6 +6,7 @@ import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from '../controller/message-queue.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Component-level port of tests/e2e/queued-send-now.e2e.ts. The queued-message
 // CONTROLLER (enqueue/reorder/abort/drain) is already exhaustively covered in
@@ -26,20 +27,25 @@ function createProjectStore(): ReturnType<typeof createStore> {
 function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[] } {
   const runs: Array<[string, string]> = []
   const aborts: string[] = []
-  return {
-    runs,
-    aborts,
-    agent: {
-      run: (_projectId: string, threadId: string, payload: string) => {
-        runs.push([threadId, payload])
-        return Promise.resolve()
+  return ((): ApiClient & { runs: Array<[string, string]>; aborts: string[] } => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      runs,
+      aborts,
+      agent: {
+        ...base['agent'],
+        run: (_projectId: string, threadId: string, payload: string): Promise<void> => {
+          runs.push([threadId, payload])
+          return Promise.resolve()
+        },
+        abort: (threadId: string): Promise<void> => {
+          aborts.push(threadId)
+          return Promise.resolve()
+        },
       },
-      abort: (threadId: string) => {
-        aborts.push(threadId)
-        return Promise.resolve()
-      },
-    },
-  } as unknown as ApiClient & { runs: Array<[string, string]>; aborts: string[] }
+    } satisfies ApiClient & { runs: Array<[string, string]>; aborts: string[] }
+  })()
 }
 
 // Mount the real conversation view and queue one user message on the active

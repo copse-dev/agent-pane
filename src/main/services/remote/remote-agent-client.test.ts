@@ -179,7 +179,7 @@ describe('runRemoteAgentFromSettings (cursor)', () => {
       }
 
       if (method === 'GET' && url.pathname === '/v1/agents/bc-reconnect/runs/run-1') {
-        return new Response(JSON.stringify({ id: 'run-1', status: 'RUNNING' }), {
+        return new Response(JSON.stringify({ id: 'run-1', status: 'RUNNING', result: null }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         })
@@ -314,6 +314,19 @@ describe('remoteStreamEventToChunks', () => {
     assert.equal(current.terminalStatus, 'FINISHED')
   })
 
+  it('treats null result fields as absent', () => {
+    const current = state()
+    assert.deepEqual(
+      remoteStreamEventToChunks(
+        { event: 'result', data: JSON.stringify({ status: null, text: null }) },
+        current,
+      ),
+      [],
+    )
+    assert.equal(current.terminalStatus, null)
+    assert.equal(current.resultText, '')
+  })
+
   it('appends a pushed-branch summary after already-streamed assistant text', () => {
     const current = state()
     current.assistantText = 'Done.'
@@ -419,7 +432,8 @@ describe('formatRemoteArtifactsSummary', () => {
 describe('fetchRemoteArtifactImageDataUrl', () => {
   it('resolves the artifact download URL and returns image data', async () => {
     const calls: string[] = []
-    const fetchImpl = async (url: string): Promise<Response> => {
+    const fetchImpl: typeof fetch = async (input): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       calls.push(url)
       if (url.includes('/artifacts/download')) {
         return new Response(
@@ -436,7 +450,7 @@ describe('fetchRemoteArtifactImageDataUrl', () => {
     }
 
     const dataUrl = await fetchRemoteArtifactImageDataUrl({
-      fetchImpl: fetchImpl as typeof fetch,
+      fetchImpl,
       baseUrl: 'https://api.cursor.com',
       apiKey: 'key',
       agentId: 'bc-00000000-0000-0000-0000-000000000001',
@@ -452,7 +466,8 @@ describe('fetchRemoteArtifactImageDataUrl', () => {
 
   it('caches artifact image data by agent and path for the app session', async () => {
     let calls = 0
-    const fetchImpl = async (url: string): Promise<Response> => {
+    const fetchImpl: typeof fetch = async (input): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       calls++
       if (url.includes('/artifacts/download')) {
         return new Response(
@@ -469,7 +484,7 @@ describe('fetchRemoteArtifactImageDataUrl', () => {
     }
 
     const input = {
-      fetchImpl: fetchImpl as typeof fetch,
+      fetchImpl,
       baseUrl: 'https://api.cursor.com',
       apiKey: 'key',
       agentId: 'bc-00000000-0000-0000-0000-000000000002',

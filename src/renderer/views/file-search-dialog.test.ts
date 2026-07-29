@@ -20,6 +20,10 @@ import {
   closeFileSearchDialog,
   isFileSearchDialogOpen,
 } from './file-search-dialog.ts'
+import { qsRequired } from '../dom/helpers.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
+import type { PackSummary, PacksListResult } from '@shared/types/packs.ts'
 
 function shimModal(dialog: HTMLDialogElement): void {
   let open = false
@@ -42,7 +46,7 @@ function makeRoadmapItem(
   prompt: string,
   status = 'ready',
   notes?: string,
-): Record<string, unknown> {
+): KnowledgeNote {
   return {
     id,
     type: 'Roadmap',
@@ -64,43 +68,66 @@ function stubApi(
   calls: ApiCalls,
   queryResult: () => string[],
   options?: {
-    roadmap?: Record<string, unknown>[] | (() => Promise<Record<string, unknown>[]>)
+    roadmap?: KnowledgeNote[] | (() => Promise<KnowledgeNote[]>)
     roadmapEnabled?: boolean
   },
 ): ApiClient {
-  const api = {
+  const base = createFakeApi()
+  const roadmapPack: PackSummary = {
+    id: ROADMAP_PLANS_PACK_ID,
+    trust: 'first-party',
+    name: ROADMAP_PLANS_PACK_ID,
+    enabled: options?.roadmapEnabled ?? false,
+    contributions: {
+      toolNames: [],
+      blockingHooks: [],
+      asyncHooks: [],
+      commandHooks: [],
+      promptBlocks: [],
+      ui: [],
+      capabilities: [],
+      permissions: [],
+    },
+    settings: [],
+  }
+  return {
+    ...base,
     index: {
+      ...base.index,
       query: (pattern: string): Promise<string[]> => {
         calls.queries.push(pattern)
         return Promise.resolve(queryResult())
       },
     },
     fs: {
-      readFile: (path: string): Promise<string> => {
+      ...base.fs,
+      readFile: (_projectId: string, _threadId: string, path: string): Promise<string> => {
         calls.reads.push(path)
         return Promise.resolve(`contents of ${path}`)
       },
     },
     settings: {
+      ...base.settings,
       get: (): Promise<unknown> => Promise.resolve(null),
     },
     packs: {
+      ...base.packs,
       // Roadmap is gated by the `copse.roadmap-plans` pack; the dialog reads
       // enablement from `packs:list` (mirrors the pane's titlebar-button gate).
-      list: (): Promise<{ packs: { id: string; enabled: boolean }[] }> =>
+      list: (): Promise<PacksListResult> =>
         Promise.resolve({
-          packs: [{ id: ROADMAP_PLANS_PACK_ID, enabled: options?.roadmapEnabled ?? false }],
+          packs: [roadmapPack],
         }),
     },
     roadmap: {
-      list: (): Promise<Record<string, unknown>[]> => {
+      ...base.roadmap,
+      list: (): Promise<KnowledgeNote[]> => {
         calls.roadmapLists++
         const items = options?.roadmap
         return typeof items === 'function' ? items() : Promise.resolve(items ?? [])
       },
     },
   }
-  return api as unknown as ApiClient
 }
 
 const tick = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -124,17 +151,17 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   let result: string[]
 
   function mount(options?: {
-    roadmap?: Record<string, unknown>[] | (() => Promise<Record<string, unknown>[]>)
+    roadmap?: KnowledgeNote[] | (() => Promise<KnowledgeNote[]>)
     roadmapEnabled?: boolean
   }): void {
     document.body.innerHTML = ''
     calls = { queries: [], reads: [], roadmapLists: 0 }
-    store = createStore()
+    store = createStore({ activeProjectId: 'project-1', activeThreadId: 'thread-1' })
     mountFileSearchDialog(
       store,
       stubApi(calls, () => result, options),
     )
-    dialog = document.getElementById('file-search-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#file-search-dialog')
     shimModal(dialog)
   }
 
@@ -164,7 +191,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   it('queries the index as the user types (debounced)', async () => {
     openFileSearchDialog()
     await tick(0)
-    const input = dialog.querySelector('.file-search-input') as HTMLInputElement
+    const input = qsRequired<HTMLInputElement>(dialog, '.file-search-input')
     result = ['src/renderer/views/file-tree.ts']
     input.value = 'tree'
     input.dispatchEvent(new Event('input'))
@@ -180,14 +207,14 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
     openFileSearchDialog()
     await tick(0)
     assert.equal(dialog.querySelectorAll('.file-search-item').length, 0)
-    const empty = dialog.querySelector('.file-search-empty') as HTMLElement
+    const empty = qsRequired(dialog, '.file-search-empty')
     assert.equal(empty.hidden, false)
   })
 
   it('opening a match reads the file, reveals the explorer, and closes', async () => {
     openFileSearchDialog()
     await tick(0)
-    const second = dialog.querySelectorAll('.file-search-item')[1] as HTMLElement
+    const second = dialog.querySelectorAll<HTMLElement>('.file-search-item').item(1)
     second.dispatchEvent(new Event('mousedown'))
     await tick(0)
     // openWorkspaceFile read the chosen path and pushed it into the explorer.
@@ -210,7 +237,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
     ]
 
     async function typeQuery(query: string): Promise<void> {
-      const input = dialog.querySelector('.file-search-input') as HTMLInputElement
+      const input = qsRequired<HTMLInputElement>(dialog, '.file-search-input')
       input.value = query
       input.dispatchEvent(new Event('input'))
       await tick(150) // past the 100ms debounce
@@ -248,7 +275,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
       openFileSearchDialog()
       await tick(0)
       await typeQuery('e2e suite')
-      const row = dialog.querySelector('.file-search-roadmap-item') as HTMLElement
+      const row = qsRequired(dialog, '.file-search-roadmap-item')
       assert.ok(row, 'expected a roadmap result row')
       row.dispatchEvent(new Event('mousedown'))
       await tick(0)
@@ -272,11 +299,11 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
       // Hand each open an explicitly-resolvable fetch so the race is
       // deterministic: reopen before resolving and the stale snapshot
       // (possibly another workspace's) must not render.
-      let resolveList: ((items: Record<string, unknown>[]) => void) | undefined
+      let resolveList: ((items: KnowledgeNote[]) => void) | undefined
       mount({
         roadmapEnabled: true,
         roadmap: () =>
-          new Promise<Record<string, unknown>[]>((resolve) => {
+          new Promise<KnowledgeNote[]>((resolve) => {
             resolveList = resolve
           }),
       })
@@ -309,7 +336,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
       await typeQuery('onboarding')
       assert.equal(calls.roadmapLists, 0, 'must not fetch the roadmap when disabled')
       assert.equal(dialog.querySelectorAll('.file-search-roadmap-item').length, 0)
-      const empty = dialog.querySelector('.file-search-empty') as HTMLElement
+      const empty = qsRequired(dialog, '.file-search-empty')
       assert.equal(empty.hidden, false)
     })
   })

@@ -7,6 +7,7 @@ import {
   type CompletedPlanWindow,
   type PlanWindowHistorySample,
 } from './plan-window-history.ts'
+import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 export type PlanWorthItVerdictKind =
   'worth_it' | 'borderline' | 'not_worth_it' | 'insufficient_history' | 'needs_fee'
@@ -142,7 +143,7 @@ export function computePlanWorthIt(input: PlanWorthItInput): PlanWorthItResult {
       : null
   const monthlyFeeUsd = feeFromUser ?? feeHint?.monthlyFeeUsd ?? null
   const planFeePerWeek = monthlyFeeUsd !== null ? monthlyFeeToWeekly(monthlyFeeUsd) : null
-  const inferenceFrontierNote = input.inferenceFrontierNote?.trim() || null
+  const inferenceFrontierNote = firstNonEmptyString(input.inferenceFrontierNote?.trim()) ?? null
 
   const base = {
     apiEquivalentBurnPerWeek: mean,

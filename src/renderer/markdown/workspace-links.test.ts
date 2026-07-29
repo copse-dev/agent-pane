@@ -5,21 +5,28 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { bindWorkspaceLinkClicks } from './workspace-links.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function apiWithFileReferences(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
   fileContent = 'file contents',
 ): ApiClient {
-  return {
-    index: {
-      query: async () => [],
-      resolveFileReferences: async () =>
-        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
-    },
-    fs: {
-      readFile: async () => fileContent,
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      index: {
+        ...base['index'],
+        query: async () => [],
+        resolveFileReferences: async () =>
+          resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
+      },
+      fs: {
+        ...base['fs'],
+        readFile: async () => fileContent,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 describe('markdown workspace links', () => {
@@ -33,7 +40,12 @@ describe('markdown workspace links', () => {
   it('opens resolved workspace markdown links in the explorer panel', async () => {
     const root = document.createElement('div')
     root.innerHTML = renderMarkdown('[guide](/docs/experiments/v2.md)')
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'terminal' })
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'terminal',
+    })
     const api = apiWithFileReferences([
       { candidate: 'docs/experiments/v2.md', path: 'docs/experiments/v2.md' },
     ])

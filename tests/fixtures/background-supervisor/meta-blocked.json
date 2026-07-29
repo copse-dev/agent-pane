@@ -1,0 +1,21 @@
+{
+  "taskId": "task-blocked-1",
+  "projectId": "proj-demo",
+  "threadId": "thread-ccc",
+  "handler": "a2a_followup",
+  "provenance": "user",
+  "state": "blocked",
+  "createdAt": 1700000000000,
+  "updatedAt": 1700000003000,
+  "trigger": { "kind": "event", "event": "ci.status_changed" },
+  "permissionSnapshot": {
+    "capturedAt": 1700000000000,
+    "autoRunSandboxCommands": true,
+    "projectSandboxEnabled": true
+  },
+  "reapproveOnWake": true,
+  "concurrencyClass": "fleet",
+  "attempt": 0,
+  "maxAttempts": 2,
+  "lastError": "needs human approval"
+}

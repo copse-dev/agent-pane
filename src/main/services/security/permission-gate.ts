@@ -17,8 +17,10 @@ import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { ShellPermissionDecision } from './permission-policy.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
+import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
@@ -77,6 +79,8 @@ import {
 } from '../mcp/custom-tools-registry.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/packs/background-tasks-pack.ts'
 import { assessShellHarm } from './shell-harm.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
@@ -94,6 +98,8 @@ export interface ShellCommandPermissionOptions {
   projectRoot?: string | null
   /** Raw tool command before any blocking hook rewrite. */
   originalCommand?: string
+  /** When aborted, pending approval prompts settle as denied and callers treat as cancelled. */
+  signal?: AbortSignal
 }
 
 export interface TerminalPermissionOptions {
@@ -113,15 +119,20 @@ async function requestEscalationApproval(
   command: string,
   title: string,
   body: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   const trustable = offerableTrustedCommand(command)
-  const { approved, remember } = await requestApproval({
-    title,
-    body,
-    type: 'shell',
-    allowRemember: trustable !== null,
-    ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      title,
+      body,
+      type: 'shell',
+      allowRemember: trustable !== null,
+      ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
+    },
+    signal,
+  )
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   return approved
 }
@@ -130,7 +141,9 @@ async function promptShell(
   command: string,
   reasons: string[],
   outsideSandbox: boolean,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
   // sandbox (a trusted command runs unsandboxed); an in-sandbox prompt never offers it.
   if (outsideSandbox) {
@@ -138,13 +151,17 @@ async function promptShell(
       command,
       'Run outside sandbox?',
       formatExternalSandboxPromptBody(command, reasons),
+      signal,
     )
   }
-  const { approved } = await requestApproval({
-    title: 'Run shell command?',
-    body: formatShellPromptBody(command, reasons),
-    type: 'shell',
-  })
+  const { approved } = await requestApproval(
+    {
+      title: 'Run shell command?',
+      body: formatShellPromptBody(command, reasons),
+      type: 'shell',
+    },
+    signal,
+  )
   return approved
 }
 
@@ -177,11 +194,16 @@ function readScriptForHarm(path: string): string | null {
 }
 
 /** Prompt when a sandboxed command failed and may succeed unsandboxed. */
-export async function promptUnsandboxedShell(command: string, reasons: string[]): Promise<boolean> {
+export async function promptUnsandboxedShell(
+  command: string,
+  reasons: string[],
+  signal?: AbortSignal,
+): Promise<boolean> {
   return requestEscalationApproval(
     command,
     'Run outside sandbox?',
     formatUnsandboxedPromptBody(command, reasons),
+    signal,
   )
 }
 
@@ -193,12 +215,16 @@ export async function promptUnsandboxedShell(command: string, reasons: string[])
 export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  const { approved } = await requestApproval({
-    title: 'Run outside sandbox?',
-    body: formatExpectedSandboxBlockPromptBody(command, reasons),
-    type: 'shell',
-  })
+  const { approved } = await requestApproval(
+    {
+      title: 'Run outside sandbox?',
+      body: formatExpectedSandboxBlockPromptBody(command, reasons),
+      type: 'shell',
+    },
+    signal,
+  )
   return approved
 }
 
@@ -362,8 +388,11 @@ function firePermissionDecision(
   const workspaceRoot = roots.projectRoot ?? getAgentProjectRoot()
   const executionRoot = roots.executionRoot ?? getAgentExecutionRoot()
   const agentSession = currentAgentSessionInfo()
-  const threadId = agentSession.conversationId || getActiveRunThread() || 'permission'
-  const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  const threadId = nonEmptyStringOr(
+    agentSession.conversationId,
+    nonEmptyStringOr(getActiveRunThread(), 'permission'),
+  )
+  const turnTreeId = asTurnTreeId(nonEmptyStringOr(agentSession.generationId, threadId))
   // Snapshot the recording context now, synchronously (decision 3/6): the
   // dispatch is detached and may settle after this turn's window closes.
   const recordingSnapshot = snapshotHookRunContext()
@@ -395,17 +424,25 @@ export async function ensureShellCommandPermitted(
   command: string,
   opts: ShellCommandPermissionOptions = {},
 ): Promise<boolean> {
+  if (opts.signal?.aborted) return false
   const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
   // ASRT's network allowlist is process-global. While an ACP agent or a
   // port-binding background task has widened it, an otherwise-contained shell
   // command could inherit that egress. Suspend every auto-run path — including
   // explicit trusted-command routing — until the scope releases. Manual approval
   // is still available for deliberate overlapping work. (#803)
-  if (!guardedYolo && isSandboxNetworkScopeActive() && !opts.networkScopeAlreadyApplies) {
+  //
+  // Exception: the sandboxed ACP agent's own bridged `run_shell` / direct
+  // execute path opts in via `networkScopeAlreadyApplies` (or the bridge ALS) —
+  // that scope exists *for* those calls, so they must not see the overlap prompt.
+  const shareActiveNetworkScope =
+    opts.networkScopeAlreadyApplies === true || acpBridgeNetworkScopeAlreadyApplies()
+  if (!guardedYolo && isSandboxNetworkScopeActive() && !shareActiveNetworkScope) {
     return promptShell(
       command,
       ['sandbox network access is temporarily widened for another process'],
       false,
+      opts.signal,
     )
   }
 
@@ -508,11 +545,12 @@ export async function ensureShellCommandPermitted(
             }),
             type: 'shell',
           },
+      opts.signal,
     )
     return approved
   }
 
-  return promptShell(command, decision.reasons, outsideSandbox)
+  return promptShell(command, decision.reasons, outsideSandbox, opts.signal)
 }
 
 function browserUrlFromArgs(args: unknown): string | null {
@@ -563,6 +601,14 @@ const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
  * carry no command and are not gated. On top of that, opting into loopback port
  * binding prompts the first time per workspace, then remembers the grant — the
  * same prompt-once model as browser origins and MCP servers.
+ *
+ * The loopback port-binding relaxation is an authority the `copse.background-tasks`
+ * pack DECLARES (its `loopback-bind` permission, issue #1190). It is grantable
+ * ONLY while the owning pack is enabled: the gate resolves the declaration
+ * through `getDefaultPackRegistry().isPermissionDeclared('loopback-bind')`, so
+ * disabling the pack revokes the relaxation in the same atomic flag flip that
+ * unregisters `run_background`. When the relaxation is undeclared the grant is
+ * refused (the task can still run fully sandboxed without binding a port).
  */
 async function checkBackgroundProcessPermission(
   args: unknown,
@@ -573,6 +619,19 @@ async function checkBackgroundProcessPermission(
   if (command && !(await checkShellPermission(args, originalCommand))) return false
 
   if (!backgroundAllowsPortBinding(args)) return true
+
+  // A declared sandbox relaxation is only honoured while the owning pack is
+  // enabled (issue #1190). If the `copse.background-tasks` pack no longer
+  // declares `loopback-bind` (it was disabled), refuse the relaxation rather
+  // than silently binding a port through a revoked authority.
+  if (!getDefaultPackRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION)) {
+    throw new Error(
+      'Loopback port binding is not available: the Background tasks pack ' +
+        '(copse.background-tasks) is disabled, so its loopback-bind sandbox ' +
+        'relaxation is revoked. Run the task without allow_port_binding, or ' +
+        'enable the pack in Settings > Packs.',
+    )
+  }
 
   const root = getAgentExecutionRoot()
   if (!root) throw new Error('No workspace open.')

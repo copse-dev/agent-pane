@@ -1,0 +1,3 @@
+{"v":1,"id":"evt-1","taskId":"task-running-shell","action":"enqueue","at":1700000000000,"toState":"queued","actor":"agent"}
+{"v":1,"id":"evt-2","taskId":"task-running-shell","action":"start","at":1700000001000,"fromState":"queued","toState":"running","actor":"system"}
+{"v":1,"id":"evt-3","taskId":"task-running-shell","action":"fail","at":1700000010000,"fromState":"running","toState":"failed","actor":"system","reason":"process handle lost on restart"}

@@ -14,6 +14,7 @@ import { beginHookRunRecording, endHookRunRecording } from '../hook-run-recorder
 import { getThreadMeta } from '../thread-store.ts'
 import { storageSet } from '../storage/storage.ts'
 import { parseSpineEntries, type SpineHookRunLine } from '@shared/threads/spine-schema.ts'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 /** Fire the canonical toolGate event for a Copse tool call (the production gate path). */
 function gate(
@@ -209,12 +210,9 @@ describe('cursor-adapter', () => {
 
       assert.equal(decision.permission, 'allow')
       assert.equal((await readFile(capturedCwd, 'utf-8')).trim(), executionRoot)
-      const stdin = JSON.parse(await readFile(capturedStdin, 'utf-8')) as {
-        cwd: string
-        workspace_roots: string[]
-      }
-      assert.equal(stdin.cwd, executionRoot)
-      assert.deepEqual(stdin.workspace_roots, [executionRoot])
+      const stdin = expectRecord(parseJsonUnknown(await readFile(capturedStdin, 'utf-8')))
+      assert.equal(stdin['cwd'], executionRoot)
+      assert.deepEqual(stdin['workspace_roots'], [executionRoot])
     })
 
     it('ignores a malformed hooks.json without throwing, but surfaces a warning', async () => {
@@ -327,8 +325,8 @@ describe('cursor-adapter', () => {
       // The final threaded input carries the first hook`s rewrite.
       assert.deepEqual(decision.updatedInput, { command: 'REWRITTEN_BY_FIRST' })
       // The second hook`s stdin proves it saw the rewrite, not the original.
-      const secondStdin = JSON.parse(await readFile(dumpPath, 'utf-8')) as { command?: string }
-      assert.equal(secondStdin.command, 'REWRITTEN_BY_FIRST')
+      const secondStdin = expectRecord(parseJsonUnknown(await readFile(dumpPath, 'utf-8')))
+      assert.equal(secondStdin['command'], 'REWRITTEN_BY_FIRST')
     })
   })
 

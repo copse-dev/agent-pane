@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from './internal-utils.ts'
+import { at, isRecord } from './internal-utils.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { AGENT_RUN_ABORT_REASON_TIMEOUT, AgentRunDeadline } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
@@ -954,7 +954,9 @@ src/renderer/views/projects-pane.ts
         return null
       },
       executeTool: async (name, args) => {
-        if (name === 'read_file') readPaths.push((args as { path: string }).path)
+        if (name === 'read_file' && isRecord(args) && typeof args['path'] === 'string') {
+          readPaths.push(args['path'])
+        }
         return 'file contents'
       },
     })
@@ -1001,7 +1003,9 @@ src/renderer/views/projects-pane.ts
         return null
       },
       executeTool: async (name, args) => {
-        if (name === 'read_file') readPaths.push((args as { path: string }).path)
+        if (name === 'read_file' && isRecord(args) && typeof args['path'] === 'string') {
+          readPaths.push(args['path'])
+        }
         return 'file contents'
       },
     })

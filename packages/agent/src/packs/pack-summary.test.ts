@@ -58,6 +58,17 @@ function demoPack(id: string): RegisteredPack {
       uiContributions: [
         { id: `${id}-panel`, level: 2, slot: 'sidebar', title: 'Sidebar', panel: { kind: 'list' } },
       ],
+      capabilities: [
+        { name: `${id}-cap`, title: 'Demo capability', description: 'a pure behaviour flag' },
+      ],
+      permissions: [
+        {
+          name: `${id}-bind`,
+          title: 'Demo bind',
+          description: 'a sandbox relaxation',
+          scope: 'project',
+        },
+      ],
     },
   )
 }
@@ -82,7 +93,36 @@ describe('packToSummary', () => {
     assert.deepEqual(summary.contributions.ui, [
       { id: 'alpha-panel', level: 2, slot: 'sidebar', title: 'Sidebar', panelKind: 'list' },
     ])
+    assert.deepEqual(summary.contributions.capabilities, [
+      { name: 'alpha-cap', title: 'Demo capability', description: 'a pure behaviour flag' },
+    ])
+    assert.deepEqual(summary.contributions.permissions, [
+      {
+        name: 'alpha-bind',
+        title: 'Demo bind',
+        description: 'a sandbox relaxation',
+        scope: 'project',
+      },
+    ])
     assert.equal(summary.contributions.storageNamespace, 'alpha')
+  })
+
+  it('projects a capability without a description as name + title only', () => {
+    const pack = definePack(
+      { name: 'cap-only', trust: 'first-party' },
+      { capabilities: [{ name: 'flag-x', title: 'Flag X' }] },
+    )
+    const summary = packToSummary(pack, true, () => undefined)
+    assert.deepEqual(summary.contributions.capabilities, [{ name: 'flag-x', title: 'Flag X' }])
+  })
+
+  it('projects a permission without description/scope as name + title only', () => {
+    const pack = definePack(
+      { name: 'perm-only', trust: 'first-party' },
+      { permissions: [{ name: 'bind-x', title: 'Bind X' }] },
+    )
+    const summary = packToSummary(pack, true, () => undefined)
+    assert.deepEqual(summary.contributions.permissions, [{ name: 'bind-x', title: 'Bind X' }])
   })
 
   it('falls values back to declared defaults when nothing is stored', () => {
@@ -165,5 +205,51 @@ describe('normalizePackSettingValue', () => {
       'not-in-list',
     )
     assert.equal(value, 'a')
+  })
+
+  it('honours any stored model id (no static option gate)', () => {
+    // A `model` field's options are the live catalogue resolved renderer-side,
+    // so any stored id — including one not in the default's shortlist — is kept.
+    const value = normalizePackSettingValue(
+      { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
+      'lmstudio:qwen3-32b',
+    )
+    assert.equal(value, 'lmstudio:qwen3-32b')
+  })
+
+  it('falls a model field back to its default when nothing is stored', () => {
+    const value = normalizePackSettingValue(
+      { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
+      undefined,
+    )
+    assert.equal(value, 'claude-opus-4-8')
+  })
+
+  it('falls a defaultless model field back to blank (use chat model)', () => {
+    const value = normalizePackSettingValue({ kind: 'model', title: 'Reviewer A' }, undefined)
+    assert.equal(value, '')
+  })
+})
+
+describe('packToSummary (model field)', () => {
+  it('projects a model field as kind "model" with its stored / default value', () => {
+    const pack = definePack({
+      name: 'gamma',
+      trust: 'first-party',
+      settings: {
+        advisorModel: { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
+      },
+    })
+    const withStored = packToSummary(pack, true, () => 'openrouter:zai-org/glm-5.2')
+    const storedField = withStored.settings.find((f) => f.id === 'advisorModel')
+    assert.ok(storedField)
+    assert.equal(storedField.kind, 'model')
+    assert.equal(storedField.value, 'openrouter:zai-org/glm-5.2')
+    assert.equal(storedField.default, 'claude-opus-4-8')
+    // A model field ships no static options — the catalogue is resolved live.
+    assert.equal(storedField.options, undefined)
+
+    const unset = packToSummary(pack, true, () => undefined)
+    assert.equal(unset.settings.find((f) => f.id === 'advisorModel')?.value, 'claude-opus-4-8')
   })
 })

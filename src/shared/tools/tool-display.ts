@@ -1,4 +1,5 @@
 import type { ToolCall } from '@shared/types'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
 export type ToolLabelTense = 'running' | 'done'
@@ -53,6 +54,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   run_shell: { running: 'Running command', done: 'Ran command' },
   run_background: { running: 'Starting background task', done: 'Started background task' },
   read_terminal: { running: 'Reading shell', done: 'Read shell' },
+  video_frames: { running: 'Reading video', done: 'Read video' },
   ask_user: { running: 'Asking user', done: 'Asked user' },
   update_todos: { running: 'Updating plan', done: 'Updated plan' },
   run_checkup: { running: 'Running checkup', done: 'Ran checkup' },
@@ -65,7 +67,7 @@ interface ToolGroupDef {
 
 const TOOL_GROUPS: Record<string, ToolGroupDef> = {
   reading: {
-    tools: ['explore', 'read_file', 'list_dir'],
+    tools: ['explore', 'read_file', 'list_dir', 'video_frames'],
     label: { running: 'Reading files', done: 'Read files' },
   },
   searching: {
@@ -170,8 +172,8 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
 }
 
 function stringArg(args: unknown, key: string): string | null {
-  if (!args || typeof args !== 'object') return null
-  const value = (args as Record<string, unknown>)[key]
+  if (!isRecord(args)) return null
+  const value = args[key]
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
@@ -215,8 +217,8 @@ export function shellCommandLabel(command: string): string {
 }
 
 function shellCommandArg(args: unknown): string | null {
-  if (!args || typeof args !== 'object') return null
-  const command = (args as Record<string, unknown>)['command']
+  if (!isRecord(args)) return null
+  const command = args['command']
   return typeof command === 'string' && command.trim() ? command : null
 }
 

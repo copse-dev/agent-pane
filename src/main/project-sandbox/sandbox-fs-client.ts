@@ -1,7 +1,11 @@
 import { join } from 'node:path'
 import { dirname } from 'node:path'
 import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
-import { assertWorkspaceWriteTarget, getWorkspaceRoot } from '../services/workspace.ts'
+import {
+  assertWorkspaceWriteTarget,
+  assertWriteTargetWithinRoot,
+  getWorkspaceRoot,
+} from '../services/workspace.ts'
 import {
   getActiveExecutionTarget,
   isSshExecutionTarget,
@@ -11,6 +15,7 @@ import { runCommand } from '../services/exec/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
 import { requestViaServer, SandboxFsServerUnavailable } from './sandbox-fs-server.ts'
+import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 /** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
 export const SANDBOX_FS_WORKER_STDOUT_MAX_BYTES = MAX_FS_WRITE_BYTES * 2 + 4096
@@ -23,19 +28,20 @@ export function sandboxFsWorkerPath(): string {
 /** Passed via spawn env when the worker is launched through a shell / ASRT wrap (paths may contain spaces). */
 export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
 
-async function invokeWorker<T extends Record<string, unknown>>(
+async function invokeWorker(
   request: Record<string, unknown>,
-): Promise<T> {
+  root?: string,
+): Promise<Record<string, unknown>> {
   // Prefer the long-lived worker (no per-call process spawn). Only transport failures fall
   // back to a one-shot spawn; a `{ ok: false }` filesystem error is surfaced as-is.
   try {
-    const res = await requestViaServer(request)
+    const res = await requestViaServer(request, root)
     assertWorkerOk(res)
-    return res as T
+    return res
   } catch (err) {
     if (!(err instanceof SandboxFsServerUnavailable)) throw err
   }
-  return invokeWorkerOneShot<T>(request)
+  return invokeWorkerOneShot(request, root)
 }
 
 function assertWorkerOk(parsed: { ok: boolean; error?: string }): void {
@@ -44,10 +50,11 @@ function assertWorkerOk(parsed: { ok: boolean; error?: string }): void {
   }
 }
 
-async function invokeWorkerOneShot<T extends Record<string, unknown>>(
+async function invokeWorkerOneShot(
   request: Record<string, unknown>,
-): Promise<T> {
-  const root = getWorkspaceRoot()
+  requestedRoot?: string,
+): Promise<Record<string, unknown>> {
+  const root = requestedRoot ?? getWorkspaceRoot()
   if (!root) throw new Error('No workspace open. Use Open Folder first.')
 
   const workerPath = sandboxFsWorkerPath()
@@ -72,15 +79,22 @@ async function invokeWorkerOneShot<T extends Record<string, unknown>>(
     throw new Error(stderr.trim() || stdout.trim() || `sandbox fs worker exited ${String(code)}`)
   }
 
-  let parsed: { ok: boolean; error?: string } & T
+  let parsed: Record<string, unknown>
   try {
-    parsed = JSON.parse(stdout.trim()) as { ok: boolean; error?: string } & T
+    const value = parseJsonUnknown(stdout.trim())
+    if (!isRecord(value) || typeof value['ok'] !== 'boolean') {
+      throw new TypeError('invalid response')
+    }
+    parsed = value
   } catch {
     const detail = stderr.trim() || stdout.trim() || '(empty output)'
     throw new Error(`sandbox fs worker returned invalid JSON: ${detail.slice(0, 200)}`)
   }
 
-  assertWorkerOk(parsed)
+  const ok = parsed['ok']
+  if (typeof ok !== 'boolean') throw new Error('sandbox fs worker returned an invalid response')
+  const error = parsed['error']
+  assertWorkerOk({ ok, ...(typeof error === 'string' ? { error } : {}) })
   return parsed
 }
 
@@ -89,20 +103,20 @@ function useSandboxFsGateway(): boolean {
   return isProjectSandboxEnabled()
 }
 
-export async function gatewayReadFile(absPath: string): Promise<string> {
+export async function gatewayReadFile(absPath: string, root?: string): Promise<string> {
   if (!useSandboxFsGateway()) {
     return getActiveWorkspaceFs().readFile(absPath, 'utf-8')
   }
-  const res = await invokeWorker<{ data?: string }>({
-    op: 'readFile',
-    path: absPath,
-    encoding: 'utf-8',
-  })
-  if (typeof res.data !== 'string') throw new Error('readFile: missing data')
-  return res.data
+  const res = await invokeWorker({ op: 'readFile', path: absPath, encoding: 'utf-8' }, root)
+  if (typeof res['data'] !== 'string') throw new Error('readFile: missing data')
+  return res['data']
 }
 
-export async function gatewayWriteFile(absPath: string, content: string): Promise<void> {
+export async function gatewayWriteFile(
+  absPath: string,
+  content: string,
+  root?: string,
+): Promise<void> {
   // Guard the write target against symlink escape before any mkdir/writeFile
   // follows it (#578). `resolveWorkspacePath` only realpaths a path's existing
   // prefix, so a repo shipping a *dangling* symlink (target not yet on disk) is
@@ -110,31 +124,39 @@ export async function gatewayWriteFile(absPath: string, content: string): Promis
   // The diff-queue write path already asserts this; the `fs:writeFile` IPC path
   // reaches the filesystem through here, so guarding at this chokepoint covers
   // both the direct-fs and sandbox-worker branches below.
-  await assertWorkspaceWriteTarget(absPath)
+  if (root) await assertWriteTargetWithinRoot(absPath, root)
+  else await assertWorkspaceWriteTarget(absPath)
   if (!useSandboxFsGateway()) {
     const fs = getActiveWorkspaceFs()
     await fs.mkdir(dirname(absPath), { recursive: true })
     await fs.writeFile(absPath, content, 'utf-8')
     return
   }
-  await invokeWorker({ op: 'writeFile', path: absPath, content, encoding: 'utf-8' })
+  await invokeWorker({ op: 'writeFile', path: absPath, content, encoding: 'utf-8' }, root)
 }
 
-export async function gatewayReaddir(absPath: string): Promise<string[]> {
+export async function gatewayReaddir(absPath: string, root?: string): Promise<string[]> {
   if (!useSandboxFsGateway()) {
     return getActiveWorkspaceFs().readdir(absPath)
   }
-  const res = await invokeWorker<{ entries?: string[] }>({ op: 'readdir', path: absPath })
-  return res.entries ?? []
+  const res = await invokeWorker({ op: 'readdir', path: absPath }, root)
+  return Array.isArray(res['entries'])
+    ? res['entries'].filter((entry): entry is string => typeof entry === 'string')
+    : []
 }
 
-export async function gatewayListDir(absPath: string): Promise<{ name: string; isDir: boolean }[]> {
+export async function gatewayListDir(
+  absPath: string,
+  root?: string,
+): Promise<{ name: string; isDir: boolean }[]> {
   if (!useSandboxFsGateway()) {
     return getActiveWorkspaceFs().readdirWithTypes(absPath)
   }
-  const res = await invokeWorker<{ dirents?: { name: string; isDir: boolean }[] }>({
-    op: 'statDir',
-    path: absPath,
-  })
-  return res.dirents ?? []
+  const res = await invokeWorker({ op: 'statDir', path: absPath }, root)
+  if (!Array.isArray(res['dirents'])) return []
+  return res['dirents'].flatMap((entry) =>
+    isRecord(entry) && typeof entry['name'] === 'string' && typeof entry['isDir'] === 'boolean'
+      ? [{ name: entry['name'], isDir: entry['isDir'] }]
+      : [],
+  )
 }

@@ -81,12 +81,7 @@
 .approval-comparison-label {
   color: var(--text-muted);
 }
-.approval-model-select {
-  width: 100%;
+.approval-comparison-row .model-picker-trigger {
   font-size: var(--font-size-sm);
   background: var(--bg-base);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 8px;
 }

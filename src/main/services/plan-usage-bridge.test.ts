@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { readFileSync } from 'node:fs'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   discoverPlanUsageCredentials,
   invalidatePlanUsageCache,
@@ -13,13 +14,13 @@ import {
   updateClaudeOAuthJson,
 } from './plan-usage-bridge.ts'
 
-const noKeychain = (): string | null => null
+const noKeychain = async (): Promise<string | null> => null
 const noStoredHf = (): string | null => null
-const noCursorKeychain = (): string | null => null
-const noCursorDb = (): string | null => null
+const noCursorKeychain = async (): Promise<string | null> => null
+const noCursorDb = async (): Promise<string | null> => null
 
 describe('discoverPlanUsageCredentials', () => {
-  it('reads Claude, Codex, Hugging Face, and Cursor credentials under a fake home', () => {
+  it('reads Claude, Codex, Hugging Face, and Cursor credentials under a fake home', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
     mkdirSync(join(home, '.claude'), { recursive: true })
     mkdirSync(join(home, '.codex'), { recursive: true })
@@ -34,7 +35,7 @@ describe('discoverPlanUsageCredentials', () => {
     )
     writeFileSync(join(home, '.cache', 'huggingface', 'token'), 'hf_from_file\n')
 
-    const creds = discoverPlanUsageCredentials(
+    const creds = await discoverPlanUsageCredentials(
       home,
       { CURSOR_SESSION_TOKEN: 'user_01%3A%3Ajwt.from.env' },
       noKeychain,
@@ -50,7 +51,7 @@ describe('discoverPlanUsageCredentials', () => {
     assert.equal(creds.cursorSessionToken, 'user_01%3A%3Ajwt.from.env')
   })
 
-  it('carries the refresh token and expiry into claudeCredentials', () => {
+  it('carries the refresh token and expiry into claudeCredentials', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
     mkdirSync(join(home, '.claude'), { recursive: true })
     writeFileSync(
@@ -63,7 +64,7 @@ describe('discoverPlanUsageCredentials', () => {
         },
       }),
     )
-    const creds = discoverPlanUsageCredentials(
+    const creds = await discoverPlanUsageCredentials(
       home,
       {},
       noKeychain,
@@ -82,7 +83,7 @@ describe('discoverPlanUsageCredentials', () => {
     assert.equal(typeof creds.onClaudeTokenRefreshed, 'function')
   })
 
-  it('orders keychain before credentials.json before env setup-token', () => {
+  it('orders keychain before credentials.json before env setup-token', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
     mkdirSync(join(home, '.claude'), { recursive: true })
     writeFileSync(
@@ -92,10 +93,10 @@ describe('discoverPlanUsageCredentials', () => {
     const keychainJson = JSON.stringify({
       claudeAiOauth: { accessToken: 'sk-ant-oat01-keychain' },
     })
-    const creds = discoverPlanUsageCredentials(
+    const creds = await discoverPlanUsageCredentials(
       home,
       { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-env' },
-      () => keychainJson,
+      async () => keychainJson,
       noStoredHf,
       noCursorKeychain,
       noCursorDb,
@@ -107,11 +108,11 @@ describe('discoverPlanUsageCredentials', () => {
     ])
   })
 
-  it('prefers Settings/stored HF token over env and token file', () => {
+  it('prefers Settings/stored HF token over env and token file', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
     mkdirSync(join(home, '.cache', 'huggingface'), { recursive: true })
     writeFileSync(join(home, '.cache', 'huggingface', 'token'), 'hf_file')
-    const creds = discoverPlanUsageCredentials(
+    const creds = await discoverPlanUsageCredentials(
       home,
       { HF_TOKEN: 'hf_env' },
       noKeychain,
@@ -122,22 +123,22 @@ describe('discoverPlanUsageCredentials', () => {
     assert.equal(creds.huggingfaceToken, 'hf_stored')
   })
 
-  it('reads Cursor session from injected state.vscdb reader', () => {
+  it('reads Cursor session from injected state.vscdb reader', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
-    const creds = discoverPlanUsageCredentials(
+    const creds = await discoverPlanUsageCredentials(
       home,
       {},
       noKeychain,
       noStoredHf,
       noCursorKeychain,
-      () => 'user_01::jwt.from.db',
+      async () => 'user_01::jwt.from.db',
     )
     assert.equal(creds.cursorSessionToken, 'user_01::jwt.from.db')
   })
 
-  it('returns empty credentials when nothing is present', () => {
+  it('returns empty credentials when nothing is present', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-empty-'))
-    const creds = discoverPlanUsageCredentials(
+    const creds = await discoverPlanUsageCredentials(
       home,
       {},
       noKeychain,
@@ -169,12 +170,13 @@ describe('updateClaudeOAuthJson', () => {
       expiresAt: 2,
     })
     assert.ok(updated)
-    const parsed = JSON.parse(updated) as { claudeAiOauth: Record<string, unknown> }
-    assert.equal(parsed.claudeAiOauth['accessToken'], 'new-acc')
-    assert.equal(parsed.claudeAiOauth['refreshToken'], 'new-ref')
-    assert.equal(parsed.claudeAiOauth['expiresAt'], 2)
-    assert.deepEqual(parsed.claudeAiOauth['scopes'], ['user:inference', 'user:profile'])
-    assert.equal(parsed.claudeAiOauth['subscriptionType'], 'max')
+    const parsed = expectRecord(parseJsonUnknown(updated))
+    const oauth = expectRecord(parsed['claudeAiOauth'])
+    assert.equal(oauth['accessToken'], 'new-acc')
+    assert.equal(oauth['refreshToken'], 'new-ref')
+    assert.equal(oauth['expiresAt'], 2)
+    assert.deepEqual(oauth['scopes'], ['user:inference', 'user:profile'])
+    assert.equal(oauth['subscriptionType'], 'max')
   })
 
   it('refuses to touch an unfamiliar payload', () => {
@@ -194,7 +196,7 @@ describe('updateClaudeOAuthJson', () => {
 })
 
 describe('persistRefreshedClaudeToken', () => {
-  it('writes the rotated token back to ~/.claude/.credentials.json', () => {
+  it('writes the rotated token back to ~/.claude/.credentials.json', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-persist-'))
     mkdirSync(join(home, '.claude'), { recursive: true })
     const path = join(home, '.claude', '.credentials.json')
@@ -209,34 +211,31 @@ describe('persistRefreshedClaudeToken', () => {
         },
       }),
     )
-    persistRefreshedClaudeToken(
+    await persistRefreshedClaudeToken(
       'credentials.json',
       { accessToken: 'new-acc', refreshToken: 'new-ref', expiresAt: 999 },
       home,
       noKeychain,
     )
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
-      claudeAiOauth: Record<string, unknown>
-    }
-    assert.equal(parsed.claudeAiOauth['accessToken'], 'new-acc')
-    assert.equal(parsed.claudeAiOauth['refreshToken'], 'new-ref')
-    assert.equal(parsed.claudeAiOauth['expiresAt'], 999)
-    assert.deepEqual(parsed.claudeAiOauth['scopes'], ['a'])
+    const parsed = expectRecord(parseJsonUnknown(readFileSync(path, 'utf8')))
+    const oauth = expectRecord(parsed['claudeAiOauth'])
+    assert.equal(oauth['accessToken'], 'new-acc')
+    assert.equal(oauth['refreshToken'], 'new-ref')
+    assert.equal(oauth['expiresAt'], 999)
+    assert.deepEqual(oauth['scopes'], ['a'])
   })
 
-  it('is a no-op for env-sourced tokens and never throws', () => {
+  it('is a no-op for env-sourced tokens and never throws', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-persist-'))
-    assert.doesNotThrow(() => {
-      persistRefreshedClaudeToken(
-        'env',
-        { accessToken: 'x', refreshToken: null, expiresAt: null },
-        home,
-        noKeychain,
-        () => {
-          throw new Error('keychain writer should not be called for env')
-        },
-      )
-    })
+    await persistRefreshedClaudeToken(
+      'env',
+      { accessToken: 'x', refreshToken: null, expiresAt: null },
+      home,
+      noKeychain,
+      async () => {
+        throw new Error('keychain writer should not be called for env')
+      },
+    )
   })
 })
 

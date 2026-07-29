@@ -21,6 +21,25 @@ export interface ThreadRefAttachment {
   spinePath: string
 }
 
+/**
+ * A video the user attached to the chat (issue: screen-recording support).
+ *
+ * Like {@link ThreadRefAttachment} nothing is inlined — and unlike an image
+ * attachment the media deliberately never becomes model content. A screen
+ * recording is thousands of near-identical frames; handing even a fraction of
+ * them to the model would cost more context than the recording is worth. The
+ * agent is pointed at the stored file and pulls the few stills it needs with
+ * `video_frames`.
+ */
+export interface VideoRefAttachment {
+  /** Absolute path to the stored copy, inside the thread's blobs directory. */
+  path: string
+  /** Original file name, for the agent to refer to in prose. */
+  name: string
+  /** Human-readable size (e.g. `12.4 MB`), so the agent can anticipate cost. */
+  size: string
+}
+
 /** Minimum pasted plain-text length to treat as an attachment instead of inline input. */
 export const TEXT_BLOCK_MIN_CHARS = 200
 
@@ -127,6 +146,8 @@ export interface BuildTextOptions {
   maxCharsPerAttachment?: number
   /** `@`-referenced past conversations to point the agent at (nothing inlined). */
   threadRefs?: ThreadRefAttachment[]
+  /** Videos attached to the chat, referenced by path (nothing inlined). */
+  videoRefs?: VideoRefAttachment[]
 }
 
 // One compact preamble describes the on-disk thread layout so the agent can
@@ -143,6 +164,22 @@ const THREAD_STEERING_PREAMBLE =
 function buildThreadRefBlock(refs: ThreadRefAttachment[]): string {
   const lines = refs.map((r) => `- "${r.title}" (${r.date}): ${r.spinePath}`)
   return `${THREAD_STEERING_PREAMBLE}\n\nReferenced threads:\n${lines.join('\n')}`
+}
+
+// States plainly that the video is *not* in context, because the model would
+// otherwise reasonably assume an attachment it can see. Naming the tool and the
+// default behaviour here saves a wasted turn spent asking the user what to do.
+const VIDEO_STEERING_PREAMBLE =
+  'The user attached the video(s) below. The video itself is NOT in your context — ' +
+  'only these paths are. Use the `video_frames` tool to read one as still images: it ' +
+  'samples the recording and returns only the frames that are visually different from ' +
+  'each other, so a whole screen recording usually costs a handful of images. Call it ' +
+  'with just the path to survey the whole video, then again with `start`/`end` around ' +
+  'a moment you need to see more closely. There is no audio track available.'
+
+function buildVideoRefBlock(refs: VideoRefAttachment[]): string {
+  const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`)
+  return `${VIDEO_STEERING_PREAMBLE}\n\nAttached videos:\n${lines.join('\n')}`
 }
 
 /**
@@ -166,12 +203,14 @@ export function buildTextWithAttachments(
 ): string {
   const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS
   const threadRefs = options.threadRefs ?? []
+  const videoRefs = options.videoRefs ?? []
   const blocks = [
     ...files.map((f) => renderTextBlock(f.path, f.content, cap)),
     ...textBlocks.map((b) => renderTextBlock(b.label, b.content, cap)),
-    // No truncation path — thread refs inline nothing, so ATTACHMENT_MAX_CHARS
-    // never applies here.
+    // No truncation path — thread and video refs inline nothing, so
+    // ATTACHMENT_MAX_CHARS never applies here.
     ...(threadRefs.length > 0 ? [buildThreadRefBlock(threadRefs)] : []),
+    ...(videoRefs.length > 0 ? [buildVideoRefBlock(videoRefs)] : []),
   ]
   return [text, ...blocks].filter(Boolean).join('\n\n')
 }

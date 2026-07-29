@@ -11,6 +11,7 @@ import {
 import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById, isBlankThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl } from '../controller/panels.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
@@ -198,7 +199,9 @@ export function mountFooterBranchStatus(
           return
         }
         setOpen(false)
-        void api.git.checkoutBranch(branch.name).then(
+        const owner = getActiveThreadOwner(store)
+        if (!owner) return
+        void api.git.checkoutBranch(owner.projectId, owner.threadId, branch.name).then(
           () => {
             showToast(`Checked out ${branch.name}`)
             store.emit('git_branch_changed')
@@ -217,9 +220,11 @@ export function mountFooterBranchStatus(
   }
 
   async function loadBranches(): Promise<void> {
+    const owner = getActiveThreadOwner(store)
+    if (!owner) return
     const [listed, defaultName] = await Promise.all([
-      api.git.listBranches(),
-      api.git.getDefaultBranch(),
+      api.git.listBranches(owner.projectId, owner.threadId),
+      api.git.getDefaultBranch(owner.projectId, owner.threadId),
     ])
     branches = listed
     defaultBranch = defaultName
@@ -233,8 +238,10 @@ export function mountFooterBranchStatus(
       renderTrigger()
       return
     }
+    const owner = getActiveThreadOwner(store)
+    if (!owner) return
     const threadBranch = getActiveThreadBranch()
-    status = await api.git.branchStatus(threadBranch)
+    status = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
     if (isPickerMode()) await loadBranches()
     else {
       branches = []
@@ -294,7 +301,7 @@ export function mountFooterBranchStatus(
     }),
     on(document, 'click', (e) => {
       if (!open) return
-      if (!wrap.contains(e.target as Node)) setOpen(false)
+      if (!wrap.contains(e.target instanceof Node ? e.target : null)) setOpen(false)
     }),
     on(document, 'keydown', (e) => {
       if (e.key === 'Escape' && open) setOpen(false)

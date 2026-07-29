@@ -84,9 +84,14 @@ export function dotIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('dot', ['M12 12h.01'], `${className} ui-icon-dot`)
 }
 
-/** Open (hollow) circle — a "pending / not started" status marker. */
+/** Open (hollow) circle — a "pending / in progress" status marker (CSS may spin it). */
 export function circleIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('circle', ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'], className)
+}
+
+/** Horizontal minus — a settled "absent / not loaded" marker (not in-progress). */
+export function minusIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('minus', ['M5 12h14'], className)
 }
 
 export function warningIcon(className = DEFAULT): SVGSVGElement {

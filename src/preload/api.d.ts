@@ -4,6 +4,11 @@ import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
+import type {
+  AutomationSchedule,
+  AutomationScheduleInput,
+  AutomationTriggerEvent,
+} from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
@@ -80,13 +85,19 @@ export interface ApiClient {
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
   }
   fs: {
-    readFile: (path: string) => Promise<string>
-    writeFile: (path: string, content: string) => Promise<void>
-    readdir: (path: string) => Promise<string[]>
-    listDir: (path: string) => Promise<{ name: string; isDir: boolean }[]>
-    watch: (path: string) => Promise<void>
-    unwatch: (path: string) => Promise<void>
-    onChanged: (handler: (path: string, content: string | null) => void) => () => void
+    readFile: (projectId: string, threadId: string, path: string) => Promise<string>
+    writeFile: (projectId: string, threadId: string, path: string, content: string) => Promise<void>
+    readdir: (projectId: string, threadId: string, path: string) => Promise<string[]>
+    listDir: (
+      projectId: string,
+      threadId: string,
+      path: string,
+    ) => Promise<{ name: string; isDir: boolean }[]>
+    watch: (projectId: string, threadId: string, path: string) => Promise<void>
+    unwatch: (projectId: string, threadId: string, path: string) => Promise<void>
+    onChanged: (
+      handler: (projectId: string, threadId: string, path: string, content: string | null) => void,
+    ) => () => void
   }
   agent: {
     run: (projectId: string, threadId: string, prompt: string) => Promise<void>
@@ -127,9 +138,11 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => () => void
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
     onAskUserRequest: (
       handler: (req: {
         id: string
@@ -187,7 +200,7 @@ export interface ApiClient {
     respond: (id: string, answers: string[]) => Promise<void>
   }
   sshPrompt: {
-    respond: (id: string, value: string) => Promise<void>
+    respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
     ) => () => void
@@ -274,6 +287,25 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
+  }
+  video: {
+    /**
+     * Store a video the user attached to a chat and return the reference the
+     * agent is given. Pass `bytes` for a file dropped from outside the app, or
+     * `path` for one already in the workspace (referenced, not copied). The
+     * video itself never becomes model content — see `video_frames`.
+     */
+    attach: (
+      projectId: string,
+      threadId: string,
+      video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
+    ) => Promise<import('@shared/video/video-media.ts').VideoAttachmentRef>
+    /**
+     * Read an attached video back for inline playback. Rejects for anything
+     * outside the chat store or the workspace, and for files over the preview
+     * size limit — the message is meant to be shown to the user.
+     */
+    read: (path: string) => Promise<{ bytes: Uint8Array<ArrayBuffer>; mimeType: string }>
   }
   openRouter: {
     models: () => Promise<
@@ -528,6 +560,13 @@ export interface ApiClient {
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
+    export: (format: import('../shared/roadmap/export.ts').RoadmapExportFormat) => Promise<{
+      filename: string
+      mimeType: string
+      dataUrl: string
+      bundled: boolean
+      files: string[]
+    }>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{
       slug: string
@@ -584,6 +623,13 @@ export interface ApiClient {
     /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
     setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
   }
+  automations: {
+    list: (projectId: string) => Promise<AutomationSchedule[]>
+    upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
+    remove: (projectId: string, scheduleId: string) => Promise<void>
+    runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
+  }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
   }
@@ -594,7 +640,7 @@ export interface ApiClient {
     create: (
       cols: number,
       rows: number,
-      meta?: { label?: string; threadId?: string | null },
+      meta: { label?: string; projectId: string; threadId: string | null },
     ) => Promise<string>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
@@ -608,17 +654,33 @@ export interface ApiClient {
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
   }
   git: {
-    isAvailable: () => Promise<boolean>
-    status: () => Promise<GitStatusResult | null>
+    isAvailable: (projectId: string, threadId: string) => Promise<boolean>
+    status: (projectId: string, threadId: string) => Promise<GitStatusResult | null>
     /** Live +/- line totals across staged + unstaged changes, or null when clean. */
-    changeStats: () => Promise<{ additions: number; deletions: number } | null>
-    fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
+    changeStats: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<{ additions: number; deletions: number } | null>
+    fileDiff: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+    ) => Promise<GitFileDiff | null>
     /** Combined HEAD → working-tree diff for one file, or null when it matches HEAD. */
-    workingFileDiff: (path: string) => Promise<GitFileDiff | null>
-    branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
-    checkoutBranch: (branch: string) => Promise<void>
-    listBranches: () => Promise<GitBranchInfo[]>
-    getDefaultBranch: () => Promise<string | null>
+    workingFileDiff: (
+      projectId: string,
+      threadId: string,
+      path: string,
+    ) => Promise<GitFileDiff | null>
+    branchStatus: (
+      projectId: string,
+      threadId: string,
+      forBranch?: string,
+    ) => Promise<GitBranchStatus>
+    checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
+    listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
+    getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>
     /** The pre-session worktree backup taken this session, or null when none. */
     sessionBackup: (projectId: string, threadId: string) => Promise<SessionBackup | null>
     /** Revert the session backup's captured paths to their pre-session content. */
@@ -654,12 +716,16 @@ export interface ApiClient {
   editors: {
     /** Installed external editors plus the sticky last-used default. */
     list: () => Promise<ExternalEditorList>
-    /** Open the active workspace root in a detected editor. */
-    open: (editorId: string) => Promise<void>
+    /** Open the active task checkout in a detected editor. */
+    open: (projectId: string, threadId: string, editorId: string) => Promise<void>
   }
   panes: {
     /** Detach a right-panel pane into its own window. */
-    popout: (mode: RightPanelMode) => Promise<void>
+    popout: (mode: RightPanelMode, seed?: unknown) => Promise<void>
+    /** Read (once) the pane snapshot stashed when this pop-out was opened. */
+    takePopoutSeed: (mode: RightPanelMode) => Promise<unknown>
+    /** When an existing pop-out is re-focused for a different pane mode. */
+    onSwitchMode: (handler: (mode: RightPanelMode) => void) => () => void
   }
 }
 

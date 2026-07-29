@@ -21,7 +21,7 @@ jobs:
     # ci.yml's routing note); hosted otherwise. Scheduled, trusted-main only.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       # Same install path as ci.yml's check job: lifecycle scripts must run so
       # node-pty (and esbuild optional deps) are present for `npm run check`.
@@ -42,6 +42,17 @@ jobs:
       - name: Open PR if catalog changed
         uses: peter-evans/create-pull-request@v8
         with:
+          # Open the PR with a PAT / App token (SYNC_PR_TOKEN) rather than the
+          # default GITHUB_TOKEN. Two reasons (same as sync-streaming-markdown.yml):
+          #   1. Org policy blocks GITHUB_TOKEN from creating PRs ("GitHub
+          #      Actions is not permitted to create or approve pull requests"),
+          #      so the default-token path fails at PR creation even though the
+          #      branch pushes fine.
+          #   2. A PR opened by GITHUB_TOKEN does not trigger downstream
+          #      workflows (CI), whereas one opened by a PAT/App token does —
+          #      so the catalog PR gets a real CI run automatically.
+          # SYNC_PR_TOKEN needs Contents + Pull requests: write on this repo.
+          token: ${{ secrets.SYNC_PR_TOKEN }}
           branch: chore/sync-model-catalog
           delete-branch: true
           commit-message: 'chore(models): sync pricing & context windows from LiteLLM'

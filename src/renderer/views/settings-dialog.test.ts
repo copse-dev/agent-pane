@@ -17,6 +17,8 @@ import {
   isSettingsDialogOpen,
   applyUiAccent,
 } from './settings-dialog.ts'
+import { qsRequired } from '../dom/helpers.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 // Recursive stub: api.<anything>.<nested>() returns a never-settling promise, so
 // the dialog can mount without a hand-written ApiClient. Mounting fires off some
@@ -24,11 +26,7 @@ import {
 // resolving to a shape they'd then read into — keeps the test to the synchronous
 // open/close contract without post-test unhandled rejections.
 function stubApi(): ApiClient {
-  const proxy: unknown = new Proxy(() => new Promise(() => {}), {
-    get: () => proxy,
-    apply: () => new Promise(() => {}),
-  })
-  return proxy as ApiClient
+  return createPendingApi()
 }
 
 // happy-dom doesn't implement modal dialogs; track open state through the methods
@@ -62,7 +60,7 @@ describe('settings dialog (native <dialog>)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     mountSettingsDialog(createStore(), stubApi())
-    dialog = document.getElementById('settings-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     spy = shimModal(dialog)
     // openSettingsDialog dispatches 'settings-open' to kick off an async data
     // load we don't exercise here (and can't satisfy without a full API).
@@ -122,8 +120,8 @@ describe('settings search (cross-section block filter)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     mountSettingsDialog(createStore(), stubApi())
-    content = document.querySelector('.settings-content') as HTMLElement
-    searchInput = document.getElementById('settings-search-input') as HTMLInputElement
+    content = qsRequired(document, '.settings-content')
+    searchInput = qsRequired<HTMLInputElement>(document, '#settings-search-input')
   })
 
   it('focuses the search input when the dialog opens', () => {
@@ -144,9 +142,10 @@ describe('settings search (cross-section block filter)', () => {
   })
 
   it('matches text in a label or hint, not just the heading', () => {
-    // "DevTools" appears in a checkbox label / hint inside the Experimental block.
-    search('devtools')
-    assert.deepEqual(resultLegends(), ['DevTools shortcut'])
+    // "verdicts" appears only in the Model comparison hint, not in any legend, so
+    // a hit proves the search reaches label/hint body copy — not just headings.
+    search('verdicts')
+    assert.deepEqual(resultLegends(), ['Model comparison'])
   })
 
   it('ranks a heading (legend) match above a body-only match', () => {
@@ -160,7 +159,7 @@ describe('settings search (cross-section block filter)', () => {
 
   it('shows an empty-state message and no results for an unknown term', () => {
     search('zzznotasetting')
-    const empty = document.getElementById('settings-search-empty') as HTMLElement
+    const empty = qsRequired(document, '#settings-search-empty')
     assert.equal(empty.hidden, false)
     assert.match(empty.textContent, /zzznotasetting/)
     assert.equal(resultLegends().length, 0)
@@ -173,7 +172,7 @@ describe('settings search (cross-section block filter)', () => {
     search('')
     assert.ok(!content.classList.contains('settings-searching'))
     assert.equal(document.querySelectorAll('#settings-search-results > *').length, 0)
-    assert.equal((document.getElementById('settings-search-empty') as HTMLElement).hidden, true)
+    assert.equal(qsRequired(document, '#settings-search-empty').hidden, true)
     // The combined Interface colours block is back inside the Appearance section.
     const appearance = document.querySelector('.settings-section[data-section="appearance"]')
     const legends = Array.from(appearance?.querySelectorAll('legend') ?? []).map((l) =>
@@ -183,6 +182,8 @@ describe('settings search (cross-section block filter)', () => {
     // Back to exactly one active section (General, the default).
     const active = document.querySelectorAll('.settings-section.active')
     assert.equal(active.length, 1)
-    assert.equal((active[0] as HTMLElement).dataset['section'], 'general')
+    const activeSection = active.item(0)
+    assert.ok(activeSection instanceof HTMLElement)
+    assert.equal(activeSection.dataset['section'], 'general')
   })
 })

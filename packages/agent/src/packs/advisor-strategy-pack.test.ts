@@ -24,6 +24,8 @@ import {
   advisorStrategyPack,
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_STRATEGY_TOOL_NAME,
+  ADVISOR_MODEL_SETTING_ID,
+  DEFAULT_ADVISOR_MODEL_ID,
 } from './advisor-strategy-pack.ts'
 import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
 
@@ -50,6 +52,19 @@ describe('copse.advisor-strategy pack', () => {
     assert.deepEqual(advisorStrategyPack.contributions.asyncHooks, [])
     assert.deepEqual(advisorStrategyPack.contributions.promptBlocks, [])
     assert.deepEqual(advisorStrategyPack.contributions.uiContributions, [])
+  })
+
+  it('owns the advisor model as a pack-scoped `model` setting with the frontier default', () => {
+    // The advisor model moved off the top-level `advisorModel` store key onto
+    // this pack's own `model` field, so the pack fully owns its model config.
+    const field = advisorStrategyPack.manifest.settings?.[ADVISOR_MODEL_SETTING_ID]
+    assert.ok(field, 'advisor-strategy pack must declare the advisorModel setting')
+    assert.equal(field.kind, 'model')
+    assert.equal(field.default, DEFAULT_ADVISOR_MODEL_ID)
+    assert.equal(DEFAULT_ADVISOR_MODEL_ID, 'claude-opus-4-8')
+    // A model field never bakes a static option list — the catalogue is live.
+    assert.equal(field.options, undefined)
+    assert.equal(ADVISOR_MODEL_SETTING_ID, 'advisorModel')
   })
 
   it('contributes advisor exactly once across all first-party packs', () => {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   BUNDLED_CURSOR_PLUGINS_COMMIT,
   syncBundledCursorSkills,
@@ -62,9 +63,9 @@ describe('bundled-cursor-skills-sync', () => {
     )
     assert.match(skillBody, /# Demo/)
 
-    const manifest = JSON.parse(await readFile(join(cacheDir, 'SOURCE.json'), 'utf8')) as {
-      slim: boolean
-    }
-    assert.equal(manifest.slim, true)
+    const manifest = expectRecord(
+      parseJsonUnknown(await readFile(join(cacheDir, 'SOURCE.json'), 'utf8')),
+    )
+    assert.equal(manifest['slim'], true)
   })
 })
