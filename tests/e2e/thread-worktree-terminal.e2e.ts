@@ -19,6 +19,16 @@ async function xtermText(): Promise<string> {
   return browser.execute(() => document.querySelector('.xterm-rows')?.textContent ?? '')
 }
 
+async function gitChangePaths(): Promise<string[]> {
+  const elements = await $$('.git-change-path')
+  const paths: string[] = []
+  for (let i = 0; i < elements.length; i += 1) {
+    const element = elements[i]
+    if (element) paths.push(await element.getText())
+  }
+  return paths
+}
+
 describe('isolated thread terminal cwd', () => {
   let projectRoot = ''
   let worktreeRoot = ''
@@ -142,14 +152,10 @@ describe('isolated thread terminal cwd', () => {
     await changesBtn.click()
 
     await browser.waitUntil(
-      async () => {
-        const paths = await $$('.git-change-path')
-        return (await Promise.all(paths.map((path) => path.getText()))).includes('worktree-only.md')
-      },
+      async () => (await gitChangePaths()).includes('worktree-only.md'),
       { timeout: 30_000, timeoutMsg: 'expected the worktree-only change in the Changes pane' },
     )
-    const paths = await $$('.git-change-path')
-    assert.ok(!(await Promise.all(paths.map((path) => path.getText()))).includes('project-only.md'))
+    assert.ok(!(await gitChangePaths()).includes('project-only.md'))
     await expect(changesBtn).toHaveElementClass('active')
   })
 })

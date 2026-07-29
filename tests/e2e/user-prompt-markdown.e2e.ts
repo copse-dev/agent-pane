@@ -5,17 +5,26 @@ import { resetUserData, seedUserPromptMarkdownFixture } from './helpers/seed-con
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('user prompt markdown in transcript', () => {
-  before(async () => {
+  before(async function () {
+    this.timeout(90_000)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
-    resetUserData()
-    seedUserPromptMarkdownFixture(process.cwd())
-    await browser.reloadSession()
-    await $('[data-message-id="msg-user-markdown"] .message-text').waitForExist({
-      timeout: 30_000,
-    })
+    // The app from the previous spec is still alive while this fixture is
+    // written and can race by persisting its old project once more. Reinforce
+    // the seed across one fresh-session retry on slower hosted runners.
+    for (const timeout of [10_000, 30_000]) {
+      resetUserData()
+      seedUserPromptMarkdownFixture(process.cwd())
+      await browser.reloadSession()
+      try {
+        await $('[data-message-id="msg-user-markdown"] .message-text').waitForExist({ timeout })
+        return
+      } catch (error) {
+        if (timeout === 30_000) throw error
+      }
+    }
   })
 
   after(() => {
