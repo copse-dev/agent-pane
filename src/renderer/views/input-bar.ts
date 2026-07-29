@@ -237,6 +237,16 @@ export function mountInputBar(
     return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
   }
 
+  function footerRecentModels(): string[] {
+    const { threads, settings } = store.getState()
+    return [...threads]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((thread) => {
+        const raw = thread.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL
+        return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
+      })
+  }
+
   const modelPicker = mountFooterModelPicker(
     modelHost,
     api,
@@ -267,6 +277,7 @@ export function mountInputBar(
       onClose: (): void => {
         composer.focus()
       },
+      getRecentModels: footerRecentModels,
     },
   )
   // Re-sync the picker whenever the active thread changes (new thread,
