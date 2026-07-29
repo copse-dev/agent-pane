@@ -363,6 +363,32 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   to the live run. Spec: [`tests/e2e/hook-cards.e2e.ts`](../tests/e2e/hook-cards.e2e.ts); DOM in
   [`src/renderer/views/hook-cards.test.ts`](../src/renderer/views/hook-cards.test.ts).
 
+## Footer popovers: one boundary, distinct trigger anchors
+
+Model, checkout, branch, overflow, and context-wheel popovers in `.input-footer` use the
+positioned footer as their horizontal containing block, but each popup must keep its own trigger as
+`position-anchor`. Give every footer control a distinct dashed-ident through
+`--footer-popup-anchor`; do not reuse one literal `anchor-name` across sibling controls.
+Chromium can resolve a duplicate name to another eligible footer anchor, which makes a menu jump
+toward the end of the composer instead of opening above its control.
+
+The shared rule in
+[`input-bar.css`](../src/renderer/styles/global/input-bar.css) preserves each popup's natural
+width and caps it at `100%` of the footer. All footer popovers share the local popup layer
+(`z-index: 100`), above composer/footer chrome but below dialogs and global context menus. Controls
+on the footer's left (model, checkout, and branch) align popup and trigger left edges, while controls
+on the right (overflow and context wheel) align their right edges. Named `@position-try` fallbacks clamp a popup to `left: 0` or `right: 0`
+only when its primary trigger alignment would overflow. Once the footer enters `is-compact`, disable
+`position-try` and snap left-side menus left / right-side menus right; compact relayout must not make
+Chromium repeatedly resolve anchor fallbacks. Keep collision sizing relative to the
+positioned footer; cross-anchor `anchor-size()` dependencies can cycle at minimum pane widths. Do
+not constrain both horizontal insets in the primary position, because that stretches wide-content
+menus across the whole available interval. The focused
+regression eval is
+[`footer-overflow-bounds.e2e.ts`](../tests/e2e/footer-overflow-bounds.e2e.ts): it pins every
+trigger/menu anchor pair, checks normal trigger alignment plus narrow-footer containment, and owns
+the model-selector, normal overflow, and constrained overflow reference screenshots.
+
 ## Context menus (right-click)
 
 App-chrome right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
