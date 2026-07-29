@@ -4,7 +4,6 @@
 
 import { accessSync, constants, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
 import {
   hasApiKey,
   isApiKeyEncrypted,
@@ -33,6 +32,7 @@ import {
   type CheckupSnapshot,
   type ProviderSnapshot,
 } from './checkup-report.ts'
+import { getElectronAppVersion, isElectronAppPackaged } from '../electron-app-runtime.ts'
 
 export type { CheckupReport } from './checkup-report.ts'
 
@@ -111,7 +111,7 @@ function findSpawnHelper(root: string): string | null {
  */
 function spawnHelperExecutable(): boolean | null {
   if (process.platform === 'win32') return null
-  const prebuildsRoot = app.isPackaged
+  const prebuildsRoot = isElectronAppPackaged()
     ? process.resourcesPath
       ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds')
       : null
@@ -149,7 +149,7 @@ export async function runCheckup(): Promise<CheckupReport> {
   ).length
 
   const snapshot: CheckupSnapshot = {
-    version: app.getVersion(),
+    version: getElectronAppVersion(),
     platform: process.platform,
     mockLlm: process.env['COPSE_PANEL_MOCK_LLM'] === '1',
     workspace: { root, trusted: isWorkspaceTrusted(root) },

@@ -1,7 +1,12 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import type {
+  BrowserWindow,
+  BrowserWindowConstructorOptions,
+  IpcMain,
+  IpcMainEvent,
+  WebContents,
+} from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { attachWebContentsLockdown } from '../../windows/web-contents-lockdown.ts'
 import {
   VIDEO_DECODE_READY_CHANNEL,
   VIDEO_DECODE_REQUEST_CHANNEL,
@@ -45,6 +50,23 @@ const pending = new Map<string, PendingDecode>()
 /** One video at a time: the page holds a single `<video>` and canvas pair. */
 let queue: Promise<unknown> = Promise.resolve()
 
+export interface VideoDecoderPlatform {
+  createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
+  ipcMain: IpcMain
+  attachWebContentsLockdown(contents: WebContents): void
+}
+
+let platform: VideoDecoderPlatform | null = null
+
+export function setVideoDecoderPlatform(next: VideoDecoderPlatform | null): void {
+  platform = next
+}
+
+function requirePlatform(): VideoDecoderPlatform {
+  if (!platform) throw new Error('Video decoding requires the Electron video-decoder platform.')
+  return platform
+}
+
 function settleAll(error: Error): void {
   for (const [, entry] of pending) {
     clearTimeout(entry.timer)
@@ -56,16 +78,19 @@ function settleAll(error: Error): void {
 function attachListeners(): void {
   if (listenersAttached) return
   listenersAttached = true
-  ipcMain.on(VIDEO_DECODE_RESULT_CHANNEL, (event, response: DecodeFramesResponse) => {
-    // Only the decoder window may answer; anything else is ignored outright.
-    if (!decoderWindow || event.sender !== decoderWindow.webContents) return
-    const entry = pending.get(response.requestId)
-    if (!entry) return
-    pending.delete(response.requestId)
-    clearTimeout(entry.timer)
-    if (response.ok) entry.resolve(response)
-    else entry.reject(new Error(response.error))
-  })
+  requirePlatform().ipcMain.on(
+    VIDEO_DECODE_RESULT_CHANNEL,
+    (event, response: DecodeFramesResponse) => {
+      // Only the decoder window may answer; anything else is ignored outright.
+      if (!decoderWindow || event.sender !== decoderWindow.webContents) return
+      const entry = pending.get(response.requestId)
+      if (!entry) return
+      pending.delete(response.requestId)
+      clearTimeout(entry.timer)
+      if (response.ok) entry.resolve(response)
+      else entry.reject(new Error(response.error))
+    },
+  )
 }
 
 function scheduleIdleShutdown(): void {
@@ -82,8 +107,9 @@ async function ensureDecoderWindow(): Promise<BrowserWindow> {
   if (readyPromise) return readyPromise
 
   attachListeners()
+  const decoderPlatform = requirePlatform()
   readyPromise = new Promise<BrowserWindow>((resolve, reject) => {
-    const win = new BrowserWindow({
+    const win = decoderPlatform.createWindow({
       show: false,
       width: 640,
       height: 360,
@@ -98,18 +124,18 @@ async function ensureDecoderWindow(): Promise<BrowserWindow> {
         preload: join(__dirname, '../preload/video-decoder.js'),
       },
     })
-    attachWebContentsLockdown(win.webContents)
+    decoderPlatform.attachWebContentsLockdown(win.webContents)
 
-    const onReady = (event: Electron.IpcMainEvent): void => {
+    const onReady = (event: IpcMainEvent): void => {
       if (event.sender !== win.webContents) return
-      ipcMain.removeListener(VIDEO_DECODE_READY_CHANNEL, onReady)
+      decoderPlatform.ipcMain.removeListener(VIDEO_DECODE_READY_CHANNEL, onReady)
       decoderWindow = win
       resolve(win)
     }
-    ipcMain.on(VIDEO_DECODE_READY_CHANNEL, onReady)
+    decoderPlatform.ipcMain.on(VIDEO_DECODE_READY_CHANNEL, onReady)
 
     win.once('closed', () => {
-      ipcMain.removeListener(VIDEO_DECODE_READY_CHANNEL, onReady)
+      decoderPlatform.ipcMain.removeListener(VIDEO_DECODE_READY_CHANNEL, onReady)
       if (decoderWindow === win) decoderWindow = null
       readyPromise = null
       settleAll(new Error('The video decoder window closed before the decode finished.'))

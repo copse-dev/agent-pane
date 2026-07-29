@@ -1,6 +1,8 @@
 import { app } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { setElectronAppRuntime } from './services/electron-app-runtime.ts'
+import { installElectronStoreBackend } from './services/storage/electron-store-backend.ts'
 
 function augmentPathForGuiLaunch(): void {
   const pathKey = process.platform === 'win32' ? 'Path' : 'PATH'
@@ -40,3 +42,10 @@ app.setPath(
     ? evalUserData
     : join(app.getPath('appData'), 'copse-panel'),
 )
+
+setElectronAppRuntime({
+  userDataPath: app.getPath('userData'),
+  version: app.getVersion(),
+  isPackaged: app.isPackaged,
+})
+installElectronStoreBackend()

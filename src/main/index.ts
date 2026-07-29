@@ -1,8 +1,9 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
-import { app, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
+  getAgentBrowserSession,
   getInAppBrowserSession,
   isBrowserWebContents,
 } from './windows/browser-web-contents.ts'
@@ -74,7 +75,10 @@ import { getMainWindow } from './windows/create-main-window.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
-import { shutdownBrowserSession } from './services/browser/session-manager.ts'
+import {
+  setBrowserSessionPlatform,
+  shutdownBrowserSession,
+} from './services/browser/session-manager.ts'
 import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
@@ -97,7 +101,7 @@ import {
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
-import { closeVideoDecoder } from './services/video/video-decoder.ts'
+import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -108,6 +112,8 @@ import {
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
+import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
+import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
 // Settings encrypts API keys through whichever cipher is installed rather than
 // importing `safeStorage` itself, which is what keeps `createRegistry()` and
@@ -118,6 +124,29 @@ setSecretCipher({
   isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
   encryptString: (plainText) => safeStorage.encryptString(plainText),
   decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+})
+
+setBrowserSessionPlatform({
+  createWindow: (options) => new BrowserWindow(options),
+  getAgentSession: () => getAgentBrowserSession(),
+})
+
+setVideoDecoderPlatform({
+  createWindow: (options) => new BrowserWindow(options),
+  ipcMain,
+  attachWebContentsLockdown,
+})
+
+setCanvasArtefactSink((artefact) => {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
+})
+
+setContextEstimateRefreshSink(() => {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  win.webContents.send('agent:refresh_context_estimate')
 })
 
 // Prevent multiple instances stacking invisible windows at the same position.
@@ -251,12 +280,12 @@ app
       if (!win.isDestroyed()) win.webContents.send('agent:hook_queue_message', payload)
     })
 
-    initApproval(win)
-    initAskUser(win)
+    initApproval(win, ipcMain, app.dock)
+    initAskUser(win, ipcMain)
     initSshAskpassServer(app.getPath('userData'))
-    initSshPrompt(win)
+    initSshPrompt(win, ipcMain)
     initSshWorkspaceIpc(win)
-    initDiffQueue(win)
+    initDiffQueue(win, ipcMain)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     recordStartupPhase('register-handlers')

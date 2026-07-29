@@ -1,5 +1,4 @@
-import type { BrowserWindow } from 'electron'
-import { ipcMain } from 'electron'
+import type { BrowserWindow, IpcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import {
   assertMainFrameSender,
@@ -47,7 +46,7 @@ export function classifySshPrompt(prompt: string): SshPromptKind {
     : 'secret'
 }
 
-export function initSshPrompt(win: BrowserWindow): void {
+export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
   const pending = new Map<string, (result: SshPromptResponse) => void>()
   const settle = (id: string, result: SshPromptResponse): void => {
     const resolve = pending.get(id)
