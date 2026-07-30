@@ -26,6 +26,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   semantic_search: { running: 'Searching codebase', done: 'Searched codebase' },
   find_files: { running: 'Finding files', done: 'Found files' },
   web_search: { running: 'Searching the web', done: 'Searched the web' },
+  parallel_search: { running: 'Searching with Parallel', done: 'Searched with Parallel' },
   fetch_url: { running: 'Fetching page', done: 'Fetched page' },
   browser_navigate: { running: 'Opening browser', done: 'Opened browser' },
   browser_snapshot: { running: 'Taking page snapshot', done: 'Took page snapshot' },
@@ -75,7 +76,7 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
     label: { running: 'Searching', done: 'Searched' },
   },
   web: {
-    tools: ['web_search', 'fetch_url'],
+    tools: ['web_search', 'parallel_search', 'fetch_url'],
     label: { running: 'Fetching from web', done: 'Fetched from web' },
   },
   browser: {
