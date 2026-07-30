@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname } from 'node:path'
 import type { BrowserWindow, IpcMain } from 'electron'
 import {
@@ -144,9 +145,18 @@ let mainWindow: BrowserWindow | null = null
 export type StagedDiffResolver = (entry: QueueEntry) => Promise<boolean>
 
 let stagedDiffResolver: StagedDiffResolver | null = null
+const scopedStagedDiffResolver = new AsyncLocalStorage<StagedDiffResolver>()
+
+export function runWithStagedDiffResolver<T>(resolver: StagedDiffResolver, fn: () => T): T {
+  return scopedStagedDiffResolver.run(resolver, fn)
+}
 
 export function setStagedDiffResolver(resolver: StagedDiffResolver | null): void {
   stagedDiffResolver = resolver
+}
+
+function activeStagedDiffResolver(): StagedDiffResolver | null {
+  return scopedStagedDiffResolver.getStore() ?? stagedDiffResolver
 }
 
 /**
@@ -159,7 +169,7 @@ async function resolveStagedEntry(path: string): Promise<string> {
   const state = stateFor(owner)
   const entry = state.queue.find((e) => e.path === path)
   if (!entry) return `No staged change found for ${path}.`
-  const resolver = stagedDiffResolver
+  const resolver = activeStagedDiffResolver()
   if (!resolver) return `No staged change found for ${path}.`
   let approved: boolean
   try {
@@ -887,7 +897,7 @@ export function stageDiff(
   broadcastQueue(state, owner)
   // Headless host (e.g. ACP): resolve the staged entry inline instead of waiting
   // for a renderer that will never answer.
-  if (stagedDiffResolver) return resolveStagedEntry(path)
+  if (activeStagedDiffResolver()) return resolveStagedEntry(path)
   return Promise.resolve(
     `${hadPending ? 'Updated pending staged diff' : 'Diff staged'} for ${path}. The file on disk is NOT changed until the user approves it in the diff panel. Shell commands, git, and read_file still see the old on-disk content. Use staged_diffs/read_staged_diff to inspect pending proposed changes, or ask the user to approve before validating.`,
   )
@@ -975,7 +985,7 @@ export function stageFileOp(entry: {
     entry.language,
   )
   broadcastQueue(state, owner)
-  if (stagedDiffResolver) return resolveStagedEntry(entry.path)
+  if (activeStagedDiffResolver()) return resolveStagedEntry(entry.path)
   const verb =
     entry.op === 'delete'
       ? `Deletion of ${entry.path}`

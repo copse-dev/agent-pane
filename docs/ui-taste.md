@@ -25,6 +25,17 @@ ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and
 (same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
 can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
 
+## UI kit primitives (buttons, fields, action rows)
+
+When building dialogs, settings forms, or labelled controls, prefer the shared kit in
+[`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
+[`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS
+classes on native `<button>`s**, not a factory — do not invent another `*-btn-primary` stack.
+Only add a new kit primitive once **two product call sites** need it and it does more than
+class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
+(tabs+content, list+viewer chrome) over inventing more atom variants — see
+[`docs/plans/ui-kit.md`](plans/ui-kit.md).
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
@@ -514,3 +525,12 @@ token, plain containment copy, and an immediate Disable action; do not reduce it
 a transient toast, icon-only state, or rounded status pill. The opt-in warning must
 name the scope, expiry, containment, and residual risk before activation. Visual
 eval: `tests/e2e/guarded-yolo.e2e.ts`.
+
+## Roadmap import picker rows
+
+`.roadmap-import-row` is a `<label>` wrapping a checkbox + title. The global `label` rule in
+`forms.css` sets `flex-direction: column`, so any row that only sets `display: flex` (without
+`flex-direction: row`) stacks the checkbox under the title and — with `align-items: center` —
+centers both. Always override `flex-direction: row` (and reset `margin-bottom`) on checkbox list
+rows built from `<label>`. Visual eval:
+[`tests/e2e/roadmap-import-picker.e2e.ts`](../tests/e2e/roadmap-import-picker.e2e.ts).

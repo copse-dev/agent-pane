@@ -12,6 +12,7 @@ import {
 import {
   normalizeToolExecuteResult,
   type LLMMessage,
+  type LLMProvider,
   type LLMTool,
   type StreamChunk,
   type ToolExecuteResult,
@@ -529,22 +530,33 @@ function fireAfterToolUseHook(args: {
   })
 }
 
+export interface RunAgentOptions {
+  invokedSkills?: string[]
+  priorTodos?: TodoItem[]
+  workingBrief?: string
+  model?: string
+  /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
+  turnTreeId?: string
+  /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
+  continuationBudgetUsed?: number
+  /** Explicit host provider for deterministic/headless execution; desktop callers resolve normally. */
+  provider?: LLMProvider
+  /** Explicit context window paired with an injected provider. */
+  contextWindow?: number
+  /** Optional tighter loop bounds for benchmark profiles; product defaults remain unchanged. */
+  maxSteps?: number
+  maxLlmCalls?: number
+  /** Pack-scoped setting resolver owned by an explicit host profile. */
+  resolvePackSetting?: (packId: string, key: string) => unknown
+}
+
 export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
   host: AgentHost<StreamChunk>,
   registry: ToolRegistry,
-  options?: {
-    invokedSkills?: string[]
-    priorTodos?: TodoItem[]
-    workingBrief?: string
-    model?: string
-    /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
-    turnTreeId?: string
-    /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
-    continuationBudgetUsed?: number
-  },
+  options?: RunAgentOptions,
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   // A new turn: drop last turn's restore point so the next dirty-worktree edit
   // snapshots the user's current uncommitted work before applying over it.
@@ -883,13 +895,16 @@ export async function runAgent(
 
   try {
     const invokedSkills = options?.invokedSkills ?? []
+    const resolvePackSetting =
+      options?.resolvePackSetting ??
+      ((packId: string, key: string): unknown => getPackService().getSetting(packId, key))
     const subagentsEnabled = getSetting<boolean>(
       SUBAGENTS_ENABLED_SETTING,
       SUBAGENTS_ENABLED_DEFAULT,
     )
-    const contextWindow = await resolveContextWindow(model)
+    const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = await buildProvider(model, threadId)
+    const provider = options?.provider ?? (await buildProvider(model, threadId))
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
@@ -972,7 +987,7 @@ export async function runAgent(
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
-        resolvePackSetting: (packId, key) => getPackService().getSetting(packId, key),
+        resolvePackSetting,
         recordHookRun: recordFunctionHookRun,
       },
     )
@@ -1285,7 +1300,8 @@ export async function runAgent(
           messages: trimmed,
           tools: parentLoopTools,
           usageModel: model,
-          maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
+          maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+          ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
           reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
           reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
           runDeadline: runAbort.deadline,
@@ -1425,7 +1441,7 @@ export async function runAgent(
       // the "do we do another post turn after a failed review?" knob — pack-scoped
       // because it is meaningless with the pack off (decision 15).
       const maxReviewCycles = resolveMaxReviewCycles(
-        getPackService().getSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
+        resolvePackSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
       )
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))

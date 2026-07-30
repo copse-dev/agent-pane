@@ -1,0 +1,15 @@
+{
+  "planId": "plan-auth-retry",
+  "revision": 1,
+  "threadId": "thread-fixture-1",
+  "title": "Add auth retry with backoff",
+  "body": "# Add auth retry with backoff\n\n## Goal\nRetry transient 401/429 responses from the provider host without spinning forever.\n\n## Approach\n1. Detect retryable status codes in the provider client.\n2. Apply exponential backoff with jitter, capped at 30s.\n3. Surface attempt count in the error toast after the final failure.\n",
+  "steps": [
+    { "id": "detect", "label": "Detect retryable status codes" },
+    { "id": "backoff", "label": "Exponential backoff with jitter" },
+    { "id": "toast", "label": "Surface final-failure toast" }
+  ],
+  "status": "draft",
+  "createdAt": 1720000000000,
+  "updatedAt": 1720000001000
+}

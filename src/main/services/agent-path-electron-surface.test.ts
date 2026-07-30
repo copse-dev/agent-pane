@@ -11,6 +11,7 @@ import { describe, it } from 'node:test'
 // are harmless here: TypeScript erases them, so Node never resolves Electron.
 
 const ROOTS = [
+  'src/main/services/headless-agent-host.ts',
   'src/main/services/registry-bootstrap.ts',
   'src/main/services/agent-system-prompt.ts',
 ]
@@ -91,7 +92,7 @@ describe('agent construction Electron surface', () => {
     assert.equal(result.status, 0, [result.stdout, result.stderr].filter(Boolean).join('\n'))
   })
 
-  it('has no runtime Electron import reachable from either construction root', () => {
+  it('has no runtime Electron import reachable from any construction root', () => {
     const actual = electronImportPaths(ROOTS)
     assert.deepEqual(
       actual,
