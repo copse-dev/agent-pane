@@ -9,8 +9,8 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 // Import picker rows: checkbox inline beside the title (not stacked/centered by
-// the global label { flex-direction: column } rule). Uses the mock GitHub
-// backend's open-issue fixtures (#41, #52).
+// the global label { flex-direction: column } rule). The expanded mock fixture
+// also proves pagination does not impose a repository-wide issue ceiling.
 describe('roadmap import picker', () => {
   let workspaceRoot: string | undefined
 
@@ -90,5 +90,42 @@ describe('roadmap import picker', () => {
     )
 
     await saveAppScreenshot('roadmap-import-picker.png')
+  })
+
+  it('loads additional bounded pages without hiding later issues', async function () {
+    this.timeout(90_000)
+    assert.ok(workspaceRoot)
+    writeE2eEnv({
+      COPSE_PANEL_MOCK_GH: '1',
+      COPSE_PANEL_MOCK_GH_STATUS: 'ready',
+      COPSE_PANEL_MOCK_GH_MANY_ISSUES: '1',
+    })
+    resetUserData()
+    seedEmptyProject(workspaceRoot, 'e2e-roadmap-import', {
+      model: 'claude-sonnet-4-6',
+      roadmapPlansEnabled: true,
+    })
+    await browser.reloadSession()
+
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
+    await $('.roadmap-import-btn').click()
+    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length === 20, {
+      timeout: 15_000,
+      timeoutMsg: 'expected the first bounded page of mock open issues',
+    })
+
+    const loadMore = $('.roadmap-import-more')
+    await loadMore.waitForDisplayed({ timeout: 10_000 })
+    assert.equal(await loadMore.getText(), 'Load more')
+    await loadMore.scrollIntoView()
+    await saveAppScreenshot('roadmap-import-picker-paginated.png')
+
+    await loadMore.click()
+    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length === 25, {
+      timeout: 15_000,
+      timeoutMsg: 'expected the final open-issue page to append',
+    })
+    assert.equal(await loadMore.isDisplayed(), false, 'load-more hides after the final page')
   })
 })
