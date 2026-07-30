@@ -250,12 +250,21 @@ function makeApi(
           calls.issueUrl.push(ref)
           return `https://github.com/octo/demo/issues/${ref.replace('#', '')}`
         },
-        openIssues: async (): Promise<{
+        openIssues: async (
+          page: number,
+        ): Promise<{
           slug: string
           issues: import('@shared/types').GhIssueSummary[]
+          hasMore: boolean
         }> => {
           calls.openIssues++
-          return { slug: 'octo/demo', issues: issues.map((i) => ({ ...i })) }
+          const pageSize = 20
+          const start = (page - 1) * pageSize
+          return {
+            slug: 'octo/demo',
+            issues: issues.slice(start, start + pageSize).map((issue) => ({ ...issue })),
+            hasMore: start + pageSize < issues.length,
+          }
         },
         checkFit: async (id: string): Promise<RoadmapFitResult> => {
           calls.checkFit.push(id)
@@ -1097,6 +1106,51 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('loads and coverage-matches open issues in bounded pages without a total ceiling', async () => {
+    const issues = Array.from({ length: 25 }, (_, index) =>
+      makeOpenIssue(index + 1, `Issue ${String(index + 1)}`),
+    )
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([], issues)
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+
+      assert.equal(viewer.querySelectorAll('.roadmap-import-row').length, 20)
+      assert.deepEqual(
+        calls.matchOpenIssues.map((page) => page.length),
+        [20],
+      )
+      const loadMore = viewer.querySelector<HTMLButtonElement>('.roadmap-import-more')
+      assert.ok(loadMore)
+      assert.equal(loadMore.hidden, false)
+
+      const first = viewer.querySelector<HTMLInputElement>('.roadmap-import-check')
+      assert.ok(first)
+      first.click()
+      loadMore.click()
+      await flush()
+
+      assert.equal(calls.openIssues, 2)
+      assert.equal(viewer.querySelectorAll('.roadmap-import-row').length, 25)
+      assert.deepEqual(
+        calls.matchOpenIssues.map((page) => page.length),
+        [20, 5],
+      )
+      assert.equal(loadMore.hidden, true)
+      assert.equal(
+        viewer.querySelector<HTMLInputElement>('.roadmap-import-check')?.checked,
+        true,
+        'loading another page preserves the current selection',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
   it('imports issue-by-issue so items land as each prompt drafts', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls } = makeApi(
@@ -1146,12 +1200,13 @@ describe('roadmap pane', () => {
   it('surfaces a not-connected error in the picker, stripped of IPC noise', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([])
-    ;(api.roadmap as { openIssues: () => Promise<unknown> }).openIssues = (): Promise<unknown> =>
-      Promise.reject(
-        new Error(
-          "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
-        ),
-      )
+    ;(api.roadmap as { openIssues: (page: number) => Promise<unknown> }).openIssues =
+      (): Promise<unknown> =>
+        Promise.reject(
+          new Error(
+            "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
+          ),
+        )
     const { list, viewer } = mountHosts()
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
