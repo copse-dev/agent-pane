@@ -6,6 +6,7 @@ import {
   matchPanelShortcut,
   matchFindInChatShortcut,
   matchUiScaleShortcut,
+  matchCommandPaletteShortcut,
 } from './keyboard-shortcuts.ts'
 
 function keyEvent(
@@ -103,6 +104,32 @@ describe('keyboard-shortcuts', () => {
     assert.equal(matchUiScaleShortcut(keyEvent({ key: '=' })), null)
     assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: '=' })), null)
     assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, key: 'f' })), null)
+  })
+
+  it('matchCommandPaletteShortcut matches Cmd/Ctrl+Shift+K', () => {
+    assert.equal(
+      matchCommandPaletteShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'k' })),
+      true,
+    )
+    assert.equal(
+      matchCommandPaletteShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'K' })),
+      true,
+    )
+  })
+
+  it('matchCommandPaletteShortcut ignores unshifted or unrelated chords', () => {
+    assert.equal(matchCommandPaletteShortcut(keyEvent({ metaKey: true, key: 'k' })), false)
+    assert.equal(matchCommandPaletteShortcut(keyEvent({ shiftKey: true, key: 'k' })), false)
+    assert.equal(
+      matchCommandPaletteShortcut(
+        keyEvent({ ctrlKey: true, shiftKey: true, altKey: true, key: 'k' }),
+      ),
+      false,
+    )
+    assert.equal(
+      matchCommandPaletteShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'j' })),
+      false,
+    )
   })
 
   it('isTypingTarget detects editable fields', () => {
