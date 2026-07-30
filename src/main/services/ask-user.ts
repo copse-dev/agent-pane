@@ -1,4 +1,5 @@
 import type { BrowserWindow, IpcMain } from 'electron'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
 import {
@@ -32,14 +33,20 @@ const ASK_USER_TIMEOUT_MS = 30 * 60 * 1000
 export type AskUserHandler = (req: AskUserRequest) => Promise<AskUserResult>
 
 let handler: AskUserHandler | null = null
+const scopedHandler = new AsyncLocalStorage<AskUserHandler>()
+
+export function runWithAskUserHandler<T>(next: AskUserHandler, fn: () => T): T {
+  return scopedHandler.run(next, fn)
+}
 
 export function setAskUserHandler(next: AskUserHandler | null): void {
   handler = next
 }
 
 export function requestUserAnswers(req: AskUserRequest): Promise<AskUserResult> {
-  if (!handler) return Promise.resolve({ answers: req.questions.map(() => '') })
-  return handler(req)
+  const activeHandler = scopedHandler.getStore() ?? handler
+  if (!activeHandler) return Promise.resolve({ answers: req.questions.map(() => '') })
+  return activeHandler(req)
 }
 
 export function initAskUser(win: BrowserWindow, ipcMain: IpcMain): void {

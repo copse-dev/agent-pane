@@ -11,27 +11,7 @@
   line-height: 1.5;
   white-space: pre-wrap;
 }
+/* Button look lives on `.ui-btn*` (ui.css); this host only keeps the legacy hook. */
 .confirm-dialog-buttons {
-  display: flex;
-  gap: var(--spacing-sm);
-  justify-content: flex-end;
-}
-.confirm-dialog-cancel {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 14px;
-  cursor: pointer;
-}
-.confirm-dialog-confirm {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius);
-  padding: 6px 14px;
-  cursor: pointer;
-}
-.confirm-dialog-danger {
-  background: var(--danger);
-  color: #fff;
+  margin-top: 0;
 }

@@ -620,16 +620,36 @@ app
     recordStartupPhase('skills-mcp')
     await initSkillsRegistry()
     registerSkillTools(registry)
-    await loadMcpServers(registry)
-    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
     await loadCustomTools(registry)
 
     recordStartupPhase('boot-complete')
     // Print the boot timeline and flag any phase over its ceiling (#994). Every
     // expensive thing above scales with something CI does not have — profile
     // size, workspace size, MCP server count — so this is the one place the
-    // number is observable on a real machine.
+    // number is observable on a real machine. Reported here, before the
+    // background work below, so the timeline covers exactly the phases that
+    // gated the boot.
     reportStartupBudget()
+
+    // MCP connects in the background rather than gating boot. Each stdio server
+    // is a process launch and each http server a network round trip, under a 30s
+    // per-server connect timeout (CONNECT_TIMEOUT_MS) — awaited here, one slow or
+    // unreachable server delayed the whole app for everyone.
+    //
+    // Tools arriving after boot is already a supported mode: `loadMcpServers` is
+    // re-run from IPC whenever config or workspace trust changes, and it guards
+    // that with a `loadGeneration` counter. The renderer already listens on
+    // `mcp:status_changed`, so the UI fills in as servers land. (Under e2e this
+    // is a no-op — `loadMcpServers` returns early there and never connects.)
+    void loadMcpServers(registry)
+      .catch((err: unknown) => {
+        console.error('[mcp] initial server load failed:', err)
+      })
+      .finally(() => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('mcp:status_changed', getMcpServerStatuses())
+        }
+      })
     disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)

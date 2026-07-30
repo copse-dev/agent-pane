@@ -232,30 +232,158 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
     })
   })
 
-  it('maps a completed tool_call_update to a tool_result and joins text content', () => {
+  it('preserves arguments and content from an in-progress tool_call_update', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call_update',
       toolCallId: 't9',
-      status: 'completed',
+      title: '`npm test`',
+      status: 'in_progress',
+      rawInput: { command: 'npm test', timeout_ms: 30_000 },
       content: [
         { type: 'content', content: { type: 'text', text: 'part1 ' } },
         { type: 'content', content: { type: 'text', text: 'part2' } },
       ],
     }
     assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_result',
+      type: 'tool_call_update',
       toolCallId: 't9',
+      name: 'npm test',
+      args: { command: 'npm test', timeout_ms: 30_000 },
+      status: 'running',
       result: 'part1 part2',
-      isError: false,
       resultFormat: 'markdown',
     })
   })
 
-  it('ignores non-terminal tool_call_update statuses', () => {
+  it('preserves structured raw output from a completed tool_call_update', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call_update',
       toolCallId: 't9',
-      status: 'in_progress',
+      status: 'completed',
+      rawOutput: { exitCode: 0, stdout: 'all good' },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'done',
+      result: '{\n  "exitCode": 0,\n  "stdout": "all good"\n}',
+      resultFormat: 'markdown',
+    })
+  })
+
+  it('unwraps text from a successful MCP raw-output envelope', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'completed',
+      rawOutput: {
+        result: {
+          content: [
+            { type: 'text', text: 'first block' },
+            { type: 'text', text: 'second block' },
+          ],
+          structuredContent: null,
+          _meta: null,
+        },
+        error: null,
+      },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'done',
+      result: 'first block\nsecond block',
+      resultFormat: 'markdown',
+    })
+  })
+
+  it('prefers unwrapped MCP text when ACP also supplies JSON display content', () => {
+    const rawOutput = {
+      result: {
+        content: [{ type: 'text', text: 'readable result' }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+    }
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'completed',
+      content: [
+        {
+          type: 'content',
+          content: { type: 'text', text: JSON.stringify(rawOutput, null, 2) },
+        },
+      ],
+      rawOutput,
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'done',
+      result: 'readable result',
+      resultFormat: 'markdown',
+    })
+  })
+
+  it('preserves an MCP error envelope instead of hiding its details', () => {
+    const rawOutput = {
+      result: {
+        content: [{ type: 'text', text: 'partial output' }],
+        structuredContent: null,
+      },
+      error: { code: -1, message: 'tool failed' },
+    }
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'failed',
+      rawOutput,
+    }
+    const chunk = sessionUpdateToStreamChunk(update)
+    assert.ok(chunk?.type === 'tool_call_update')
+    assert.equal(chunk.result, JSON.stringify(rawOutput, null, 2))
+  })
+
+  it('preserves structured and mixed-media MCP results', () => {
+    const rawOutputs: unknown[] = [
+      {
+        result: {
+          content: [{ type: 'text', text: 'summary' }],
+          structuredContent: { changedFiles: 2 },
+        },
+        error: null,
+      },
+      {
+        result: {
+          content: [
+            { type: 'text', text: 'caption' },
+            { type: 'image', data: 'encoded-image' },
+          ],
+          structuredContent: null,
+        },
+        error: null,
+      },
+    ]
+
+    for (const rawOutput of rawOutputs) {
+      const update: SessionUpdate = {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 't9',
+        status: 'completed',
+        rawOutput,
+      }
+      const chunk = sessionUpdateToStreamChunk(update)
+      assert.ok(chunk?.type === 'tool_call_update')
+      assert.equal(chunk.result, JSON.stringify(rawOutput, null, 2))
+    }
+  })
+
+  it('ignores an empty tool_call_update', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't9',
     }
     assert.equal(sessionUpdateToStreamChunk(update), null)
   })
@@ -285,6 +413,38 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
         { id: 'acp-plan-1', content: 'read the code', status: 'completed' },
         { id: 'acp-plan-2', content: 'fix the bug', status: 'in_progress' },
       ],
+    })
+  })
+
+  it('maps usage_update to authoritative live context pressure', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'usage_update',
+      used: 80_000,
+      size: 200_000,
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'context_pressure',
+      contextWindow: 200_000,
+      conversationBudget: 200_000,
+      conversationTokens: 80_000,
+      fillRatio: 0.4,
+      source: 'agent-reported',
+    })
+  })
+
+  it('handles a zero-sized usage_update without producing an invalid ratio', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'usage_update',
+      used: 0,
+      size: 0,
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'context_pressure',
+      contextWindow: 0,
+      conversationBudget: 0,
+      conversationTokens: 0,
+      fillRatio: 0,
+      source: 'agent-reported',
     })
   })
 

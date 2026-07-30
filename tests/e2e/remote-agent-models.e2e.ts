@@ -72,6 +72,8 @@ describe('remote agent model picker', () => {
 
     await $('.model-picker-trigger').click()
     await $('.model-picker-menu .model-picker-option').waitForExist({ timeout: 15_000 })
+    await $('.model-picker-browse').click()
+    await $('.model-picker-filter').waitForDisplayed({ timeout: 5_000 })
 
     const picker = await browser.execute(() => {
       const groupLabels = [

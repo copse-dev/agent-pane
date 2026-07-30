@@ -55,13 +55,22 @@ import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
+import { registerUiKit } from './ui/index.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
+
+registerUiKit()
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
   closeFileSearchDialog,
   isFileSearchDialogOpen,
 } from './views/file-search-dialog.ts'
+import {
+  mountCommandPalette,
+  openCommandPalette,
+  closeCommandPalette,
+  isCommandPaletteOpen,
+} from './views/command-palette.ts'
 import {
   mountConversationSearch,
   openConversationSearch,
@@ -99,6 +108,7 @@ import {
   registerPanelKeyboardShortcuts,
   matchFindInChatShortcut,
   matchUiScaleShortcut,
+  matchCommandPaletteShortcut,
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
@@ -200,6 +210,7 @@ async function boot(): Promise<void> {
   mountUpdatePromptDialog(api)
   mountConfirmDialog()
   mountFileSearchDialog(store, api)
+  mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
   const contextWarningBanner = mountContextWarningBanner(api)
@@ -516,10 +527,21 @@ function registerKeyboardShortcuts(): void {
       e.preventDefault()
       if (store.getState().workspaceRoot) openFileSearchDialog()
     }
+    // Cmd/Ctrl+Shift+K opens the command palette (threads, projects, panels,
+    // commands). Works without a workspace so its commands stay reachable.
+    if (matchCommandPaletteShortcut(e)) {
+      e.preventDefault()
+      openCommandPalette()
+    }
     // Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat).
     // Skipped while a modal dialog owns the screen so it can't open behind it.
     if (matchFindInChatShortcut(e)) {
-      if (isFileSearchDialogOpen() || isSettingsDialogOpen() || isKeyboardShortcutsDialogOpen())
+      if (
+        isFileSearchDialogOpen() ||
+        isCommandPaletteOpen() ||
+        isSettingsDialogOpen() ||
+        isKeyboardShortcutsDialogOpen()
+      )
         return
       e.preventDefault()
       openConversationSearch()
@@ -548,6 +570,10 @@ function registerKeyboardShortcuts(): void {
       void confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isCommandPaletteOpen()) {
+        closeCommandPalette()
+        return
+      }
       if (isKeyboardShortcutsDialogOpen()) {
         closeKeyboardShortcutsDialog()
         return
