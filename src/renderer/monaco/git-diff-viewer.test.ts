@@ -23,6 +23,22 @@ function forceSize(el: HTMLElement, width: number, height: number): void {
   Object.defineProperty(el, 'offsetHeight', { configurable: true, value: height })
 }
 
+async function withDeadline<T>(promise: Promise<T>, timeoutMs = 500): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 describe('whenDiffHostVisible', () => {
   it('resolves true immediately when the host already has a layout box', async () => {
     const host = document.createElement('div')
@@ -46,7 +62,7 @@ describe('whenDiffHostVisible', () => {
     // flicking files never attaches a model.
     current = false
     const started = Date.now()
-    assert.equal(await pending, false)
+    assert.equal(await withDeadline(pending), false)
     assert.ok(Date.now() - started < 500, 'stale wait must not block on visibility')
   })
 
@@ -61,6 +77,6 @@ describe('whenDiffHostVisible', () => {
       host.hidden = false
       forceSize(host, 200, 100)
     })
-    assert.equal(await pending, true)
+    assert.equal(await withDeadline(pending), true)
   })
 })
