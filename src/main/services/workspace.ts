@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -15,6 +16,13 @@ const ACTIVE_PROJECT_KEY = 'activeProjectId'
 const storedWorkspaceRoot = storageGet(WORKSPACE_KEY)
 let workspaceRoot: string | null =
   typeof storedWorkspaceRoot === 'string' ? storedWorkspaceRoot : null
+
+const explicitWorkspace = new AsyncLocalStorage<{ readonly root: string }>()
+
+/** Scope workspace-dependent product services to an explicit headless run root. */
+export function runWithWorkspaceRoot<T>(root: string, fn: () => T): T {
+  return explicitWorkspace.run({ root }, fn)
+}
 
 /** Roots the renderer may activate via `workspace:set` (dialog-opened or persisted projects). */
 const allowedWorkspaceRoots = new Set<string>()
@@ -249,7 +257,7 @@ export function clearAllowedWorkspaceRootsForTest(): void {
 }
 
 export function getWorkspaceRoot(): string | null {
-  return workspaceRoot
+  return explicitWorkspace.getStore()?.root ?? workspaceRoot
 }
 
 /**
@@ -278,9 +286,11 @@ export function getProjectRoot(projectId: string): string | null {
 }
 
 export function getActiveProjectRoot(): string | null {
+  const currentRoot = getWorkspaceRoot()
+  if (explicitWorkspace.getStore()) return currentRoot
   const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)
-  if (typeof activeProjectId !== 'string') return workspaceRoot
-  return getProjectRoot(activeProjectId) ?? workspaceRoot
+  if (typeof activeProjectId !== 'string') return currentRoot
+  return getProjectRoot(activeProjectId) ?? currentRoot
 }
 
 /** Resolve a persisted project's id/name/path (e.g. for the roadmap exporter's project metadata). */
@@ -386,8 +396,9 @@ export async function resolveWorkspacePath(
   path: string,
   backend: PathBackend = getActivePathBackend(),
 ): Promise<string> {
-  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  return resolvePathWithinRoot(path, workspaceRoot, backend)
+  const root = getWorkspaceRoot()
+  if (!root) throw new Error('No workspace open. Use Open Folder first.')
+  return resolvePathWithinRoot(path, root, backend)
 }
 
 /** Resolve a path against an explicit trusted root, with the workspace containment rules. */
@@ -489,8 +500,9 @@ export async function resolveReadablePath(
   path: string,
   backend: PathBackend = getActivePathBackend(),
 ): Promise<string> {
-  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  return resolveReadablePathWithinRoot(path, workspaceRoot, backend)
+  const root = getWorkspaceRoot()
+  if (!root) throw new Error('No workspace open. Use Open Folder first.')
+  return resolveReadablePathWithinRoot(path, root, backend)
 }
 
 /** Explicit-root variant used by agent turns whose checkout differs from the project root. */
@@ -539,8 +551,9 @@ export async function assertWorkspaceWriteTarget(
   absPath: string,
   backend: PathBackend = getActivePathBackend(),
 ): Promise<void> {
-  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  return assertWriteTargetWithinRoot(absPath, workspaceRoot, backend)
+  const root = getWorkspaceRoot()
+  if (!root) throw new Error('No workspace open. Use Open Folder first.')
+  return assertWriteTargetWithinRoot(absPath, root, backend)
 }
 
 /** Explicit-root write guard for thread checkouts. */
@@ -586,8 +599,9 @@ export async function isResolvedPathInsideWorkspace(
   absPath: string,
   backend: PathBackend = getActivePathBackend(),
 ): Promise<boolean> {
-  if (!workspaceRoot) return false
-  return isResolvedPathInsideRoot(absPath, workspaceRoot, backend)
+  const root = getWorkspaceRoot()
+  if (!root) return false
+  return isResolvedPathInsideRoot(absPath, root, backend)
 }
 
 /** Explicit-root TOCTOU containment check for task worktrees and shared checkouts. */
@@ -609,8 +623,9 @@ export async function toRelativePath(
   absPath: string,
   backend: PathBackend = getActivePathBackend(),
 ): Promise<string> {
-  if (!workspaceRoot) return absPath
-  return toRelativePathWithinRoot(absPath, workspaceRoot, backend)
+  const root = getWorkspaceRoot()
+  if (!root) return absPath
+  return toRelativePathWithinRoot(absPath, root, backend)
 }
 
 /** Convert an absolute path to the relative form for one explicit checkout root. */
