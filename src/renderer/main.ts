@@ -441,7 +441,7 @@ function mountFullLayout(): void {
   })
   handleStopShortcut = inputBar.handleStopShortcut
   const conversationRoot = requireElement('conversation')
-  mountConversation(conversationRoot, store, api, inputRoot)
+  mountConversation(conversationRoot, store, api)
   mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')

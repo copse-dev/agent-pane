@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
   arrowDownIcon,
   checkIcon,
@@ -120,7 +121,16 @@ function createToolHeader(
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
 ): HTMLElement {
-  const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
+  // Keep a fixed-width leading slot in every state so the label never shifts
+  // when a running tool settles. The animated icon itself is omitted once done.
+  const activityIcon = el('span', {
+    class: 'tool-activity-icon-slot',
+    'aria-hidden': 'true',
+  })
+  if (status === 'running') {
+    activityIcon.append(reasoningActivityIcon('reasoning-activity-icon'))
+  }
+  const children: (Node | string)[] = [activityIcon, el('span', { class: 'tool-name' }, label)]
   if (editStats) {
     const stats = [
       el('span', { class: 'tool-stat tool-stat-add' }, `+${String(editStats.additions)}`),
@@ -785,12 +795,13 @@ function shouldNestReasoningInTools(toolCalls: ToolCall[]): boolean {
 
 /** Progressive while this bubble is the live step; past once settled. */
 function reasoningDisclosureTitle(live: boolean): string {
-  return live ? 'Reasoning' : 'Reasoned'
+  return live ? 'Reasoning…' : 'Reasoned'
 }
 
 function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean): void {
   const title = details.querySelector('.message-reasoning-title')
   if (title) title.textContent = reasoningDisclosureTitle(live)
+  details.classList.toggle('message-reasoning-live', live)
 }
 
 /** Live = running thread, this is the latest bubble, and no answer text yet. */
@@ -862,11 +873,18 @@ function renderUserTranscript(
  * never fight the user's choice.
  */
 function buildReasoningEl(reasoning: string, open: boolean, live: boolean): HTMLDetailsElement {
-  const details = el('details', { class: 'message-reasoning', open })
+  const details = el('details', {
+    class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
+    open,
+  })
   const summary = el(
     'summary',
     { class: 'message-reasoning-summary' },
-    el('span', { class: 'message-reasoning-icon', 'aria-hidden': 'true' }),
+    el(
+      'span',
+      { class: 'message-reasoning-icon', 'aria-hidden': 'true' },
+      reasoningActivityIcon('reasoning-activity-icon'),
+    ),
     el('span', { class: 'message-reasoning-title' }, reasoningDisclosureTitle(live)),
   )
   const text = el('div', { class: 'message-reasoning-text' })
@@ -961,12 +979,7 @@ const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
-export function mountConversation(
-  root: HTMLElement,
-  store: AppStore,
-  api: ApiClient,
-  activityHost?: HTMLElement,
-): () => void {
+export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -984,12 +997,10 @@ export function mountConversation(
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
-  activityBar.append(
-    el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
-    activityLabel,
-  )
-  // Clicking the activity row jumps to and opens the latest reasoning trail so the
-  // "Reasoning…" indicator is itself the way in to watching the model reason.
+  activityBar.append(reasoningActivityIcon('reasoning-activity-icon'), activityLabel)
+  // Non-reasoning activity can still reopen the latest trail (for example while
+  // the answer is being written). During reasoning, the live disclosure itself
+  // replaces this standalone row.
   activityBar.addEventListener('click', () => {
     const trails = list.querySelectorAll<HTMLDetailsElement>('.msg-assistant .message-reasoning')
     const details = trails[trails.length - 1]
@@ -1003,11 +1014,6 @@ export function mountConversation(
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   root.append(scrollArea, queuedHost)
-  // In the full app, activity is the composer's top strip so it reads as part
-  // of the message box rather than a separate full-width status bar. Component
-  // mounts can omit the host and keep the self-contained fallback.
-  if (activityHost) activityHost.prepend(activityBar)
-  else root.append(activityBar)
 
   // Clicking a file edit's +/- counts reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
@@ -1316,6 +1322,17 @@ export function mountConversation(
       return
     }
     activityLabel.textContent = label
+    // Once reasoning tokens exist, the disclosure title is the activity row.
+    // Keep the standalone row for the initial wait before the first token, but
+    // never show two live "Reasoning…" labels in the transcript.
+    if (
+      label.startsWith('Reasoning…') &&
+      list.querySelector('.message-reasoning.message-reasoning-live')
+    ) {
+      activityBar.hidden = true
+      scrollToBottom()
+      return
+    }
     // Only advertise the row as clickable once there's a reasoning trail to open.
     activityBar.classList.toggle(
       'agent-activity-clickable',
@@ -1614,8 +1631,12 @@ export function mountConversation(
     // cards are anchored inline after their own message (see renderMessageReview)
     // and stay put — a new message naturally lands after them.
     const trailingCard = list.querySelector('[data-comparison-card]')
-    if (trailingCard) list.insertBefore(msgEl, trailingCard)
-    else list.append(msgEl)
+    if (trailingCard) {
+      // The activity row sits immediately above a trailing comparison. Insert
+      // the message above both so the status remains the transcript's live tail
+      // while the comparison preserves its last-child contract.
+      list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
+    } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
@@ -1828,6 +1849,9 @@ export function mountConversation(
       queuedHost.replaceChildren()
       queuedHost.hidden = true
     }
+    // Activity is transcript content, not composer chrome. Keep it beneath the
+    // messages but above a trailing comparison card, which remains last.
+    list.insertBefore(activityBar, list.querySelector('[data-comparison-card]'))
     updateScrollButton()
   }
 
@@ -1889,6 +1913,7 @@ export function mountConversation(
       if (msg?.role === 'assistant' && msgEl) {
         syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
         activityBar.classList.add('agent-activity-clickable')
+        setActivity(activityLabel.textContent)
         scrollToBottom()
       }
     }),
@@ -1959,7 +1984,6 @@ export function mountConversation(
   rebuildForThread()
   syncFromStore()
   return () => {
-    if (activityHost) activityBar.remove()
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
