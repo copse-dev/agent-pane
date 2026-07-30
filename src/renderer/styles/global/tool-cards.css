@@ -39,6 +39,14 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+.tool-activity-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--font-size-lg);
+  height: var(--font-size-lg);
+  flex: 0 0 var(--font-size-lg);
+}
 .tool-card[open] .tool-card-header {
   margin-bottom: var(--spacing-xs);
 }
@@ -138,6 +146,9 @@
 }
 .tool-rollup-body > .message-reasoning > .message-reasoning-summary {
   margin-inline: calc(-1 * var(--spacing-xs));
+}
+.tool-rollup-body .reasoning-activity-icon {
+  color: var(--text-secondary);
 }
 
 .tool-card-group > .tool-group-items {
