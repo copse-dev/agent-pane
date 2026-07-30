@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import {
   clearWorkspaceTrustForTest,
   isWorkspaceTrusted,
+  runWithWorkspaceTrust,
   setWorkspaceTrusted,
 } from './workspace-trust.ts'
 
@@ -52,5 +53,18 @@ describe('workspace trust gate (#100)', () => {
     } finally {
       rmSync(other, { recursive: true, force: true })
     }
+  })
+
+  it('uses scoped trust without inheriting or replacing persisted trust', async () => {
+    setWorkspaceTrusted(dir, true)
+
+    await runWithWorkspaceTrust(dir, false, async () => {
+      assert.equal(isWorkspaceTrusted(dir), false)
+      assert.throws(() => {
+        setWorkspaceTrusted(dir, true)
+      }, /Cannot mutate workspace trust inside an explicit host profile/)
+    })
+
+    assert.equal(isWorkspaceTrusted(dir), true)
   })
 })

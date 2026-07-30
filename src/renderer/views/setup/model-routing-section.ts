@@ -6,6 +6,7 @@ import { fetchRoleModelOptions, localModelOptions, type ModelOption } from '../m
 import { mountModelSelectPicker } from '../model-picker.ts'
 import { el } from '../../dom/helpers.ts'
 import { optionalString, stringRecordOrEmpty } from '@shared/unknown-value.ts'
+import { uiField } from '../../ui/index.ts'
 
 export interface ModelRoutingSection {
   root: HTMLElement
@@ -23,14 +24,8 @@ export interface ModelRoutingSectionOptions {
   modelScope?: 'all' | 'local'
 }
 
-function routingField(label: string, control: HTMLElement, hint: string): HTMLLabelElement {
-  return el(
-    'label',
-    { class: 'setup-field' },
-    el('span', { class: 'setup-field-label' }, label),
-    control,
-    el('span', { class: 'field-hint' }, hint),
-  )
+function routingField(label: string, control: HTMLElement, hint: string): HTMLElement {
+  return uiField({ label, control, hint })
 }
 
 export function createModelRoutingSection(

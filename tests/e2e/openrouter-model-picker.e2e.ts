@@ -8,7 +8,7 @@ import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 const OPENROUTER_FIXTURE_PORT = 51235
 
 // Mimics OpenRouter's /models payload: a free tool-capable model, a free model
-// without tool support (filtered out), a paid tool-capable model (shown when
+// without tool support (filtered out), paid tool-capable models (shown when
 // free mode is off), and a non-text generator (filtered out).
 const MODELS_PAYLOAD = {
   data: [
@@ -33,6 +33,14 @@ const MODELS_PAYLOAD = {
       name: 'Claude 3.5 Sonnet (paid)',
       context_length: 200000,
       pricing: { prompt: '0.000003', completion: '0.000015' },
+      supported_parameters: ['tools'],
+      architecture: { modality: 'text->text' },
+    },
+    {
+      id: 'google/gemini-2.5-pro',
+      name: 'Gemini 2.5 Pro (paid)',
+      context_length: 1048576,
+      pricing: { prompt: '0.00000125', completion: '0.00001' },
       supported_parameters: ['tools'],
       architecture: { modality: 'text->text' },
     },
@@ -91,11 +99,32 @@ describe('OpenRouter model picker', () => {
     if (fixture) await fixture.close()
   })
 
-  it('lists all tool-capable models from the live catalog by default', async () => {
+  it('starts with recent models and opens the full catalog on demand', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
     await $('.model-picker-trigger').click()
     await $('.model-picker-menu .model-picker-option').waitForExist({ timeout: 15_000 })
+
+    const recent = await browser.execute(() => {
+      const groupLabels = [
+        ...document.querySelectorAll<HTMLElement>('.model-picker-group-label'),
+      ].map((el) => el.textContent?.trim())
+      const optionLabels = [
+        ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
+      ].map((el) => el.textContent?.trim() ?? '')
+      const title = document.querySelector<HTMLElement>('.model-picker-view-title')?.textContent
+      return { groupLabels, optionLabels, title: title?.trim() }
+    })
+
+    assert.equal(recent.title, 'Recent')
+    assert.deepEqual(recent.groupLabels, [])
+    assert.deepEqual(recent.optionLabels, ['Qwen3 235B A22B (free)', 'Claude 3.5 Sonnet (paid)'])
+    assert.ok(!recent.optionLabels.includes('Gemini 2.5 Pro (paid)'))
+
+    await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
+
+    await $('.model-picker-browse').click()
+    await $('.model-picker-filter').waitForDisplayed()
 
     const picker = await browser.execute(() => {
       const groupLabels = [
@@ -122,6 +151,10 @@ describe('OpenRouter model picker', () => {
       `expected the paid Claude model, saw ${JSON.stringify(picker.optionLabels)}`,
     )
     assert.ok(
+      picker.optionLabels.includes('Gemini 2.5 Pro (paid)'),
+      `expected the paid Gemini model, saw ${JSON.stringify(picker.optionLabels)}`,
+    )
+    assert.ok(
       !picker.optionLabels.some((l) => l.includes('GLM 4.5 Air')),
       'free model without tool support should be filtered out',
     )
@@ -130,7 +163,11 @@ describe('OpenRouter model picker', () => {
       'custom id that matches the live catalog should not duplicate',
     )
 
-    await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
+    await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-all.png')
+    await browser.keys('Escape')
+    await $('.model-picker-filter').waitForDisplayed({ reverse: true })
+    await browser.keys('Escape')
+    await $('.model-picker-menu').waitForDisplayed({ reverse: true })
   })
 
   it('moves the highlighted model with arrow keys and applies it with Enter', async () => {
@@ -142,10 +179,10 @@ describe('OpenRouter model picker', () => {
     await $('.model-picker-menu .model-picker-option').waitForDisplayed({ timeout: 5_000 })
     assert.equal(
       await browser.execute(() =>
-        document.activeElement?.classList.contains('model-picker-filter'),
+        document.activeElement?.classList.contains('model-picker-option'),
       ),
       true,
-      'filter should be focused when the picker opens',
+      'the current recent model should be focused when the picker opens',
     )
 
     const initialOptions = await browser.execute(() =>
@@ -159,13 +196,13 @@ describe('OpenRouter model picker', () => {
     assert.deepEqual(
       initialOptions,
       [
-        { text: 'Claude 3.5 Sonnet (paid)', active: 'false' },
         { text: 'Qwen3 235B A22B (free)', active: 'true' },
+        { text: 'Claude 3.5 Sonnet (paid)', active: 'false' },
       ],
       'the currently applied model should be highlighted when the picker opens',
     )
 
-    await browser.keys('ArrowUp')
+    await browser.keys('ArrowDown')
     const afterArrow = await browser.execute(() =>
       [
         ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
@@ -176,13 +213,15 @@ describe('OpenRouter model picker', () => {
       })),
     )
     assert.deepEqual(afterArrow, [
-      { text: 'Claude 3.5 Sonnet (paid)', active: 'true', hasActiveClass: true },
       { text: 'Qwen3 235B A22B (free)', active: 'false', hasActiveClass: false },
+      { text: 'Claude 3.5 Sonnet (paid)', active: 'true', hasActiveClass: true },
     ])
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-keyboard.png')
 
     // prepareE2eScreenshot can steal focus; put it back before applying.
-    await $('.model-picker-filter').click()
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('.model-picker-option.is-active')?.focus()
+    })
     await browser.keys('Enter')
     await $('.model-picker-menu').waitForDisplayed({ reverse: true, timeout: 5_000 })
     assert.equal((await $('.model-picker-label').getText()).trim(), 'Claude 3.5 Sonnet (paid)')
@@ -197,6 +236,7 @@ describe('OpenRouter model picker', () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await browser.keys('Escape')
     await $('.model-picker-trigger').click()
+    await $('.model-picker-browse').click()
     const filter = await $('.model-picker-filter')
     assert.equal(
       await browser.execute(() =>
@@ -225,6 +265,8 @@ describe('OpenRouter model picker', () => {
 
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-filter.png')
 
+    await browser.keys('Escape')
+    await $('.model-picker-filter').waitForDisplayed({ reverse: true })
     await browser.keys('Escape')
     await $('.model-picker-menu').waitForDisplayed({ reverse: true })
     assert.equal(

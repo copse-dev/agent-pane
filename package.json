@@ -55,6 +55,7 @@
     "bench:skills:build-agent": "node scripts/build-skillsbench-agent.mts",
     "bench:skills:fleet": "node scripts/run-skillsbench-fleet.mts",
     "bench:swe-tasks": "node scripts/fetch-swe-bench-subset.mts",
+    "gen:headless-schema": "node scripts/gen-headless-schema.mts",
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "runners:burst": "node scripts/burst-runners.mts",
     "runners:burst:scw": "node scripts/burst-runners.mts scaleway",

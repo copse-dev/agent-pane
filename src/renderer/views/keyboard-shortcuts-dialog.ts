@@ -61,6 +61,7 @@ const SECTIONS: ShortcutSection[] = [
     title: 'Navigation',
     shortcuts: [
       { label: 'Quick open (files, roadmap)', keys: ['Mod', 'P'] },
+      { label: 'Command palette (threads, projects…)', keys: ['Mod', 'Shift', 'K'] },
       { label: 'Find in conversation', keys: ['Mod', 'F'] },
       { label: 'Previous thread', keys: ['Alt', '←'] },
       { label: 'Next thread', keys: ['Alt', '→'] },

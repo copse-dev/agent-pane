@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { runCommand } from './exec/command-runner.ts'
 import { probeIndexedGrepBackends, type IndexedGrepBackend } from './search/indexed-grep.ts'
 import {
@@ -16,6 +17,19 @@ import { getSshConnectionManager } from './ssh-workspace/connection-manager.ts'
 let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null
 let ghAvail: boolean | null = null
+
+export interface ExplicitToolAvailability {
+  readonly rg: boolean
+  readonly git: boolean
+  readonly gh: boolean
+}
+
+const explicitAvailability = new AsyncLocalStorage<ExplicitToolAvailability>()
+
+/** Scope deterministic tool probes to one headless profile without mutating desktop startup state. */
+export function runWithToolAvailability<T>(availability: ExplicitToolAvailability, fn: () => T): T {
+  return explicitAvailability.run(availability, fn)
+}
 
 /**
  * The probes {@link checkToolAvailability} runs, injectable so a test can drive
@@ -53,6 +67,7 @@ let probing: Promise<void> | null = null
 
 /** Resolve once the startup probe has answered — a no-op if none was started. */
 export async function whenToolAvailabilityProbed(): Promise<void> {
+  if (explicitAvailability.getStore()) return
   if (probing) await probing
 }
 
@@ -109,9 +124,10 @@ async function runToolAvailabilityProbes(deps: ToolAvailabilityDeps): Promise<vo
     )
 }
 
-export const isRgAvailable = (): boolean => rgAvail === true
-export const isGitAvailable = (): boolean => gitAvail === true
-export const isGhAvailable = (): boolean => ghAvail === true
+export const isRgAvailable = (): boolean => explicitAvailability.getStore()?.rg ?? rgAvail === true
+export const isGitAvailable = (): boolean =>
+  explicitAvailability.getStore()?.git ?? gitAvail === true
+export const isGhAvailable = (): boolean => explicitAvailability.getStore()?.gh ?? ghAvail === true
 
 /**
  * Whether git is available for the active (or given) execution target. Local
