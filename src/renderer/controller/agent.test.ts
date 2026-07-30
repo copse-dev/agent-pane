@@ -429,6 +429,27 @@ test('usage chunks accumulate into the thread total and per-model breakdown', ()
   assert.deepEqual(usage.byModel?.['m1'], { inputTokens: 15, outputTokens: 5 })
 })
 
+test('context pressure persists the agent-reported used and window values', () => {
+  const { store, send } = setup()
+  send({
+    type: 'context_pressure',
+    contextWindow: 200_000,
+    conversationBudget: 200_000,
+    conversationTokens: 80_000,
+    fillRatio: 0.4,
+    source: 'agent-reported',
+  })
+
+  assert.deepEqual(requireThread(store, 't1').contextSnapshot, {
+    contextWindow: 200_000,
+    conversationBudget: 200_000,
+    conversationTokens: 80_000,
+    fillRatio: 0.4,
+    source: 'agent-reported',
+    updatedAt: requireThread(store, 't1').contextSnapshot?.updatedAt,
+  })
+})
+
 test('done finalizes the message, sets the thread idle, and resets stream state', () => {
   const { send, messages, messageDone, store } = setup()
   send({ type: 'text', text: 'answer' })
