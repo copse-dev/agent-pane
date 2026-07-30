@@ -1507,6 +1507,67 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
   })
 }
 
+/** ACP thread whose context snapshot represents a `usage_update` from the agent. */
+export function seedAcpUsageUpdateFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-usage-update-project'
+  const threadId = 'e2e-acp-usage-update-thread'
+  const contextWindow = 200_000
+  const used = 80_000
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSettings({
+    registeredAcpAgents: [
+      {
+        id: 'claude-agent-acp',
+        title: 'Claude',
+        command: 'claude-agent-acp',
+        enabled: true,
+        availableModels: [{ value: 'default', label: 'Default' }],
+      },
+    ],
+  })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP context usage',
+        status: 'idle',
+        model: 'acp:claude-agent-acp#default',
+        messages: [
+          {
+            id: 'msg-user-acp-usage',
+            role: 'user',
+            content: 'Inspect the project.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-usage',
+            role: 'assistant',
+            content: 'I inspected the project and summarized the relevant files.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 544, outputTokens: 285 },
+        contextSnapshot: {
+          contextWindow,
+          conversationBudget: contextWindow,
+          conversationTokens: used,
+          fillRatio: used / contextWindow,
+          source: 'agent-reported',
+          updatedAt: now + 1,
+        },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
 export function seedPortraitRightPanelFixture(
   workspaceRoot: string,
   autoPortraitRightPanel: boolean,
