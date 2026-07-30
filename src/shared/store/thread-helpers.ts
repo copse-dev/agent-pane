@@ -159,17 +159,23 @@ export function openNewThread(store: AppStore): string {
 }
 
 export function switchThread(store: AppStore, id: string): void {
-  if (id === store.getState().activeThreadId) return
+  const state = store.getState()
+  if (id === state.activeThreadId) return
   store.emit('composer_draft_flush')
+
+  // Fold blank-thread pruning into the switch mutation. `threads_changed` has
+  // many render and persistence subscribers, so emitting once for selection and
+  // again for pruning repeated almost the entire switch path on every click.
+  const pruned = state.threads.filter((t) => !isPrunableBlankThread(t) || t.id === id)
+  const threads = pruned.length > 0 ? pruned : state.threads
   store.setState({
     activeThreadId: id,
+    threads,
     openFile: null,
     activeDiff: null,
     stagedDiffs: [],
   })
   store.emit('panel_changed')
-  store.emit('threads_changed')
-  pruneBlankThreads(store, new Set([id]))
   store.emit('threads_changed')
 }
 

@@ -115,6 +115,20 @@ describe('blank thread reuse', () => {
     assert.equal(store.getState().activeThreadId, usedId)
   })
 
+  it('emits one threads_changed event for a switch including blank pruning', () => {
+    const store = createStore()
+    const usedId = createThread(store)
+    addMessage(store, usedId, 'user', 'hello')
+    createThread(store)
+    let changes = 0
+    store.on('threads_changed', () => changes++)
+
+    switchThread(store, usedId)
+
+    assert.equal(changes, 1)
+    assert.equal(store.getState().threads.length, 1)
+  })
+
   it('switching away from a blank thread keeps it when it has a draft prompt', () => {
     const store = createStore()
     const usedId = createThread(store)
