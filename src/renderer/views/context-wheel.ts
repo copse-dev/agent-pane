@@ -27,6 +27,8 @@ function pctOf(part: number, whole: number): number {
 export interface ContextWheelOptions {
   usageLine?: string | null
   breakdown?: ContextBreakdown | null
+  /** Label shown when the live snapshot came from an external agent. */
+  snapshotSource?: string | null
   /**
    * When true the multi-arc breakdown ring replaces the live snapshot fill
    * (pre-send / fresh threads). When false the measured snapshot ring stays,
@@ -86,10 +88,10 @@ export function createContextWheel(): {
   svg.append(track, segGroup, fill)
   root.append(svg, label, popover)
 
-  let breakdownActive = false
+  let popoverActive = false
 
   function showPopover(): void {
-    if (breakdownActive) popover.hidden = false
+    if (popoverActive) popover.hidden = false
   }
   function hidePopover(): void {
     popover.hidden = true
@@ -134,7 +136,7 @@ export function createContextWheel(): {
   }
 
   function renderBreakdown(breakdown: ContextBreakdown): void {
-    breakdownActive = true
+    popoverActive = true
     root.hidden = false
     root.classList.add('has-breakdown')
     root.tabIndex = 0
@@ -187,12 +189,27 @@ export function createContextWheel(): {
   }
 
   function resetToSnapshotMode(): void {
-    breakdownActive = false
+    popoverActive = false
     hidePopover()
     root.classList.remove('has-breakdown')
     root.removeAttribute('tabindex')
     fill.style.display = ''
     clearSegments()
+  }
+
+  /** Build an aggregate-only popover for an agent-reported live snapshot. */
+  function renderSnapshotPopover(snapshot: ContextSnapshot, source: string): void {
+    const pct = pctOf(snapshot.conversationTokens, snapshot.conversationBudget)
+    clearPopover()
+    const header = document.createElement('div')
+    header.className = 'context-wheel-popover-header'
+    header.textContent = `Context · ${formatTokenCount(
+      snapshot.conversationTokens,
+    )} / ${formatTokenCount(snapshot.conversationBudget)} (${String(pct)}%)`
+    const note = document.createElement('div')
+    note.className = 'context-wheel-popover-note'
+    note.textContent = source
+    popover.append(header, note)
   }
 
   function renderSnapshot(
@@ -222,13 +239,18 @@ export function createContextWheel(): {
 
     // Existing (already-run) chats keep the measured live-fill ring, but still
     // expose the part-by-part breakdown on hover when one is available. Subagent
-    // and remote-agent windows don't report a breakdown, so they fall through
-    // here with no popover — matching their non-interactive presentation.
+    // and remote-agent windows don't report a breakdown or source label, so
+    // they fall through here with no popover. ACP snapshots carry a source label
+    // and get an aggregate-only popover instead.
     const breakdown = options?.breakdown
     if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
-      breakdownActive = true
+      popoverActive = true
       root.tabIndex = 0
       renderPopover(breakdown)
+    } else if (options?.snapshotSource) {
+      popoverActive = true
+      root.tabIndex = 0
+      renderSnapshotPopover(snapshot, options.snapshotSource)
     }
   }
 

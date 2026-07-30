@@ -59,7 +59,11 @@ grinding out large amounts of work before those PRs merge.
   the configured small-tasks model (the local default used for titles/summaries), falling
   back to a deterministic template when no model is available
   (`src/main/services/roadmap-issue-import.ts`). Issues already pinned by an item are
-  shown but not re-importable.
+  shown but not re-importable. After the list loads, the same small-tasks model also
+  judges which _unpinned_ open issues are already covered by an existing roadmap prompt
+  (`src/main/services/roadmap-issue-coverage.ts`); `likely` matches are disabled with a
+  "covered by …" badge, `partial` stays selectable as "maybe covered by …". No model →
+  pin status only (same stance as fit-check).
 - **Complexity on save** — saving a prompt (create, edit, or import) classifies its
   complexity one-shot as `low` / `medium` / `high` via the small-tasks model only
   (`src/main/services/roadmap-complexity.ts`; vocabulary in

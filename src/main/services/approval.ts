@@ -1,4 +1,5 @@
 import type { BrowserWindow, IpcMain } from 'electron'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import {
   approvalRespondSchema,
@@ -66,6 +67,22 @@ export type ApprovalHandler = (
 ) => Promise<ApprovalResponse>
 
 let handler: ApprovalHandler | null = null
+interface ScopedApprovalHandler {
+  readonly handler: ApprovalHandler
+  readonly dedupePrefix: string
+}
+
+const scopedHandler = new AsyncLocalStorage<ScopedApprovalHandler>()
+let nextScopedHandlerId = 0
+
+/** Scope non-interactive approvals to one headless run without replacing the desktop handler. */
+export function runWithApprovalHandler<T>(next: ApprovalHandler, fn: () => T): T {
+  nextScopedHandlerId++
+  return scopedHandler.run(
+    { handler: next, dedupePrefix: `headless-${String(nextScopedHandlerId)}` },
+    fn,
+  )
+}
 
 /** In-flight coalesced approvals keyed by {@link approvalDedupeKey}. */
 interface InflightApproval {
@@ -206,12 +223,19 @@ export function requestApproval(
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
-  const activeHandler = handler
+  const scoped = scopedHandler.getStore()
+  const activeHandler = scoped?.handler ?? handler
   if (!activeHandler) return Promise.resolve(DENIED)
 
   const threadId = getActiveRunThread() ?? undefined
   return withRunDeadlinePaused(threadId, () =>
-    requestApprovalUnpaused(req, activeHandler, signal, threadId ?? null),
+    requestApprovalUnpaused(
+      req,
+      activeHandler,
+      signal,
+      threadId ?? null,
+      scoped?.dedupePrefix ?? 'desktop',
+    ),
   )
 }
 
@@ -220,10 +244,11 @@ function requestApprovalUnpaused(
   activeHandler: ApprovalHandler,
   signal: AbortSignal | undefined,
   threadId: string | null,
+  dedupePrefix: string,
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
 
-  const key = approvalDedupeKey(req)
+  const key = `${dedupePrefix}:${approvalDedupeKey(req)}`
 
   return new Promise<ApprovalResponse>((resolve) => {
     // Register the waiter before invoking the handler so a synchronous settle
