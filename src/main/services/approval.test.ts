@@ -6,6 +6,7 @@ import {
   cancelApprovalsForAcpToolCall,
   pendingApprovalCountForThread,
   requestApproval,
+  runWithApprovalHandler,
   setApprovalHandler,
   startDockAttention,
   trackAcpPermissionToolCall,
@@ -106,6 +107,30 @@ describe('requestApproval pluggable transport', () => {
       requestApproval({ ...req, body: 'different command' }),
     ])
     assert.equal(handlerCalls, 2)
+  })
+
+  it('does not coalesce identical requests across scoped headless handlers', async () => {
+    const handlers: string[] = []
+    const first = runWithApprovalHandler(
+      async () => {
+        handlers.push('first')
+        return { approved: true, remember: false }
+      },
+      () => requestApproval(req),
+    )
+    const second = runWithApprovalHandler(
+      async () => {
+        handlers.push('second')
+        return { approved: false, remember: false }
+      },
+      () => requestApproval(req),
+    )
+
+    assert.deepEqual(await Promise.all([first, second]), [
+      { approved: true, remember: false },
+      { approved: false, remember: false },
+    ])
+    assert.deepEqual(handlers.sort(), ['first', 'second'])
   })
 
   it('keeps the shared prompt open when only one coalesced waiter aborts', async () => {
