@@ -67,6 +67,12 @@ function resolveDiffEditor(source: GitDiffEditorSource): GitDiffEditor {
   return typeof source === 'function' ? source() : source
 }
 
+function unrefNodeTimer(timer: unknown): void {
+  if (typeof timer !== 'object' || timer === null || !('unref' in timer)) return
+  const { unref } = timer
+  if (typeof unref === 'function') Reflect.apply(unref, timer, [])
+}
+
 /**
  * Wait until the diff host has a real layout box.
  *
@@ -107,6 +113,10 @@ export async function whenDiffHostVisible(
     // Ancestor unhide (e.g. `#pane-files`) can size the host without mutating
     // it; polling also lets superseded selections abandon the wait promptly.
     const poll = setInterval(tick, 32)
+    // Browser timers are numeric. Under Node's DOM test environment the timer
+    // is an object whose default ref would keep coverage alive indefinitely
+    // whenever a mounted hidden host is intentionally still waiting.
+    unrefNodeTimer(poll)
     requestAnimationFrame(tick)
   })
 }
