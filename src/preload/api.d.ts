@@ -581,6 +581,9 @@ export interface ApiClient {
     importIssues: (
       issues: { number: number; title: string; body: string }[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
+    matchOpenIssues: (
+      issues: { number: number; title: string; body: string }[],
+    ) => Promise<import('../main/services/roadmap-issue-coverage.ts').RoadmapIssueCoverageMatch[]>
     checkFit: (
       id: string,
     ) => Promise<import('../main/services/roadmap-fit-check.ts').RoadmapFitResult>

@@ -387,6 +387,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       issueUrl: () => resolved(null),
       openIssues: () => resolved({ slug: 'copse-dev/agent-pane', issues: [] }),
       importIssues: emptyArray,
+      matchOpenIssues: emptyArray,
       checkFit: unsupported,
       attachmentData: () => resolved(null),
       prepareReview: unsupported,

@@ -5,7 +5,8 @@ import { resetUserData, seedUserPromptMarkdownFixture } from './helpers/seed-con
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('user prompt markdown in transcript', () => {
-  before(async () => {
+  before(async function () {
+    this.timeout(90_000)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''

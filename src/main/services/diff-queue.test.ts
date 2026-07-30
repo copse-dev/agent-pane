@@ -17,6 +17,7 @@ import {
   getRecentStagedDiffDecision,
   getStagedDiffEntry,
   listWorktreeChangesSince,
+  runWithStagedDiffResolver,
   setStagedDiffResolver,
   stageDiff,
   upsertStagedDiffEntry,
@@ -544,6 +545,20 @@ describe('staged-diff resolver (headless host, e.g. ACP)', () => {
     assert.match(message, /Approved and applied/)
     assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'new\n')
     assert.equal(getDiffQueueForTest().length, 0, 'the entry should not linger once resolved')
+  })
+
+  ownedIt('uses a run-scoped resolver without replacing the desktop resolver', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+    setStagedDiffResolver(async () => false)
+
+    const message = await runWithStagedDiffResolver(
+      async () => true,
+      () => stageDiff('a.txt', 'old\n', 'new\n', 'plaintext'),
+    )
+
+    assert.match(message, /Approved and applied/)
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'new\n')
+    assert.equal(getDiffQueueForTest().length, 0)
   })
 
   ownedIt(
