@@ -1430,6 +1430,45 @@ dialog.settings-overlay::backdrop {
   min-width: 180px;
 }
 
+.parallel-search-pack-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-sm);
+}
+.parallel-search-key-fieldset {
+  margin: 0;
+}
+.parallel-search-notice {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.parallel-search-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+.parallel-search-save-btn,
+.parallel-search-clear-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
+}
+.parallel-search-save-btn:hover:not(:disabled),
+.parallel-search-clear-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.parallel-search-save-btn:disabled,
+.parallel-search-clear-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 /* First-party level-3 detail for copse.automations. It lives inside the pack
    row so scope, enablement, and configuration remain one coherent surface. */
 .automation-pack-settings {
