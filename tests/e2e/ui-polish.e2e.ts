@@ -29,35 +29,53 @@ describe('shared UI polish', () => {
   it('integrates status, selections, pane rules, and roadmap field spacing', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    // Keep the mock turn alive long enough to inspect the live activity strip.
-    await setComposerValue('Check the current layout. [[mock:delay_ms 8000]]')
+    // Keep the mock turn alive long enough to inspect both the initial waiting
+    // row and the reasoning-token state that replaces it.
+    await setComposerValue(
+      'Check the current layout. [[mock:delay_ms 1500]] [[mock:reasoning Inspecting the conversation layout and the placement of its live reasoning indicator in the transcript. This sentence intentionally streams long enough for the visual assertion to capture the active state.]]',
+    )
     await $('.submit-btn').click()
     const activity = $('.agent-activity')
     await activity.waitForDisplayed({ timeout: 10_000 })
 
     const composerGeometry = await browser.execute(() => {
       const input = document.getElementById('input-bar')
-      const status = input?.querySelector<HTMLElement>(':scope > .agent-activity')
-      const prompt = input?.querySelector<HTMLElement>('.prompt-input')
-      if (!input || !status || !prompt) return null
-      const inputRect = input.getBoundingClientRect()
+      const messages = document.querySelector<HTMLElement>('.messages-list')
+      const status = messages?.querySelector<HTMLElement>(':scope > .agent-activity')
+      if (!input || !messages || !status) return null
+      const messagesRect = messages.getBoundingClientRect()
       const statusRect = status.getBoundingClientRect()
+      const iconPath = status.querySelector('.reasoning-activity-path')
       return {
         statusIsInsideComposer: input.contains(status),
-        leftEdge: statusRect.left - inputRect.left,
-        rightEdge: inputRect.right - statusRect.right,
-        statusRadius: getComputedStyle(status).borderTopLeftRadius,
-        promptRadius: getComputedStyle(prompt).borderTopLeftRadius,
+        statusIsInsideTranscript: messages.contains(status),
+        leftEdge: statusRect.left - messagesRect.left,
+        rightEdge: messagesRect.right - statusRect.right,
+        hasAnimatedIcon: Boolean(status.querySelector('[data-icon="reasoning-activity"]')),
+        iconAnimation: iconPath ? getComputedStyle(iconPath).animationName : '',
+        reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       }
     })
     assert.ok(composerGeometry, 'composer status geometry must exist')
-    assert.equal(composerGeometry.statusIsInsideComposer, true)
-    // Allow a hair over 1px for fractional layout (seen as ~1.02 on Linux).
-    assert.ok(Math.abs(composerGeometry.leftEdge) <= 2)
-    assert.ok(Math.abs(composerGeometry.rightEdge) <= 2)
-    assert.notEqual(composerGeometry.statusRadius, '0px')
-    assert.equal(composerGeometry.promptRadius, '0px')
-    await saveAppScreenshot('chat-activity-in-composer.png')
+    assert.equal(composerGeometry.statusIsInsideComposer, false)
+    assert.equal(composerGeometry.statusIsInsideTranscript, true)
+    assert.equal(composerGeometry.hasAnimatedIcon, true)
+    assert.equal(
+      composerGeometry.iconAnimation,
+      composerGeometry.reducedMotion ? 'none' : 'reasoning-activity-draw',
+    )
+    assert.ok(composerGeometry.leftEdge >= 0)
+    assert.ok(composerGeometry.rightEdge >= 0)
+
+    const reasoning = $('.message-reasoning-live')
+    await reasoning.waitForDisplayed({ timeout: 10_000 })
+    await expect(reasoning.$('.message-reasoning-title')).toHaveText('Reasoning…')
+    await expect(reasoning.$('[data-icon="reasoning-activity"]')).toExist()
+    await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    // Capture after the draw-in has become a recognizable spiral, while the
+    // deliberately long reasoning fixture is still streaming.
+    await browser.pause(900)
+    await saveAppScreenshot('chat-reasoning-in-transcript.png')
 
     await $('.stop-btn').click()
     await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
