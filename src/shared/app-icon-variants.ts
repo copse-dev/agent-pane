@@ -46,16 +46,16 @@ export const APP_ICON_VARIANT_LABELS: Record<AppIconVariant, string> = {
 }
 
 /**
- * Colour recipe for one icon variant — the two gradient stops of the wave
- * stroke plus the tile background. These are the schemes exported from the
+ * Colour recipe for one icon variant — the two gradient stops of the Copse
+ * glyph plus the tile background. These are the schemes exported from the
  * product icon explorations, and are the single source of truth for both the
- * rasterised PNG/.icns assets (scripts/generate-icon.mts renders the wave mark
+ * rasterised PNG/.icns assets (scripts/generate-icon.mts renders the shared glyph
  * from them) and any in-app colour swatches.
  */
 export interface AppIconScheme {
-  /** Gradient start colour (top-left of the stroke). */
+  /** Gradient start colour (top-left of the glyph). */
   start: string
-  /** Gradient end colour (bottom-right of the stroke). */
+  /** Gradient end colour (bottom-right of the glyph). */
   end: string
   /** Rounded-tile background fill. */
   bg: string
