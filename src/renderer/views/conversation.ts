@@ -121,7 +121,16 @@ function createToolHeader(
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
 ): HTMLElement {
-  const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
+  // Keep a fixed-width leading slot in every state so the label never shifts
+  // when a running tool settles. The animated icon itself is omitted once done.
+  const activityIcon = el('span', {
+    class: 'tool-activity-icon-slot',
+    'aria-hidden': 'true',
+  })
+  if (status === 'running') {
+    activityIcon.append(reasoningActivityIcon('reasoning-activity-icon'))
+  }
+  const children: (Node | string)[] = [activityIcon, el('span', { class: 'tool-name' }, label)]
   if (editStats) {
     const stats = [
       el('span', { class: 'tool-stat tool-stat-add' }, `+${String(editStats.additions)}`),

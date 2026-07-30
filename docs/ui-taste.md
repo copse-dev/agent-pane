@@ -324,6 +324,9 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
   into the live disclosure title so the transcript never shows two reasoning labels. The animated
   spiral sits immediately beside the live label; settled disclosures return to a static chevron.
+- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
+  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
+  place so the existing past-tense label does not jump horizontally; do not keep animating it.
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
