@@ -34,10 +34,14 @@ permissions:
   id-token: write
 
 # Allow one concurrent deployment; let an in-progress run finish. Preview
-# publishes and site pushes share this group and therefore serialize.
+# publishes and site pushes share this group and therefore serialize. Keep a
+# real queue: GitHub's default single pending slot cancels the older pending
+# deployment whenever another preview is published, painting an otherwise
+# successful PR red.
 concurrency:
   group: pages
   cancel-in-progress: false
+  queue: max
 
 jobs:
   deploy:

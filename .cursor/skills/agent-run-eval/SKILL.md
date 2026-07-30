@@ -71,15 +71,18 @@ npm run analyze:thread -- tests/e2e/artifacts/<file>.jsonl tests/e2e/scenarios/m
 
 Optional `expect` block in scenario JSON:
 
-| Field                        | Meaning                                          |
-| ---------------------------- | ------------------------------------------------ |
-| `shouldSteerTodos`           | User message should match `shouldSteerTodos()`   |
-| `requireUpdateTodos`         | At least one `update_todos` tool call            |
-| `maxExplore` / `minExplore`  | Explore count bounds                             |
-| `requireTools`               | e.g. `["git_diff"]` for review tasks             |
-| `forbidTools`                | Tools that should not appear                     |
-| `maxInputTokens`             | Token budget guard                               |
-| `forbidParallelExploreTurn1` | First assistant turn must not launch 2+ explores |
+| Field                        | Meaning                                                    |
+| ---------------------------- | ---------------------------------------------------------- |
+| `shouldSteerTodos`           | User message should match `shouldSteerTodos()`             |
+| `requireUpdateTodos`         | At least one `update_todos` tool call                      |
+| `maxExplore` / `minExplore`  | Explore count bounds                                       |
+| `requireTools`               | e.g. `["git_diff"]` for review tasks                       |
+| `forbidTools`                | Tools that should not appear                               |
+| `maxInputTokens`             | Token budget guard                                         |
+| `forbidParallelExploreTurn1` | First assistant turn must not launch 2+ explores           |
+| `requireDoctrineCompliance`  | Fail when working-style doctrine heuristics violate (#744) |
+| `userIntent`                 | Optional `question` / `request` label for doctrine scoring |
+| `inScopePaths`               | Optional paths for doctrine `scopeDiscipline`              |
 
 ## LLM judge (you)
 

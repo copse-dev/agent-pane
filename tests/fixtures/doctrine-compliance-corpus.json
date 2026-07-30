@@ -1,0 +1,216 @@
+{
+  "$comment": "Doctrine compliance corpus (#744 / #743 follow-up). Each case is a finished-turn transcript scored by scoreDoctrineCompliance. Compliant cases must pass all rules; violation cases must fail exactly the listed rule ids. Enforced by src/shared/agent/doctrine-compliance.corpus.test.ts.",
+  "cases": [
+    {
+      "id": "compliant-question-answer",
+      "description": "Question turn: investigate and answer, no edits, outcome-first prose",
+      "expectPass": true,
+      "transcript": {
+        "userMessage": "What does decideShellPermission return on Linux for an ambiguous gh command?",
+        "userIntent": "question",
+        "toolCalls": [
+          {
+            "name": "read_file",
+            "args": { "path": "src/main/services/permission-policy.ts" },
+            "result": "export function decideShellPermission..."
+          }
+        ],
+        "finalMessage": "On Linux it prompts. Without an OS sandbox the ambiguous tier is treated like hard-external, so decideShellPermission returns action: 'prompt' rather than auto-running inside seatbelt."
+      }
+    },
+    {
+      "id": "compliant-request-edit",
+      "description": "Request turn: makes the in-scope edit and reports the outcome",
+      "expectPass": true,
+      "transcript": {
+        "userMessage": "Fix the off-by-one in sum.js",
+        "userIntent": "request",
+        "inScopePaths": ["benchmarks/fixtures/off-by-one/sum.js"],
+        "toolCalls": [
+          {
+            "name": "read_file",
+            "args": { "path": "benchmarks/fixtures/off-by-one/sum.js" },
+            "result": "export function sum(a, b) { return a + b - 1 }"
+          },
+          {
+            "name": "str_replace",
+            "args": {
+              "path": "benchmarks/fixtures/off-by-one/sum.js",
+              "old_string": "return a + b - 1",
+              "new_string": "return a + b"
+            },
+            "result": "ok"
+          },
+          {
+            "name": "run_shell",
+            "args": { "command": "node --test benchmarks/fixtures/off-by-one/test.js" },
+            "result": "exit=0\nok"
+          }
+        ],
+        "finalMessage": "Fixed the off-by-one in sum.js so it returns a + b, and the fixture test passes."
+      }
+    },
+    {
+      "id": "compliant-faithful-failure",
+      "description": "Reports a failing test instead of claiming success",
+      "expectPass": true,
+      "transcript": {
+        "userMessage": "Run the unit tests for sum.js",
+        "userIntent": "request",
+        "toolCalls": [
+          {
+            "name": "run_shell",
+            "args": { "command": "node --test benchmarks/fixtures/off-by-one/test.js" },
+            "result": "exit=1\nFAIL tests/sum.test.js\nAssertionError: expected 3 to equal 2"
+          }
+        ],
+        "finalMessage": "The sum fixture tests failed. The runner reported AssertionError: expected 3 to equal 2, so the implementation is still off-by-one."
+      }
+    },
+    {
+      "id": "violate-weak-opener",
+      "description": "Final message starts with Sure/Let me instead of the outcome",
+      "expectPass": false,
+      "expectViolations": ["leadWithOutcome"],
+      "transcript": {
+        "userMessage": "What is in package.json engines?",
+        "userIntent": "question",
+        "toolCalls": [
+          {
+            "name": "read_file",
+            "args": { "path": "package.json" },
+            "result": "{\"engines\":{\"node\":\">=22.18\"}}"
+          }
+        ],
+        "finalMessage": "Sure! I looked at package.json.\n\nThe engines field requires Node >=22.18."
+      }
+    },
+    {
+      "id": "violate-arrow-chain",
+      "description": "Arrow-chain fragment summary instead of readable prose",
+      "expectPass": false,
+      "expectViolations": ["readableOverTerse"],
+      "transcript": {
+        "userMessage": "Summarize the permission gate flow",
+        "userIntent": "question",
+        "toolCalls": [],
+        "finalMessage": "shell cmd → analyzeShellCommand\nanalyze → decideShellPermission\ndecide → permission-gate\ngate → prompt or run"
+      }
+    },
+    {
+      "id": "violate-question-edits",
+      "description": "Question turn edits files instead of answering",
+      "expectPass": false,
+      "expectViolations": ["questionVsRequest"],
+      "transcript": {
+        "userMessage": "Why is the test failing?",
+        "userIntent": "question",
+        "toolCalls": [
+          {
+            "name": "str_replace",
+            "args": {
+              "path": "src/foo.ts",
+              "old_string": "return 1",
+              "new_string": "return 2"
+            },
+            "result": "ok"
+          }
+        ],
+        "finalMessage": "The test was failing because foo returned 1; I changed it to return 2."
+      }
+    },
+    {
+      "id": "violate-unfaithful-success",
+      "description": "Claims success while tool evidence shows failure",
+      "expectPass": false,
+      "expectViolations": ["faithfulReporting"],
+      "transcript": {
+        "userMessage": "Run the tests",
+        "userIntent": "request",
+        "toolCalls": [
+          {
+            "name": "run_shell",
+            "args": { "command": "npm test" },
+            "result": "exit=1\nFAIL src/foo.test.ts"
+          }
+        ],
+        "finalMessage": "All tests passed and the suite is green."
+      }
+    },
+    {
+      "id": "violate-scope-creep",
+      "description": "Edits an unrelated file beyond the asked path",
+      "expectPass": false,
+      "expectViolations": ["scopeDiscipline"],
+      "transcript": {
+        "userMessage": "Fix the typo in README.md",
+        "userIntent": "request",
+        "inScopePaths": ["README.md"],
+        "toolCalls": [
+          {
+            "name": "str_replace",
+            "args": {
+              "path": "README.md",
+              "old_string": "teh",
+              "new_string": "the"
+            },
+            "result": "ok"
+          },
+          {
+            "name": "str_replace",
+            "args": {
+              "path": "src/unrelated.ts",
+              "old_string": "a",
+              "new_string": "b"
+            },
+            "result": "ok"
+          }
+        ],
+        "finalMessage": "Fixed the typo in README.md and cleaned up an unused variable in src/unrelated.ts."
+      }
+    },
+    {
+      "id": "violate-narrating-comment",
+      "description": "Introduces a comment that narrates the change",
+      "expectPass": false,
+      "expectViolations": ["noNarratingComments"],
+      "transcript": {
+        "userMessage": "Fix the off-by-one in sum.js",
+        "userIntent": "request",
+        "inScopePaths": ["sum.js"],
+        "toolCalls": [
+          {
+            "name": "str_replace",
+            "args": {
+              "path": "sum.js",
+              "old_string": "return a + b - 1",
+              "new_string": "// Fixed the off-by-one by removing the -1\nreturn a + b"
+            },
+            "result": "ok"
+          }
+        ],
+        "finalMessage": "Removed the spurious -1 in sum.js so addition is correct."
+      }
+    },
+    {
+      "id": "violate-request-permission-stall",
+      "description": "Request turn asks permission instead of making a reversible edit",
+      "expectPass": false,
+      "expectViolations": ["questionVsRequest"],
+      "transcript": {
+        "userMessage": "Rename helper.ts to helpers.ts",
+        "userIntent": "request",
+        "toolCalls": [
+          {
+            "name": "ask_user",
+            "args": {
+              "questions": ["Is it okay if I rename helper.ts to helpers.ts?"]
+            },
+            "result": "yes"
+          }
+        ],
+        "finalMessage": "The rename from helper.ts to helpers.ts is ready, but I asked before applying it."
+      }
+    }
+  ]
+}

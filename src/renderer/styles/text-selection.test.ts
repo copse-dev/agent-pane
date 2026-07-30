@@ -45,7 +45,8 @@ describe('text-selection policy', () => {
       '.message-reasoning-text', // rendered Reasoning markdown
       '.tool-result', // tool output
       '.tool-args pre', // tool arguments
-      '.terminal-container', // terminal output
+      '.terminal-container', // interactive terminal output
+      '.agent-task-output-panel', // agent-run terminal output
       '.monaco-editor .view-lines', // editor content
     ]) {
       assert.ok(
