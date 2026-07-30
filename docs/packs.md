@@ -109,6 +109,17 @@ and the shipped renderer submits due prompts through the interactive agent contr
 See [`docs/plans/automations.md`](plans/automations.md) for the deliberately narrow
 desktop-online cron prototype and its durable-supervisor boundary.
 
+The default-off `copse.parallel-search` pack is another level-3 first-party
+integration. It contributes the native `parallel_search` tool and calls
+Parallel's Search API directly rather than running an MCP server. Registration
+requires both an enabled pack and a configured `PARALLEL_API_KEY` (or encrypted
+key saved in Settings). Its detail view keeps the secret outside the generic
+pack-settings snapshot and states the network, billing, and ZDR boundary. The
+tool is also declared in `tools.acpTools`, so HTTP-MCP-capable external ACP
+agents can invoke the same direct API implementation through Copse's native-tool
+bridge. See
+[`docs/parallel-search.md`](parallel-search.md).
+
 ## Level-2 declarative panels (P2)
 
 A pack contributes a **level-2 panel** by declaring a UI contribution at
@@ -223,6 +234,7 @@ disable is pinned by
 
 - [`docs/adding-a-pack.md`](adding-a-pack.md) — practical install / authoring guide (linked from Settings → Packs)
 - [`docs/forced-planning.md`](forced-planning.md) — `copse.forced-planning`, the first pack born as a pack rather than extracted, and the `resolvePackSetting` seam it introduced
+- [`docs/parallel-search.md`](parallel-search.md) — direct Parallel Search API pack, credentials, permissions, and ZDR boundary
 - [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) — design source of truth (Feature packs, the [two-capability-tiers](plans/hooks-and-feature-packs.md#decisions-log) and [disable-never-breaks-history](plans/hooks-and-feature-packs.md#decisions-log) decisions)
 - [`docs/cursor-plugins.md`](cursor-plugins.md) — the plugin manifest the pack manifest extends
 - [`docs/hooks.md`](hooks.md) — the hook registry a pack's hooks register through
