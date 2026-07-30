@@ -44,6 +44,7 @@ function demoPack(id: string): RegisteredPack {
     {
       name: id,
       trust: 'first-party',
+      stability: 'stable',
       description: `demo ${id}`,
       version: '1.2.3',
       storage: { namespace: id },
@@ -79,6 +80,7 @@ describe('packToSummary', () => {
     const summary = packToSummary(pack, true, () => undefined)
     assert.equal(summary.id, 'alpha')
     assert.equal(summary.trust, 'first-party')
+    assert.equal(summary.stability, 'stable')
     assert.equal(summary.enabled, true)
     assert.equal(summary.version, '1.2.3')
     assert.equal(summary.description, 'demo alpha')
@@ -109,7 +111,7 @@ describe('packToSummary', () => {
 
   it('projects a capability without a description as name + title only', () => {
     const pack = definePack(
-      { name: 'cap-only', trust: 'first-party' },
+      { name: 'cap-only', trust: 'first-party', stability: 'stable' },
       { capabilities: [{ name: 'flag-x', title: 'Flag X' }] },
     )
     const summary = packToSummary(pack, true, () => undefined)
@@ -118,7 +120,7 @@ describe('packToSummary', () => {
 
   it('projects a permission without description/scope as name + title only', () => {
     const pack = definePack(
-      { name: 'perm-only', trust: 'first-party' },
+      { name: 'perm-only', trust: 'first-party', stability: 'stable' },
       { permissions: [{ name: 'bind-x', title: 'Bind X' }] },
     )
     const summary = packToSummary(pack, true, () => undefined)
@@ -236,6 +238,7 @@ describe('packToSummary (model field)', () => {
     const pack = definePack({
       name: 'gamma',
       trust: 'first-party',
+      stability: 'stable',
       settings: {
         advisorModel: { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
       },

@@ -85,6 +85,7 @@ export interface PackContributionsOut {
 export interface PackSummaryOut {
   id: string
   trust: PackManifest['trust']
+  stability: NonNullable<PackManifest['stability']>
   name: string
   version?: string
   description?: string
@@ -200,6 +201,9 @@ export function packToSummary(
   const summary: PackSummaryOut = {
     id: pack.id,
     trust: pack.trust,
+    // Legacy/user manifests without the field fail safe: absence is not a
+    // stability claim and must not be presented as one in Settings.
+    stability: manifest.stability ?? 'experimental',
     name: manifest.name,
     enabled,
     contributions: contributionsOut,

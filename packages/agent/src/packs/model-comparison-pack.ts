@@ -67,6 +67,7 @@ export const modelComparisonPack: RegisteredPack = definePack(
     description:
       'Model comparison — runs the working-diff review through two configured models and a judge that compares their verdicts; on-demand via the `compare_models` tool, optionally after every editing turn.',
     trust: 'first-party',
+    stability: 'experimental',
     tools: { native: [MODEL_COMPARISON_TOOL_NAME] },
     settings: {
       [COMPARISON_MODEL_A_SETTING_ID]: {

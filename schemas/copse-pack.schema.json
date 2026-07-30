@@ -24,6 +24,10 @@
       "description": "Whether the pack is shipped by Copse or user-installed (decision 15). A discovered plugin.json is always `user`; first-party packs declare `first-party` in code.",
       "enum": ["first-party", "user"]
     },
+    "stability": {
+      "description": "Product-support status shown before enablement. Missing user-pack values are treated as experimental; every first-party pack declares this explicitly (decision 19).",
+      "enum": ["stable", "experimental"]
+    },
     "skills": {
       "description": "Existing plugin.json slot: relative path to a skills directory.",
       "type": "string"

@@ -42,6 +42,7 @@ function makeRegistry(): PackRegistry {
       {
         name: 'demo.pack',
         trust: 'first-party',
+        stability: 'stable',
         description: 'demo pack',
         storage: { namespace: 'demo.pack' },
         settings: {
@@ -56,6 +57,7 @@ function makeRegistry(): PackRegistry {
     definePack({
       name: 'copse.other',
       trust: 'first-party',
+      stability: 'stable',
       storage: { namespace: 'copse.other' },
     }),
   )
