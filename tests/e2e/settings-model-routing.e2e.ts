@@ -136,7 +136,7 @@ describe('settings model routing placement', function () {
       )
       const routingHost = generalSection?.querySelector<HTMLElement>('#settings-model-routing-host')
       const routingFieldLabels = [
-        ...(routingHost?.querySelectorAll<HTMLElement>('.setup-field-label') ?? []),
+        ...(routingHost?.querySelectorAll<HTMLElement>('.ui-field-label') ?? []),
       ].map((label) => label.textContent?.trim())
 
       return {

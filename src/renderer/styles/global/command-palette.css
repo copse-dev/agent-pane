@@ -1,0 +1,91 @@
+/* Cmd/Ctrl+Shift+K command palette — a native <dialog> centred near the top,
+   styled to match the file-search quick-open palette. */
+.command-palette-overlay {
+  margin: 10vh auto 0;
+  padding: 0;
+  width: min(640px, 90vw);
+  max-height: 60vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.command-palette-overlay::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+.command-palette-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+}
+.command-palette-input {
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  outline: none;
+}
+.command-palette-input::placeholder {
+  color: var(--text-muted);
+}
+.command-palette-results {
+  overflow-y: auto;
+  padding: var(--spacing-xs);
+}
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px var(--spacing-sm);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.command-palette-item.selected,
+.command-palette-item:hover {
+  background: var(--bg-hover);
+}
+.command-palette-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.command-palette-name {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Thread rows: title fills the row, project name hugs the right edge. */
+.command-palette-item-thread .command-palette-name {
+  flex: 1;
+  min-width: 0;
+}
+.command-palette-context {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+.command-palette-empty {
+  padding: var(--spacing-md) var(--spacing-lg);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+/* Section header separating threads / projects / panels / commands. */
+.command-palette-section {
+  padding: var(--spacing-sm) var(--spacing-sm) 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

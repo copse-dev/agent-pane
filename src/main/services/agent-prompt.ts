@@ -1,3 +1,20 @@
+import {
+  assemblePromptFromSections,
+  buildPromptSections,
+  type PromptSectionId,
+  type PromptSections,
+  type PromptSectionVars,
+} from './agent-prompt-sections.ts'
+
+export {
+  assemblePromptFromSections,
+  buildPromptSections,
+  PROMPT_SECTION_IDS,
+  type PromptSectionId,
+  type PromptSections,
+  type PromptSectionVars,
+} from './agent-prompt-sections.ts'
+
 // The subagents-enabled and direct-reads prompts share their structure and most
 // of their rules; they differ only in the available tools and whether context is
 // gathered via `explore` or direct reads/searches. Keep the shared wording (and
@@ -9,7 +26,7 @@ const SHARED_WEB_TOOLS = `- web_search: Search the public web
 // model-agnostic: Copse runs many providers, and these rules are the lever that
 // pulls all of them toward the same working contract. Kept ahead of custom and
 // project instructions in the assembled prompt so users can still override it.
-const SHARED_WORKING_STYLE = `Working style:
+export const SHARED_WORKING_STYLE = `Working style:
 - Lead with the outcome: the first sentence of your final message should answer what happened or what you found; detail comes after. Everything the user needs must be in that final message — text between tool calls may not be read.
 - Be readable over terse: complete sentences, no fragment or arrow-chain summaries. Shorten by leaving out what doesn't change the reader's next step, not by compressing the prose.
 - If the user is asking a question or thinking aloud, the deliverable is your answer — investigate and report; do not edit files until they ask. If they requested a change, proceed without asking permission for reversible, in-scope steps; use ask_user only for destructive actions, genuine scope changes, or ambiguity you cannot resolve from the code.
@@ -17,7 +34,7 @@ const SHARED_WORKING_STYLE = `Working style:
 - Do only what was asked. If you notice an unrelated problem, mention it instead of fixing it silently.
 - Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
 
-const GIT_BRANCH_SAFETY = `Git branch safety:
+export const GIT_BRANCH_SAFETY = `Git branch safety:
 - Never commit or push directly to the repository's default branch (commonly main or master). Before committing, check the current branch and the repository's default branch.
 - If the default branch is checked out, create and switch to a working branch named copse/<short-kebab-summary> before making the commit. Use that naming convention for new branches.
 - Preserve an existing non-default working branch unless the user explicitly asks to change branches.`
@@ -40,12 +57,12 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - ask_user: Ask the user one or more clarifying questions and block until they answer (use at ambiguous or branching points instead of guessing)
 - update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)`
 
-interface BasePromptVars {
+export interface BasePromptVars {
   /** Mode-specific tool lines listed above the shared git/run_shell tail. */
   tools: string
   /** Open-ended question, step 1: how to gather context. */
   gather: string
-  /** Open-ended question, step 3: avoid redoing the same work. */
+  /** Open-ended question, step 2: avoid redoing the same work. */
   avoidRepeat: string
   /** Modifying files, step 1: understand the file first. */
   understand: string
@@ -55,38 +72,41 @@ interface BasePromptVars {
   toolChoice: string
 }
 
-function buildBasePrompt(v: BasePromptVars): string {
-  return `You are a coding assistant with access to the user's local workspace.
-
-Available tools:
-${v.tools}
-${SHARED_TOOL_TAIL}
-{SKILLS_TOOLS_LINE}
-Working directory: {WORKSPACE_ROOT}
-
-When the user asks an open-ended question (review, explain, validate, summarize):
-1. ${v.gather}
-2. ${v.avoidRepeat}
-
-When modifying files:
-1. ${v.understand}
-2. Use str_replace for partial edits or write_file for full rewrites. If git is clean, edits apply directly to disk. If git already has user/unowned changes or there are pending proposed diffs, edits are staged for user approval instead.
-3. Do not assume file content; always ${v.inspectVerb} before writing
-4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
-5. When you make an edit, use str_replace or write_file rather than pasting the file's new contents into the chat
-6. Read the tool result carefully: if it says applied directly, run_shell, git, and read_file can validate immediately. If it says staged/pending, those tools still see only on-disk content; use staged_diffs/read_staged_diff to inspect proposed content and ask the user to approve before shell validation.
-7. If staged_diffs reports existing git changes, avoid direct overwrites and preserve the user's dirty tree.
-8. If a retry would not be informed by new information, stop and present your diagnosis via ask_user instead of trying the same fix again
-
-Tool choice:
-${v.toolChoice}
-
-${SHARED_WORKING_STYLE}
-
-${GIT_BRANCH_SAFETY}`
+function toSectionVars(v: BasePromptVars): PromptSectionVars {
+  return {
+    tools: v.tools,
+    toolTail: SHARED_TOOL_TAIL,
+    gather: v.gather,
+    avoidRepeat: v.avoidRepeat,
+    understand: v.understand,
+    inspectVerb: v.inspectVerb,
+    toolChoice: v.toolChoice,
+    workingStyle: SHARED_WORKING_STYLE,
+    gitBranchSafety: GIT_BRANCH_SAFETY,
+  }
 }
 
-export const BASE_SYSTEM_PROMPT = buildBasePrompt({
+function buildBasePrompt(v: BasePromptVars): string {
+  return assemblePromptFromSections(buildPromptSections(toSectionVars(v)))
+}
+
+/** Section map for a prompt mode — used by ablation evals (#744). */
+export function buildBasePromptSections(v: BasePromptVars): PromptSections {
+  return buildPromptSections(toSectionVars(v))
+}
+
+/**
+ * Build a base prompt with selected sections omitted (ablation arm).
+ * Production always uses the full assembly via `BASE_SYSTEM_PROMPT*`.
+ */
+export function buildAblatedBasePrompt(
+  v: BasePromptVars,
+  omit: readonly PromptSectionId[],
+): string {
+  return assemblePromptFromSections(buildPromptSections(toSectionVars(v)), omit)
+}
+
+const EXPLORE_MODE_VARS: BasePromptVars = {
   tools: `- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
 - investigate_ci: Delegate a deep CI-failure investigation to a subagent that reads the failing run logs and returns root-cause findings — prefer this when a PR has failing CI
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
@@ -101,9 +121,9 @@ ${SHARED_WEB_TOOLS}`,
   toolChoice: `- For reading files, searching the codebase, or listing directories: use explore — not run_shell (no cat, grep, rg, find, head, or tail for those jobs)
 - For GitHub pull requests and CI status: use gh_* / get_ci_* tools — not run_shell + gh
 - Reserve run_shell for running tests, builds, package installs, and other commands with no dedicated tool`,
-})
+}
 
-export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt({
+const DIRECT_READS_MODE_VARS: BasePromptVars = {
   tools: `- read_file: Read a file from the workspace
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
@@ -121,7 +141,15 @@ ${SHARED_WEB_TOOLS}`,
   toolChoice: `- For reading files, searching the codebase, or listing directories: use read_file, list_dir, search_codebase, search_code, semantic_search, or find_files — not run_shell (no cat, grep, rg, find, head, or tail for those jobs)
 - For GitHub pull requests and CI status: use gh_* / get_ci_* tools — not run_shell + gh
 - Reserve run_shell for running tests, builds, package installs, and other commands with no dedicated tool`,
-})
+}
+
+export const BASE_SYSTEM_PROMPT = buildBasePrompt(EXPLORE_MODE_VARS)
+export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt(DIRECT_READS_MODE_VARS)
+
+/** Vars for the explore-mode base prompt — ablation evals pin against these. */
+export const EXPLORE_BASE_PROMPT_VARS = EXPLORE_MODE_VARS
+/** Vars for the direct-reads base prompt — ablation evals pin against these. */
+export const DIRECT_READS_BASE_PROMPT_VARS = DIRECT_READS_MODE_VARS
 
 // Appended when the `browserToolsEnabled` setting is on. Describes the built-in
 // headless browser tools so the agent prefers accessibility snapshots over blind

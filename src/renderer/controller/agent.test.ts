@@ -1,3 +1,4 @@
+import '../../../tests/setup-dom.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -224,6 +225,42 @@ test('diff events stay scoped to their owning project and thread', () => {
   })
 })
 
+test('opening Changes for a staged diff unhides the pane before panel sync events', () => {
+  // Layout must win the race against Monaco's whenDiffHostVisible wait: emit
+  // right_panel_mode_changed / files_pane_changed (and sync #pane-files) before
+  // panel_changed / staged_diffs_changed, which kick the Changes viewer.
+  const { store, showDiff, queueDiffs } = setup()
+  const pane = document.createElement('div')
+  pane.id = 'pane-files'
+  pane.hidden = true
+  document.body.append(pane)
+
+  const events: string[] = []
+  store.on('right_panel_mode_changed', () => {
+    events.push(`mode:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+  store.on('files_pane_changed', () => {
+    events.push(`files:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+  store.on('staged_diffs_changed', () => {
+    events.push(`staged:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+  store.on('panel_changed', () => {
+    events.push(`panel:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+
+  showDiff('project-1', 't1', 'a.ts', 'before', 'after', 'typescript')
+  assert.equal(pane.hidden, false)
+  assert.deepEqual(events, ['mode:open', 'files:open', 'panel:open'])
+
+  events.length = 0
+  queueDiffs('project-1', 't1', [{ path: 'a.ts', language: 'typescript' }])
+  assert.equal(pane.hidden, false)
+  assert.deepEqual(events, ['mode:open', 'files:open', 'staged:open', 'panel:open'])
+
+  pane.remove()
+})
+
 test('text chunks create one assistant message and accumulate tokens', () => {
   const { send, messages } = setup()
   send({ type: 'text', text: 'Hello' })
@@ -271,6 +308,35 @@ test('tool_call then tool_result transitions the tool card running -> done', () 
   tc = at(at(messages(), 0).toolCalls, 0)
   assert.equal(tc.status, 'done')
   assert.equal(tc.result, 'file body')
+})
+
+test('tool_call_update patches ACP arguments, output, and status in place', () => {
+  const { send, messages } = setup()
+  send({
+    type: 'tool_call',
+    toolCall: { id: 'tc1', name: 'mcp.copse.run_shell', args: {}, kind: 'execute' },
+  })
+  send({
+    type: 'tool_call_update',
+    toolCallId: 'tc1',
+    name: 'Run shell',
+    args: { command: 'npm test' },
+    status: 'running',
+    result: 'starting',
+    resultFormat: 'markdown',
+  })
+
+  let tc = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(tc.name, 'Run shell')
+  assert.deepEqual(tc.args, { command: 'npm test' })
+  assert.equal(tc.status, 'running')
+  assert.equal(tc.result, 'starting')
+  assert.equal(tc.resultFormat, 'markdown')
+
+  send({ type: 'tool_call_update', toolCallId: 'tc1', status: 'done' })
+  tc = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(tc.status, 'done')
+  assert.equal(tc.result, 'starting')
 })
 
 test('tool_result with isError marks the tool card as error', () => {
@@ -398,6 +464,27 @@ test('usage chunks accumulate into the thread total and per-model breakdown', ()
   assert.equal(usage.inputTokens, 15)
   assert.equal(usage.outputTokens, 5)
   assert.deepEqual(usage.byModel?.['m1'], { inputTokens: 15, outputTokens: 5 })
+})
+
+test('context pressure persists the agent-reported used and window values', () => {
+  const { store, send } = setup()
+  send({
+    type: 'context_pressure',
+    contextWindow: 200_000,
+    conversationBudget: 200_000,
+    conversationTokens: 80_000,
+    fillRatio: 0.4,
+    source: 'agent-reported',
+  })
+
+  assert.deepEqual(requireThread(store, 't1').contextSnapshot, {
+    contextWindow: 200_000,
+    conversationBudget: 200_000,
+    conversationTokens: 80_000,
+    fillRatio: 0.4,
+    source: 'agent-reported',
+    updatedAt: requireThread(store, 't1').contextSnapshot?.updatedAt,
+  })
 })
 
 test('done finalizes the message, sets the thread idle, and resets stream state', () => {
