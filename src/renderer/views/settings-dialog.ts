@@ -38,6 +38,8 @@ import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { createAutomationPackSettings } from './automation-pack-settings.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { createParallelSearchPackSettings } from './parallel-search-pack-settings.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -1962,6 +1964,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
     ) {
       row.append(createAutomationPackSettings(store, api, pack.enabled))
+    }
+    if (
+      pack.id === PARALLEL_SEARCH_PACK_ID &&
+      pack.contributions.ui.some(
+        (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
+      )
+    ) {
+      row.append(createParallelSearchPackSettings(api))
     }
 
     // Disabling greys the whole row so the effect of the toggle is immediately
