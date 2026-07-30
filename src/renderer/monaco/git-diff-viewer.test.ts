@@ -30,7 +30,7 @@ async function withDeadline<T>(promise: Promise<T>, timeoutMs = 500): Promise<T>
       promise,
       new Promise<T>((_resolve, reject) => {
         timer = setTimeout(() => {
-          reject(new Error(`timed out after ${timeoutMs}ms`))
+          reject(new Error(`timed out after ${String(timeoutMs)}ms`))
         }, timeoutMs)
       }),
     ])
