@@ -284,5 +284,9 @@ truth:
   behavioral issues; the bench harness is headless and outcome-graded.
 - `validate:local-agent` becomes the smoke test for the Phase 2 harness's
   loop-hosting seam (same headless setup, trivial task).
+- Doctrine compliance evals (#744 / [`doctrine-compliance-evals.md`](doctrine-compliance-evals.md))
+  are the prompt-section ablation + working-style scoring slice of Phase 1/3: a
+  deterministic corpus and composable `buildAblatedBasePrompt` arms in the unit
+  tier, with model-backed section A/B reserved for the nightly matrix.
 - `analyze-thread-jsonl.mts` is reused as-is for trace metrics; benchmark
   grading (did the tests pass) layers on top rather than replacing it.

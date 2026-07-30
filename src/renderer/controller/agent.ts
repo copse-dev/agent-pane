@@ -199,6 +199,20 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         maybeNameThread(store, api, threadId)
         break
       }
+      case 'tool_call_update': {
+        if (st.msgId && findToolCall(store, st.msgId, chunk.toolCallId)) {
+          updateToolCall(store, st.msgId, chunk.toolCallId, {
+            ...(chunk.name !== undefined ? { name: chunk.name } : {}),
+            ...(chunk.args !== undefined ? { args: chunk.args } : {}),
+            ...(chunk.status !== undefined ? { status: chunk.status } : {}),
+            ...(chunk.result !== undefined ? { result: chunk.result } : {}),
+            ...(chunk.resultFormat !== undefined ? { resultFormat: chunk.resultFormat } : {}),
+          })
+        }
+        st.writing = false
+        activity(threadId)
+        break
+      }
       case 'tool_result': {
         if (st.msgId) {
           updateToolCall(store, st.msgId, chunk.toolCallId, {

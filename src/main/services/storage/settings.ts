@@ -10,6 +10,7 @@ import {
   isRecord,
   matchesFallbackType,
 } from '@shared/unknown-value.ts'
+import { getExplicitSettingsProfile } from './settings-context.ts'
 
 // Cache reads in memory so electron-store does not re-read and re-parse the
 // whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
@@ -77,11 +78,15 @@ const PROVIDER_ENV_VARS: Record<string, string> = {
 }
 
 export function hasApiKey(provider: KeyProvider): boolean {
+  const scoped = getExplicitSettingsProfile()
+  if (scoped) return (scoped.apiKeys?.[provider]?.trim().length ?? 0) > 0
   const raw = cached.get(`apiKey.${provider}`)
   return isStoredKey(raw) && raw.enc.length > 0
 }
 
 export function getApiKey(provider: KeyProvider): string | null {
+  const scoped = getExplicitSettingsProfile()
+  if (scoped) return firstNonEmptyString(scoped.apiKeys?.[provider]) ?? null
   // electron-store JSON-serializes values, so a raw Buffer cannot round-trip.
   // We persist a base64 string instead. (Old Buffer-shaped records are ignored.)
   const raw = cached.get(`apiKey.${provider}`)
@@ -113,6 +118,9 @@ export function setApiKey(
   key: string,
   opts: { allowPlaintext?: boolean } = {},
 ): SetApiKeyResult {
+  if (getExplicitSettingsProfile()) {
+    throw new Error('Cannot mutate API keys inside an explicit settings profile.')
+  }
   const trimmed = key.trim()
   // An empty/whitespace value clears the key rather than persisting a blank one
   // and stomping the current session's env var with an empty string.
@@ -152,6 +160,9 @@ export function setApiKey(
 
 /** Remove a stored API key and clear the corresponding session env var. */
 export function deleteApiKey(provider: KeyProvider): void {
+  if (getExplicitSettingsProfile()) {
+    throw new Error('Cannot mutate API keys inside an explicit settings profile.')
+  }
   cached.delete(`apiKey.${provider}`)
   const envVar = envVarFor(provider)
   if (envVar) Reflect.deleteProperty(process.env, envVar)
@@ -167,6 +178,7 @@ export function deleteApiKey(provider: KeyProvider): void {
  * "How API keys are stored" section.
  */
 export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
+  if (getExplicitSettingsProfile()) return null
   const raw = cached.get(`apiKey.${provider}`)
   if (!isStoredKey(raw) || raw.enc.length === 0) {
     return null
@@ -177,6 +189,7 @@ export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
 // Whether a cloud provider can be used at all — a key is stored in Settings or
 // present in the environment.
 export function isProviderAvailable(provider: CloudKeyProvider): boolean {
+  if (getExplicitSettingsProfile()) return hasApiKey(provider)
   const envVar = envVarFor(provider)
   const environmentKey = envVar ? firstNonEmptyString(process.env[envVar]) : undefined
   return environmentKey !== undefined || hasApiKey(provider)
@@ -184,6 +197,8 @@ export function isProviderAvailable(provider: CloudKeyProvider): boolean {
 
 /** Stored key, falling back to the provider's env var when it ships one. */
 export function resolveApiKey(provider: KeyProvider): string | null {
+  const scoped = getExplicitSettingsProfile()
+  if (scoped) return firstNonEmptyString(scoped.apiKeys?.[provider]) ?? null
   const stored = getApiKey(provider)
   if (stored) return stored
   const envVar = envVarFor(provider)
@@ -191,11 +206,14 @@ export function resolveApiKey(provider: KeyProvider): string | null {
 }
 
 export function getLmStudioApiKey(): string {
+  const scoped = getExplicitSettingsProfile()
+  if (scoped) return firstNonEmptyString(scoped.apiKeys?.['lmstudio']) ?? ''
   return resolveLmStudioApiKey(getApiKey('lmstudio'), process.env)
 }
 
 export function getSetting<T>(key: string, fallback: T): T {
-  const raw = cached.get(key)
+  const scoped = getExplicitSettingsProfile()
+  const raw = scoped ? scoped.values[key] : cached.get(key)
   if (raw === undefined || raw === null) return fallback
   // If we have a schema for this key, validate on read so a corrupt/wrong-typed
   // persisted value degrades to the fallback instead of being trusted blindly.
@@ -218,6 +236,9 @@ export function getSettingTrimmed(key: string, fallback = ''): string {
  * rejected rather than silently corrupting the store.
  */
 export function setSetting(key: string, value: unknown): Promise<void> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
   const schema = getSettingSchema(key)
   const toStore = schema ? schema.parse(value) : value
   return runSerialized(queueKey(key), () => {
