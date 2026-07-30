@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
@@ -30,6 +31,11 @@ const SKIP_DIRS = new Set(['node_modules', '.git'])
 
 let cachedSkills: SkillMetadata[] = []
 let refreshPromise: Promise<void> | null = null
+const scopedSkills = new AsyncLocalStorage<readonly SkillMetadata[]>()
+
+function activeSkills(): readonly SkillMetadata[] {
+  return scopedSkills.getStore() ?? cachedSkills
+}
 
 function skillsEnabled(): boolean {
   return getSetting<boolean>('skillsEnabled', true)
@@ -185,10 +191,9 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
   return roots
 }
 
-export async function refreshSkillsRegistry(): Promise<void> {
+async function discoverSkillsRegistry(): Promise<SkillMetadata[]> {
   if (!skillsEnabled()) {
-    cachedSkills = []
-    return
+    return []
   }
 
   const skills = new Map<string, SkillMetadata>()
@@ -200,7 +205,11 @@ export async function refreshSkillsRegistry(): Promise<void> {
     })
   }
 
-  cachedSkills = [...skills.values()].sort((a, b) => a.name.localeCompare(b.name))
+  return [...skills.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function refreshSkillsRegistry(): Promise<void> {
+  cachedSkills = await discoverSkillsRegistry()
 }
 
 export async function initSkillsRegistry(): Promise<void> {
@@ -211,8 +220,14 @@ export async function initSkillsRegistry(): Promise<void> {
   notifyRefreshContextEstimate()
 }
 
+/** Discover and scope the product skill catalog to one explicit headless run. */
+export async function runWithDiscoveredSkills<T>(fn: () => Promise<T>): Promise<T> {
+  const skills = await discoverSkillsRegistry()
+  return scopedSkills.run(skills, fn)
+}
+
 export function listSkills(): SkillSummary[] {
-  return cachedSkills.map(({ name, description, source, skillPath, externalLinks }) => ({
+  return activeSkills().map(({ name, description, source, skillPath, externalLinks }) => ({
     name,
     description,
     source,
@@ -229,7 +244,7 @@ export function listSkills(): SkillSummary[] {
  * pick them up on its own.
  */
 export function listModelInvocableSkills(): SkillSummary[] {
-  return cachedSkills
+  return activeSkills()
     .filter((skill) => !skill.disableModelInvocation)
     .map(({ name, description, source, skillPath, externalLinks }) => ({
       name,
@@ -241,7 +256,7 @@ export function listModelInvocableSkills(): SkillSummary[] {
 }
 
 export function getSkill(name: string): SkillMetadata | null {
-  return cachedSkills.find((skill) => skill.name === name) ?? null
+  return activeSkills().find((skill) => skill.name === name) ?? null
 }
 
 export async function readSkill(name: string, relativePath = 'SKILL.md'): Promise<SkillReadResult> {
