@@ -1,7 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedThreadReferenceFixture } from './helpers/seed-config.ts'
+import {
+  invalidateThreadCatalog,
+  resetUserData,
+  seedThreadReferenceFixture,
+} from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -10,9 +14,13 @@ describe('@-reference past threads (#644)', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedThreadReferenceFixture(process.cwd())
+    const { projectId } = seedThreadReferenceFixture(process.cwd())
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    // The outgoing Electron process may recreate an empty derived catalog
+    // during reloadSession(). Invalidate it after the replacement process has
+    // restored the seeded project so the picker rebuilds from its thread dirs.
+    invalidateThreadCatalog(projectId)
   })
 
   after(() => {
@@ -20,9 +28,9 @@ describe('@-reference past threads (#644)', () => {
   })
 
   it('shows past threads in the @ picker and attaches a thread chip on select', async () => {
-    // Empty query after `@` still resolves via a shared token in the seeded
-    // thread titles/digests ("the"), which keeps the file list short too.
-    await setComposerValue('@the')
+    // Filter on the seeded title so this interaction test does not also depend
+    // on catalog digest extraction (covered by thread-store unit tests).
+    await setComposerValue('@auth')
 
     const threadItem = await $('.mention-picker .mention-item-thread')
     await threadItem.waitForDisplayed({ timeout: 10_000 })

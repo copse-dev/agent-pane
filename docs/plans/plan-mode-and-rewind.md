@@ -2,12 +2,12 @@
 
 Tracking: [#1080](https://github.com/copse-dev/agent-pane/issues/1080)
 
-**Status: Proposed.** This is the first delivery slice for #1080: nail the product
-contract for transactional Plan Mode and prompt-boundary rewind before UI chrome,
-capability-profile wiring, or checkout restore code. Implementation PRs should link
-here and keep the working brief (#35), long-horizon checklists (#558), and thread
-worktrees (#869) as **foundations/consumers**, not alternate planning or history
-systems.
+**Status: Active (P1 in progress).** Design contract landed on `main` via
+[#1138](https://github.com/copse-dev/agent-pane/pull/1138). P1 adds the on-disk
+plan artifact layout, zod/JSON Schema, and spine `plan` lifecycle events (fixtures
+validate; no UI). Later PRs should link here and keep the working brief (#35),
+long-horizon checklists (#558), and thread worktrees (#869) as
+**foundations/consumers**, not alternate planning or history systems.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related durable state: [`../thread-store-format.md`](../thread-store-format.md),
@@ -81,18 +81,30 @@ binding decisions, minimum contract, and the smallest design→implementation se
 
 ### Plan artifact
 
-Minimum fields (names illustrative; schema lands in P1):
+On-disk layout under the thread root (Open Q1 resolved — not OKF conversation
+messages):
+
+```
+<threadId>/plans/<planId>/
+  meta.json
+  revision-<n>.md
+  comments.json
+  approval.json          # only after approve
+```
+
+Minimum fields (zod in [`plan-schema.ts`](../../src/shared/threads/plan-schema.ts);
+JSON Schema mirror [`schemas/copse-plan.schema.json`](../../schemas/copse-plan.schema.json)):
 
 - `planId`, `revision`, `threadId`, `createdAt`, `updatedAt`
-- `title`, `body` (markdown), optional structured steps
+- `title`, `body` (markdown in `revision-<n>.md`), optional structured steps
 - `comments[]` keyed to ranges or anchors in the body
 - `status`: `draft` \| `approved` \| `superseded` \| `abandoned`
 - `approvedAt` / `approvedRevision` / `executionProfileId` when approved
-- content hash for integrity at approval time
+- content hash (sha256 of body) for integrity at approval time
 
-Storage must stay human-readable under the thread directory (OKF- or markdown-adjacent),
-with spine events for create/revise/comment/approve so `@`-thread tools and rewind can
-see them.
+Spine events use `type: "plan"` with
+`action: create | revise | comment | approve | abandon` (see
+[`thread-store-format.md`](../thread-store-format.md)).
 
 ### Capability profile (planning)
 
@@ -133,24 +145,29 @@ A checkpoint captures at least:
 4. Failure policy: partial restore fails closed and reports which subsystem did not
    converge; never leave UI claiming a clean rewind when checkout restore failed.
 
-## First delivery slice (this PR's scope)
+## First delivery slices
 
-Ship **design-only** artifacts that unblock implementation without choosing UI chrome:
+**Design (on `main` via [#1138](https://github.com/copse-dev/agent-pane/pull/1138)):**
+this plan (contract + phases + exit gates), index entry in [`README.md`](README.md),
+and ownership link from the Grok Build comparison map.
 
-1. This plan (contract + phases + exit gates).
-2. Index entry in [`README.md`](README.md).
-3. Explicit ownership link from the Grok Build comparison map to this doc.
+**P1 (schema sketch):** on-disk `plans/<planId>/` layout, zod + JSON Schema, spine
+`type: "plan"` lifecycle lines, fixtures under `tests/fixtures/plan-mode/`. No UI,
+no `thread-store` writers, no capability-profile enforcement yet.
 
-Out of scope for the first slice: Settings toggles, composer Plan Mode control, plan
-markdown renderer, checkout snapshotter implementation, and spine schema migrations.
+Still out of scope until later phases: Settings toggles, composer Plan Mode control,
+plan markdown renderer, checkout snapshotter, and rewind UI.
 
 ## Later phases
 
 ### P1 — Artifact + schema sketch
 
-- Draft the on-disk plan artifact layout under the thread root and JSON Schema (or zod
-  source) for plan revisions, comments, and approval records.
-- Define spine event types for plan lifecycle (create/revise/comment/approve/abandon).
+- [x] On-disk layout: `plans/<planId>/{meta.json,revision-N.md,comments.json,approval.json}`.
+- [x] Zod source of truth in `src/shared/threads/plan-schema.ts` + published
+      `schemas/copse-plan.schema.json`.
+- [x] Spine `type: "plan"` lifecycle actions (create/revise/comment/approve/abandon),
+      preserved across full-save with artifact refs.
+- [x] Fixtures under `tests/fixtures/plan-mode/` validate; no UI / no store writers yet.
 - Exit gate: fixtures validate; no UI required.
 
 ### P2 — Checkpoint model on the thread store
@@ -190,8 +207,10 @@ markdown renderer, checkout snapshotter implementation, and spine schema migrati
 
 ## Open questions (resolve in P1/P2 PRs)
 
-1. Should plan artifacts live as `plans/<planId>/revision-N.md` under the thread root, or
-   as OKF messages with a dedicated spine `type`?
+1. **Resolved (P1):** Plan artifacts live as `plans/<planId>/revision-N.md` (plus
+   `meta.json` / `comments.json` / `approval.json`) under the thread root, with spine
+   `type: "plan"` lifecycle lines. Not OKF conversation messages — those would pollute
+   `parseSpine` / transcript fold.
 2. On rewind, do we fork a new thread directory, tombstone events in place, or keep a
    restore branch pointer in `meta.json` while preserving bytes for audit?
 3. Is explore-only shell a hard deny of all external/ambiguous commands, or a prompted

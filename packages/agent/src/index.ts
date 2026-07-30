@@ -33,6 +33,10 @@ export * from './parse-text-tool-calls.ts'
 export * from './agent-text-chunk.ts'
 export * from './build-text-with-attachments.ts'
 
+// The canonical headless automation contract (#1079): the versioned
+// request/event/permission types every non-UI adapter (bench, ACP, CLI) shares.
+export * from './headless-contract.ts'
+
 // Tool-adjacent helpers the loop's tools and hosts share.
 export * from './read-file-limits.ts'
 export * from './read-file-page.ts'

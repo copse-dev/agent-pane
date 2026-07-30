@@ -67,7 +67,10 @@ export const config: Options.Testrunner = {
   // Four workers keep a growing geometry tier to two startup waves on the
   // standard check runner without approaching the e2e shard's process load.
   maxInstances: 4,
-  specFileRetries: 0,
+  // A Chrome session can occasionally wedge while loading a demo scenario, before the
+  // spec body runs. Retry the whole spec once so WebdriverIO starts a fresh worker;
+  // deterministic failures still fail on the second attempt.
+  specFileRetries: 1,
   logLevel: 'warn',
   bail: 0,
   waitforTimeout: 15_000,

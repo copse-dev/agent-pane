@@ -1,0 +1,139 @@
+/* Renderer UI kit primitives — see docs/plans/ui-kit.md and src/renderer/ui/. */
+
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: var(--font-size-sm);
+  line-height: 1.3;
+  cursor: pointer;
+  color: var(--text-primary);
+  background: var(--bg-secondary, var(--bg-elevated));
+}
+
+.ui-btn:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.ui-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ui-btn-secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.ui-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ui-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.ui-btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--text-on-accent);
+}
+
+.ui-btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.ui-btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+  color: #fff;
+}
+
+.ui-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.ui-btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+copse-ui-actions,
+.ui-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+copse-ui-actions[data-align='end'],
+.ui-actions[data-align='end'] {
+  justify-content: flex-end;
+}
+
+copse-ui-actions[data-align='start'],
+.ui-actions[data-align='start'] {
+  justify-content: flex-start;
+}
+
+copse-ui-actions[data-align='stretch'],
+.ui-actions[data-align='stretch'] {
+  justify-content: stretch;
+}
+
+copse-ui-actions[data-align='stretch'] > *,
+.ui-actions[data-align='stretch'] > * {
+  flex: 1;
+}
+
+copse-ui-field,
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-xs);
+}
+
+copse-ui-field + copse-ui-field,
+.ui-field + .ui-field {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+
+copse-ui-field:last-child,
+.ui-field:last-child {
+  margin-bottom: 0;
+}
+
+.ui-field-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+copse-ui-field select,
+copse-ui-field input[type='text'],
+copse-ui-field input[type='password'],
+.ui-field select,
+.ui-field input[type='text'],
+.ui-field input[type='password'] {
+  width: 100%;
+  max-width: 480px;
+}
+
+.ui-field-hint {
+  margin: 0;
+  line-height: 1.5;
+  padding-top: 2px;
+}

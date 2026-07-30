@@ -1,5 +1,6 @@
 import { el, qs } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { uiActions } from '../ui/index.ts'
 import { showToast } from './toast.ts'
 
 interface UpdatePromptRequest {
@@ -18,7 +19,7 @@ interface UpdatePromptRequest {
 export function mountUpdatePromptDialog(api: ApiClient): void {
   const messageEl = el('h3', { class: 'update-prompt-message' })
   const detailEl = el('p', { class: 'update-prompt-detail' })
-  const buttonsEl = el('div', { class: 'update-prompt-buttons' })
+  const buttonsEl = uiActions({ className: 'update-prompt-buttons' })
   const dialog = el('dialog', { id: 'update-prompt-dialog' }, messageEl, detailEl, buttonsEl)
   document.body.append(dialog)
 
@@ -56,7 +57,9 @@ export function mountUpdatePromptDialog(api: ApiClient): void {
           'button',
           {
             type: 'button',
-            class: isPrimary ? 'update-prompt-primary' : 'update-prompt-secondary',
+            class: isPrimary
+              ? 'ui-btn ui-btn-primary update-prompt-primary'
+              : 'ui-btn ui-btn-secondary update-prompt-secondary',
           },
           label,
         )
