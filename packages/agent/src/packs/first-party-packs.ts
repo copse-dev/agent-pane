@@ -122,6 +122,16 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   automationsPack,
 ]
 
+/**
+ * The single source of truth for first-party packs that must ship disabled.
+ * Stability is product metadata, not decorative copy: an experimental pack is
+ * opt-in by construction, so adding one cannot accidentally enable it for a
+ * fresh profile while forgetting to update a second hand-maintained list.
+ */
+export const EXPERIMENTAL_FIRST_PARTY_PACK_IDS: readonly string[] = FIRST_PARTY_PACKS.filter(
+  (pack) => pack.manifest.stability === 'experimental',
+).map((pack) => pack.id)
+
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */
 export function createFirstPartyPackRegistry(): PackRegistry {
   const registry = new PackRegistry()
