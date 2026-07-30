@@ -3,7 +3,7 @@
 `copse.parallel-search` is a default-off, first-party pack that gives the agent a
 native `parallel_search` tool. Copse sends requests directly to
 `https://api.parallel.ai/v1/search`; there is no MCP process or MCP server in the
-request path.
+Parallel request path.
 
 ## Setup and lifecycle
 
@@ -18,6 +18,12 @@ The live tool registry requires both enablement and a resolved key. Saving or
 clearing the key and toggling the pack synchronizes the registry immediately,
 without restarting Copse. Disabling the pack removes the tool from new turns but
 does not erase the saved key or historical tool cards.
+
+The manifest also lists `parallel_search` in `tools.acpTools`. External ACP
+agents that advertise HTTP MCP support receive it through Copse's authenticated
+localhost native-tool bridge. That bridge is only the ACP client-tool transport:
+the bridged call re-enters the same native registry, permission gate, and direct
+Parallel API client. Copse does not run or configure a Parallel MCP server.
 
 ## Request and response contract
 

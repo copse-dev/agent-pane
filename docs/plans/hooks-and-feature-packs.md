@@ -530,6 +530,9 @@ each entry to be a first-party `tools.native` member with a matching executable
 runtime contribution. The ACP native bridge merges enabled declarations into
 its curated core set and intersects that set with the live tool registry, so a
 pack disable or credential-driven unregister revokes exposure immediately.
+`copse.parallel-search` declares `parallel_search`; the bridge is only ACP's
+client-tool transport and the actual provider call remains the direct Parallel
+Search API.
 
 P4 restack invariant: cancelled todos stay in durable thread state but are omitted
 from `todosToPanelListData()` so the extracted pack preserves the pre-existing UI

@@ -18,7 +18,10 @@ export const parallelSearchPack: RegisteredPack = definePack(
     description:
       'Parallel Search — sends an objective and focused queries to Parallel’s Search API and returns ranked URLs with token-dense excerpts. Requires a Parallel API key; Zero Data Retention is an account/contract property, not enabled by this pack.',
     trust: 'first-party',
-    tools: { native: [PARALLEL_SEARCH_TOOL_NAME] },
+    tools: {
+      native: [PARALLEL_SEARCH_TOOL_NAME],
+      acpTools: [PARALLEL_SEARCH_TOOL_NAME],
+    },
     ui: [
       {
         id: 'parallel-search-credentials',

@@ -114,7 +114,10 @@ integration. It contributes the native `parallel_search` tool and calls
 Parallel's Search API directly rather than running an MCP server. Registration
 requires both an enabled pack and a configured `PARALLEL_API_KEY` (or encrypted
 key saved in Settings). Its detail view keeps the secret outside the generic
-pack-settings snapshot and states the network, billing, and ZDR boundary. See
+pack-settings snapshot and states the network, billing, and ZDR boundary. The
+tool is also declared in `tools.acpTools`, so HTTP-MCP-capable external ACP
+agents can invoke the same direct API implementation through Copse's native-tool
+bridge. See
 [`docs/parallel-search.md`](parallel-search.md).
 
 ## Level-2 declarative panels (P2)
