@@ -150,11 +150,15 @@ export interface PackStorageDecl {
 /**
  * How a pack declares its tools in the manifest (decision 15):
  *  - `native`: native tool names contributed to the model tool list (first-party).
+ *  - `acpTools`: the subset of `native` tools safe to offer to external ACP
+ *    agents through Copse's authenticated localhost native-tool bridge
+ *    (first-party only).
  *  - `mcpServers`: a path to an MCP config file (user packs), like the existing
  *    plugin.json `mcpServers` field.
  */
 export interface PackToolsDecl {
   native?: readonly string[]
+  acpTools?: readonly string[]
   mcpServers?: string
 }
 
@@ -321,7 +325,13 @@ export function packManifestFromPluginJson(
   if (raw.version) manifest.version = raw.version
   if (raw.description) manifest.description = raw.description
   if (raw.skills) manifest.skills = raw.skills
-  if (tools.native !== undefined || tools.mcpServers !== undefined) manifest.tools = tools
+  if (
+    tools.native !== undefined ||
+    tools.acpTools !== undefined ||
+    tools.mcpServers !== undefined
+  ) {
+    manifest.tools = tools
+  }
   if (raw.hooks) manifest.hooks = raw.hooks
   // A user pack's prompt blocks are NEVER trusted, whatever the file claims:
   // `trust: 'trusted'` means verbatim injection past the untrusted-data
