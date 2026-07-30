@@ -2,7 +2,11 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { PackRegistry, DuplicatePackError, UnknownPackError } from './pack-registry.ts'
 import { definePack, packManifestFromPluginJson, type RegisteredPack } from './pack-manifest.ts'
-import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
+import {
+  createFirstPartyPackRegistry,
+  EXPERIMENTAL_FIRST_PARTY_PACK_IDS,
+  FIRST_PARTY_PACKS,
+} from './first-party-packs.ts'
 import type { BlockingHook } from '../hooks/canonical-events.ts'
 
 const stepHook: BlockingHook<'turnStart'> = {
@@ -15,7 +19,7 @@ const stepHook: BlockingHook<'turnStart'> = {
 
 function demoPack(id: string): RegisteredPack {
   return definePack(
-    { name: id, trust: 'first-party', storage: { namespace: id } },
+    { name: id, trust: 'first-party', stability: 'stable', storage: { namespace: id } },
     {
       toolNames: [`${id}_tool`],
       blockingHooks: [stepHook],
@@ -26,6 +30,20 @@ function demoPack(id: string): RegisteredPack {
 }
 
 describe('PackRegistry grouping', () => {
+  it('makes every shipped pack stability explicit and keeps experiments opt-in', () => {
+    assert.ok(FIRST_PARTY_PACKS.length > 0)
+    assert.equal(
+      FIRST_PARTY_PACKS.every((pack) => pack.manifest.stability !== undefined),
+      true,
+    )
+    assert.deepEqual(
+      EXPERIMENTAL_FIRST_PARTY_PACK_IDS,
+      FIRST_PARTY_PACKS.filter((pack) => pack.manifest.stability === 'experimental').map(
+        (pack) => pack.id,
+      ),
+    )
+  })
+
   it('registers packs grouped by id, enabled by default', () => {
     const registry = new PackRegistry()
     const pack = demoPack('alpha')
@@ -136,5 +154,10 @@ describe('packManifestFromPluginJson — user-pack trust hardening (P1 review)',
     const b = packManifestFromPluginJson({}, { sourceHint: 'dir-b' })
     assert.notEqual(a.name, b.name)
     assert.equal(a.name, 'unnamed-pack-dir-a')
+  })
+
+  it('defaults an undeclared user-pack stability claim to experimental', () => {
+    const manifest = packManifestFromPluginJson({ name: 'legacy-user-pack' })
+    assert.equal(manifest.stability, 'experimental')
   })
 })

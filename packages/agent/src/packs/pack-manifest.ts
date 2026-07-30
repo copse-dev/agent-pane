@@ -17,6 +17,9 @@ import type { PanelContributionDecl } from './pack-panel.ts'
 /** Whether a pack is shipped by Copse or installed by the user (decision 15). */
 export type PackTrust = 'first-party' | 'user'
 
+/** Product-support status shown before a user enables a pack (decision 19). */
+export type PackStability = 'stable' | 'experimental'
+
 /**
  * UI contribution levels (Feature packs section of the plan):
  *  - 1: declarative cards (the hook-card family).
@@ -183,6 +186,8 @@ export interface PackManifest {
   description?: string
   /** Shipped by Copse vs user-installed (decision 15). */
   trust: PackTrust
+  /** Product-support status. Omitted user-pack values fail safe to `experimental`. */
+  stability?: PackStability
   /** Existing plugin.json slot: relative skills directory. */
   skills?: string
   /** Tools slot: native names (first-party) or an MCP config path (user). */
@@ -264,7 +269,11 @@ export interface RegisteredPack {
  * every empty array.
  */
 export function definePack(
-  manifest: PackManifest,
+  manifest: PackManifest &
+    (
+      | { trust: 'first-party'; stability: PackStability }
+      | { trust: 'user'; stability?: PackStability }
+    ),
   contributions: Partial<PackContributions> = {},
 ): RegisteredPack {
   return {
@@ -287,6 +296,7 @@ export function packManifestFromPluginJson(
     name?: string
     version?: string
     description?: string
+    stability?: PackStability
     skills?: string
     mcpServers?: string
     tools?: PackToolsDecl
@@ -317,6 +327,9 @@ export function packManifestFromPluginJson(
     // share the manifest; first-party packs are defined in code, not on disk).
     name: requestedName === undefined || requestedName.length === 0 ? fallbackName : requestedName,
     trust: 'user',
+    // A third-party pack that makes no support claim must never look stable by
+    // omission. Authors may explicitly declare stable once discovery lands.
+    stability: raw.stability ?? 'experimental',
   }
   if (raw.version) manifest.version = raw.version
   if (raw.description) manifest.description = raw.description
