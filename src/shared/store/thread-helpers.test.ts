@@ -129,6 +129,23 @@ describe('blank thread reuse', () => {
     assert.equal(store.getState().threads.length, 1)
   })
 
+  it('preserves a draft saved by the composer flush during a switch', () => {
+    const store = createStore()
+    const usedId = createThread(store)
+    addMessage(store, usedId, 'user', 'hello')
+    const blankId = createThread(store)
+    store.on('composer_draft_flush', () => {
+      setThreadDraftPrompt(store, blankId, 'still typing…')
+    })
+
+    switchThread(store, usedId)
+
+    assert.equal(
+      store.getState().threads.find((thread) => thread.id === blankId)?.draftPrompt,
+      'still typing…',
+    )
+  })
+
   it('switching away from a blank thread keeps it when it has a draft prompt', () => {
     const store = createStore()
     const usedId = createThread(store)
