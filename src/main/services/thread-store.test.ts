@@ -452,6 +452,49 @@ describe('thread-store', () => {
       )
     })
 
+    it('appendMessage persists late ACP arguments and output across reload', async () => {
+      await createThread('proj-1', thread('t1'))
+      const initial: Message = {
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        createdAt: 20,
+        toolCalls: [
+          {
+            id: 'acp1',
+            name: 'mcp.copse.run_shell',
+            args: {},
+            kind: 'execute',
+            status: 'done',
+            result: null,
+          },
+        ],
+      }
+      const initialTool = initial.toolCalls[0]
+      assert.ok(initialTool)
+      const updated: Message = {
+        ...initial,
+        toolCalls: [
+          {
+            ...initialTool,
+            args: { command: 'npm run typecheck', timeout_ms: 30_000 },
+            result: 'Type check passed.\n',
+            resultFormat: 'markdown',
+          },
+        ],
+      }
+
+      await appendMessage('proj-1', 't1', initial)
+      await appendMessage('proj-1', 't1', updated)
+
+      const [loaded] = await loadProjectThreads('proj-1')
+      assert.deepEqual(loaded?.messages, [updated])
+      assert.equal(
+        readFileSync(join(root, 'proj-1', 't1', 'blobs', 'acp1.result.txt'), 'utf8'),
+        'Type check passed.\n',
+      )
+    })
+
     it('appendMessage preserves earlier messages (true append, not rewrite)', async () => {
       await createThread('proj-1', thread('t1'))
       await appendMessage('proj-1', 't1', userMsg('u1', 'one'))

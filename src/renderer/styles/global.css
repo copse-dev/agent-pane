@@ -2,6 +2,7 @@
    esbuild CSS bundle (and the cascade) is byte-identical to the old single file. */
 @import './global/base.css';
 @import './global/icons.css';
+@import './global/ui.css';
 @import './global/layout.css';
 @import './global/titlebar.css';
 @import './global/forms.css';
@@ -25,6 +26,7 @@
 @import './global/image-expand.css';
 @import './global/video-expand.css';
 @import './global/file-search.css';
+@import './global/command-palette.css';
 @import './global/keyboard-shortcuts.css';
 @import './global/conversation-search.css';
 @import './global/todo.css';

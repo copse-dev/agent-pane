@@ -30,6 +30,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
+import {
+  HEADLESS_PROTOCOL_VERSION,
+  headlessEventSchema,
+  normalizeStopReason,
+  projectStreamChunk,
+  serializeHeadlessEvent,
+  type HeadlessEvent,
+  type HeadlessOutcome,
+  type HeadlessStopReason,
+} from '@copse/agent/headless-contract.ts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
@@ -67,6 +77,13 @@ export interface TaskResult {
   usageEstimated: boolean
   durationMs: number
   trace: string
+  /**
+   * Path to the canonical headless-contract event trace for this run (#1079).
+   * The harness is the contract's first conformance consumer: it projects the
+   * loop's native stream through `projectStreamChunk` and emits a validated
+   * `turn_start … turn_end` envelope. Absent when the turn never ran.
+   */
+  headlessTrace?: string
   error?: string
 }
 
@@ -333,6 +350,60 @@ function prepareWorkspace(task: BenchTask, workspace: string): TaskResult | null
   return null
 }
 
+/**
+ * Assemble one turn's canonical headless-contract event envelope from the loop's
+ * native chunk stream (#1079, Phase 1). This is the adapter-side assembly every
+ * headless consumer needs: a `turn_start`, the per-chunk projection via
+ * `projectStreamChunk`, then a `turn_end` carrying the terminal outcome. Every
+ * event is validated against `headlessEventSchema` before it is returned, so a
+ * projection regression fails the harness (this is the conformance check), not a
+ * downstream reader. Exported so a unit test can drive it with representative
+ * chunks without spawning the whole loop.
+ */
+export function buildHeadlessTurnEvents(params: {
+  threadId: string
+  turnId: string
+  chunks: AgentStreamChunk[]
+  outcome: HeadlessOutcome
+  stopReason?: HeadlessStopReason
+}): HeadlessEvent[] {
+  const { threadId, turnId, chunks, outcome, stopReason } = params
+  let item = 0
+  const mintItemId = (): string => `${turnId}-item-${String(++item)}`
+  const events: HeadlessEvent[] = [
+    { v: 1, type: 'turn_start', threadId, turnId, protocolVersion: HEADLESS_PROTOCOL_VERSION },
+  ]
+  // Merge adjacent text/reasoning deltas so a streamed message is one item, not
+  // one item per character. Coalescing at the adapter layer keeps
+  // `projectStreamChunk` a pure per-chunk mapping.
+  for (const chunk of coalesceStreamText(chunks)) {
+    events.push(...projectStreamChunk(chunk, { turnId, mintItemId }))
+  }
+  events.push({
+    v: 1,
+    type: 'turn_end',
+    turnId,
+    outcome,
+    ...(stopReason !== undefined ? { stopReason } : {}),
+  })
+  for (const event of events) headlessEventSchema.parse(event)
+  return events
+}
+
+/** Collapse runs of consecutive `text` (or `reasoning`) chunks into one. */
+function coalesceStreamText(chunks: AgentStreamChunk[]): AgentStreamChunk[] {
+  const out: AgentStreamChunk[] = []
+  for (const chunk of chunks) {
+    const prev = out[out.length - 1]
+    if ((chunk.type === 'text' || chunk.type === 'reasoning') && prev?.type === chunk.type) {
+      out[out.length - 1] = { type: chunk.type, text: prev.text + chunk.text }
+      continue
+    }
+    out.push(chunk)
+  }
+  return out
+}
+
 async function runTask(
   task: BenchTask,
   provider: LLMProvider,
@@ -355,6 +426,10 @@ async function runTask(
   }
 
   const stats = { toolCalls: 0, inputTokens: 0, outputTokens: 0, usageChunks: 0 }
+  // Every chunk the loop emits, retained so the run can be projected onto the
+  // canonical headless-contract event envelope (#1079) after it finishes.
+  const chunks: AgentStreamChunk[] = []
+  let doneStopReason: string | undefined
   let error: string | undefined
   const started = Date.now()
 
@@ -381,6 +456,7 @@ async function runTask(
       signal: controller.signal,
       maxSteps: task.maxSteps ?? 20,
       onChunk: (c: AgentStreamChunk) => {
+        chunks.push(c)
         if (c.type === 'text') {
           textBuffer += c.text
           return
@@ -392,6 +468,7 @@ async function runTask(
           stats.inputTokens += c.inputTokens
           stats.outputTokens += c.outputTokens
         }
+        if (c.type === 'done') doneStopReason = c.stopReason
         if (c.type === 'tool_call' || c.type === 'tool_result' || c.type === 'done') {
           traceLines.push(JSON.stringify(c))
         }
@@ -414,6 +491,32 @@ async function runTask(
 
   const verdict = grade(task, workspace)
   await writeFile(tracePath, `${traceLines.join('\n')}\n`, 'utf8')
+
+  // Project the run onto the canonical headless-contract envelope (#1079). The
+  // turn outcome is the loop's lifecycle result — completed / timed-out / errored
+  // — not the benchmark's solved/unsolved grade, which is a consumer-specific
+  // judgement layered on top.
+  const timedOut = controller.signal.aborted
+  const outcome: HeadlessOutcome = timedOut || error !== undefined ? 'failed' : 'completed'
+  const stopReason: HeadlessStopReason = timedOut
+    ? 'timeout'
+    : error !== undefined
+      ? 'error'
+      : normalizeStopReason(doneStopReason)
+  const headlessTracePath = join(outDir, `${task.id}.headless.jsonl`)
+  const headlessEvents = buildHeadlessTurnEvents({
+    threadId: task.id,
+    turnId: `${task.id}-t1`,
+    chunks,
+    outcome,
+    stopReason,
+  })
+  await writeFile(
+    headlessTracePath,
+    `${headlessEvents.map(serializeHeadlessEvent).join('\n')}\n`,
+    'utf8',
+  )
+
   if (process.env['COPSE_BENCH_KEEP'] !== '1') rmSync(workspace, { recursive: true, force: true })
 
   return {
@@ -426,6 +529,7 @@ async function runTask(
     usageEstimated,
     durationMs: Date.now() - started,
     trace: tracePath,
+    headlessTrace: headlessTracePath,
     ...(error !== undefined ? { error } : {}),
   }
 }
@@ -535,11 +639,4 @@ function gateAgainstBaseline(summary: BenchSummary): void {
     process.exit(1)
   }
   console.log(`bench:agent gate OK (model '${summary.model}').`)
-}
-
-if (require.main === module) {
-  runBench().catch((err: unknown) => {
-    console.error(err)
-    process.exit(1)
-  })
 }

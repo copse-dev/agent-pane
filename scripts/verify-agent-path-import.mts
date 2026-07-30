@@ -13,7 +13,8 @@ try {
     `
       import { createRegistry } from ${JSON.stringify(resolve('src/main/services/registry-bootstrap.ts'))}
       import { buildSystemPrompt } from ${JSON.stringify(resolve('src/main/services/agent-system-prompt.ts'))}
-      export { createRegistry, buildSystemPrompt }
+      import { runHeadlessAgent } from ${JSON.stringify(resolve('src/main/services/headless-agent-host.ts'))}
+      export { createRegistry, buildSystemPrompt, runHeadlessAgent }
     `,
   )
 
@@ -41,11 +42,12 @@ try {
       return load.call(this, request, parent, isMain)
     }
     void (async () => {
-      const { createRegistry, buildSystemPrompt } = require(${JSON.stringify(bundle)})
+      const { createRegistry, buildSystemPrompt, runHeadlessAgent } = require(${JSON.stringify(bundle)})
       const registry = createRegistry()
       if (registry.names().length === 0) throw new Error('createRegistry returned no tools')
       const prompt = await buildSystemPrompt({ subagentsEnabled: false, invokedSkills: [] })
       if (prompt.length === 0) throw new Error('buildSystemPrompt returned an empty prompt')
+      if (typeof runHeadlessAgent !== 'function') throw new Error('headless host export is missing')
     })()
   `
   const child = spawnSync(process.execPath, ['-e', childProgram], {

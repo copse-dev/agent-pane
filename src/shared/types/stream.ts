@@ -24,6 +24,22 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  */
 export type StreamChunk =
   | AgentStreamChunk
+  /**
+   * Patch an existing external ACP tool call. ACP agents may send the title and
+   * raw input on the initial `tool_call`, then replace input/output/status in
+   * later `tool_call_update` notifications. Keeping that patch shape intact
+   * prevents clients from losing arguments or streamed output before the final
+   * completion update arrives.
+   */
+  | {
+      type: 'tool_call_update'
+      toolCallId: string
+      name?: string
+      args?: unknown
+      status?: 'running' | 'done' | 'error'
+      result?: string
+      resultFormat?: 'markdown'
+    }
   | {
       type: 'context_trimmed'
       contextWindow: number
