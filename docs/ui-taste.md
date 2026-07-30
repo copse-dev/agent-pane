@@ -128,8 +128,9 @@ Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch”
 
 For primary/secondary action buttons (Save / Cancel style):
 
-- Give buttons a roomy hit area — `padding: var(--spacing-md) var(--spacing-xl)` reads better than a
-  cramped `8px 20px`.
+- Match the marketing-site action recipe through the shared `--action-*` tokens: 36px minimum
+  height, 14px horizontal padding, 14px/22.4px semibold Pliant, and a 999px pill radius. Keep
+  compact chrome and icon-only controls out of this recipe.
 - Separate buttons with `gap: var(--spacing-md)`, not a tight `--spacing-sm`.
 - Keep an action bar clear of the window's bottom edge. Don't let buttons sit flush against the
   bottom; add generous bottom spacing (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`).
@@ -327,10 +328,17 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
   body (above the tool rows) so the collapsed view is only the italic heading. Standalone
   Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
-  `Reasoning` while live, `Reasoned` when settled.
+  `Reasoning…` while live, `Reasoned` when settled.
 - **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
   `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
   `reasoning` field / provider events.
+- **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
+  `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
+  into the live disclosure title so the transcript never shows two reasoning labels. The animated
+  spiral sits immediately beside the live label; settled disclosures return to a static chevron.
+- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
+  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
+  place so the existing past-tense label does not jump horizontally; do not keep animating it.
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
