@@ -98,27 +98,40 @@
   stroke: currentColor;
   stroke-width: 152;
   stroke-linecap: round;
-  stroke-dasharray: 0 1;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
   animation: reasoning-activity-draw 2.5s ease-in-out infinite;
 }
 @keyframes reasoning-activity-draw {
-  0% {
-    stroke-dasharray: 0 1;
-    stroke-dashoffset: 0;
+  0%,
+  1% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  2% {
+    stroke-dashoffset: 1;
+    opacity: 1;
   }
   46%,
   56% {
-    stroke-dasharray: 1 0;
     stroke-dashoffset: 0;
+    opacity: 1;
   }
-  100% {
-    stroke-dasharray: 0 1;
+  98% {
     stroke-dashoffset: -1;
+    opacity: 1;
+  }
+  99%,
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .reasoning-activity-path {
     stroke-dasharray: 1 0;
+    opacity: 1;
     animation: none;
   }
 }

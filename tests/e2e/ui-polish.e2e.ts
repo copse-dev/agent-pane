@@ -72,9 +72,91 @@ describe('shared UI polish', () => {
     await expect(reasoning.$('.message-reasoning-title')).toHaveText('Reasoning…')
     await expect(reasoning.$('[data-icon="reasoning-activity"]')).toExist()
     await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
-    // Capture after the draw-in has become a recognizable spiral, while the
-    // deliberately long reasoning fixture is still streaming.
-    await browser.pause(900)
+    // Freeze the animation through one cycle. Its dash pattern must be longer
+    // than the path so retraction cannot wrap a repeated dash back onto the
+    // beginning while the tail is still visible.
+    const loopSeam = await browser.execute(() => {
+      const path = document.querySelector<SVGPathElement>(
+        '.message-reasoning-live .reasoning-activity-path',
+      )
+      if (!path) return null
+      const animation = path
+        .getAnimations()
+        .find((candidate) => candidate.animationName === 'reasoning-activity-draw')
+      if (!animation) return { animated: false as const }
+
+      const duration = animation.effect?.getTiming().duration
+      if (typeof duration !== 'number' || !Number.isFinite(duration)) return null
+
+      animation.pause()
+      const sample = (
+        currentTime: number,
+      ): {
+        dashLength: number
+        gapLength: number
+        dashOffset: number
+        opacity: number
+      } => {
+        animation.currentTime = currentTime
+        const style = getComputedStyle(path)
+        const dashPattern = style.strokeDasharray
+          .split(/[ ,]+/)
+          .map((value) => Number.parseFloat(value))
+          .filter((value) => Number.isFinite(value))
+        const dashLength = dashPattern[0] ?? 0
+        return {
+          dashLength,
+          gapLength: dashPattern[1] ?? dashLength,
+          dashOffset: Number.parseFloat(style.strokeDashoffset),
+          opacity: Number.parseFloat(style.opacity),
+        }
+      }
+
+      const blankBefore = sample(duration - 1)
+      const blankAfter = sample(1)
+      const drawing = sample(duration * 0.1)
+      const full = sample(duration * 0.5)
+      // Leave the animation frozen mid-retraction for the visual reference:
+      // only the path tail should be visible, never a second start fragment.
+      const retracting = sample(duration * 0.75)
+      const visibleIconCount = [
+        ...document.querySelectorAll<SVGSVGElement>('[data-icon="reasoning-activity"]'),
+      ].filter((icon) => {
+        const style = getComputedStyle(icon)
+        return icon.getClientRects().length > 0 && style.visibility !== 'hidden'
+      }).length
+      return {
+        animated: true as const,
+        blankDurationMs: duration * 0.02,
+        blankBefore,
+        blankAfter,
+        drawing,
+        full,
+        retracting,
+        visibleIconCount,
+      }
+    })
+    assert.ok(loopSeam, 'reasoning animation path must exist')
+    assert.equal(loopSeam.animated, !composerGeometry.reducedMotion)
+    if (loopSeam.animated) {
+      assert.ok(loopSeam.blankDurationMs >= 1000 / 60)
+      assert.equal(loopSeam.visibleIconCount, 1)
+      assert.equal(loopSeam.blankBefore.opacity, 0)
+      assert.equal(loopSeam.blankAfter.opacity, 0)
+      assert.ok(loopSeam.blankBefore.dashOffset <= -0.99)
+      assert.ok(loopSeam.blankAfter.dashOffset >= 0.99)
+      assert.ok(loopSeam.drawing.opacity > 0.99)
+      assert.ok(loopSeam.drawing.dashOffset > 0)
+      assert.ok(loopSeam.drawing.dashOffset < 1)
+      assert.ok(loopSeam.full.opacity > 0.99)
+      assert.ok(Math.abs(loopSeam.full.dashOffset) <= 0.001)
+      assert.ok(loopSeam.retracting.opacity > 0.99)
+      assert.ok(loopSeam.retracting.dashOffset < 0)
+      assert.ok(loopSeam.retracting.dashOffset > -1)
+      assert.ok(loopSeam.retracting.dashLength >= 0.99)
+      assert.ok(loopSeam.retracting.gapLength >= 0.99)
+      assert.ok(loopSeam.retracting.dashLength + loopSeam.retracting.gapLength > 1)
+    }
     await saveAppScreenshot('chat-reasoning-in-transcript.png')
 
     await $('.stop-btn').click()
