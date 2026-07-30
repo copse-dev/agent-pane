@@ -89,6 +89,8 @@ export interface ContextSnapshot {
   conversationBudget: number
   conversationTokens: number
   fillRatio: number
+  /** Present when the context owner reported this snapshot directly. */
+  source?: 'agent-reported'
   updatedAt: number
 }
 

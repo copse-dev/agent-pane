@@ -1,0 +1,220 @@
+import { randomUUID } from 'node:crypto'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
+import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import { runWithDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/types'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { runAgent, abortAgent } from './agent-service.ts'
+import { createRegistry, registerSkillTools } from './registry-bootstrap.ts'
+import { runWithExplicitSettings } from './storage/settings-context.ts'
+import { runWithWorkspaceRoot, canonicalWorkspaceRoot } from './workspace.ts'
+import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
+import { runWithDiscoveredSkills, listSkills } from './skills/skills-registry.ts'
+import { runWithToolAvailability, type ExplicitToolAvailability } from './tool-availability.ts'
+import { loadMcpServers } from './mcp/mcp-registry.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
+import { runWithActiveRunIdentity } from './thread-models.ts'
+import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
+import { runWithApprovalHandler, type ApprovalHandler, type ApprovalResponse } from './approval.ts'
+import { runWithAskUserHandler, type AskUserHandler, type AskUserResult } from './ask-user.ts'
+import {
+  runWithSshPromptHandler,
+  type SshPromptHandler,
+  type SshPromptResponse,
+} from './ssh-workspace/ssh-prompt.ts'
+import { runWithStagedDiffResolver, type StagedDiffResolver } from './diff-queue.ts'
+
+export interface HeadlessInteractionProfile {
+  readonly approve?: ApprovalHandler
+  readonly askUser?: AskUserHandler
+  readonly sshPrompt?: SshPromptHandler
+  readonly stagedDiff?: StagedDiffResolver
+}
+
+export interface HeadlessAgentProfile {
+  /** Trusted local workspace the product file/shell tools are confined to. */
+  readonly workspaceRoot: string
+  /** Product model selection passed through the ordinary provider resolver. */
+  readonly model: string
+  /** User-visible settings for this run; absent keys use product defaults, never persisted values. */
+  readonly settings: Readonly<Record<string, unknown>>
+  /** Provider credentials for this run; no persisted or environment keys are inherited. */
+  readonly apiKeys?: Readonly<Record<string, string>>
+  /** Exact first-party packs enabled for this run. */
+  readonly enabledPackIds: readonly string[]
+  /** Optional pack-scoped settings, keyed by pack id then manifest setting id. */
+  readonly packSettings?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
+  /** Deterministic executable availability supplied by the host environment. */
+  readonly toolAvailability: ExplicitToolAvailability
+  /** Whether to discover/connect the product's configured MCP servers. */
+  readonly loadMcpServers: boolean
+  /** Explicit trust posture used by MCP, hooks, shell routing, and permission policy. */
+  readonly workspaceTrusted: boolean
+  /** Host interaction channels; omitted channels resolve deterministically without ambient UI. */
+  readonly interaction?: HeadlessInteractionProfile
+  /** Optional product-loop tighteners used by benchmark profiles. */
+  readonly limits?: { readonly maxSteps?: number; readonly maxLlmCalls?: number }
+}
+
+export interface HeadlessAgentRun {
+  readonly prompt: UserContent
+  readonly priorMessages?: readonly LLMMessage[]
+  readonly invokedSkills?: readonly string[]
+  readonly threadId?: string
+  readonly projectId?: string
+  readonly signal?: AbortSignal
+  readonly onChunk?: (chunk: StreamChunk) => void
+}
+
+export interface HeadlessAgentDependencies {
+  /** Deterministic provider seam for tests; ordinary hosts omit it and use product resolution. */
+  readonly provider?: LLMProvider
+  /** Context window paired with an injected provider. */
+  readonly contextWindow?: number
+}
+
+export interface HeadlessAgentResult {
+  readonly threadId: string
+  readonly chunks: readonly StreamChunk[]
+  readonly messages: readonly LLMMessage[]
+  readonly usage: { readonly inputTokens: number; readonly outputTokens: number }
+  /** Effective product construction, exposed for profile-resolution/hash tests. */
+  readonly toolNames: readonly string[]
+  readonly skillNames: readonly string[]
+}
+
+function runWithHeadlessInteractions<T>(
+  interaction: HeadlessInteractionProfile | undefined,
+  fn: () => T,
+): T {
+  const approve: ApprovalHandler =
+    interaction?.approve ??
+    ((): Promise<ApprovalResponse> => Promise.resolve({ approved: false, remember: false }))
+  const askUser: AskUserHandler =
+    interaction?.askUser ??
+    ((request): Promise<AskUserResult> =>
+      Promise.resolve({ answers: request.questions.map(() => '') }))
+  const sshPrompt: SshPromptHandler =
+    interaction?.sshPrompt ?? ((): Promise<SshPromptResponse> => Promise.resolve({ value: '' }))
+  const stagedDiff: StagedDiffResolver =
+    interaction?.stagedDiff ?? ((): Promise<boolean> => Promise.resolve(false))
+  return runWithApprovalHandler(approve, () =>
+    runWithAskUserHandler(askUser, () =>
+      runWithSshPromptHandler(sshPrompt, () => runWithStagedDiffResolver(stagedDiff, fn)),
+    ),
+  )
+}
+
+/**
+ * Run the product's complete local agent surface from an explicit profile.
+ *
+ * This is bootstrap only: provider/prompt/tool/permission/loop behavior stays in
+ * `runAgent`, the same orchestrator the Electron renderer drives. Async-local
+ * scopes keep concurrent headless runs isolated without replacing desktop state.
+ */
+export async function runHeadlessAgent(
+  profile: HeadlessAgentProfile,
+  run: HeadlessAgentRun,
+  dependencies: HeadlessAgentDependencies = {},
+): Promise<HeadlessAgentResult> {
+  const workspaceRoot = await canonicalWorkspaceRoot(profile.workspaceRoot, localWorkspaceFs)
+  const threadId = nonEmptyStringOr(run.threadId, `headless-${randomUUID()}`)
+  const projectId = nonEmptyStringOr(run.projectId, `headless-project-${randomUUID()}`)
+  const enabledPackIds = new Set(profile.enabledPackIds)
+  const packRegistry = createFirstPartyPackRegistry()
+
+  for (const pack of packRegistry.all()) {
+    if (!enabledPackIds.has(pack.id)) packRegistry.disable(pack.id)
+  }
+  for (const id of enabledPackIds) {
+    if (!packRegistry.has(id)) throw new Error(`Unknown enabled pack: ${id}`)
+  }
+  for (const [packId, values] of Object.entries(profile.packSettings ?? {})) {
+    if (!packRegistry.has(packId)) throw new Error(`Unknown pack settings owner: ${packId}`)
+    const storage = packRegistry.storage(packId)
+    for (const [key, value] of Object.entries(values)) storage.set(key, value)
+  }
+
+  return runWithExplicitSettings(
+    { values: profile.settings, ...(profile.apiKeys ? { apiKeys: profile.apiKeys } : {}) },
+    () =>
+      runWithWorkspaceRoot(workspaceRoot, () =>
+        runWithWorkspaceTrust(workspaceRoot, profile.workspaceTrusted, () =>
+          runWithDefaultPackRegistry(packRegistry, () =>
+            runWithToolAvailability(profile.toolAvailability, () =>
+              runWithHeadlessInteractions(profile.interaction, () =>
+                runWithDiscoveredSkills(async () => {
+                  const registry = createRegistry()
+                  registerSkillTools(registry)
+                  if (profile.loadMcpServers) await loadMcpServers(registry)
+
+                  const chunks: StreamChunk[] = []
+                  const host: AgentHost<StreamChunk> = {
+                    emit: (_emittingThreadId, chunk) => {
+                      chunks.push(chunk)
+                      run.onChunk?.(chunk)
+                    },
+                  }
+                  const onAbort = (): void => {
+                    abortAgent(threadId)
+                  }
+                  run.signal?.addEventListener('abort', onAbort, { once: true })
+
+                  try {
+                    const result = await runWithThreadExecutionContext(
+                      {
+                        projectId,
+                        threadId,
+                        projectRoot: workspaceRoot,
+                        root: workspaceRoot,
+                        checkoutMode: 'shared',
+                        branch: null,
+                      },
+                      () =>
+                        runWithActiveRunIdentity(threadId, () =>
+                          runAgent(
+                            threadId,
+                            run.prompt,
+                            [...(run.priorMessages ?? [])],
+                            host,
+                            registry,
+                            {
+                              model: profile.model,
+                              invokedSkills: [...(run.invokedSkills ?? [])],
+                              resolvePackSetting: (packId, key) =>
+                                packRegistry.has(packId)
+                                  ? packRegistry.storage(packId).get(key)
+                                  : undefined,
+                              ...(dependencies.provider ? { provider: dependencies.provider } : {}),
+                              ...(dependencies.contextWindow !== undefined
+                                ? { contextWindow: dependencies.contextWindow }
+                                : {}),
+                              ...(profile.limits?.maxSteps !== undefined
+                                ? { maxSteps: profile.limits.maxSteps }
+                                : {}),
+                              ...(profile.limits?.maxLlmCalls !== undefined
+                                ? { maxLlmCalls: profile.limits.maxLlmCalls }
+                                : {}),
+                            },
+                          ),
+                        ),
+                    )
+                    return {
+                      threadId,
+                      chunks,
+                      messages: result.messages,
+                      usage: result.usage,
+                      toolNames: registry.names(),
+                      skillNames: listSkills().map((skill) => skill.name),
+                    }
+                  } finally {
+                    run.signal?.removeEventListener('abort', onAbort)
+                  }
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+  )
+}

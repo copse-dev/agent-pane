@@ -673,7 +673,13 @@ export function mountPrPane(
           emptyState.textContent = 'File was deleted in this pull request'
           return
         }
-        await setGitFileDiffModel(ensureDiffEditor(), monaco, diff, viewerRoot)
+        await setGitFileDiffModel(
+          () => ensureDiffEditor(),
+          monaco,
+          diff,
+          viewerRoot,
+          () => requestId === selectRequestId && selectedFile === path,
+        )
       })
     await diffLoadQueue
   }

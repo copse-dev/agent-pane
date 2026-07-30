@@ -310,6 +310,60 @@ test('a finalized message is appended immediately on message_done', async () => 
   autosave.detach()
 })
 
+test('a settled ACP tool update re-finalizes its message with the latest args and response', async () => {
+  __resetPersistenceForTest()
+  const running: Message = {
+    id: 'a1',
+    role: 'assistant',
+    content: '',
+    createdAt: 20,
+    toolCalls: [
+      {
+        id: 'acp1',
+        name: 'mcp.copse.run_shell',
+        args: { command: 'npm test' },
+        kind: 'execute',
+        status: 'running',
+        result: 'starting',
+        resultFormat: 'markdown',
+      },
+    ],
+  }
+  const { api, calls } = fakeApi()
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 't1',
+    threads: [thread('t1', { messages: [running] })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+
+  // A running patch must not be serialized as the v1 spine's terminal `done`.
+  store.emit('tool_call_updated', running.id, 'acp1')
+  await tick()
+  assert.equal(calls.appends.length, 0)
+
+  const settled: Message = {
+    ...running,
+    toolCalls: running.toolCalls.map((toolCall) => ({
+      ...toolCall,
+      status: 'done' as const,
+      result: 'all tests passed',
+    })),
+  }
+  store.setState({ threads: [thread('t1', { messages: [settled] })] })
+  store.emit('tool_call_updated', settled.id, 'acp1')
+  await tick()
+
+  assert.equal(calls.appends.length, 1)
+  assert.deepEqual(calls.appends[0], {
+    projectId: 'p1',
+    threadId: 't1',
+    message: settled,
+  })
+  autosave.detach()
+})
+
 test('a new user message sends thread creation before an agent run can be dispatched', async () => {
   __resetPersistenceForTest()
   const message = userMsg('m1')
