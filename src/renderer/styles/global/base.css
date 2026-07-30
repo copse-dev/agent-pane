@@ -69,6 +69,7 @@ select,
 .tool-args pre,
 .hook-test-stream pre,
 .terminal-container,
+.agent-task-output-panel,
 .monaco-editor .view-lines {
   user-select: text;
   -webkit-user-select: text;

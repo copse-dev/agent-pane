@@ -16,8 +16,8 @@ import type { PanelEntry } from '@copse/agent/packs/pack-panel.ts'
  *   {@link sessionUpdateToStreamChunk} turns updates received from the agent
  *   back into chunks the renderer already knows how to display.
  *
- * Chunks/updates without a clean counterpart (usage accounting, context
- * pressure, internal subagent events) map to `null` and are dropped.
+ * Chunks/updates without a clean counterpart (turn token accounting, outbound
+ * context pressure, internal subagent events) map to `null` and are dropped.
  */
 
 /**
@@ -175,6 +175,20 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
           status: entry.status,
         })),
       }
+    case 'usage_update':
+      // ACP reports the agent-owned context directly. Unlike Copse's native
+      // estimator this includes the external agent's own system prompt, tools,
+      // cache reads, and any other context the client cannot inspect. Reuse the
+      // existing live context-pressure chunk so persistence and the footer wheel
+      // consume the authoritative `used / size` pair end to end.
+      return {
+        type: 'context_pressure',
+        contextWindow: update.size,
+        conversationBudget: update.size,
+        conversationTokens: update.used,
+        fillRatio: update.size > 0 ? update.used / update.size : 0,
+        source: 'agent-reported',
+      }
     case 'tool_call':
       return {
         type: 'tool_call',
@@ -192,17 +206,36 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         },
       }
     case 'tool_call_update': {
-      // Only surface terminal states; intermediate progress has no chunk.
-      if (update.status !== 'completed' && update.status !== 'failed') return null
+      // ACP updates are patches, and agents do not have to repeat raw input or
+      // content on the terminal status update. Preserve every supplied field so
+      // arguments and in-progress output are not discarded before completion.
+      const status = toolCallStatus(update.status)
+      const contentResult =
+        update.content !== undefined && update.content !== null
+          ? toolCallContentText(update.content)
+          : undefined
+      const rawTextResult =
+        update.rawOutput !== undefined ? mcpTextResult(update.rawOutput) : undefined
+      const result =
+        rawTextResult ??
+        contentResult ??
+        (update.rawOutput !== undefined ? formatRawToolValue(update.rawOutput) : undefined)
+      const name = typeof update.title === 'string' ? unwrapInlineCode(update.title) : undefined
+      if (
+        status === undefined &&
+        result === undefined &&
+        name === undefined &&
+        update.rawInput === undefined
+      ) {
+        return null
+      }
       return {
-        type: 'tool_result',
+        type: 'tool_call_update',
         toolCallId: update.toolCallId,
-        result: toolCallContentText(update.content),
-        isError: update.status === 'failed',
-        // External agents author tool output as Markdown (fenced code blocks,
-        // lists, prose). Tag it so the renderer runs it through the Markdown
-        // pipeline instead of dumping literal backticks into a `<pre>`.
-        resultFormat: 'markdown',
+        ...(name !== undefined ? { name } : {}),
+        ...(update.rawInput !== undefined ? { args: update.rawInput } : {}),
+        ...(status !== undefined ? { status } : {}),
+        ...(result !== undefined ? { result, resultFormat: 'markdown' } : {}),
       }
     }
     // The agent's permission (session) mode changed — either from our own
@@ -242,4 +275,55 @@ function toolCallContentText(content: ToolCallContent[] | null | undefined): str
     if (item.type === 'content' && item.content.type === 'text') parts.push(item.content.text)
   }
   return parts.join('')
+}
+
+function toolCallStatus(
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | null | undefined,
+): 'running' | 'done' | 'error' | undefined {
+  if (status === 'pending' || status === 'in_progress') return 'running'
+  if (status === 'completed') return 'done'
+  if (status === 'failed') return 'error'
+  return undefined
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * MCP transports wrap successful tool text in a protocol envelope. Extract it
+ * only when doing so is lossless; errors, mixed media, and structured results
+ * stay serialized so the UI never hides meaningful response data.
+ */
+function mcpTextResult(value: unknown): string | undefined {
+  if (!isUnknownRecord(value)) return undefined
+  const error = value['error']
+  if (error !== undefined && error !== null) return undefined
+
+  const result = value['result']
+  if (!isUnknownRecord(result) || result['isError'] === true) return undefined
+  const structuredContent = result['structuredContent']
+  if (structuredContent !== undefined && structuredContent !== null) return undefined
+
+  const content = result['content']
+  if (!Array.isArray(content) || content.length === 0) return undefined
+  const parts: string[] = []
+  for (const item of content) {
+    if (!isUnknownRecord(item) || item['type'] !== 'text' || typeof item['text'] !== 'string') {
+      return undefined
+    }
+    parts.push(item['text'])
+  }
+  return parts.join('\n')
+}
+
+function formatRawToolValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  const textResult = mcpTextResult(value)
+  if (textResult !== undefined) return textResult
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
 }

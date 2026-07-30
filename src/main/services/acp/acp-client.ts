@@ -622,18 +622,33 @@ export async function openAcpSession(
   let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
   const pendingUpdates = new Map<string, SessionUpdate[]>()
 
+  const enqueueUpdate = (sessionId: string, update: SessionUpdate): void => {
+    if (activeUpdates?.sessionId === sessionId) {
+      activeUpdates.queue.enqueue(update)
+      return
+    }
+    const pending = pendingUpdates.get(sessionId) ?? []
+    pending.push(update)
+    pendingUpdates.set(sessionId, pending)
+  }
+
   const app = client({ name: 'copse' })
     .onNotification(methods.client.session.update, (ctx) => {
-      const { sessionId, update } = ctx.params
-      if (activeUpdates?.sessionId === sessionId) {
-        activeUpdates.queue.enqueue(update)
-        return
-      }
-      const pending = pendingUpdates.get(sessionId) ?? []
-      pending.push(update)
-      pendingUpdates.set(sessionId, pending)
+      enqueueUpdate(ctx.params.sessionId, ctx.params.update)
     })
     .onRequest(methods.client.session.requestPermission, async (ctx) => {
+      const { sessionId, toolCall } = ctx.params
+      // Some ACP agents omit rawInput from their display notifications while
+      // still supplying it on the permission request. Feed that authoritative
+      // payload through the same ordered update queue so terminal tasks,
+      // transcript cards, and restart persistence receive the arguments.
+      if (toolCall.rawInput !== undefined) {
+        enqueueUpdate(sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: toolCall.toolCallId,
+          rawInput: toolCall.rawInput,
+        })
+      }
       const current = handlers.current
       if (!current) return { outcome: { outcome: 'cancelled' as const } }
       try {

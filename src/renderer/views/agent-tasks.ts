@@ -36,7 +36,10 @@ interface AgentTask {
   output: string
   tab: HTMLButtonElement
   panel: HTMLPreElement
-  /** Holds the echoed command line at the top of the panel; the rest is output. */
+  labelNode: HTMLSpanElement
+  commandNode: HTMLSpanElement
+  argsNode: HTMLSpanElement
+  /** Holds streamed/final response text after the fixed command and arguments. */
   outputNode: Text
 }
 
@@ -44,6 +47,17 @@ function shellCommandFromArgs(args: unknown): string | null {
   if (!isRecord(args)) return null
   const command = args['command']
   return typeof command === 'string' && command.trim() ? command : null
+}
+
+function formatTaskArgs(args: unknown): string {
+  if (args === undefined || args === null) return ''
+  try {
+    const rendered = JSON.stringify(args, null, 2)
+    if (!rendered || rendered === '{}' || rendered === '[]') return ''
+    return `Arguments:\n${rendered}\n\n`
+  } catch {
+    return 'Arguments:\n[Unable to display arguments]\n\n'
+  }
 }
 
 /**
@@ -104,6 +118,18 @@ export function mountAgentTasks(
     task.tab.dataset['status'] = status
   }
 
+  function setCommand(task: AgentTask, rawCommand: string): void {
+    const command = shellCommandLabel(rawCommand)
+    task.command = command
+    task.labelNode.textContent = command
+    task.labelNode.title = command
+    task.commandNode.textContent = `$ ${command}\n`
+  }
+
+  function setArgs(task: AgentTask, args: unknown): void {
+    task.argsNode.textContent = formatTaskArgs(args)
+  }
+
   function scrollPanelToBottom(task: AgentTask): void {
     task.panel.scrollTop = task.panel.scrollHeight
   }
@@ -149,7 +175,7 @@ export function mountAgentTasks(
     }
   }
 
-  function addTask(id: string, rawCommand: string, threadId: string): void {
+  function addTask(id: string, rawCommand: string, args: unknown, threadId: string): void {
     if (tasks.has(id)) return
     const command = shellCommandLabel(rawCommand)
 
@@ -162,12 +188,13 @@ export function mountAgentTasks(
     })
     panel.hidden = true
 
-    // Echo the command at the top of the panel, the way a real terminal shows the
-    // line that was typed before its output. The prompt line stays fixed at the
-    // top; streamed output accumulates in `outputNode` below it.
+    // Keep command and arguments in fixed nodes before the streamed response.
+    // ACP may provide `rawInput` after output has already started; updating the
+    // middle node still preserves command → arguments → response ordering.
     const promptLine = el('span', { class: 'agent-task-command' }, `$ ${command}\n`)
+    const argsNode = el('span', { class: 'agent-task-arguments' }, formatTaskArgs(args))
     const outputNode = document.createTextNode('')
-    panel.append(promptLine, outputNode)
+    panel.append(promptLine, argsNode, outputNode)
 
     const task: AgentTask = {
       id,
@@ -177,6 +204,9 @@ export function mountAgentTasks(
       output: '',
       tab,
       panel,
+      labelNode: label,
+      commandNode: promptLine,
+      argsNode,
       outputNode,
     }
     tab.addEventListener('click', () => {
@@ -220,6 +250,28 @@ export function mountAgentTasks(
       task.output = stripAnsi(result)
       task.outputNode.data = task.output
     }
+    if (task.id === selectedId) scrollPanelToBottom(task)
+  }
+
+  function updateTask(
+    id: string,
+    patch: {
+      name?: string
+      args?: unknown
+      status?: TaskStatus
+      result?: string
+    },
+  ): void {
+    const task = tasks.get(id)
+    if (!task) return
+    const command = shellCommandFromArgs(patch.args) ?? patch.name
+    if (command) setCommand(task, command)
+    if (patch.args !== undefined) setArgs(task, patch.args)
+    if (patch.result !== undefined) {
+      task.output = stripAnsi(patch.result)
+      task.outputNode.data = task.output
+    }
+    if (patch.status !== undefined) setStatus(task, patch.status)
     if (task.id === selectedId) scrollPanelToBottom(task)
   }
 
@@ -267,10 +319,12 @@ export function mountAgentTasks(
       if (chunk.toolCall.name === 'run_shell' || isAcpShell) {
         const command =
           shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.name : null)
-        if (command) addTask(chunk.toolCall.id, command, threadId)
+        if (command) addTask(chunk.toolCall.id, command, chunk.toolCall.args, threadId)
       }
     } else if (chunk.type === 'tool_result' && tasks.has(chunk.toolCallId)) {
       completeTask(chunk.toolCallId, chunk.result, chunk.isError)
+    } else if (chunk.type === 'tool_call_update') {
+      updateTask(chunk.toolCallId, chunk)
     }
   })
 
