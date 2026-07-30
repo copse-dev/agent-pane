@@ -513,3 +513,12 @@ token, plain containment copy, and an immediate Disable action; do not reduce it
 a transient toast, icon-only state, or rounded status pill. The opt-in warning must
 name the scope, expiry, containment, and residual risk before activation. Visual
 eval: `tests/e2e/guarded-yolo.e2e.ts`.
+
+## Roadmap import picker rows
+
+`.roadmap-import-row` is a `<label>` wrapping a checkbox + title. The global `label` rule in
+`forms.css` sets `flex-direction: column`, so any row that only sets `display: flex` (without
+`flex-direction: row`) stacks the checkbox under the title and — with `align-items: center` —
+centers both. Always override `flex-direction: row` (and reset `margin-bottom`) on checkbox list
+rows built from `<label>`. Visual eval:
+[`tests/e2e/roadmap-import-picker.e2e.ts`](../tests/e2e/roadmap-import-picker.e2e.ts).
