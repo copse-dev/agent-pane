@@ -2369,6 +2369,97 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
   })
 }
 
+/** MCP and Copse-wrapped tool cards without internal server prefixes in their labels. */
+export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-mcp-tool-display-project'
+  const threadId = 'e2e-mcp-tool-display-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'MCP tool labels',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-mcp-labels',
+            role: 'user',
+            content: 'Create an issue, inspect the issue list, and check the repository state.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-mcp-single',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-mcp-create',
+                name: 'mcp__github__create_issue',
+                args: { title: 'Tool label polish' },
+                status: 'done',
+                result: 'Created issue #42',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-mcp-group',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-mcp-list',
+                name: 'mcp__github__list_issues',
+                args: {},
+                status: 'done',
+                result: '#42 Tool label polish',
+              },
+              {
+                id: 'tc-mcp-get',
+                name: 'mcp__github__get_issue',
+                args: { number: 42 },
+                status: 'done',
+                result: 'Tool label polish',
+              },
+            ],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-copse-group',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-copse-status',
+                name: 'mcp__copse__git_status',
+                args: {},
+                status: 'done',
+                result: 'working tree clean',
+              },
+              {
+                id: 'tc-copse-diff',
+                name: 'mcp__copse__git_diff',
+                args: {},
+                status: 'done',
+                result: 'no changes',
+              },
+            ],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
 /** Thread showing built-in browser tool cards (navigate/snapshot/screenshot/interact). */
 export function seedBrowserToolsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-tools-project'
