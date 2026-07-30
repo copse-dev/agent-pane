@@ -147,6 +147,9 @@
 .tool-rollup-body > .message-reasoning > .message-reasoning-summary {
   margin-inline: calc(-1 * var(--spacing-xs));
 }
+.tool-rollup-body .reasoning-activity-icon {
+  color: var(--text-secondary);
+}
 
 .tool-card-group > .tool-group-items {
   display: flex;
