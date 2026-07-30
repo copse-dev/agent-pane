@@ -117,8 +117,9 @@ Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch”
 
 For primary/secondary action buttons (Save / Cancel style):
 
-- Give buttons a roomy hit area — `padding: var(--spacing-md) var(--spacing-xl)` reads better than a
-  cramped `8px 20px`.
+- Match the marketing-site action recipe through the shared `--action-*` tokens: 36px minimum
+  height, 14px horizontal padding, 14px/22.4px semibold Pliant, and a 999px pill radius. Keep
+  compact chrome and icon-only controls out of this recipe.
 - Separate buttons with `gap: var(--spacing-md)`, not a tight `--spacing-sm`.
 - Keep an action bar clear of the window's bottom edge. Don't let buttons sit flush against the
   bottom; add generous bottom spacing (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`).

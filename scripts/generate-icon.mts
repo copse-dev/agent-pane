@@ -10,6 +10,9 @@ import type { AppIconScheme, AppIconVariant } from '../src/shared/app-icon-varia
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const iconVariantSchema = z.enum([
   'rose',
+  'pink-lady',
+  'mint-leaf',
+  'cucumber',
   'aurora',
   'citrus',
   'candy',

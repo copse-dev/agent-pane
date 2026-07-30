@@ -200,9 +200,9 @@ function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   // Pin appearance so reference screenshots are deterministic: the app now
   // defaults to `system` theme (which resolves to whatever prefers-color-scheme
-  // the CI runner reports) and a pink interface tint — both would make shots
-  // depend on the host / drift with brand tweaks. Force the historical
-  // neutral-dark look here; individual specs can override via `settings`.
+  // the CI runner reports). Pin dark mode and disable any custom tint so shots
+  // do not depend on the host or saved appearance state; individual specs can
+  // override via `settings`.
   writeFileSync(
     SETTINGS_PATH,
     JSON.stringify({
@@ -218,8 +218,9 @@ function writeSettings(settings: Record<string, unknown>): void {
 /** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */
 export function seedE2eViewport(
   bounds: { width: number; height: number } = { width: 1280, height: 800 },
+  settings: Record<string, unknown> = {},
 ): void {
-  writeSettings({ windowBounds: bounds })
+  writeSettings({ windowBounds: bounds, ...settings })
 }
 
 /** Workspace + pinned theme for the preload boot-theme e2e (#41). */
