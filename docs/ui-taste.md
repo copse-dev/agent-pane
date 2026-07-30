@@ -327,10 +327,17 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
   body (above the tool rows) so the collapsed view is only the italic heading. Standalone
   Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
-  `Reasoning` while live, `Reasoned` when settled.
+  `Reasoning…` while live, `Reasoned` when settled.
 - **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
   `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
   `reasoning` field / provider events.
+- **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
+  `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
+  into the live disclosure title so the transcript never shows two reasoning labels. The animated
+  spiral sits immediately beside the live label; settled disclosures return to a static chevron.
+- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
+  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
+  place so the existing past-tense label does not jump horizontally; do not keep animating it.
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
