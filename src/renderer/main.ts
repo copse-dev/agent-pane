@@ -87,6 +87,7 @@ import { startAgentController } from './controller/agent.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
   addProjectFromPath,
   attachProjectThreadCache,
@@ -217,28 +218,29 @@ async function boot(): Promise<void> {
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
-  const rawSavedModel = await api.settings.get('model')
+  const startupSettings = await loadStartupSettings(api.settings)
+  const rawSavedModel = startupSettings.model
   const savedModel = typeof rawSavedModel === 'string' ? rawSavedModel : null
-  const savedLayout = await api.settings.get('layout')
-  const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
-  const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
-  const savedOpenLinksInBuiltInBrowser = await api.settings.get('openLinksInBuiltInBrowser')
+  const savedLayout = startupSettings.layout
+  const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
+  const savedRightPanelPosition = startupSettings.rightPanelPosition
+  const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
   // Theme and editor font size persist too. Restore them here (the store
   // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
   // the document root before the layout paints — panes read both from the store
   // as they mount below, so no post-mount re-theming is needed.
-  const savedTheme = await api.settings.get('theme')
+  const savedTheme = startupSettings.theme
   const themePreference = isThemePreference(savedTheme) ? savedTheme : DEFAULT_THEME_PREFERENCE
   // `system` resolves against the OS here; a watcher below keeps it live.
   const theme = resolveTheme(themePreference)
-  const savedFontSize = await api.settings.get('fontSize')
+  const savedFontSize = startupSettings.fontSize
   const fontSize =
     typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
       ? savedFontSize
       : store.getState().fontSize
   // Interface scale drives CSS --ui-scale (spacing + type tokens). Apply before
   // paint so the shell does not flash at 100% then jump.
-  const uiScale = restoreUiScale(await api.settings.get('uiScale'))
+  const uiScale = restoreUiScale(startupSettings.uiScale)
   applyThemeToDocument(theme)
   // When the preference is `system`, follow OS light/dark flips live so the app
   // re-themes without a relaunch. Reads the preference from the store each time,
@@ -253,10 +255,10 @@ async function boot(): Promise<void> {
   )
   // Restore the interaction accent and whole-app tint before the layout paints
   // so controls and surfaces do not flash their defaults before shifting.
-  const savedAccentColor = await api.settings.get('uiAccentColor')
+  const savedAccentColor = startupSettings.uiAccentColor
   applyUiAccent(typeof savedAccentColor === 'string' ? savedAccentColor : DEFAULT_ACCENT_COLOR)
-  const savedTintColor = await api.settings.get('uiTintColor')
-  const savedTintStrength = await api.settings.get('uiTintStrength')
+  const savedTintColor = startupSettings.uiTintColor
+  const savedTintStrength = startupSettings.uiTintStrength
   applyUiTint(
     typeof savedTintColor === 'string' ? savedTintColor : DEFAULT_TINT_COLOR,
     isUiTintStrength(savedTintStrength) ? savedTintStrength : DEFAULT_TINT_STRENGTH,

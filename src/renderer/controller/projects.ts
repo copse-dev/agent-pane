@@ -263,14 +263,6 @@ async function finishActivate(
 ): Promise<void> {
   if (gen !== switchGeneration) return
 
-  if (outgoingId && outgoingId !== id) {
-    await flushProjectThreads(api, outgoingId, outgoingThreads)
-  }
-  if (gen !== switchGeneration) return
-
-  await saveProjects(api, store.getState().projects, id)
-  if (gen !== switchGeneration) return
-
   if (sshHost) {
     const enabled = await api.settings.get('sshWorkspaceEnabled')
     if (enabled !== true) {
@@ -299,7 +291,20 @@ async function finishActivate(
     }
   }
 
-  if (!(await trySetWorkspace(api, path, sshHost))) {
+  // These operations touch independent stores. Start them together so dirty
+  // outgoing metadata or config I/O does not sit in front of workspace
+  // activation. Loading incoming threads still waits for a successful open,
+  // avoiding cache/baseline changes for a quarantined project.
+  const flushOutgoing =
+    outgoingId && outgoingId !== id
+      ? flushProjectThreads(api, outgoingId, outgoingThreads)
+      : Promise.resolve()
+  const persistSelection = saveProjects(api, store.getState().projects, id)
+  const workspaceOpened = trySetWorkspace(api, path, sshHost)
+  const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened])
+  if (gen !== switchGeneration) return
+
+  if (!opened) {
     if (gen !== switchGeneration) return
     // Quarantine rather than delete: flag the project missing and stay on the
     // project the user was already viewing (issue #997).
@@ -520,11 +525,16 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
       return
     }
   }
-  if (!(await trySetWorkspace(api, proj.path, proj.sshHost))) {
+  // Thread-store reads are project-id scoped and independent from workspace
+  // activation. Overlap them on launch; both can scale on an aged profile.
+  const [workspaceOpened, loaded] = await Promise.all([
+    trySetWorkspace(api, proj.path, proj.sshHost),
+    loadThreads(api, id),
+  ])
+  if (!workspaceOpened) {
     await quarantineAndRestoreNext(store, api, id)
     return
   }
-  const loaded = await loadThreads(api, id)
   cacheThreads(id, loaded)
   store.setState({
     activeProjectId: id,
