@@ -89,21 +89,20 @@ function isSettingsSection(value: unknown): value is SettingsSection {
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_ACCENT_COLOR = '#2A9D8F'
-// Ships on by default as a gentle wash that matches the default "Rose" app
-// icon (its #F472B6 mark). Users can dial it up, recolour it, or set the
-// strength to Off for the plain neutral surfaces.
-export const DEFAULT_TINT_COLOR = '#F472B6'
+export const DEFAULT_ACCENT_COLOR = '#20FD85'
+// Keep the neon interaction accent independent from the deeper surface tint.
+// New users get a restrained green wash; Strong unlocks the exact site palette.
+export const DEFAULT_TINT_COLOR = '#002E2B'
 export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
   subtle: '4%',
-  medium: '7%',
-  strong: '10%',
+  medium: '8%',
+  strong: '16%',
 }
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 
-function accentTextColor(color: string): '#101918' | '#ffffff' {
+function accentTextColor(color: string): '#444444' | '#ffffff' {
   const linearChannel = (offset: number): number => {
     const channel = Number.parseInt(color.slice(offset, offset + 2), 16) / 255
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
@@ -112,7 +111,7 @@ function accentTextColor(color: string): '#101918' | '#ffffff' {
   const green = linearChannel(3)
   const blue = linearChannel(5)
   const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-  return luminance > 0.179 ? '#101918' : '#ffffff'
+  return luminance > 0.179 ? '#444444' : '#ffffff'
 }
 
 /** Apply the interaction hue and keep text on solid accent fills readable. */
@@ -130,7 +129,12 @@ export function isUiTintStrength(value: unknown): value is UiTintStrength {
 /** Push the tint onto the document root so every surface picks it up at once. */
 export function applyUiTint(color: string, strength: UiTintStrength): void {
   const root = document.documentElement
-  if (HEX_COLOR.test(color)) root.style.setProperty('--tint-hue', color)
+  if (HEX_COLOR.test(color)) {
+    root.style.setProperty('--tint-hue', color)
+    root.dataset['tintPalette'] =
+      color.toLowerCase() === DEFAULT_TINT_COLOR.toLowerCase() ? 'copse' : 'custom'
+  }
+  root.dataset['tintStrength'] = strength
   root.style.setProperty('--tint-amount', TINT_STRENGTH_AMOUNTS[strength])
 }
 
