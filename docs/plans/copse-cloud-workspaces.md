@@ -11,6 +11,8 @@ builds can run on a disposable cloud machine instead of the user's laptop.
 Security, credential, network, checkpoint, and runtime lifecycle requirements are
 owned by [`execution-runtime-security.md`](execution-runtime-security.md). This plan
 owns provisioning providers, workspace attachment, cost UX, and rollout order.
+The distinction between remote execution and a device-independent background agent is
+mapped in [`background-agents-capability-map.md`](background-agents-capability-map.md).
 
 ## Goal
 
@@ -26,6 +28,13 @@ From the app, for any opened workspace:
 The end state keeps the UI, policy engine, thread store, and provider-neutral LLM loop
 local while filesystem and command execution run remotely. The remote runtime is
 replaceable compute attached to the logical thread, not the owner of the conversation.
+
+That end state completes **remote interactive execution**, not by itself a Copse
+background agent: if the desktop/model loop disconnects, the guest has no authority to
+continue reasoning. A later detached-worker phase may move ownership of a supervised
+turn to an always-available control plane, but only through the same thread, runtime,
+grant, and audit contracts. Provisioning a container must not be presented as completing
+device independence.
 
 This is distinct from the shipped **managed remote agent** path in
 `src/main/services/remote/`: managed agents hand the prompt and repository resource to
@@ -114,6 +123,11 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
    read-only base image and dedicated writable storage, but a container alone does not
    justify a hostile multi-tenant claim. v1 uses a dedicated user-controlled host or
    VM; stronger VM isolation can be added behind the same runtime contract.
+10. **Detached execution is an explicit ownership transfer.** A background run records
+    which worker holds the supervisor lease, automation principal, provider-call
+    authority, runtime, and thread-spine append lease. The desktop becomes an observer
+    or approval endpoint until the lease is released; local and remote loops must never
+    advance the same turn concurrently.
 
 ### Alternatives considered
 
@@ -162,6 +176,16 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
   from the thread spine, workspace snapshot, and runtime metadata. Add backend-specific
   process/VM snapshots only as optional capabilities after crash recovery and teardown
   are proven.
+- **C7 — detached Copse worker (true background-agent milestone).** Run the shared
+  headless-turn contract and background supervisor on an always-available worker;
+  acquire a fenced per-task/thread lease; use an automation principal and scoped
+  runtime/credential grants; stream canonical events to the durable thread spine; park
+  safely on human approval; and let desktop clients observe or take over after an
+  explicit handoff. Start with one task in one repo. Fleet campaigns and external
+  trigger ingress consume this only after single-task crash/replay behavior is proven.
+  Exit gate: disconnect the initiating desktop during model and tool execution, restart
+  both sides in adversarial order, and observe one converged task with no duplicate
+  provider turn, GitHub action, commit, or spine append.
 
 ## Risks / open questions
 
@@ -187,3 +211,6 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
   durable secrets, keep the control plane local, and document provider-host exposure.
 - **Windows/macOS containers:** out of scope — containers are Linux;
   platform-specific work stays local.
+- **Split-brain risk:** an app and detached worker can both believe they own a turn.
+  C7 needs a renewable, fenced lease and idempotent external actions; presence/status
+  heartbeats without fencing are insufficient.
