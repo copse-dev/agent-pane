@@ -15,6 +15,7 @@ import type {
   RoadmapReviewItemResult,
   RoadmapReviewPrepareResult,
 } from '../../main/services/roadmap-review.ts'
+import type { RoadmapIssueCoverageMatch } from '../../main/services/roadmap-issue-coverage.ts'
 
 // Minimal KnowledgeNote (Roadmap) factory; only the fields the pane reads matter.
 function makeItem(
@@ -89,6 +90,7 @@ interface RoadmapCalls {
   openExternal: string[]
   openIssues: number
   importIssues: { number: number; title: string; body: string }[][]
+  matchOpenIssues: { number: number; title: string; body: string }[][]
   checkFit: string[]
   prepareReview: number
   reviewItem: { id: string; commits: string; runId?: string }[]
@@ -125,6 +127,12 @@ function makeOpenIssue(number: number, title: string, body = ''): MockOpenIssue 
 function makeApi(
   seed: ReturnType<typeof makeItem>[],
   issues: MockOpenIssue[] = [],
+  coverage: {
+    issueNumber: number
+    itemId: string
+    itemTitle: string
+    verdict: 'likely' | 'partial'
+  }[] = [],
 ): {
   api: ApiClient
   calls: RoadmapCalls
@@ -144,6 +152,7 @@ function makeApi(
     openExternal: [],
     openIssues: 0,
     importIssues: [],
+    matchOpenIssues: [],
     checkFit: [],
     prepareReview: 0,
     reviewItem: [],
@@ -367,7 +376,13 @@ function makeApi(
           items.push(...created)
           return created
         },
-        onChanged: (handler: () => void) => {
+        matchOpenIssues: async (
+          selected: { number: number; title: string; body: string }[],
+        ): Promise<RoadmapIssueCoverageMatch[]> => {
+          calls.matchOpenIssues.push(selected)
+          return coverage.map((c) => ({ ...c }))
+        },
+        onChanged: (handler: () => void): (() => void) => {
           changedHandler = handler
           return (): void => {
             changedHandler = null
@@ -1018,6 +1033,7 @@ describe('roadmap pane', () => {
       list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
       await flush()
       assert.equal(calls.openIssues, 1)
+      assert.equal(calls.matchOpenIssues.length, 1)
       const checks = [...viewer.querySelectorAll<HTMLInputElement>('.roadmap-import-check')]
       assert.equal(checks.length, 2)
       const [pinnedCheck, freeCheck] = checks
@@ -1035,6 +1051,47 @@ describe('roadmap pane', () => {
       assert.ok(titles.join('\n').includes('#52'), 'the imported item appears in the list')
       // The picker closes after a successful import.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-import')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('disables issues the model judges already covered by a roadmap item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi(
+      [makeItem('term', 'Add a keyboard shortcut to toggle the terminal pane')],
+      [
+        makeOpenIssue(52, 'Add keyboard shortcut to toggle the terminal pane'),
+        makeOpenIssue(99, 'Unrelated issue'),
+      ],
+      [
+        {
+          issueNumber: 52,
+          itemId: 'term',
+          itemTitle: 'Add a keyboard shortcut to toggle the terminal pane',
+          verdict: 'likely',
+        },
+      ],
+    )
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      assert.equal(calls.matchOpenIssues.length, 1)
+      const rows = [...viewer.querySelectorAll<HTMLLabelElement>('.roadmap-import-row')]
+      assert.equal(rows.length, 2)
+      const covered = rows.find((r) => r.textContent.includes('#52'))
+      const free = rows.find((r) => r.textContent.includes('#99'))
+      assert.ok(covered && free)
+      assert.equal(covered.classList.contains('is-covered'), true)
+      const coveredCheck = covered.querySelector<HTMLInputElement>('.roadmap-import-check')
+      const freeCheck = free.querySelector<HTMLInputElement>('.roadmap-import-check')
+      assert.ok(coveredCheck && freeCheck)
+      assert.equal(coveredCheck.disabled, true)
+      assert.match(covered.textContent, /covered by/)
+      assert.equal(freeCheck.disabled, false)
     } finally {
       unmount()
     }
