@@ -740,7 +740,10 @@ export async function getCurrentCommitHash(
 export async function getGitPromptState(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<GitPromptState> {
-  const [startingCommit, status] = await Promise.all([getCurrentCommitHash(root), getGitStatus(root)])
+  const [startingCommit, status] = await Promise.all([
+    getCurrentCommitHash(root),
+    getGitStatus(root),
+  ])
   return {
     startingCommit,
     dirty: Boolean(status && (status.staged.length > 0 || status.unstaged.length > 0)),
