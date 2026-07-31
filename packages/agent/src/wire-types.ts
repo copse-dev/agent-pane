@@ -210,6 +210,8 @@ export type AgentStreamChunk =
       conversationBudget: number
       conversationTokens: number
       fillRatio: number
+      /** Present when an external agent reported the values instead of Copse estimating them. */
+      source?: 'agent-reported'
     }
   | { type: 'subagent_start'; parentToolCallId: string; session: SubagentSession }
   | { type: 'subagent_text'; parentToolCallId: string; messageId: string; text: string }

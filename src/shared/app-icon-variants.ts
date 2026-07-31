@@ -1,5 +1,8 @@
 export const APP_ICON_VARIANTS = [
   'rose',
+  'pink-lady',
+  'mint-leaf',
+  'cucumber',
   'aurora',
   'citrus',
   'candy',
@@ -22,6 +25,9 @@ export const DEFAULT_APP_ICON_VARIANT: AppIconVariant = 'rose'
 
 export const APP_ICON_VARIANT_LABELS: Record<AppIconVariant, string> = {
   rose: 'Rose',
+  'pink-lady': 'Pink Lady',
+  'mint-leaf': 'Mint Leaf',
+  cucumber: 'Cucumber',
   aurora: 'Aurora',
   citrus: 'Citrus',
   candy: 'Candy',
@@ -40,16 +46,16 @@ export const APP_ICON_VARIANT_LABELS: Record<AppIconVariant, string> = {
 }
 
 /**
- * Colour recipe for one icon variant — the two gradient stops of the wave
- * stroke plus the tile background. These are the schemes exported from the
- * "Icon Studio" design (claude.ai/design), and are the single source of truth
- * for both the rasterised PNG/.icns assets (scripts/generate-icon.mts renders
- * the wave mark from them) and any in-app colour swatches.
+ * Colour recipe for one icon variant — the two gradient stops of the Copse
+ * glyph plus the tile background. These are the schemes exported from the
+ * product icon explorations, and are the single source of truth for both the
+ * rasterised PNG/.icns assets (scripts/generate-icon.mts renders the shared glyph
+ * from them) and any in-app colour swatches.
  */
 export interface AppIconScheme {
-  /** Gradient start colour (top-left of the stroke). */
+  /** Gradient start colour (top-left of the glyph). */
   start: string
-  /** Gradient end colour (bottom-right of the stroke). */
+  /** Gradient end colour (bottom-right of the glyph). */
   end: string
   /** Rounded-tile background fill. */
   bg: string
@@ -57,6 +63,9 @@ export interface AppIconScheme {
 
 export const APP_ICON_VARIANT_SCHEMES: Record<AppIconVariant, AppIconScheme> = {
   rose: { start: '#FDA4AF', end: '#F472B6', bg: '#7A1145' },
+  'pink-lady': { start: '#002E2B', end: '#002E2B', bg: '#FF9FC5' },
+  'mint-leaf': { start: '#002E2B', end: '#002E2B', bg: '#20FD85' },
+  cucumber: { start: '#FF9FC5', end: '#FF9FC5', bg: '#002E2B' },
   aurora: { start: '#7C3AED', end: '#22D3EE', bg: '#0F172A' },
   citrus: { start: '#79F042', end: '#4C7EF0', bg: '#121C0D' },
   candy: { start: '#4265F0', end: '#F04C86', bg: '#0D101C' },

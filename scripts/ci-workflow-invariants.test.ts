@@ -25,6 +25,14 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('keeps the e2e hosted-runner fallback explicit and inside the trusted-event guard', () => {
+    const e2eJob = workflow.match(/^ {2}e2e:\n(?: {4}.*\n)+/m)?.[0]
+    assert.ok(e2eJob, 'expected an `e2e:` job in ci.yml')
+    assert.match(e2eJob, /vars\.E2E_RUNNER == 'ubuntu-latest'/)
+    assert.match(e2eJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/)
+    assert.match(e2eJob, /fromJSON\('\["self-hosted", "copse-e2e"\]'\)/)
+  })
+
   it('keeps the heavy tier off `develop` so day-to-day PRs stay cheap', () => {
     // The develop model only pays for itself if e2e/bench run once per PROMOTION
     // rather than once per PR. Both guards are easy to lose when someone edits an
