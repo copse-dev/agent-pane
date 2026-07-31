@@ -23,6 +23,7 @@ const ENV_VARS: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
   cursor: 'CURSOR_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
+  parallel: 'PARALLEL_API_KEY',
   groq: 'GROQ_API_KEY',
   together: 'TOGETHER_API_KEY',
   fireworks: 'FIREWORKS_API_KEY',

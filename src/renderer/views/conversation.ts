@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
   arrowDownIcon,
   checkIcon,
@@ -10,6 +11,7 @@ import {
 import {
   getHookCardStatusLabel,
   getHookCardTitle,
+  hookCardPerformedAction,
   hookEventLabel,
   isHookCardBlocking,
   type HookCard,
@@ -40,6 +42,7 @@ import {
 } from '@shared/threads/message-model.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
+import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -120,7 +123,16 @@ function createToolHeader(
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
 ): HTMLElement {
-  const children: (Node | string)[] = [el('span', { class: 'tool-name' }, label)]
+  // Keep a fixed-width leading slot in every state so the label never shifts
+  // when a running tool settles. The animated icon itself is omitted once done.
+  const activityIcon = el('span', {
+    class: 'tool-activity-icon-slot',
+    'aria-hidden': 'true',
+  })
+  if (status === 'running') {
+    activityIcon.append(reasoningActivityIcon('reasoning-activity-icon'))
+  }
+  const children: (Node | string)[] = [activityIcon, el('span', { class: 'tool-name' }, label)]
   if (editStats) {
     const stats = [
       el('span', { class: 'tool-stat tool-stat-add' }, `+${String(editStats.additions)}`),
@@ -616,23 +628,35 @@ function hookCardStatusIcon(status: HookCardStatus): SVGSVGElement {
 /** Compact facts about what a hook run did — shown under the header when useful. */
 function hookCardDetailLines(card: HookCard): string[] {
   const lines: string[] = []
+  if (card.status === 'deny') lines.push('Blocked the gated action')
+  if (card.status === 'ask') lines.push('Requested approval for the gated action')
+  if (card.status === 'halted') lines.push('Stopped the agent run')
+  if (card.updatedInput) lines.push('Rewrote the tool input')
+  if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
+    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
+  }
+  if (card.agentMessageChars !== undefined && card.agentMessageChars > 0) {
+    lines.push(`Sent ${String(card.agentMessageChars)} chars of guidance to the agent`)
+  }
+  if (card.userMessageChars !== undefined && card.userMessageChars > 0) {
+    lines.push(`Showed you a ${String(card.userMessageChars)}-char message`)
+  }
+  if (card.queuedMessageChars !== undefined && card.queuedMessageChars > 0) {
+    lines.push(`Queued a ${String(card.queuedMessageChars)}-char follow-up`)
+  }
+  if (card.sessionEnvKeys !== undefined && card.sessionEnvKeys > 0) {
+    lines.push(`Set ${String(card.sessionEnvKeys)} session environment variables`)
+  }
+  if (card.stopReason) lines.push(`Reason: ${card.stopReason}`)
+  if (card.sandboxBlocked) lines.push('Blocked by the project sandbox')
+  if (!card.parseOk) lines.push('Output did not parse as a hook response')
+  if (card.error) lines.push(`Error: ${card.error}`)
   lines.push(`Hook: ${card.hookId}`)
   if (card.executor === 'command' && card.exitCode !== undefined && card.exitCode !== null) {
     lines.push(`Exit code: ${String(card.exitCode)}`)
   }
   if (card.exitCode === null) lines.push('Process killed (timeout / output cap)')
   if (card.durationMs > 0) lines.push(`Duration: ${String(card.durationMs)}ms`)
-  if (card.updatedInput) lines.push('Rewrote the tool input')
-  if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
-    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
-  }
-  if (card.queuedMessageChars !== undefined && card.queuedMessageChars > 0) {
-    lines.push(`Queued a ${String(card.queuedMessageChars)}-char follow-up`)
-  }
-  if (card.stopReason) lines.push(`Reason: ${card.stopReason}`)
-  if (card.sandboxBlocked) lines.push('Blocked by the project sandbox')
-  if (!card.parseOk) lines.push('Output did not parse as a hook response')
-  if (card.error) lines.push(`Error: ${card.error}`)
   return lines
 }
 
@@ -643,6 +667,7 @@ function createHookCard(card: HookCard): HTMLElement {
     'data-hook-event': card.event,
     'data-hook-kind': card.kind,
     'data-status': card.status,
+    open: hookCardPerformedAction(card),
   })
   const header = el(
     'summary',
@@ -701,14 +726,22 @@ function hookGroupStatus(cards: HookCard[]): HookCardStatus {
   return worst
 }
 
-/** Summary line for the collapsed group, e.g. `12 ran` or `12 ran · 1 blocked`. */
+/** Outcome-first summary for the collapsed group, e.g. `1 action · 12 ran`. */
 function hookGroupSummaryLabel(cards: HookCard[]): string {
   const ran = `${String(cards.length)} ran`
-  const blocking = cards.filter((c) => isHookCardBlocking(c.status)).length
-  if (blocking > 0) return `${ran} · ${String(blocking)} blocked`
+  const failed = cards.filter((c) => c.status === 'blocked' || c.status === 'error').length
+  if (failed > 0) return `${String(failed)} failed · ${ran}`
+  const denied = cards.filter((c) => c.status === 'deny').length
+  if (denied > 0) return `${String(denied)} blocked · ${ran}`
+  const halted = cards.filter((c) => c.status === 'halted').length
+  if (halted > 0) return `${String(halted)} stopped · ${ran}`
   const asked = cards.filter((c) => c.status === 'ask').length
-  if (asked > 0) return `${ran} · ${String(asked)} asked`
-  return ran
+  if (asked > 0) return `${String(asked)} requested approval · ${ran}`
+  const actions = cards.filter(hookCardPerformedAction).length
+  if (actions > 0) {
+    return `${String(actions)} ${actions === 1 ? 'action' : 'actions'} · ${ran}`
+  }
+  return `No changes · ${ran}`
 }
 
 /**
@@ -785,12 +818,13 @@ function shouldNestReasoningInTools(toolCalls: ToolCall[]): boolean {
 
 /** Progressive while this bubble is the live step; past once settled. */
 function reasoningDisclosureTitle(live: boolean): string {
-  return live ? 'Reasoning' : 'Reasoned'
+  return live ? 'Reasoning…' : 'Reasoned'
 }
 
 function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean): void {
   const title = details.querySelector('.message-reasoning-title')
   if (title) title.textContent = reasoningDisclosureTitle(live)
+  details.classList.toggle('message-reasoning-live', live)
 }
 
 /** Live = running thread, this is the latest bubble, and no answer text yet. */
@@ -804,13 +838,12 @@ function isReasoningDisclosureLive(
 }
 
 /**
- * A transcript chip: an outline icon + its (clipped) label. Display-only except
- * for a video, which becomes a button that plays the recording — the file is on
- * disk and the person who attached it otherwise has no way to see what they
- * sent, since the video deliberately never becomes model content.
+ * A transcript chip: an outline icon + its (clipped) label. Text snapshots open
+ * in the shared attachment viewer; videos use the same shell after loading their
+ * bytes from disk. Legacy chips without preview data remain display-only.
  */
 function transcriptChip(
-  attachment: Pick<TranscriptAttachment, 'kind' | 'label' | 'path'>,
+  attachment: Pick<TranscriptAttachment, 'kind' | 'label' | 'path' | 'content'>,
   api: ApiClient,
 ): HTMLElement {
   const { kind, label } = attachment
@@ -821,6 +854,8 @@ function transcriptChip(
   )
   if (kind === 'video' && attachment.path) {
     attachVideoExpand(chip, api, attachment.path, label)
+  } else if (attachment.content !== undefined) {
+    attachTextExpand(chip, attachment.content, label)
   }
   return chip
 }
@@ -862,11 +897,18 @@ function renderUserTranscript(
  * never fight the user's choice.
  */
 function buildReasoningEl(reasoning: string, open: boolean, live: boolean): HTMLDetailsElement {
-  const details = el('details', { class: 'message-reasoning', open })
+  const details = el('details', {
+    class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
+    open,
+  })
   const summary = el(
     'summary',
     { class: 'message-reasoning-summary' },
-    el('span', { class: 'message-reasoning-icon', 'aria-hidden': 'true' }),
+    el(
+      'span',
+      { class: 'message-reasoning-icon', 'aria-hidden': 'true' },
+      reasoningActivityIcon('reasoning-activity-icon'),
+    ),
     el('span', { class: 'message-reasoning-title' }, reasoningDisclosureTitle(live)),
   )
   const text = el('div', { class: 'message-reasoning-text' })
@@ -961,12 +1003,7 @@ const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
-export function mountConversation(
-  root: HTMLElement,
-  store: AppStore,
-  api: ApiClient,
-  activityHost?: HTMLElement,
-): () => void {
+export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -984,12 +1021,10 @@ export function mountConversation(
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
-  activityBar.append(
-    el('span', { class: 'agent-activity-pulse', 'aria-hidden': 'true' }),
-    activityLabel,
-  )
-  // Clicking the activity row jumps to and opens the latest reasoning trail so the
-  // "Reasoning…" indicator is itself the way in to watching the model reason.
+  activityBar.append(reasoningActivityIcon('reasoning-activity-icon'), activityLabel)
+  // Non-reasoning activity can still reopen the latest trail (for example while
+  // the answer is being written). During reasoning, the live disclosure itself
+  // replaces this standalone row.
   activityBar.addEventListener('click', () => {
     const trails = list.querySelectorAll<HTMLDetailsElement>('.msg-assistant .message-reasoning')
     const details = trails[trails.length - 1]
@@ -1003,11 +1038,6 @@ export function mountConversation(
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   root.append(scrollArea, queuedHost)
-  // In the full app, activity is the composer's top strip so it reads as part
-  // of the message box rather than a separate full-width status bar. Component
-  // mounts can omit the host and keep the self-contained fallback.
-  if (activityHost) activityHost.prepend(activityBar)
-  else root.append(activityBar)
 
   // Clicking a file edit's +/- counts reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
@@ -1316,6 +1346,17 @@ export function mountConversation(
       return
     }
     activityLabel.textContent = label
+    // Once reasoning tokens exist, the disclosure title is the activity row.
+    // Keep the standalone row for the initial wait before the first token, but
+    // never show two live "Reasoning…" labels in the transcript.
+    if (
+      label.startsWith('Reasoning…') &&
+      list.querySelector('.message-reasoning.message-reasoning-live')
+    ) {
+      activityBar.hidden = true
+      scrollToBottom()
+      return
+    }
     // Only advertise the row as clickable once there's a reasoning trail to open.
     activityBar.classList.toggle(
       'agent-activity-clickable',
@@ -1614,8 +1655,12 @@ export function mountConversation(
     // cards are anchored inline after their own message (see renderMessageReview)
     // and stay put — a new message naturally lands after them.
     const trailingCard = list.querySelector('[data-comparison-card]')
-    if (trailingCard) list.insertBefore(msgEl, trailingCard)
-    else list.append(msgEl)
+    if (trailingCard) {
+      // The activity row sits immediately above a trailing comparison. Insert
+      // the message above both so the status remains the transcript's live tail
+      // while the comparison preserves its last-child contract.
+      list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
+    } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
@@ -1828,6 +1873,9 @@ export function mountConversation(
       queuedHost.replaceChildren()
       queuedHost.hidden = true
     }
+    // Activity is transcript content, not composer chrome. Keep it beneath the
+    // messages but above a trailing comparison card, which remains last.
+    list.insertBefore(activityBar, list.querySelector('[data-comparison-card]'))
     updateScrollButton()
   }
 
@@ -1889,6 +1937,7 @@ export function mountConversation(
       if (msg?.role === 'assistant' && msgEl) {
         syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
         activityBar.classList.add('agent-activity-clickable')
+        setActivity(activityLabel.textContent)
         scrollToBottom()
       }
     }),
@@ -1959,7 +2008,6 @@ export function mountConversation(
   rebuildForThread()
   syncFromStore()
   return () => {
-    if (activityHost) activityBar.remove()
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

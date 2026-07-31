@@ -15,6 +15,7 @@ interface FakeWebview extends HTMLElement {
   canGoForward(): boolean
   reload(): void
   openDevTools?(): void
+  getWebContentsId(): number
 }
 
 /** Stub the guest-webview methods jsdom lacks so `dom-ready` handlers can run. */
@@ -23,6 +24,7 @@ function stubWebviewMethods(webview: FakeWebview): void {
   webview.canGoBack = (): boolean => false
   webview.canGoForward = (): boolean => false
   webview.reload = (): void => {}
+  webview.getWebContentsId = (): number => 42
 }
 
 function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
@@ -35,6 +37,55 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
+  it('creates and reuses a visible tab for a selected-pack browser request', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    let requestTab:
+      | ((request: { requestId: number; preferredTabId?: string }) => Promise<{
+          tabId: string
+          webContentsId: number
+        }>)
+      | undefined
+    const api = createPendingApi({
+      'browser.onPackTabRequest': (handler: typeof requestTab): (() => void) => {
+        requestTab = handler
+        return (): void => {}
+      },
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      assert.ok(requestTab)
+      const firstResult = requestTab({ requestId: 1 })
+      const webview = qsRequired<FakeWebview>(viewer, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+      const first = await firstResult
+
+      assert.equal(first.webContentsId, 42)
+      assert.equal(store.getState().filesPaneOpen, true)
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+
+      const second = await requestTab({ requestId: 2, preferredTabId: first.tabId })
+      assert.deepEqual(second, first)
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
   it('opens Cursor agent run URLs in a browser tab without switching threads', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
