@@ -78,6 +78,42 @@ describe('shared model picker', () => {
     picker.destroy()
   })
 
+  it('navigates recent -> all on ArrowRight and all -> recent on ArrowLeft', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    let current = 'claude-sonnet-4-6'
+    const picker = mountModelPicker(
+      host,
+      () => current,
+      (value) => {
+        current = value
+      },
+      async () => OPTIONS,
+      {
+        loadOnMount: false,
+        getRecentValues: () => ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      },
+    )
+    await picker.refresh()
+
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const menu = host.querySelector<HTMLDivElement>('.model-picker-menu')
+    assert.ok(menu)
+    const filter = host.querySelector<HTMLInputElement>('.model-picker-filter')
+    assert.ok(filter)
+
+    // In recent view: ArrowRight opens the all-models view with the filter focused.
+    menu.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    assert.equal(filter.hasAttribute('hidden'), false)
+    assert.equal(document.activeElement, filter)
+
+    // In all view: ArrowLeft returns to the recent view.
+    menu.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    assert.equal(filter.hasAttribute('hidden'), true)
+
+    picker.destroy()
+  })
+
   it('keeps a hidden select as form state and supports an automatic blank route', async () => {
     const form = document.createElement('form')
     const label = document.createElement('label')

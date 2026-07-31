@@ -68,6 +68,7 @@ export function mountApprovalDialog(
   // batch doesn't push the buttons off screen.
   const heading = el('h3', { class: 'approval-heading' })
   const items = el('div', { class: 'approval-items' })
+  const chatScrim = el('div', { class: 'approval-chat-scrim', 'aria-hidden': 'true', hidden: '' })
   const dialog = el('dialog', { id: 'approval-dialog' })
   dialog.append(
     heading,
@@ -80,7 +81,12 @@ export function mountApprovalDialog(
       el('button', { class: 'approval-reject' }, 'Reject'),
     ),
   )
-  document.body.append(dialog)
+  // Approval is intentionally owned by the chat pane rather than the window:
+  // the scrim blocks the transcript/composer while the adjacent terminal and
+  // other right-panel tools remain interactive. Tests that mount this view in
+  // isolation have no app shell, so body is the harmless fallback host.
+  const chatPane = document.getElementById('pane-chat') ?? document.body
+  chatPane.append(chatScrim, dialog)
 
   const rememberInput = qsRequired<HTMLInputElement>(rememberLabel, '.approval-remember-input')
   const approveButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve')
@@ -117,6 +123,10 @@ export function mountApprovalDialog(
   let cancelSettle: (() => void) | null = null
   /** Live reader for model-compare pickers on the open prompt (single-item batch). */
   let readComparisonModels: (() => ComparisonModelSelection) | null = null
+  function closeDialog(): void {
+    dialog.close()
+    chatScrim.hidden = true
+  }
 
   // Minimizing the window flips the renderer document to `hidden`. A modal shown
   // on a hidden window can't be painted, so it reads as a frozen/crashed pane and
@@ -267,7 +277,17 @@ export function mountApprovalDialog(
     clearSettle()
     rememberInput.checked = false
     renderBatch()
-    dialog.showModal()
+    // A Settings-owned provider-host prompt is the one deliberate modal
+    // exception: Settings already makes the document inert, so an inline prompt
+    // could not be answered. Pop-out windows also have no visible chat pane.
+    const shouldShowModal =
+      isSettingsDialogOpen() || document.documentElement.classList.contains('is-popout')
+    if (shouldShowModal) {
+      dialog.showModal()
+    } else {
+      chatScrim.hidden = false
+      dialog.show()
+    }
     active = true
     syncAttention()
   }
@@ -309,7 +329,7 @@ export function mountApprovalDialog(
     batch = batch.filter((req) => req.id !== id)
     if (wasInBatch && active) {
       if (batch.length === 0) {
-        dialog.close()
+        closeDialog()
         active = false
         readComparisonModels = null
         clearSettle()
@@ -325,7 +345,7 @@ export function mountApprovalDialog(
     if (!active || batch.length === 0) return
     const answered = batch
     const comparisonModels = approved && readComparisonModels ? readComparisonModels() : undefined
-    dialog.close()
+    closeDialog()
     batch = []
     active = false
     readComparisonModels = null
@@ -367,7 +387,20 @@ export function mountApprovalDialog(
       }
       if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)
-      if (active) appendToOpen()
+      if (active && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+        // Settings may have been opened after an ordinary inline approval was
+        // already visible. Its modal top layer makes that chat prompt inert, so
+        // put the interrupted batch back at the front and surface only the
+        // Settings-owned request modally. The older batch resumes after Settings
+        // closes; this also keeps unrelated grants out of the provider prompt.
+        queue.unshift(...batch)
+        batch = []
+        closeDialog()
+        active = false
+        readComparisonModels = null
+        clearSettle()
+        show()
+      } else if (active) appendToOpen()
       else scheduleShow()
       // scheduleShow/appendToOpen sync attention on their own paths, but a request
       // held back by the settings guard reaches neither; sync unconditionally.
