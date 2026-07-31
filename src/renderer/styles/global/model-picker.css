@@ -155,6 +155,10 @@
   overflow-y: auto;
   min-height: 0;
 }
+.model-picker-all-header + .model-picker-filter:not([hidden]) {
+  margin-top: 3px;
+}
+
 .model-picker-filter:not([hidden]) + .model-picker-list {
   margin-top: var(--spacing-xs);
 }
