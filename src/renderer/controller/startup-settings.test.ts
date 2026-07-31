@@ -31,10 +31,12 @@ test('loads every first-paint setting concurrently', async () => {
     'uiAccentColor',
     'uiTintColor',
     'uiTintStrength',
+    'developerMode',
   ])
 
   for (const release of releases) release()
   const loaded = await pending
   assert.equal(loaded.model, 'model')
   assert.equal(loaded.uiTintStrength, 'uiTintStrength')
+  assert.equal(loaded.developerMode, 'developerMode')
 })

@@ -279,6 +279,18 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
         if (chunk.type === 'usage') {
           recordUsage(chunk)
         }
+        if (chunk.type === 'reasoning') {
+          const msgId = ensureAssistantMessage()
+          const msg = session.messages.find((m) => m.id === msgId)
+          if (!msg) throw new Error(`subagent message ${msgId} not found`)
+          msg.reasoning = (msg.reasoning ?? '') + chunk.text
+          onSubagentChunk({
+            type: 'subagent_reasoning',
+            parentToolCallId,
+            messageId: msgId,
+            text: chunk.text,
+          })
+        }
         if (chunk.type === 'text') {
           const msgId = ensureAssistantMessage()
           const msg = session.messages.find((m) => m.id === msgId)

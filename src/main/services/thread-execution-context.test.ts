@@ -107,6 +107,51 @@ describe('thread execution context', () => {
     })
   })
 
+  it('registers a resolved worktree execution root with the file index (#1400)', async () => {
+    const validated: ValidatedThreadWorktree = {
+      path: '/validated/root',
+      branch: 'copse/thread-1',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+      root: '/validated/root',
+      gitDir: '/repo/.git/worktrees/thread-1',
+      commonGitDir: '/repo/.git',
+    }
+    const indexedRoots: string[] = []
+    await resolver({
+      getThreadMeta: async () => ({
+        id: 'thread-1',
+        worktree: {
+          path: '/diagnostic/path',
+          branch: 'copse/thread-1',
+          baseBranch: 'main',
+          baseCommit: 'abc123',
+          createdAt: 1,
+          seededFromDirtyProject: false,
+        },
+      }),
+      validateWorktree: async () => validated,
+      startWorktreeIndexing: (root) => {
+        indexedRoots.push(root)
+      },
+    })
+
+    assert.deepEqual(indexedRoots, ['/validated/root'])
+  })
+
+  it('never registers a shared checkout with the worktree indexer', async () => {
+    const indexedRoots: string[] = []
+    await resolver({
+      startWorktreeIndexing: (root) => {
+        indexedRoots.push(root)
+      },
+    })
+
+    assert.deepEqual(indexedRoots, [])
+  })
+
   it('persists an adopted live branch when Git HEAD drifted inside the worktree', async () => {
     const persisted = {
       path: '/diagnostic/path',

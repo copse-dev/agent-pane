@@ -52,6 +52,7 @@ export const devtoolsShortcutPack: RegisteredPack = definePack(
     description:
       'DevTools shortcut — register the Ctrl+Shift+I keyboard shortcut that toggles the Electron DevTools window, for debugging the app itself.',
     trust: 'first-party',
+    stability: 'experimental',
     capabilities: [DEVTOOLS_SHORTCUT_CAPABILITY_DECL],
   },
   {
