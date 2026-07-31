@@ -191,6 +191,9 @@ export function mountRoadmapPane(
       }
     | undefined
   let openIssues: OpenIssue[] = []
+  let openIssuePage = 0
+  let openIssueSlug = ''
+  let moreOpenIssues = false
   /** Model-judged coverage of open issues by existing (unpinned) roadmap items. */
   let issueCoverage = new Map<number, RoadmapIssueCoverageMatch>()
   let coverageToken = 0
@@ -508,6 +511,11 @@ export function mountRoadmapPane(
     { type: 'button', class: 'memories-btn memories-btn-primary roadmap-import-confirm' },
     'Import selected',
   )
+  const importLoadMoreBtn = el(
+    'button',
+    { type: 'button', class: 'memories-btn roadmap-import-more', hidden: true },
+    'Load more',
+  )
   const importCancelBtn = el(
     'button',
     { type: 'button', class: 'memories-btn roadmap-import-cancel' },
@@ -519,7 +527,7 @@ export function mountRoadmapPane(
     el('label', { class: 'memories-label' }, 'Open issues'),
     importStatus,
     importList,
-    el('div', { class: 'memories-actions' }, importConfirmBtn, importCancelBtn),
+    el('div', { class: 'memories-actions' }, importLoadMoreBtn, importConfirmBtn, importCancelBtn),
   )
 
   const reviewStatus = el('div', { class: 'memories-meta roadmap-review-status' })
@@ -1448,6 +1456,11 @@ export function mountRoadmapPane(
   }
 
   function renderImportList(): void {
+    const selected = new Set(
+      [...importList.querySelectorAll<HTMLInputElement>('.roadmap-import-check')]
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => Number(checkbox.dataset['number'])),
+    )
     clear(importList)
     for (const issue of openIssues) {
       const pinned = issueAlreadyPinned(issue)
@@ -1461,6 +1474,7 @@ export function mountRoadmapPane(
         'data-number': String(issue.number),
         disabled: blocked,
       })
+      checkbox.checked = !blocked && selected.has(issue.number)
       const rowClass =
         'roadmap-import-row' +
         (pinned ? ' is-pinned' : '') +
@@ -1490,6 +1504,63 @@ export function mountRoadmapPane(
     }
   }
 
+  function isCurrentImport(token: number): boolean {
+    return importing && token === coverageToken
+  }
+
+  async function loadMoreOpenIssues(matchToken: number): Promise<void> {
+    importLoadMoreBtn.disabled = true
+    importStatus.textContent = openIssuePage === 0 ? 'Loading open issues…' : 'Loading more issues…'
+    try {
+      let issues: OpenIssue[] = []
+      // REST issue pages can contain only pull requests, which the backend
+      // removes. Skip empty raw pages so "Load more" always makes progress.
+      do {
+        const result = await api.roadmap.openIssues(openIssuePage + 1)
+        if (!isCurrentImport(matchToken)) return
+        openIssuePage++
+        openIssueSlug = result.slug
+        moreOpenIssues = result.hasMore
+        issues = result.issues
+      } while (issues.length === 0 && moreOpenIssues)
+
+      openIssues.push(...issues)
+      renderImportList()
+      importLoadMoreBtn.hidden = !moreOpenIssues
+      if (issues.length === 0) {
+        importStatus.textContent = openIssues.length
+          ? `Pick the issues to turn into roadmap prompts (${openIssueSlug}).`
+          : `No open issues found in ${openIssueSlug}.`
+        return
+      }
+
+      // Pin badges render immediately. Semantic coverage is bounded to this
+      // page and merges into prior pages when the model answers.
+      importStatus.textContent = `Checking existing roadmap coverage (${openIssueSlug})…`
+      try {
+        const matches = await api.roadmap.matchOpenIssues(
+          issues.map((issue) => ({ number: issue.number, title: issue.title, body: issue.body })),
+        )
+        if (!isCurrentImport(matchToken)) return
+        for (const match of matches) issueCoverage.set(match.issueNumber, match)
+        renderImportList()
+      } catch {
+        // Coverage is advisory — a failed page must not strand the picker or
+        // prevent the user from loading the next page.
+      }
+      if (!isCurrentImport(matchToken)) return
+      importStatus.textContent = `Pick the issues to turn into roadmap prompts (${openIssueSlug}).`
+    } catch (err) {
+      if (!isCurrentImport(matchToken)) return
+      importStatus.textContent = ipcErrorMessage(err, 'Could not list open issues.')
+    } finally {
+      if (isCurrentImport(matchToken)) {
+        importLoadMoreBtn.disabled = false
+        importLoadMoreBtn.hidden = !moreOpenIssues
+      }
+    }
+  }
+
   function startImport(): void {
     cancelResolutionCheckUi()
     importing = true
@@ -1497,45 +1568,18 @@ export function mountRoadmapPane(
     creating = false
     selectedId = null
     openIssues = []
+    openIssuePage = 0
+    openIssueSlug = ''
+    moreOpenIssues = false
     issueCoverage = new Map()
     const matchToken = ++coverageToken
     clear(importList)
+    importLoadMoreBtn.hidden = true
     importConfirmBtn.disabled = false
     importStatus.textContent = 'Loading open issues…'
     renderList()
     renderEditor()
-    void api.roadmap
-      .openIssues()
-      .then(({ slug, issues }) => {
-        if (!importing || matchToken !== coverageToken) return
-        openIssues = issues
-        // Naming the queried repo surfaces a stale or fork origin at a glance.
-        importStatus.textContent = issues.length
-          ? `Pick the issues to turn into roadmap prompts (${slug}).`
-          : `No open issues found in ${slug}.`
-        renderImportList()
-        if (issues.length === 0) return
-        // Pin badges are immediate; semantic coverage lands when the model
-        // answers (or silently stays empty when no model / unparseable).
-        importStatus.textContent = `Checking existing roadmap coverage (${slug})…`
-        return api.roadmap
-          .matchOpenIssues(issues.map((i) => ({ number: i.number, title: i.title, body: i.body })))
-          .then((matches) => {
-            if (!importing || matchToken !== coverageToken) return
-            issueCoverage = new Map(matches.map((m) => [m.issueNumber, m]))
-            importStatus.textContent = `Pick the issues to turn into roadmap prompts (${slug}).`
-            renderImportList()
-          })
-          .catch(() => {
-            // Coverage is advisory — a failed match must not strand the picker.
-            if (!importing || matchToken !== coverageToken) return
-            importStatus.textContent = `Pick the issues to turn into roadmap prompts (${slug}).`
-          })
-      })
-      .catch((err: unknown) => {
-        if (!importing) return
-        importStatus.textContent = ipcErrorMessage(err, 'Could not list open issues.')
-      })
+    void loadMoreOpenIssues(matchToken)
   }
 
   async function confirmImport(): Promise<void> {
@@ -1846,6 +1890,7 @@ export function mountRoadmapPane(
   reviewCloseBtn.addEventListener('click', closeReview)
   reviewMarkResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('done'))
   reviewArchiveResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('archived'))
+  importLoadMoreBtn.addEventListener('click', () => void loadMoreOpenIssues(coverageToken))
   importConfirmBtn.addEventListener('click', () => void confirmImport())
   importCancelBtn.addEventListener('click', cancelImport)
 

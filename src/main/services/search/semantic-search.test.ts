@@ -14,12 +14,14 @@ import {
   setSemanticSearchExecutorForTest,
   isSemanticSearchAvailable,
 } from './semantic-index.ts'
+import { resetWorkspaceIndexStatusForTest, setSemanticIndexScaleGuarded } from './index-status.ts'
 
 describe('semantic-search', () => {
   afterEach(() => {
     setSemanticBackendForTest(null)
     setSemanticSearchExecutorForTest(null)
     setSemanticIndexReadyForTest(null)
+    resetWorkspaceIndexStatusForTest()
   })
 
   it('builds native routing guidance when semantic backend is available', () => {
@@ -94,6 +96,26 @@ describe('semantic-search', () => {
         new AbortController().signal,
       )
       assert.deepEqual(result, { status: 'unavailable' })
+    } finally {
+      restoreWorkspace()
+    }
+  })
+
+  it('returns unavailable with a scale-guard note when semantic indexing is skipped', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest('/tmp/repo')
+    setSemanticBackendForTest('gortex')
+    setSemanticIndexScaleGuarded('skipped', 'Workspace has 120,000 indexed paths')
+    setSemanticSearchExecutorForTest(async () => {
+      throw new Error('search must not run when scale-guarded')
+    })
+    try {
+      const result = await executeSemanticSearch(
+        { query: 'where is auth handled' },
+        new AbortController().signal,
+      )
+      assert.deepEqual(result, { status: 'unavailable' })
+      assert.match(semanticIndexBuildingNote(), /skipped/)
+      assert.match(semanticIndexBuildingNote(), /120,000 indexed paths/)
     } finally {
       restoreWorkspace()
     }

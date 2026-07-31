@@ -88,6 +88,7 @@ export const todosPack: RegisteredPack = definePack(
     description:
       'Structured plan pilot pack — owns the `update_todos` tool, todo steering + closeout hooks, and the plan panel contribution.',
     trust: 'first-party',
+    stability: 'stable',
     tools: { native: [TODOS_TOOL_NAME] },
     prompt: [TODOS_PROMPT_BLOCK],
     ui: [TODOS_PANEL_UI],

@@ -103,11 +103,11 @@ would otherwise ask about.
 
 Dialect is determined by **source path**, not prefixes or content sniffing (the [dialect-by-source-path decision](./plans/hooks-and-feature-packs.md#decisions-log)):
 
-| Source path                         | Dialect | Adapter                                     |
-| ----------------------------------- | ------- | ------------------------------------------- |
-| `~/.cursor/hooks.json` + project    | Cursor  | `src/main/services/hooks/cursor-adapter.ts` |
-| `~/.claude/settings.json` + project | Claude  | `src/main/services/hooks/claude-adapter.ts` |
-| `~/.copse/hooks.json` + project     | Copse   | `src/main/services/hooks/copse-adapter.ts`  |
+| Source path                                                  | Dialect | Adapter                                     |
+| ------------------------------------------------------------ | ------- | ------------------------------------------- |
+| `~/.cursor/hooks.json` + project                             | Cursor  | `src/main/services/hooks/cursor-adapter.ts` |
+| `~/.claude/settings.json` + project                          | Claude  | `src/main/services/hooks/claude-adapter.ts` |
+| `~/.copse/hooks.json` (or `$COPSE_DIR/hooks.json`) + project | Copse   | `src/main/services/hooks/copse-adapter.ts`  |
 
 Each adapter owns **discovery, parsing, matchers, and wire marshalling both directions**:
 a Cursor hook sees Cursor's stdin shape and permission vocabulary; a Claude hook sees
@@ -252,7 +252,7 @@ off runner-side violation signals (never the hook's own stdout, so a hook can't 
 ## Enablement, trust, and security
 
 Hooks are **off by default**, gated behind the `cursorHooksEnabled` security setting
-(Settings → Sources → Hooks) — the same gate for all three dialects. When disabled the gate
+(Developer mode → Settings → Sources → Hooks) — the same gate for all three dialects. When disabled the gate
 skips discovery on the hot path; Sources still lists discovered hooks so authoring problems
 are visible before enabling. User configs (`~/.cursor` / `~/.claude` / `~/.copse`) are always
 honoured; **project configs require workspace trust** (#100) and are skipped for untrusted
@@ -271,7 +271,10 @@ Security section for the full model.
   the hook id — clearly **not** a user message. Cards are **derived** from the always-on
   spine `hook_run` lines at fold time (`attachHookCards`), never a second source of truth
   (the [disable never breaks history decision](./plans/hooks-and-feature-packs.md#decisions-log)), so an old thread renders its hooks exactly as they ran, even for a
-  now-unregistered hook. Hook-originated turns carry an `origin` marker (`Hook · <id>
+  now-unregistered hook. The turn-level group always starts collapsed and leads with what
+  changed (or “No changes”) before the run count. Expanding it keeps passive runs collapsed
+  while applied effects open individually with the effect above timing/executor metadata.
+  Hook-originated turns carry an `origin` marker (`Hook · <id>
 (<Event>)`); the message role stays `user` for the LLM, and a human edit shows an `edited`
   note (the [hook-card attribution decision](./plans/hooks-and-feature-packs.md#decisions-log)). The card model is `src/shared/hooks/hook-card.ts`; styling is
   `src/renderer/styles/global/hook-cards.css`. Conventions are in
@@ -279,6 +282,8 @@ Security section for the full model.
 - **Sources panel ([foundations phase](./plans/hooks-and-feature-packs.md#phase-a--foundations)).** Settings → Sources → Hooks lists every discovered hook across all
   three dialects, per-entry validation warnings, unsupported-event badges, the
   "outside sandbox" badge ([Copse-dialect phase](./plans/hooks-and-feature-packs.md#phase-f--copse-dialect-native-events-sandbox)), and per-hook runtime error state (first failure per session).
+  Developer mode reveals this advanced panel; if hooks are already enabled it remains visible
+  outside Developer mode so the execution gate can always be turned off.
 - **Dry-run tester ([validation & tooling phase](./plans/hooks-and-feature-packs.md#phase-g--validation--tooling)).** Each Sources hook row has a **Test** button that runs the hook
   **once** against a _synthetic_ payload for its event and shows the raw
   `stdin` / `stdout` / `stderr` / exit code / duration plus `parse_ok` and a one-line outcome

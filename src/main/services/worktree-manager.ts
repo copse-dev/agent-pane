@@ -1,14 +1,15 @@
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
+import { copseWorktreesDir } from './storage/copse-paths.ts'
 import { createWorktreeBackup, getDefaultBranch } from './github/git-service.ts'
 import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
-import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { stopExecutionRootIndexing } from './search/workspace-indexing.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 const DISABLE_GIT_HOOKS = ['-c', 'core.hooksPath=/dev/null']
@@ -154,13 +155,18 @@ export function parseWorktreePorcelain(raw: string): WorktreeRecord[] {
   return records
 }
 
+/** Drop a retired/failed worktree's internal-root authority and its index/watcher (#1400). */
+function releaseWorktreeRoot(executionRoot: string): void {
+  unregisterInternalWorkspaceRoot(executionRoot)
+  stopExecutionRootIndexing(executionRoot)
+}
+
 function assertOwnerId(label: string, value: string): void {
   if (!OWNER_ID.test(value)) throw new Error(`Invalid ${label}`)
 }
 
 function worktreesRoot(): string {
-  const override = process.env['COPSE_WORKTREES_DIR']?.trim()
-  const configured = resolve(nonEmptyStringOr(override, join(homedir(), '.copse', 'worktrees')))
+  const configured = resolve(copseWorktreesDir())
   const missing: string[] = []
   let existing = configured
   for (;;) {
@@ -415,7 +421,7 @@ export async function allocateThreadWorktree(
         })
       }
       await git(projectRoot, ['worktree', 'remove', canonicalPath]).catch(() => undefined)
-      unregisterInternalWorkspaceRoot(executionRoot)
+      releaseWorktreeRoot(executionRoot)
       throw error
     }
   })
@@ -499,7 +505,7 @@ export async function validateThreadWorktree(
   const registration = await registerInternalWorkspaceRoot(canonicalPath, executionRoot)
   const projectCommonGitDir = await commonGitDir(projectRoot)
   if (registration.commonGitDir !== projectCommonGitDir) {
-    unregisterInternalWorkspaceRoot(executionRoot)
+    releaseWorktreeRoot(executionRoot)
     throw new Error('Thread worktree belongs to a different repository')
   }
   return {
@@ -563,7 +569,7 @@ export async function retireThreadWorktree(
 
   const remove = await git(input.projectRoot, ['worktree', 'remove', validated.path])
   if (remove.code !== 0) throw commandFailure('Cannot retire thread worktree', remove)
-  unregisterInternalWorkspaceRoot(validated.root)
+  releaseWorktreeRoot(validated.root)
   return { status: 'removed', branch: validated.branch }
 }
 
@@ -656,7 +662,7 @@ export async function pruneSafeOrphans(
         })
         continue
       }
-      unregisterInternalWorkspaceRoot(resolve(record.path, location.projectRelativePath))
+      releaseWorktreeRoot(resolve(record.path, location.projectRelativePath))
       report.pruned.push({ threadId, path: record.path, branch: record.branch })
     }
     return report

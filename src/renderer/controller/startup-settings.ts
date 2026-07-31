@@ -1,3 +1,4 @@
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 export interface StartupSettings {
@@ -12,6 +13,7 @@ export interface StartupSettings {
   uiAccentColor: unknown
   uiTintColor: unknown
   uiTintStrength: unknown
+  developerMode: unknown
 }
 
 /**
@@ -36,6 +38,7 @@ export async function loadStartupSettings(
     uiAccentColor,
     uiTintColor,
     uiTintStrength,
+    developerMode,
   ] = await Promise.all([
     settings.get('model'),
     settings.get('layout'),
@@ -48,6 +51,7 @@ export async function loadStartupSettings(
     settings.get('uiAccentColor'),
     settings.get('uiTintColor'),
     settings.get('uiTintStrength'),
+    settings.get(DEVELOPER_MODE_SETTING),
   ])
 
   return {
@@ -62,5 +66,6 @@ export async function loadStartupSettings(
     uiAccentColor,
     uiTintColor,
     uiTintStrength,
+    developerMode,
   }
 }
