@@ -30,4 +30,58 @@ describe('compactAtTodoBoundary', () => {
     assert.match(sysText, /Active plan/)
     assert.match(sysText, /Next step/)
   })
+
+  it('keeps the file paths dropped tool calls touched, so a retry knows where to look', () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Still working', status: 'in_progress' }]
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Do the refactor' },
+      {
+        role: 'assistant',
+        content: [
+          { id: 'tc1', name: 'read_file', args: { path: 'src/roadmap-pane.ts' } },
+          { id: 'tc2', name: 'search_codebase', args: { path: 'src/complexity.ts', query: 'x' } },
+        ],
+      },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc1', result: 'file contents' }] },
+      { role: 'assistant', content: 'Looked at the files.' },
+      { role: 'user', content: 'continue' },
+    ]
+    compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1 })
+    const sys = at(messages, 0)
+    const sysText = 'content' in sys && typeof sys.content === 'string' ? sys.content : ''
+    assert.match(sysText, /Files touched/)
+    assert.match(sysText, /src\/roadmap-pane\.ts/)
+    assert.match(sysText, /src\/complexity\.ts/)
+  })
+
+  it('accumulates touched files across repeated compactions instead of losing them', () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Still working', status: 'in_progress' }]
+    const first: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Do the refactor' },
+      { role: 'assistant', content: [{ id: 'tc1', name: 'read_file', args: { path: 'a.ts' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc1', result: 'contents' }] },
+      { role: 'assistant', content: 'Read a.ts.' },
+      { role: 'user', content: 'continue' },
+    ]
+    compactAtTodoBoundary(first, todos, { keepRecentPairs: 1 })
+
+    const second: LLMMessage[] = [
+      at(first, 0),
+      { role: 'user', content: 'keep going' },
+      { role: 'assistant', content: [{ id: 'tc2', name: 'read_file', args: { path: 'b.ts' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc2', result: 'contents' }] },
+      { role: 'assistant', content: 'Read b.ts.' },
+      { role: 'user', content: 'continue' },
+    ]
+    compactAtTodoBoundary(second, todos, { keepRecentPairs: 1 })
+
+    const sys = at(second, 0)
+    const sysText = 'content' in sys && typeof sys.content === 'string' ? sys.content : ''
+    assert.match(sysText, /a\.ts/)
+    assert.match(sysText, /b\.ts/)
+    // Exactly one files-touched block, not one stacked on top of the last.
+    assert.equal(sysText.match(/Files touched/g)?.length, 1)
+  })
 })
