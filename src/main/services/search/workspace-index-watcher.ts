@@ -4,6 +4,7 @@ import { buildIndex } from './file-index.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import { updateSemanticIndex } from './semantic-index.ts'
+import { invalidateSearchResultCache } from './search-result-cache.ts'
 
 const REBUILD_DEBOUNCE_MS = 500
 
@@ -54,6 +55,11 @@ export function startWorkspaceIndexWatcher(
       // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
       // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
       if (filename !== null && isIgnoredWorkspacePath(filename)) return
+      // Invalidate immediately (not debounced): an external edit (the user's
+      // own editor, a terminal command outside the agent's tool calls) must
+      // not leave a stale search result cached while the debounced re-index
+      // below is still pending.
+      invalidateSearchResultCache(root)
       scheduleIndexRebuild(key)
     })
   } catch (err) {

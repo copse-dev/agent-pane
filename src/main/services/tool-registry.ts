@@ -1,11 +1,21 @@
 import { z } from 'zod'
 import type { ToolDefinition, LLMTool, ToolExecuteResult } from '@shared/types'
 import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
-import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
+import {
+  getReadonlyToolBlockReason,
+  isToolAllowedInReadonlyMode,
+} from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
+import { getAgentExecutionRoot } from './execution-root.ts'
+import {
+  CACHEABLE_SEARCH_TOOLS,
+  getCachedToolResult,
+  invalidateSearchResultCache,
+  setCachedToolResult,
+} from './search/search-result-cache.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
 
@@ -113,10 +123,9 @@ export class ToolRegistry {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     const parsed = tool.parse(rawArgs)
+    const mcpAnnotations = name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined
     if (isAgentRunReadonly()) {
-      const blockReason = getReadonlyToolBlockReason(name, {
-        mcpAnnotations: name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined,
-      })
+      const blockReason = getReadonlyToolBlockReason(name, { mcpAnnotations })
       if (blockReason) return blockReason
     }
     // The check is passed by reference so the gate can stamp back a hook's
@@ -124,7 +133,23 @@ export class ToolRegistry {
     const check: PermissionCheck = { toolName: name, args: parsed }
     const permitted = await ensurePermitted(check)
     if (!permitted) return `User rejected the ${name} tool call.`
-    const result = await tool.execute(rawArgs, signal)
+
+    const root = getAgentExecutionRoot()
+    const cacheable = root !== null && CACHEABLE_SEARCH_TOOLS.has(name)
+    const cached = cacheable ? getCachedToolResult(root, name, parsed) : undefined
+    let result: ToolExecuteResult
+    if (cached !== undefined) {
+      result = cached
+    } else {
+      result = await tool.execute(rawArgs, signal)
+      if (cacheable && root) {
+        setCachedToolResult(root, name, parsed, result)
+      } else if (root && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
+        // A tool that can mutate the workspace ran — the last search snapshot
+        // for this root may now be stale.
+        invalidateSearchResultCache(root)
+      }
+    }
     // H2: a `toolGate` hook injected context into the current turn. Append the
     // pre-built system-reminder block (10k-capped) to this call's textual
     // result so the model reads it right after the tool output.

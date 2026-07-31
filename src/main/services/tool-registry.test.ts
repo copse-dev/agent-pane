@@ -1,6 +1,8 @@
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { ToolRegistry, setPermissionGateForTests } from './tool-registry.ts'
+import { setWorkspaceRootForTest } from './workspace.ts'
+import { clearAllSearchResultCachesForTest } from './search/search-result-cache.ts'
 import { z } from 'zod'
 
 describe('ToolRegistry', () => {
@@ -70,6 +72,68 @@ describe('ToolRegistry', () => {
     const result = await reg.execute('echo', { msg: 'plain' }, new AbortController().signal)
     assert.equal(result, 'plain')
     setPermissionGateForTests(null)
+  })
+
+  describe('search result caching', () => {
+    let restoreWorkspace: () => void
+
+    beforeEach(() => {
+      restoreWorkspace = setWorkspaceRootForTest('/tmp/tool-registry-cache-test')
+      clearAllSearchResultCachesForTest()
+    })
+
+    afterEach(() => {
+      restoreWorkspace()
+      clearAllSearchResultCachesForTest()
+    })
+
+    it('reuses a cached result for a repeated search_code call instead of re-executing', async () => {
+      setPermissionGateForTests(async () => true)
+      const reg = new ToolRegistry()
+      let calls = 0
+      reg.register({
+        name: 'search_code',
+        description: 'search',
+        parameters: z.object({ pattern: z.string() }),
+        execute: async ({ pattern }) => {
+          calls++
+          return `match for ${pattern} (call ${String(calls)})`
+        },
+      })
+      const signal = new AbortController().signal
+      const first = await reg.execute('search_code', { pattern: 'foo' }, signal)
+      const second = await reg.execute('search_code', { pattern: 'foo' }, signal)
+      assert.equal(calls, 1)
+      assert.equal(first, second)
+      setPermissionGateForTests(null)
+    })
+
+    it('drops the cache once a non-read-only tool runs', async () => {
+      setPermissionGateForTests(async () => true)
+      const reg = new ToolRegistry()
+      let calls = 0
+      reg.register({
+        name: 'search_code',
+        description: 'search',
+        parameters: z.object({ pattern: z.string() }),
+        execute: async ({ pattern }) => {
+          calls++
+          return `match for ${pattern} (call ${String(calls)})`
+        },
+      })
+      reg.register({
+        name: 'write_file',
+        description: 'write',
+        parameters: z.object({ path: z.string() }),
+        execute: async () => 'written',
+      })
+      const signal = new AbortController().signal
+      await reg.execute('search_code', { pattern: 'foo' }, signal)
+      await reg.execute('write_file', { path: 'a.ts' }, signal)
+      await reg.execute('search_code', { pattern: 'foo' }, signal)
+      assert.equal(calls, 2)
+      setPermissionGateForTests(null)
+    })
   })
 
   it('throws on unknown tool', async () => {
