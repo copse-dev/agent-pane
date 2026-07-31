@@ -3,7 +3,7 @@
 // The Settings pack list renders `PackSummaryOut` snapshots that
 // `summarizePacks` produces from the shared `PackRegistry` + a per-key reader.
 // The invariants this pins:
-//  - contributions carry through with the right shapes (tools / hooks / prompt
+//  - contributions carry through with the right shapes (tools / models / hooks / prompt
 //    / panel-kind / storage namespace);
 //  - the `enabled` flag reflects the registry's current state;
 //  - setting values are coerced to their declared kind, falling back to the
@@ -44,6 +44,7 @@ function demoPack(id: string): RegisteredPack {
     {
       name: id,
       trust: 'first-party',
+      stability: 'stable',
       description: `demo ${id}`,
       version: '1.2.3',
       storage: { namespace: id },
@@ -53,6 +54,15 @@ function demoPack(id: string): RegisteredPack {
     },
     {
       toolNames: [`${id}_tool`],
+      modelRoutes: [
+        {
+          id: `${id}-judge`,
+          label: 'Reference judge',
+          group: 'Personal models',
+          supportsImages: true,
+        },
+      ],
+      browserOrigins: ['https://example.test'],
       blockingHooks: [stepHook],
       promptBlocks: [{ id: `${id}-prompt`, text: 'steer', trust: 'trusted' }],
       uiContributions: [
@@ -79,10 +89,20 @@ describe('packToSummary', () => {
     const summary = packToSummary(pack, true, () => undefined)
     assert.equal(summary.id, 'alpha')
     assert.equal(summary.trust, 'first-party')
+    assert.equal(summary.stability, 'stable')
     assert.equal(summary.enabled, true)
     assert.equal(summary.version, '1.2.3')
     assert.equal(summary.description, 'demo alpha')
     assert.deepEqual(summary.contributions.toolNames, ['alpha_tool'])
+    assert.deepEqual(summary.contributions.modelRoutes, [
+      {
+        id: 'alpha-judge',
+        label: 'Reference judge',
+        group: 'Personal models',
+        supportsImages: true,
+      },
+    ])
+    assert.deepEqual(summary.contributions.browserOrigins, ['https://example.test'])
     assert.deepEqual(summary.contributions.blockingHooks, [
       { id: 'demo-turn-start', event: 'turnStart' },
     ])
@@ -109,7 +129,7 @@ describe('packToSummary', () => {
 
   it('projects a capability without a description as name + title only', () => {
     const pack = definePack(
-      { name: 'cap-only', trust: 'first-party' },
+      { name: 'cap-only', trust: 'first-party', stability: 'stable' },
       { capabilities: [{ name: 'flag-x', title: 'Flag X' }] },
     )
     const summary = packToSummary(pack, true, () => undefined)
@@ -118,7 +138,7 @@ describe('packToSummary', () => {
 
   it('projects a permission without description/scope as name + title only', () => {
     const pack = definePack(
-      { name: 'perm-only', trust: 'first-party' },
+      { name: 'perm-only', trust: 'first-party', stability: 'stable' },
       { permissions: [{ name: 'bind-x', title: 'Bind X' }] },
     )
     const summary = packToSummary(pack, true, () => undefined)
@@ -236,6 +256,7 @@ describe('packToSummary (model field)', () => {
     const pack = definePack({
       name: 'gamma',
       trust: 'first-party',
+      stability: 'stable',
       settings: {
         advisorModel: { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
       },

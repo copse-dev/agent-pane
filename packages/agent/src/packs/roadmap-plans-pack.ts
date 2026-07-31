@@ -41,6 +41,7 @@ export const roadmapPlansPack: RegisteredPack = definePack(
     description:
       'Roadmap plans — a durable, per-project backlog of future-work prompts with a status lifecycle via the `roadmap_plan` tool, plus a Roadmap pane to browse and run them, so longer-horizon work is captured without being started early.',
     trust: 'first-party',
+    stability: 'experimental',
     tools: { native: [ROADMAP_PLANS_TOOL_NAME] },
     storage: { namespace: ROADMAP_PLANS_PACK_ID },
   },
