@@ -392,6 +392,18 @@ export interface ApiClient {
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
     models: () => Promise<Array<{ id: string; label: string }>>
+    /**
+     * List Cursor cloud agents for the account and import those matching the
+     * given project's GitHub repo (and not already linked) as local thread stubs.
+     * Omit `projectId` to use main's active project.
+     */
+    discoverExternal: (projectId?: string) => Promise<{
+      imported: Array<{ threadId: string; agentId: string; title: string; url: string }>
+      scanned: number
+      skippedLinked: number
+      skippedWrongRepo: number
+      skippedInactive: number
+    }>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */

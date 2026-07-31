@@ -246,6 +246,7 @@ import {
   invalidateCursorCloudModelsCache,
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
+import { discoverExternalCursorAgents } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 
 import {
@@ -1610,6 +1611,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('remoteAgent:models', (event) => {
     assertMainFrameSender(event, win)
     return listCursorCloudModels()
+  })
+  /**
+   * Import Cursor cloud agents launched outside Copse as local thread stubs.
+   * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
+   * open project. Caller should reload/merge project threads after imports.
+   */
+  ipcMain.handle('remoteAgent:discoverExternal', (event, projectId: unknown) => {
+    assertMainFrameSender(event, win)
+    if (projectId === undefined || projectId === null) {
+      return discoverExternalCursorAgents()
+    }
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return discoverExternalCursorAgents({ projectId: id })
   })
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
