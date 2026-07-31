@@ -49,6 +49,7 @@ import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
@@ -108,12 +109,16 @@ const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
   MCP_UI_CANVAS_PACK_ID,
   MODEL_COMPARISON_PACK_ID,
   OKF_MEMORIES_PACK_ID,
+  PARALLEL_SEARCH_PACK_ID,
   PII_REDACTION_PACK_ID,
   ROADMAP_PLANS_PACK_ID,
 ]
 
 /** One-time default-off seed for the new local automations prototype. */
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
+
+/** One-time default-off seed for the hosted Parallel Search integration. */
+const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'packMigration.parallelSearchEnablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -160,6 +165,19 @@ function migrateAutomationsEnablement(): void {
   disabled.add(AUTOMATIONS_PACK_ID)
   storageSet(PACK_DISABLED_KEY, [...disabled].sort())
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Parallel Search sends user queries to a paid external API. Existing profiles
+ * already own `packDisabled`, so seed this newly introduced pack off exactly
+ * once instead of accidentally enabling network access on upgrade.
+ */
+function migrateParallelSearchEnablement(): void {
+  if (storageGet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(PARALLEL_SEARCH_PACK_ID)
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -445,6 +463,7 @@ export function getPackService(): PackService {
   seedDefaultDisabledPacks()
   migratePackModelSettings()
   migrateAutomationsEnablement()
+  migrateParallelSearchEnablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

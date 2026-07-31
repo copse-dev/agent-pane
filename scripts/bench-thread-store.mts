@@ -14,8 +14,8 @@ import { join, resolve } from 'node:path'
  * times and prefer the p50. Authoritative numbers come from a real machine.
  */
 
-const settingsShim = resolve('src/main/services/settings.test-shim.ts')
-const storageShim = resolve('src/main/services/storage.test-shim.ts')
+const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
+const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
 const outfile = join(mkdtempSync(join(tmpdir(), 'copse-bench-build-')), 'bench.cjs')
 
 await esbuild.build({
