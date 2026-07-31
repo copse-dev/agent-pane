@@ -80,6 +80,37 @@ describe('newest-first thread backfill on load', () => {
     )
   })
 
+  it('leaves exactly one Resend button after backfilling older prompts', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    // Same 97 as above: 57 messages arrive through the backfill rather than the
+    // initial window, and roughly half of those are prompts.
+    const total = 97
+    const ids: string[] = []
+    for (let i = 0; i < total; i++) {
+      ids.push(
+        addMessage(store, threadId, i % 2 === 0 ? 'user' : 'assistant', `message ${String(i)}`),
+      )
+    }
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    // Resend buttons render visible and are hidden only by syncUserActions, so
+    // a backfilled chunk that skipped that pass leaves one on every older
+    // prompt — each of which would resend the newest prompt, not its own.
+    const visible = Array.from(host.querySelectorAll<HTMLButtonElement>('.msg-resend')).filter(
+      (button) => !button.hidden,
+    )
+    assert.equal(visible.length, 1, 'only the last settled prompt offers Resend')
+    assert.equal(
+      visible[0]?.closest<HTMLElement>('[data-message-id]')?.dataset['messageId'],
+      ids[96],
+      'and it is the thread’s last prompt',
+    )
+  })
+
   it('a live-streamed message still appends after a completed backfill', () => {
     const store = createStore()
     const threadId = createThread(store)

@@ -2007,6 +2007,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Older messages can start new model segments; appendMessageEl only syncs
     // labels for the window it saw, so a chunk further back needs its own pass.
     syncModelLabels()
+    // Same reason, and it matters more here: Resend buttons render visible and
+    // are hidden only by this pass, so a backfilled chunk would otherwise leave
+    // one on every older user message. Those extras are worse than clutter —
+    // runResend resends the thread's *latest* prompt, not the one beside the
+    // button, so clicking a stray one silently repeats the wrong message.
+    syncUserActions()
     updateScrollButton()
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
