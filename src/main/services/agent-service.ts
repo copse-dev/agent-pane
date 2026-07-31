@@ -1214,6 +1214,11 @@ export async function runAgent(
       },
     })
 
+    // Briefs later local todo workers with what earlier ones already found (#i2jsed):
+    // each `runTodoWorker` call starts a fresh, isolated context, so without this a
+    // plan like "mirror complexity" (todo 2) has no way to know todo 1 just built it.
+    const localWorkerSummaries = new Map<string, string>()
+
     setTodoToolPostProcess(async (before, after) => {
       let todos = after
       let extraMessage: string | undefined
@@ -1237,7 +1242,11 @@ export async function runAgent(
             toolSchemaReserve: subagentRoute.toolSchemaReserve,
             signal: controller.signal,
             onChunk: sendChunk,
+            parentGoal,
+            allTodos: after,
+            priorSummaries: localWorkerSummaries,
           })
+          localWorkerSummaries.set(localItem.id, worker.summary)
           inputTokens += worker.usage.inputTokens
           outputTokens += worker.usage.outputTokens
           sendChunk({
