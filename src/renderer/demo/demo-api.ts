@@ -422,6 +422,10 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
     },
+    decisions: {
+      list: emptyArray,
+      export: () => resolved({ path: '', count: 0 }),
+    },
     automations: {
       list: emptyArray,
       upsert: unsupported,
