@@ -21,14 +21,16 @@ interface ComponentState {
   startedAt: number | null
   /** Phase reported when no build is active. */
   restingPhase: IndexPhase
+  /** Optional resting reason (scale guard). Cleared on ordinary ready/error. */
+  restingReason: string | null
 }
 
 type StatusListener = (status: WorkspaceIndexStatus) => void
 
 function initialState(): Record<IndexComponent, ComponentState> {
   return {
-    fileIndex: { active: 0, startedAt: null, restingPhase: 'idle' },
-    semantic: { active: 0, startedAt: null, restingPhase: 'idle' },
+    fileIndex: { active: 0, startedAt: null, restingPhase: 'idle', restingReason: null },
+    semantic: { active: 0, startedAt: null, restingPhase: 'idle', restingReason: null },
   }
 }
 
@@ -42,7 +44,10 @@ function componentStatus(state: ComponentState): IndexComponentStatus {
       ...(state.startedAt !== null ? { startedAt: state.startedAt } : {}),
     }
   }
-  return { phase: state.restingPhase }
+  return {
+    phase: state.restingPhase,
+    ...(state.restingReason !== null ? { reason: state.restingReason } : {}),
+  }
 }
 
 export function getWorkspaceIndexStatus(): WorkspaceIndexStatus {
@@ -81,14 +86,40 @@ export function indexBuildFinished(component: IndexComponent, ok: boolean): void
   const state = components[component]
   state.active = Math.max(0, state.active - 1)
   state.restingPhase = ok ? 'ready' : 'error'
+  state.restingReason = null
   if (state.active === 0) state.startedAt = null
   notify()
 }
 
 /** Mark the semantic backend as absent (no gortex/vera binary found at probe time). */
 export function setSemanticIndexUnavailable(): void {
-  components.semantic = { active: 0, startedAt: null, restingPhase: 'unavailable' }
+  components.semantic = {
+    active: 0,
+    startedAt: null,
+    restingPhase: 'unavailable',
+    restingReason: null,
+  }
   notify()
+}
+
+/**
+ * Mark semantic indexing as scale-limited or skipped (#795).
+ * Text/regex search remains available; this is not an error.
+ */
+export function setSemanticIndexScaleGuarded(phase: 'limited' | 'skipped', reason: string): void {
+  components.semantic = {
+    active: 0,
+    startedAt: null,
+    restingPhase: phase,
+    restingReason: reason,
+  }
+  notify()
+}
+
+/** Whether semantic work is refused by the scale guard for the active workspace. */
+export function isSemanticIndexScaleGuarded(): boolean {
+  const phase = components.semantic.restingPhase
+  return phase === 'limited' || phase === 'skipped'
 }
 
 /** Test hook — reset counters, phases, and listeners between tests. */
