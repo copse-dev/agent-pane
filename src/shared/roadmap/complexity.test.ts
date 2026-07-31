@@ -6,7 +6,6 @@ import {
   isRoadmapCategory,
   parseCategoryWord,
   roadmapCategoryLabel,
-  ROADMAP_CATEGORIES,
 } from './complexity.ts'
 
 describe('parseComplexityWord', () => {
@@ -79,12 +78,5 @@ describe('roadmapCategoryLabel', () => {
     assert.equal(roadmapCategoryLabel('bug'), 'Bugs')
     assert.equal(roadmapCategoryLabel('feature'), 'Features')
     assert.equal(roadmapCategoryLabel('project'), 'Projects')
-  })
-})
-
-// Verify the source list is non-empty (same guard used by type-predicates.test.ts).
-describe('ROADMAP_CATEGORIES', () => {
-  it('has a non-empty source list', () => {
-    assert.ok(ROADMAP_CATEGORIES.length > 0, 'ROADMAP_CATEGORIES is empty')
   })
 })
