@@ -28,7 +28,12 @@ const asyncHook: AsyncHook<'stop'> = {
 
 function pilotPack(): RegisteredPack {
   return definePack(
-    { name: 'pilot', trust: 'first-party', storage: { namespace: 'pilot' } },
+    {
+      name: 'pilot',
+      trust: 'first-party',
+      stability: 'stable',
+      storage: { namespace: 'pilot' },
+    },
     {
       toolNames: ['update_todos'],
       blockingHooks: [blockingHook],
@@ -118,7 +123,7 @@ describe('atomic enable/disable', () => {
     registry.register(pilotPack())
     registry.register(
       definePack(
-        { name: 'other', trust: 'first-party' },
+        { name: 'other', trust: 'first-party', stability: 'stable' },
         { toolNames: ['other_tool'], promptBlocks: [{ id: 'o', text: 'x', trust: 'trusted' }] },
       ),
     )
