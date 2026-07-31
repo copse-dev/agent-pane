@@ -445,8 +445,12 @@ export function mountGitChangesPane(
           pendingSelect?.kind === 'proposed' &&
           pendingSelect.path === view.path
         if (!isCurrent()) return
+        // Defer Monaco construction until the host has a real size — creating
+        // the editor while Changes is still closed (0×0) leaves a blank viewer
+        // after the panel opens, and a hung visibility wait used to stall this
+        // shared queue so later file clicks never attached a model.
         await setGitFileDiffModel(
-          ensureDiffEditor(),
+          () => ensureDiffEditor(),
           requireMonaco(),
           proposed,
           viewerRoot,
@@ -536,7 +540,17 @@ export function mountGitChangesPane(
         }
         imageWrap.hidden = true
         diffWrap.hidden = false
-        await setGitFileDiffModel(ensureDiffEditor(), requireMonaco(), diff, viewerRoot)
+        await setGitFileDiffModel(
+          () => ensureDiffEditor(),
+          requireMonaco(),
+          diff,
+          viewerRoot,
+          () =>
+            requestId === selectRequestId &&
+            pendingSelect?.kind === 'git' &&
+            pendingSelect.path === path &&
+            pendingSelect.staged === staged,
+        )
       })
     await diffLoadQueue
   }

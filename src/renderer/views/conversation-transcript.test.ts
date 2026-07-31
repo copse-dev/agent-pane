@@ -46,8 +46,8 @@ afterEach(() => {
 describe('user transcript attachment chips', () => {
   it('renders the paste chip inline at its placeholder, files/threads in a trailing row', () => {
     mountWithUserMessage(`apply this ${CHIP_CHAR} to the intro`, [
-      { kind: 'paste', label: 'Editor feedback' },
-      { kind: 'file', label: 'notes.txt' },
+      { kind: 'paste', label: 'Editor feedback', content: 'Make the heading shorter.' },
+      { kind: 'file', label: 'notes.txt', content: 'release checklist' },
       { kind: 'thread', label: 'Auth refactor' },
     ])
 
@@ -78,6 +78,9 @@ describe('user transcript attachment chips', () => {
     assert.ok(thread, 'thread chip renders')
     assert.equal(file.querySelector('.transcript-attachment-label')?.textContent, 'notes.txt')
     assert.ok(file.querySelector('svg[data-icon="file"]'))
+    assert.equal(file.getAttribute('role'), 'button')
+    assert.equal(file.getAttribute('tabindex'), '0')
+    assert.equal(file.getAttribute('aria-label'), 'Preview notes.txt')
     assert.equal(thread.querySelector('.transcript-attachment-label')?.textContent, 'Auth refactor')
     assert.ok(thread.querySelector('svg[data-icon="thread"]'))
 

@@ -89,6 +89,8 @@ export interface ContextSnapshot {
   conversationBudget: number
   conversationTokens: number
   fillRatio: number
+  /** Present when the context owner reported this snapshot directly. */
+  source?: 'agent-reported'
   updatedAt: number
 }
 
@@ -256,6 +258,12 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
 export interface TranscriptAttachment {
   kind: 'paste' | 'file' | 'thread' | 'shell' | 'video'
   label: string
+  /**
+   * Exact text snapshot represented by a text-like chip. Persisted out-of-line
+   * in the thread store so the sent attachment remains inspectable even when a
+   * workspace file later changes. Absent for non-text and legacy attachments.
+   */
+  content?: string
   /**
    * Where the attached file lives, for the chips that can act on it. Only
    * `video` sets it today: the chip plays the recording in a preview modal, and
