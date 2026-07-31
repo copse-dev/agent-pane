@@ -14,6 +14,7 @@ export const automationsPack: RegisteredPack = definePack(
     description:
       'Project-scoped cron schedules that start model-pinned tasks while Copse is running.',
     trust: 'first-party',
+    stability: 'experimental',
     ui: [
       {
         id: 'schedule-editor',

@@ -76,6 +76,7 @@ function stubApi(
   const roadmapPack: PackSummary = {
     id: ROADMAP_PLANS_PACK_ID,
     trust: 'first-party',
+    stability: 'experimental',
     name: ROADMAP_PLANS_PACK_ID,
     enabled: options?.roadmapEnabled ?? false,
     contributions: {

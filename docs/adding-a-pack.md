@@ -89,6 +89,7 @@ slots. JSON Schema:
 ```
 pack manifest
 ├── name / version / description
+├── stability   stable | experimental (omitted user values are experimental)
 ├── skills      relative skills directory (same as plugin.json)
 ├── tools       { "mcpServers": ".mcp.json" }   # user packs — not native tools
 ├── hooks       [ { "event", "command" }, … ]   # command hooks
@@ -106,6 +107,7 @@ until host discovery lands):
   "name": "example.notes",
   "version": "0.1.0",
   "description": "Example user pack",
+  "stability": "experimental",
   "skills": "skills",
   "tools": { "mcpServers": ".mcp.json" },
   "hooks": [{ "event": "stop", "command": "./hooks/on-stop.sh" }],
@@ -167,7 +169,8 @@ Shipped packs live in `packages/agent/src/packs/`, are listed from
 `pii-redaction-pack.ts`:
 
 1. `definePack(manifest, contributions)` with typed function hooks / native
-   tool names as needed.
+   tool names as needed. First-party manifests must declare `stability`; use
+   `experimental` for any feature whose contract or compatibility may still change.
    Add a native tool to `tools.acpTools` only when it is safe to execute without
    native-loop-only state; registration enforces that each entry is also in
    `tools.native` and has a runtime tool contribution.

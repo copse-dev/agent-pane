@@ -24,6 +24,7 @@ contract is `PackManifest` in
 
 ```
 pack manifest
+├── stability  stable | experimental (missing user values fail safe to experimental)
 ├── tools      native + ACP-safe tool names (first-party) or an MCP config path (user packs)
 ├── hooks      command-hook declarations (user packs); first-party function hooks are typed runtime contributions
 ├── prompt     skills / steering blocks (with trust framing: trusted vs untrusted)
@@ -78,12 +79,13 @@ groups every pack's contributions by pack id and owns the lifecycle:
   the grant, so the authority exists only while the owning pack is enabled — the
   same flag flip that unregisters the pack's tools revokes it. The declaration
   also feeds the Settings enumeration and the install-time review.
-- **Default enablement** — `createFirstPartyPackRegistry()` seeds every pack
-  enabled, so the off-by-default set is declared once as
-  `DEFAULT_DISABLED_PACK_IDS` in `pack-service.ts` and written into `packDisabled`
-  on a profile that has never had one. Every experimental pack is in that list;
-  `copse.post-turn-review` is deliberately absent. Once `packDisabled` exists it
-  is the user's own and is never re-seeded.
+- **Stability and default enablement** — every first-party manifest declares
+  `stable` or `experimental`; missing user-pack values fail safe to experimental.
+  Settings shows the status before enablement. `createFirstPartyPackRegistry()`
+  seeds every pack enabled, then `EXPERIMENTAL_FIRST_PARTY_PACK_IDS` derives the
+  off-by-default set from those declarations and writes it into `packDisabled` on
+  a profile that has never had one. Once `packDisabled` exists it is the user's
+  own and is never re-seeded.
 - **Atomic enable/disable** — `disable(id)` flips a single flag, so every one of
   a pack's contribution kinds drops from the active getters at once: tools leave
   the model tool list, hooks stop firing, prompt blocks drop out, UI stops
@@ -183,7 +185,7 @@ settings the manifest declares. This is the `about:addons` of Copse.
   stuff arbitrary payloads.
 - **Renderer.** The Settings dialog gains a `Packs` nav section
   (`src/renderer/views/settings-dialog.ts`). Each row shows the pack's name +
-  version + trust badge, an enable toggle, a description, contribution chips
+  version + trust and stability badges, an enable toggle, a description, contribution chips
   (`Tools × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
   identifiers in a hover title, and generic form fields for the manifest's
   `settings` schema. Disabled rows are visually greyed via `pack-row-disabled`

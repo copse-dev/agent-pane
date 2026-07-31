@@ -1369,6 +1369,14 @@ dialog.settings-overlay::backdrop {
   color: var(--warning, #d29922);
   border-color: var(--warning, #d29922);
 }
+.pack-badge-stable {
+  color: var(--success, #3fb950);
+  border-color: var(--success, #3fb950);
+}
+.pack-badge-experimental {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
 .pack-row-desc {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);

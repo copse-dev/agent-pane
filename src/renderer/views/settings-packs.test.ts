@@ -66,6 +66,7 @@ function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
 const demoPack: PackSummary = {
   id: 'copse.demo',
   trust: 'first-party',
+  stability: 'stable',
   name: 'copse.demo',
   version: '1.2.3',
   description: 'A demonstration pack.',
@@ -102,6 +103,7 @@ const demoPack: PackSummary = {
 const modelFieldPack: PackSummary = {
   id: 'copse.model-demo',
   trust: 'first-party',
+  stability: 'stable',
   name: 'copse.model-demo',
   enabled: true,
   contributions: {
@@ -128,6 +130,7 @@ const modelFieldPack: PackSummary = {
 const disabledUserPack: PackSummary = {
   id: 'sample.user',
   trust: 'user',
+  stability: 'experimental',
   name: 'sample.user',
   enabled: false,
   contributions: {
@@ -193,7 +196,7 @@ describe('settings → packs list', () => {
     assert.match(docsLink.textContent, /how to add a pack/i)
   })
 
-  it('renders one row per pack with a toggle, name, version, and trust badge', async () => {
+  it('renders one row per pack with trust and stability before enablement', async () => {
     const list = await openPacks({ packs: [demoPack, disabledUserPack] }, spy)
     const rows = list.querySelectorAll('.pack-row')
     assert.equal(rows.length, 2)
@@ -205,6 +208,7 @@ describe('settings → packs list', () => {
     assert.equal(first.querySelector('.pack-name')?.textContent, 'copse.demo')
     assert.equal(first.querySelector('.pack-version')?.textContent, '1.2.3')
     assert.equal(first.querySelector('.pack-badge-first-party')?.textContent, 'first-party')
+    assert.equal(first.querySelector('.pack-badge-stable')?.textContent, 'stable')
     const toggle = first.querySelector<HTMLInputElement>('input.pack-toggle-input')
     assert.ok(toggle)
     assert.equal(toggle.type, 'checkbox')
@@ -215,6 +219,7 @@ describe('settings → packs list', () => {
     assert.equal(second.getAttribute('data-enabled'), 'false')
     assert.ok(second.classList.contains('pack-row-disabled'))
     assert.equal(second.querySelector('.pack-badge-user')?.textContent, 'user')
+    assert.equal(second.querySelector('.pack-badge-experimental')?.textContent, 'experimental')
     assert.equal(second.querySelector<HTMLInputElement>('input.pack-toggle-input')?.checked, false)
   })
 
@@ -229,6 +234,7 @@ describe('settings → packs list', () => {
     const capabilityPack: PackSummary = {
       id: 'copse.mcp-ui-canvas',
       trust: 'first-party',
+      stability: 'experimental',
       name: 'copse.mcp-ui-canvas',
       enabled: false,
       contributions: {
@@ -254,6 +260,7 @@ describe('settings → packs list', () => {
     const permissionPack: PackSummary = {
       id: 'copse.background-tasks',
       trust: 'first-party',
+      stability: 'experimental',
       name: 'copse.background-tasks',
       enabled: false,
       contributions: {
