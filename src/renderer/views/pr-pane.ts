@@ -524,7 +524,11 @@ export function mountPrPane(
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number }
       actions.append(
         actionButton('Rerun CI', `Re-run the failed CI runs for #${String(ref.number)}?`, (r) =>
-          api.gh.rerunFailedRuns(r.owner, r.repo, r.number),
+          api.gh.rerunFailedRuns(r.owner, r.repo, r.number).then((result) => {
+            if (result.ok) return result
+            // Suppress "no failed runs" messages — the user already knows.
+            return { ...result, message: '', ok: true }
+          }),
         ),
         actionButton('Approve', `Approve pull request #${String(ref.number)}?`, (r) =>
           api.gh.approvePr(r.owner, r.repo, r.number),
