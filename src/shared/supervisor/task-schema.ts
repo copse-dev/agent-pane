@@ -11,7 +11,8 @@ import { z } from 'zod'
  *   audit.jsonl    # append-only lifecycle transitions
  * ```
  *
- * Override the workspace root with `COPSE_WORKSPACE_DIR` (same as threads).
+ * An alternate profile uses `$COPSE_DIR/workspace`; `COPSE_WORKSPACE_DIR` is the
+ * granular override (same as threads).
  * This module is pure validation + path helpers — no fs/Electron — so fixtures
  * and reconcile helpers can unit-test without a store writer.
  *

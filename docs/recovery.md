@@ -11,12 +11,16 @@ stores are not changing during the backup.
 
 Back up together:
 
-1. The conversation store at `~/.copse/workspace/`, or the directory selected by
-   `COPSE_WORKSPACE_DIR`.
+1. The Copse data root at `~/.copse/`. For an alternate profile, back up the
+   directory selected by `COPSE_DIR`; it contains that profile's conversation
+   store, knowledge, tasks, and managed worktrees. `COPSE_WORKSPACE_DIR` and
+   `COPSE_WORKTREES_DIR` may place those two stores elsewhere when explicitly set.
 2. The Electron user-data directory:
    - macOS: `~/Library/Application Support/copse-panel/`
    - Linux source builds: `~/.config/copse-panel/`
    - Windows source builds: `%APPDATA%/copse-panel/`
+     An alternate `COPSE_DIR` profile keeps this at `$COPSE_DIR/user-data` instead;
+     `COPSE_PANEL_USER_DATA` may override it explicitly.
 3. Each project repository through its normal version-control and backup
    process. Copse's app-data backup is not a backup of the project itself.
 
