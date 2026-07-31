@@ -171,6 +171,17 @@ export class PackRegistry {
     return this.packs.has(id)
   }
 
+  /**
+   * Remove a dynamically discovered pack from new work while retaining its
+   * namespaced storage bag. First-party packs are static and never call this;
+   * local/user discovery uses it when a source disappears or its hash changes.
+   */
+  unregister(id: string): void {
+    if (!this.packs.has(id)) throw new UnknownPackError(id)
+    this.packs.delete(id)
+    this.disabledIds.delete(id)
+  }
+
   /** True when the pack is registered and not disabled. */
   isEnabled(id: string): boolean {
     return this.packs.has(id) && !this.disabledIds.has(id)
@@ -217,6 +228,30 @@ export class PackRegistry {
   activeAcpToolNames(): readonly string[] {
     const out: string[] = []
     for (const pack of this.enabledPacks()) out.push(...(pack.manifest.tools?.acpTools ?? []))
+    return out
+  }
+
+  /** Thread-model routes paired with their owning enabled pack. */
+  activeModelRoutes(): readonly {
+    readonly packId: string
+    readonly route: RegisteredPack['contributions']['modelRoutes'][number]
+  }[] {
+    const out: Array<{
+      packId: string
+      route: RegisteredPack['contributions']['modelRoutes'][number]
+    }> = []
+    for (const pack of this.enabledPacks()) {
+      for (const route of pack.contributions.modelRoutes) out.push({ packId: pack.id, route })
+    }
+    return out
+  }
+
+  /** Interactive browser origins paired with their owning enabled pack. */
+  activeBrowserOrigins(): readonly { readonly packId: string; readonly origin: string }[] {
+    const out: Array<{ packId: string; origin: string }> = []
+    for (const pack of this.enabledPacks()) {
+      for (const origin of pack.contributions.browserOrigins) out.push({ packId: pack.id, origin })
+    }
     return out
   }
 

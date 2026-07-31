@@ -1,8 +1,10 @@
 import { app } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { setElectronAppRuntime } from './services/electron-app-runtime.ts'
 import { installElectronStoreBackend } from './services/storage/electron-store-backend.ts'
+import { copseUserDataDir } from './services/storage/copse-paths.ts'
 
 function augmentPathForGuiLaunch(): void {
   const pathKey = process.platform === 'win32' ? 'Path' : 'PATH'
@@ -35,13 +37,11 @@ augmentPathForGuiLaunch()
 // Without this, an unpackaged `electron .` run stores data under an "Electron"
 // directory and presents itself as "Electron" in the menu/About panel.
 app.setName('Copse')
-const evalUserData = process.env['COPSE_PANEL_USER_DATA']?.trim()
-app.setPath(
-  'userData',
-  evalUserData && evalUserData.length > 0
-    ? evalUserData
-    : join(app.getPath('appData'), 'copse-panel'),
-)
+const userDataDir = copseUserDataDir(join(app.getPath('appData'), 'copse-panel'))
+// Electron requires an app.setPath() target to exist. Creating it here makes a
+// previously unused COPSE_DIR a genuinely one-variable fresh-profile launch.
+mkdirSync(userDataDir, { recursive: true })
+app.setPath('userData', userDataDir)
 
 setElectronAppRuntime({
   userDataPath: app.getPath('userData'),
