@@ -151,6 +151,15 @@ Scaleway sizing guidance:
   `Prune Scaleway Volumes` workflow is a backstop that deletes only tagged,
   unattached Copse volumes after 24 hours. Run the same guard manually with
   `npm run scaleway:prune-volumes -- --yes --older-than-hours 24`.
+- Zonal flexible IPs are the costliest thing to leak: Scaleway bills them from
+  reservation until deletion whether or not a server is attached, so an orphan
+  never stops charging on its own. `up` reserves each IP with the fleet's
+  ownership tags _before_ creating its server, so a failed create can hand it
+  straight back and the reaper can tell fleet garbage from an address someone
+  reserved deliberately. The daily `Prune Scaleway IPs` workflow deletes only
+  tagged IPs seen unattached in two passes 120s apart —
+  `npm run scaleway:prune-ips -- --yes --settle-seconds 120`. Untagged IPs are
+  never touched, so any predating this tagging must be removed by hand.
 - With `--instances N` (N>1), hosts are provisioned **in parallel** after create
   (SSH wait + Docker build). Pass `--serial` for one-at-a-time logs.
 
