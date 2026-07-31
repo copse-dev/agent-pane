@@ -390,6 +390,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       create: unsupported,
       update: () => resolved(null),
       setStatus: () => resolved(null),
+      setCategory: () => resolved(null),
       delete: () => resolved(false),
       export: unsupported,
       issueUrl: () => resolved(null),

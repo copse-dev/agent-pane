@@ -7,7 +7,8 @@ import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { addKnowledgeNote, type KnowledgeNote } from './storage/knowledge-store.ts'
 import { ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
 import { classifyRoadmapComplexity, stampRoadmapComplexity } from './roadmap-complexity.ts'
-import type { RoadmapComplexity } from '@shared/roadmap/complexity.ts'
+import { classifyRoadmapCategory, stampRoadmapCategory } from './roadmap-category.ts'
+import type { RoadmapComplexity, RoadmapCategory } from '@shared/roadmap/complexity.ts'
 
 /**
  * Roadmap issue import (issue #556 follow-up): turn selected open GitHub
@@ -68,18 +69,20 @@ export async function draftRoadmapPrompt(issue: RoadmapImportIssue): Promise<str
 
 /**
  * Create one roadmap item per issue, pinned via `fields.issue`. Each item is
- * saved the moment its prompt is drafted; the complexity stamp lands in the
- * background like any other save (stampRoadmapComplexity), so import never
- * waits on the classifier. Drafting stays sequential on purpose: local
- * small-tasks models handle one completion at a time well, and import is an
- * explicit, occasional action. `draft`/`classify` are injectable for tests;
- * `onStamped` fires per background stamp (e.g. to refresh the pane).
+ * saved the moment its prompt is drafted; the complexity and category stamps land
+ * in the background like any other save (stampRoadmapComplexity /
+ * stampRoadmapCategory), so import never waits on the classifiers. Drafting
+ * stays sequential on purpose: local small-tasks models handle one completion
+ * at a time well, and import is an explicit, occasional action.
+ * `draft`/`classify`/`classifyCategory` are injectable for tests; `onStamped`
+ * fires per background stamp (e.g. to refresh the pane).
  */
 export async function importIssuesAsRoadmapItems(
   issues: RoadmapImportIssue[],
   draft: (issue: RoadmapImportIssue) => Promise<string> = draftRoadmapPrompt,
   classify: (prompt: string) => Promise<RoadmapComplexity | null> = classifyRoadmapComplexity,
   onStamped?: () => void,
+  classifyCategory: (prompt: string) => Promise<RoadmapCategory | null> = classifyRoadmapCategory,
 ): Promise<KnowledgeNote[]> {
   const created: KnowledgeNote[] = []
   for (const issue of issues) {
@@ -96,6 +99,7 @@ export async function importIssuesAsRoadmapItems(
     })
     created.push(note)
     void stampRoadmapComplexity(note.id, prompt, onStamped, classify)
+    void stampRoadmapCategory(note.id, prompt, onStamped, classifyCategory)
   }
   return created
 }

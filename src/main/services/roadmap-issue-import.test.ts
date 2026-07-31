@@ -47,6 +47,7 @@ describe('importIssuesAsRoadmapItems', () => {
   })
 
   const stubClassify = (): Promise<'medium'> => Promise.resolve('medium')
+  const stubClassifyCategory = (): Promise<'feature'> => Promise.resolve('feature')
 
   /** Let the detached complexity stamps settle. */
   const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
@@ -63,6 +64,8 @@ describe('importIssuesAsRoadmapItems', () => {
         return Promise.resolve(`Do the work for issue ${String(issue.number)}`)
       },
       () => new Promise((resolve) => pending.push(resolve)),
+      undefined,
+      stubClassifyCategory,
     )
     assert.deepEqual(drafted, [41, 52])
     assert.equal(created.length, 2)
@@ -91,9 +94,10 @@ describe('importIssuesAsRoadmapItems', () => {
       () => Promise.resolve('Do the work'),
       stubClassify,
       () => stamps++,
+      stubClassifyCategory,
     )
     await settle()
-    assert.equal(stamps, 1)
+    assert.equal(stamps, 2)
   })
 
   it('falls back to the template when the draft fn fails', async () => {

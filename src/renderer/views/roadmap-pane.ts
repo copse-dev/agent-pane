@@ -1,4 +1,4 @@
-import { el, clear, scrollIntoViewIfNeeded } from '../dom/helpers.ts'
+import { el, clear } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
@@ -8,7 +8,15 @@ import {
   roadmapExportFormatLabel,
 } from '../export-roadmap.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
-import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
+import {
+  ROADMAP_CATEGORIES,
+  ROADMAP_COMPLEXITIES,
+  isRoadmapCategory,
+  isRoadmapComplexity,
+  roadmapCategoryLabel,
+  type RoadmapCategory,
+  type RoadmapComplexity,
+} from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
 import type { RoadmapIssueCoverageMatch } from '@shared/roadmap/coverage.ts'
 import {
@@ -89,6 +97,7 @@ interface EditorDraft {
   notes: string
   issue: string
   status: RoadmapStatus
+  category: RoadmapCategory | ''
   pendingAttachments: PendingAttachment[]
   removedAttachmentIds: string[]
 }
@@ -211,8 +220,19 @@ export function mountRoadmapPane(
   // empty state — a large roadmap's fetch can take a while and the two look
   // identical otherwise.
   let loading = false
-  // Search/filter query entered in the list header.
+  // Text and facet filters entered in the list header. Every facet starts
+  // enabled, including legacy items that have not been stamped yet.
   let searchQuery = ''
+  const enabledCategories = new Set<RoadmapCategory | 'uncategorized'>([
+    ...ROADMAP_CATEGORIES,
+    'uncategorized',
+  ])
+  const enabledComplexities = new Set<RoadmapComplexity | 'unestimated'>([
+    ...ROADMAP_COMPLEXITIES,
+    'unestimated',
+  ])
+  const enabledStatuses = new Set<RoadmapStatus>(STATUS_OPTIONS)
+  const collapsedCategories = new Set<RoadmapCategory | 'uncategorized'>()
   // Done items are hidden by default; the header toggle reveals them.
   let showDone = false
   /** In-progress edits keyed by item id, or {@link NEW_ITEM_DRAFT_KEY} for a new item. */
@@ -222,12 +242,31 @@ export function mountRoadmapPane(
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
+  const filter = el('div', { class: 'roadmap-filter' })
   const searchInput = el('input', {
     type: 'search',
     class: 'roadmap-search-input',
-    placeholder: 'Filter roadmap items…',
-    'aria-label': 'Filter roadmap items',
+    placeholder: 'Search roadmap…',
+    'aria-label': 'Search roadmap items',
   })
+  const filterToggle = el(
+    'button',
+    {
+      type: 'button',
+      class: 'roadmap-filter-toggle',
+      'aria-label': 'Filter roadmap items',
+      'aria-expanded': 'false',
+      title: 'Filter by category, complexity, or status',
+    },
+    'Filter',
+  )
+  const filterMenu = el('div', {
+    class: 'roadmap-filter-menu',
+    role: 'group',
+    'aria-label': 'Roadmap filters',
+    hidden: true,
+  })
+  filter.append(searchInput, filterToggle, filterMenu)
   const actionButtons = el('div', { class: 'roadmap-action-buttons' })
   const newBtn = el(
     'button',
@@ -307,7 +346,7 @@ export function mountRoadmapPane(
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
-    searchInput,
+    filter,
     actionButtons,
   )
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
@@ -319,6 +358,55 @@ export function mountRoadmapPane(
     showDoneBtn.title = showDone ? 'Hide done items' : 'Show done items'
     showDoneBtn.setAttribute('aria-label', showDone ? 'Hide done items' : 'Show done items')
   }
+
+  function appendFilterSection<T extends string>(
+    title: string,
+    values: readonly T[],
+    enabled: Set<T>,
+    label: (value: T) => string,
+  ): void {
+    filterMenu.append(el('div', { class: 'roadmap-filter-heading' }, title))
+    for (const value of values) {
+      const checkbox = el('input', { type: 'checkbox', checked: true })
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) enabled.add(value)
+        else enabled.delete(value)
+        renderList()
+      })
+      filterMenu.append(
+        el('label', { class: 'roadmap-filter-option' }, checkbox, el('span', {}, label(value))),
+      )
+    }
+  }
+
+  appendFilterSection(
+    'Category',
+    [...ROADMAP_CATEGORIES, 'uncategorized'],
+    enabledCategories,
+    (category) => (category === 'uncategorized' ? 'Uncategorized' : roadmapCategoryLabel(category)),
+  )
+  appendFilterSection(
+    'Complexity',
+    [...ROADMAP_COMPLEXITIES, 'unestimated'],
+    enabledComplexities,
+    (complexity) => (complexity === 'unestimated' ? 'Unestimated' : complexity),
+  )
+  appendFilterSection('Status', STATUS_OPTIONS, enabledStatuses, (status) => status)
+
+  function closeFilterMenu(): void {
+    filterMenu.hidden = true
+    filterToggle.setAttribute('aria-expanded', 'false')
+  }
+
+  filterToggle.addEventListener('click', () => {
+    const opening = filterMenu.hidden
+    filterMenu.hidden = !opening
+    filterToggle.setAttribute('aria-expanded', opening ? 'true' : 'false')
+  })
+  const closeFilterOnOutsideClick = (event: Event): void => {
+    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu()
+  }
+  document.addEventListener('click', closeFilterOnOutsideClick)
 
   searchInput.addEventListener('input', () => {
     searchQuery = searchInput.value.trim()
@@ -362,6 +450,14 @@ export function mountRoadmapPane(
   })
   for (const status of STATUS_OPTIONS) {
     statusSelect.append(el('option', { value: status }, status))
+  }
+  const categorySelect = el('select', {
+    class: 'memories-field roadmap-category-select',
+    'aria-label': 'Roadmap category',
+  })
+  categorySelect.append(el('option', { value: '' }, 'Auto'))
+  for (const category of ROADMAP_CATEGORIES) {
+    categorySelect.append(el('option', { value: category }, roadmapCategoryLabel(category)))
   }
   // Attachments (issue #556): pasted/dropped/picked files and images ride with
   // the item — .jsonl eval sets, screenshots for prompts — and flow into the
@@ -495,6 +591,8 @@ export function mountRoadmapPane(
     attachmentsLabel,
     attachmentList,
     attachFileInput,
+    el('label', { class: 'memories-label' }, 'Category'),
+    categorySelect,
     statusLabel,
     statusSelect,
     metaLine,
@@ -594,6 +692,10 @@ export function mountRoadmapPane(
       notesInput.value !== (item ? itemNotes(item) : '') ||
       issueInput.value !== (item ? itemIssue(item) : '') ||
       (item != null && statusSelect.value !== itemStatus(item)) ||
+      categorySelect.value !==
+        (item && item.fields['categoryManual'] && isRoadmapCategory(item.fields['category'])
+          ? item.fields['category']
+          : '') ||
       pendingAttachments.length > 0 ||
       removedAttachmentIds.size > 0
     )
@@ -631,6 +733,7 @@ export function mountRoadmapPane(
       notes: notesInput.value,
       issue: issueInput.value,
       status: toRoadmapStatus(statusSelect.value),
+      category: isRoadmapCategory(categorySelect.value) ? categorySelect.value : '',
       pendingAttachments: pendingAttachments.map((pending) => ({ ...pending })),
       removedAttachmentIds: [...removedAttachmentIds],
     }
@@ -643,6 +746,7 @@ export function mountRoadmapPane(
     notesInput.value = draft.notes
     issueInput.value = draft.issue
     statusSelect.value = draft.status
+    categorySelect.value = draft.category
     pendingAttachments = draft.pendingAttachments.map((pending) => ({ ...pending }))
     removedAttachmentIds.clear()
     for (const id of draft.removedAttachmentIds) removedAttachmentIds.add(id)
@@ -654,6 +758,7 @@ export function mountRoadmapPane(
       a.notes === b.notes &&
       a.issue === b.issue &&
       a.status === b.status &&
+      a.category === b.category &&
       a.pendingAttachments.length === b.pendingAttachments.length &&
       a.pendingAttachments.every((pending, index) => {
         const other = b.pendingAttachments[index]
@@ -691,8 +796,17 @@ export function mountRoadmapPane(
         removeIds.length > 0 ? removeIds : undefined,
       )
       if (autoSaveToken.get(id) !== token || !updated) return
+      const storedCategory =
+        updated.fields['categoryManual'] && isRoadmapCategory(updated.fields['category'])
+          ? updated.fields['category']
+          : ''
+      const categorized =
+        draft.category === storedCategory
+          ? updated
+          : await api.roadmap.setCategory(id, draft.category)
+      if (autoSaveToken.get(id) !== token || !categorized) return
       const index = items.findIndex((item) => item.id === id)
-      if (index >= 0) items[index] = updated
+      if (index >= 0) items[index] = categorized
       const current = editorDrafts.get(id)
       if (current && draftsMatch(current, draft)) editorDrafts.delete(id)
       if (selectedId !== id) renderList()
@@ -850,6 +964,10 @@ export function mountRoadmapPane(
         notesInput.value = item ? itemNotes(item) : ''
         issueInput.value = item ? itemIssue(item) : ''
         statusSelect.value = item ? itemStatus(item) : 'ready'
+        categorySelect.value =
+          item && item.fields['categoryManual'] && isRoadmapCategory(item.fields['category'])
+            ? item.fields['category']
+            : ''
         resetAttachmentEdits()
       }
     }
@@ -914,7 +1032,11 @@ export function mountRoadmapPane(
     }
     if (item?.updatedAt) {
       metaLine.hidden = false
-      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)}`
+      const updatedTime = new Date(item.updatedAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`
     } else {
       metaLine.hidden = true
       metaLine.textContent = ''
@@ -933,9 +1055,25 @@ export function mountRoadmapPane(
     )
   }
 
+  function itemCategory(item: RoadmapItem): RoadmapCategory | 'uncategorized' {
+    const category = item.fields['category']
+    return isRoadmapCategory(category) ? category : 'uncategorized'
+  }
+
+  function itemComplexity(item: RoadmapItem): RoadmapComplexity | 'unestimated' {
+    const complexity = item.fields['complexity']
+    return isRoadmapComplexity(complexity) ? complexity : 'unestimated'
+  }
+
   function isListVisible(item: RoadmapItem): boolean {
-    if (!showDone && itemStatus(item) === 'done') return false
-    return matchesSearch(item)
+    const status = itemStatus(item)
+    if (!showDone && status === 'done') return false
+    return (
+      enabledCategories.has(itemCategory(item)) &&
+      enabledComplexities.has(itemComplexity(item)) &&
+      enabledStatuses.has(status) &&
+      matchesSearch(item)
+    )
   }
 
   function renderList(): void {
@@ -953,8 +1091,43 @@ export function mountRoadmapPane(
       listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
       return
     }
-    for (const item of visible) {
-      const isSelected = item.id === selectedId
+    const categoryOrder: readonly (RoadmapCategory | 'uncategorized')[] = [
+      ...ROADMAP_CATEGORIES,
+      'uncategorized',
+    ]
+    for (const category of categoryOrder) {
+      const categoryItems = visible.filter((item) => itemCategory(item) === category)
+      if (categoryItems.length === 0) continue
+      const group = el('section', {
+        class: `roadmap-category-group is-${category}`,
+        'data-category': category,
+      })
+      const groupItems = el('div', { class: 'roadmap-category-items' })
+      if (categoryItems.length > 1) {
+        const collapsed = collapsedCategories.has(category)
+        groupItems.hidden = collapsed
+        const label =
+          category === 'uncategorized' ? 'Uncategorized' : roadmapCategoryLabel(category)
+        const header = el(
+          'button',
+          {
+            type: 'button',
+            class: 'roadmap-category-header',
+            'aria-expanded': collapsed ? 'false' : 'true',
+          },
+          el('span', { class: 'roadmap-category-chevron' }, collapsed ? '›' : '⌄'),
+          el('span', { class: 'roadmap-category-header-label' }, label),
+          el('span', { class: 'roadmap-category-count' }, String(categoryItems.length)),
+        )
+        header.addEventListener('click', () => {
+          if (collapsedCategories.has(category)) collapsedCategories.delete(category)
+          else collapsedCategories.add(category)
+          renderList()
+        })
+        group.append(header)
+      }
+      for (const item of categoryItems) {
+        const isSelected = item.id === selectedId
       const status = itemStatus(item)
       const row = el('button', {
         type: 'button',
@@ -975,19 +1148,16 @@ export function mountRoadmapPane(
       if (LIST_STATUS_BADGES.has(status)) {
         meta.append(el('span', { class: `roadmap-status-badge is-${status}` }, status))
       }
-      // Complexity is stamped in the background shortly after a save
-      // (roadmap-complexity.ts); freshly saved items and older items that
-      // predate stamping simply have no badge yet.
-      const complexity = item.fields['complexity']
-      if (isRoadmapComplexity(complexity)) {
+      const categoryBadge = item.fields['category']
+      if (isRoadmapCategory(categoryBadge)) {
         meta.append(
           el(
             'span',
             {
-              class: `roadmap-complexity-badge is-${complexity}`,
-              title: 'Estimated prompt complexity (classified after save)',
+              class: `roadmap-category-badge is-${categoryBadge}`,
+              title: 'Roadmap category',
             },
-            complexity,
+            categoryBadge,
           ),
         )
       }
@@ -1082,6 +1252,21 @@ export function mountRoadmapPane(
         })
         meta.append(threadChip)
       }
+      // Complexity follows the attachment and thread indicators so the compact
+      // relationship shortcuts stay closest to the title.
+      const complexity = item.fields['complexity']
+      if (isRoadmapComplexity(complexity)) {
+        meta.append(
+          el(
+            'span',
+            {
+              class: `roadmap-complexity-badge is-${complexity}`,
+              title: 'Estimated prompt complexity (classified after save)',
+            },
+            complexity,
+          ),
+        )
+      }
 
       // One-click status flip without opening the editor: check marks a live
       // item done, refresh reopens a done one. Hidden until row hover/focus so
@@ -1131,13 +1316,21 @@ export function mountRoadmapPane(
         renderEditor()
         void maybeAutoCheckResolution(item)
       })
-      listBody.append(row)
+        groupItems.append(row)
+      }
+      group.append(groupItems)
+      listBody.append(group)
     }
-    // Keep the selected row visible after re-render without nudging scroll when
-    // it is already fully on screen (e.g. the user just clicked it).
+    // A partly clipped row stays put. Only selections wholly above or below
+    // the viewport are brought back, which avoids fighting deliberate scroll.
     const selectedRow = listBody.querySelector('.is-selected')
     if (selectedRow) {
-      scrollIntoViewIfNeeded(selectedRow, listBody)
+      const rowRect = selectedRow.getBoundingClientRect()
+      const listRect = listBody.getBoundingClientRect()
+      const hasLayout = listRect.height > 0 && rowRect.height > 0
+      if (hasLayout && (rowRect.bottom <= listRect.top || rowRect.top >= listRect.bottom)) {
+        selectedRow.scrollIntoView({ block: 'nearest' })
+      }
     }
   }
 
@@ -1216,6 +1409,8 @@ export function mountRoadmapPane(
           addAttachments.length > 0 ? addAttachments : undefined,
         )
         selectedId = created.id
+        const category = isRoadmapCategory(categorySelect.value) ? categorySelect.value : ''
+        if (category) await api.roadmap.setCategory(created.id, category)
         creating = false
         editorDrafts.delete(NEW_ITEM_DRAFT_KEY)
       } else {
@@ -1232,6 +1427,13 @@ export function mountRoadmapPane(
           showError('This roadmap item no longer exists.')
           selectedId = null
           creating = false
+        } else {
+          const storedCategory =
+            updated.fields['categoryManual'] && isRoadmapCategory(updated.fields['category'])
+              ? updated.fields['category']
+              : ''
+          const category = isRoadmapCategory(categorySelect.value) ? categorySelect.value : ''
+          if (category !== storedCategory) await api.roadmap.setCategory(updated.id, category)
         }
       }
       if (selectedId) editorDrafts.delete(selectedId)
@@ -2029,6 +2231,7 @@ export function mountRoadmapPane(
   })
 
   return () => {
+    document.removeEventListener('click', closeFilterOnOutsideClick)
     unregisterPopoutSeed()
     unsubs.forEach((u) => {
       u()
