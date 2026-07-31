@@ -126,9 +126,8 @@ before launching.
 **Chat threads are no longer in `config.json`.** They live in the filesystem-native thread store
 under `~/.copse/workspace/<projectId>/<threadId>/` (issue #644) — one directory per thread
 (`meta.json` + append-only `events.jsonl` spine + OKF `messages/*.md` + `blobs/*`), documented in
-[docs/thread-store-format.md](docs/thread-store-format.md). Override the complete profile root with
-`COPSE_DIR`; `COPSE_WORKSPACE_DIR` remains the granular thread-store override used by some unit
-tests. The e2e harness points `COPSE_DIR` at a throwaway profile. To seed threads
+[docs/thread-store-format.md](docs/thread-store-format.md). Override the root with
+`COPSE_WORKSPACE_DIR` (the e2e harness and unit tests point it at a throwaway dir). To seed threads
 for a test, don't write a `threads:<projectId>` key — use `writeSeedConfig`
 (`tests/e2e/helpers/seed-config.ts`), which routes any such array into new-format thread dirs. The
 store is mounted **read-only** into the agent's read tools so it can `@`-reference past threads.

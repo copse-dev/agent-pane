@@ -13,9 +13,8 @@ describes it to the agent, so changing the layout means updating that preamble.
 ~/.copse/workspace/<projectId>/
 ```
 
-- Set `COPSE_DIR` to relocate the complete profile; the thread root becomes
-  `$COPSE_DIR/workspace`. `COPSE_WORKSPACE_DIR` remains as a granular override
-  used by unit tests.
+- Override the root with the `COPSE_WORKSPACE_DIR` env var (used by unit tests
+  and the e2e harness so runs never touch a developer's real store).
 - Mounted **read-only** into the agent's file tools: reads resolve through
   `resolveReadablePath` ([`workspace.ts`](../src/main/services/workspace.ts));
   writes stay workspace-only (`resolveWorkspacePath` + `assertWorkspaceWriteTarget`),

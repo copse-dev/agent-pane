@@ -21,24 +21,19 @@ import {
   serializeSpineLine,
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
-import {
-  copseDataRoot,
-  copseUserDataDir,
-  copseWorkspaceDir,
-} from '../../../src/main/services/storage/copse-paths.ts'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 function copsePanelUserDataDir(): string {
-  let defaultDir: string
+  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
+  if (override) return override
   if (process.platform === 'darwin') {
-    defaultDir = join(homedir(), 'Library', 'Application Support', 'copse-panel')
-  } else if (process.platform === 'win32') {
-    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
-    defaultDir = join(appData, 'copse-panel')
-  } else {
-    defaultDir = join(homedir(), '.config', 'copse-panel')
+    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
   }
-  return copseUserDataDir(defaultDir)
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
+    return join(appData, 'copse-panel')
+  }
+  return join(homedir(), '.config', 'copse-panel')
 }
 
 const USER_DATA = copsePanelUserDataDir()
@@ -70,9 +65,10 @@ function packDisabledSeed(enabled: readonly string[]): string[] {
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
-/** New-format chat-store root; mirrors the app's active Copse profile. */
+/** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
 function e2eWorkspaceDir(): string {
-  return copseWorkspaceDir()
+  const override = process.env.COPSE_WORKSPACE_DIR?.trim()
+  return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
 }
 
 /** Remove a rebuildable per-project thread catalog after an app relaunch. */
@@ -109,9 +105,8 @@ function normalizeToolCall(tc: Record<string, unknown>): Record<string, unknown>
 
 /**
  * Write one seeded thread as a self-contained new-format directory under
- * `$COPSE_DIR/workspace/<projectId>/<threadId>/` (issue #644), using the same
- * explode/spine logic the app persists with. A granular `COPSE_WORKSPACE_DIR`
- * still takes precedence. The catalog is intentionally not
+ * `COPSE_WORKSPACE_DIR/<projectId>/<threadId>/` (issue #644), using the same
+ * explode/spine logic the app persists with. The catalog is intentionally not
  * written — the store rebuilds it from the thread dirs on first read.
  */
 function seedThreadDir(projectId: string, thread: Record<string, unknown>): void {
@@ -457,7 +452,7 @@ export function seedEmptyProject(
 
 /**
  * Seed OKF roadmap notes for a workspace, mirroring the knowledge store's
- * on-disk layout (`$COPSE_DIR/knowledge/<slug>-<hash8>/roadmap/<id>.md`,
+ * on-disk layout (`~/.copse/knowledge/<slug>-<hash8>/roadmap/<id>.md`,
  * `src/main/services/storage/knowledge-store.ts`). No `index.jsonl` is written —
  * the store heals unindexed note files in on first read. Returns the workspace's
  * knowledge dir so specs can remove it in `after`.
@@ -476,7 +471,7 @@ export function seedRoadmapNotes(
       .replace(/^-+|-+$/g, '')
       .slice(0, 64) || 'workspace'
   const hash = createHash('sha1').update(workspaceRoot).digest('hex').slice(0, 8)
-  const knowledgeDir = join(copseDataRoot(), 'knowledge', `${slug}-${hash}`)
+  const knowledgeDir = join(homedir(), '.copse', 'knowledge', `${slug}-${hash}`)
   const roadmapDir = join(knowledgeDir, 'roadmap')
   mkdirSync(roadmapDir, { recursive: true })
   const iso = new Date().toISOString()
