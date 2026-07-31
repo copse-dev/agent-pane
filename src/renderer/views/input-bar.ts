@@ -1354,6 +1354,19 @@ export function mountInputBar(
       })
     }),
     store.on('composer_draft_flush', persistComposerDraft),
+    // A scheduled automation consumes the draft it was created with, clearing
+    // it once the prompt is dispatched (controller/automations.ts).
+    // `syncComposerThread` only reads `draftPrompt` on a thread *switch*, so
+    // without this the already-sent prompt stays sitting in the composer of the
+    // thread the user is watching — one Enter away from sending it twice.
+    // Echoes of the composer's own autosave compare equal and are ignored.
+    store.on('thread_draft_changed', (tid) => {
+      if (tid !== activeComposerThreadId) return
+      const draft = getThreadById(store, tid)?.draftPrompt ?? ''
+      if (draft === composer.expandedValue()) return
+      composer.value = draft
+      scheduleContextEstimate(0)
+    }),
     store.on('composer_checkout_preferred', (choice) => {
       const thread = getActiveThread(store)
       if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return
