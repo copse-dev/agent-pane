@@ -2,6 +2,7 @@ import { escapeHtml } from '@copse/streaming-markdown'
 import { errorMessage } from '@shared/errors.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
+import { uiField } from '../../ui/index.ts'
 
 export interface GhCliSection {
   root: HTMLElement
@@ -30,12 +31,11 @@ export function createGhCliSection(api: ApiClient): GhCliSection {
   backendSelect.addEventListener('change', () => {
     void api.settings.set('githubBackend', backendSelect.value)
   })
-  const backendField = el(
-    'label',
-    { class: 'setup-field gh-backend-field' },
-    el('span', { class: 'setup-field-label' }, 'Backend'),
-    backendSelect,
-  )
+  const backendField = uiField({
+    label: 'Backend',
+    control: backendSelect,
+    className: 'gh-backend-field',
+  })
 
   async function refreshStatus(): Promise<void> {
     statusEl.textContent = 'Checking GitHub CLI…'

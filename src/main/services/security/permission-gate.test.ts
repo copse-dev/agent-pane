@@ -13,7 +13,11 @@ import {
   SANDBOX_TOOLS,
   isStructurallyReadOnlyShellCommand,
 } from './permission-policy.ts'
-import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
+import {
+  DEFAULT_WEB_ALLOWED_ORIGINS,
+  WEB_ALLOWED_ORIGINS_SETTING,
+  WEB_ALLOW_USER_APPROVAL_SETTING,
+} from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import {
@@ -25,6 +29,7 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import { runWithAcpBridgePermissionContext } from '../acp/acp-bridge-permission-context.ts'
 import {
@@ -34,6 +39,7 @@ import {
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { setSetting } from '../storage/settings.test-shim.ts'
 
 describe('isStructurallyReadOnlyShellCommand', () => {
   it('accepts simple read commands and read-only pipelines', () => {
@@ -129,6 +135,27 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('prompts before sending a direct Parallel Search request', async () => {
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
+        false,
+      )
+      assert.match(approvalBody, /api\.parallel\.ai/)
+      assert.match(approvalBody, /paid API credits/i)
+      assert.match(approvalBody, /Zero Data Retention/i)
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
   it('forces approval for a concurrent shell call while a network scope is widened', async () => {
     setPermissionGateForTests(null)
     const release = acquireSandboxNetworkScope({
@@ -136,8 +163,10 @@ describe('ensureToolPermitted', () => {
       allowLocalBinding: false,
     })
     let approvalBody = ''
+    let approvalSubject = ''
     setApprovalHandler(async (request) => {
       approvalBody = request.body
+      approvalSubject = request.subject ?? ''
       return { approved: false, remember: false }
     })
     try {
@@ -146,6 +175,7 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.match(approvalBody, /network access is temporarily widened/i)
+      assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
     } finally {
       setApprovalHandler(null)
       release()

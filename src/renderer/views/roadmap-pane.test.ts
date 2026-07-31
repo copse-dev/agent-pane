@@ -15,6 +15,7 @@ import type {
   RoadmapReviewItemResult,
   RoadmapReviewPrepareResult,
 } from '../../main/services/roadmap-review.ts'
+import type { RoadmapIssueCoverageMatch } from '../../main/services/roadmap-issue-coverage.ts'
 
 // Minimal KnowledgeNote (Roadmap) factory; only the fields the pane reads matter.
 function makeItem(
@@ -89,6 +90,7 @@ interface RoadmapCalls {
   openExternal: string[]
   openIssues: number
   importIssues: { number: number; title: string; body: string }[][]
+  matchOpenIssues: { number: number; title: string; body: string }[][]
   checkFit: string[]
   prepareReview: number
   reviewItem: { id: string; commits: string; runId?: string }[]
@@ -125,6 +127,12 @@ function makeOpenIssue(number: number, title: string, body = ''): MockOpenIssue 
 function makeApi(
   seed: ReturnType<typeof makeItem>[],
   issues: MockOpenIssue[] = [],
+  coverage: {
+    issueNumber: number
+    itemId: string
+    itemTitle: string
+    verdict: 'likely' | 'partial'
+  }[] = [],
 ): {
   api: ApiClient
   calls: RoadmapCalls
@@ -144,6 +152,7 @@ function makeApi(
     openExternal: [],
     openIssues: 0,
     importIssues: [],
+    matchOpenIssues: [],
     checkFit: [],
     prepareReview: 0,
     reviewItem: [],
@@ -241,12 +250,21 @@ function makeApi(
           calls.issueUrl.push(ref)
           return `https://github.com/octo/demo/issues/${ref.replace('#', '')}`
         },
-        openIssues: async (): Promise<{
+        openIssues: async (
+          page: number,
+        ): Promise<{
           slug: string
           issues: import('@shared/types').GhIssueSummary[]
+          hasMore: boolean
         }> => {
           calls.openIssues++
-          return { slug: 'octo/demo', issues: issues.map((i) => ({ ...i })) }
+          const pageSize = 20
+          const start = (page - 1) * pageSize
+          return {
+            slug: 'octo/demo',
+            issues: issues.slice(start, start + pageSize).map((issue) => ({ ...issue })),
+            hasMore: start + pageSize < issues.length,
+          }
         },
         checkFit: async (id: string): Promise<RoadmapFitResult> => {
           calls.checkFit.push(id)
@@ -367,7 +385,13 @@ function makeApi(
           items.push(...created)
           return created
         },
-        onChanged: (handler: () => void) => {
+        matchOpenIssues: async (
+          selected: { number: number; title: string; body: string }[],
+        ): Promise<RoadmapIssueCoverageMatch[]> => {
+          calls.matchOpenIssues.push(selected)
+          return coverage.map((c) => ({ ...c }))
+        },
+        onChanged: (handler: () => void): (() => void) => {
           changedHandler = handler
           return (): void => {
             changedHandler = null
@@ -1018,6 +1042,7 @@ describe('roadmap pane', () => {
       list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
       await flush()
       assert.equal(calls.openIssues, 1)
+      assert.equal(calls.matchOpenIssues.length, 1)
       const checks = [...viewer.querySelectorAll<HTMLInputElement>('.roadmap-import-check')]
       assert.equal(checks.length, 2)
       const [pinnedCheck, freeCheck] = checks
@@ -1035,6 +1060,92 @@ describe('roadmap pane', () => {
       assert.ok(titles.join('\n').includes('#52'), 'the imported item appears in the list')
       // The picker closes after a successful import.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-import')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('disables issues the model judges already covered by a roadmap item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi(
+      [makeItem('term', 'Add a keyboard shortcut to toggle the terminal pane')],
+      [
+        makeOpenIssue(52, 'Add keyboard shortcut to toggle the terminal pane'),
+        makeOpenIssue(99, 'Unrelated issue'),
+      ],
+      [
+        {
+          issueNumber: 52,
+          itemId: 'term',
+          itemTitle: 'Add a keyboard shortcut to toggle the terminal pane',
+          verdict: 'likely',
+        },
+      ],
+    )
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      assert.equal(calls.matchOpenIssues.length, 1)
+      const rows = [...viewer.querySelectorAll<HTMLLabelElement>('.roadmap-import-row')]
+      assert.equal(rows.length, 2)
+      const covered = rows.find((r) => r.textContent.includes('#52'))
+      const free = rows.find((r) => r.textContent.includes('#99'))
+      assert.ok(covered && free)
+      assert.equal(covered.classList.contains('is-covered'), true)
+      const coveredCheck = covered.querySelector<HTMLInputElement>('.roadmap-import-check')
+      const freeCheck = free.querySelector<HTMLInputElement>('.roadmap-import-check')
+      assert.ok(coveredCheck && freeCheck)
+      assert.equal(coveredCheck.disabled, true)
+      assert.match(covered.textContent, /covered by/)
+      assert.equal(freeCheck.disabled, false)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('loads and coverage-matches open issues in bounded pages without a total ceiling', async () => {
+    const issues = Array.from({ length: 25 }, (_, index) =>
+      makeOpenIssue(index + 1, `Issue ${String(index + 1)}`),
+    )
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([], issues)
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+
+      assert.equal(viewer.querySelectorAll('.roadmap-import-row').length, 20)
+      assert.deepEqual(
+        calls.matchOpenIssues.map((page) => page.length),
+        [20],
+      )
+      const loadMore = viewer.querySelector<HTMLButtonElement>('.roadmap-import-more')
+      assert.ok(loadMore)
+      assert.equal(loadMore.hidden, false)
+
+      const first = viewer.querySelector<HTMLInputElement>('.roadmap-import-check')
+      assert.ok(first)
+      first.click()
+      loadMore.click()
+      await flush()
+
+      assert.equal(calls.openIssues, 2)
+      assert.equal(viewer.querySelectorAll('.roadmap-import-row').length, 25)
+      assert.deepEqual(
+        calls.matchOpenIssues.map((page) => page.length),
+        [20, 5],
+      )
+      assert.equal(loadMore.hidden, true)
+      assert.equal(
+        viewer.querySelector<HTMLInputElement>('.roadmap-import-check')?.checked,
+        true,
+        'loading another page preserves the current selection',
+      )
     } finally {
       unmount()
     }
@@ -1089,12 +1200,13 @@ describe('roadmap pane', () => {
   it('surfaces a not-connected error in the picker, stripped of IPC noise', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([])
-    ;(api.roadmap as { openIssues: () => Promise<unknown> }).openIssues = (): Promise<unknown> =>
-      Promise.reject(
-        new Error(
-          "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
-        ),
-      )
+    ;(api.roadmap as { openIssues: (page: number) => Promise<unknown> }).openIssues =
+      (): Promise<unknown> =>
+        Promise.reject(
+          new Error(
+            "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
+          ),
+        )
     const { list, viewer } = mountHosts()
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
@@ -1355,6 +1467,84 @@ describe('roadmap pane', () => {
       assert.equal(
         viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
         'Half-typed new prompt',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('auto-saves and restores a partial edit when switching items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'First prompt'), makeItem('b', 'Second prompt')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const rows = list.querySelectorAll<HTMLButtonElement>('.roadmap-row')
+      rows[0]?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.ok(prompt)
+      prompt.value = 'Partially edited first prompt'
+
+      rows[1]?.click()
+      await flush()
+      assert.deepEqual(calls.update, [
+        {
+          id: 'a',
+          prompt: 'Partially edited first prompt',
+          notes: undefined,
+          status: 'ready',
+          issue: undefined,
+        },
+      ])
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Second prompt',
+      )
+
+      list.querySelectorAll<HTMLButtonElement>('.roadmap-row')[0]?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Partially edited first prompt',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('retains a new-item draft when switching to an existing item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Existing prompt')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      const notes = viewer.querySelector<HTMLTextAreaElement>('.roadmap-notes-input')
+      assert.ok(prompt)
+      assert.ok(notes)
+      prompt.value = 'Draft prompt'
+      notes.value = 'Draft notes'
+
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      await flush()
+      assert.equal(calls.create.length, 0)
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Existing prompt',
+      )
+
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Draft prompt',
+      )
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-notes-input')?.value,
+        'Draft notes',
       )
     } finally {
       unmount()

@@ -2,12 +2,13 @@ import { app, Menu, dialog, type BrowserWindow } from 'electron'
 import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/workspace.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { checkForUpdatesManually } from '../services/auto-update.ts'
+import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 
 // Builds the native application menu. The File ▸ Open Folder… item drives the
 // same flow as the renderer's Open Folder button: pick a directory, set it as
 // the workspace, kick off indexing, and notify the renderer to swap to the
 // full layout via the 'workspace:opened' event.
-export function buildAppMenu(win: BrowserWindow): void {
+export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
   const isMac = process.platform === 'darwin'
 
   async function openFolder(): Promise<void> {
@@ -153,7 +154,16 @@ export function buildAppMenu(win: BrowserWindow): void {
             win.webContents.reload()
           },
         },
-        { role: 'toggleDevTools' as const },
+        ...(developerMode
+          ? [
+              {
+                label: 'Developer Tools',
+                click: (): void => {
+                  toggleDetachedDevTools(win.webContents)
+                },
+              },
+            ]
+          : []),
         { type: 'separator' as const },
         // Custom interface scale (CSS --ui-scale), not Chromium page zoom.
         // The built-in zoomIn/Out/resetZoom roles were unreliable in this

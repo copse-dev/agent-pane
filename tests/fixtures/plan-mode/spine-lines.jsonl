@@ -1,0 +1,5 @@
+{"v":1,"type":"plan","action":"create","id":"evt-plan-1","planId":"plan-auth-retry","revision":1,"createdAt":1720000000000,"artifact":{"ref":"plans/plan-auth-retry/revision-1.md","sha256":"deadbeef"}}
+{"v":1,"type":"plan","action":"comment","id":"evt-plan-2","planId":"plan-auth-retry","revision":1,"createdAt":1720000002000,"commentId":"cmt-1"}
+{"v":1,"type":"plan","action":"revise","id":"evt-plan-3","planId":"plan-auth-retry","revision":2,"createdAt":1720000004000,"artifact":{"ref":"plans/plan-auth-retry/revision-2.md","sha256":"cafebabe"}}
+{"v":1,"type":"plan","action":"approve","id":"evt-plan-4","planId":"plan-auth-retry","revision":2,"createdAt":1720000005000,"artifact":{"ref":"plans/plan-auth-retry/revision-2.md","sha256":"cafebabe"},"executionProfileId":"implementation","contentHash":"cafebabe"}
+{"v":1,"type":"plan","action":"abandon","id":"evt-plan-5","planId":"plan-other","revision":1,"createdAt":1720000006000}

@@ -1,0 +1,12 @@
+{
+  "comments": [
+    {
+      "id": "cmt-1",
+      "revision": 1,
+      "body": "Cap should be configurable later; 30s is fine for v1.",
+      "createdAt": 1720000002000,
+      "author": "user",
+      "anchor": { "start": 180, "end": 210 }
+    }
+  ]
+}

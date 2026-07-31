@@ -19,6 +19,7 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
+import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
 import {
   assertFsWriteContent,
   isIndexQueryPattern,
@@ -41,6 +42,7 @@ import { resolveFileReferences } from '../services/search/file-reference-resolve
 import {
   getWorkspaceIndexStatus,
   onWorkspaceIndexStatusChanged,
+  setSemanticIndexScaleGuarded,
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
@@ -109,6 +111,12 @@ import {
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
+import {
+  setPackToolRuntimeController,
+  ToolingPackToolRuntimeController,
+} from '../services/packs/pack-tool-controller.ts'
+import { createPackBrowserPanelService } from '../services/packs/pack-browser-panel.ts'
+import { setPackBrowserService } from '../services/packs/pack-browser-service.ts'
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -119,6 +127,7 @@ import {
   syncModelComparisonTools,
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
+  syncParallelSearchTools,
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -132,6 +141,7 @@ import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
@@ -171,6 +181,7 @@ import {
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
+import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { buildRoadmapExport } from '../services/roadmap-export.ts'
@@ -217,6 +228,8 @@ import {
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+import { buildAppMenu } from '../windows/app-menu.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
@@ -242,6 +255,7 @@ import {
   invalidateCursorCloudModelsCache,
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
+import { discoverExternalCursorAgents } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 
 import {
@@ -283,6 +297,12 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
 }
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const packService = getPackService()
+  setPackBrowserService(createPackBrowserPanelService(win))
+  setPackToolRuntimeController(new ToolingPackToolRuntimeController(registry))
+  void packService.refreshPackSources().catch((error: unknown) => {
+    console.warn('[packs] selected-pack startup reconciliation failed:', error)
+  })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
   // getPackService() has already layered the user's explicit choices on top, so
@@ -374,7 +394,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const context = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, context.root)
     await gatewayWriteFile(abs, content, context.root)
-    if (context.checkoutMode === 'shared') scheduleIndexRebuild()
+    scheduleIndexRebuild(context.root)
   })
 
   ipcMain.handle('fs:readdir', async (event, ...rawArgs) => {
@@ -406,8 +426,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     const query = typeof pattern === 'string' ? pattern : ''
     if (query && !isIndexQueryPattern(query)) return []
-    await whenFileIndexReady()
-    const idx = getIndex()
+    // Renderer-global feature (command palette / `@` mention picker), scoped
+    // to the renderer-selected workspace root, not any one thread's execution root.
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    await whenFileIndexReady(root)
+    const idx = getIndex(root)
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
@@ -424,7 +448,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('index:resolveFileReferences', async (event, rawCandidates: unknown) => {
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
-    await whenFileIndexReady()
+    const root = getWorkspaceRoot()
+    if (root) await whenFileIndexReady(root)
     return await resolveFileReferences(candidates)
   })
 
@@ -695,8 +720,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Import-from-issues flow: list the workspace's open issues, then turn the
   // selected ones into roadmap items (prompt drafted by the small-tasks model,
   // falling back to a template — see roadmap-issue-import.ts).
-  ipcMain.handle('roadmap:openIssues', async (event) => {
+  const roadmapIssueSchema = z.object({
+    number: z.number().int().positive(),
+    title: z.string().max(512),
+    body: z.string().max(20_000),
+  })
+  const roadmapIssuePageSize = 20
+
+  ipcMain.handle('roadmap:openIssues', async (event, rawPage: unknown) => {
     assertMainFrameSender(event, win)
+    const page = parseIpcArgs(z.number().int().positive(), [rawPage])
     // The backend impls return [] for "gh missing", "not authenticated", and
     // "no origin remote" alike — fine for the PR panel, which surfaces status
     // separately, but here an empty picker must mean "no open issues". Turn
@@ -713,26 +746,30 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new Error('No GitHub origin remote detected in this workspace.')
     }
     // Return the slug too: an empty result names the repo it actually queried,
-    // which surfaces stale/fork origins immediately. Limit 30: even with
-    // per-issue bodies bounded at the backend, the gh CLI path must stay
-    // comfortably under runCommand's 100 KiB stdout cap.
-    return { slug, issues: await backend.listWorkspaceOpenIssues(30) }
+    // which surfaces stale/fork origins immediately. Pagination keeps every
+    // GitHub/IPC/model operation bounded without imposing a repository-wide
+    // issue ceiling on the picker.
+    return {
+      slug,
+      ...(await backend.listWorkspaceOpenIssues(page, roadmapIssuePageSize)),
+    }
   })
 
-  const zRoadmapImportIssues = z
-    .array(
-      z.object({
-        number: z.number().int().positive(),
-        title: z.string().max(512),
-        body: z.string().max(20_000),
-      }),
-    )
-    .max(20)
+  const zRoadmapImportIssues = z.array(roadmapIssueSchema).max(roadmapIssuePageSize)
 
   ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
     return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
+  })
+
+  // Semantic coverage for the import picker: which open issues already have a
+  // roadmap prompt (even without a pin)? Pin matches stay client-side; this
+  // only asks the small-tasks model about the unpinned remainder.
+  ipcMain.handle('roadmap:matchOpenIssues', async (event, rawIssues: unknown) => {
+    assertMainFrameSender(event, win)
+    const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
+    return matchOpenIssuesToRoadmapItems(issues)
   })
 
   // Track the chat thread started from an item ("Start thread" in the pane) in
@@ -863,6 +900,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
     }
+    // Keep the native diagnostics menu in sync with Developer mode. The
+    // Ctrl+Shift+I shortcut is owned independently by its first-party pack.
+    if (k === DEVELOPER_MODE_SETTING) {
+      const win = getMainWindow()
+      const enabled = typeof value === 'boolean' && value
+      if (win) buildAppMenu(win, enabled)
+    }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -909,6 +953,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // their key. Drop it here so the next value-map open re-fetches with the new
     // key.
     if (p === 'artificial-analysis') invalidateLiveIntellectCache()
+    if (p === 'parallel') syncParallelSearchTools(registry)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -1050,6 +1095,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     await setClaudePlanMonthlyFeeUsd(fee)
     return getPlanWorthItPayload()
+  })
+  // Durable permission-decision audit log (#656). `projectId` is optional — an
+  // empty/absent value falls back to the active project.
+  ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) return []
+    return readDecisionLog(resolved)
+  })
+  ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) throw new Error('No project to export decisions for.')
+    return exportDecisionLog(resolved)
   })
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
@@ -1262,8 +1323,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Settings pack list ("about:addons") calls these to enumerate every
   // registered pack, toggle enablement atomically (P1 contract), and read /
   // write pack-scoped settings values under the manifest's declared schema.
-  ipcMain.handle('packs:list', (event) => {
+  ipcMain.handle('packs:list', async (event) => {
     assertMainFrameSender(event, win)
+    await getPackService().refreshPackSources()
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle('packs:addSource', async (event) => {
+    assertMainFrameSender(event, win)
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Add pack',
+      properties: ['openDirectory'],
+    })
+    const sourcePath = result.filePaths[0]
+    if (!result.canceled && sourcePath) {
+      await getPackService().addPackSource(sourcePath)
+    }
     return { packs: getPackService().list() }
   })
   ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
@@ -1319,6 +1393,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
     if (id === BACKGROUND_TASKS_PACK_ID) {
       syncBackgroundTasksTools(registry)
+    }
+    if (id === PARALLEL_SEARCH_PACK_ID) {
+      syncParallelSearchTools(registry)
     }
     return { packs: getPackService().list() }
   })
@@ -1578,6 +1655,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return listCursorCloudModels()
   })
+  /**
+   * Import Cursor cloud agents launched outside Copse as local thread stubs.
+   * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
+   * open project. Caller should reload/merge project threads after imports.
+   */
+  ipcMain.handle('remoteAgent:discoverExternal', (event, projectId: unknown) => {
+    assertMainFrameSender(event, win)
+    if (projectId === undefined || projectId === null) {
+      return discoverExternalCursorAgents()
+    }
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return discoverExternalCursorAgents({ projectId: id })
+  })
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
@@ -1684,6 +1774,26 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // E2e-only: register an ordered mock script so specs can drive multi-turn flows
   // with natural-language prompts (see mock-script.ts). Not exposed in release UX.
   if (process.env['COPSE_E2E'] === '1') {
+    const testAgentChunkSchema = z.discriminatedUnion('type', [
+      z.object({
+        type: z.literal('tool_call'),
+        toolCall: z.object({
+          id: z.string().min(1).max(256),
+          name: z.string().min(1).max(2_000),
+          args: z.unknown(),
+          kind: z.string().max(128).optional(),
+        }),
+      }),
+      z.object({
+        type: z.literal('tool_call_update'),
+        toolCallId: z.string().min(1).max(256),
+        name: z.string().max(2_000).optional(),
+        args: z.unknown().optional(),
+        status: z.enum(['running', 'done', 'error']).optional(),
+        result: z.string().max(200_000).optional(),
+        resultFormat: z.literal('markdown').optional(),
+      }),
+    ])
     const mockScriptStepSchema = z
       .object({
         when: z.string().min(1).max(500),
@@ -1714,6 +1824,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       clearMockScript()
     })
+    ipcMain.handle('test:emitAgentChunks', (event, rawThreadId: unknown, rawChunks: unknown) => {
+      assertMainFrameSender(event, win)
+      const [threadId, chunks] = parseIpcArgs(
+        z.tuple([z.string().min(1).max(256), z.array(testAgentChunkSchema).max(16)]),
+        [rawThreadId, rawChunks],
+      )
+      for (const chunk of chunks) win.webContents.send('agent:chunk', threadId, chunk)
+    })
     ipcMain.handle('test:requestSshPrompt', (event, prompt: unknown, kind: unknown) => {
       assertMainFrameSender(event, win)
       const [parsedPrompt, parsedKind] = parseIpcArgs(
@@ -1727,6 +1845,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
       return requestAcpPackageInstallApproval([codex])
+    })
+    ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
+      assertMainFrameSender(event, win)
+      const [parsedPhase, parsedReason] = parseIpcArgs(
+        z.tuple([z.enum(['limited', 'skipped']), z.string().min(1).max(500)]),
+        [phase, reason],
+      )
+      setSemanticIndexScaleGuarded(parsedPhase, parsedReason)
     })
   }
 }
