@@ -146,6 +146,8 @@ export interface SubagentMessage {
   toolCalls: ToolCall[]
   /** Wall-clock time the message was first created; absent on sessions persisted before timestamps existed. */
   createdAt?: number
+  /** Accumulated reasoning / "thinking" text streamed before this message's content, mirroring `ChatMessage.reasoning`. */
+  reasoning?: string
 }
 
 export interface SubagentSession {
@@ -214,6 +216,7 @@ export type AgentStreamChunk =
       source?: 'agent-reported'
     }
   | { type: 'subagent_start'; parentToolCallId: string; session: SubagentSession }
+  | { type: 'subagent_reasoning'; parentToolCallId: string; messageId: string; text: string }
   | { type: 'subagent_text'; parentToolCallId: string; messageId: string; text: string }
   | {
       type: 'subagent_tool_call'
