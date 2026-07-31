@@ -1019,10 +1019,13 @@ export function mountInputBar(
     // trailing row. Order matters — pastes first, in composer order, so the Nth
     // placeholder maps to the Nth paste attachment.
     const attachments: TranscriptAttachment[] = [
-      ...composer.getBlocks().map((b) => ({ kind: 'paste' as const, label: b.label })),
+      ...composer
+        .getBlocks()
+        .map((b) => ({ kind: 'paste' as const, label: b.label, content: b.content })),
       ...attachedFiles.map((f) => ({
         kind: 'file' as const,
         label: f.path.split('/').pop() ?? f.path,
+        content: f.content,
       })),
       ...attachedThreads.map((t) => ({
         kind: 'thread' as const,
@@ -1031,6 +1034,7 @@ export function mountInputBar(
       ...attachedShells.map((s) => ({
         kind: 'shell' as const,
         label: s.label,
+        content: s.content,
       })),
       ...attachedVideos.map((v) => ({
         kind: 'video' as const,

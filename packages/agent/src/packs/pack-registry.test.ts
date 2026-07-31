@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { PackRegistry, DuplicatePackError, UnknownPackError } from './pack-registry.ts'
+import {
+  PackRegistry,
+  DuplicatePackError,
+  InvalidAcpToolsError,
+  UnknownPackError,
+} from './pack-registry.ts'
 import { definePack, packManifestFromPluginJson, type RegisteredPack } from './pack-manifest.ts'
 import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
 import type { BlockingHook } from '../hooks/canonical-events.ts'
@@ -84,6 +89,67 @@ describe('PackRegistry grouping', () => {
       registry.disable('nope')
     }, UnknownPackError)
     assert.throws(() => registry.storage('nope'), UnknownPackError)
+  })
+
+  it('exposes only enabled packs’ explicitly declared ACP tools', () => {
+    const registry = new PackRegistry()
+    registry.register(
+      definePack(
+        {
+          name: 'search-pack',
+          trust: 'first-party',
+          tools: { native: ['pack_search', 'native_only'], acpTools: ['pack_search'] },
+        },
+        { toolNames: ['pack_search', 'native_only'] },
+      ),
+    )
+    assert.deepEqual(registry.activeAcpToolNames(), ['pack_search'])
+    registry.disable('search-pack')
+    assert.deepEqual(registry.activeAcpToolNames(), [])
+  })
+
+  it('rejects ACP tools that are not first-party native runtime contributions', () => {
+    const userRegistry = new PackRegistry()
+    assert.throws(() => {
+      userRegistry.register(
+        definePack(
+          {
+            name: 'user-pack',
+            trust: 'user',
+            tools: { native: ['unsafe'], acpTools: ['unsafe'] },
+          },
+          { toolNames: ['unsafe'] },
+        ),
+      )
+    }, InvalidAcpToolsError)
+
+    const undeclaredRegistry = new PackRegistry()
+    assert.throws(() => {
+      undeclaredRegistry.register(
+        definePack(
+          {
+            name: 'undeclared-pack',
+            trust: 'first-party',
+            tools: { native: ['native'], acpTools: ['not_native'] },
+          },
+          { toolNames: ['native', 'not_native'] },
+        ),
+      )
+    }, InvalidAcpToolsError)
+
+    const missingRuntimeRegistry = new PackRegistry()
+    assert.throws(() => {
+      missingRuntimeRegistry.register(
+        definePack(
+          {
+            name: 'missing-runtime-pack',
+            trust: 'first-party',
+            tools: { native: ['missing_runtime'], acpTools: ['missing_runtime'] },
+          },
+          { toolNames: [] },
+        ),
+      )
+    }, InvalidAcpToolsError)
   })
 })
 

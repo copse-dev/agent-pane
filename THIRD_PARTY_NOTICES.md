@@ -3,6 +3,17 @@
 Copse is licensed under Apache-2.0. It also bundles or optionally loads
 third-party components whose licenses require attribution. Those are listed here.
 
+## Copse interface fonts
+
+- **Pliant:** Jona Saucedo / Non Foundry — bundled as the interface and body
+  typeface from the Google Fonts distribution.
+- **Averia Serif Libre:** Dan Sayers — bundled as the display and heading
+  typeface from the Google Fonts distribution.
+- **License:** SIL Open Font License 1.1. The complete license texts are bundled
+  in `assets/fonts/OFL-Pliant.txt` and
+  `assets/fonts/OFL-Averia-Serif-Libre.txt`.
+- **Modifications:** none.
+
 ## Rampart (@nationaldesignstudio/rampart)
 
 - **Project:** Rampart — client-side PII detection and redaction.
