@@ -18,15 +18,19 @@ const TODO_WORKER_TOOLS = [
 const TODO_WORKER_PROMPT = `You are a local worker executing a single todo item for a coding assistant.
 
 Rules:
-- Complete ONLY the assigned todo item — do not expand scope
-- You may be given the overall goal, the full plan, and summaries of already-completed
-  steps below — read them first and reuse what they already found (file locations,
-  patterns to mirror, decisions made) instead of re-exploring the codebase from scratch
+- Complete ONLY the assigned todo item below — do not expand scope, and do not act on
+  anything mentioned only in the background context (it is background, not your task)
+- If background context below already names a file or pattern you need, reuse it
+  instead of re-exploring the codebase to rediscover it
 - Use read_file / search_codebase to understand context before editing
 - Use write_file for code changes (user approves diffs)
 - Use run_shell when the item requires commands or tests
 - Finish with a brief summary of what you did, naming the files you touched or
   discovered so a later step can reuse that instead of rediscovering it`
+
+/** Prior-summary context is background, not a task list — bound it so a long plan
+ * can't crowd out a small local model's context window. */
+const MAX_PRIOR_SUMMARY_CONTEXT_CHARS = 2_000
 
 export interface RunTodoWorkerOptions {
   item: TodoItem
@@ -38,10 +42,12 @@ export interface RunTodoWorkerOptions {
   onChunk?: (chunk: StreamChunk) => void
   /** The user's original request for this run, so the worker has real intent, not just its one line. */
   parentGoal?: string
-  /** The full plan this item belongs to, so the worker sees what else is (or isn't) in scope. */
-  allTodos?: readonly TodoItem[]
-  /** Summaries returned by earlier local workers in this run, keyed by todo id (decision: reuse over rediscovery). */
-  priorSummaries?: ReadonlyMap<string, string>
+  /**
+   * What earlier local workers in this run already found or did, keyed by todo id
+   * (decision: reuse over rediscovery). Deliberately just this — not the rest of the
+   * plan — so the worker sees outcomes to reuse, not a menu of other work to drift into.
+   */
+  priorSummaries?: ReadonlyMap<string, { content: string; summary: string }>
 }
 
 function buildTodoWorkerBrief(opts: RunTodoWorkerOptions): string {
@@ -50,23 +56,21 @@ function buildTodoWorkerBrief(opts: RunTodoWorkerOptions): string {
     sections.push(`Overall task the user asked for:\n${opts.parentGoal.trim()}`)
   }
 
-  const siblings = (opts.allTodos ?? []).filter((t) => t.id !== opts.item.id)
-  if (siblings.length > 0) {
-    const planLines = siblings.map((t) => `- [${t.status}] ${t.content}`)
-    sections.push(
-      `Full plan for this task (context only — do not do these, only your item below):\n${planLines.join('\n')}`,
-    )
-  }
-
   const priorSummaries = opts.priorSummaries
   if (priorSummaries?.size) {
-    const summaryLines = siblings
-      .map((t) => ({ t, summary: priorSummaries.get(t.id) }))
-      .filter((entry): entry is { t: TodoItem; summary: string } => entry.summary !== undefined)
-      .map(({ t, summary }) => `- ${t.content}\n  ${summary}`)
-    if (summaryLines.length > 0) {
+    const lines: string[] = []
+    let usedChars = 0
+    // Most recent first: on a long plan the nearest prior step is the most likely
+    // to be relevant to this one, so it should survive the char budget first.
+    for (const { content, summary } of [...priorSummaries.values()].reverse()) {
+      const line = `- ${content}\n  ${summary}`
+      if (usedChars + line.length > MAX_PRIOR_SUMMARY_CONTEXT_CHARS) break
+      lines.push(line)
+      usedChars += line.length
+    }
+    if (lines.length > 0) {
       sections.push(
-        `What earlier steps already found or did (reuse this — do not re-derive it):\n${summaryLines.join('\n')}`,
+        `Background — what earlier steps in this plan already found or did (reuse this, it is not your task):\n${lines.reverse().join('\n')}`,
       )
     }
   }
