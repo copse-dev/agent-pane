@@ -12,6 +12,9 @@
 // write-queue used in production but land in an in-memory Map.
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { definePack } from '@copse/agent/packs/pack-manifest.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
@@ -28,12 +31,38 @@ import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
+import {
+  setPackToolRuntimeController,
+  type PackToolRuntimeController,
+} from './pack-tool-controller.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
+const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'packMigration.parallelSearchEnablement'
+const PACK_SOURCES_KEY = 'packSources'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
+const localPackRoots: string[] = []
+
+async function makeToolPack(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'copse-pack-service-local-'))
+  localPackRoots.push(root)
+  await mkdir(join(root, 'dist'))
+  await writeFile(join(root, 'dist', 'index.mjs'), 'export default {}\n')
+  await writeFile(
+    join(root, 'copse-pack.json'),
+    JSON.stringify({
+      name: 'personal.local-tools',
+      tools: {
+        provides: ['personal_judge'],
+      },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+    }),
+  )
+  return root
+}
 
 function makeRegistry(): PackRegistry {
   const registry = new PackRegistry()
@@ -42,6 +71,7 @@ function makeRegistry(): PackRegistry {
       {
         name: 'demo.pack',
         trust: 'first-party',
+        stability: 'stable',
         description: 'demo pack',
         storage: { namespace: 'demo.pack' },
         settings: {
@@ -56,6 +86,7 @@ function makeRegistry(): PackRegistry {
     definePack({
       name: 'copse.other',
       trust: 'first-party',
+      stability: 'stable',
       storage: { namespace: 'copse.other' },
     }),
   )
@@ -67,6 +98,8 @@ function clearStorage(): void {
   // Keep the prototype's one-time default-off migration out of unrelated cases;
   // its dedicated test below deletes this marker explicitly.
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(PACK_SOURCES_KEY, [])
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -77,8 +110,11 @@ describe('PackService', () => {
     clearStorage()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     __resetPackServiceForTests()
+    await Promise.all(
+      localPackRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    )
   })
 
   it('lists every registered pack with its enablement + settings values', () => {
@@ -158,6 +194,64 @@ describe('PackService', () => {
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 
+  it('discovers selected tool packs as ordinary user packs and refreshes their hash', async () => {
+    const registry = makeRegistry()
+    const service = createPackService(registry)
+    const source = await makeToolPack()
+
+    await service.addPackSource(source)
+    const discovered = service.list().find((pack) => pack.id === 'personal.local-tools')
+    assert.ok(discovered)
+    assert.equal(discovered.trust, 'user')
+    assert.equal(discovered.enabled, false)
+    assert.ok(discovered.source)
+    assert.equal(discovered.source.path, await realpath(source))
+    assert.match(discovered.source.contentHash, /^sha256:[a-f0-9]{64}$/)
+    assert.deepEqual(discovered.contributions.toolNames, ['personal_judge'])
+    assert.equal(registry.activeToolNames().includes('personal_judge'), false)
+    assert.equal(parseStringList(storageGet(PACK_DISABLED_KEY)).includes(discovered.id), false)
+
+    await writeFile(join(source, 'dist', 'index.mjs'), 'export default { changed: true }\n')
+    await service.refreshPackSources()
+    const changed = service.list().find((pack) => pack.id === 'personal.local-tools')
+    assert.ok(changed)
+    assert.ok(changed.source)
+    assert.notEqual(changed.source.contentHash, discovered.source.contentHash)
+  })
+
+  it('starts selected tool behavior on add and stops it before disabling the pack', async () => {
+    const calls: string[] = []
+    let running = false
+    const controller: PackToolRuntimeController = {
+      enable(candidate) {
+        calls.push(`enable:${candidate.manifest.name}`)
+        running = true
+        return Promise.resolve()
+      },
+      disable(packId) {
+        calls.push(`disable:${packId}`)
+        running = false
+        return Promise.resolve()
+      },
+      isRunning: () => running,
+      registrations: () => null,
+      invokeTool: () => Promise.resolve(null),
+      invokeModel: () => Promise.resolve(null),
+    }
+    setPackToolRuntimeController(controller)
+    const registry = makeRegistry()
+    const service = createPackService(registry)
+    await service.addPackSource(await makeToolPack())
+    const pack = service.list().find((candidate) => candidate.id === 'personal.local-tools')
+    assert.ok(pack?.source)
+    assert.equal(registry.isEnabled(pack.id), true)
+    assert.equal(parseStringList(storageGet(PACK_DISABLED_KEY)).includes(pack.id), false)
+
+    await service.setEnabled(pack.id, false)
+    assert.equal(registry.isEnabled(pack.id), false)
+    assert.deepEqual(calls, [`enable:${pack.id}`, `disable:${pack.id}`])
+  })
+
   it('getPackService() installs a singleton registry with the first-party packs', () => {
     const service = getPackService()
     assert.equal(typeof service.registry.all, 'function')
@@ -189,6 +283,7 @@ describe('PackService', () => {
       DEVTOOLS_SHORTCUT_PACK_ID,
       BACKGROUND_TASKS_PACK_ID,
       AUTOMATIONS_PACK_ID,
+      PARALLEL_SEARCH_PACK_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
     }
@@ -207,6 +302,7 @@ describe('PackService', () => {
         DEVTOOLS_SHORTCUT_PACK_ID,
         BACKGROUND_TASKS_PACK_ID,
         AUTOMATIONS_PACK_ID,
+        PARALLEL_SEARCH_PACK_ID,
       ].sort(),
     )
   })
@@ -224,6 +320,18 @@ describe('PackService', () => {
     __resetPackServiceForTests()
     const later = getPackService()
     assert.equal(later.registry.isEnabled(AUTOMATIONS_PACK_ID), true)
+  })
+
+  it('seeds Parallel Search off once for existing profiles without erasing later choices', async () => {
+    storageDelete(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY)
+    const service = getPackService()
+    assert.equal(service.registry.isEnabled(PARALLEL_SEARCH_PACK_ID), false)
+    assert.equal(storageGet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY), true)
+
+    await service.setEnabled(PARALLEL_SEARCH_PACK_ID, true)
+    __resetPackServiceForTests()
+    const later = getPackService()
+    assert.equal(later.registry.isEnabled(PARALLEL_SEARCH_PACK_ID), true)
   })
 
   it('never re-seeds over a pack list the user already owns', () => {
