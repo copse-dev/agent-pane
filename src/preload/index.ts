@@ -743,7 +743,7 @@ contextBridge.exposeInMainWorld('api', {
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
     export: (format: string) => ipcRenderer.invoke('roadmap:export', format),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
-    openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
+    openIssues: (page: number) => ipcRenderer.invoke('roadmap:openIssues', page),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
     matchOpenIssues: (issues: { number: number; title: string; body: string }[]) =>
