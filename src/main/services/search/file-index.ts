@@ -1,7 +1,8 @@
+import { resolve } from 'node:path'
 import { runCommand } from '../exec/command-runner.ts'
 import { isRgAvailableForTarget } from '../tool-availability.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { toRelativePath } from '../workspace.ts'
+import { toRelativePathWithinRoot } from '../workspace.ts'
 import { indexBuildStarted, indexBuildFinished } from './index-status.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import {
@@ -15,8 +16,14 @@ interface FileIndex {
   lastBuilt: number
 }
 
-let index: FileIndex | null = null
-let buildInFlight: Promise<void> | null = null
+/**
+ * One file index per execution root. A worktree thread runs against a
+ * checkout under `~/.copse/worktrees/<project>/<thread>/` — outside the
+ * primary workspace root — so a single global index would serve it the
+ * shared checkout's file list instead of its own (#1400).
+ */
+const indexes = new Map<string, FileIndex>()
+const buildsInFlight = new Map<string, Promise<void>>()
 
 const LIST_CMD_OPTS = {
   timeout_ms: FILE_INDEX_LIST_TIMEOUT_MS,
@@ -35,7 +42,7 @@ async function listFilesViaFind(workspaceRoot: string): Promise<string[]> {
   if (code !== 0) return []
   const paths: string[] = []
   for (const full of stdout.split('\n').filter(Boolean)) {
-    const rel = await toRelativePath(full)
+    const rel = await toRelativePathWithinRoot(full, workspaceRoot)
     if (isIndexableRelativePath(rel)) paths.push(rel)
   }
   return paths
@@ -49,13 +56,13 @@ async function listFilesViaRg(workspaceRoot: string): Promise<string[]> {
     stdout
       .split('\n')
       .filter(Boolean)
-      .map((p) => toRelativePath(p)),
+      .map((p) => toRelativePathWithinRoot(p, workspaceRoot)),
   )
   paths.sort((a, b) => a.localeCompare(b))
   return paths
 }
 
-async function runBuild(workspaceRoot: string): Promise<void> {
+async function runBuild(key: string, workspaceRoot: string): Promise<void> {
   indexBuildStarted('fileIndex')
   try {
     let paths: string[]
@@ -67,30 +74,36 @@ async function runBuild(workspaceRoot: string): Promise<void> {
       paths = await walkPaths(workspaceRoot, workspaceRoot)
       paths.sort((a, b) => a.localeCompare(b))
     }
-    index = { paths, lastBuilt: Date.now() }
+    indexes.set(key, { paths, lastBuilt: Date.now() })
     indexBuildFinished('fileIndex', true)
   } catch (err) {
     indexBuildFinished('fileIndex', false)
     throw err
   } finally {
-    buildInFlight = null
+    buildsInFlight.delete(key)
   }
 }
 
 export function buildIndex(workspaceRoot: string): Promise<void> {
-  // Single-flight: concurrent open/watcher/diff-queue callers share one listing.
-  buildInFlight ??= runBuild(workspaceRoot)
-  return buildInFlight
+  const key = resolve(workspaceRoot)
+  // Single-flight per root: concurrent open/watcher/diff-queue callers for the
+  // same root share one listing; other roots build independently.
+  let inFlight = buildsInFlight.get(key)
+  if (!inFlight) {
+    inFlight = runBuild(key, workspaceRoot)
+    buildsInFlight.set(key, inFlight)
+  }
+  return inFlight
 }
 
 /**
- * Resolve as soon as SOME index is available: immediately when a snapshot
- * exists (even if a rebuild is in flight — `runBuild` only swaps the index in
- * at the end, so a stale snapshot is always coherent), otherwise ride the one
- * in-flight build. Workspace open schedules the build without blocking the
- * renderer, so index consumers (find_files, `@` file references, workspace
- * links) briefly wait for the first build here instead of seeing "no index"
- * during boot.
+ * Resolve as soon as SOME index is available for this root: immediately when a
+ * snapshot exists (even if a rebuild is in flight — `runBuild` only swaps the
+ * index in at the end, so a stale snapshot is always coherent), otherwise ride
+ * the in-flight build for this root. Workspace open schedules the build
+ * without blocking the renderer, so index consumers (find_files, `@` file
+ * references, workspace links) briefly wait for the first build here instead
+ * of seeing "no index" during boot.
  *
  * Deliberately NOT a wait-for-quiescence loop: the recursive workspace watcher
  * re-arms a rebuild on every file write, so on a busy workspace (an agent
@@ -98,31 +111,40 @@ export function buildIndex(workspaceRoot: string): Promise<void> {
  * starved consumers indefinitely — observed as the `@` mention picker hanging
  * past its timeout on CI, where the no-rg walk makes each rebuild slow.
  */
-export async function whenFileIndexReady(): Promise<void> {
-  if (index) return
-  await buildInFlight?.catch(() => undefined)
+export async function whenFileIndexReady(root: string): Promise<void> {
+  const key = resolve(root)
+  if (indexes.has(key)) return
+  await buildsInFlight.get(key)?.catch(() => undefined)
 }
 
-export function getIndex(): FileIndex | null {
-  return index
+export function getIndex(root: string): FileIndex | null {
+  return indexes.get(resolve(root)) ?? null
+}
+
+/** Drop the cached index for one root, or every root when called with none. */
+export function invalidateIndex(root?: string): void {
+  if (root === undefined) {
+    indexes.clear()
+    return
+  }
+  indexes.delete(resolve(root))
 }
 
 /**
  * Scale evidence for the #795 index policy. Path count comes from the bounded
  * file listing; byte estimate is reserved for a later sampling slice (null today).
  */
-export function getIndexStats(): { pathCount: number; byteEstimate: number | null } | null {
-  if (!index) return null
-  return { pathCount: index.paths.length, byteEstimate: null }
+export function getIndexStats(root: string): { pathCount: number; byteEstimate: number | null } | null {
+  const entry = indexes.get(resolve(root))
+  if (!entry) return null
+  return { pathCount: entry.paths.length, byteEstimate: null }
 }
 
-export function invalidateIndex(): void {
-  index = null
-}
-
-/** Test hook — install a fixed file index without scanning a workspace. */
-export function setIndexForTest(paths: string[] | null): void {
-  index = paths ? { paths, lastBuilt: Date.now() } : null
+/** Test hook — install a fixed file index for a root without scanning it. */
+export function setIndexForTest(paths: string[] | null, root: string): void {
+  const key = resolve(root)
+  if (paths === null) indexes.delete(key)
+  else indexes.set(key, { paths, lastBuilt: Date.now() })
 }
 
 async function walkPaths(root: string, dir: string): Promise<string[]> {
@@ -136,7 +158,7 @@ async function walkPaths(root: string, dir: string): Promise<string[]> {
     if (e.isDirectory() && isIgnoredWorkspacePath(e.name)) continue
     const full = `${dir}/${e.name}`
     if (e.isDirectory()) paths.push(...(await walkPaths(root, full)))
-    else paths.push(await toRelativePath(full))
+    else paths.push(await toRelativePathWithinRoot(full, root))
   }
   return paths
 }

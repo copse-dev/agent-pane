@@ -394,7 +394,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const context = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, context.root)
     await gatewayWriteFile(abs, content, context.root)
-    if (context.checkoutMode === 'shared') scheduleIndexRebuild()
+    scheduleIndexRebuild(context.root)
   })
 
   ipcMain.handle('fs:readdir', async (event, ...rawArgs) => {
@@ -426,8 +426,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     const query = typeof pattern === 'string' ? pattern : ''
     if (query && !isIndexQueryPattern(query)) return []
-    await whenFileIndexReady()
-    const idx = getIndex()
+    // Renderer-global feature (command palette / `@` mention picker), scoped
+    // to the renderer-selected workspace root, not any one thread's execution root.
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    await whenFileIndexReady(root)
+    const idx = getIndex(root)
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
@@ -444,7 +448,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('index:resolveFileReferences', async (event, rawCandidates: unknown) => {
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
-    await whenFileIndexReady()
+    const root = getWorkspaceRoot()
+    if (root) await whenFileIndexReady(root)
     return await resolveFileReferences(candidates)
   })
 
