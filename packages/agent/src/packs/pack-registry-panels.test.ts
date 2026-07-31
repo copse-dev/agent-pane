@@ -19,7 +19,12 @@ describe('level-2 panel contributions', () => {
   it('registers a pack with a valid level-2 panel and surfaces it in activePanelContributions()', () => {
     const registry = new PackRegistry()
     const pack = definePack(
-      { name: 'todos-demo', trust: 'first-party', storage: { namespace: 'todos-demo' } },
+      {
+        name: 'todos-demo',
+        trust: 'first-party',
+        stability: 'stable',
+        storage: { namespace: 'todos-demo' },
+      },
       {
         uiContributions: [
           {
@@ -46,7 +51,7 @@ describe('level-2 panel contributions', () => {
   it('rejects a level-2 contribution without a panel decl at register time', () => {
     const registry = new PackRegistry()
     const bad = definePack(
-      { name: 'broken', trust: 'first-party' },
+      { name: 'broken', trust: 'first-party', stability: 'stable' },
       {
         uiContributions: [{ id: 'orphan-panel', level: 2, slot: 'plan' }],
       },
@@ -61,7 +66,7 @@ describe('level-2 panel contributions', () => {
   it('rejects a panel decl on a non-level-2 contribution at register time', () => {
     const registry = new PackRegistry()
     const bad = definePack(
-      { name: 'mislevelled', trust: 'first-party' },
+      { name: 'mislevelled', trust: 'first-party', stability: 'stable' },
       {
         uiContributions: [{ id: 'card-with-panel', level: 1, panel: { kind: 'list' } }],
       },
@@ -77,7 +82,7 @@ describe('level-2 panel contributions', () => {
   it('allows level-1 (cards) and level-3 (real views) without a panel decl', () => {
     const registry = new PackRegistry()
     const ok = definePack(
-      { name: 'mixed', trust: 'first-party' },
+      { name: 'mixed', trust: 'first-party', stability: 'stable' },
       {
         uiContributions: [
           { id: 'hook-card', level: 1 },
@@ -94,7 +99,7 @@ describe('level-2 panel contributions', () => {
     const registry = new PackRegistry()
     registry.register(
       definePack(
-        { name: 'todos', trust: 'first-party' },
+        { name: 'todos', trust: 'first-party', stability: 'stable' },
         {
           uiContributions: [{ id: 'todos-panel', level: 2, slot: 'plan', panel: { kind: 'list' } }],
         },
@@ -113,7 +118,7 @@ describe('level-2 panel contributions', () => {
     const registry = new PackRegistry()
     registry.register(
       definePack(
-        { name: 'alpha', trust: 'first-party' },
+        { name: 'alpha', trust: 'first-party', stability: 'stable' },
         {
           uiContributions: [{ id: 'alpha-panel', level: 2, slot: 'plan', panel: { kind: 'list' } }],
         },
@@ -121,7 +126,7 @@ describe('level-2 panel contributions', () => {
     )
     registry.register(
       definePack(
-        { name: 'beta', trust: 'first-party' },
+        { name: 'beta', trust: 'first-party', stability: 'stable' },
         {
           uiContributions: [
             { id: 'beta-panel', level: 2, slot: 'sidebar', panel: { kind: 'tree' } },

@@ -36,7 +36,7 @@ describe('settings sources hooks (dry-run tester)', () => {
     )
 
     const trustedRoot = realpathSync(workspaceRoot)
-    seedEmptyProject(workspaceRoot, PROJECT_ID)
+    seedEmptyProject(workspaceRoot, PROJECT_ID, { developerMode: true })
     // Project Cursor hooks are only discovered for a trusted workspace.
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: workspaceRoot, name: 'workspace' }],

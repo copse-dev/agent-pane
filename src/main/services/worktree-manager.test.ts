@@ -252,6 +252,59 @@ describe('worktree manager', () => {
     )
   })
 
+  it('falls back to a clean worktree when the dirty snapshot cannot be created', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, 'unstaged.txt'), 'local wip\n')
+    const beforeStatus = git(repo, ['status', '--porcelain=v1', '-z'])
+
+    setGitAvailableForTest(false)
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-clean-fallback',
+      projectRoot: repo,
+      prompt: 'Snapshot cannot be created',
+      baseBranch: 'main',
+    })
+    setGitAvailableForTest(true)
+
+    assert.equal(worktree.seededFromDirtyProject, false)
+    await assert.rejects(readFile(join(worktree.path, 'unstaged.txt'), 'utf-8'))
+    // The project root itself is untouched either way.
+    assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
+  })
+
+  it('fetches and bases a worktree on the latest remote default branch', async () => {
+    const { temp, repo } = await setup()
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    git(repo, ['remote', 'set-head', 'origin', '-a'])
+
+    // Advance the remote past the local branch, as if someone else pushed.
+    const clone = join(temp, 'clone')
+    git(temp, ['clone', '-q', remote, clone])
+    await writeFile(join(clone, 'from-remote.txt'), 'newer commit\n')
+    git(clone, ['add', '.'])
+    git(clone, ['commit', '-q', '-m', 'pushed elsewhere'])
+    git(clone, ['push', '-q', 'origin', 'main'])
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-default-branch',
+      projectRoot: repo,
+      prompt: 'Use the latest default branch',
+      baseBranch: 'main',
+    })
+
+    assert.equal(
+      worktree.baseCommit,
+      git(remote, ['rev-parse', 'main']).trim(),
+      'should base off the fetched remote tip, not the stale local branch',
+    )
+    assert.equal(await readFile(join(worktree.path, 'from-remote.txt'), 'utf-8'), 'newer commit\n')
+  })
+
   it('serializes concurrent allocations and suffixes branch collisions deterministically', async () => {
     const { repo } = await setup()
     const colliding = threadWorktreeBranchName('Same prompt', 'thread-a')
