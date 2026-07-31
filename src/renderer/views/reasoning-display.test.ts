@@ -19,7 +19,8 @@ import { qsRequired } from '../dom/helpers.ts'
 // in via `appendReasoning` (which emits `message_reasoning`); the view should
 // surface them in a collapsible <details> above the answer, keep it open while
 // the answer is still empty, and tuck it away once the answer lands. The
-// activity row doubles as a click target that opens the latest trail.
+// initial activity row lives in the transcript, then folds into the live
+// disclosure once reasoning tokens arrive.
 
 function fakeApi(): ApiClient {
   return ((): ApiClient => {
@@ -61,7 +62,9 @@ describe('reasoning display (component)', () => {
     assert.ok(details, 'expected a reasoning disclosure')
     // Live (no answer yet): open by default; progressive title.
     assert.equal(details.open, true)
-    assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoning')
+    assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoning…')
+    assert.ok(details.classList.contains('message-reasoning-live'))
+    assert.ok(details.querySelector('[data-icon="reasoning-activity"]'))
     assert.equal(
       details.querySelector('.message-reasoning-text')?.innerHTML,
       // @copse/streaming-markdown ≥0.2 wraps a single prose line in <p> (styled
@@ -103,19 +106,24 @@ describe('reasoning display (component)', () => {
     assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoned')
   })
 
-  it('makes the activity row open the latest reasoning trail on click', () => {
+  it('moves the waiting activity out of the composer and folds it into live reasoning', () => {
     const { store, threadId, messageId } = mountWithReasoning()
-    appendReasoning(store, messageId, 'reasoning…')
-    // The agent controller emits this label while the model reasons.
+    const input = document.createElement('div')
+    input.id = 'input-bar'
+    document.body.append(input)
+
+    setThreadStatus(store, threadId, 'running')
     store.emit('agent_activity', threadId, 'Reasoning…')
-
     const activity = qsRequired(document, '.agent-activity')
-    assert.ok(activity.classList.contains('agent-activity-clickable'))
+    assert.equal(activity.closest('.messages-list') !== null, true)
+    assert.equal(input.contains(activity), false)
+    assert.equal(activity.hidden, false)
+    assert.ok(activity.querySelector('[data-icon="reasoning-activity"]'))
 
-    // Collapse first to prove the click re-opens it.
+    appendReasoning(store, messageId, 'reasoning…')
+    store.emit('agent_activity', threadId, 'Reasoning…')
     const details = qsRequired<HTMLDetailsElement>(document, '.message-reasoning')
-    details.open = false
-    activity.dispatchEvent(new Event('click', { bubbles: true }))
-    assert.equal(details.open, true)
+    assert.equal(activity.hidden, true)
+    assert.ok(details.classList.contains('message-reasoning-live'))
   })
 })

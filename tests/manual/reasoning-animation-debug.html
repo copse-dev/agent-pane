@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reasoning animation debug</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        background: #11161c;
+        color: #dce5ec;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+      }
+
+      main {
+        width: min(720px, 100%);
+        display: grid;
+        gap: 24px;
+      }
+
+      h1,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 20px;
+      }
+
+      .hint {
+        margin-top: 6px;
+        color: #91a0ad;
+        line-height: 1.5;
+      }
+
+      .stage {
+        min-height: 300px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #2a343e;
+        border-radius: 12px;
+        background: #171e25;
+      }
+
+      .reasoning-activity-icon {
+        width: 180px;
+        height: 180px;
+        overflow: visible;
+        color: #4ec9a4;
+      }
+
+      .reasoning-activity-path {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 152;
+        stroke-linecap: round;
+        stroke-dasharray: 1 1;
+        stroke-dashoffset: 1;
+        opacity: 0;
+        animation: reasoning-activity-draw 2.5s ease-in-out infinite;
+      }
+
+      @keyframes reasoning-activity-draw {
+        0%,
+        1% {
+          stroke-dashoffset: 1;
+          opacity: 0;
+        }
+
+        2% {
+          stroke-dashoffset: 1;
+          opacity: 1;
+        }
+
+        46%,
+        56% {
+          stroke-dashoffset: 0;
+          opacity: 1;
+        }
+
+        98% {
+          stroke-dashoffset: -1;
+          opacity: 1;
+        }
+
+        99%,
+        100% {
+          stroke-dashoffset: -1;
+          opacity: 0;
+        }
+      }
+
+      .controls,
+      .readout {
+        border: 1px solid #2a343e;
+        border-radius: 12px;
+        background: #171e25;
+        padding: 16px;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      button,
+      select {
+        min-height: 34px;
+        border: 1px solid #3b4854;
+        border-radius: 7px;
+        padding: 0 12px;
+        background: #202a33;
+        color: inherit;
+        font: inherit;
+      }
+
+      button:hover,
+      select:hover {
+        background: #27333e;
+      }
+
+      label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #aebbc6;
+      }
+
+      .timeline {
+        width: 100%;
+        margin-top: 16px;
+        accent-color: #4ec9a4;
+      }
+
+      .readout {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px 20px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .metric {
+        display: grid;
+        gap: 3px;
+      }
+
+      .metric span:first-child {
+        color: #83919d;
+        font-size: 12px;
+      }
+
+      .metric output {
+        overflow-wrap: anywhere;
+      }
+
+      .phase {
+        color: #4ec9a4;
+      }
+
+      @media (max-width: 560px) {
+        .readout {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Reasoning animation — isolated reproduction</h1>
+        <p class="hint">
+          This page contains one SVG with one animated path and the no-wrap dash candidate. Slow it
+          down or step through the retraction one frame at a time.
+        </p>
+      </header>
+
+      <section class="stage" aria-label="Animation stage">
+        <svg
+          class="reasoning-activity-icon"
+          viewBox="-540 -540 1080 1080"
+          aria-label="Animated reasoning spiral"
+          data-icon="reasoning-activity"
+        >
+          <path
+            class="reasoning-activity-path"
+            pathLength="1"
+            d="M416.134 -141.959 C384 -475 -72 -488 -286.485 -266.216 C-474.71 -71.585 -423.084 227.135 -226.856 360.464 C5 518 328 385 297.052 111.165 C273.531 -96.947 -15 -98 -62.629 47.319 C-128.956 249.689 154 322 180.928 153.093"
+          ></path>
+        </svg>
+      </section>
+
+      <section class="controls" aria-label="Animation controls">
+        <div class="button-row">
+          <button id="toggle" type="button">Pause</button>
+          <button id="restart" type="button">Restart</button>
+          <button id="previous-frame" type="button">−1 frame</button>
+          <button id="next-frame" type="button">+1 frame</button>
+          <label>
+            Speed
+            <select id="speed">
+              <option value="0.1">0.1×</option>
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+            </select>
+          </label>
+        </div>
+        <input
+          id="timeline"
+          class="timeline"
+          type="range"
+          min="0"
+          max="2500"
+          step="0.1"
+          value="0"
+          aria-label="Animation time in milliseconds"
+        />
+      </section>
+
+      <section class="readout" aria-label="Computed animation values">
+        <div class="metric"><span>Time</span><output id="time">0.0 ms</output></div>
+        <div class="metric"><span>Progress</span><output id="progress">0.00%</output></div>
+        <div class="metric"><span>Phase</span><output id="phase" class="phase">blank</output></div>
+        <div class="metric"><span>Dash array</span><output id="dash-array">—</output></div>
+        <div class="metric"><span>Dash offset</span><output id="dash-offset">—</output></div>
+        <div class="metric"><span>Opacity</span><output id="opacity">—</output></div>
+        <div class="metric"><span>SVG instances</span><output id="svg-count">1</output></div>
+        <div class="metric"><span>Animated paths</span><output id="path-count">1</output></div>
+        <div class="metric"><span>DOM mutations</span><output id="mutation-count">0</output></div>
+        <div class="metric"><span>Iterations</span><output id="iteration-count">0</output></div>
+      </section>
+    </main>
+
+    <script>
+      const DURATION = 2500
+      const FRAME_MS = 1000 / 60
+      const path = document.querySelector('.reasoning-activity-path')
+      const animation = path.getAnimations()[0]
+      const timeline = document.querySelector('#timeline')
+      const toggle = document.querySelector('#toggle')
+      const speed = document.querySelector('#speed')
+      let mutationCount = 0
+      let iterationCount = 0
+
+      const outputs = {
+        time: document.querySelector('#time'),
+        progress: document.querySelector('#progress'),
+        phase: document.querySelector('#phase'),
+        dashArray: document.querySelector('#dash-array'),
+        dashOffset: document.querySelector('#dash-offset'),
+        opacity: document.querySelector('#opacity'),
+        svgCount: document.querySelector('#svg-count'),
+        pathCount: document.querySelector('#path-count'),
+        mutationCount: document.querySelector('#mutation-count'),
+        iterationCount: document.querySelector('#iteration-count'),
+      }
+
+      function normalizedTime() {
+        const current = Number(animation.currentTime ?? 0)
+        return ((current % DURATION) + DURATION) % DURATION
+      }
+
+      function phaseFor(progress) {
+        if (progress <= 1 || progress >= 99) return 'blank seam'
+        if (progress < 2) return 'first reveal'
+        if (progress < 46) return 'drawing'
+        if (progress <= 56) return 'full'
+        if (progress < 98) return 'retracting'
+        return 'fade to blank'
+      }
+
+      function renderReadout() {
+        const time = normalizedTime()
+        const progress = (time / DURATION) * 100
+        const style = getComputedStyle(path)
+        outputs.time.value = time.toFixed(1) + ' ms'
+        outputs.progress.value = progress.toFixed(2) + '%'
+        outputs.phase.value = phaseFor(progress)
+        outputs.dashArray.value = style.strokeDasharray
+        outputs.dashOffset.value = style.strokeDashoffset
+        outputs.opacity.value = style.opacity
+        outputs.svgCount.value = String(
+          document.querySelectorAll('svg[data-icon="reasoning-activity"]').length,
+        )
+        outputs.pathCount.value = String(
+          document.querySelectorAll('.reasoning-activity-path').length,
+        )
+        outputs.mutationCount.value = String(mutationCount)
+        outputs.iterationCount.value = String(iterationCount)
+        if (document.activeElement !== timeline) timeline.value = String(time)
+        toggle.textContent = animation.playState === 'running' ? 'Pause' : 'Play'
+        requestAnimationFrame(renderReadout)
+      }
+
+      function pauseAt(time) {
+        animation.pause()
+        animation.currentTime = ((time % DURATION) + DURATION) % DURATION
+      }
+
+      toggle.addEventListener('click', () => {
+        if (animation.playState === 'running') animation.pause()
+        else animation.play()
+      })
+
+      document.querySelector('#restart').addEventListener('click', () => {
+        animation.currentTime = 0
+        animation.play()
+      })
+
+      document.querySelector('#previous-frame').addEventListener('click', () => {
+        pauseAt(normalizedTime() - FRAME_MS)
+      })
+
+      document.querySelector('#next-frame').addEventListener('click', () => {
+        pauseAt(normalizedTime() + FRAME_MS)
+      })
+
+      speed.addEventListener('change', () => {
+        animation.playbackRate = Number(speed.value)
+      })
+
+      timeline.addEventListener('input', () => {
+        pauseAt(Number(timeline.value))
+      })
+
+      path.addEventListener('animationiteration', () => {
+        iterationCount += 1
+      })
+
+      new MutationObserver((records) => {
+        mutationCount += records.length
+      }).observe(document.querySelector('.stage'), {
+        childList: true,
+        subtree: true,
+        attributes: true,
+      })
+
+      renderReadout()
+    </script>
+  </body>
+</html>
