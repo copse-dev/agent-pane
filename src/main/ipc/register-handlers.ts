@@ -714,8 +714,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Import-from-issues flow: list the workspace's open issues, then turn the
   // selected ones into roadmap items (prompt drafted by the small-tasks model,
   // falling back to a template — see roadmap-issue-import.ts).
-  ipcMain.handle('roadmap:openIssues', async (event) => {
+  const roadmapIssueSchema = z.object({
+    number: z.number().int().positive(),
+    title: z.string().max(512),
+    body: z.string().max(20_000),
+  })
+  const roadmapIssuePageSize = 20
+
+  ipcMain.handle('roadmap:openIssues', async (event, rawPage: unknown) => {
     assertMainFrameSender(event, win)
+    const page = parseIpcArgs(z.number().int().positive(), [rawPage])
     // The backend impls return [] for "gh missing", "not authenticated", and
     // "no origin remote" alike — fine for the PR panel, which surfaces status
     // separately, but here an empty picker must mean "no open issues". Turn
@@ -732,21 +740,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new Error('No GitHub origin remote detected in this workspace.')
     }
     // Return the slug too: an empty result names the repo it actually queried,
-    // which surfaces stale/fork origins immediately. Limit 30: even with
-    // per-issue bodies bounded at the backend, the gh CLI path must stay
-    // comfortably under runCommand's 100 KiB stdout cap.
-    return { slug, issues: await backend.listWorkspaceOpenIssues(30) }
+    // which surfaces stale/fork origins immediately. Pagination keeps every
+    // GitHub/IPC/model operation bounded without imposing a repository-wide
+    // issue ceiling on the picker.
+    return {
+      slug,
+      ...(await backend.listWorkspaceOpenIssues(page, roadmapIssuePageSize)),
+    }
   })
 
-  const zRoadmapImportIssues = z
-    .array(
-      z.object({
-        number: z.number().int().positive(),
-        title: z.string().max(512),
-        body: z.string().max(20_000),
-      }),
-    )
-    .max(20)
+  const zRoadmapImportIssues = z.array(roadmapIssueSchema).max(roadmapIssuePageSize)
 
   ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
