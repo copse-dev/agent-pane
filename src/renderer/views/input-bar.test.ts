@@ -498,6 +498,67 @@ describe('input bar model recents', () => {
   })
 })
 
+describe('input bar developer diagnostics', () => {
+  it('hides diagnostics by default and reveals them in Developer mode', async () => {
+    const populated = thread()
+    populated.messages = [
+      {
+        id: 'message-1',
+        role: 'user',
+        content: 'A persisted message makes this thread exportable.',
+        toolCalls: [],
+        createdAt: 1,
+      },
+    ]
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: populated.id,
+      threads: [populated],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const overflow = host.querySelector<HTMLElement>('.footer-overflow')
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(overflow)
+    assert.ok(trigger)
+    assert.equal(overflow.hidden, false)
+    trigger.click()
+    assert.deepEqual(
+      Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
+        item.textContent.trim(),
+      ),
+      ['Enable Guarded YOLO'],
+    )
+
+    store.setState({ developerMode: true })
+    store.emit('settings_changed')
+    assert.equal(overflow.hidden, false)
+    trigger.click()
+    assert.deepEqual(
+      Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
+        item.textContent.trim(),
+      ),
+      ['Enable Guarded YOLO', 'Copy thread ID', 'Export conversation (JSONL)', 'Share trace'],
+    )
+
+    store.setState({ developerMode: false })
+    store.emit('settings_changed')
+    assert.equal(overflow.hidden, false)
+    trigger.click()
+    assert.deepEqual(
+      Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
+        item.textContent.trim(),
+      ),
+      ['Enable Guarded YOLO'],
+    )
+  })
+})
+
 describe('input bar branch mismatch warning', () => {
   it('does not block submit when an isolated worktree binds a different branch', async () => {
     let runs = 0
@@ -631,6 +692,8 @@ describe('input bar browse button', () => {
   it('attaches a selected file as a chip', async () => {
     const store = createStore({
       workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread()],
     })
@@ -653,6 +716,18 @@ describe('input bar browse button', () => {
     const label = chip.querySelector<HTMLElement>('.attachment-chip-label')
     assert.ok(label, 'the chip renders its name in the clipped label span')
     assert.match(label.textContent, /notes\.txt/)
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Review this file'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(store.getState().threads[0]?.messages[0]?.attachments, [
+      { kind: 'file', label: 'notes.txt', content: 'hello world' },
+    ])
   })
 })
 
@@ -800,8 +875,8 @@ describe('input bar footer overflow menu', () => {
     const labels = [...host.querySelectorAll('.footer-overflow-item')].map(
       (item) => item.textContent,
     )
-    // Export/Share are gated on the thread having exportable content, which this
-    // blank fixture does not — hence two items here and four in the demo scenario.
-    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Copy thread ID'])
+    // Developer diagnostics are disabled for this fixture, so only the ordinary
+    // thread action remains visible.
+    assert.deepEqual(labels, ['Enable Guarded YOLO'])
   })
 })

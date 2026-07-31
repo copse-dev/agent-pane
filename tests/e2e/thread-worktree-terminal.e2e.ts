@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { copseWorktreesDir } from '../../src/main/services/storage/copse-paths.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -38,8 +39,7 @@ describe('isolated thread terminal cwd', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
-    const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
-    if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
+    const worktreesRoot = copseWorktreesDir()
     projectRoot = join(dirname(worktreesRoot), 'project-checkout')
     mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q'])

@@ -200,6 +200,7 @@ describe('startAcpNativeBridge', () => {
         {
           name: 'search-pack',
           trust: 'first-party',
+          stability: 'experimental',
           tools: { native: ['pack_search'], acpTools: ['pack_search'] },
         },
         { toolNames: ['pack_search'] },

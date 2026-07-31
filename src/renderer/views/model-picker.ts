@@ -358,6 +358,14 @@ export function mountModelPicker(
         setOpen(false)
         if (!recentMode) trigger.focus()
       }
+    } else if (e.key === 'ArrowRight' && view === 'recent' && recentMode) {
+      e.preventDefault()
+      e.stopPropagation()
+      setView('all')
+    } else if (e.key === 'ArrowLeft' && view === 'all' && recentMode) {
+      e.preventDefault()
+      e.stopPropagation()
+      setView('recent')
     }
   })
 
