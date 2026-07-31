@@ -55,6 +55,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     },
     browser: {
       onOpenTab: subscribe,
+      onPackTabRequest: subscribe,
     },
     security: {
       getGuardedYolo: (threadId) =>
@@ -421,6 +422,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ packs: [] }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
+      addSource: () => resolved({ packs: [] }),
     },
     decisions: {
       list: emptyArray,

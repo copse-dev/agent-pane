@@ -47,12 +47,29 @@ import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
+import {
+  discoverPackToolSource,
+  registeredPackToolSource,
+  type PackToolSourceCandidate,
+} from './pack-tool-source.ts'
+import {
+  getPackToolRuntimeController,
+  setPackToolRuntimeController,
+} from './pack-tool-controller.ts'
+import { setPackBrowserService } from './pack-browser-service.ts'
+
+// P1 of #1336: selected-pack discovery is part of the production graph before
+// the isolated behavior runtime is wired by the host.
+export { discoverPackToolSource, hashPackToolSource } from './pack-tool-source.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by packs. */
 const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
 
 /** Storage key holding the ids of packs the user disabled. */
 const PACK_DISABLED_KEY = 'packDisabled'
+
+/** Explicitly user-selected pack directories (#1336 P1). */
+const PACK_SOURCES_KEY = 'packSources'
 
 /**
  * Packs that ship registered but off.
@@ -237,6 +254,10 @@ export interface PackService {
   getSetting(packId: string, key: string): unknown
   /** Persist one pack-scoped setting value under the pack's namespaced bag. */
   setSetting(packId: string, key: string, value: unknown): Promise<void>
+  /** Reconcile explicitly selected pack sources into the registry. */
+  refreshPackSources(): Promise<void>
+  /** Persist and discover one directory selected through the host-owned native dialog. */
+  addPackSource(sourcePath: string): Promise<void>
 }
 
 /**
@@ -247,17 +268,118 @@ export interface PackService {
  */
 export function createPackService(registry: PackRegistry): PackService {
   const disabled = readDisabledIds()
+  const selectedCandidates = new Map<string, PackToolSourceCandidate>()
   for (const id of disabled) {
     if (registry.has(id)) registry.disable(id)
+  }
+
+  async function refreshPackSources(): Promise<void> {
+    const sources = parseStringList(storageGet(PACK_SOURCES_KEY))
+    const discovered: PackToolSourceCandidate[] = []
+    for (const source of sources) {
+      try {
+        discovered.push(await discoverPackToolSource(source))
+      } catch (error) {
+        console.warn(`[packs] selected source ${JSON.stringify(source)} is inert:`, error)
+      }
+    }
+
+    const controller = getPackToolRuntimeController()
+    const discoveredById = new Map(
+      discovered.map((candidate) => [candidate.manifest.name, candidate]),
+    )
+    for (const [id, previous] of selectedCandidates) {
+      const next = discoveredById.get(id)
+      if (
+        next &&
+        next.sourcePath === previous.sourcePath &&
+        next.contentHash === previous.contentHash
+      ) {
+        continue
+      }
+      registry.disable(id)
+      if (controller?.isRunning(id)) await controller.disable(id)
+      registry.unregister(id)
+      selectedCandidates.delete(id)
+    }
+
+    for (const candidate of discovered) {
+      const id = candidate.manifest.name
+      const existing = selectedCandidates.get(id)
+      if (!existing && registry.has(id)) {
+        console.warn(
+          `[packs] selected pack id ${JSON.stringify(id)} conflicts with a registered pack.`,
+        )
+        continue
+      }
+      if (!existing) {
+        registry.register(registeredPackToolSource(candidate))
+        selectedCandidates.set(id, candidate)
+      }
+      const current = selectedCandidates.get(id)
+      if (!current) continue
+      const shouldRun = !readDisabledIds().has(id)
+      if (shouldRun && controller) {
+        try {
+          await controller.enable(current)
+          registry.enable(id)
+        } catch (error) {
+          registry.disable(id)
+          console.warn(`[packs] pack ${JSON.stringify(id)} tools could not start:`, error)
+        }
+      } else {
+        registry.disable(id)
+        if (controller?.isRunning(id)) await controller.disable(id)
+      }
+    }
   }
 
   return {
     registry,
     list(): readonly PackSummaryOut[] {
-      return summarizePacks(registry, (packId, key) => readPackSettings(packId)[key])
+      return summarizePacks(registry, (packId, key) => readPackSettings(packId)[key]).map(
+        (summary) => {
+          const candidate = selectedCandidates.get(summary.id)
+          if (!candidate) return summary
+          return {
+            ...summary,
+            source: {
+              kind: 'directory' as const,
+              path: candidate.sourcePath,
+              contentHash: candidate.contentHash,
+            },
+          }
+        },
+      )
     },
     async setEnabled(packId: string, enabled: boolean): Promise<void> {
       if (!registry.has(packId)) return
+      const selected = selectedCandidates.get(packId)
+      if (selected) {
+        if (!enabled) {
+          registry.disable(packId)
+          const controller = getPackToolRuntimeController()
+          if (controller?.isRunning(packId)) await controller.disable(packId)
+          await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+            const set = new Set(parseStringList(raw))
+            set.add(packId)
+            return [...set].sort()
+          })
+          return
+        }
+        const controller = getPackToolRuntimeController()
+        if (!controller) {
+          throw new Error(`pack "${packId}" runtime is unavailable`)
+        }
+        await controller.enable(selected)
+        registry.enable(packId)
+        await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+          const set = new Set(parseStringList(raw))
+          set.delete(packId)
+          return [...set].sort()
+        })
+        return
+      }
       if (enabled) registry.enable(packId)
       else registry.disable(packId)
       await storageUpdate(PACK_DISABLED_KEY, (raw) => {
@@ -285,6 +407,27 @@ export function createPackService(registry: PackRegistry): PackService {
         return current
       })
     },
+    refreshPackSources,
+    async addPackSource(sourcePath: string): Promise<void> {
+      const candidate = await discoverPackToolSource(sourcePath)
+      if (
+        registry.has(candidate.manifest.name) &&
+        !selectedCandidates.has(candidate.manifest.name)
+      ) {
+        throw new Error(`pack id "${candidate.manifest.name}" is already registered`)
+      }
+      await storageUpdate(PACK_SOURCES_KEY, (raw) => {
+        const sources = new Set(parseStringList(raw))
+        sources.add(candidate.sourcePath)
+        return [...sources].sort()
+      })
+      await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+        const ids = new Set(parseStringList(raw))
+        ids.delete(candidate.manifest.name)
+        return [...ids].sort()
+      })
+      await refreshPackSources()
+    },
   }
 }
 
@@ -310,4 +453,6 @@ export function getPackService(): PackService {
 export function __resetPackServiceForTests(): void {
   singleton = null
   setDefaultPackRegistry(null)
+  setPackToolRuntimeController(null)
+  setPackBrowserService(null)
 }

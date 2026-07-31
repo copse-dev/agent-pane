@@ -9,6 +9,14 @@ import type { StreamChunk } from '@shared/types'
 import { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
+import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
+import { definePack } from '@copse/agent/packs/pack-manifest.ts'
+import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import {
+  setPackToolRuntimeController,
+  type PackToolRuntimeController,
+} from './packs/pack-tool-controller.ts'
+import { packModelValue } from '@shared/pack-model.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -82,6 +90,92 @@ describe('runAgent AgentHost decoupling', () => {
       )
     } finally {
       if (priorCursorKey !== undefined) process.env['CURSOR_API_KEY'] = priorCursorKey
+    }
+  })
+
+  it('runs a selected-pack model with bounded history, current images, and usage', async () => {
+    const received: StreamChunk[] = []
+    const host: AgentHost<StreamChunk> = {
+      emit: (_threadId, chunk) => received.push(chunk),
+    }
+    let invocation: unknown = null
+    const runtime: PackToolRuntimeController = {
+      enable: () => Promise.resolve(),
+      disable: () => Promise.resolve(),
+      isRunning: (packId) => packId === 'personal.reference-model',
+      registrations: () => ({ tools: [], models: [{ id: 'judge:default' }] }),
+      invokeTool: () => Promise.reject(new Error('not a tool turn')),
+      invokeModel: (_packId, _routeId, input) => {
+        invocation = input
+        return Promise.resolve({ text: 'Personal judge answer', inputTokens: 12, outputTokens: 4 })
+      },
+    }
+    const route = {
+      id: 'judge:default',
+      label: 'Reference judge',
+      group: 'Personal models',
+      supportsImages: true,
+    }
+    const packs = new PackRegistry()
+    packs.register(
+      definePack(
+        {
+          name: 'personal.reference-model',
+          trust: 'user',
+          models: { provides: [route] },
+        },
+        { modelRoutes: [route] },
+      ),
+    )
+    setDefaultPackRegistry(packs)
+    setPackToolRuntimeController(runtime)
+
+    try {
+      const result = await runWithThreadExecutionContext(
+        {
+          projectId: 'project-1',
+          threadId: 'thread-personal',
+          projectRoot: '/workspace',
+          root: '/workspace',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity('thread-personal', () =>
+            agentService.runAgent(
+              'thread-personal',
+              [
+                { type: 'image', dataUrl: 'data:image/png;base64,QUJD' },
+                { type: 'text', text: 'judge this' },
+              ],
+              [
+                { role: 'user', content: 'Long local-model discussion' },
+                { role: 'assistant', content: 'Local conclusion to judge' },
+              ],
+              host,
+              new ToolRegistry(),
+              { model: packModelValue('personal.reference-model', 'judge:default') },
+            ),
+          ),
+      )
+
+      assert.deepEqual(invocation, {
+        threadId: 'thread-personal',
+        prompt: 'judge this',
+        attachments: [{ mimeType: 'image/png', dataBase64: 'QUJD' }],
+        history: [
+          { role: 'user', text: 'Long local-model discussion' },
+          { role: 'assistant', text: 'Local conclusion to judge' },
+        ],
+      })
+      assert.deepEqual(result.usage, { inputTokens: 12, outputTokens: 4 })
+      assert.ok(
+        received.some((chunk) => chunk.type === 'text' && chunk.text === 'Personal judge answer'),
+      )
+      assert.ok(received.some((chunk) => chunk.type === 'done'))
+    } finally {
+      setPackToolRuntimeController(null)
+      setDefaultPackRegistry(null)
     }
   })
 })
