@@ -474,7 +474,13 @@ export function deleteKnowledgeNote(id: string, now: Date = new Date()): boolean
  * on-disk note missing from the index (hand-added, or a lost index) is healed in
  * at the end. */
 export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
-  const records = [...foldIndex().values()].sort((a, b) => a.order - b.order)
+  const allRecords = [...foldIndex().values()]
+  // Filter to the requested type before reading any file bodies — a workspace
+  // with many memories notes shouldn't pay for reading + parsing them just to
+  // list roadmap items (or vice versa).
+  const records = (type ? allRecords.filter((r) => r.type === type) : allRecords).sort(
+    (a, b) => a.order - b.order,
+  )
   const notes: KnowledgeNote[] = []
 
   // Read notes referenced by the index in a batch (single pass over file reads).
@@ -501,8 +507,11 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
 
   // Scan for orphan files not in the index and heal them in a single pass.
   const orphanFiles = scanNoteFiles(type)
+  // `order` is a global monotonic sequence shared across all types (see
+  // nextOrder()), so compute it from the unfiltered records even though
+  // `records` above was narrowed to the requested type.
   let maxOrder = 0
-  for (const record of records) {
+  for (const record of allRecords) {
     if (record.order > maxOrder) maxOrder = record.order
   }
   let order = maxOrder + 1
