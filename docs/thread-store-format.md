@@ -101,6 +101,8 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
   "reasoning": { "ref": "messages/<id>.reasoning.md", "sha256": "…" }, // optional
   "images": [{ "ref": "blobs/<imageId>.png", "mimeType": "image/png" }], // optional
   "commandSummary": "…", // optional
+  "startingCommit": "a1b2c3…", // optional: HEAD SHA the prompt started from (user messages)
+  "dirty": true, // optional: working tree had uncommitted changes at send time
   "toolCalls": [
     {
       "id": "…", "name": "read_file",
@@ -119,6 +121,12 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
 message. The transcript surfaces it only when more than one distinct primary
 model appears in the thread; explore/CI subagent models stay on the nested
 `subagent.model` field (already shown on their cards).
+
+`startingCommit`/`dirty` are captured once, at send time, for a human-typed
+prompt (via `git:promptState`) — the HEAD SHA the turn began on and whether the
+working tree already had uncommitted changes. Best-effort: absent outside a
+git repository, and not captured on paths that don't round-trip through main
+before the message is finalized (e.g. resend).
 Reconstruction (`foldThread`) folds `meta.json` + spine, resolves each ref, and
 **verifies its sha256** — a hash mismatch surfaces as a load error on that
 thread (skipped), never silent corruption. `parseSpine` tolerates unknown `v`

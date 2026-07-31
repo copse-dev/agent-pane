@@ -1159,7 +1159,10 @@ export function mountInputBar(
         return
       }
     }
-    const branchStatus = await api.git.branchStatus(projectId, id)
+    const [branchStatus, promptState] = await Promise.all([
+      api.git.branchStatus(projectId, id),
+      api.git.promptState(projectId, id),
+    ])
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
@@ -1332,6 +1335,12 @@ export function mountInputBar(
       visibleText,
       imageUrls.length ? imageUrls : undefined,
       attachments.length ? attachments : undefined,
+      {
+        ...(promptState.startingCommit !== null
+          ? { startingCommit: promptState.startingCommit }
+          : {}),
+        dirty: promptState.dirty,
+      },
     )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
     // Durable record of the attachment: the reference block in this message can
