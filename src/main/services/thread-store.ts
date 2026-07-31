@@ -10,7 +10,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
   LLMMessage,
@@ -32,6 +31,7 @@ import {
 } from '@shared/threads/fold.ts'
 import { parseOkfMessage } from '@shared/threads/okf-message.ts'
 import { parseThreadMetaValue } from '@shared/threads/thread-boundary.ts'
+import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import {
   parseSpine,
   parseSpineEntries,
@@ -85,11 +85,9 @@ const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
-/** Root of the chat store. `COPSE_WORKSPACE_DIR` overrides it (tests, relocation). */
+/** Root of the chat store. COPSE_DIR owns the normal profile layout. */
 function workspaceRoot(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  if (override) return override
-  return join(homedir(), '.copse', 'workspace')
+  return copseWorkspaceDir()
 }
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
