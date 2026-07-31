@@ -109,9 +109,10 @@ The principal local stores are:
 
 - `settings.json` and `config.json` in the `copse-panel` Electron user-data
   directory for credentials, preferences, providers, projects, and UI state;
-- `~/.copse/workspace/<projectId>/<threadId>/` (or `COPSE_WORKSPACE_DIR`) for
+- `~/.copse/workspace/<projectId>/<threadId>/`, or
+  `$COPSE_DIR/workspace/<projectId>/<threadId>/` for an alternate profile, for
   conversations, reasoning, tool arguments/results, hook output, images, and
-  nested subagents;
+  nested subagents (`COPSE_WORKSPACE_DIR` is the granular override);
 - persistent, separate browser profiles for interactive and agent-driven
   browsing under Electron user data;
 - `browser-screenshots/` under Electron user data for agent-browser captures;
