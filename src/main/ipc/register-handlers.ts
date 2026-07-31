@@ -227,6 +227,8 @@ import {
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+import { buildAppMenu } from '../windows/app-menu.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
@@ -888,6 +890,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
+    }
+    // Keep the native diagnostics menu in sync with Developer mode. The
+    // Ctrl+Shift+I shortcut is owned independently by its first-party pack.
+    if (k === DEVELOPER_MODE_SETTING) {
+      const win = getMainWindow()
+      const enabled = typeof value === 'boolean' && value
+      if (win) buildAppMenu(win, enabled)
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
