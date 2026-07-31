@@ -938,6 +938,9 @@ if (process.env['COPSE_E2E'] === '1') {
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
+    requestAcpPackageUpgradeApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageUpgradeApproval')
+    },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
     },
