@@ -22,6 +22,24 @@
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
   --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.1);
 }
+
+/* Strong + the default Copse tint is the full marketing-site theme. Keeping
+   the exact surface steps here preserves panel hierarchy instead of mixing
+   every surface down to one flat green at 100%. */
+[data-theme='dark'][data-tint-palette='copse'][data-tint-strength='strong'] {
+  --bg-base: #002e2b;
+  --bg-elevated: #073936;
+  --bg-hover: #0d4540;
+  --bg-muted: #123f3b;
+  --bg-subtle: #043431;
+  --text-primary: #f9fcff;
+  --text-secondary: #b8cbc8;
+  --text-muted: #829e9a;
+  --border: #28534f;
+  --border-subtle: #16413d;
+  --border-strong: #50736f;
+}
+
 [data-theme='light'] {
   color-scheme: light;
   /* Re-derive the surfaces from light greys so the tint still washes through.
@@ -46,10 +64,15 @@
   --border: #d4d4d4;
   --border-subtle: #e4e4e4;
   --border-strong: #ababab;
+  /* Raw neon remains the fill for large primary buttons, where dark label text
+     provides the contrast. Small text, links, borders, and focus indicators use
+     a much darker derivation that remains readable even on the Strong tint. */
+  --accent: color-mix(in srgb, var(--accent-color) 30%, black);
   --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
   --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
-  --link: color-mix(in srgb, var(--accent) 75%, black);
-  --link-hover: color-mix(in srgb, var(--accent) 65%, black);
+  --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, black);
+  --link: var(--accent);
+  --link-hover: color-mix(in srgb, var(--accent) 82%, black);
   --error: #cf222e;
   --danger: #cf222e;
   --success: #1a7f37;

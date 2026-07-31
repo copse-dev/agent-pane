@@ -111,4 +111,31 @@ describe('context wheel breakdown (component)', () => {
     // Still hidden: breakdownActive was never set, so the hover does nothing.
     assert.equal(popover.hidden, true)
   })
+
+  it('shows an aggregate-only popover for an ACP-reported snapshot', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+
+    const snapshot = {
+      contextWindow: 200_000,
+      conversationBudget: 200_000,
+      conversationTokens: 80_000,
+      fillRatio: 0.4,
+      updatedAt: Date.now(),
+    }
+    wheel.update(snapshot, false, {
+      breakdown: null,
+      breakdownRing: false,
+      snapshotSource: 'Reported by ACP agent',
+    })
+
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    assert.equal(popover.hidden, true)
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Context · 80\.0k \/ 200\.0k \(40%\)/)
+    assert.match(popover.textContent, /Reported by ACP agent/)
+    assert.equal(popover.querySelectorAll('.context-wheel-popover-row').length, 0)
+  })
 })

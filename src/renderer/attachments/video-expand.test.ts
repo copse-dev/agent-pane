@@ -67,7 +67,7 @@ describe('video expand modal', () => {
     await openVideoExpand(api, '/store/clip.webm', 'clip.webm')
 
     assert.equal(requested, '/store/clip.webm')
-    const dialog = qsRequired<HTMLDialogElement>(document.body, '.video-expand-dialog')
+    const dialog = qsRequired<HTMLDialogElement>(document.body, '.attachment-preview-dialog')
     assert.equal(dialog.open, true)
     const video = qsRequired<HTMLVideoElement>(dialog, '.video-expand-video')
     assert.equal(video.hidden, false)
@@ -81,11 +81,11 @@ describe('video expand modal', () => {
     const api = videoApi(() => Promise.reject(new Error('over the 50 MB preview limit')))
     await openVideoExpand(api, '/elsewhere/huge.mp4', 'huge.mp4')
 
-    const dialog = qsRequired<HTMLDialogElement>(document.body, '.video-expand-dialog')
-    const status = qsRequired(dialog, '.video-expand-status')
+    const dialog = qsRequired<HTMLDialogElement>(document.body, '.attachment-preview-dialog')
+    const status = qsRequired(dialog, '.attachment-preview-status')
     assert.match(status.textContent, /over the 50 MB preview limit/)
     assert.equal(status.hidden, false)
-    assert.equal(qsRequired<HTMLVideoElement>(dialog, '.video-expand-video').hidden, true)
+    assert.equal(dialog.querySelector('.video-expand-video'), null)
     dialog.close()
   })
 
@@ -98,13 +98,10 @@ describe('video expand modal', () => {
     }
     const api = videoApi(() => Promise.resolve({ bytes: BYTES, mimeType: 'video/mp4' }))
     await openVideoExpand(api, '/store/clip.mp4', 'clip.mp4')
-    const dialog = qsRequired<HTMLDialogElement>(document.body, '.video-expand-dialog')
+    const dialog = qsRequired<HTMLDialogElement>(document.body, '.attachment-preview-dialog')
     dialog.close()
 
     assert.equal(revoked, OBJECT_URL, 'closing the modal must revoke the object URL')
-    assert.equal(
-      qsRequired<HTMLVideoElement>(dialog, '.video-expand-video').hasAttribute('src'),
-      false,
-    )
+    assert.equal(dialog.querySelector('.video-expand-video'), null)
   })
 })

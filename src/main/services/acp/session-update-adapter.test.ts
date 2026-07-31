@@ -416,6 +416,38 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
     })
   })
 
+  it('maps usage_update to authoritative live context pressure', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'usage_update',
+      used: 80_000,
+      size: 200_000,
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'context_pressure',
+      contextWindow: 200_000,
+      conversationBudget: 200_000,
+      conversationTokens: 80_000,
+      fillRatio: 0.4,
+      source: 'agent-reported',
+    })
+  })
+
+  it('handles a zero-sized usage_update without producing an invalid ratio', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'usage_update',
+      used: 0,
+      size: 0,
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'context_pressure',
+      contextWindow: 0,
+      conversationBudget: 0,
+      conversationTokens: 0,
+      fillRatio: 0,
+      source: 'agent-reported',
+    })
+  })
+
   it('drops update kinds the renderer does not consume', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'available_commands_update',

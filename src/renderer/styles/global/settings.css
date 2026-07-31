@@ -1369,6 +1369,43 @@ dialog.settings-overlay::backdrop {
   color: var(--warning, #d29922);
   border-color: var(--warning, #d29922);
 }
+.pack-source-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.pack-source-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.pack-source-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px var(--spacing-sm);
+  margin: 0;
+  font-size: 11px;
+}
+.pack-source-details dt {
+  color: var(--text-muted);
+}
+.pack-source-details dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.pack-badge-stable {
+  color: var(--success, #3fb950);
+  border-color: var(--success, #3fb950);
+}
+.pack-badge-experimental {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
 .pack-row-desc {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -1428,6 +1465,45 @@ dialog.settings-overlay::backdrop {
 .pack-setting-input.pack-setting-string,
 .pack-setting-input.pack-setting-number {
   min-width: 180px;
+}
+
+.parallel-search-pack-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-sm);
+}
+.parallel-search-key-fieldset {
+  margin: 0;
+}
+.parallel-search-notice {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.parallel-search-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+.parallel-search-save-btn,
+.parallel-search-clear-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
+}
+.parallel-search-save-btn:hover:not(:disabled),
+.parallel-search-clear-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.parallel-search-save-btn:disabled,
+.parallel-search-clear-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 /* First-party level-3 detail for copse.automations. It lives inside the pack

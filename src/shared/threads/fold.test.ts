@@ -95,8 +95,8 @@ test('round-trips a user message with transcript attachments', () => {
       // The ￼ placeholder marks where the pasted block sits inline.
       content: 'apply this ￼ to the intro',
       attachments: [
-        { kind: 'paste', label: 'Editor feedback' },
-        { kind: 'file', label: 'notes.txt' },
+        { kind: 'paste', label: 'Editor feedback', content: 'Use the shorter heading.' },
+        { kind: 'file', label: 'notes.txt', content: 'release checklist\n- test\n' },
         { kind: 'thread', label: 'Auth refactor' },
       ],
       toolCalls: [],
@@ -481,6 +481,7 @@ test('refsOfLine enumerates exactly the refs the fold resolves', () => {
       role: 'user',
       content: 'look at this',
       images: ['data:image/png;base64,aaaa'],
+      attachments: [{ kind: 'file', label: 'notes.txt', content: 'attached snapshot' }],
       toolCalls: [],
       createdAt: 1,
     },

@@ -857,6 +857,10 @@
   margin-bottom: 6px;
   white-space: nowrap;
 }
+.context-wheel-popover-note {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 .context-wheel-popover-row {
   display: flex;
   align-items: center;

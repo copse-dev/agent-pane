@@ -10,23 +10,7 @@
   color: var(--text-secondary);
   line-height: 1.5;
 }
+/* Button look lives on `.ui-btn*` (ui.css); keep legacy hooks for tests. */
 .update-prompt-buttons {
-  display: flex;
-  gap: var(--spacing-sm);
-  justify-content: flex-end;
-}
-.update-prompt-secondary {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 14px;
-  cursor: pointer;
-}
-.update-prompt-primary {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius);
-  padding: 6px 14px;
-  cursor: pointer;
+  margin-top: 0;
 }
