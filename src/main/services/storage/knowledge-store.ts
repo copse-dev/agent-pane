@@ -8,10 +8,10 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { splitSkillMarkdown } from '../skills/parse-skill-frontmatter.ts'
 import { getActiveProjectRoot } from '../workspace.ts'
+import { copseDataRoot } from './copse-paths.ts'
 
 /**
  * Per-project store for durable *application knowledge* — facts, decisions, and
@@ -98,7 +98,7 @@ export function setKnowledgeRootForTest(path: string | null): void {
 }
 
 function knowledgeBaseDir(): string {
-  return rootOverride ?? join(homedir(), '.copse', 'knowledge')
+  return rootOverride ?? join(copseDataRoot(), 'knowledge')
 }
 
 /**
