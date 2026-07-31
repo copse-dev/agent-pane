@@ -66,7 +66,7 @@ function packDisabledSeed(enabled: readonly string[]): string[] {
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
 /** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
-function e2eWorkspaceDir(): string {
+export function e2eWorkspaceDir(): string {
   const override = process.env.COPSE_WORKSPACE_DIR?.trim()
   return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
 }
@@ -3329,6 +3329,7 @@ export function seedForkResendFixture(workspaceRoot: string): {
   const threadId = 'e2e-fork-resend-thread'
   const title = 'Fork and resend'
   const now = Date.now()
+  rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
