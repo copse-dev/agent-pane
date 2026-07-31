@@ -24,7 +24,7 @@ contract is `PackManifest` in
 
 ```
 pack manifest
-├── tools      native tool names (first-party) or an MCP config path (user packs)
+├── tools      native + ACP-safe tool names (first-party) or an MCP config path (user packs)
 ├── hooks      command-hook declarations (user packs); first-party function hooks are typed runtime contributions
 ├── prompt     skills / steering blocks (with trust framing: trusted vs untrusted)
 ├── ui         contributions — level 1 (cards) / 2 (named panel slot) / 3 (real renderer view)
@@ -58,8 +58,14 @@ groups every pack's contributions by pack id and owns the lifecycle:
 - **Grouping** — `all()` / `grouping()` enumerate packs (Settings, P3); the
   `active*()` getters (`activeToolNames`, `activeBlockingHooks`,
   `activeAsyncHooks`, `activePromptBlocks`, `activeUiContributions`,
-  `activeCapabilities`, `activePermissions`) return the contributions of
+  `activeCapabilities`, `activePermissions`, `activeAcpToolNames`) return the contributions of
   **enabled** packs only, for **new work**.
+- **ACP tools** — a first-party pack may declare `tools.acpTools` as the subset
+  of its `tools.native` entries safe to execute through Copse's authenticated
+  localhost bridge for external ACP agents. Registration rejects user-pack,
+  non-native, and missing-runtime declarations. The bridge intersects the
+  enabled declaration with the live `ToolRegistry`, so disabling the pack or
+  removing its credential-gated tool revokes ACP exposure immediately.
 - **Capabilities** — a pack may declare named **capability** flags: pure
   cross-cutting behaviour with no tool/hook/prompt/panel (e.g. the MCP-UI canvas,
   the DevTools shortcut). Any subsystem reads one through the single
@@ -102,6 +108,17 @@ storage, while the Electron host supplies the local clock/thread-store service
 and the shipped renderer submits due prompts through the interactive agent controller.
 See [`docs/plans/automations.md`](plans/automations.md) for the deliberately narrow
 desktop-online cron prototype and its durable-supervisor boundary.
+
+The default-off `copse.parallel-search` pack is another level-3 first-party
+integration. It contributes the native `parallel_search` tool and calls
+Parallel's Search API directly rather than running an MCP server. Registration
+requires both an enabled pack and a configured `PARALLEL_API_KEY` (or encrypted
+key saved in Settings). Its detail view keeps the secret outside the generic
+pack-settings snapshot and states the network, billing, and ZDR boundary. The
+tool is also declared in `tools.acpTools`, so HTTP-MCP-capable external ACP
+agents can invoke the same direct API implementation through Copse's native-tool
+bridge. See
+[`docs/parallel-search.md`](parallel-search.md).
 
 ## Level-2 declarative panels (P2)
 
@@ -217,6 +234,7 @@ disable is pinned by
 
 - [`docs/adding-a-pack.md`](adding-a-pack.md) — practical install / authoring guide (linked from Settings → Packs)
 - [`docs/forced-planning.md`](forced-planning.md) — `copse.forced-planning`, the first pack born as a pack rather than extracted, and the `resolvePackSetting` seam it introduced
+- [`docs/parallel-search.md`](parallel-search.md) — direct Parallel Search API pack, credentials, permissions, and ZDR boundary
 - [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) — design source of truth (Feature packs, the [two-capability-tiers](plans/hooks-and-feature-packs.md#decisions-log) and [disable-never-breaks-history](plans/hooks-and-feature-packs.md#decisions-log) decisions)
 - [`docs/cursor-plugins.md`](cursor-plugins.md) — the plugin manifest the pack manifest extends
 - [`docs/hooks.md`](hooks.md) — the hook registry a pack's hooks register through

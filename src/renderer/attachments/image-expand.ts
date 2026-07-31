@@ -1,49 +1,21 @@
 import { el } from '../dom/helpers.ts'
-
-let expandDialog: HTMLDialogElement | null = null
-let imageEl: HTMLImageElement | null = null
-
-function ensureExpandDialog(): HTMLDialogElement {
-  if (expandDialog) return expandDialog
-
-  expandDialog = document.createElement('dialog')
-  expandDialog.className = 'image-expand-dialog'
-  expandDialog.setAttribute('aria-label', 'Image preview')
-
-  const body = el('div', { class: 'image-expand-dialog-body' })
-  imageEl = el('img', {
-    class: 'image-expand-image',
-    alt: 'Expanded attachment',
-  })
-  body.append(imageEl)
-
-  const closeBtn = el('button', { type: 'button', class: 'image-expand-close' }, 'Close')
-
-  expandDialog.append(body, closeBtn)
-  document.body.append(expandDialog)
-
-  closeBtn.addEventListener('click', () => expandDialog?.close())
-  expandDialog.addEventListener('click', (event) => {
-    if (event.target === expandDialog) expandDialog?.close()
-  })
-  expandDialog.addEventListener('close', () => {
-    if (imageEl) {
-      imageEl.removeAttribute('src')
-      imageEl.alt = 'Expanded attachment'
-    }
-  })
-
-  return expandDialog
-}
+import { openAttachmentPreview } from './attachment-preview.ts'
 
 /** Open the shared image lightbox for a data URL (or other resolvable img src). */
 export function openImageExpand(src: string, alt = 'Expanded attachment'): void {
   if (!src) return
-  const dialog = ensureExpandDialog()
-  if (!imageEl) return
+  const imageEl = el('img', { class: 'image-expand-image', alt })
   imageEl.src = src
-  imageEl.alt = alt
-  dialog.showModal()
+  openAttachmentPreview({
+    kind: 'image',
+    title: alt,
+    ariaLabel: `Image preview: ${alt}`,
+    content: imageEl,
+    onClose: () => {
+      imageEl.removeAttribute('src')
+      imageEl.alt = 'Expanded attachment'
+    },
+  })
 }
 
 /**

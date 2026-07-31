@@ -9,7 +9,13 @@ import { buildAcpAgentEnv } from './acp-client.ts'
  * (and legitimate non-LLM tool tokens like GITHUB_TOKEN) through.
  */
 describe('buildAcpAgentEnv', () => {
-  const injected = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GITHUB_TOKEN']
+  const injected = [
+    'ANTHROPIC_API_KEY',
+    'OPENAI_API_KEY',
+    'OPENROUTER_API_KEY',
+    'PARALLEL_API_KEY',
+    'GITHUB_TOKEN',
+  ]
 
   afterEach(() => {
     for (const key of injected) Reflect.deleteProperty(process.env, key)
@@ -19,6 +25,7 @@ describe('buildAcpAgentEnv', () => {
     process.env['ANTHROPIC_API_KEY'] = 'sk-ant-secret'
     process.env['OPENAI_API_KEY'] = 'sk-openai-secret'
     process.env['OPENROUTER_API_KEY'] = 'sk-or-secret'
+    process.env['PARALLEL_API_KEY'] = 'parallel-secret'
     process.env['GITHUB_TOKEN'] = 'gh-token'
 
     const env = buildAcpAgentEnv({ command: 'agent', cwd: '/tmp/project' })
@@ -26,6 +33,7 @@ describe('buildAcpAgentEnv', () => {
     assert.equal(env['ANTHROPIC_API_KEY'], undefined)
     assert.equal(env['OPENAI_API_KEY'], undefined)
     assert.equal(env['OPENROUTER_API_KEY'], undefined)
+    assert.equal(env['PARALLEL_API_KEY'], undefined)
     assert.equal(env['GITHUB_TOKEN'], 'gh-token')
   })
 

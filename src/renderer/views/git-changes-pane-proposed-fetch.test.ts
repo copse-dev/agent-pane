@@ -442,4 +442,77 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
     assert.equal(models.original.getValue(), 'fast-before\n')
     assert.equal(models.modified.getValue(), 'fast-after\n')
   })
+
+  it('recovers when the first selection raced a still-closed changes host', async () => {
+    // Regression: auto-opening Changes while `#git-diff-viewer-host` is still
+    // hidden used to park `whenDiffHostVisible` on the shared diffLoadQueue.
+    // Later file clicks updated the row highlight but never attached a model.
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    store.setState({
+      stagedDiffs: [
+        { path: 'first.ts', language: 'typescript' },
+        { path: 'second.ts', language: 'typescript' },
+      ],
+    })
+
+    const api = makeApi(
+      {
+        'first.ts': {
+          path: 'first.ts',
+          before: 'first-before\n',
+          after: 'first-after\n',
+          language: 'typescript',
+        },
+        'second.ts': {
+          path: 'second.ts',
+          before: 'second-before\n',
+          after: 'second-after\n',
+          language: 'typescript',
+        },
+      },
+      [],
+    )
+    const capture: { editor: StubDiffEditor | null } = { editor: null }
+    const monaco = makeMonacoStub(capture)
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    viewerRoot.hidden = true
+    Object.defineProperty(viewerRoot, 'offsetWidth', { configurable: true, value: 0 })
+    Object.defineProperty(viewerRoot, 'offsetHeight', { configurable: true, value: 0 })
+    document.body.append(listRoot, viewerRoot)
+
+    mountGitChangesPane(listRoot, viewerRoot, store, api, monaco)
+    await settle()
+    // Compare via boolean so TS does not narrow `capture.editor` to `null`
+    // for the rest of the test (createDiffEditor mutates it later).
+    assert.equal(
+      capture.editor === null,
+      true,
+      'must not construct Monaco while the host is closed',
+    )
+
+    const secondRow = [
+      ...listRoot.querySelectorAll<HTMLButtonElement>('.git-change-row-proposed'),
+    ].find((row) => row.textContent.includes('second.ts'))
+    assert.ok(secondRow, 'expected the second proposed file row')
+    secondRow.click()
+    await settle()
+    assert.equal(
+      capture.editor === null,
+      true,
+      'selection while closed must still defer Monaco create',
+    )
+
+    viewerRoot.hidden = false
+    forceVisible(viewerRoot)
+    await waitForModifiedValue(capture, 'second-after\n')
+    const models = capture.editor?.models
+    assert.ok(models)
+    assert.equal(models.original.getValue(), 'second-before\n')
+  })
 })

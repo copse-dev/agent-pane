@@ -80,10 +80,10 @@ function makeApi(): {
   }
 }
 
-function shimModal(dialog: HTMLDialogElement): void {
+function shimDialog(dialog: HTMLDialogElement): void {
   let open = false
   Object.defineProperties(dialog, {
-    showModal: {
+    show: {
       configurable: true,
       value: () => {
         open = true
@@ -116,7 +116,7 @@ describe('approval dialog model comparison pickers', () => {
       },
     })
     const dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
-    shimModal(dialog)
+    shimDialog(dialog)
 
     emit({ id: 'cmp-1' })
 

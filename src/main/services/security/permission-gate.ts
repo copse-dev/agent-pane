@@ -81,6 +81,7 @@ import {
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
+import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/packs/background-tasks-pack.ts'
 import { assessShellHarm } from './shell-harm.ts'
@@ -337,6 +338,23 @@ async function checkWebSearchPermission(): Promise<boolean> {
   return promptWebOrigin(
     decision.origin,
     `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
+  )
+}
+
+async function checkParallelSearchPermission(): Promise<boolean> {
+  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
+  const decision = decideWebFetchPermission({
+    url: PARALLEL_SEARCH_API_URL,
+    allowedOrigins: webAllowedOriginsWithDefaults(saved),
+    allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
+  })
+  if (decision.action === 'allow') return true
+  if (decision.action === 'deny') {
+    throw new Error(`Parallel Search access denied: ${decision.reasons.join('; ')}`)
+  }
+  return promptWebOrigin(
+    decision.origin,
+    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
   )
 }
 
@@ -919,6 +937,10 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
 
   if (toolName === 'web_search') {
     return checkWebSearchPermission()
+  }
+
+  if (toolName === 'parallel_search') {
+    return checkParallelSearchPermission()
   }
 
   // Read-only GitHub CI reads (status/logs/wait) reach github.com via the `gh`
