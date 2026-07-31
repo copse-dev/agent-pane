@@ -74,15 +74,16 @@ export async function draftRoadmapPrompt(issue: RoadmapImportIssue): Promise<str
  * stampRoadmapCategory), so import never waits on the classifiers. Drafting
  * stays sequential on purpose: local small-tasks models handle one completion
  * at a time well, and import is an explicit, occasional action.
- * `draft`/`classify`/`classifyCategory` are injectable for tests; `onStamped`
- * fires per background stamp (e.g. to refresh the pane).
+ * `draft`/`classify`/`classifyCategory` are injectable for tests and sit
+ * together in the signature; `onStamped` fires per background stamp (e.g. to
+ * refresh the pane).
  */
 export async function importIssuesAsRoadmapItems(
   issues: RoadmapImportIssue[],
   draft: (issue: RoadmapImportIssue) => Promise<string> = draftRoadmapPrompt,
   classify: (prompt: string) => Promise<RoadmapComplexity | null> = classifyRoadmapComplexity,
-  onStamped?: () => void,
   classifyCategory: (prompt: string) => Promise<RoadmapCategory | null> = classifyRoadmapCategory,
+  onStamped?: () => void,
 ): Promise<KnowledgeNote[]> {
   const created: KnowledgeNote[] = []
   for (const issue of issues) {

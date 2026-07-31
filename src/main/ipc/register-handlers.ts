@@ -718,27 +718,35 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return setKnowledgeNoteStatus(id, status)
   })
 
-  // User-chosen category override. Sets the `category` field and marks it
-  // `categoryManual` so a later prompt-change re-classification does not
-  // overwrite the user's pick (see stampRoadmapCategory). Clearing the
-  // category (empty string) also clears the manual flag, letting the next
-  // save re-classify. Empty string unpins; anything else must be a valid
-  // category word.
+  // User-chosen category override. A category word pins the `category` field
+  // and marks it `categoryManual`, so a later prompt-change re-classification
+  // does not overwrite the user's pick (see stampRoadmapCategory).
+  //
+  // The empty string is the editor's "Auto": it unpins by clearing both fields
+  // and re-runs the classifier in the background against the item's current
+  // prompt. Without that round-trip "Auto" would only ever mean "no category
+  // until I next edit the prompt", since the update path stamps on a prompt
+  // change alone. The schema admits '' or a category word and nothing else, so
+  // the two branches below are total.
   ipcMain.handle('roadmap:setCategory', (event, rawId: unknown, rawCategory: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
-    const input = parseIpcArgs(zRoadmapCategory.optional(), [rawCategory])?.trim() ?? ''
+    const input = parseIpcArgs(zRoadmapCategory.optional(), [rawCategory]) ?? ''
     const existing = getKnowledgeNote(id)
     if (!existing || existing.type !== ROADMAP_TYPE) return null
     const fields = { ...existing.fields }
-    if (!input) {
-      delete fields['category']
-      delete fields['categoryManual']
-    } else if (isRoadmapCategory(input)) {
+    if (isRoadmapCategory(input)) {
       fields['category'] = input
       fields['categoryManual'] = '1'
+    } else {
+      delete fields['category']
+      delete fields['categoryManual']
     }
-    return updateKnowledgeNote(id, { fields })
+    const updated = updateKnowledgeNote(id, { fields })
+    if (updated && !isRoadmapCategory(input)) {
+      void stampRoadmapCategory(id, updated.body, notifyRoadmapChanged)
+    }
+    return updated
   })
 
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
@@ -792,7 +800,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
-    return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged, undefined)
+    return importIssuesAsRoadmapItems(issues, undefined, undefined, undefined, notifyRoadmapChanged)
   })
 
   // Semantic coverage for the import picker: which open issues already have a

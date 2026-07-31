@@ -64,7 +64,6 @@ describe('importIssuesAsRoadmapItems', () => {
         return Promise.resolve(`Do the work for issue ${String(issue.number)}`)
       },
       () => new Promise((resolve) => pending.push(resolve)),
-      undefined,
       stubClassifyCategory,
     )
     assert.deepEqual(drafted, [41, 52])
@@ -93,8 +92,8 @@ describe('importIssuesAsRoadmapItems', () => {
       [ISSUE],
       () => Promise.resolve('Do the work'),
       stubClassify,
-      () => stamps++,
       stubClassifyCategory,
+      () => stamps++,
     )
     await settle()
     assert.equal(stamps, 2)

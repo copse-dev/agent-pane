@@ -1053,10 +1053,13 @@ export function mountRoadmapPane(
     clear(listBody)
     const visible = items.filter(isListVisible)
     if (visible.length === 0) {
+      // An empty *list* and an empty *roadmap* read very differently: the
+      // onboarding copy below is a lie once items exist and a facet or the
+      // search box is simply hiding them all.
       let hint = loading
         ? 'Loading roadmap…'
         : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
-      if (!loading && searchQuery) {
+      if (!loading && items.length > 0) {
         hint = 'No roadmap items match your filter.'
       }
       listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
@@ -1074,29 +1077,31 @@ export function mountRoadmapPane(
         'data-category': category,
       })
       const groupItems = el('div', { class: 'roadmap-category-items' })
-      if (categoryItems.length > 1) {
-        const collapsed = collapsedCategories.has(category)
-        groupItems.hidden = collapsed
-        const label =
-          category === 'uncategorized' ? 'Uncategorized' : roadmapCategoryLabel(category)
-        const header = el(
-          'button',
-          {
-            type: 'button',
-            class: 'roadmap-category-header',
-            'aria-expanded': collapsed ? 'false' : 'true',
-          },
-          el('span', { class: 'roadmap-category-chevron' }, collapsed ? '›' : '⌄'),
-          el('span', { class: 'roadmap-category-header-label' }, label),
-          el('span', { class: 'roadmap-category-count' }, String(categoryItems.length)),
-        )
-        header.addEventListener('click', () => {
-          if (collapsedCategories.has(category)) collapsedCategories.delete(category)
-          else collapsedCategories.add(category)
-          renderList()
-        })
-        group.append(header)
-      }
+      // Every group gets a header, including a one-row one. Rendering it only
+      // past a threshold means a collapsed group silently springs open (and
+      // loses its only control) the moment filtering or a status flip drops it
+      // to a single row, while `collapsedCategories` still holds the entry and
+      // snaps it shut again when a second row returns.
+      const collapsed = collapsedCategories.has(category)
+      groupItems.hidden = collapsed
+      const label = category === 'uncategorized' ? 'Uncategorized' : roadmapCategoryLabel(category)
+      const header = el(
+        'button',
+        {
+          type: 'button',
+          class: 'roadmap-category-header',
+          'aria-expanded': collapsed ? 'false' : 'true',
+        },
+        el('span', { class: 'roadmap-category-chevron' }, collapsed ? '›' : '⌄'),
+        el('span', { class: 'roadmap-category-header-label' }, label),
+        el('span', { class: 'roadmap-category-count' }, String(categoryItems.length)),
+      )
+      header.addEventListener('click', () => {
+        if (collapsedCategories.has(category)) collapsedCategories.delete(category)
+        else collapsedCategories.add(category)
+        renderList()
+      })
+      group.append(header)
       for (const item of categoryItems) {
         const isSelected = item.id === selectedId
         const status = itemStatus(item)

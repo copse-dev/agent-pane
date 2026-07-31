@@ -68,8 +68,9 @@ describe('roadmap category grouping and filters', () => {
     const bugHeader = $('[data-category="bug"] .roadmap-category-header')
     assert.equal(await bugHeader.getAttribute('aria-expanded'), 'true')
     assert.equal(await $('[data-category="bug"] .roadmap-category-count').getText(), '2')
-    assert.equal(await $('.roadmap-category-badge').length, 4)
-    assert.equal(await $('.roadmap-show-done-btn').length, 0)
+    assert.equal((await $$('.roadmap-category-badge')).length, 4)
+    // The `done` toolbar toggle is gone; status is a filter facet now.
+    assert.equal((await $$('.roadmap-show-done-btn')).length, 0)
 
     await bugHeader.click()
     assert.equal(await bugHeader.getAttribute('aria-expanded'), 'false')

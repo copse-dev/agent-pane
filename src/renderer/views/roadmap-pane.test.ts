@@ -612,7 +612,10 @@ describe('roadmap pane', () => {
       assert.equal(status.value, 'blocked')
       assert.match(
         viewer.querySelector('.memories-meta')?.textContent ?? '',
-        /^Updated 2026-07-13 at \d{2}:\d{2}$/,
+        // `toLocaleTimeString` follows the runner's locale, so the clock is
+        // 24-hour under en-GB and 12-hour with a meridiem under en-US. Pin the
+        // HH:MM shape and let either render pass rather than pinning a locale.
+        /^Updated 2026-07-13 at \d{2}:\d{2}(?: [AP]M)?$/,
       )
       // Status and Delete are offered for an existing item.
       assert.equal(status.hidden, false)
@@ -946,6 +949,65 @@ describe('roadmap pane', () => {
         list.querySelectorAll('[data-category="bug"] .roadmap-row').length,
         1,
         'disabling high complexity leaves the low-complexity bug',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('keeps a collapsed group collapsed, with its header, when it drops to one row', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const bugHigh = makeItem('bug-high', 'Fix crash', 'ready', undefined, undefined, 'high')
+    bugHigh.fields['category'] = 'bug'
+    const bugLow = makeItem('bug-low', 'Fix typo', 'ready', undefined, undefined, 'low')
+    bugLow.fields['category'] = 'bug'
+    const { api } = makeApi([bugHigh, bugLow])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-category-header')?.click()
+      // Filtering the group down to a single row must not silently re-expand it
+      // or strip the only control that could collapse it again.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const highOption = [
+        ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
+      ].find((option) => option.textContent === 'high')
+      assert.ok(highOption)
+      highOption.querySelector<HTMLInputElement>('input')?.click()
+      const header = list.querySelector('[data-category="bug"] .roadmap-category-header')
+      assert.ok(header, 'a one-row group still renders its header')
+      assert.equal(header.getAttribute('aria-expanded'), 'false')
+      assert.equal(header.querySelector('.roadmap-category-count')?.textContent, '1')
+      assert.equal(
+        list.querySelector<HTMLElement>('[data-category="bug"] .roadmap-category-items')?.hidden,
+        true,
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('distinguishes an empty roadmap from one whose facets hide every item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const item = makeItem('a', 'Fix crash', 'ready')
+    item.fields['category'] = 'bug'
+    const { api } = makeApi([item])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      // No search term — only a facet is hiding the work. The onboarding copy
+      // would claim the roadmap is empty when it is merely filtered.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const bugOption = [...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option')].find(
+        (option) => option.textContent === 'Bugs',
+      )
+      assert.ok(bugOption)
+      bugOption.querySelector<HTMLInputElement>('input')?.click()
+      assert.equal(
+        list.querySelector('.roadmap-list-empty')?.textContent,
+        'No roadmap items match your filter.',
       )
     } finally {
       unmount()

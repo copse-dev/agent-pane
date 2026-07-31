@@ -72,7 +72,8 @@
   accent-color: var(--accent);
 }
 
-/* Category groups become accordions only when a group has multiple rows. */
+/* Every category group is an accordion, one row or many, so a collapsed group
+   keeps its control as filtering changes how many rows it holds. */
 .roadmap-category-group {
   display: flex;
   flex-direction: column;
