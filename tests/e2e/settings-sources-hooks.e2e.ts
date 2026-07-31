@@ -34,7 +34,7 @@ describe('settings sources hooks (Claude Code)', () => {
     )
 
     const trustedRoot = realpathSync(workspaceRoot)
-    seedEmptyProject(workspaceRoot, PROJECT_ID)
+    seedEmptyProject(workspaceRoot, PROJECT_ID, { developerMode: true })
     // Re-write config to add trust so project Claude hooks appear in Sources.
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: workspaceRoot, name: 'workspace' }],

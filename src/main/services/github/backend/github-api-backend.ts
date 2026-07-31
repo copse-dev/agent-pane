@@ -372,16 +372,18 @@ export const githubApiBackend: GitHubBackend = {
       .filter((entry): entry is GhPrSummary => entry != null)
   },
 
-  async listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]> {
+  async listWorkspaceOpenIssues(page: number, pageSize: number) {
     const slug = await getGithubRepoSlug()
-    if (!slug) return []
+    if (!slug) return { issues: [], hasMore: false }
     const [owner, repo] = slug.split('/')
-    if (!owner || !repo) return []
-    const result = await rest(`/repos/${owner}/${repo}/issues?state=open&per_page=${String(limit)}`)
+    if (!owner || !repo) return { issues: [], hasMore: false }
+    const result = await rest(
+      `/repos/${owner}/${repo}/issues?state=open&per_page=${String(pageSize)}&page=${String(page)}`,
+    )
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not list issues.')
     const items = recordArrayOrEmpty(result.json)
-    return (
-      items
+    return {
+      issues: items
         // The REST /issues listing includes pull requests; keep real issues only.
         .filter((item) => !('pull_request' in item))
         .map((item) => {
@@ -404,8 +406,12 @@ export const githubApiBackend: GitHubBackend = {
           if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
           return summary
         })
-        .filter((entry): entry is GhIssueSummary => entry != null)
-    )
+        .filter((entry): entry is GhIssueSummary => entry != null),
+      // GitHub does not include a body-only sentinel page. A full raw page may
+      // have a successor; an exact multiple can show one harmless final
+      // "Load more" that resolves to an empty page.
+      hasMore: items.length === pageSize,
+    }
   },
 
   async getIssue(ref: PrRef): Promise<GhIssueSummary | null> {

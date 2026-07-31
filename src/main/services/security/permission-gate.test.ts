@@ -29,6 +29,7 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import { runWithAcpBridgePermissionContext } from '../acp/acp-bridge-permission-context.ts'
 import {
@@ -162,8 +163,10 @@ describe('ensureToolPermitted', () => {
       allowLocalBinding: false,
     })
     let approvalBody = ''
+    let approvalSubject = ''
     setApprovalHandler(async (request) => {
       approvalBody = request.body
+      approvalSubject = request.subject ?? ''
       return { approved: false, remember: false }
     })
     try {
@@ -172,6 +175,7 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.match(approvalBody, /network access is temporarily widened/i)
+      assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
     } finally {
       setApprovalHandler(null)
       release()

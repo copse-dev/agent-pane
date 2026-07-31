@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
+import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import { getActivePathBackend } from './workspace-fs/get-path-backend.ts'
 import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
 import type { PathBackend } from './workspace-fs/path-backend.ts'
@@ -437,15 +437,13 @@ export async function resolvePathWithinRoot(
 }
 
 /**
- * Root of the filesystem-native chat store (issue #644), honoring the
- * `COPSE_WORKSPACE_DIR` override — mirrors `thread-store.ts` (a follow-up unifies
- * both under one `COPSE_DIR`). Kept separate from the workspace root: the store
+ * Root of the filesystem-native chat store (issue #644), derived from the
+ * active Copse profile. Kept separate from the workspace root: the store
  * is mounted **read-only** so the agent can explore past threads with the
  * existing file tools, never write to them.
  */
 function chatStoreDir(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  return override && override.length > 0 ? override : join(homedir(), '.copse', 'workspace')
+  return copseWorkspaceDir()
 }
 
 /** Sync chat-store root for seatbelt overlay assembly (overlay builder stays sync). */
@@ -525,7 +523,7 @@ export async function resolveReadablePathWithinRoot(
       throw workspaceErr
     }
     throw new Error(
-      `Path outside workspace or chat store: ${path}. Read tools accept workspace-relative paths or absolute paths inside the chat store (~/.copse/workspace).`,
+      `Path outside workspace or chat store: ${path}. Read tools accept workspace-relative paths or absolute paths inside the chat store (${chatStoreDir()}).`,
       { cause: workspaceErr },
     )
   }

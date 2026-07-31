@@ -33,6 +33,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
     openLinksInBuiltInBrowser: true,
+    developerMode: false,
     ...partial,
   }
 }

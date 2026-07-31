@@ -238,6 +238,45 @@ describe('thread-store', () => {
     )
   })
 
+  it('heals a partial catalog written by a single-thread upsert before rebuild', async () => {
+    // External seed (e2e fixtures): thread dirs on disk, no catalog yet.
+    await createThread(
+      'proj-1',
+      thread('seeded-auth', {
+        title: 'Auth refactor plan',
+        messages: [userMsg('u1', 'How should we refactor the auth layer?')],
+        updatedAt: 100,
+      }),
+    )
+    await createThread(
+      'proj-1',
+      thread('seeded-docs', {
+        title: 'Docs cleanup',
+        messages: [userMsg('u2', 'Clean up the README and docs index.')],
+        updatedAt: 90,
+      }),
+    )
+    // Simulate the race: wipe the catalog, then let updateMeta refresh one line
+    // from an empty read (the pre-fix upsert/refresh path).
+    rmSync(join(root, 'proj-1', 'catalog.jsonl'))
+    writeFileSync(
+      join(root, 'proj-1', 'catalog.jsonl'),
+      `${JSON.stringify({
+        id: 'seeded-docs',
+        title: 'Docs cleanup',
+        createdAt: 1,
+        updatedAt: 90,
+        digest: 'Docs cleanup',
+        path: 'seeded-docs',
+      })}\n`,
+    )
+
+    // Query token appears only in the auth thread's first-user digest — a partial
+    // catalog that omitted that thread used to return [].
+    const hits = await loadProjectCatalog('proj-1', 'the')
+    assert.deepEqual(hits.map((e) => e.id).sort(), ['seeded-auth', 'seeded-docs'])
+  })
+
   it('round-trips a nested subagent session through disk', async () => {
     const t = thread('t1', {
       messages: [
