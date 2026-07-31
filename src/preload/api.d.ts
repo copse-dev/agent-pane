@@ -133,6 +133,7 @@ export interface ApiClient {
       payload: string,
     ) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
+    runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>

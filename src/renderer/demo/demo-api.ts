@@ -168,6 +168,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         replay?.abort()
         return resolvedVoid()
       },
+      runningThreadIds: emptyArray,
       retryReview: resolvedVoid,
       retryComparison: resolvedVoid,
       clearHistory: resolvedVoid,

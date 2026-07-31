@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld('api', {
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', projectId, threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    runningThreadIds: () => ipcRenderer.invoke('agent:runningThreadIds'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
     retryComparison: (projectId: string, threadId: string, payload: string) =>

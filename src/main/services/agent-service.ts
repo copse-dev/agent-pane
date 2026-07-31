@@ -1734,6 +1734,17 @@ export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
 }
 
+/**
+ * Thread ids with a live in-process run right now. Lets a renderer that's just
+ * (re)loaded a project's threads tell a genuinely still-running turn apart from
+ * one whose `status: 'running'` was merely the last thing persisted before a
+ * crash (#1406) — trusting the persisted flag alone flips a real run's status
+ * to idle and hides its stop control while it keeps streaming.
+ */
+export function listRunningThreadIds(): string[] {
+  return [...abortMap.keys()]
+}
+
 export interface RetryOptions {
   workingBrief?: string
   model?: string

@@ -291,13 +291,20 @@ export function movePendingUserMessagesToEnd(
   return alreadyInOrder ? messages : nextMessages
 }
 
-export function resumePendingQueues(store: AppStore, api: ApiClient): void {
+export async function resumePendingQueues(store: AppStore, api: ApiClient): Promise<void> {
+  // A crash mid-run can leave status stuck at running with no live main-process
+  // run — but the main process is long-lived and may genuinely still be
+  // streaming a thread the renderer is only now (re)loading (e.g. a window
+  // reload, or switching back to a project while its run kept going). Ask
+  // which threads actually have a live run before trusting the persisted flag,
+  // so a real run's status isn't flipped to idle out from under it, hiding its
+  // stop control while it keeps producing output (#1406).
+  const reallyRunning = new Set(await api.agent.runningThreadIds())
   for (const thread of store.getState().threads) {
     // A fresh session has no open inline editors, so a persisted pause is stale.
     if (thread.queuePaused) setQueuePaused(store, thread.id, false)
-    // A crash mid-run can leave status stuck at running with no live main-process run.
     let status = thread.status
-    if (status === 'running') {
+    if (status === 'running' && !reallyRunning.has(thread.id)) {
       setThreadStatus(store, thread.id, 'idle')
       status = 'idle'
     }
