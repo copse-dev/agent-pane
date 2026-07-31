@@ -135,13 +135,76 @@ describe('requestLiveIntellectModels', () => {
     assert.equal(model.inputPricePerMTok, 1.25)
   })
 
+  it('accepts null for measurements that the API has not populated', async () => {
+    const { fetch } = fakeFetch({
+      body: {
+        intelligence_index_version: 4.1,
+        data: [
+          {
+            slug: 'nullable-pricing',
+            evaluations: { artificial_analysis_intelligence_index: 42 },
+            artificial_analysis_intelligence_index_cost: null,
+            pricing: {
+              price_1m_input_tokens: null,
+              price_1m_output_tokens: null,
+            },
+          },
+          null,
+        ],
+      },
+    })
+    const result = await requestLiveIntellectModels('key', fetch)
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.models, [{ id: 'nullable-pricing', intellect: 42 }])
+  })
+
+  it('falls back to the legacy score feed when the richer response fails validation', async () => {
+    const urls: string[] = []
+    const fetch: typeof globalThis.fetch = async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      urls.push(url)
+      if (url.includes('/language/models/free')) {
+        return new Response('[{"code":"invalid_type"', {
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          intelligence_index_version: 4.1,
+          data: [AA_MODEL('legacy-score', 41, 2)],
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      )
+    }
+
+    const result = await requestLiveIntellectModels('key', fetch)
+    assert.equal(result.ok, true)
+    assert.equal(result.models[0]?.id, 'legacy-score')
+    assert.match(urls[0] ?? '', /\/language\/models\/free\?page=1$/)
+    assert.match(urls[1] ?? '', /\/data\/llms\/models$/)
+  })
+
+  it('keeps response-validator details out of the visible error when both feeds fail', async () => {
+    const fetch: typeof globalThis.fetch = async () =>
+      new Response('[{"code":"invalid_type"', {
+        headers: { 'content-type': 'application/json' },
+      })
+    const result = await requestLiveIntellectModels('key', fetch)
+    assert.equal(result.ok, false)
+    assert.equal(
+      result.error,
+      'Artificial Analysis returned model data that does not match its published schema.',
+    )
+  })
+
   it('surfaces a rejected key (403) with an actionable message', async () => {
-    const { fetch } = fakeFetch({ status: 403, statusText: 'Forbidden' })
+    const { fetch, urls } = fakeFetch({ status: 403, statusText: 'Forbidden' })
     const result = await requestLiveIntellectModels('bad-key', fetch)
     assert.equal(result.ok, false)
     assert.equal(result.models.length, 0)
     assert.match(result.error ?? '', /HTTP 403/)
     assert.match(result.error ?? '', /key was rejected/)
+    assert.equal(urls.length, 1, 'authentication failures must not retry against another endpoint')
   })
 
   it('reports a non-auth HTTP error without the key hint', async () => {
