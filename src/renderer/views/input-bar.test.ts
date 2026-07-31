@@ -692,6 +692,8 @@ describe('input bar browse button', () => {
   it('attaches a selected file as a chip', async () => {
     const store = createStore({
       workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread()],
     })
@@ -714,6 +716,18 @@ describe('input bar browse button', () => {
     const label = chip.querySelector<HTMLElement>('.attachment-chip-label')
     assert.ok(label, 'the chip renders its name in the clipped label span')
     assert.match(label.textContent, /notes\.txt/)
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Review this file'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(store.getState().threads[0]?.messages[0]?.attachments, [
+      { kind: 'file', label: 'notes.txt', content: 'hello world' },
+    ])
   })
 })
 
