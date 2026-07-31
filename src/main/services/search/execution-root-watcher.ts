@@ -1,23 +1,40 @@
 import * as fs from 'node:fs'
+import { join } from 'node:path'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
-import { invalidateSearchResultCacheUnderRoot } from './search-result-cache.ts'
+import { invalidateToolResultCacheForChange } from './tool-result-cache.ts'
 
 /**
- * Watches whichever execution roots currently hold cached search results, so an
+ * Watches whichever execution roots currently hold cached tool results, so an
  * edit made outside the agent's own tool calls drops the affected results.
  *
  * Separate from {@link ./workspace-index-watcher.ts} on purpose. That one is a
  * single-root singleton driving index rebuilds, started only by the
  * workspace-open paths — it never sees a thread worktree, which lives under
- * `~/.copse/worktrees/<projectId>/<threadId>` rather than inside the project.
- * Rebuild coalescing there is load-bearing (#517), so cache invalidation gets
- * its own multi-root watcher instead of being grafted onto it.
+ * `~/.copse/worktrees/<projectId>/<threadId>` rather than inside the project
+ * (see #1400). Rebuild coalescing there is load-bearing (#517), so cache
+ * invalidation gets its own multi-root watcher instead of being grafted onto it.
  *
  * No debounce: invalidation is a Map delete, and delaying it is exactly the
  * window where a stale result could be served.
  */
 
 const watchers = new Map<string, fs.FSWatcher>()
+
+/**
+ * A moved branch pointer — `git checkout` / `git switch` from a terminal.
+ * The working tree it rewrites generates its own events, but they arrive
+ * file-by-file and a checkout that only touches ignored directories would
+ * otherwise go unnoticed, so treat the pointer itself as "everything changed".
+ *
+ * Only fires for a normal checkout: a linked worktree's `.git` is a file
+ * pointing at the common git dir, so its HEAD is out of watch range. Worktree
+ * threads are covered instead by the branch in their execution context, which
+ * `validateThreadWorktree` re-resolves each turn.
+ */
+function isBranchPointerChange(relPath: string): boolean {
+  const segments = relPath.split(/[/\\]/)
+  return segments.length === 2 && segments[0] === '.git' && segments[1] === 'HEAD'
+}
 
 /**
  * Idempotently watch `root`. Returns false when no watcher could be
@@ -28,15 +45,25 @@ export function ensureExecutionRootWatched(root: string): boolean {
   if (watchers.has(root)) return true
   try {
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
+      // fs.watch can omit the filename; without it the change can't be located,
+      // so nothing under this root can be trusted.
+      if (filename === null) {
+        invalidateToolResultCacheForChange(root, null)
+        return
+      }
+      if (isBranchPointerChange(filename)) {
+        invalidateToolResultCacheForChange(root, null)
+        return
+      }
       // Ignore churn under build output / deps / .git — none of it is searched,
       // and a burst there would clear the cache continuously.
-      if (filename !== null && isIgnoredWorkspacePath(filename)) return
-      invalidateSearchResultCacheUnderRoot(root)
+      if (isIgnoredWorkspacePath(filename)) return
+      invalidateToolResultCacheForChange(root, join(root, filename))
     })
     watchers.set(root, watcher)
     return true
   } catch (err) {
-    console.warn('[copse-panel] search cache watcher unavailable for', root, err)
+    console.warn('[copse-panel] tool result cache watcher unavailable for', root, err)
     return false
   }
 }

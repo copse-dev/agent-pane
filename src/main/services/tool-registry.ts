@@ -13,11 +13,12 @@ import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
 import { ensureExecutionRootWatched } from './search/execution-root-watcher.ts'
 import {
-  CACHEABLE_SEARCH_TOOLS,
+  CACHEABLE_TOOLS,
   getCachedToolResult,
-  invalidateThreadSearchCache,
+  invalidateThreadToolCache,
   setCachedToolResult,
-} from './search/search-result-cache.ts'
+  type ToolCacheIdentity,
+} from './search/tool-result-cache.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
 
@@ -141,28 +142,29 @@ export class ToolRegistry {
     // Outside an agent turn (plain IPC, tests) there is no thread to key on and
     // nothing is cached.
     const context = getThreadExecutionContext()
-    const cacheable = context !== null && CACHEABLE_SEARCH_TOOLS.has(name)
-    const cached = cacheable
-      ? getCachedToolResult(context.threadId, context.root, name, parsed)
-      : undefined
+    const identity: ToolCacheIdentity | null = context
+      ? { threadId: context.threadId, root: context.root, branch: context.branch }
+      : null
+    const cacheable = identity !== null && CACHEABLE_TOOLS.has(name)
+    const cached = cacheable ? getCachedToolResult(identity, name, parsed) : undefined
     let result: ToolExecuteResult
     if (cached !== undefined) {
       result = cached
     } else {
       result = await tool.execute(rawArgs, signal)
-      if (context && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
-        // A tool that can mutate the workspace ran — this thread's search
-        // snapshot may now be stale.
-        invalidateThreadSearchCache(context.threadId)
+      if (identity && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
+        // A tool that can mutate the workspace ran — this thread's cached
+        // results may now be stale.
+        invalidateThreadToolCache(identity.threadId)
       } else if (
         // Only cache what we can invalidate. SSH workspaces have no local
         // fs.watch, and a root we failed to watch would be stuck serving stale
         // results for the rest of the thread.
         cacheable &&
         !isActiveSshWorkspace() &&
-        ensureExecutionRootWatched(context.root)
+        ensureExecutionRootWatched(identity.root)
       ) {
-        setCachedToolResult(context.threadId, context.root, name, parsed, result)
+        setCachedToolResult(identity, name, parsed, result)
       }
     }
     // H2: a `toolGate` hook injected context into the current turn. Append the

@@ -8,7 +8,7 @@ import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
 } from './thread-execution-context.ts'
-import { clearAllSearchResultCachesForTest } from './search/search-result-cache.ts'
+import { clearAllToolResultCachesForTest } from './search/tool-result-cache.ts'
 import { stopAllExecutionRootWatchers } from './search/execution-root-watcher.ts'
 import { z } from 'zod'
 
@@ -81,7 +81,7 @@ describe('ToolRegistry', () => {
     setPermissionGateForTests(null)
   })
 
-  describe('search result caching', () => {
+  describe('tool result caching', () => {
     let root = ''
     let searchCalls = 0
 
@@ -91,25 +91,25 @@ describe('ToolRegistry', () => {
     beforeEach(async () => {
       root = await mkdtemp(join(tmpdir(), 'copse-tool-cache-'))
       searchCalls = 0
-      clearAllSearchResultCachesForTest()
+      clearAllToolResultCachesForTest()
       setPermissionGateForTests(async () => true)
     })
 
     afterEach(async () => {
       stopAllExecutionRootWatchers()
-      clearAllSearchResultCachesForTest()
+      clearAllToolResultCachesForTest()
       setPermissionGateForTests(null)
       if (root) await rm(root, { recursive: true, force: true })
     })
 
-    function inThread<T>(threadId: string, fn: () => T): T {
+    function inThread<T>(threadId: string, fn: () => T, branch: string | null = null): T {
       const context: ThreadExecutionContext = {
         projectId: 'p1',
         threadId,
         projectRoot: root,
         root,
         checkoutMode: 'shared',
-        branch: null,
+        branch,
       }
       return runWithThreadExecutionContext(context, fn)
     }
@@ -119,7 +119,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'search_code',
         description: 'search',
-        parameters: z.object({ pattern: z.string() }),
+        parameters: z.object({ pattern: z.string(), path: z.string().optional() }),
         execute: async ({ pattern }) => {
           searchCalls++
           return `match for ${pattern} (call ${String(searchCalls)})`
@@ -170,6 +170,26 @@ describe('ToolRegistry', () => {
       await reg.execute('search_code', { pattern: 'foo' }, signal)
       await reg.execute('search_code', { pattern: 'foo' }, signal)
       assert.equal(searchCalls, 2)
+    })
+
+    it('does not reuse a result across a branch change', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal), 'main')
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal), 'feature')
+      assert.equal(searchCalls, 2)
+    })
+
+    it('keeps a directory-scoped result across a write the agent makes elsewhere', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      // The mutating-tool path clears the whole thread, so scope only spares a
+      // result when the change arrives via the watcher instead.
+      await inThread('t1', async () => {
+        await reg.execute('search_code', { pattern: 'foo', path: 'docs' }, signal)
+        await reg.execute('search_code', { pattern: 'foo', path: 'docs' }, signal)
+      })
+      assert.equal(searchCalls, 1)
     })
   })
 
