@@ -13,7 +13,11 @@ import {
   SANDBOX_TOOLS,
   isStructurallyReadOnlyShellCommand,
 } from './permission-policy.ts'
-import { DEFAULT_WEB_ALLOWED_ORIGINS } from './web-origin-policy.ts'
+import {
+  DEFAULT_WEB_ALLOWED_ORIGINS,
+  WEB_ALLOWED_ORIGINS_SETTING,
+  WEB_ALLOW_USER_APPROVAL_SETTING,
+} from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import {
@@ -35,6 +39,7 @@ import {
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { setSetting } from '../storage/settings.test-shim.ts'
 
 describe('isStructurallyReadOnlyShellCommand', () => {
   it('accepts simple read commands and read-only pipelines', () => {
@@ -125,6 +130,27 @@ describe('ensureToolPermitted', () => {
         await ensureToolPermitted({ toolName: 'gh_pr_approve', args: { number: 1 } }),
         true,
       )
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
+  it('prompts before sending a direct Parallel Search request', async () => {
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
+        false,
+      )
+      assert.match(approvalBody, /api\.parallel\.ai/)
+      assert.match(approvalBody, /paid API credits/i)
+      assert.match(approvalBody, /Zero Data Retention/i)
     } finally {
       setApprovalHandler(null)
     }
