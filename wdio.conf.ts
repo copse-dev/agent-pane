@@ -24,7 +24,7 @@ const chromedriverBinary = join(
   'node_modules/electron-chromedriver/bin/chromedriver',
 )
 
-let e2eProfileDir: string | null = null
+let e2eUserDataDir: string | null = null
 
 export const config: Options.Testrunner = {
   runner: 'local',
@@ -128,21 +128,10 @@ export const config: Options.Testrunner = {
   },
   beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
-    e2eProfileDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
-    const e2eUserDataDir = join(e2eProfileDir, 'user-data')
-    mkdirSync(e2eUserDataDir, { recursive: true })
-
-    // Granular overrides win over COPSE_DIR; remove inherited values so this
-    // harness exercises the same one-variable profile boundary users rely on.
-    delete process.env.COPSE_PANEL_USER_DATA
-    delete process.env.COPSE_WORKSPACE_DIR
-    delete process.env.COPSE_WORKTREES_DIR
+    e2eUserDataDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
 
     const e2eEnv: Record<string, string> = {
       COPSE_E2E: '1',
-      // Isolate Electron state, threads, knowledge, and managed worktrees
-      // together under this disposable profile.
-      COPSE_DIR: e2eProfileDir,
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
       // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).
@@ -157,6 +146,15 @@ export const config: Options.Testrunner = {
       // so the spec doesn't depend on what the runner has on PATH (launching is a
       // no-op under this mock). Mixes code editors with the macOS system targets.
       COPSE_PANEL_MOCK_EDITORS: 'vscode,cursor,zed,finder,terminal',
+      COPSE_PANEL_USER_DATA: e2eUserDataDir,
+      // Filesystem-native thread store (issue #644) — isolate it per run under the
+      // throwaway profile so seeded threads don't touch the developer's real
+      // ~/.copse/workspace. Seed helpers mirror this path.
+      COPSE_WORKSPACE_DIR: join(e2eUserDataDir, 'workspace'),
+      // Keep linked worktrees inside the disposable e2e profile as well. Specs
+      // can then seed and validate isolated thread roots without touching the
+      // developer's real ~/.copse/worktrees directory.
+      COPSE_WORKTREES_DIR: join(e2eUserDataDir, 'worktrees'),
       // Blank every provider key the app recognises so e2e is deterministic:
       // the mock LLM is used (no real key), and the env-key-detection scan
       // (Settings → General) finds nothing from the runner's environment.
@@ -204,13 +202,13 @@ export const config: Options.Testrunner = {
     } catch {
       // ignore
     }
-    if (e2eProfileDir) {
+    if (e2eUserDataDir) {
       try {
-        rmSync(e2eProfileDir, { recursive: true, force: true })
+        rmSync(e2eUserDataDir, { recursive: true, force: true })
       } catch {
         // ignore
       }
-      e2eProfileDir = null
+      e2eUserDataDir = null
     }
   },
 }

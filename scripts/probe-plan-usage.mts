@@ -20,7 +20,6 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { copseUserDataDir as resolveCopseUserDataDir } from '../src/main/services/storage/copse-paths.ts'
 import {
   fetchClaudePlanUsageFromCandidates,
   fetchCodexPlanUsage,
@@ -194,16 +193,16 @@ function discoverCodexAuth(): { accessToken: string; accountId: string | null } 
 
 /** Copse userData dir (same layout as e2e helpers / app-init). */
 function copseUserDataDir(): string {
-  let defaultDir: string
+  const override = process.env['COPSE_PANEL_USER_DATA']?.trim()
+  if (override) return override
   if (process.platform === 'darwin') {
-    defaultDir = join(homedir(), 'Library', 'Application Support', 'copse-panel')
-  } else if (process.platform === 'win32') {
-    const appData = process.env['APPDATA']?.trim()
-    defaultDir = appData ? join(appData, 'copse-panel') : join(homedir(), 'copse-panel')
-  } else {
-    defaultDir = join(homedir(), '.config', 'copse-panel')
+    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
   }
-  return resolveCopseUserDataDir(defaultDir)
+  if (process.platform === 'win32') {
+    const appData = process.env['APPDATA']?.trim()
+    return appData ? join(appData, 'copse-panel') : join(homedir(), 'copse-panel')
+  }
+  return join(homedir(), '.config', 'copse-panel')
 }
 
 /**
