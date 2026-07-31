@@ -5,10 +5,12 @@ import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
   ACP_MODELS_TTL_MS,
   acpModelsCacheStale,
+  formatAcpPackageApproval,
   planAcpAutoSetup,
   requestAcpPackageInstallApproval,
   updateCurrentAcpAgentModels,
   type AcpAutoSetupInput,
+  type AcpPackageChange,
 } from './acp-auto-setup.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { listAcpAgents } from './acp-agent-registry.ts'
@@ -69,6 +71,7 @@ describe('planAcpAutoSetup', () => {
       plan.install.map((k) => k.id),
       ['claude-agent-acp'],
     )
+    assert.deepEqual(plan.upgrade, [])
     assert.deepEqual(
       plan.register.map((k) => k.id),
       ['claude-agent-acp'],
@@ -78,9 +81,52 @@ describe('planAcpAutoSetup', () => {
   it('registers (no install) when the adapter is already installed', () => {
     const plan = planAcpAutoSetup([input(claude, { clientInstalled: true, agentInstalled: true })])
     assert.deepEqual(plan.install, [])
+    assert.deepEqual(plan.upgrade, [])
     assert.deepEqual(
       plan.register.map((k) => k.id),
       ['claude-agent-acp'],
+    )
+  })
+
+  it('upgrades an installed autoInstall adapter that is behind the registry', () => {
+    const plan = planAcpAutoSetup([
+      input(codex, {
+        clientInstalled: true,
+        agentInstalled: true,
+        configured: true,
+        hasModels: true,
+        outdated: { installedVersion: '1.1.0', latestVersion: '1.1.7' },
+      }),
+    ])
+    assert.deepEqual(plan.install, [])
+    assert.deepEqual(
+      plan.upgrade.map((entry) => ({
+        id: entry.known.id,
+        from: entry.installedVersion,
+        to: entry.latestVersion,
+      })),
+      [{ id: 'codex', from: '1.1.0', to: '1.1.7' }],
+    )
+    assert.deepEqual(plan.register, [])
+    assert.deepEqual(plan.refreshModels, [])
+  })
+
+  it('does not upgrade when the version check is absent or the client gate fails', () => {
+    assert.deepEqual(
+      planAcpAutoSetup([
+        input(codex, { clientInstalled: true, agentInstalled: true, outdated: null }),
+      ]).upgrade,
+      [],
+    )
+    assert.deepEqual(
+      planAcpAutoSetup([
+        input(claude, {
+          clientInstalled: false,
+          agentInstalled: true,
+          outdated: { installedVersion: '0.1.0', latestVersion: '0.2.0' },
+        }),
+      ]).upgrade,
+      [],
     )
   })
 
@@ -89,6 +135,7 @@ describe('planAcpAutoSetup', () => {
       input(claude, { clientInstalled: false, agentInstalled: false }),
     ])
     assert.deepEqual(plan.install, [])
+    assert.deepEqual(plan.upgrade, [])
     assert.deepEqual(plan.register, [])
   })
 
@@ -109,6 +156,7 @@ describe('planAcpAutoSetup', () => {
       input(cursor, { clientInstalled: true, agentInstalled: true }),
     ])
     assert.deepEqual(present.install, [])
+    assert.deepEqual(present.upgrade, [])
     assert.deepEqual(
       present.register.map((k) => k.id),
       ['cursor'],
@@ -132,6 +180,7 @@ describe('planAcpAutoSetup', () => {
       input(nonPreset, { clientInstalled: true, agentInstalled: true }),
     ])
     assert.deepEqual(plan.install, [])
+    assert.deepEqual(plan.upgrade, [])
     assert.deepEqual(plan.register, [])
     assert.deepEqual(plan.refreshModels, [])
   })
@@ -199,15 +248,51 @@ describe('acpModelsCacheStale', () => {
 describe('ACP package install approval', () => {
   it('requires explicit approval and names every global package', async () => {
     let body = ''
+    let title = ''
     setApprovalHandler(async (request) => {
+      title = request.title
       body = request.body
       return { approved: false, remember: false }
     })
-    assert.equal(await requestAcpPackageInstallApproval([codex, claude]), false)
+    const changes: AcpPackageChange[] = [
+      { agent: codex, action: 'install' },
+      { agent: claude, action: 'install' },
+    ]
+    assert.equal(await requestAcpPackageInstallApproval(changes), false)
+    assert.equal(title, 'Install ACP adapters globally?')
     assert.match(body, /@agentclientprotocol\/codex-acp/)
     assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
     assert.match(body, /Socket Firewall \(sfw\).*first install it globally/)
     assert.match(body, /lifecycle scripts disabled/)
+  })
+
+  it('describes upgrades with from→to versions', () => {
+    const { title, body } = formatAcpPackageApproval([
+      {
+        agent: codex,
+        action: 'upgrade',
+        fromVersion: '1.1.0',
+        toVersion: '1.1.7',
+      },
+    ])
+    assert.equal(title, 'Update ACP adapters globally?')
+    assert.match(body, /@agentclientprotocol\/codex-acp \(1\.1\.0 → 1\.1\.7\)/)
+    assert.match(body, /Socket Firewall \(sfw\)/)
+  })
+
+  it('uses a combined title when installing and upgrading together', () => {
+    const { title, body } = formatAcpPackageApproval([
+      { agent: claude, action: 'install' },
+      {
+        agent: codex,
+        action: 'upgrade',
+        fromVersion: '1.1.0',
+        toVersion: '1.1.7',
+      },
+    ])
+    assert.equal(title, 'Install or update ACP adapters?')
+    assert.match(body, /claude-agent-acp \(new install\)/)
+    assert.match(body, /codex-acp \(1\.1\.0 → 1\.1\.7\)/)
   })
 })
 

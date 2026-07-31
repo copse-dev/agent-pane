@@ -269,6 +269,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       autoSetup: () =>
         resolved({
           installed: [],
+          upgraded: [],
           registered: [],
           modelsDetected: [],
           failed: [],
