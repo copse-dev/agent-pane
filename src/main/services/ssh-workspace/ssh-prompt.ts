@@ -1,4 +1,5 @@
 import type { BrowserWindow, IpcMain } from 'electron'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import {
   assertMainFrameSender,
@@ -30,13 +31,19 @@ const SSH_PROMPT_TIMEOUT_MS = 60_000
 export type SshPromptHandler = (req: SshPromptRequest) => Promise<SshPromptResponse>
 
 let handler: SshPromptHandler | null = null
+const scopedHandler = new AsyncLocalStorage<SshPromptHandler>()
+
+export function runWithSshPromptHandler<T>(next: SshPromptHandler, fn: () => T): T {
+  return scopedHandler.run(next, fn)
+}
 
 export function setSshPromptHandler(next: SshPromptHandler | null): void {
   handler = next
 }
 
 export function requestSshPrompt(req: SshPromptRequest): Promise<SshPromptResponse> {
-  return handler ? handler(req) : Promise.resolve({ value: '' })
+  const activeHandler = scopedHandler.getStore() ?? handler
+  return activeHandler ? activeHandler(req) : Promise.resolve({ value: '' })
 }
 
 /** Host-key style prompts expect a literal `yes`; everything else is a secret. */

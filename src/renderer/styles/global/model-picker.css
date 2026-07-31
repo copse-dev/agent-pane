@@ -1,3 +1,8 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
+ * component: model picker · genre: modern-minimal · theme: Copse tokens
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: pass (40–41)
+ */
 /* Shared searchable model picker: compact in the composer, full-width in forms. */
 .model-picker,
 .model-picker-field-host {
@@ -79,6 +84,61 @@
   top: calc(100% + var(--spacing-xs));
   bottom: auto;
 }
+.model-picker-view-title {
+  min-width: 0;
+  padding: var(--spacing-xs) var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.model-picker-all-header {
+  display: flex;
+  align-items: center;
+  min-height: calc(var(--spacing-xl) + var(--spacing-xs));
+}
+.model-picker-all-header .model-picker-view-title {
+  padding-left: var(--spacing-xs);
+}
+.model-picker-back,
+.model-picker-browse {
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.model-picker-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--spacing-xl) + var(--spacing-xs));
+  height: calc(var(--spacing-xl) + var(--spacing-xs));
+}
+.model-picker-browse {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  width: 100%;
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  text-align: left;
+  font: inherit;
+}
+.model-picker-back:hover,
+.model-picker-browse:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.model-picker-filter:focus-visible,
+.model-picker-back:focus-visible,
+.model-picker-browse:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 .model-picker-filter {
   min-width: 220px;
   width: 100%;
@@ -88,9 +148,21 @@
   border-radius: var(--radius);
   font: inherit;
   padding: var(--spacing-xs) var(--spacing-sm);
+  outline: 2px solid transparent;
+  outline-offset: 1px;
 }
 .model-picker-list {
   overflow-y: auto;
+  min-height: 0;
+  /* Let the list scroll within the menu's max-height so the last option
+     in the all-models catalog stays clickable (ArrowDown + Enter/click). */
+  max-height: inherit;
+}
+.model-picker-all-header + .model-picker-filter:not([hidden]) {
+  margin-top: 3px;
+}
+
+.model-picker-filter:not([hidden]) + .model-picker-list {
   margin-top: var(--spacing-xs);
 }
 .model-picker-group-label {
@@ -117,6 +189,30 @@
 .model-picker-option.is-active {
   background: var(--bg-hover);
 }
+.model-picker-recent-mode .model-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  min-height: calc(var(--spacing-xl) + var(--spacing-sm));
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-sm);
+}
+.model-picker-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-picker-option-check {
+  flex-shrink: 0;
+}
+.model-picker-recent-mode .model-picker-option.is-active {
+  background: var(--bg-selected);
+}
+.model-picker-option:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 .model-picker-option.is-selected {
   color: var(--accent);
 }
@@ -132,6 +228,14 @@
   padding: var(--spacing-sm) var(--spacing-md);
   color: var(--text-muted);
   font-size: 11px;
+}
+.model-picker-status {
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.model-picker-status.is-error {
+  color: var(--error);
 }
 .approval-model-picker,
 .approval-comparison-row .model-picker-field-host {

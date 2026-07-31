@@ -84,6 +84,18 @@ export class InvalidPanelContributionError extends Error {
   }
 }
 
+/** Thrown when a pack's ACP bridge declaration could expose an unsafe tool. */
+export class InvalidAcpToolsError extends Error {
+  readonly packId: string
+  readonly toolName: string
+  constructor(packId: string, toolName: string, reason: string) {
+    super(`pack "${packId}" ACP tool "${toolName}" is invalid: ${reason}`)
+    this.name = 'InvalidAcpToolsError'
+    this.packId = packId
+    this.toolName = toolName
+  }
+}
+
 export class PackRegistry {
   // Insertion-ordered so `all()` / the active getters keep a deterministic
   // order (contribution order can be load-bearing, e.g. prompt assembly).
@@ -98,6 +110,32 @@ export class PackRegistry {
   /** Register a pack, grouped by its id. Enabled by default. Duplicate id throws. */
   register(pack: RegisteredPack): void {
     if (this.packs.has(pack.id)) throw new DuplicatePackError(pack.id)
+    const acpTools = pack.manifest.tools?.acpTools ?? []
+    const nativeTools = new Set(pack.manifest.tools?.native ?? [])
+    const runtimeTools = new Set(pack.contributions.toolNames)
+    for (const toolName of acpTools) {
+      if (pack.trust !== 'first-party') {
+        throw new InvalidAcpToolsError(
+          pack.id,
+          toolName,
+          'only first-party packs may expose native tools to external ACP agents',
+        )
+      }
+      if (!nativeTools.has(toolName)) {
+        throw new InvalidAcpToolsError(
+          pack.id,
+          toolName,
+          '`tools.acpTools` must be a subset of `tools.native`',
+        )
+      }
+      if (!runtimeTools.has(toolName)) {
+        throw new InvalidAcpToolsError(
+          pack.id,
+          toolName,
+          'the tool must have a matching executable runtime contribution',
+        )
+      }
+    }
     for (const contribution of pack.contributions.uiContributions) {
       if (contribution.level === 2 && !contribution.panel) {
         throw new InvalidPanelContributionError(
@@ -131,6 +169,17 @@ export class PackRegistry {
 
   has(id: string): boolean {
     return this.packs.has(id)
+  }
+
+  /**
+   * Remove a dynamically discovered pack from new work while retaining its
+   * namespaced storage bag. First-party packs are static and never call this;
+   * local/user discovery uses it when a source disappears or its hash changes.
+   */
+  unregister(id: string): void {
+    if (!this.packs.has(id)) throw new UnknownPackError(id)
+    this.packs.delete(id)
+    this.disabledIds.delete(id)
   }
 
   /** True when the pack is registered and not disabled. */
@@ -173,6 +222,37 @@ export class PackRegistry {
   /** Native tool names offered to the model right now (enabled packs only). */
   activeToolNames(): readonly string[] {
     return this.collectActive((c) => c.toolNames)
+  }
+
+  /** Native pack tools safe to offer to external ACP agents right now. */
+  activeAcpToolNames(): readonly string[] {
+    const out: string[] = []
+    for (const pack of this.enabledPacks()) out.push(...(pack.manifest.tools?.acpTools ?? []))
+    return out
+  }
+
+  /** Thread-model routes paired with their owning enabled pack. */
+  activeModelRoutes(): readonly {
+    readonly packId: string
+    readonly route: RegisteredPack['contributions']['modelRoutes'][number]
+  }[] {
+    const out: Array<{
+      packId: string
+      route: RegisteredPack['contributions']['modelRoutes'][number]
+    }> = []
+    for (const pack of this.enabledPacks()) {
+      for (const route of pack.contributions.modelRoutes) out.push({ packId: pack.id, route })
+    }
+    return out
+  }
+
+  /** Interactive browser origins paired with their owning enabled pack. */
+  activeBrowserOrigins(): readonly { readonly packId: string; readonly origin: string }[] {
+    const out: Array<{ packId: string; origin: string }> = []
+    for (const pack of this.enabledPacks()) {
+      for (const origin of pack.contributions.browserOrigins) out.push({ packId: pack.id, origin })
+    }
+    return out
   }
 
   /** Blocking function hooks to register for new work (enabled packs only). */

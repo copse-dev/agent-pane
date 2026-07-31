@@ -74,6 +74,7 @@ import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
+import { isAcpModel } from '@shared/acp.ts'
 
 interface MountInputBarOptions {
   /**
@@ -197,12 +198,13 @@ export function mountInputBar(
     },
     {
       label: 'Copy thread ID',
-      hidden: (): boolean => !getActiveThreadId(),
+      hidden: (): boolean => !store.getState().developerMode || !getActiveThreadId(),
       onClick: copyThreadId,
     },
     {
       label: 'Export conversation (JSONL)',
-      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean =>
+        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
       onClick: (): void => {
         const thread = getActiveThread(store)
         if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
@@ -210,7 +212,8 @@ export function mountInputBar(
     },
     {
       label: 'Share trace',
-      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean =>
+        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
       onClick: shareTrace,
     },
   ])
@@ -235,6 +238,16 @@ export function mountInputBar(
     const thread = getActiveThread(store)
     const raw = thread?.model ?? store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
     return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
+  }
+
+  function footerRecentModels(): string[] {
+    const { threads, settings } = store.getState()
+    return [...threads]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((thread) => {
+        const raw = thread.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL
+        return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
+      })
   }
 
   const modelPicker = mountFooterModelPicker(
@@ -267,6 +280,7 @@ export function mountInputBar(
       onClose: (): void => {
         composer.focus()
       },
+      getRecentModels: footerRecentModels,
     },
   )
   // Re-sync the picker whenever the active thread changes (new thread,
@@ -602,6 +616,7 @@ export function mountInputBar(
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
+    const acpContext = isAcpModel(footerChatModel())
     const usageText = usageSummaryText()
     const compact = footerCompact.isCompact()
     const snapshot = thread?.contextSnapshot
@@ -619,6 +634,7 @@ export function mountInputBar(
     // Show the pre-send breakdown while composing (or on fresh threads with no live
     // snapshot); keep the measured live snapshot once a run has produced one.
     const showBreakdown =
+      !acpContext &&
       !running &&
       !!lastBreakdown &&
       lastBreakdown.totalTokens > 0 &&
@@ -629,11 +645,13 @@ export function mountInputBar(
     // also replaces the live snapshot fill (pre-send / fresh threads). While the
     // agent is running we suppress it — the live snapshot is the authoritative
     // source then, and subagent/remote windows never produce a breakdown here.
-    const hoverBreakdown = !running ? lastBreakdown : null
+    const hoverBreakdown = !running && !acpContext ? lastBreakdown : null
     contextWheel.update(snapshot, running, {
       usageLine: tuckUsageIntoWheel ? usageText : null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
+      snapshotSource:
+        acpContext && snapshot?.source === 'agent-reported' ? 'Reported by ACP agent' : null,
     })
     contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
     if (!usageText) {
@@ -685,6 +703,16 @@ export function mountInputBar(
 
   async function runContextEstimate(): Promise<void> {
     if (!estimateEnabled) return
+    // The external agent owns its system prompt, tools, skills, and cache. A
+    // Copse-native estimate would describe the wrong prompt; wait for ACP's
+    // authoritative `usage_update` instead.
+    if (isAcpModel(footerChatModel())) {
+      if (lastBreakdown !== null) {
+        lastBreakdown = null
+        updateFooter()
+      }
+      return
+    }
     const id = getActiveThreadId()
     if (!id) {
       if (lastBreakdown !== null) {
@@ -993,10 +1021,13 @@ export function mountInputBar(
     // trailing row. Order matters — pastes first, in composer order, so the Nth
     // placeholder maps to the Nth paste attachment.
     const attachments: TranscriptAttachment[] = [
-      ...composer.getBlocks().map((b) => ({ kind: 'paste' as const, label: b.label })),
+      ...composer
+        .getBlocks()
+        .map((b) => ({ kind: 'paste' as const, label: b.label, content: b.content })),
       ...attachedFiles.map((f) => ({
         kind: 'file' as const,
         label: f.path.split('/').pop() ?? f.path,
+        content: f.content,
       })),
       ...attachedThreads.map((t) => ({
         kind: 'thread' as const,
@@ -1005,6 +1036,7 @@ export function mountInputBar(
       ...attachedShells.map((s) => ({
         kind: 'shell' as const,
         label: s.label,
+        content: s.content,
       })),
       ...attachedVideos.map((v) => ({
         kind: 'video' as const,

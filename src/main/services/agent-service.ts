@@ -12,6 +12,7 @@ import {
 import {
   normalizeToolExecuteResult,
   type LLMMessage,
+  type LLMProvider,
   type LLMTool,
   type StreamChunk,
   type ToolExecuteResult,
@@ -155,6 +156,9 @@ import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { parsePackModelSelection } from '@shared/pack-model.ts'
+import { getPackToolRuntimeController } from './packs/pack-tool-controller.ts'
+import { buildPackModelTurn } from './packs/pack-model-turn.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -173,6 +177,26 @@ export {
 } from './title-generator.ts'
 
 const abortMap = new Map<string, AbortController>()
+
+function packModelResult(raw: unknown): {
+  text: string
+  inputTokens: number
+  outputTokens: number
+} {
+  if (typeof raw === 'string') return { text: raw, inputTokens: 0, outputTokens: 0 }
+  if (!isRecord(raw) || typeof raw['text'] !== 'string') {
+    throw new Error('Pack model route returned no text.')
+  }
+  const inputTokens =
+    typeof raw['inputTokens'] === 'number' && Number.isFinite(raw['inputTokens'])
+      ? Math.max(0, raw['inputTokens'])
+      : 0
+  const outputTokens =
+    typeof raw['outputTokens'] === 'number' && Number.isFinite(raw['outputTokens'])
+      ? Math.max(0, raw['outputTokens'])
+      : 0
+  return { text: raw['text'], inputTokens, outputTokens }
+}
 
 // LM Studio models advertise smaller tool-schema budgets than cloud providers,
 // so reserve more of the window for their tool definitions. Shared by the turn
@@ -529,22 +553,33 @@ function fireAfterToolUseHook(args: {
   })
 }
 
+export interface RunAgentOptions {
+  invokedSkills?: string[]
+  priorTodos?: TodoItem[]
+  workingBrief?: string
+  model?: string
+  /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
+  turnTreeId?: string
+  /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
+  continuationBudgetUsed?: number
+  /** Explicit host provider for deterministic/headless execution; desktop callers resolve normally. */
+  provider?: LLMProvider
+  /** Explicit context window paired with an injected provider. */
+  contextWindow?: number
+  /** Optional tighter loop bounds for benchmark profiles; product defaults remain unchanged. */
+  maxSteps?: number
+  maxLlmCalls?: number
+  /** Pack-scoped setting resolver owned by an explicit host profile. */
+  resolvePackSetting?: (packId: string, key: string) => unknown
+}
+
 export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
   host: AgentHost<StreamChunk>,
   registry: ToolRegistry,
-  options?: {
-    invokedSkills?: string[]
-    priorTodos?: TodoItem[]
-    workingBrief?: string
-    model?: string
-    /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
-    turnTreeId?: string
-    /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
-    continuationBudgetUsed?: number
-  },
+  options?: RunAgentOptions,
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   // A new turn: drop last turn's restore point so the next dirty-worktree edit
   // snapshots the user's current uncommitted work before applying over it.
@@ -561,6 +596,7 @@ export async function runAgent(
   const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
+  const packModel = parsePackModelSelection(model)
 
   const sendChunk = createAgentChunkSink(threadId, host)
 
@@ -601,6 +637,60 @@ export async function runAgent(
 
   if (resolved.fallbackNotice) {
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
+  }
+
+  if (packModel) {
+    const controller = new AbortController()
+    abortMap.set(threadId, controller)
+    setActiveRunThread(threadId)
+    beginHookRunRecording(threadId)
+    try {
+      const packs = getDefaultPackRegistry()
+      const runtime = getPackToolRuntimeController()
+      if (!packs.isEnabled(packModel.packId) || !runtime?.isRunning(packModel.packId)) {
+        throw new Error(`The selected pack "${packModel.packId}" is disabled.`)
+      }
+      const route = packs
+        .get(packModel.packId)
+        ?.contributions.modelRoutes.find((candidate) => candidate.id === packModel.routeId)
+      if (!route) throw new Error(`Pack model route "${packModel.routeId}" is unavailable.`)
+
+      const result = packModelResult(
+        await runtime.invokeModel(
+          packModel.packId,
+          packModel.routeId,
+          buildPackModelTurn({
+            threadId,
+            prompt: outboundPrompt,
+            priorMessages,
+            supportsImages: route.supportsImages === true,
+          }),
+          controller.signal,
+        ),
+      )
+      sendChunk({ type: 'text', text: result.text })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+        messages: [
+          ...priorMessages,
+          { role: 'user', content: outboundPrompt },
+          { role: 'assistant', content: result.text },
+        ],
+      }
+    } catch (err) {
+      sendChunk({ type: 'text', text: errorMessage(err) })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: [...priorMessages, { role: 'user', content: outboundPrompt }],
+      }
+    } finally {
+      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+      endHookRunRecording(threadId)
+      clearActiveRunThread(threadId)
+      abortMap.delete(threadId)
+    }
   }
 
   // Running an ACP turn is reachable two ways: the user picked an `acp:<id>`
@@ -883,13 +973,16 @@ export async function runAgent(
 
   try {
     const invokedSkills = options?.invokedSkills ?? []
+    const resolvePackSetting =
+      options?.resolvePackSetting ??
+      ((packId: string, key: string): unknown => getPackService().getSetting(packId, key))
     const subagentsEnabled = getSetting<boolean>(
       SUBAGENTS_ENABLED_SETTING,
       SUBAGENTS_ENABLED_DEFAULT,
     )
-    const contextWindow = await resolveContextWindow(model)
+    const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = await buildProvider(model, threadId)
+    const provider = options?.provider ?? (await buildProvider(model, threadId))
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
@@ -972,7 +1065,7 @@ export async function runAgent(
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
-        resolvePackSetting: (packId, key) => getPackService().getSetting(packId, key),
+        resolvePackSetting,
         recordHookRun: recordFunctionHookRun,
       },
     )
@@ -1285,7 +1378,8 @@ export async function runAgent(
           messages: trimmed,
           tools: parentLoopTools,
           usageModel: model,
-          maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
+          maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+          ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
           reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
           reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
           runDeadline: runAbort.deadline,
@@ -1425,7 +1519,7 @@ export async function runAgent(
       // the "do we do another post turn after a failed review?" knob — pack-scoped
       // because it is meaningless with the pack off (decision 15).
       const maxReviewCycles = resolveMaxReviewCycles(
-        getPackService().getSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
+        resolvePackSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
       )
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))

@@ -71,6 +71,12 @@ function startShell(h: Harness, id: string, command: string): void {
   h.emitChunk('t1', { type: 'tool_call', toolCall: { id, name: 'run_shell', args: { command } } })
 }
 
+function panelPrefix(command: string, args: unknown = { command }): string {
+  const rendered = JSON.stringify(args, null, 2)
+  const argsBlock = rendered === '{}' ? '' : `Arguments:\n${rendered}\n\n`
+  return `$ ${command}\n${argsBlock}`
+}
+
 function tabs(h: Harness): HTMLButtonElement[] {
   return [...h.listRoot.querySelectorAll<HTMLButtonElement>('.agent-task-tab')]
 }
@@ -107,25 +113,29 @@ describe('agent-tasks', () => {
     assert.equal(tab.querySelector('.agent-task-label')?.textContent, 'npm run build')
   })
 
-  it('echoes the command at the top of the panel, like a real terminal', () => {
+  it('shows the command and structured arguments before the response', () => {
     startShell(h, 'a', 'cd /repo && npm run build')
     const panel = at(panels(h), 0)
-    // The (cd-stripped) command appears first, prefixed like a typed shell line.
-    assert.match(panel.textContent, /^\$ npm run build\n/)
+    // The display command is cd-stripped; arguments preserve the exact input.
+    assert.equal(
+      panel.textContent,
+      panelPrefix('npm run build', { command: 'cd /repo && npm run build' }),
+    )
     assert.equal(panel.querySelector('.agent-task-command')?.textContent, '$ npm run build\n')
+    assert.match(panel.querySelector('.agent-task-arguments')?.textContent ?? '', /^Arguments:/)
   })
 
   it('routes streamed output to the matching task panel by id, after the echoed command', () => {
     startShell(h, 'a', 'echo hi')
     h.emitOutput('hello\nworld\n', 'a')
-    // Command line stays at the top; output follows beneath it.
-    assert.match(at(panels(h), 0).textContent, /^\$ echo hi\nhello\nworld/)
+    // Command and arguments stay at the top; output follows beneath them.
+    assert.equal(at(panels(h), 0).textContent, `${panelPrefix('echo hi')}hello\nworld\n`)
   })
 
   it('strips ANSI escape sequences from output', () => {
     startShell(h, 'a', 'ls')
     h.emitOutput('\x1b[31mred\x1b[0m text', 'a')
-    assert.equal(at(panels(h), 0).textContent, '$ ls\nred text')
+    assert.equal(at(panels(h), 0).textContent, `${panelPrefix('ls')}red text`)
   })
 
   it('falls back to the latest running task when output has no id', () => {
@@ -133,8 +143,8 @@ describe('agent-tasks', () => {
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'a', result: '', isError: false })
     startShell(h, 'b', 'second')
     h.emitOutput('streamed', null)
-    assert.equal(at(panels(h), 0).textContent, '$ first\n')
-    assert.equal(at(panels(h), 1).textContent, '$ second\nstreamed')
+    assert.equal(at(panels(h), 0).textContent, panelPrefix('first'))
+    assert.equal(at(panels(h), 1).textContent, `${panelPrefix('second')}streamed`)
   })
 
   it('marks a task done/error on tool_result', () => {
@@ -155,7 +165,7 @@ describe('agent-tasks', () => {
       result: 'final output',
       isError: false,
     })
-    assert.equal(at(panels(h), 0).textContent, '$ quiet\nfinal output')
+    assert.equal(at(panels(h), 0).textContent, `${panelPrefix('quiet')}final output`)
   })
 
   it('shows the task panel and takes over the viewer when a tab is clicked', () => {
@@ -212,6 +222,40 @@ describe('agent-tasks', () => {
     // Its output arrives in the tool result (ACP has no live shell-output stream).
     h.emitChunk('t1', { type: 'tool_result', toolCallId: 'e1', result: 'clean', isError: false })
     assert.equal(at(panels(h), 0).textContent, '$ git status\nclean')
+  })
+
+  it('applies later ACP argument, output, and status updates to the terminal', () => {
+    h.emitChunk('t1', {
+      type: 'tool_call',
+      toolCall: { id: 'e2', name: 'mcp.copse.run_shell', args: {}, kind: 'execute' },
+    })
+    h.emitChunk('t1', {
+      type: 'tool_call_update',
+      toolCallId: 'e2',
+      args: { command: 'npm run typecheck', timeout_ms: 30_000 },
+      status: 'running',
+      result: '> typecheck\n> tsc --noEmit\n',
+      resultFormat: 'markdown',
+    })
+
+    const tab = at(tabs(h), 0)
+    assert.equal(tab.querySelector('.agent-task-label')?.textContent, 'npm run typecheck')
+    assert.equal(tab.dataset['status'], 'running')
+    assert.equal(
+      at(panels(h), 0).textContent,
+      `${panelPrefix('npm run typecheck', {
+        command: 'npm run typecheck',
+        timeout_ms: 30_000,
+      })}> typecheck\n> tsc --noEmit\n`,
+    )
+
+    h.emitChunk('t1', {
+      type: 'tool_call_update',
+      toolCallId: 'e2',
+      status: 'done',
+    })
+    assert.equal(tab.dataset['status'], 'done')
+    assert.match(at(panels(h), 0).textContent, /tsc --noEmit/)
   })
 
   it('prefers an explicit command arg over the ACP title', () => {

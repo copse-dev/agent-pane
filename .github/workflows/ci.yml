@@ -667,18 +667,23 @@ jobs:
     # Runner is picked by TRUST and fails closed. The label set requires BOTH
     # `self-hosted` AND `copse-e2e`, so trusted push/same-repo PR jobs land only
     # on the Linux Docker runners (never the macOS `self-hosted` boxes, which
-    # lack `copse-e2e`). Nightly `schedule` uses GitHub-hosted ubuntu-latest.
+    # lack `copse-e2e`). Nightly `schedule` uses GitHub-hosted ubuntu-latest. A
+    # repo-level E2E_RUNNER=ubuntu-latest override is the break-glass path when
+    # the self-hosted fleet is offline; delete it after the fleet recovers.
     # Fork PRs are skipped by the `if` guard above and must never run on any
     # runner — there is no hosted fallback; if that guard were ever removed, the
     # expression below evaluates to a falsy value (not a runner label) so the
     # job fails closed instead of dispatching untrusted code anywhere. NOTE:
-    # requires a registered `copse-e2e` runner or PR/push e2e queues forever.
+    # Without the explicit hosted override, a registered `copse-e2e` runner is
+    # required or PR/push e2e queues until the fleet returns.
     runs-on: >-
       ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
           ((github.event_name == 'push' ||
             (github.event_name == 'pull_request' &&
              github.event.pull_request.head.repo.full_name == github.repository))
-           && fromJSON('["self-hosted", "copse-e2e"]')) }}
+           && (vars.E2E_RUNNER == 'ubuntu-latest'
+               && fromJSON('["ubuntu-latest"]')
+               || fromJSON('["self-hosted", "copse-e2e"]'))) }}
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
@@ -1502,8 +1507,15 @@ jobs:
             echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
             exit 0
           fi
-          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository }}
-          if $PROMOTION_PR && [ "${{ needs.e2e.result }}" != "success" ]; then
+          # Demand e2e only when the `e2e` job was actually dispatched. Its own
+          # `if:` skips drafts (no `ci-full`) and zero-shard plans, so mirroring
+          # those two guards here is what keeps the demand and the dispatch in
+          # step. Without the draft guard a main-based DRAFT deadlocked: e2e
+          # skipped because it was a draft, and this gate failed because e2e had
+          # not succeeded, so `CI Passed` could never go green — and since a base
+          # retarget does not re-run CI, the red outlived the move to `develop`.
+          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          if $PROMOTION_PR && [ "${{ needs.precheck.outputs.e2e_shard_total }}" != "0" ] && [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "Promotion PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
             echo '${{ toJSON(needs) }}'
             exit 1

@@ -348,6 +348,23 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       const threadId = threadIdOfMessage(messageId)
       if (threadId) persistMessage(activeProjectId, threadId, messageId)
     }),
+    // ACP agents may patch raw input/output after the turn's message was first
+    // finalized (including between-turn background updates). Re-finalize the
+    // owning message when that tool settles so events.jsonl + its result blob
+    // carry the latest args/response across an app restart. Do not persist a
+    // running tool: the v1 spine deliberately has no running status.
+    store.on('tool_call_updated', (messageId, toolCallId) => {
+      if (!toolCallId) return
+      const { activeProjectId, threads } = store.getState()
+      if (!activeProjectId) return
+      const threadId = threadIdOfMessage(messageId)
+      const message = threads
+        .find((thread) => thread.id === threadId)
+        ?.messages.find((candidate) => candidate.id === messageId)
+      const toolCall = message?.toolCalls.find((candidate) => candidate.id === toolCallId)
+      if (!threadId || !toolCall || toolCall.status === 'running') return
+      persistMessage(activeProjectId, threadId, messageId)
+    }),
   ]
 
   const onPagehide = (): void => void flush()

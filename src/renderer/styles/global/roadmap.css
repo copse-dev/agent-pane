@@ -370,10 +370,16 @@
   flex-direction: column;
   gap: var(--spacing-xs);
 }
+/* Must set flex-direction: row — the global `label` rule in forms.css uses
+   column, which stacks the checkbox under the title and (with align-items:
+   center) centers both. */
 .roadmap-import-row {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: var(--spacing-sm);
+  margin-bottom: 0;
+  min-width: 0;
   font-size: var(--font-size-sm);
   color: var(--text-primary);
   cursor: pointer;
@@ -382,17 +388,34 @@
    undo it so the box sits inline beside its title. */
 .roadmap-import-check {
   width: auto;
+  height: auto;
   padding: 0;
   margin: 0;
   flex: none;
+  align-self: center;
   accent-color: var(--accent);
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
-.roadmap-import-row.is-pinned {
+.roadmap-import-row.is-pinned,
+.roadmap-import-row.is-covered {
   color: var(--text-muted);
   cursor: default;
 }
 .roadmap-import-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.roadmap-import-coverage {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
 }

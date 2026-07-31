@@ -34,7 +34,7 @@ describe('file-index', () => {
 
   it('builds a path index for the workspace', async () => {
     await buildIndex(tempRoot)
-    const idx = getIndex()
+    const idx = getIndex(tempRoot)
     assert.ok(idx)
     assert.ok(idx.paths.includes('src/main.ts'))
     assert.ok(idx.paths.includes('package.json'))
@@ -51,11 +51,11 @@ describe('file-index', () => {
 
   it('whenFileIndexReady rides an in-flight build and resolves immediately when idle', async () => {
     const build = buildIndex(tempRoot)
-    await whenFileIndexReady()
-    assert.ok(getIndex())
+    await whenFileIndexReady(tempRoot)
+    assert.ok(getIndex(tempRoot))
     await build
     // No build in flight — must resolve without hanging.
-    await whenFileIndexReady()
+    await whenFileIndexReady(tempRoot)
   })
 
   it('serves a stale index immediately while a rebuild is in flight (no starvation)', async () => {
@@ -63,13 +63,13 @@ describe('file-index', () => {
     // a busy workspace keeps builds perpetually in flight. Consumers must be
     // served the existing snapshot rather than waiting for quiescence — the old
     // `while (buildInFlight)` loop starved the `@` mention picker indefinitely.
-    setIndexForTest(['stale-marker.ts'])
+    setIndexForTest(['stale-marker.ts'], tempRoot)
     const build = buildIndex(tempRoot)
-    await whenFileIndexReady()
+    await whenFileIndexReady(tempRoot)
     // Resolved from the stale snapshot, before the rebuild swapped it out.
-    assert.ok(getIndex()?.paths.includes('stale-marker.ts'))
+    assert.ok(getIndex(tempRoot)?.paths.includes('stale-marker.ts'))
     await build
-    assert.ok(getIndex()?.paths.includes('src/main.ts'))
+    assert.ok(getIndex(tempRoot)?.paths.includes('src/main.ts'))
   })
 
   it('skips ignored build-output dirs in the no-rg walk fallback', async () => {
@@ -80,7 +80,7 @@ describe('file-index', () => {
     await mkdir(join(tempRoot, 'vendor'), { recursive: true })
     await writeFile(join(tempRoot, 'vendor', 'big.bin'), 'x\n', 'utf-8')
     await buildIndex(tempRoot)
-    const idx = getIndex()
+    const idx = getIndex(tempRoot)
     assert.ok(idx)
     assert.ok(idx.paths.includes('src/main.ts'))
     assert.equal(
@@ -97,6 +97,21 @@ describe('file-index', () => {
     assert.equal(b, undefined)
     // Two callers must not leave the active-build counter stuck above zero.
     assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'ready')
-    assert.ok(getIndex()?.paths.includes('src/main.ts'))
+    assert.ok(getIndex(tempRoot)?.paths.includes('src/main.ts'))
+  })
+
+  it('keeps independent indexes per root — a worktree root never serves the workspace listing', async () => {
+    const worktreeRoot = await mkdtemp(join(tmpdir(), 'copse-panel-file-index-worktree-'))
+    try {
+      await writeFile(join(worktreeRoot, 'only-in-worktree.ts'), 'export {}\n', 'utf-8')
+      await Promise.all([buildIndex(tempRoot), buildIndex(worktreeRoot)])
+      assert.ok(getIndex(tempRoot)?.paths.includes('src/main.ts'))
+      assert.equal(getIndex(tempRoot)?.paths.includes('only-in-worktree.ts'), false)
+      assert.ok(getIndex(worktreeRoot)?.paths.includes('only-in-worktree.ts'))
+      assert.equal(getIndex(worktreeRoot)?.paths.includes('src/main.ts'), false)
+    } finally {
+      invalidateIndex(worktreeRoot)
+      await rm(worktreeRoot, { recursive: true, force: true })
+    }
   })
 })

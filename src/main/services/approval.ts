@@ -1,4 +1,5 @@
 import type { BrowserWindow, IpcMain } from 'electron'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import {
   approvalRespondSchema,
@@ -8,6 +9,7 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
+import { recordDecision } from './security/decision-log-store.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
 export interface ComparisonModelSelection {
@@ -26,11 +28,21 @@ export interface ApprovalRequest {
   showWhileSettingsOpen?: boolean
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
   comparisonModels?: ComparisonModelSelection
+  /** Secret-free operation or tool name stored in the durable decision log. */
+  subject?: string
+  /** Scope the decision applies at, such as `sandbox` or `external`. */
+  scope?: string
 }
 
 export interface ApprovalResponse {
   approved: boolean
   remember: boolean
+  /**
+   * How the prompt settled; omitted by external handlers means a user decision.
+   * There is no wall-clock timeout — `timeout` remains in the union for older
+   * recorded logs / handlers that still emit it.
+   */
+  resolution?: 'user' | 'timeout' | 'window-closed' | 'unavailable'
   /** User-selected models from the comparison approval pickers. */
   comparisonModels?: ComparisonModelSelection
 }
@@ -66,6 +78,22 @@ export type ApprovalHandler = (
 ) => Promise<ApprovalResponse>
 
 let handler: ApprovalHandler | null = null
+interface ScopedApprovalHandler {
+  readonly handler: ApprovalHandler
+  readonly dedupePrefix: string
+}
+
+const scopedHandler = new AsyncLocalStorage<ScopedApprovalHandler>()
+let nextScopedHandlerId = 0
+
+/** Scope non-interactive approvals to one headless run without replacing the desktop handler. */
+export function runWithApprovalHandler<T>(next: ApprovalHandler, fn: () => T): T {
+  nextScopedHandlerId++
+  return scopedHandler.run(
+    { handler: next, dedupePrefix: `headless-${String(nextScopedHandlerId)}` },
+    fn,
+  )
+}
 
 /** In-flight coalesced approvals keyed by {@link approvalDedupeKey}. */
 interface InflightApproval {
@@ -92,6 +120,31 @@ const inflight = new Map<string, InflightApproval>()
  */
 const acpPermissionByToolCallId = new Map<string, AbortController>()
 
+/** Best-effort: persistence never blocks the approval flow it describes. */
+function recordApprovalDecision(
+  req: ApprovalRequest,
+  response: ApprovalResponse,
+  resolutionOverride?: string,
+): void {
+  const resolution = resolutionOverride ?? response.resolution ?? 'user'
+  recordDecision({
+    kind: req.type,
+    actor: resolution === 'user' ? 'user' : 'system',
+    verdict:
+      resolution === 'user'
+        ? response.approved
+          ? 'approved'
+          : 'denied'
+        : resolution === 'timeout'
+          ? 'timeout'
+          : 'cancelled',
+    subject: req.subject ?? req.title,
+    ...(req.scope ? { scope: req.scope } : {}),
+    remembered: response.remember,
+    ...(resolution === 'user' ? {} : { source: resolution }),
+  })
+}
+
 export function setApprovalHandler(next: ApprovalHandler | null): void {
   handler = next
   // Drop coalesced waiters when the transport is torn down (tests / shutdown) so
@@ -110,9 +163,16 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
   }
 }
 
-function settleInflight(key: string, entry: InflightApproval, response: ApprovalResponse): void {
+function settleInflight(
+  key: string,
+  entry: InflightApproval,
+  response: ApprovalResponse,
+  req: ApprovalRequest,
+): void {
   if (inflight.get(key) !== entry) return
   inflight.delete(key)
+  // One shared prompt → one audit event (not one per coalesced waiter).
+  recordApprovalDecision(req, response)
   for (const waiter of entry.waiters) {
     waiter.signal?.removeEventListener('abort', waiter.onAbort)
     waiter.resolve(response)
@@ -200,18 +260,35 @@ export function cancelApprovalsForAcpToolCall(toolCallId: string): boolean {
  * While the prompt is open the active run's sliding idle deadline is paused so a
  * long think-before-click cannot abort the turn (and cancel the dialog) underneath
  * the user.
+ *
+ * Settled outcomes are appended to the durable decision log (best-effort).
  */
 export function requestApproval(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
-  const activeHandler = handler
-  if (!activeHandler) return Promise.resolve(DENIED)
+  const scoped = scopedHandler.getStore()
+  const activeHandler = scoped?.handler ?? handler
+  if (!activeHandler) {
+    const unavailable: ApprovalResponse = {
+      approved: false,
+      remember: false,
+      resolution: 'unavailable',
+    }
+    recordApprovalDecision(req, unavailable)
+    return Promise.resolve(unavailable)
+  }
 
   const threadId = getActiveRunThread() ?? undefined
   return withRunDeadlinePaused(threadId, () =>
-    requestApprovalUnpaused(req, activeHandler, signal, threadId ?? null),
+    requestApprovalUnpaused(
+      req,
+      activeHandler,
+      signal,
+      threadId ?? null,
+      scoped?.dedupePrefix ?? 'desktop',
+    ),
   )
 }
 
@@ -220,10 +297,11 @@ function requestApprovalUnpaused(
   activeHandler: ApprovalHandler,
   signal: AbortSignal | undefined,
   threadId: string | null,
+  dedupePrefix: string,
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
 
-  const key = approvalDedupeKey(req)
+  const key = `${dedupePrefix}:${approvalDedupeKey(req)}`
 
   return new Promise<ApprovalResponse>((resolve) => {
     // Register the waiter before invoking the handler so a synchronous settle
@@ -249,6 +327,9 @@ function requestApprovalUnpaused(
         if (!active.waiters.has(waiter)) return
         active.waiters.delete(waiter)
         signal?.removeEventListener('abort', waiter.onAbort)
+        // Abort is a transport cancel, not a user denial — record per waiter so
+        // coalesced siblings that stay open are not blamed for this leave.
+        recordApprovalDecision(req, DENIED, 'aborted')
         resolve(DENIED)
         // Only tear down the shared prompt once nobody is left waiting — a
         // sibling tool call may still need the user's answer.
@@ -265,11 +346,17 @@ function requestApprovalUnpaused(
 
     void activeHandler(req, active.controller.signal).then(
       (response) => {
-        settleInflight(key, active, response)
+        settleInflight(key, active, response, req)
       },
       () => {
-        // Handler rejection must not hang waiters (treat as deny).
-        settleInflight(key, active, DENIED)
+        // Handler rejection must not hang waiters — transport failure, not a
+        // user denial (see "Record audit evidence without inventing user denials").
+        settleInflight(
+          key,
+          active,
+          { approved: false, remember: false, resolution: 'unavailable' },
+          req,
+        )
       },
     )
   })
@@ -322,6 +409,7 @@ export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAt
       settle(id, {
         approved,
         remember: remember === true,
+        resolution: 'user',
         ...(comparisonModels ? { comparisonModels } : {}),
       })
     } catch (err) {
@@ -332,7 +420,9 @@ export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAt
 
   // If the window goes away, deny everything still pending so callers unblock.
   win.on('closed', () => {
-    for (const [id] of pending) settle(id, { approved: false, remember: false })
+    for (const [id] of pending) {
+      settle(id, { approved: false, remember: false, resolution: 'window-closed' })
+    }
   })
 
   setApprovalHandler(

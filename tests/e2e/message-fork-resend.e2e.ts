@@ -1,7 +1,7 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
+import { e2eWorkspaceDir, resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -18,6 +18,45 @@ describe('fork a thread and resend the last message', function () {
 
   afterEach(() => {
     resetUserData()
+  })
+
+  it('gives a whole-thread fork model context when the source has no history sidecar', async function () {
+    resetUserData()
+    const { projectId } = seedForkResendFixture(process.cwd())
+    await browser.reloadSession()
+
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const sourceRow = await $('.chat-row.selected')
+    const sourceThreadId = await sourceRow.getAttribute('data-thread-id')
+    await sourceRow.click({ button: 'right' })
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    await $('.context-menu-item*=Fork').click()
+
+    await browser.waitUntil(
+      async () => (await $('.chat-row.selected').getAttribute('data-thread-id')) !== sourceThreadId,
+      { timeout: 10_000, timeoutMsg: 'expected the whole-thread fork to become active' },
+    )
+    const forkedThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    if (!forkedThreadId) throw new Error('forked thread has no id')
+    const historyPath = join(e2eWorkspaceDir(), projectId, forkedThreadId, 'agent-history.json')
+
+    await browser.waitUntil(() => existsSync(historyPath), {
+      timeout: 10_000,
+      timeoutMsg: 'expected the fork to persist rebuilt provider history',
+    })
+    const history = JSON.parse(readFileSync(historyPath, 'utf8')) as {
+      messages?: Array<{ role?: string; content?: unknown }>
+    }
+    expect(history.messages?.[0]).toEqual({
+      role: 'user',
+      content: 'Where does the login redirect get decided?',
+    })
+    await expect(await $$('.messages-list .msg-user')).toBeElementsArrayOfSize(2)
+
+    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    await $('.messages-list').saveScreenshot(
+      join(SCREENSHOT_DIR, 'message-fork-resend-whole-thread-context.png'),
+    )
   })
 
   it('offers per-prompt actions, and Fork from here branches the conversation', async function () {

@@ -25,6 +25,7 @@ import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
 import { getToolCallLabel, shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
 import {
   initSubagent,
+  appendSubagentReasoning,
   appendSubagentText,
   addSubagentToolCall,
   updateSubagentToolCall,
@@ -34,6 +35,7 @@ import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { maybeNameThread } from './thread-naming.ts'
+import { syncFilesPaneDom } from './panels.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 
@@ -121,16 +123,21 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     const { activeDiff } = store.getState()
     const stillQueued =
       activeDiff && entries.some((entry) => entry.path === activeDiff.path) ? activeDiff : null
+    const openingChanges = entries.length > 0
     store.setState({
       stagedDiffs: entries,
-      rightPanelMode: entries.length > 0 ? 'changes' : store.getState().rightPanelMode,
-      filesPaneOpen: entries.length > 0 ? true : store.getState().filesPaneOpen,
+      rightPanelMode: openingChanges ? 'changes' : store.getState().rightPanelMode,
+      filesPaneOpen: openingChanges ? true : store.getState().filesPaneOpen,
       activeDiff: entries.length === 0 ? null : stillQueued,
     })
+    // Unhide `#pane-files` and switch the Changes hosts before the pane syncs
+    // a Monaco model — otherwise `whenDiffHostVisible` races a still-closed
+    // panel and can stall the shared diff load queue.
+    if (openingChanges) syncFilesPaneDom(store)
+    if (openingChanges) store.emit('right_panel_mode_changed')
+    store.emit('files_pane_changed')
     store.emit('staged_diffs_changed')
     store.emit('panel_changed')
-    if (entries.length > 0) store.emit('right_panel_mode_changed')
-    store.emit('files_pane_changed')
   }
 
   const unsub = api.agent.onChunk((threadId, chunk) => {
@@ -197,6 +204,20 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         activity(threadId)
         // First tool call counts as the agent responding — name in parallel.
         maybeNameThread(store, api, threadId)
+        break
+      }
+      case 'tool_call_update': {
+        if (st.msgId && findToolCall(store, st.msgId, chunk.toolCallId)) {
+          updateToolCall(store, st.msgId, chunk.toolCallId, {
+            ...(chunk.name !== undefined ? { name: chunk.name } : {}),
+            ...(chunk.args !== undefined ? { args: chunk.args } : {}),
+            ...(chunk.status !== undefined ? { status: chunk.status } : {}),
+            ...(chunk.result !== undefined ? { result: chunk.result } : {}),
+            ...(chunk.resultFormat !== undefined ? { resultFormat: chunk.resultFormat } : {}),
+          })
+        }
+        st.writing = false
+        activity(threadId)
         break
       }
       case 'tool_result': {
@@ -269,6 +290,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           conversationBudget: chunk.conversationBudget,
           conversationTokens: chunk.conversationTokens,
           fillRatio: chunk.fillRatio,
+          ...(chunk.source !== undefined ? { source: chunk.source } : {}),
         })
         break
       }
@@ -277,6 +299,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         initSubagent(store, st.msgId, chunk.parentToolCallId, chunk.session)
         st.writing = false
         activity(threadId)
+        break
+      }
+      case 'subagent_reasoning': {
+        if (st.msgId) {
+          appendSubagentReasoning(
+            store,
+            st.msgId,
+            chunk.parentToolCallId,
+            chunk.messageId,
+            chunk.text,
+          )
+        }
         break
       }
       case 'subagent_text': {
@@ -414,9 +448,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       rightPanelMode: 'changes',
       filesPaneOpen: true,
     })
-    store.emit('panel_changed')
+    // Layout first (unhide pane + Changes hosts), then tell the pane to sync.
+    syncFilesPaneDom(store)
     store.emit('right_panel_mode_changed')
     store.emit('files_pane_changed')
+    store.emit('panel_changed')
   })
 
   // Diff IPC → store: `agent:show_diff` sets activeDiff; `diff:queued` updates

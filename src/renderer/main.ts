@@ -55,13 +55,22 @@ import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
+import { registerUiKit } from './ui/index.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
+
+registerUiKit()
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
   closeFileSearchDialog,
   isFileSearchDialogOpen,
 } from './views/file-search-dialog.ts'
+import {
+  mountCommandPalette,
+  openCommandPalette,
+  closeCommandPalette,
+  isCommandPaletteOpen,
+} from './views/command-palette.ts'
 import {
   mountConversationSearch,
   openConversationSearch,
@@ -78,6 +87,8 @@ import { startAgentController } from './controller/agent.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
+import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
   addProjectFromPath,
   attachProjectThreadCache,
@@ -99,6 +110,7 @@ import {
   registerPanelKeyboardShortcuts,
   matchFindInChatShortcut,
   matchUiScaleShortcut,
+  matchCommandPaletteShortcut,
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
@@ -200,34 +212,37 @@ async function boot(): Promise<void> {
   mountUpdatePromptDialog(api)
   mountConfirmDialog()
   mountFileSearchDialog(store, api)
+  mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
   const contextWarningBanner = mountContextWarningBanner(api)
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
-  const rawSavedModel = await api.settings.get('model')
+  const startupSettings = await loadStartupSettings(api.settings)
+  const rawSavedModel = startupSettings.model
   const savedModel = typeof rawSavedModel === 'string' ? rawSavedModel : null
-  const savedLayout = await api.settings.get('layout')
-  const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
-  const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
-  const savedOpenLinksInBuiltInBrowser = await api.settings.get('openLinksInBuiltInBrowser')
+  const savedLayout = startupSettings.layout
+  const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
+  const savedRightPanelPosition = startupSettings.rightPanelPosition
+  const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
+  const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
   // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
   // the document root before the layout paints — panes read both from the store
   // as they mount below, so no post-mount re-theming is needed.
-  const savedTheme = await api.settings.get('theme')
+  const savedTheme = startupSettings.theme
   const themePreference = isThemePreference(savedTheme) ? savedTheme : DEFAULT_THEME_PREFERENCE
   // `system` resolves against the OS here; a watcher below keeps it live.
   const theme = resolveTheme(themePreference)
-  const savedFontSize = await api.settings.get('fontSize')
+  const savedFontSize = startupSettings.fontSize
   const fontSize =
     typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
       ? savedFontSize
       : store.getState().fontSize
   // Interface scale drives CSS --ui-scale (spacing + type tokens). Apply before
   // paint so the shell does not flash at 100% then jump.
-  const uiScale = restoreUiScale(await api.settings.get('uiScale'))
+  const uiScale = restoreUiScale(startupSettings.uiScale)
   applyThemeToDocument(theme)
   // When the preference is `system`, follow OS light/dark flips live so the app
   // re-themes without a relaunch. Reads the preference from the store each time,
@@ -242,10 +257,10 @@ async function boot(): Promise<void> {
   )
   // Restore the interaction accent and whole-app tint before the layout paints
   // so controls and surfaces do not flash their defaults before shifting.
-  const savedAccentColor = await api.settings.get('uiAccentColor')
+  const savedAccentColor = startupSettings.uiAccentColor
   applyUiAccent(typeof savedAccentColor === 'string' ? savedAccentColor : DEFAULT_ACCENT_COLOR)
-  const savedTintColor = await api.settings.get('uiTintColor')
-  const savedTintStrength = await api.settings.get('uiTintStrength')
+  const savedTintColor = startupSettings.uiTintColor
+  const savedTintStrength = startupSettings.uiTintStrength
   applyUiTint(
     typeof savedTintColor === 'string' ? savedTintColor : DEFAULT_TINT_COLOR,
     isUiTintStrength(savedTintStrength) ? savedTintStrength : DEFAULT_TINT_STRENGTH,
@@ -264,6 +279,7 @@ async function boot(): Promise<void> {
       : 'auto',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
+    developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
   })
   // Reflect the "open links in built-in browser" choice onto the document root so
   // CSS can flag external links with an icon (and re-sync when Settings saves).
@@ -282,6 +298,9 @@ async function boot(): Promise<void> {
     attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
+    // Outside Cursor cloud agents for the open project — first tick after one
+    // interval, never on editor open.
+    startExternalCursorAgentSync(store, api)
   }
   attachProjectThreadCache(store)
 
@@ -357,8 +376,12 @@ async function boot(): Promise<void> {
   const [firstProject] = projects
   if (firstProject) {
     const active = projects.find((p) => p.id === activeProjectId) ?? firstProject
-    await restoreProject(store, api, active.id)
+    // Mount the panel immediately rather than waiting for restoreProject() to
+    // finish — a large project's thread load (or a slow SSH connect) can take a
+    // while, and every mounted pane already renders its own empty/loading state
+    // and updates reactively once workspace_changed/threads_changed fire below.
     ensureLayout()
+    await restoreProject(store, api, active.id)
   } else {
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
     const unsubWelcome = store.on('workspace_changed', () => {
@@ -430,7 +453,7 @@ function mountFullLayout(): void {
   })
   handleStopShortcut = inputBar.handleStopShortcut
   const conversationRoot = requireElement('conversation')
-  mountConversation(conversationRoot, store, api, inputRoot)
+  mountConversation(conversationRoot, store, api)
   mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
@@ -516,10 +539,21 @@ function registerKeyboardShortcuts(): void {
       e.preventDefault()
       if (store.getState().workspaceRoot) openFileSearchDialog()
     }
+    // Cmd/Ctrl+Shift+K opens the command palette (threads, projects, panels,
+    // commands). Works without a workspace so its commands stay reachable.
+    if (matchCommandPaletteShortcut(e)) {
+      e.preventDefault()
+      openCommandPalette()
+    }
     // Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat).
     // Skipped while a modal dialog owns the screen so it can't open behind it.
     if (matchFindInChatShortcut(e)) {
-      if (isFileSearchDialogOpen() || isSettingsDialogOpen() || isKeyboardShortcutsDialogOpen())
+      if (
+        isFileSearchDialogOpen() ||
+        isCommandPaletteOpen() ||
+        isSettingsDialogOpen() ||
+        isKeyboardShortcutsDialogOpen()
+      )
         return
       e.preventDefault()
       openConversationSearch()
@@ -548,6 +582,10 @@ function registerKeyboardShortcuts(): void {
       void confirmDeleteThread()
     }
     if (e.key === 'Escape') {
+      if (isCommandPaletteOpen()) {
+        closeCommandPalette()
+        return
+      }
       if (isKeyboardShortcutsDialogOpen()) {
         closeKeyboardShortcutsDialog()
         return
