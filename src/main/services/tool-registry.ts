@@ -9,11 +9,13 @@ import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
-import { getAgentExecutionRoot } from './execution-root.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
+import { ensureExecutionRootWatched } from './search/execution-root-watcher.ts'
 import {
   CACHEABLE_SEARCH_TOOLS,
   getCachedToolResult,
-  invalidateSearchResultCache,
+  invalidateThreadSearchCache,
   setCachedToolResult,
 } from './search/search-result-cache.ts'
 
@@ -134,20 +136,33 @@ export class ToolRegistry {
     const permitted = await ensurePermitted(check)
     if (!permitted) return `User rejected the ${name} tool call.`
 
-    const root = getAgentExecutionRoot()
-    const cacheable = root !== null && CACHEABLE_SEARCH_TOOLS.has(name)
-    const cached = cacheable ? getCachedToolResult(root, name, parsed) : undefined
+    // Search caching is scoped to a thread's fixed execution root, so it needs
+    // the trusted per-turn context — never the renderer-selected workspace.
+    // Outside an agent turn (plain IPC, tests) there is no thread to key on and
+    // nothing is cached.
+    const context = getThreadExecutionContext()
+    const cacheable = context !== null && CACHEABLE_SEARCH_TOOLS.has(name)
+    const cached = cacheable
+      ? getCachedToolResult(context.threadId, context.root, name, parsed)
+      : undefined
     let result: ToolExecuteResult
     if (cached !== undefined) {
       result = cached
     } else {
       result = await tool.execute(rawArgs, signal)
-      if (cacheable && root) {
-        setCachedToolResult(root, name, parsed, result)
-      } else if (root && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
-        // A tool that can mutate the workspace ran — the last search snapshot
-        // for this root may now be stale.
-        invalidateSearchResultCache(root)
+      if (context && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
+        // A tool that can mutate the workspace ran — this thread's search
+        // snapshot may now be stale.
+        invalidateThreadSearchCache(context.threadId)
+      } else if (
+        // Only cache what we can invalidate. SSH workspaces have no local
+        // fs.watch, and a root we failed to watch would be stuck serving stale
+        // results for the rest of the thread.
+        cacheable &&
+        !isActiveSshWorkspace() &&
+        ensureExecutionRootWatched(context.root)
+      ) {
+        setCachedToolResult(context.threadId, context.root, name, parsed, result)
       }
     }
     // H2: a `toolGate` hook injected context into the current turn. Append the
