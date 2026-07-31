@@ -2,7 +2,6 @@ import { accessSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { copseWorkspaceDir } from '../services/storage/copse-paths.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import {
   getChatStoreRootSync,
@@ -101,7 +100,7 @@ function gitConfigReadPaths(): string[] {
  * the user's working tree.
  */
 export function workspaceTmpDir(): string {
-  return join(copseWorkspaceDir(), 'tmp')
+  return join(homedir(), '.copse', 'workspace', 'tmp')
 }
 
 /**

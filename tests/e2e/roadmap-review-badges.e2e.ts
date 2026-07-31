@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -38,7 +37,7 @@ function seedRoadmapNote(
   // deterministic regardless of readdir order. Callers pass ordered timestamps.
   const createdAt = input.createdAt ?? new Date().toISOString()
   const now = new Date().toISOString()
-  const dir = join(copseDataRoot(), 'knowledge', knowledgeNamespace(workspaceRoot), 'roadmap')
+  const dir = join(homedir(), '.copse', 'knowledge', knowledgeNamespace(workspaceRoot), 'roadmap')
   mkdirSync(dir, { recursive: true })
   const lines = [
     '---',

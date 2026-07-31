@@ -15,14 +15,14 @@ const chromedriverBinary = join(
   'node_modules/electron-chromedriver/bin/chromedriver',
 )
 
-let evalProfileDir: string | null = null
+let evalUserDataDir: string | null = null
 let evalChromeProfileDir: string | null = null
 
 function cleanupEvalRunDirs(): void {
   if (KEEP_EVAL_WDIO) return
-  if (evalProfileDir) {
-    rmSync(evalProfileDir, { recursive: true, force: true })
-    evalProfileDir = null
+  if (evalUserDataDir) {
+    rmSync(evalUserDataDir, { recursive: true, force: true })
+    evalUserDataDir = null
   }
   if (evalChromeProfileDir) {
     rmSync(evalChromeProfileDir, { recursive: true, force: true })
@@ -77,18 +77,18 @@ export const config: Options.Testrunner = {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
 
-    evalProfileDir = mkdtempSync(
-      join(process.cwd(), `.wdio-eval-profile-${randomBytes(4).toString('hex')}-`),
+    evalUserDataDir = mkdtempSync(
+      join(process.cwd(), `.wdio-eval-userdata-${randomBytes(4).toString('hex')}-`),
     )
-    delete process.env.COPSE_PANEL_USER_DATA
-    delete process.env.COPSE_WORKSPACE_DIR
-    delete process.env.COPSE_WORKTREES_DIR
-    process.env.COPSE_DIR = evalProfileDir
+    process.env.COPSE_PANEL_USER_DATA = evalUserDataDir
+    const evalWorkspaceDir = join(evalUserDataDir, 'workspace')
+    process.env.COPSE_WORKSPACE_DIR = evalWorkspaceDir
 
     const evalEnv: Record<string, string> = {
       COPSE_E2E: '1',
       COPSE_AGENT_EVAL: '1',
-      COPSE_DIR: evalProfileDir,
+      COPSE_PANEL_USER_DATA: evalUserDataDir,
+      COPSE_WORKSPACE_DIR: evalWorkspaceDir,
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
     }

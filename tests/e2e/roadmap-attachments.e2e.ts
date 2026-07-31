@@ -121,7 +121,7 @@ describe('Roadmap item attachments', () => {
     )
 
     // Delete through the real IPC so the note and its attachment directory
-    // leave the disposable profile's knowledge store rather than accumulating.
+    // leave the runner's ~/.copse/knowledge rather than accumulating per run.
     await browser.execute(async () => {
       const api = (
         window as unknown as {
