@@ -119,6 +119,7 @@ import {
   syncModelComparisonTools,
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
+  syncParallelSearchTools,
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -132,6 +133,7 @@ import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
@@ -928,6 +930,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // their key. Drop it here so the next value-map open re-fetches with the new
     // key.
     if (p === 'artificial-analysis') invalidateLiveIntellectCache()
+    if (p === 'parallel') syncParallelSearchTools(registry)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -1338,6 +1341,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
     if (id === BACKGROUND_TASKS_PACK_ID) {
       syncBackgroundTasksTools(registry)
+    }
+    if (id === PARALLEL_SEARCH_PACK_ID) {
+      syncParallelSearchTools(registry)
     }
     return { packs: getPackService().list() }
   })

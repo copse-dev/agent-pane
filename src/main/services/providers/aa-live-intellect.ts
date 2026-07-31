@@ -20,6 +20,10 @@ const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
 // Index cost-per-task field. The current free-shape endpoint does (for every
 // API tier) and paginates at 200 rows, so request every page below.
 const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
+// The richer endpoint has occasionally rejected its own nullable rows while
+// serialising a response. The legacy feed lacks cost-per-task, but still
+// provides the scores and token prices needed for the core value map.
+const AA_LEGACY_MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
 // AA data moves slowly; refetching each panel open would just burn quota.
 const CACHE_TTL_MS = 6 * 60 * 60_000
 // Failures (bad key, network, unparseable payload) are cached only briefly, so
@@ -40,36 +44,34 @@ export interface LiveIntellectFetch {
 
 const aaApiModelSchema = z
   .object({
-    id: z.string().optional(),
-    slug: z.string().optional(),
-    name: z.string().optional(),
+    id: z.string().nullish(),
+    slug: z.string().nullish(),
+    name: z.string().nullish(),
     evaluations: z
       .object({
-        artificial_analysis_intelligence_index: z.number().optional(),
-        artificial_analysis_intelligence_index_version: z
-          .union([z.string(), z.number()])
-          .optional(),
+        artificial_analysis_intelligence_index: z.number().nullish(),
+        artificial_analysis_intelligence_index_version: z.union([z.string(), z.number()]).nullish(),
       })
-      .optional(),
+      .nullish(),
     /**
      * Documented AA Data API shape for Intelligence Index cost-per-task (USD).
      * Free tier exposes `total_cost` plus nested `cost_per_task.total_cost`.
      */
     artificial_analysis_intelligence_index_cost: z
       .object({
-        total_cost: z.number().optional(),
-        cost_per_task: z.object({ total_cost: z.number().optional() }).optional(),
+        total_cost: z.number().nullish(),
+        cost_per_task: z.object({ total_cost: z.number().nullish() }).nullish(),
       })
-      .optional(),
+      .nullish(),
     pricing: z
       .object({
-        price_1m_input_tokens: z.number().optional(),
-        price_1m_output_tokens: z.number().optional(),
+        price_1m_input_tokens: z.number().nullish(),
+        price_1m_output_tokens: z.number().nullish(),
         /** Legacy / alternate spellings — prefer the model-level cost object above. */
-        price_per_intelligence_index_task: z.number().optional(),
-        cost_per_task: z.number().optional(),
+        price_per_intelligence_index_task: z.number().nullish(),
+        cost_per_task: z.number().nullish(),
       })
-      .optional(),
+      .nullish(),
   })
   .loose()
 
@@ -77,18 +79,39 @@ type AaApiModel = z.infer<typeof aaApiModelSchema>
 
 const aaApiPayloadSchema = z
   .object({
-    data: z.array(aaApiModelSchema).optional(),
+    data: z.array(aaApiModelSchema.nullable()).nullish(),
     pagination: z
       .object({
         page: z.number().optional(),
         total_pages: z.number().optional(),
         has_more: z.boolean().optional(),
       })
-      .optional(),
+      .nullish(),
   })
   .loose()
 
 type AaApiPayload = z.infer<typeof aaApiPayloadSchema>
+
+class AaHttpError extends Error {
+  readonly status: number
+  readonly statusText: string
+
+  constructor(status: number, statusText: string) {
+    super(`HTTP ${String(status)}${statusText ? ` ${statusText}` : ''}`)
+    this.name = 'AaHttpError'
+    this.status = status
+    this.statusText = statusText
+  }
+}
+
+class AaPayloadError extends Error {
+  constructor(cause?: unknown) {
+    super('Artificial Analysis returned model data that does not match its published schema.', {
+      cause,
+    })
+    this.name = 'AaPayloadError'
+  }
+}
 
 /**
  * The index version the payload declares — the docs place it as a version
@@ -153,6 +176,69 @@ function reduceModel(api: AaApiModel): LiveAaModel | null {
   return model
 }
 
+interface AaEndpointResult {
+  firstPayload: AaApiPayload
+  models: AaApiModel[]
+}
+
+async function requestAaEndpoint(
+  urlString: string,
+  key: string,
+  fetchImpl: typeof fetch,
+  paginated: boolean,
+): Promise<AaEndpointResult> {
+  const models: AaApiModel[] = []
+  let firstPayload: AaApiPayload = {}
+  let page = 1
+  let hasMore = true
+  while (hasMore) {
+    const url = new URL(urlString)
+    if (paginated) url.searchParams.set('page', String(page))
+    const res = await fetchImpl(url, {
+      headers: { 'x-api-key': key },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    if (!res.ok) throw new AaHttpError(res.status, res.statusText)
+
+    let payload: AaApiPayload
+    try {
+      payload = aaApiPayloadSchema.parse(await res.json())
+    } catch (err) {
+      // Some AA responses currently fail their generated response validator
+      // because optional measurements are represented as null. Keep that
+      // implementation detail out of the UI and let the caller use the
+      // score-only endpoint instead.
+      throw new AaPayloadError(err)
+    }
+    if (page === 1) firstPayload = payload
+    models.push(...(payload.data ?? []).filter((model): model is AaApiModel => model !== null))
+
+    const pagination = payload.pagination
+    hasMore =
+      paginated &&
+      (pagination?.has_more === true ||
+        (typeof pagination?.total_pages === 'number' && page < pagination.total_pages))
+    if (hasMore) page += 1
+  }
+  return { firstPayload, models }
+}
+
+function shouldUseLegacyFeed(err: unknown): boolean {
+  return err instanceof AaPayloadError || (err instanceof AaHttpError && err.status >= 500)
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof AaHttpError) {
+    const hint =
+      err.status === 401 || err.status === 403
+        ? ' — the key was rejected; check the Artificial Analysis key in Settings'
+        : ''
+    return `Artificial Analysis API: ${err.message}${hint}`
+  }
+  return err instanceof Error ? err.message : 'Artificial Analysis API fetch failed'
+}
+
 /**
  * One live fetch of the AA model list, with no key lookup and no caching — the
  * pure HTTP+parse surface, so tests can drive it with a fake fetch.
@@ -169,44 +255,18 @@ export async function requestLiveIntellectModels(
   fetchImpl: typeof fetch = fetch,
 ): Promise<LiveIntellectFetch> {
   try {
-    const apiModels: AaApiModel[] = []
-    let firstPayload: AaApiPayload = {}
-    let page = 1
-    let hasMore = true
-    while (hasMore) {
-      const url = new URL(AA_MODELS_URL)
-      url.searchParams.set('page', String(page))
-      const res = await fetchImpl(url, {
-        headers: { 'x-api-key': key },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      })
-      if (!res.ok) {
-        const status = `HTTP ${String(res.status)}${res.statusText ? ` ${res.statusText}` : ''}`
-        const hint =
-          res.status === 401 || res.status === 403
-            ? ' — the key was rejected; check the Artificial Analysis key in Settings'
-            : ''
-        return { ok: false, models: [], error: `Artificial Analysis API: ${status}${hint}` }
-      }
-      const payload = aaApiPayloadSchema.parse(await res.json())
-      if (page === 1) firstPayload = payload
-      apiModels.push(...(payload.data ?? []))
-      const pagination = payload.pagination
-      hasMore =
-        pagination?.has_more === true ||
-        (typeof pagination?.total_pages === 'number' && page < pagination.total_pages)
-      if (hasMore) page += 1
+    let endpoint: AaEndpointResult
+    try {
+      endpoint = await requestAaEndpoint(AA_MODELS_URL, key, fetchImpl, true)
+    } catch (err) {
+      if (!shouldUseLegacyFeed(err)) throw err
+      endpoint = await requestAaEndpoint(AA_LEGACY_MODELS_URL, key, fetchImpl, false)
     }
-    const models = apiModels.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
-    const indexVersion = reportedIndexVersion(firstPayload, apiModels)
+    const models = endpoint.models.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
+    const indexVersion = reportedIndexVersion(endpoint.firstPayload, endpoint.models)
     return { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
   } catch (err) {
-    return {
-      ok: false,
-      models: [],
-      error: err instanceof Error ? err.message : 'Artificial Analysis API fetch failed',
-    }
+    return { ok: false, models: [], error: errorMessage(err) }
   }
 }
 
