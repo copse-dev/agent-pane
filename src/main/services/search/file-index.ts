@@ -134,7 +134,9 @@ export function invalidateIndex(root?: string): void {
  * Scale evidence for the #795 index policy. Path count comes from the bounded
  * file listing; byte estimate is reserved for a later sampling slice (null today).
  */
-export function getIndexStats(root: string): { pathCount: number; byteEstimate: number | null } | null {
+export function getIndexStats(
+  root: string,
+): { pathCount: number; byteEstimate: number | null } | null {
   const entry = indexes.get(resolve(root))
   if (!entry) return null
   return { pathCount: entry.paths.length, byteEstimate: null }
