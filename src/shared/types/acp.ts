@@ -148,6 +148,11 @@ export interface AcpAgentProbe {
 export interface AcpAutoSetupResult {
   /** Preset ids whose npm adapter was installed via Socket Firewall. */
   installed: string[]
+  /**
+   * Preset ids whose already-installed npm adapter was upgraded to the registry
+   * latest (same Socket-Firewall path as a fresh install).
+   */
+  upgraded: string[]
   /** Preset ids newly registered as usable agents. */
   registered: string[]
   /** Preset ids whose models were detected and cached. */

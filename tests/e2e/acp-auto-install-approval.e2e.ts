@@ -45,4 +45,32 @@ describe('ACP adapter auto-install approval', () => {
     await saveElementScreenshot('#approval-dialog', 'acp-auto-install-approval.png')
     await dialog.$('.approval-reject').click()
   })
+
+  it('discloses an outdated adapter upgrade with from→to versions', async function () {
+    this.timeout(60_000)
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await browser.execute(() => {
+      const bridge = (
+        window as unknown as {
+          __copseE2e?: { requestAcpPackageUpgradeApproval: () => Promise<unknown> }
+        }
+      ).__copseE2e
+      if (!bridge?.requestAcpPackageUpgradeApproval) {
+        throw new Error('__copseE2e.requestAcpPackageUpgradeApproval unavailable')
+      }
+      void bridge.requestAcpPackageUpgradeApproval()
+    })
+
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText('Update ACP adapters globally?')
+
+    const body = await dialog.$('.approval-body').getText()
+    expect(body).toContain('@agentclientprotocol/codex-acp (1.1.0 → 1.1.7)')
+    expect(body).toContain('Socket Firewall (sfw)')
+    expect(body).toContain('lifecycle scripts disabled')
+
+    await saveElementScreenshot('#approval-dialog', 'acp-auto-upgrade-approval.png')
+    await dialog.$('.approval-reject').click()
+  })
 })
