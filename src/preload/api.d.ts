@@ -590,9 +590,10 @@ export interface ApiClient {
       files: string[]
     }>
     issueUrl: (ref: string) => Promise<string | null>
-    openIssues: () => Promise<{
+    openIssues: (page: number) => Promise<{
       slug: string
       issues: import('../shared/types/git.ts').GhIssueSummary[]
+      hasMore: boolean
     }>
     importIssues: (
       issues: { number: number; title: string; body: string }[],
