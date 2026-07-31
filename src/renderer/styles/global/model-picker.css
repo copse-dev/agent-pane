@@ -154,6 +154,9 @@
 .model-picker-list {
   overflow-y: auto;
   min-height: 0;
+  /* Let the list scroll within the menu's max-height so the last option
+     in the all-models catalog stays clickable (ArrowDown + Enter/click). */
+  max-height: inherit;
 }
 .model-picker-filter:not([hidden]) + .model-picker-list {
   margin-top: var(--spacing-xs);
