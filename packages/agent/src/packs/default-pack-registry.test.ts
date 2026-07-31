@@ -27,7 +27,12 @@ const packHook: BlockingHook<'turnStart'> = {
 
 function packWithHook(): RegisteredPack {
   return definePack(
-    { name: 'shared-pack', trust: 'first-party', storage: { namespace: 'shared-pack' } },
+    {
+      name: 'shared-pack',
+      trust: 'first-party',
+      stability: 'stable',
+      storage: { namespace: 'shared-pack' },
+    },
     { blockingHooks: [packHook] },
   )
 }

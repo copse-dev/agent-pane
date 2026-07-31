@@ -40,5 +40,11 @@ export function mountFooterModelPicker(
     },
   )
 
+  // Selected-pack models can appear or disappear while this footer remains
+  // mounted. Refresh on explicit open so the menu reflects live pack state.
+  picker.root.querySelector('.model-picker-trigger')?.addEventListener('click', () => {
+    void picker.refresh()
+  })
+
   return { refresh: () => void picker.refresh(), destroy: picker.destroy }
 }
