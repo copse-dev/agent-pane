@@ -104,9 +104,9 @@ describe('post-turn review renders inline in the transcript (component)', () => 
     const cards = list.querySelectorAll('[data-review-card]')
     assert.equal(cards.length, 2, 'each turn keeps its own review card')
     // Order in the transcript: first message, its review, second message, its review.
-    const order = [...list.children].map(
-      (c) => c.getAttribute('data-message-id') ?? c.getAttribute('data-review-for'),
-    )
+    const order = [...list.children]
+      .map((c) => c.getAttribute('data-message-id') ?? c.getAttribute('data-review-for'))
+      .filter((id) => id !== null)
     assert.deepEqual(order, [first, first, second, second])
   })
 

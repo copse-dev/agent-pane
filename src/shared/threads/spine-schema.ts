@@ -44,6 +44,11 @@ export interface ImageRef {
   sha256: string
 }
 
+/** Transcript metadata stays inline; potentially large text snapshots do not. */
+export type SpineTranscriptAttachment = Omit<TranscriptAttachment, 'content'> & {
+  content?: ContentRef
+}
+
 /** A tool call as persisted on a spine line. `running` is never written. */
 export interface SpineToolCall {
   id: string
@@ -88,8 +93,8 @@ export interface SpineMessageLine {
   commandSummary?: string
   /** Small-model polish for the turn tool rollup; optional, display-only. */
   toolSummary?: string
-  /** Display-only transcript attachment chips (user messages); short, inlined here. */
-  attachments?: TranscriptAttachment[]
+  /** Display metadata is inline; text snapshots are referenced blob files. */
+  attachments?: SpineTranscriptAttachment[]
   /**
    * Primary-chat model for this assistant message (picker id). Optional for
    * legacy spines written before per-message provenance existed.
