@@ -370,8 +370,12 @@ async function boot(): Promise<void> {
   const [firstProject] = projects
   if (firstProject) {
     const active = projects.find((p) => p.id === activeProjectId) ?? firstProject
-    await restoreProject(store, api, active.id)
+    // Mount the panel immediately rather than waiting for restoreProject() to
+    // finish — a large project's thread load (or a slow SSH connect) can take a
+    // while, and every mounted pane already renders its own empty/loading state
+    // and updates reactively once workspace_changed/threads_changed fire below.
     ensureLayout()
+    await restoreProject(store, api, active.id)
   } else {
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
     const unsubWelcome = store.on('workspace_changed', () => {
