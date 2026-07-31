@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
@@ -57,12 +57,20 @@ describe('cron automation trigger', function () {
     const userMessage = $('.msg-user .message-text')
     await expect(userMessage).toHaveText(PROMPT, { wait: 15_000 })
 
-    const assistantMessage = $('.msg-assistant .message-text')
-    await assistantMessage.waitForExist({ timeout: 30_000 })
-    await expect(assistantMessage).toHaveText(`Mock response to: ${PROMPT}`, {
-      containing: true,
-      wait: 30_000,
-    })
+    const expectedResponse = `Mock response to: ${PROMPT}`
+    await browser.waitUntil(
+      async () => {
+        const assistantMessages = await $$('.msg-assistant .message-text')
+        for (let i = 0; i < assistantMessages.length; i += 1) {
+          if ((await assistantMessages[i]?.getText())?.includes(expectedResponse)) return true
+        }
+        return false
+      },
+      {
+        timeout: 30_000,
+        timeoutMsg: `expected an assistant message containing ${JSON.stringify(expectedResponse)}`,
+      },
+    )
     assert.equal(await $('.prompt-input').getText(), '')
 
     await saveAppScreenshot('automation-trigger.png')

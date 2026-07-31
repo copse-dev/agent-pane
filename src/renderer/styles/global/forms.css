@@ -36,7 +36,7 @@ dialog {
   padding: var(--spacing-xl);
   min-width: 400px;
 }
-/* A class like `.image-expand-dialog { display: flex }` outranks the UA
+/* A class like `.attachment-preview-dialog { display: flex }` outranks the UA
    `dialog { display: none }`, so `close()` drops the top-layer/backdrop but
    leaves the dialog painted in-page (broken-image alt + Close — a "ghost"
    modal). Same class of bug as `[hidden]` in base.css. */

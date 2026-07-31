@@ -1,0 +1,576 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Copse headless automation contract",
+  "version": 1,
+  "definitions": {
+    "runRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "new"
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Absolute path of the workspace root the turn runs against."
+            },
+            "input": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The user prompt for this turn."
+            },
+            "model": {
+              "description": "Model id override; absent uses the runtime default.",
+              "type": "string",
+              "minLength": 1
+            },
+            "outputMode": {
+              "default": "jsonl",
+              "type": "string",
+              "enum": [
+                "jsonl",
+                "text"
+              ]
+            },
+            "permissionProfile": {
+              "default": "ci-deny-by-default",
+              "description": "Id of the permission profile to run under.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "cwd",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "resume"
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Thread to resume."
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Absolute path of the workspace root the turn runs against."
+            },
+            "input": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The user prompt for this turn."
+            },
+            "model": {
+              "description": "Model id override; absent uses the runtime default.",
+              "type": "string",
+              "minLength": 1
+            },
+            "outputMode": {
+              "default": "jsonl",
+              "type": "string",
+              "enum": [
+                "jsonl",
+                "text"
+              ]
+            },
+            "permissionProfile": {
+              "default": "ci-deny-by-default",
+              "description": "Id of the permission profile to run under.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "threadId",
+            "cwd",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "fork"
+            },
+            "sourceThreadId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Thread to fork from."
+            },
+            "fromTurnId": {
+              "description": "Rewind point: seed the fork with history through this turn. Absent = full history.",
+              "type": "string",
+              "minLength": 1
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Absolute path of the workspace root the turn runs against."
+            },
+            "input": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The user prompt for this turn."
+            },
+            "model": {
+              "description": "Model id override; absent uses the runtime default.",
+              "type": "string",
+              "minLength": 1
+            },
+            "outputMode": {
+              "default": "jsonl",
+              "type": "string",
+              "enum": [
+                "jsonl",
+                "text"
+              ]
+            },
+            "permissionProfile": {
+              "default": "ci-deny-by-default",
+              "description": "Id of the permission profile to run under.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "sourceThreadId",
+            "cwd",
+            "input"
+          ]
+        }
+      ]
+    },
+    "event": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "turn_start"
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "protocolVersion": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "v",
+            "type",
+            "threadId",
+            "turnId",
+            "protocolVersion"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "message"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "assistant",
+                "user"
+              ]
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "v",
+            "type",
+            "turnId",
+            "itemId",
+            "role",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "reasoning"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "v",
+            "type",
+            "turnId",
+            "itemId",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_call"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "toolCallId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "args": {}
+          },
+          "required": [
+            "v",
+            "type",
+            "turnId",
+            "itemId",
+            "toolCallId",
+            "name",
+            "args"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_result"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "toolCallId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "done",
+                "error"
+              ]
+            },
+            "result": {
+              "type": "string"
+            },
+            "editStats": {
+              "type": "object",
+              "properties": {
+                "additions": {
+                  "type": "number"
+                },
+                "deletions": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "additions",
+                "deletions"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "v",
+            "type",
+            "turnId",
+            "toolCallId",
+            "status",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "approval_request"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "approvalId": {
+              "type": "string"
+            },
+            "toolCallId": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "label"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "v",
+            "type",
+            "turnId",
+            "approvalId",
+            "title",
+            "options"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "turn_end"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "failed",
+                "cancelled",
+                "awaiting_approval",
+                "awaiting_input"
+              ]
+            },
+            "stopReason": {
+              "type": "string",
+              "enum": [
+                "end_turn",
+                "max_steps",
+                "max_tokens",
+                "context_overflow",
+                "refusal",
+                "timeout",
+                "cancelled",
+                "tool_denied",
+                "error"
+              ]
+            }
+          },
+          "required": [
+            "v",
+            "type",
+            "turnId",
+            "outcome"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "permissionProfile": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable profile identifier a request can reference by name."
+        },
+        "default": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "ask"
+          ],
+          "description": "Decision applied to any capability without an explicit override."
+        },
+        "fileWrite": {
+          "description": "Writing files in the workspace.",
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "ask"
+          ]
+        },
+        "shell": {
+          "description": "Running shell commands.",
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "ask"
+          ]
+        },
+        "network": {
+          "description": "Outbound network access.",
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "ask"
+          ]
+        },
+        "mcpMutation": {
+          "description": "Mutating (non-read) MCP tool calls.",
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "ask"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "default"
+      ]
+    },
+    "capabilities": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "operations": {
+          "type": "object",
+          "properties": {
+            "new": {
+              "type": "boolean"
+            },
+            "resume": {
+              "type": "boolean"
+            },
+            "fork": {
+              "type": "boolean"
+            },
+            "cancel": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "new",
+            "resume",
+            "fork",
+            "cancel"
+          ],
+          "additionalProperties": false
+        },
+        "outputModes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "jsonl",
+              "text"
+            ]
+          }
+        },
+        "permissionProfiles": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "operations",
+        "outputModes",
+        "permissionProfiles"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

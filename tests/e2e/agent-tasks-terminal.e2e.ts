@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -78,5 +79,103 @@ describe('agent tasks in terminal tab', () => {
     )
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'agent-tasks-terminal.png'))
+  })
+
+  it('shows arguments and responses delivered by later ACP tool updates', async () => {
+    const threadId = await browser.execute(async (projectId) => {
+      const host = window as unknown as {
+        api?: { threads?: { loadProject?: (id: string) => Promise<Array<{ id: string }>> } }
+      }
+      const threads = await host.api?.threads?.loadProject?.(projectId)
+      return threads?.[0]?.id ?? null
+    }, 'e2e-agent-tasks-project')
+    expect(threadId).not.toBeNull()
+    if (!threadId) throw new Error('expected the seeded project to have an active thread')
+
+    await browser.execute(async (activeThreadId) => {
+      const bridge = (
+        window as unknown as {
+          __copseE2e?: {
+            emitAgentChunks?: (threadId: string, chunks: unknown[]) => Promise<void>
+          }
+        }
+      ).__copseE2e
+      if (!bridge?.emitAgentChunks) throw new Error('__copseE2e.emitAgentChunks unavailable')
+      await bridge.emitAgentChunks(activeThreadId, [
+        {
+          type: 'tool_call',
+          toolCall: {
+            id: 'acp-e2e-task',
+            name: 'mcp.copse.git_diff',
+            args: {},
+            kind: 'execute',
+          },
+        },
+        {
+          type: 'tool_call_update',
+          toolCallId: 'acp-e2e-task',
+          args: {
+            server: 'copse',
+            tool: 'git_diff',
+            arguments: {
+              staged: false,
+              path: 'src/main/services/acp/session-update-adapter.ts',
+            },
+          },
+          status: 'running',
+          result:
+            'diff --git a/src/main/services/acp/session-update-adapter.ts ' +
+            'b/src/main/services/acp/session-update-adapter.ts\n' +
+            '--- a/src/main/services/acp/session-update-adapter.ts\n' +
+            '+++ b/src/main/services/acp/session-update-adapter.ts\n' +
+            '@@ -1,1 +1,1 @@\n-old line\n+new line\n',
+          resultFormat: 'markdown',
+        },
+        {
+          type: 'tool_call_update',
+          toolCallId: 'acp-e2e-task',
+          status: 'done',
+        },
+      ])
+    }, threadId)
+
+    const taskTab = await $('.agent-task-tab*=mcp.copse.git_diff')
+    await taskTab.waitForExist({ timeout: 10_000 })
+    await expect(taskTab).toHaveAttribute('data-status', 'done')
+    await taskTab.click()
+
+    const panel = await $('.agent-task-output-panel[data-task-id="acp-e2e-task"]')
+    await panel.waitForDisplayed({ timeout: 10_000 })
+    const panelText = await panel.getText()
+    expect(panelText).toContain('$ mcp.copse.git_diff')
+    expect(panelText).toContain('Arguments:')
+    expect(panelText).toContain('"tool": "git_diff"')
+    expect(panelText).toContain('"staged": false')
+    expect(panelText).toContain('diff --git a/src/main/services/acp/session-update-adapter.ts')
+    expect(panelText).not.toContain('"content"')
+    expect(panelText.indexOf('Arguments:')).toBeLessThan(panelText.indexOf('diff --git'))
+
+    const selected = await browser.execute(() => {
+      const output = document.querySelector<HTMLElement>(
+        '.agent-task-output-panel[data-task-id="acp-e2e-task"]',
+      )
+      if (!output) throw new Error('expected the ACP task output panel')
+      const range = document.createRange()
+      range.selectNodeContents(output)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      return {
+        userSelect: getComputedStyle(output).userSelect,
+        text: selection?.toString() ?? '',
+      }
+    })
+    expect(selected.userSelect).toBe('text')
+    expect(selected.text).toContain('$ mcp.copse.git_diff')
+    expect(selected.text).toContain('Arguments:')
+    expect(selected.text).toContain('"tool": "git_diff"')
+    expect(selected.text).toContain('diff --git a/src/main/services/acp/session-update-adapter.ts')
+    expect(selected.text).not.toContain('"content"')
+    await saveAppScreenshot('agent-tasks-acp-updates.png')
   })
 })

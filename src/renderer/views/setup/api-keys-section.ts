@@ -7,7 +7,7 @@ import { showConfirmDialog } from '../../views/confirm-dialog.ts'
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
 // custom-providers section, not here.
 export type ApiKeyProvider =
-  'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'github' | 'artificial-analysis'
+  'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'github' | 'artificial-analysis' | 'parallel'
 
 export interface ApiKeysSection {
   root: HTMLFieldSetElement
@@ -65,6 +65,13 @@ const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
     label: 'Artificial Analysis API key',
     placeholder: 'aa-…',
     hint: 'Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map).',
+  },
+  parallel: {
+    provider: 'parallel',
+    name: 'parallelKey',
+    label: 'Parallel API key',
+    placeholder: 'Parallel API key',
+    hint: 'Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement.',
   },
 }
 
