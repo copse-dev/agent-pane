@@ -9,6 +9,7 @@ import {
   isSemanticSearchAvailable,
   searchSemanticContent,
 } from './semantic-index.ts'
+import { semanticIndexPending } from './workspace-index-gate.ts'
 
 export function buildSemanticSearchPromptBlock(): string {
   return buildSearchRoutingPromptBlock(isSemanticSearchAvailable())
@@ -39,7 +40,16 @@ export function semanticIndexBuildingNote(): string {
       'Use regex search (search_code, or search_codebase with mode: regex) instead.'
     )
   }
-  const startedAt = getWorkspaceIndexStatus().semantic.startedAt
+  const semantic = getWorkspaceIndexStatus().semantic
+  if (semantic.phase === 'limited' || semantic.phase === 'skipped') {
+    const detail = semantic.reason ? ` (${semantic.reason})` : ''
+    return (
+      `Semantic index is ${semantic.phase} for this workspace${detail}. ` +
+      'Text/regex search remains available — use search_code, or search_codebase with mode: regex, ' +
+      'or read_file.'
+    )
+  }
+  const startedAt = semantic.startedAt
   const elapsed =
     startedAt !== undefined
       ? ` (${String(Math.round((Date.now() - startedAt) / 1000))}s so far)`
@@ -60,6 +70,15 @@ export async function executeSemanticSearch(
   const maxResults = request.maxResults ?? 20
 
   if (!root || !isSemanticSearchAvailable()) return { status: 'unavailable' }
+
+  const semanticPhase = getWorkspaceIndexStatus().semantic.phase
+  if (semanticPhase === 'limited' || semanticPhase === 'skipped') {
+    return { status: 'unavailable' }
+  }
+
+  if (semanticIndexPending(root)) {
+    return { status: 'building' }
+  }
 
   if (!isSemanticIndexReady(root)) {
     // Kick (or join) the build in the background rather than awaiting it —
