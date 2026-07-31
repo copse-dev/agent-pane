@@ -27,7 +27,12 @@ const packHook: BlockingHook<'toolGate'> = {
 
 function packWithHistory(): RegisteredPack {
   return definePack(
-    { name: 'history-pack', trust: 'first-party', storage: { namespace: 'history-pack' } },
+    {
+      name: 'history-pack',
+      trust: 'first-party',
+      stability: 'stable',
+      storage: { namespace: 'history-pack' },
+    },
     { toolNames: ['pack_tool'], blockingHooks: [packHook] },
   )
 }

@@ -7,7 +7,11 @@ import {
   UnknownPackError,
 } from './pack-registry.ts'
 import { definePack, packManifestFromPluginJson, type RegisteredPack } from './pack-manifest.ts'
-import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
+import {
+  createFirstPartyPackRegistry,
+  EXPERIMENTAL_FIRST_PARTY_PACK_IDS,
+  FIRST_PARTY_PACKS,
+} from './first-party-packs.ts'
 import type { BlockingHook } from '../hooks/canonical-events.ts'
 
 const stepHook: BlockingHook<'turnStart'> = {
@@ -20,9 +24,10 @@ const stepHook: BlockingHook<'turnStart'> = {
 
 function demoPack(id: string): RegisteredPack {
   return definePack(
-    { name: id, trust: 'first-party', storage: { namespace: id } },
+    { name: id, trust: 'first-party', stability: 'stable', storage: { namespace: id } },
     {
       toolNames: [`${id}_tool`],
+      browserOrigins: [`https://${id}.example.test`],
       blockingHooks: [stepHook],
       promptBlocks: [{ id: `${id}-prompt`, text: 'steer', trust: 'trusted' }],
       uiContributions: [{ id: `${id}-panel`, level: 2, slot: 'sidebar', panel: { kind: 'list' } }],
@@ -31,6 +36,20 @@ function demoPack(id: string): RegisteredPack {
 }
 
 describe('PackRegistry grouping', () => {
+  it('makes every shipped pack stability explicit and keeps experiments opt-in', () => {
+    assert.ok(FIRST_PARTY_PACKS.length > 0)
+    assert.equal(
+      FIRST_PARTY_PACKS.every((pack) => pack.manifest.stability !== undefined),
+      true,
+    )
+    assert.deepEqual(
+      EXPERIMENTAL_FIRST_PARTY_PACK_IDS,
+      FIRST_PARTY_PACKS.filter((pack) => pack.manifest.stability === 'experimental').map(
+        (pack) => pack.id,
+      ),
+    )
+  })
+
   it('registers packs grouped by id, enabled by default', () => {
     const registry = new PackRegistry()
     const pack = demoPack('alpha')
@@ -59,6 +78,10 @@ describe('PackRegistry grouping', () => {
     registry.register(demoPack('beta'))
 
     assert.deepEqual(registry.activeToolNames(), ['alpha_tool', 'beta_tool'])
+    assert.deepEqual(registry.activeBrowserOrigins(), [
+      { packId: 'alpha', origin: 'https://alpha.example.test' },
+      { packId: 'beta', origin: 'https://beta.example.test' },
+    ])
     assert.deepEqual(
       registry.activeBlockingHooks().map((h) => h.id),
       ['demo-turn-start', 'demo-turn-start'],
@@ -89,6 +112,21 @@ describe('PackRegistry grouping', () => {
       registry.disable('nope')
     }, UnknownPackError)
     assert.throws(() => registry.storage('nope'), UnknownPackError)
+    assert.throws(() => {
+      registry.unregister('nope')
+    }, UnknownPackError)
+  })
+
+  it('unregisters dynamic packs without erasing their namespaced storage', () => {
+    const registry = new PackRegistry()
+    registry.register(demoPack('local'))
+    registry.storage('local').set('session', 'kept')
+    registry.unregister('local')
+    assert.equal(registry.has('local'), false)
+    assert.deepEqual(registry.activeToolNames(), [])
+
+    registry.register(demoPack('local'))
+    assert.equal(registry.storage('local').get('session'), 'kept')
   })
 
   it('exposes only enabled packs’ explicitly declared ACP tools', () => {
@@ -98,6 +136,7 @@ describe('PackRegistry grouping', () => {
         {
           name: 'search-pack',
           trust: 'first-party',
+          stability: 'experimental',
           tools: { native: ['pack_search', 'native_only'], acpTools: ['pack_search'] },
         },
         { toolNames: ['pack_search', 'native_only'] },
@@ -130,6 +169,7 @@ describe('PackRegistry grouping', () => {
           {
             name: 'undeclared-pack',
             trust: 'first-party',
+            stability: 'experimental',
             tools: { native: ['native'], acpTools: ['not_native'] },
           },
           { toolNames: ['native', 'not_native'] },
@@ -144,6 +184,7 @@ describe('PackRegistry grouping', () => {
           {
             name: 'missing-runtime-pack',
             trust: 'first-party',
+            stability: 'experimental',
             tools: { native: ['missing_runtime'], acpTools: ['missing_runtime'] },
           },
           { toolNames: [] },
@@ -202,5 +243,32 @@ describe('packManifestFromPluginJson — user-pack trust hardening (P1 review)',
     const b = packManifestFromPluginJson({}, { sourceHint: 'dir-b' })
     assert.notEqual(a.name, b.name)
     assert.equal(a.name, 'unnamed-pack-dir-a')
+  })
+
+  it('preserves explicitly selected behaviors without changing their trust tier', () => {
+    const manifest = packManifestFromPluginJson({
+      name: 'personal.review-tools',
+      tools: {
+        provides: ['personal_judge'],
+      },
+      models: {
+        provides: [{ id: 'judge', label: 'Reference judge', supportsImages: true }],
+      },
+      browser: { origins: ['https://example.test'] },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+    })
+
+    assert.equal(manifest.trust, 'user')
+    assert.deepEqual(manifest.tools, { provides: ['personal_judge'] })
+    assert.deepEqual(manifest.models, {
+      provides: [{ id: 'judge', label: 'Reference judge', supportsImages: true }],
+    })
+    assert.deepEqual(manifest.browser, { origins: ['https://example.test'] })
+    assert.deepEqual(manifest.runtime, { entrypoint: 'dist/index.mjs', apiVersion: 1 })
+  })
+
+  it('defaults an undeclared user-pack stability claim to experimental', () => {
+    const manifest = packManifestFromPluginJson({ name: 'legacy-user-pack' })
+    assert.equal(manifest.stability, 'experimental')
   })
 })

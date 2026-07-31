@@ -50,6 +50,10 @@ Then:
 
 API keys entered in Copse are encrypted with the operating system's secure storage when it is available. Environment-only keys are not written to Copse's settings. See [Privacy and data flow](docs/privacy-data-flow.md) and [Provider data policies](docs/provider-data-policies.md) before choosing a hosted provider.
 
+To open a second Copse instance with fresh settings and conversations, launch it
+with a separate profile. See [Running multiple profiles](docs/multiple-profiles.md)
+for copy-paste commands and the directories that must be kept separate.
+
 ## What’s included
 
 | Area       | Highlights                                                                           |
@@ -113,6 +117,7 @@ Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-
 - [Privacy and data flow](docs/privacy-data-flow.md)
 - [Provider retention and training policies](docs/provider-data-policies.md)
 - [Backup and recovery](docs/recovery.md)
+- [Running multiple profiles](docs/multiple-profiles.md)
 - [MCP example configuration](mcp.json.example)
 - [Custom tools](docs/custom-tools.md)
 - [Skills and feature packs](docs/packs.md)
