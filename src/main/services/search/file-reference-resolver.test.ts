@@ -14,14 +14,17 @@ describe('file-reference-resolver', () => {
   beforeEach(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-file-ref-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
-    setIndexForTest([
-      'README.md',
-      'src/renderer/markdown/renderer.ts',
-      'src/main/index.ts',
-      'tests/renderer.test.ts',
-      'src/renderer/renderer.test.ts',
-      'scripts/build.mts',
-    ])
+    setIndexForTest(
+      [
+        'README.md',
+        'src/renderer/markdown/renderer.ts',
+        'src/main/index.ts',
+        'tests/renderer.test.ts',
+        'src/renderer/renderer.test.ts',
+        'scripts/build.mts',
+      ],
+      tempRoot,
+    )
   })
 
   afterEach(() => {

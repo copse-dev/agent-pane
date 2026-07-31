@@ -1,8 +1,11 @@
-import { buildIndex } from './file-index.ts'
+import { buildIndex, invalidateIndex } from './file-index.ts'
 import { ensureSemanticIndex } from './semantic-index.ts'
 import { setSemanticIndexUnavailable } from './index-status.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { startWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
+import { startWorkspaceIndexWatcher, stopWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
+
+/** The most recently opened renderer-selected workspace root, if any. */
+let primaryWorkspaceRoot: string | null = null
 
 /**
  * Kick off all workspace indexing without blocking the caller.
@@ -24,6 +27,18 @@ import { startWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
  * than ordinary tool subprocesses (`FILE_INDEX_LIST_TIMEOUT_MS`).
  */
 export function startWorkspaceIndexing(root: string): void {
+  // Switching workspaces replaces the previous primary root: drop its watcher
+  // and stale index rather than accumulating one entry per folder ever opened.
+  // Worktree execution roots (registered via startExecutionRootIndexing) are
+  // untouched — they track their own thread's lifetime, not the renderer's
+  // selected workspace.
+  const previous = primaryWorkspaceRoot
+  primaryWorkspaceRoot = root
+  if (previous && previous !== root) {
+    stopWorkspaceIndexWatcher(previous)
+    invalidateIndex(previous)
+  }
+
   void buildIndex(root).catch((err: unknown) => {
     console.warn('[copse-panel] file index build failed:', err)
   })
@@ -32,5 +47,34 @@ export function startWorkspaceIndexing(root: string): void {
     return
   }
   void ensureSemanticIndex(root)
-  startWorkspaceIndexWatcher(root)
+  startWorkspaceIndexWatcher(root, { withSemantic: true })
+}
+
+/**
+ * Kick off file indexing (and its rebuild watcher) for a thread's worktree
+ * execution root — a linked checkout under `~/.copse/worktrees/<project>/
+ * <thread>/`, outside the primary workspace root the functions above cover.
+ *
+ * Deliberately skips semantic indexing: gortex scopes its shared daemon to one
+ * active repo (`scopeGortexToActiveRepo`), so tracking every worktree
+ * alongside the workspace would repeatedly untrack/re-track and thrash it.
+ * Worktree threads fall back to regex/text search for "by meaning" queries,
+ * the same posture SSH workspaces already take (see `semanticIndexBuildingNote`).
+ *
+ * Safe to call repeatedly for the same root — both the file-index build and
+ * the watcher registration are no-ops once already in place — so callers can
+ * fire this on every worktree context resolution rather than tracking whether
+ * a given thread has already been registered.
+ */
+export function startExecutionRootIndexing(root: string): void {
+  void buildIndex(root).catch((err: unknown) => {
+    console.warn('[copse-panel] execution root index build failed:', err)
+  })
+  startWorkspaceIndexWatcher(root, { withSemantic: false })
+}
+
+/** Release a worktree execution root's index/watcher once its thread's checkout is retired. */
+export function stopExecutionRootIndexing(root: string): void {
+  stopWorkspaceIndexWatcher(root)
+  invalidateIndex(root)
 }
