@@ -113,8 +113,14 @@ export function getSidebarThreads(store: AppStore, projectId: string): Thread[] 
 }
 
 export function isProjectSwitchInFlight(store: AppStore, projectId: string): boolean {
-  const { activeProjectId, expandedProjectId } = store.getState()
-  return expandedProjectId === projectId && activeProjectId !== projectId
+  const { activeProjectId, expandedProjectId, workspaceRoot } = store.getState()
+  if (expandedProjectId === projectId && activeProjectId !== projectId) return true
+  // On launch, activeProjectId is restored from persisted state before
+  // restoreProject() finishes opening the workspace and loading its threads
+  // (main.ts mounts the panel without waiting for that to complete). Treat
+  // that window as in-flight too, so the sidebar shows "Loading…" instead of
+  // an empty thread list while a large project's threads load in the background.
+  return activeProjectId === projectId && !workspaceRoot
 }
 
 function cacheThreads(projectId: string, threads: Thread[]): void {

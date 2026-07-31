@@ -5,6 +5,7 @@ import { classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import { validateThreadWorktree, type ValidatedThreadWorktree } from './worktree-manager.ts'
+import { startExecutionRootIndexing } from './search/workspace-indexing.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 
 async function syncAdoptedWorktreeBranch(
@@ -51,6 +52,12 @@ export interface ThreadExecutionContextDependencies {
     threadId: string,
     worktree: ThreadWorktree,
   ) => Promise<void>
+  /**
+   * Register a resolved worktree's execution root with the file index and its
+   * rebuild watcher (#1400) — fire-and-forget, never awaited, so a slow index
+   * build never delays the turn it was resolved for.
+   */
+  startWorktreeIndexing?: (root: string) => void
 }
 
 const storage = new AsyncLocalStorage<ThreadExecutionContext>()
@@ -60,6 +67,7 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
   getThreadMeta,
   validateWorktree: validateThreadWorktree,
   syncWorktreeBranch: syncAdoptedWorktreeBranch,
+  startWorktreeIndexing: startExecutionRootIndexing,
 }
 
 /**
@@ -104,6 +112,7 @@ export async function resolveThreadExecutionContext(
       }
       await dependencies.syncWorktreeBranch?.(projectId, threadId, adopted)
     }
+    dependencies.startWorktreeIndexing?.(worktree.root)
     return Object.freeze({
       projectId,
       threadId,

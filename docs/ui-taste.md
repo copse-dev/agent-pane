@@ -428,6 +428,11 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   `--warning`; `allow` / `ok` use `--success`. The card keeps its blue family fill throughout — the
   status is a signal, not a re-skin. A sandbox block or a function-hook throw always wins over a
   printed verdict (a hook can't paint itself "allowed", F3 / decision 9).
+- **Lead with effects, then provenance.** The turn-level Hooks group always starts collapsed and
+  names an applied outcome (or “No changes”) before the quieter run count. Inside an expanded group,
+  allow-only/no-op/suppressed/failure runs stay collapsed; only applied effects start open. Put those
+  effect lines before hook id, exit code, and duration so the first answer is what changed, not that a
+  process happened to run. Every inner card remains a normal `<details>` so the user can contract it.
 - **A hook-originated turn is marked, never disguised.** The message role stays `user` for the LLM,
   but `.msg-hook-origin-marker` (a small `--accent` label: `Hook · <id> (<Event>)`) sits above the
   body so it never reads as human-typed. A human edit surfaces an italic `edited` note — authorship
