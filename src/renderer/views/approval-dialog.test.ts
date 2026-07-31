@@ -61,10 +61,17 @@ function makeApi(): {
 
 // happy-dom doesn't implement modal dialogs; track open state and fire the native
 // `close` event the real element emits from close().
-function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
-  const spy = { showModalCalls: 0 }
+function shimDialog(dialog: HTMLDialogElement): { showCalls: number; showModalCalls: number } {
+  const spy = { showCalls: 0, showModalCalls: 0 }
   let open = false
   Object.defineProperties(dialog, {
+    show: {
+      configurable: true,
+      value: () => {
+        open = true
+        spy.showCalls += 1
+      },
+    },
     showModal: {
       configurable: true,
       value: () => {
@@ -87,11 +94,14 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
 
 describe('approval dialog vs settings (issue #501)', () => {
   let approvalDialog: HTMLDialogElement
-  let approvalSpy: { showModalCalls: number }
+  let approvalSpy: { showCalls: number; showModalCalls: number }
   let emit: (req: { id: string; showWhileSettingsOpen?: boolean }) => void
 
   beforeEach(() => {
     document.body.innerHTML = ''
+    const chatPane = document.createElement('section')
+    chatPane.id = 'pane-chat'
+    document.body.append(chatPane)
     resetAttention()
     const made = makeApi()
     emit = made.emit
@@ -99,7 +109,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     // Settings must mount first: the approval dialog subscribes to its close event.
     mountSettingsDialog(store, made.api)
     const settings = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
-    shimModal(settings)
+    shimDialog(settings)
     // openSettingsDialog also dispatches `settings-open`, kicking off async loads
     // against the never-settling stub api: those awaits never resolve, so nothing
     // rejects after the test. We leave dispatchEvent intact because the close-event
@@ -114,24 +124,27 @@ describe('approval dialog vs settings (issue #501)', () => {
       },
     })
     approvalDialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
-    approvalSpy = shimModal(approvalDialog)
+    approvalSpy = shimDialog(approvalDialog)
   })
 
   it('shows an approval prompt immediately when settings is closed', () => {
     emit({ id: 'a' })
-    assert.equal(approvalSpy.showModalCalls, 1)
+    assert.equal(approvalSpy.showCalls, 1)
+    assert.equal(approvalSpy.showModalCalls, 0)
     assert.equal(approvalDialog.open, true)
+    assert.equal(approvalDialog.parentElement?.id, 'pane-chat')
+    assert.equal(qsRequired(document, '.approval-chat-scrim').hidden, false)
   })
 
   it('defers an approval prompt while settings is open, flushing on close', () => {
     openSettingsDialog()
     emit({ id: 'a' })
     // Held back behind settings — not stacked on top of it.
-    assert.equal(approvalSpy.showModalCalls, 0)
+    assert.equal(approvalSpy.showCalls, 0)
     assert.equal(approvalDialog.open, false)
 
     closeSettingsDialog()
-    assert.equal(approvalSpy.showModalCalls, 1)
+    assert.equal(approvalSpy.showCalls, 1)
     assert.equal(approvalDialog.open, true)
   })
 
@@ -141,15 +154,36 @@ describe('approval dialog vs settings (issue #501)', () => {
     emit({ id: 'provider', showWhileSettingsOpen: true })
 
     assert.equal(approvalSpy.showModalCalls, 1)
+    assert.equal(approvalSpy.showCalls, 0)
     assert.equal(approvalDialog.open, true)
     assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Provider host')
     assert.equal(qsRequired(approvalDialog, '.approval-body').textContent, 'provider.example')
 
     qsRequired<HTMLButtonElement>(approvalDialog, '.approval-reject').click()
     assert.equal(approvalDialog.open, false)
+    assert.equal(qsRequired(document, '.approval-chat-scrim').hidden, true)
 
     closeSettingsDialog()
-    assert.equal(approvalSpy.showModalCalls, 2)
+    assert.equal(approvalSpy.showModalCalls, 1)
+    assert.equal(approvalSpy.showCalls, 1)
+    assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Shell command')
+  })
+
+  it('temporarily replaces an inline prompt when Settings needs a provider approval', () => {
+    emit({ id: 'shell' })
+    assert.equal(approvalSpy.showCalls, 1)
+
+    openSettingsDialog()
+    emit({ id: 'provider', showWhileSettingsOpen: true })
+
+    assert.equal(approvalSpy.showModalCalls, 1)
+    assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Provider host')
+
+    qsRequired<HTMLButtonElement>(approvalDialog, '.approval-reject').click()
+    assert.equal(approvalDialog.open, false)
+
+    closeSettingsDialog()
+    assert.equal(approvalSpy.showCalls, 2)
     assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Shell command')
   })
 })

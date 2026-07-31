@@ -15,8 +15,16 @@
  * renderer never sees a `RegisteredPack` directly; it renders these summaries.
  */
 
-/** Trust tier of a pack (first-party = shipped by Copse; user = disk-loaded). */
+/** Trust tier assigned by the host; disk manifests cannot self-promote. */
 export type PackTrustLevel = 'first-party' | 'user'
+
+export interface PackDirectorySourceSummary {
+  kind: 'directory'
+  path: string
+  contentHash: string
+}
+/** Product-support status declared by the manifest and shown in Settings. */
+export type PackStabilityLevel = 'stable' | 'experimental'
 
 /** UI contribution levels from the plan (1 = card, 2 = named panel, 3 = real view). */
 export type PackUiLevel = 1 | 2 | 3
@@ -105,6 +113,16 @@ export interface PackPermissionSummary {
 export interface PackContributionsSummary {
   /** Native tool names contributed to the model tool list (first-party). */
   toolNames: readonly string[]
+  /** Thread models contributed by an enabled selected pack. */
+  modelRoutes: readonly {
+    id: string
+    label: string
+    group?: string
+    description?: string
+    supportsImages?: boolean
+  }[]
+  /** Exact origins this pack may operate in the visible interactive browser pane. */
+  browserOrigins: readonly string[]
   /** MCP config path a user pack pulls its tools from (mirrors `plugin.json`). */
   mcpServersPath?: string
   /** Blocking (in-loop) function hooks the pack registers, by canonical event. */
@@ -131,10 +149,13 @@ export interface PackContributionsSummary {
 export interface PackSummary {
   id: string
   trust: PackTrustLevel
+  stability: PackStabilityLevel
   name: string
   version?: string
   description?: string
   enabled: boolean
+  /** Present only for a pack explicitly selected from a directory. */
+  source?: PackDirectorySourceSummary
   contributions: PackContributionsSummary
   /** Pack-scoped settings the manifest declares, each carrying its current value. */
   settings: readonly PackSettingFieldSummary[]
