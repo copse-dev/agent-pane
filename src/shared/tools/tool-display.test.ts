@@ -263,10 +263,10 @@ describe('tool-display', () => {
       tc('3', 'mcp__mdn__get_compat', 'error'),
     ])
     assert.equal(items[0]?.type, 'rollup')
-    assert.equal(items[0].label, 'mdn (MCP) · 3 failed')
+    assert.equal(items[0].label, 'mdn · 3 failed')
     const children = rollupChildren(items)
     assert.equal(children[0]?.type, 'group')
-    assert.equal(children[0].label, 'mdn (MCP)')
+    assert.equal(children[0].label, 'mdn')
     assert.equal(children[0].toolCalls.length, 3)
     assert.equal(aggregateToolStatus(children[0].toolCalls), 'error')
   })
@@ -331,19 +331,29 @@ describe('tool-display', () => {
     assert.ok(children.every((item) => item.type === 'individual'))
   })
 
-  it('humanizes MCP tool names with their server prefix', () => {
-    assert.equal(getToolDisplayName('mcp__github__create_issue'), 'github: Create Issue')
+  it('humanizes MCP and ACP tool names without their server prefix', () => {
+    assert.equal(getToolDisplayName('mcp__github__create_issue'), 'Create Issue')
+    assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Run Shell')
   })
 
-  it('groups MCP tools by server', () => {
+  it('groups MCP tools by server without exposing an internal MCP marker', () => {
     assert.equal(getToolGroupKey('mcp__github__create_issue'), 'mcp:github')
-    assert.equal(getToolGroupLabel('mcp:github'), 'github (MCP)')
+    assert.equal(getToolGroupLabel('mcp:github'), 'github')
     const items = buildToolCallDisplayItems([
       tc('1', 'mcp__github__create_issue'),
       tc('2', 'mcp__github__list_issues'),
     ])
     assert.equal(items[0]?.type, 'rollup')
-    assert.equal(items[0].label, 'github (MCP)')
+    assert.equal(items[0].label, 'github')
+  })
+
+  it('groups Copse MCP wrappers like their built-in tools', () => {
+    assert.equal(getToolGroupKey('mcp__copse__git_status'), 'git')
+    assert.equal(getToolGroupKey('mcp__copse__run_shell'), 'shell')
+    assert.equal(getToolGroupKey('mcp__copse__read_file'), 'reading')
+    assert.equal(getToolGroupKey('mcp__copse.git__status'), 'git')
+    assert.equal(getToolGroupKey('mcp__copse.run__command'), 'shell')
+    assert.equal(getToolGroupKey('mcp__copse__custom_tool'), 'mcp:copse')
   })
 
   it('does not group MCP tools from different servers, but rolls the turn up', () => {

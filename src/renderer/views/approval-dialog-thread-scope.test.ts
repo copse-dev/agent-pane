@@ -64,15 +64,15 @@ function setVisibility(state: DocumentVisibilityState): void {
   document.dispatchEvent(new Event('visibilitychange'))
 }
 
-function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
-  const spy = { showModalCalls: 0 }
+function shimDialog(dialog: HTMLDialogElement): { showCalls: number } {
+  const spy = { showCalls: 0 }
   let open = false
   Object.defineProperties(dialog, {
-    showModal: {
+    show: {
       configurable: true,
       value: () => {
         open = true
-        spy.showModalCalls += 1
+        spy.showCalls += 1
       },
     },
     close: {
@@ -91,7 +91,7 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
 describe('approval dialog thread scoping', () => {
   let store: AppStore
   let dialog: HTMLDialogElement
-  let spy: { showModalCalls: number }
+  let spy: { showCalls: number }
   let emit: (req: { id: string; threadId?: string }) => void
   let responses: Responded[]
 
@@ -113,19 +113,19 @@ describe('approval dialog thread scoping', () => {
       },
     })
     dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
-    spy = shimModal(dialog)
+    spy = shimDialog(dialog)
   })
 
   it('shows a prompt immediately for the focused thread', () => {
     emit({ id: 'a', threadId: 'focused' })
-    assert.equal(spy.showModalCalls, 1)
+    assert.equal(spy.showCalls, 1)
     assert.equal(dialog.open, true)
     assert.equal(isThreadAwaitingAttention('focused'), false)
   })
 
   it('defers a background-thread prompt and flags it for attention', () => {
     emit({ id: 'a', threadId: 'other' })
-    assert.equal(spy.showModalCalls, 0)
+    assert.equal(spy.showCalls, 0)
     assert.equal(dialog.open, false)
     assert.equal(isThreadAwaitingAttention('other'), true)
   })
@@ -138,7 +138,7 @@ describe('approval dialog thread scoping', () => {
     store.setState({ activeThreadId: 'other' })
     store.emit('threads_changed')
 
-    assert.equal(spy.showModalCalls, 1)
+    assert.equal(spy.showCalls, 1)
     assert.equal(dialog.open, true)
     assert.equal(isThreadAwaitingAttention('other'), false)
   })
@@ -147,7 +147,7 @@ describe('approval dialog thread scoping', () => {
     emit({ id: 'foreground', threadId: 'focused' })
     emit({ id: 'background', threadId: 'other' })
 
-    assert.equal(spy.showModalCalls, 1)
+    assert.equal(spy.showCalls, 1)
     assert.equal(isThreadAwaitingAttention('other'), true)
 
     // Answering the focused prompt does not auto-pop the background one; it
@@ -160,7 +160,7 @@ describe('approval dialog thread scoping', () => {
 
   it('shows a request with no threadId regardless of focus', () => {
     emit({ id: 'a' })
-    assert.equal(spy.showModalCalls, 1)
+    assert.equal(spy.showCalls, 1)
     assert.equal(dialog.open, true)
   })
 
@@ -176,7 +176,7 @@ describe('approval dialog thread scoping', () => {
 
       // No invisible modal on a minimized window; surface a bell instead so the
       // pane doesn't look frozen.
-      assert.equal(spy.showModalCalls, 0)
+      assert.equal(spy.showCalls, 0)
       assert.equal(dialog.open, false)
       assert.equal(isThreadAwaitingAttention('focused'), true)
     })
@@ -184,12 +184,12 @@ describe('approval dialog thread scoping', () => {
     it('surfaces the deferred prompt when the window is restored', () => {
       setVisibility('hidden')
       emit({ id: 'a', threadId: 'focused' })
-      assert.equal(spy.showModalCalls, 0)
+      assert.equal(spy.showCalls, 0)
 
       // Restoring the window must pop the prompt without a thread switch.
       setVisibility('visible')
 
-      assert.equal(spy.showModalCalls, 1)
+      assert.equal(spy.showCalls, 1)
       assert.equal(dialog.open, true)
       assert.equal(isThreadAwaitingAttention('focused'), false)
     })
@@ -197,11 +197,11 @@ describe('approval dialog thread scoping', () => {
     it('also defers a no-threadId prompt while hidden and shows it on restore', () => {
       setVisibility('hidden')
       emit({ id: 'a' })
-      assert.equal(spy.showModalCalls, 0)
+      assert.equal(spy.showCalls, 0)
       assert.equal(dialog.open, false)
 
       setVisibility('visible')
-      assert.equal(spy.showModalCalls, 1)
+      assert.equal(spy.showCalls, 1)
       assert.equal(dialog.open, true)
     })
   })

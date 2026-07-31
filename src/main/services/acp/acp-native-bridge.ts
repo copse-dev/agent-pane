@@ -10,6 +10,7 @@ import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
@@ -46,8 +47,9 @@ export const BRIDGE_MCP_SERVER_NAME = 'copse'
  */
 
 /**
- * Registry tools offered over the bridge, filtered to what is actually
- * registered (e.g. browser tools only exist when enabled in Settings).
+ * Core registry tools offered over the bridge, filtered to what is actually
+ * registered (e.g. browser tools only exist when enabled in Settings). Enabled
+ * first-party packs extend this list explicitly through `tools.acpTools`.
  */
 export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Workspace reads, searches, and diff-queued edits. Offering these lets an
@@ -107,6 +109,11 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
 ]
 
+/** Core tools plus ACP-safe tools declared by currently enabled first-party packs. */
+export function activeBridgeToolNames(): readonly string[] {
+  return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPackRegistry().activeAcpToolNames()])]
+}
+
 /**
  * Per-tool matchers over a permission request's title, anchored at the *start*
  * of the (code-unwrapped, trimmed) title: the bridge server name (`copse`), a
@@ -122,9 +129,13 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
  * with `/`, `_`, or `.` still matches; a title in some entirely different shape
  * just falls through to the normal prompt.
  */
-const BRIDGE_TITLE_MATCHERS: readonly RegExp[] = BRIDGE_TOOL_NAMES.map(
-  (tool) => new RegExp(`^${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]${tool}(?![a-z0-9_])`, 'i'),
-)
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function bridgeTitleMatcher(tool: string): RegExp {
+  return new RegExp(`^${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]${escapeRegex(tool)}(?![a-z0-9_])`, 'i')
+}
 
 /**
  * Best-effort check that an ACP permission request describes one of Copse's own
@@ -134,8 +145,8 @@ const BRIDGE_TITLE_MATCHERS: readonly RegExp[] = BRIDGE_TOOL_NAMES.map(
  * The signal is the tool-call *title* the external agent sends. ACP does not
  * specify the title's contents, so this recognises only the shape we have
  * observed — the bridge's server name (`BRIDGE_MCP_SERVER_NAME`) prefixing the
- * tool name at the start of the title (see BRIDGE_TITLE_MATCHERS). Any other
- * shape falls through to a normal prompt, so broadening this stays additive as
+ * tool name at the start of the title. Any other shape falls through to a
+ * normal prompt, so broadening this stays additive as
  * more agents are observed.
  *
  * This is advisory, not proof: the title is authored by the external agent, so
@@ -151,7 +162,7 @@ const BRIDGE_TITLE_MATCHERS: readonly RegExp[] = BRIDGE_TOOL_NAMES.map(
 export function isBridgedNativeToolTitle(title: string | null | undefined): boolean {
   if (!title) return false
   const text = unwrapInlineCode(title)
-  return BRIDGE_TITLE_MATCHERS.some((re) => re.test(text))
+  return activeBridgeToolNames().some((tool) => bridgeTitleMatcher(tool).test(text))
 }
 
 export interface AcpNativeBridge {
@@ -174,7 +185,7 @@ export interface AcpNativeBridge {
 function bridgedTools(
   registry: ToolRegistry,
 ): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
-  const offered = new Set(BRIDGE_TOOL_NAMES)
+  const offered = new Set(activeBridgeToolNames())
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
   // 400s the whole request on the openapi-3.0 flavor.
@@ -222,7 +233,7 @@ function buildMcpServer(
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: bridgedTools(registry) }))
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name
-    if (!BRIDGE_TOOL_NAMES.includes(name) || !registry.has(name)) {
+    if (!activeBridgeToolNames().includes(name) || !registry.has(name)) {
       return {
         content: [{ type: 'text', text: `Tool "${name}" is not offered by this bridge.` }],
         isError: true,

@@ -151,7 +151,10 @@ export interface PackStorageDecl {
 
 /**
  * How a pack declares its tools in the manifest (decision 15):
- *  - `native`: in-process tool names contributed by first-party code.
+ *  - `native`: native tool names contributed to the model tool list (first-party).
+ *  - `acpTools`: the subset of `native` tools safe to offer to external ACP
+ *    agents through Copse's authenticated localhost native-tool bridge
+ *    (first-party only).
  *  - `provides`: tool ids implemented by an explicitly selected user pack's
  *    shared top-level runtime.
  *  - `mcpServers`: a path to an MCP config file (user packs), like the existing
@@ -164,6 +167,7 @@ export interface PackToolRuntimeDecl {
 
 export interface PackToolsDecl {
   native?: readonly string[]
+  acpTools?: readonly string[]
   provides?: readonly string[]
   mcpServers?: string
 }
@@ -371,6 +375,7 @@ export function packManifestFromPluginJson(
   if (raw.skills) manifest.skills = raw.skills
   if (
     tools.native !== undefined ||
+    tools.acpTools !== undefined ||
     tools.provides !== undefined ||
     tools.mcpServers !== undefined
   ) {

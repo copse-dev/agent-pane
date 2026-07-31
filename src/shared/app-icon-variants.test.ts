@@ -9,11 +9,14 @@ import {
 } from './app-icon-variants.ts'
 
 describe('app-icon-variants', () => {
-  it('lists the Icon Studio colour schemes', () => {
+  it('lists the app icon colour schemes', () => {
     assert.deepEqual(
       [...APP_ICON_VARIANTS],
       [
         'rose',
+        'pink-lady',
+        'mint-leaf',
+        'cucumber',
         'aurora',
         'citrus',
         'candy',
@@ -49,6 +52,7 @@ describe('app-icon-variants', () => {
 
   it('validates known variants', () => {
     assert.equal(isAppIconVariant('aurora'), true)
+    assert.equal(isAppIconVariant('mint-leaf'), true)
     assert.equal(isAppIconVariant('lagoon'), true)
     assert.equal(isAppIconVariant('wave'), false)
     assert.equal(isAppIconVariant('other'), false)
