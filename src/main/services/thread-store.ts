@@ -31,6 +31,7 @@ import {
 } from '@shared/threads/fold.ts'
 import { parseOkfMessage } from '@shared/threads/okf-message.ts'
 import { parseThreadMetaValue } from '@shared/threads/thread-boundary.ts'
+import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import {
   parseSpine,
   parseSpineEntries,
@@ -50,7 +51,7 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { storageGet } from './storage/storage.ts'
-import { projectStoreDir, workspaceRoot } from './storage/copse-paths.ts'
+import { projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**
@@ -86,6 +87,11 @@ const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
 const projectDir = projectStoreDir
+
+/** Root of the chat store. COPSE_DIR owns the normal profile layout. */
+function workspaceRoot(): string {
+  return copseWorkspaceDir()
+}
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
 export const chatStoreRoot = workspaceRoot
