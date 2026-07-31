@@ -78,6 +78,9 @@
 //    only grants the loopback port-binding relaxation while the pack declares it
 //    (`permission-gate.ts` reads `isPermissionDeclared('loopback-bind')`).
 //    Default DISABLED.
+//  - `parallelSearchPack` — direct, credential-gated access to Parallel's
+//    hosted Search API. It declares the native `parallel_search` tool, search
+//    mode setting, and first-party credential detail. Default DISABLED.
 import type { RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
@@ -94,6 +97,7 @@ import { mcpUiCanvasPack } from './mcp-ui-canvas-pack.ts'
 import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
 import { backgroundTasksPack } from './background-tasks-pack.ts'
 import { automationsPack } from './automations-pack.ts'
+import { parallelSearchPack } from './parallel-search-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
@@ -103,7 +107,7 @@ import { automationsPack } from './automations-pack.ts'
  * the CI investigator, then PII redaction, then forced planning, then the two
  * capability-only packs (MCP-UI canvas + DevTools shortcut), then the
  * background-tasks pack (which declares a permission / sandbox relaxation,
- * issue #1190), then the automations prototype.
+ * issue #1190), then the automations prototype and Parallel Search.
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -120,6 +124,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   devtoolsShortcutPack,
   backgroundTasksPack,
   automationsPack,
+  parallelSearchPack,
 ]
 
 /**
