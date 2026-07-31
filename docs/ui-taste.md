@@ -8,11 +8,12 @@ doesn't relearn it. It complements — not replaces — the visual-eval rules in
 
 ## Attached screenshot expand
 
-Thread message images (`.message-image`) and roadmap plan image chips
-(`.roadmap-attachment-thumb`) open the shared lightbox in
-[`src/renderer/attachments/image-expand.ts`](../src/renderer/attachments/image-expand.ts)
-(`dialog.image-expand-dialog`). Wire new attachment thumbs through
-`attachImageExpand` rather than inventing a second overlay. Visual eval:
+Thread message images (`.message-image`), sent text attachments, roadmap image
+chips (`.roadmap-attachment-thumb`), and videos use the shared viewer shell in
+[`src/renderer/attachments/attachment-preview.ts`](../src/renderer/attachments/attachment-preview.ts)
+(`dialog.attachment-preview-dialog`). Each media adapter owns its content and
+resource cleanup; wire future types through `openAttachmentPreview` rather than
+inventing another overlay. Visual eval:
 [`tests/e2e/image-expand.e2e.ts`](../tests/e2e/image-expand.e2e.ts).
 
 ### Native `<dialog>` and `display`

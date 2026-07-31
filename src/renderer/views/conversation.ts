@@ -41,6 +41,7 @@ import {
 } from '@shared/threads/message-model.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
+import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -815,13 +816,12 @@ function isReasoningDisclosureLive(
 }
 
 /**
- * A transcript chip: an outline icon + its (clipped) label. Display-only except
- * for a video, which becomes a button that plays the recording — the file is on
- * disk and the person who attached it otherwise has no way to see what they
- * sent, since the video deliberately never becomes model content.
+ * A transcript chip: an outline icon + its (clipped) label. Text snapshots open
+ * in the shared attachment viewer; videos use the same shell after loading their
+ * bytes from disk. Legacy chips without preview data remain display-only.
  */
 function transcriptChip(
-  attachment: Pick<TranscriptAttachment, 'kind' | 'label' | 'path'>,
+  attachment: Pick<TranscriptAttachment, 'kind' | 'label' | 'path' | 'content'>,
   api: ApiClient,
 ): HTMLElement {
   const { kind, label } = attachment
@@ -832,6 +832,8 @@ function transcriptChip(
   )
   if (kind === 'video' && attachment.path) {
     attachVideoExpand(chip, api, attachment.path, label)
+  } else if (attachment.content !== undefined) {
+    attachTextExpand(chip, attachment.content, label)
   }
   return chip
 }
