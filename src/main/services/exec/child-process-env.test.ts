@@ -25,6 +25,7 @@ describe('envForRendererChildProcess', () => {
       FIREWORKS_API_KEY: 'f',
       MISTRAL_API_KEY: 'm',
       OPENROUTER_API_KEY: 'o',
+      PARALLEL_API_KEY: 'p',
       ANTHROPIC_AUTH_TOKEN: 'a', // caught by the provider pattern, not the list
     })
     assert.equal(env['PATH'], '/usr/bin')
@@ -34,6 +35,7 @@ describe('envForRendererChildProcess', () => {
     assert.equal(env['FIREWORKS_API_KEY'], undefined)
     assert.equal(env['MISTRAL_API_KEY'], undefined)
     assert.equal(env['OPENROUTER_API_KEY'], undefined)
+    assert.equal(env['PARALLEL_API_KEY'], undefined)
     assert.equal(env['ANTHROPIC_AUTH_TOKEN'], undefined)
   })
 

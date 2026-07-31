@@ -9,6 +9,7 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
 const THREAD_SHOT = 'image-expand-thread.png'
 const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
+const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
 
 /** 64×40 teal checker PNG so the modal has visible content for visual review. */
@@ -57,7 +58,7 @@ describe('Screenshot click-to-expand', () => {
     assert.equal(await thumb.getAttribute('aria-label'), 'Expand Attached image')
 
     await thumb.click()
-    const dialog = $('dialog.image-expand-dialog[open]')
+    const dialog = $('dialog.attachment-preview-dialog[open]')
     await dialog.waitForExist({ timeout: 5_000 })
     await expect($('.image-expand-image')).toExist()
     const expandedSrc = await $('.image-expand-image').getAttribute('src')
@@ -68,8 +69,8 @@ describe('Screenshot click-to-expand', () => {
 
     await saveAppScreenshot(THREAD_SHOT)
 
-    await $('.image-expand-close').click()
-    const closed = $('dialog.image-expand-dialog')
+    await $('.attachment-preview-close').click()
+    const closed = $('dialog.attachment-preview-dialog')
     await browser.waitUntil(
       async () => {
         if (!(await closed.isExisting())) return true
@@ -86,6 +87,24 @@ describe('Screenshot click-to-expand', () => {
     )
     await expect(closed).not.toBeDisplayed()
     await saveAppScreenshot(THREAD_DISMISSED_SHOT)
+  })
+
+  it('previews a sent text file in the same modal shell', async () => {
+    const chip = $('.transcript-attachment-file.text-expandable')
+    await chip.waitForDisplayed({ timeout: 10_000 })
+    assert.equal(await chip.getAttribute('role'), 'button')
+    assert.equal(await chip.getAttribute('aria-label'), 'Preview running-tests.diff')
+
+    await chip.click()
+    const dialog = $('dialog.attachment-preview-dialog[open]')
+    await dialog.waitForExist({ timeout: 5_000 })
+    assert.equal(await dialog.getAttribute('data-preview-kind'), 'text')
+    await expect($('.attachment-preview-title')).toHaveText('running-tests.diff')
+    await expect($('.attachment-preview-text')).toHaveText(
+      expect.stringContaining('+ expect(status).toBe("running")'),
+    )
+    await saveAppScreenshot(TEXT_SHOT)
+    await $('.attachment-preview-close').click()
   })
 
   it('expands a roadmap plan attachment thumb in the same modal', async () => {
@@ -108,14 +127,14 @@ describe('Screenshot click-to-expand', () => {
     await thumb.waitForDisplayed({ timeout: 5_000 })
     await thumb.click()
 
-    const dialog = $('dialog.image-expand-dialog[open]')
+    const dialog = $('dialog.attachment-preview-dialog[open]')
     await dialog.waitForExist({ timeout: 5_000 })
     const expandedSrc = await $('.image-expand-image').getAttribute('src')
     assert.ok(
       typeof expandedSrc === 'string' && expandedSrc.startsWith('data:image/png;base64,'),
       'plan modal shows the chip data URL',
     )
-    await expect($('.image-expand-close')).toExist()
+    await expect($('.attachment-preview-close')).toExist()
     await saveAppScreenshot(ROADMAP_SHOT)
   })
 })

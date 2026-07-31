@@ -203,6 +203,11 @@ export function mountRoadmapPane(
   let resolutionCheckItemId: string | null = null
   let resolutionCheckToken = 0
   let loadToken = 0
+  // True while the first (or a re-triggered empty-list) fetch is in flight, so
+  // renderList() can show "Loading…" instead of the "No roadmap items yet"
+  // empty state — a large roadmap's fetch can take a while and the two look
+  // identical otherwise.
+  let loading = false
   // Search/filter query entered in the list header.
   let searchQuery = ''
   // Done items are hidden by default; the header toggle reveals them.
@@ -929,9 +934,10 @@ export function mountRoadmapPane(
     clear(listBody)
     const visible = items.filter(isListVisible)
     if (visible.length === 0) {
-      let hint =
-        'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
-      if (searchQuery) {
+      let hint = loading
+        ? 'Loading roadmap…'
+        : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
+      if (!loading && searchQuery) {
         hint = 'No roadmap items match your filter.'
       } else if (!showDone && items.some((item) => itemStatus(item) === 'done')) {
         hint = 'No open roadmap items. Turn on "done" to see completed work.'
@@ -1132,6 +1138,13 @@ export function mountRoadmapPane(
   // workspace change) refresh without it so the editor renders fresh.
   async function refresh(opts?: { preserveDirty?: boolean }): Promise<void> {
     const token = ++loadToken
+    // Only flip on the loading state (and repaint) when the list is currently
+    // empty — a background refresh of an already-populated list shouldn't
+    // flash "Loading…" over the existing rows.
+    if (items.length === 0 && !loading) {
+      loading = true
+      renderList()
+    }
     let next: RoadmapItem[]
     try {
       next = await api.roadmap.list()
@@ -1139,6 +1152,7 @@ export function mountRoadmapPane(
       next = []
     }
     if (token !== loadToken) return
+    loading = false
     items = next
     // Drop a selection whose item vanished (deleted elsewhere), but keep an
     // in-progress new-item form open. During review/import the viewer column

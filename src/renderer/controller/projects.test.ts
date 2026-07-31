@@ -46,6 +46,7 @@ function makeApi(handlers: {
   storageGet?: (key: string) => Promise<unknown>
   storageSet?: (key: string, value: unknown) => Promise<void>
   loadProjectThreads?: (projectId: string) => Promise<Thread[]>
+  createProjectThread?: (projectId: string, thread: Thread) => Promise<void>
   settingsGet?: (key: string) => Promise<unknown>
   sshStates?: () => Promise<SshConnectionState[]>
   sshConnect?: (hostId: string) => Promise<void>
@@ -67,7 +68,7 @@ function makeApi(handlers: {
       threads: {
         ...base['threads'],
         loadProject: handlers.loadProjectThreads ?? (async (): Promise<Thread[]> => []),
-        create: async (): Promise<void> => undefined,
+        create: handlers.createProjectThread ?? (async (): Promise<void> => undefined),
         appendMessage: async (): Promise<void> => undefined,
         updateMeta: async (): Promise<void> => undefined,
         delete: async (): Promise<void> => undefined,
@@ -177,6 +178,51 @@ test('switchProject uses cached threads in sidebar while activation is in flight
   releaseWorkspace()
   await new Promise((r) => setTimeout(r, 0))
   await new Promise((r) => setTimeout(r, 0))
+})
+
+test('switchProject starts outgoing persistence and workspace activation concurrently', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'perf-a', path: '/a', name: 'A' },
+      { id: 'perf-b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'perf-a',
+    expandedProjectId: 'perf-a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+
+  const started: string[] = []
+  const releases: Array<() => void> = []
+  let blockInitialWrites = true
+  const gate = (name: string): Promise<void> => {
+    started.push(name)
+    return new Promise((resolve) => releases.push(resolve))
+  }
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      await gate('workspace')
+      return path
+    },
+    storageSet: async (key) => {
+      if (blockInitialWrites) await gate(`storage:${key}`)
+    },
+    createProjectThread: async () => gate('threads'),
+    loadProjectThreads: async () => [thread('t-b')],
+  })
+
+  switchProject(store, api, 'perf-b')
+  await waitUntil(() => started.length === 4)
+
+  assert.deepEqual(
+    new Set(started),
+    new Set(['workspace', 'threads', 'storage:projects', 'storage:activeProjectId']),
+  )
+  blockInitialWrites = false
+  for (const release of releases) release()
+  await waitUntil(() => store.getState().activeProjectId === 'perf-b')
 })
 
 test('switchProjectThread selects the clicked thread after activation', async () => {
@@ -330,6 +376,39 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
   assert.equal(store.getState().expandedProjectId, 'a')
   assert.equal(store.getState().threads.length, 1)
   assert.deepEqual(events, ['projects_changed', 'workspace_changed', 'threads_changed'])
+})
+
+test('restoreProject overlaps workspace activation with thread loading', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    threads: [],
+  })
+  const started: string[] = []
+  const releases: Array<() => void> = []
+  const gate = (name: string): Promise<void> => {
+    started.push(name)
+    return new Promise((resolve) => releases.push(resolve))
+  }
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      await gate('workspace')
+      return path
+    },
+    loadProjectThreads: async () => {
+      await gate('threads')
+      return [thread('t-a')]
+    },
+  })
+
+  const pending = restoreProject(store, api, 'a')
+  await waitUntil(() => started.length === 2)
+
+  assert.deepEqual(new Set(started), new Set(['workspace', 'threads']))
+  for (const release of releases) release()
+  await pending
+  assert.equal(store.getState().activeThreadId, 't-a')
 })
 
 test('panel visibility persists per project across switches', async () => {

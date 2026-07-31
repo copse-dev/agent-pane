@@ -1,3 +1,28 @@
+/* Chat-scoped modality: cover the conversation and composer, but leave sibling
+ * panes (notably the integrated terminal) fully visible and interactive. */
+.approval-chat-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 110;
+  background: color-mix(in srgb, var(--bg-base) 65%, transparent);
+}
+#approval-dialog {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  z-index: 111;
+  width: min(calc(100% - 2 * var(--spacing-xl)), 560px);
+  min-width: 0;
+  max-height: calc(100% - 2 * var(--spacing-xl));
+  margin: 0;
+  transform: translate(-50%, -50%);
+  box-shadow: var(--shadow-lg);
+}
+/* When Settings already owns the top layer, provider-host approval keeps its
+ * established modal exception. In that mode, center against the viewport. */
+#approval-dialog:modal {
+  position: fixed;
+  max-height: calc(100vh - 2 * var(--spacing-xl));
+}
 /* Single heading for the whole prompt; stays put while the items scroll. */
 .approval-heading {
   margin-bottom: var(--spacing-md);
