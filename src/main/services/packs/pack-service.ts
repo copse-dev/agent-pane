@@ -26,7 +26,10 @@
 // bagged per pack to keep the top-level key namespace clean and let the P4
 // todos pack lift/shift its config into a single record.
 import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import {
+  createFirstPartyPackRegistry,
+  EXPERIMENTAL_FIRST_PARTY_PACK_IDS,
+} from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-summary.ts'
 import {
@@ -35,19 +38,10 @@ import {
   COMPARISON_MODEL_B_SETTING_ID,
   COMPARISON_JUDGE_MODEL_SETTING_ID,
 } from '@copse/agent/packs/model-comparison-pack.ts'
-import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
-import { FORCED_PLANNING_PACK_ID } from '@copse/agent/packs/forced-planning-pack.ts'
-import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
-import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
@@ -80,12 +74,10 @@ const PACK_SOURCES_KEY = 'packSources'
 /**
  * Packs that ship registered but off.
  *
- * `createFirstPartyPackRegistry()` seeds every pack enabled, so the off-by-
- * default set is declared here and written into `packDisabled` on a profile
- * that has never had one. Every id below was opt-in before it became a pack,
- * and `copse.pii-redaction` additionally rewrites model input — defaulting any
- * of them on would hand an experimental surface to someone who never asked for
- * it. `copse.post-turn-review` is deliberately absent: it has always been on.
+ * `createFirstPartyPackRegistry()` seeds every pack enabled. The off-by-default
+ * set is derived from each first-party manifest's `experimental` stability and
+ * written into `packDisabled` on a profile that has never had one. This makes a
+ * forgotten rollout-list update impossible when a new experiment is added.
  *
  * The three packs added with the contribution kinds (#1188-#1190) join the list
  * for the same reason — each replaces a retired opt-in boolean
@@ -98,21 +90,7 @@ const PACK_SOURCES_KEY = 'packSources'
  * but belongs here for the same reason: it rewrites the system prompt of every
  * turn that runs on a below-threshold model.
  */
-const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
-  ADVISOR_STRATEGY_PACK_ID,
-  AUTOMATIONS_PACK_ID,
-  BACKGROUND_TASKS_PACK_ID,
-  CI_INVESTIGATOR_PACK_ID,
-  DEVTOOLS_SHORTCUT_PACK_ID,
-  FORCED_PLANNING_PACK_ID,
-  LONG_HORIZON_TASKS_PACK_ID,
-  MCP_UI_CANVAS_PACK_ID,
-  MODEL_COMPARISON_PACK_ID,
-  OKF_MEMORIES_PACK_ID,
-  PARALLEL_SEARCH_PACK_ID,
-  PII_REDACTION_PACK_ID,
-  ROADMAP_PLANS_PACK_ID,
-]
+const DEFAULT_DISABLED_PACK_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_PACK_IDS
 
 /** One-time default-off seed for the new local automations prototype. */
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'

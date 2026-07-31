@@ -87,6 +87,7 @@ import { startAgentController } from './controller/agent.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
   addProjectFromPath,
@@ -295,6 +296,9 @@ async function boot(): Promise<void> {
     attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
+    // Outside Cursor cloud agents for the open project — first tick after one
+    // interval, never on editor open.
+    startExternalCursorAgentSync(store, api)
   }
   attachProjectThreadCache(store)
 

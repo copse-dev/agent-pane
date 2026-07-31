@@ -79,6 +79,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
                   {
                     id: 'personal.reference-model',
                     trust: 'user',
+                    stability: 'experimental',
                     name: 'personal.reference-model',
                     enabled: opts.packEnabled ?? true,
                     contributions: {

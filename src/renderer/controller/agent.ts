@@ -25,6 +25,7 @@ import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
 import { getToolCallLabel, shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
 import {
   initSubagent,
+  appendSubagentReasoning,
   appendSubagentText,
   addSubagentToolCall,
   updateSubagentToolCall,
@@ -298,6 +299,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         initSubagent(store, st.msgId, chunk.parentToolCallId, chunk.session)
         st.writing = false
         activity(threadId)
+        break
+      }
+      case 'subagent_reasoning': {
+        if (st.msgId) {
+          appendSubagentReasoning(
+            store,
+            st.msgId,
+            chunk.parentToolCallId,
+            chunk.messageId,
+            chunk.text,
+          )
+        }
         break
       }
       case 'subagent_text': {

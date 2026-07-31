@@ -89,6 +89,7 @@ export const postTurnReviewPack: RegisteredPack = definePack({
   description:
     'Post-turn review — reads the working diff after each editing turn with a subagent and applies its todo remediation, gated by a per-chat spend approval for billable review models.',
   trust: 'first-party',
+  stability: 'stable',
   storage: { namespace: POST_TURN_REVIEW_PACK_ID },
   settings: {
     [POST_TURN_REVIEW_MAX_CYCLES_SETTING]: {
