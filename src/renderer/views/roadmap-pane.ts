@@ -1,4 +1,4 @@
-import { el, clear, scrollIntoViewIfNeeded } from '../dom/helpers.ts'
+import { el, clear } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
@@ -8,7 +8,15 @@ import {
   roadmapExportFormatLabel,
 } from '../export-roadmap.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
-import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
+import {
+  ROADMAP_CATEGORIES,
+  ROADMAP_COMPLEXITIES,
+  isRoadmapCategory,
+  isRoadmapComplexity,
+  roadmapCategoryLabel,
+  type RoadmapCategory,
+  type RoadmapComplexity,
+} from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
 import type { RoadmapIssueCoverageMatch } from '@shared/roadmap/coverage.ts'
 import {
@@ -89,6 +97,7 @@ interface EditorDraft {
   notes: string
   issue: string
   status: RoadmapStatus
+  category: RoadmapCategory | ''
   pendingAttachments: PendingAttachment[]
   removedAttachmentIds: string[]
 }
@@ -191,6 +200,9 @@ export function mountRoadmapPane(
       }
     | undefined
   let openIssues: OpenIssue[] = []
+  let openIssuePage = 0
+  let openIssueSlug = ''
+  let moreOpenIssues = false
   /** Model-judged coverage of open issues by existing (unpinned) roadmap items. */
   let issueCoverage = new Map<number, RoadmapIssueCoverageMatch>()
   let coverageToken = 0
@@ -208,23 +220,51 @@ export function mountRoadmapPane(
   // empty state — a large roadmap's fetch can take a while and the two look
   // identical otherwise.
   let loading = false
-  // Search/filter query entered in the list header.
+  // Text and facet filters entered in the list header. Every facet starts
+  // enabled, including legacy items that have not been stamped yet.
   let searchQuery = ''
-  // Done items are hidden by default; the header toggle reveals them.
-  let showDone = false
+  const enabledCategories = new Set<RoadmapCategory | 'uncategorized'>([
+    ...ROADMAP_CATEGORIES,
+    'uncategorized',
+  ])
+  const enabledComplexities = new Set<RoadmapComplexity | 'unestimated'>([
+    ...ROADMAP_COMPLEXITIES,
+    'unestimated',
+  ])
+  const enabledStatuses = new Set<RoadmapStatus>(STATUS_OPTIONS)
+  const collapsedCategories = new Set<RoadmapCategory | 'uncategorized'>()
   /** In-progress edits keyed by item id, or {@link NEW_ITEM_DRAFT_KEY} for a new item. */
   const editorDrafts = new Map<string, EditorDraft>()
   /** Ignores stale auto-save responses when the user leaves and re-enters quickly. */
   const autoSaveToken = new Map<string, number>()
 
   // --- list column ----------------------------------------------------------
-  const listHeader = el('div', { class: 'git-changes-header' })
+  const listHeader = el('div', { class: 'git-changes-header roadmap-list-header' })
+  const filter = el('div', { class: 'roadmap-filter' })
   const searchInput = el('input', {
     type: 'search',
     class: 'roadmap-search-input',
-    placeholder: 'Filter roadmap items…',
-    'aria-label': 'Filter roadmap items',
+    placeholder: 'Search roadmap…',
+    'aria-label': 'Search roadmap items',
   })
+  const filterToggle = el(
+    'button',
+    {
+      type: 'button',
+      class: 'roadmap-filter-toggle',
+      'aria-label': 'Filter roadmap items',
+      'aria-expanded': 'false',
+      title: 'Filter by category, complexity, or status',
+    },
+    'Filter',
+  )
+  const filterMenu = el('div', {
+    class: 'roadmap-filter-menu',
+    role: 'group',
+    'aria-label': 'Roadmap filters',
+    hidden: true,
+  })
+  filter.append(searchInput, filterToggle, filterMenu)
   const actionButtons = el('div', { class: 'roadmap-action-buttons' })
   const newBtn = el(
     'button',
@@ -255,17 +295,6 @@ export function mountRoadmapPane(
       title: 'Review whether roadmap items have been resolved',
     },
     '◎',
-  )
-  const showDoneBtn = el(
-    'button',
-    {
-      type: 'button',
-      class: 'git-changes-refresh-btn roadmap-show-done-btn',
-      'aria-label': 'Show done items',
-      'aria-pressed': 'false',
-      title: 'Show done items',
-    },
-    'done',
   )
   const refreshBtn = el(
     'button',
@@ -300,33 +329,69 @@ export function mountRoadmapPane(
       })),
     )
   })
-  actionButtons.append(newBtn, importBtn, reviewBtn, showDoneBtn, exportBtn, refreshBtn)
+  actionButtons.append(newBtn, importBtn, reviewBtn, exportBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
-    searchInput,
+    filter,
     actionButtons,
   )
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
   listRoot.append(listHeader, listBody)
 
-  function syncShowDoneBtn(): void {
-    showDoneBtn.setAttribute('aria-pressed', showDone ? 'true' : 'false')
-    showDoneBtn.classList.toggle('is-active', showDone)
-    showDoneBtn.title = showDone ? 'Hide done items' : 'Show done items'
-    showDoneBtn.setAttribute('aria-label', showDone ? 'Hide done items' : 'Show done items')
+  function appendFilterSection<T extends string>(
+    title: string,
+    values: readonly T[],
+    enabled: Set<T>,
+    label: (value: T) => string,
+  ): void {
+    filterMenu.append(el('div', { class: 'roadmap-filter-heading' }, title))
+    for (const value of values) {
+      const checkbox = el('input', { type: 'checkbox', checked: true })
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) enabled.add(value)
+        else enabled.delete(value)
+        renderList()
+      })
+      filterMenu.append(
+        el('label', { class: 'roadmap-filter-option' }, checkbox, el('span', {}, label(value))),
+      )
+    }
   }
+
+  appendFilterSection(
+    'Category',
+    [...ROADMAP_CATEGORIES, 'uncategorized'],
+    enabledCategories,
+    (category) => (category === 'uncategorized' ? 'Uncategorized' : roadmapCategoryLabel(category)),
+  )
+  appendFilterSection(
+    'Complexity',
+    [...ROADMAP_COMPLEXITIES, 'unestimated'],
+    enabledComplexities,
+    (complexity) => (complexity === 'unestimated' ? 'Unestimated' : complexity),
+  )
+  appendFilterSection('Status', STATUS_OPTIONS, enabledStatuses, (status) => status)
+
+  function closeFilterMenu(): void {
+    filterMenu.hidden = true
+    filterToggle.setAttribute('aria-expanded', 'false')
+  }
+
+  filterToggle.addEventListener('click', () => {
+    const opening = filterMenu.hidden
+    filterMenu.hidden = !opening
+    filterToggle.setAttribute('aria-expanded', opening ? 'true' : 'false')
+  })
+  const closeFilterOnOutsideClick = (event: Event): void => {
+    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu()
+  }
+  document.addEventListener('click', closeFilterOnOutsideClick)
 
   searchInput.addEventListener('input', () => {
     searchQuery = searchInput.value.trim()
     renderList()
   })
-  showDoneBtn.addEventListener('click', () => {
-    showDone = !showDone
-    syncShowDoneBtn()
-    renderList()
-  })
-  syncShowDoneBtn()
 
   // --- editor column --------------------------------------------------------
   const emptyState = el(
@@ -359,6 +424,14 @@ export function mountRoadmapPane(
   })
   for (const status of STATUS_OPTIONS) {
     statusSelect.append(el('option', { value: status }, status))
+  }
+  const categorySelect = el('select', {
+    class: 'memories-field roadmap-category-select',
+    'aria-label': 'Roadmap category',
+  })
+  categorySelect.append(el('option', { value: '' }, 'Auto'))
+  for (const category of ROADMAP_CATEGORIES) {
+    categorySelect.append(el('option', { value: category }, roadmapCategoryLabel(category)))
   }
   // Attachments (issue #556): pasted/dropped/picked files and images ride with
   // the item — .jsonl eval sets, screenshots for prompts — and flow into the
@@ -492,6 +565,8 @@ export function mountRoadmapPane(
     attachmentsLabel,
     attachmentList,
     attachFileInput,
+    el('label', { class: 'memories-label' }, 'Category'),
+    categorySelect,
     statusLabel,
     statusSelect,
     metaLine,
@@ -508,6 +583,11 @@ export function mountRoadmapPane(
     { type: 'button', class: 'memories-btn memories-btn-primary roadmap-import-confirm' },
     'Import selected',
   )
+  const importLoadMoreBtn = el(
+    'button',
+    { type: 'button', class: 'memories-btn roadmap-import-more', hidden: true },
+    'Load more',
+  )
   const importCancelBtn = el(
     'button',
     { type: 'button', class: 'memories-btn roadmap-import-cancel' },
@@ -519,7 +599,7 @@ export function mountRoadmapPane(
     el('label', { class: 'memories-label' }, 'Open issues'),
     importStatus,
     importList,
-    el('div', { class: 'memories-actions' }, importConfirmBtn, importCancelBtn),
+    el('div', { class: 'memories-actions' }, importLoadMoreBtn, importConfirmBtn, importCancelBtn),
   )
 
   const reviewStatus = el('div', { class: 'memories-meta roadmap-review-status' })
@@ -586,6 +666,10 @@ export function mountRoadmapPane(
       notesInput.value !== (item ? itemNotes(item) : '') ||
       issueInput.value !== (item ? itemIssue(item) : '') ||
       (item != null && statusSelect.value !== itemStatus(item)) ||
+      categorySelect.value !==
+        (item && item.fields['categoryManual'] && isRoadmapCategory(item.fields['category'])
+          ? item.fields['category']
+          : '') ||
       pendingAttachments.length > 0 ||
       removedAttachmentIds.size > 0
     )
@@ -623,6 +707,7 @@ export function mountRoadmapPane(
       notes: notesInput.value,
       issue: issueInput.value,
       status: toRoadmapStatus(statusSelect.value),
+      category: isRoadmapCategory(categorySelect.value) ? categorySelect.value : '',
       pendingAttachments: pendingAttachments.map((pending) => ({ ...pending })),
       removedAttachmentIds: [...removedAttachmentIds],
     }
@@ -635,6 +720,7 @@ export function mountRoadmapPane(
     notesInput.value = draft.notes
     issueInput.value = draft.issue
     statusSelect.value = draft.status
+    categorySelect.value = draft.category
     pendingAttachments = draft.pendingAttachments.map((pending) => ({ ...pending }))
     removedAttachmentIds.clear()
     for (const id of draft.removedAttachmentIds) removedAttachmentIds.add(id)
@@ -646,6 +732,7 @@ export function mountRoadmapPane(
       a.notes === b.notes &&
       a.issue === b.issue &&
       a.status === b.status &&
+      a.category === b.category &&
       a.pendingAttachments.length === b.pendingAttachments.length &&
       a.pendingAttachments.every((pending, index) => {
         const other = b.pendingAttachments[index]
@@ -683,8 +770,17 @@ export function mountRoadmapPane(
         removeIds.length > 0 ? removeIds : undefined,
       )
       if (autoSaveToken.get(id) !== token || !updated) return
+      const storedCategory =
+        updated.fields['categoryManual'] && isRoadmapCategory(updated.fields['category'])
+          ? updated.fields['category']
+          : ''
+      const categorized =
+        draft.category === storedCategory
+          ? updated
+          : await api.roadmap.setCategory(id, draft.category)
+      if (autoSaveToken.get(id) !== token || !categorized) return
       const index = items.findIndex((item) => item.id === id)
-      if (index >= 0) items[index] = updated
+      if (index >= 0) items[index] = categorized
       const current = editorDrafts.get(id)
       if (current && draftsMatch(current, draft)) editorDrafts.delete(id)
       if (selectedId !== id) renderList()
@@ -842,6 +938,10 @@ export function mountRoadmapPane(
         notesInput.value = item ? itemNotes(item) : ''
         issueInput.value = item ? itemIssue(item) : ''
         statusSelect.value = item ? itemStatus(item) : 'ready'
+        categorySelect.value =
+          item && item.fields['categoryManual'] && isRoadmapCategory(item.fields['category'])
+            ? item.fields['category']
+            : ''
         resetAttachmentEdits()
       }
     }
@@ -906,7 +1006,11 @@ export function mountRoadmapPane(
     }
     if (item?.updatedAt) {
       metaLine.hidden = false
-      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)}`
+      const updatedTime = new Date(item.updatedAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`
     } else {
       metaLine.hidden = true
       metaLine.textContent = ''
@@ -925,211 +1029,284 @@ export function mountRoadmapPane(
     )
   }
 
+  function itemCategory(item: RoadmapItem): RoadmapCategory | 'uncategorized' {
+    const category = item.fields['category']
+    return isRoadmapCategory(category) ? category : 'uncategorized'
+  }
+
+  function itemComplexity(item: RoadmapItem): RoadmapComplexity | 'unestimated' {
+    const complexity = item.fields['complexity']
+    return isRoadmapComplexity(complexity) ? complexity : 'unestimated'
+  }
+
   function isListVisible(item: RoadmapItem): boolean {
-    if (!showDone && itemStatus(item) === 'done') return false
-    return matchesSearch(item)
+    const status = itemStatus(item)
+    return (
+      enabledCategories.has(itemCategory(item)) &&
+      enabledComplexities.has(itemComplexity(item)) &&
+      enabledStatuses.has(status) &&
+      matchesSearch(item)
+    )
   }
 
   function renderList(): void {
     clear(listBody)
     const visible = items.filter(isListVisible)
     if (visible.length === 0) {
+      // An empty *list* and an empty *roadmap* read very differently: the
+      // onboarding copy below is a lie once items exist and a facet or the
+      // search box is simply hiding them all.
       let hint = loading
         ? 'Loading roadmap…'
         : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
-      if (!loading && searchQuery) {
+      if (!loading && items.length > 0) {
         hint = 'No roadmap items match your filter.'
-      } else if (!showDone && items.some((item) => itemStatus(item) === 'done')) {
-        hint = 'No open roadmap items. Turn on "done" to see completed work.'
       }
       listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
       return
     }
-    for (const item of visible) {
-      const isSelected = item.id === selectedId
-      const status = itemStatus(item)
-      const row = el('button', {
-        type: 'button',
-        class: [
-          'git-change-row',
-          'memories-row',
-          'roadmap-row',
-          isSelected ? 'is-selected' : '',
-          status === 'done' ? 'is-done' : '',
-          status === 'archived' ? 'is-archived' : '',
-        ]
-          .filter(Boolean)
-          .join(' '),
+    const categoryOrder: readonly (RoadmapCategory | 'uncategorized')[] = [
+      ...ROADMAP_CATEGORIES,
+      'uncategorized',
+    ]
+    for (const category of categoryOrder) {
+      const categoryItems = visible.filter((item) => itemCategory(item) === category)
+      if (categoryItems.length === 0) continue
+      const group = el('section', {
+        class: `roadmap-category-group is-${category}`,
+        'data-category': category,
       })
-      const main = el('div', { class: 'memories-row-main' })
-      // Trailing indicators only — title leads; default `ready` is silent.
-      const meta = el('div', { class: 'roadmap-row-meta' })
-      if (LIST_STATUS_BADGES.has(status)) {
-        meta.append(el('span', { class: `roadmap-status-badge is-${status}` }, status))
-      }
-      // Complexity is stamped in the background shortly after a save
-      // (roadmap-complexity.ts); freshly saved items and older items that
-      // predate stamping simply have no badge yet.
-      const complexity = item.fields['complexity']
-      if (isRoadmapComplexity(complexity)) {
-        meta.append(
-          el(
-            'span',
-            {
-              class: `roadmap-complexity-badge is-${complexity}`,
-              title: 'Estimated prompt complexity (classified after save)',
-            },
-            complexity,
-          ),
-        )
-      }
-      // A fit verdict survives until the prompt or pin changes (the update
-      // path drops stale ones).
-      const fit = item.fields['fit']
-      if (isRoadmapFit(fit)) {
-        meta.append(
-          el(
-            'span',
-            {
-              class: `roadmap-fit-badge is-${fit}`,
-              title: 'Model verdict: would this prompt resolve the pinned issue?',
-            },
-            `fit: ${fit}`,
-          ),
-        )
-      }
-      const review = item.fields['reviewVerdict']
-      if (isRoadmapReviewVerdict(review)) {
-        meta.append(
-          el(
-            'span',
-            {
-              class: `roadmap-review-badge is-${review}`,
-              title: 'Model verdict: has this roadmap item been resolved?',
-            },
-            `review: ${review}`,
-          ),
-        )
-      }
-      const issue = itemIssue(item)
-      if (issue) {
-        const chip = el(
-          'span',
-          {
-            class: 'roadmap-issue-chip',
-            role: 'link',
-            title: `Open ${issue} on GitHub`,
-          },
-          issue,
-        )
-        chip.addEventListener('click', (e) => {
-          // The row itself selects the item; the chip only opens the issue.
-          e.stopPropagation()
-          void api.roadmap.issueUrl(issue).then((url) => {
-            if (url) void api.shell.openExternal(url)
-          })
-        })
-        meta.append(chip)
-      }
-      const attachmentCount = itemAttachments(item).length
-      if (attachmentCount > 0) {
-        meta.append(
-          el(
-            'span',
-            {
-              class: 'roadmap-attachment-badge',
-              title: `${String(attachmentCount)} attachment${attachmentCount === 1 ? '' : 's'}`,
-            },
-            // The shared paperclip SVG (attachment-icons.ts) — theme-aware
-            // `currentColor` stroke, never an emoji glyph.
-            attachmentIcon('file', 'ui-icon roadmap-attachment-badge-icon'),
-            String(attachmentCount),
-          ),
-        )
-      }
-      // Items whose started thread is still around get an icon that jumps
-      // straight back to it (tracked via the `thread` field on Start thread).
-      const trackedThread = getThreadById(store, itemThreadId(item))
-      if (trackedThread) {
-        const threadChip = el('span', {
-          class: 'roadmap-thread-chip',
-          role: 'link',
-          tabindex: '0',
-          title: `Reopen thread "${trackedThread.title}"`,
-          'aria-label': `Reopen thread "${trackedThread.title}"`,
-        })
-        threadChip.append(attachmentIcon('thread', 'ui-icon roadmap-thread-chip-icon'))
-        threadChip.addEventListener('click', (e) => {
-          // The row itself selects the item; the chip only reopens the thread.
-          e.stopPropagation()
-          switchThread(store, trackedThread.id)
-          getPromptAttachmentHandlers()?.focusComposer?.()
-        })
-        threadChip.addEventListener('keydown', (e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return
-          e.preventDefault()
-          e.stopPropagation()
-          switchThread(store, trackedThread.id)
-          getPromptAttachmentHandlers()?.focusComposer?.()
-        })
-        meta.append(threadChip)
-      }
-
-      // One-click status flip without opening the editor: check marks a live
-      // item done, refresh reopens a done one. Hidden until row hover/focus so
-      // the list stays quiet at rest. Archived items keep the editor-only flow.
-      // A span with role=button, like the issue chip — rows are <button>s and
-      // buttons cannot nest.
-      if (status !== 'archived') {
-        const isDone = status === 'done'
-        const toggle = el('span', {
-          class: 'roadmap-done-toggle',
-          role: 'button',
-          tabindex: '0',
-          title: isDone ? 'Reopen (set ready)' : 'Mark done',
-          'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
-        })
-        toggle.append(
-          isDone
-            ? refreshIcon('ui-icon roadmap-done-toggle-icon')
-            : checkIcon('ui-icon roadmap-done-toggle-icon'),
-        )
-        toggle.addEventListener('click', (e) => {
-          // The row itself selects the item; the toggle only flips status.
-          e.stopPropagation()
-          void setStatus(item, isDone ? 'ready' : 'done')
-        })
-        toggle.addEventListener('keydown', (e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return
-          e.preventDefault()
-          e.stopPropagation()
-          void setStatus(item, isDone ? 'ready' : 'done')
-        })
-        meta.append(toggle)
-      }
-      main.append(
-        el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
-        meta,
+      const groupItems = el('div', { class: 'roadmap-category-items' })
+      // Every group gets a header, including a one-row one. Rendering it only
+      // past a threshold means a collapsed group silently springs open (and
+      // loses its only control) the moment filtering or a status flip drops it
+      // to a single row, while `collapsedCategories` still holds the entry and
+      // snaps it shut again when a second row returns.
+      const collapsed = collapsedCategories.has(category)
+      groupItems.hidden = collapsed
+      const label = category === 'uncategorized' ? 'Uncategorized' : roadmapCategoryLabel(category)
+      const header = el(
+        'button',
+        {
+          type: 'button',
+          class: 'roadmap-category-header',
+          'aria-expanded': collapsed ? 'false' : 'true',
+        },
+        el('span', { class: 'roadmap-category-chevron' }, collapsed ? '›' : '⌄'),
+        el('span', { class: 'roadmap-category-header-label' }, label),
+        el('span', { class: 'roadmap-category-count' }, String(categoryItems.length)),
       )
-      row.append(main)
-      row.addEventListener('click', () => {
-        if (reviewing || importing) return
-        if (item.id === selectedId) return
-        leaveCurrentEditor()
-        cancelResolutionCheckUi()
-        selectedId = item.id
-        creating = false
+      header.addEventListener('click', () => {
+        if (collapsedCategories.has(category)) collapsedCategories.delete(category)
+        else collapsedCategories.add(category)
         renderList()
-        renderEditor()
-        void maybeAutoCheckResolution(item)
       })
-      listBody.append(row)
+      group.append(header)
+      for (const item of categoryItems) {
+        const isSelected = item.id === selectedId
+        const status = itemStatus(item)
+        const row = el('button', {
+          type: 'button',
+          class: [
+            'git-change-row',
+            'memories-row',
+            'roadmap-row',
+            isSelected ? 'is-selected' : '',
+            status === 'done' ? 'is-done' : '',
+            status === 'archived' ? 'is-archived' : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        })
+        const main = el('div', { class: 'memories-row-main' })
+        // Trailing indicators only — title leads; default `ready` is silent.
+        const meta = el('div', { class: 'roadmap-row-meta' })
+        if (LIST_STATUS_BADGES.has(status)) {
+          meta.append(el('span', { class: `roadmap-status-badge is-${status}` }, status))
+        }
+        const categoryBadge = item.fields['category']
+        if (isRoadmapCategory(categoryBadge)) {
+          meta.append(
+            el(
+              'span',
+              {
+                class: `roadmap-category-badge is-${categoryBadge}`,
+                title: 'Roadmap category',
+              },
+              categoryBadge,
+            ),
+          )
+        }
+        // A fit verdict survives until the prompt or pin changes (the update
+        // path drops stale ones).
+        const fit = item.fields['fit']
+        if (isRoadmapFit(fit)) {
+          meta.append(
+            el(
+              'span',
+              {
+                class: `roadmap-fit-badge is-${fit}`,
+                title: 'Model verdict: would this prompt resolve the pinned issue?',
+              },
+              `fit: ${fit}`,
+            ),
+          )
+        }
+        const review = item.fields['reviewVerdict']
+        if (isRoadmapReviewVerdict(review)) {
+          meta.append(
+            el(
+              'span',
+              {
+                class: `roadmap-review-badge is-${review}`,
+                title: 'Model verdict: has this roadmap item been resolved?',
+              },
+              `review: ${review}`,
+            ),
+          )
+        }
+        const issue = itemIssue(item)
+        if (issue) {
+          const chip = el(
+            'span',
+            {
+              class: 'roadmap-issue-chip',
+              role: 'link',
+              title: `Open ${issue} on GitHub`,
+            },
+            issue,
+          )
+          chip.addEventListener('click', (e) => {
+            // The row itself selects the item; the chip only opens the issue.
+            e.stopPropagation()
+            void api.roadmap.issueUrl(issue).then((url) => {
+              if (url) void api.shell.openExternal(url)
+            })
+          })
+          meta.append(chip)
+        }
+        const attachmentCount = itemAttachments(item).length
+        if (attachmentCount > 0) {
+          meta.append(
+            el(
+              'span',
+              {
+                class: 'roadmap-attachment-badge',
+                title: `${String(attachmentCount)} attachment${attachmentCount === 1 ? '' : 's'}`,
+              },
+              // The shared paperclip SVG (attachment-icons.ts) — theme-aware
+              // `currentColor` stroke, never an emoji glyph.
+              attachmentIcon('file', 'ui-icon roadmap-attachment-badge-icon'),
+              String(attachmentCount),
+            ),
+          )
+        }
+        // Items whose started thread is still around get an icon that jumps
+        // straight back to it (tracked via the `thread` field on Start thread).
+        const trackedThread = getThreadById(store, itemThreadId(item))
+        if (trackedThread) {
+          const threadChip = el('span', {
+            class: 'roadmap-thread-chip',
+            role: 'link',
+            tabindex: '0',
+            title: `Reopen thread "${trackedThread.title}"`,
+            'aria-label': `Reopen thread "${trackedThread.title}"`,
+          })
+          threadChip.append(attachmentIcon('thread', 'ui-icon roadmap-thread-chip-icon'))
+          threadChip.addEventListener('click', (e) => {
+            // The row itself selects the item; the chip only reopens the thread.
+            e.stopPropagation()
+            switchThread(store, trackedThread.id)
+            getPromptAttachmentHandlers()?.focusComposer?.()
+          })
+          threadChip.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return
+            e.preventDefault()
+            e.stopPropagation()
+            switchThread(store, trackedThread.id)
+            getPromptAttachmentHandlers()?.focusComposer?.()
+          })
+          meta.append(threadChip)
+        }
+        // Complexity follows the attachment and thread indicators so the compact
+        // relationship shortcuts stay closest to the title.
+        const complexity = item.fields['complexity']
+        if (isRoadmapComplexity(complexity)) {
+          meta.append(
+            el(
+              'span',
+              {
+                class: `roadmap-complexity-badge is-${complexity}`,
+                title: 'Estimated prompt complexity (classified after save)',
+              },
+              complexity,
+            ),
+          )
+        }
+
+        // One-click status flip without opening the editor: check marks a live
+        // item done, refresh reopens a done one. Hidden until row hover/focus so
+        // the list stays quiet at rest. Archived items keep the editor-only flow.
+        // A span with role=button, like the issue chip — rows are <button>s and
+        // buttons cannot nest.
+        if (status !== 'archived') {
+          const isDone = status === 'done'
+          const toggle = el('span', {
+            class: 'roadmap-done-toggle',
+            role: 'button',
+            tabindex: '0',
+            title: isDone ? 'Reopen (set ready)' : 'Mark done',
+            'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
+          })
+          toggle.append(
+            isDone
+              ? refreshIcon('ui-icon roadmap-done-toggle-icon')
+              : checkIcon('ui-icon roadmap-done-toggle-icon'),
+          )
+          toggle.addEventListener('click', (e) => {
+            // The row itself selects the item; the toggle only flips status.
+            e.stopPropagation()
+            void setStatus(item, isDone ? 'ready' : 'done')
+          })
+          toggle.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return
+            e.preventDefault()
+            e.stopPropagation()
+            void setStatus(item, isDone ? 'ready' : 'done')
+          })
+          meta.append(toggle)
+        }
+        main.append(
+          el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
+          meta,
+        )
+        row.append(main)
+        row.addEventListener('click', () => {
+          if (reviewing || importing) return
+          if (item.id === selectedId) return
+          leaveCurrentEditor()
+          cancelResolutionCheckUi()
+          selectedId = item.id
+          creating = false
+          renderList()
+          renderEditor()
+          void maybeAutoCheckResolution(item)
+        })
+        groupItems.append(row)
+      }
+      group.append(groupItems)
+      listBody.append(group)
     }
-    // Keep the selected row visible after re-render without nudging scroll when
-    // it is already fully on screen (e.g. the user just clicked it).
+    // A partly clipped row stays put. Only selections wholly above or below
+    // the viewport are brought back, which avoids fighting deliberate scroll.
     const selectedRow = listBody.querySelector('.is-selected')
     if (selectedRow) {
-      scrollIntoViewIfNeeded(selectedRow, listBody)
+      const rowRect = selectedRow.getBoundingClientRect()
+      const listRect = listBody.getBoundingClientRect()
+      const hasLayout = listRect.height > 0 && rowRect.height > 0
+      if (hasLayout && (rowRect.bottom <= listRect.top || rowRect.top >= listRect.bottom)) {
+        selectedRow.scrollIntoView({ block: 'nearest' })
+      }
     }
   }
 
@@ -1208,6 +1385,8 @@ export function mountRoadmapPane(
           addAttachments.length > 0 ? addAttachments : undefined,
         )
         selectedId = created.id
+        const category = isRoadmapCategory(categorySelect.value) ? categorySelect.value : ''
+        if (category) await api.roadmap.setCategory(created.id, category)
         creating = false
         editorDrafts.delete(NEW_ITEM_DRAFT_KEY)
       } else {
@@ -1224,6 +1403,13 @@ export function mountRoadmapPane(
           showError('This roadmap item no longer exists.')
           selectedId = null
           creating = false
+        } else {
+          const storedCategory =
+            updated.fields['categoryManual'] && isRoadmapCategory(updated.fields['category'])
+              ? updated.fields['category']
+              : ''
+          const category = isRoadmapCategory(categorySelect.value) ? categorySelect.value : ''
+          if (category !== storedCategory) await api.roadmap.setCategory(updated.id, category)
         }
       }
       if (selectedId) editorDrafts.delete(selectedId)
@@ -1448,6 +1634,11 @@ export function mountRoadmapPane(
   }
 
   function renderImportList(): void {
+    const selected = new Set(
+      [...importList.querySelectorAll<HTMLInputElement>('.roadmap-import-check')]
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => Number(checkbox.dataset['number'])),
+    )
     clear(importList)
     for (const issue of openIssues) {
       const pinned = issueAlreadyPinned(issue)
@@ -1461,6 +1652,7 @@ export function mountRoadmapPane(
         'data-number': String(issue.number),
         disabled: blocked,
       })
+      checkbox.checked = !blocked && selected.has(issue.number)
       const rowClass =
         'roadmap-import-row' +
         (pinned ? ' is-pinned' : '') +
@@ -1490,6 +1682,63 @@ export function mountRoadmapPane(
     }
   }
 
+  function isCurrentImport(token: number): boolean {
+    return importing && token === coverageToken
+  }
+
+  async function loadMoreOpenIssues(matchToken: number): Promise<void> {
+    importLoadMoreBtn.disabled = true
+    importStatus.textContent = openIssuePage === 0 ? 'Loading open issues…' : 'Loading more issues…'
+    try {
+      let issues: OpenIssue[] = []
+      // REST issue pages can contain only pull requests, which the backend
+      // removes. Skip empty raw pages so "Load more" always makes progress.
+      do {
+        const result = await api.roadmap.openIssues(openIssuePage + 1)
+        if (!isCurrentImport(matchToken)) return
+        openIssuePage++
+        openIssueSlug = result.slug
+        moreOpenIssues = result.hasMore
+        issues = result.issues
+      } while (issues.length === 0 && moreOpenIssues)
+
+      openIssues.push(...issues)
+      renderImportList()
+      importLoadMoreBtn.hidden = !moreOpenIssues
+      if (issues.length === 0) {
+        importStatus.textContent = openIssues.length
+          ? `Pick the issues to turn into roadmap prompts (${openIssueSlug}).`
+          : `No open issues found in ${openIssueSlug}.`
+        return
+      }
+
+      // Pin badges render immediately. Semantic coverage is bounded to this
+      // page and merges into prior pages when the model answers.
+      importStatus.textContent = `Checking existing roadmap coverage (${openIssueSlug})…`
+      try {
+        const matches = await api.roadmap.matchOpenIssues(
+          issues.map((issue) => ({ number: issue.number, title: issue.title, body: issue.body })),
+        )
+        if (!isCurrentImport(matchToken)) return
+        for (const match of matches) issueCoverage.set(match.issueNumber, match)
+        renderImportList()
+      } catch {
+        // Coverage is advisory — a failed page must not strand the picker or
+        // prevent the user from loading the next page.
+      }
+      if (!isCurrentImport(matchToken)) return
+      importStatus.textContent = `Pick the issues to turn into roadmap prompts (${openIssueSlug}).`
+    } catch (err) {
+      if (!isCurrentImport(matchToken)) return
+      importStatus.textContent = ipcErrorMessage(err, 'Could not list open issues.')
+    } finally {
+      if (isCurrentImport(matchToken)) {
+        importLoadMoreBtn.disabled = false
+        importLoadMoreBtn.hidden = !moreOpenIssues
+      }
+    }
+  }
+
   function startImport(): void {
     cancelResolutionCheckUi()
     importing = true
@@ -1497,45 +1746,18 @@ export function mountRoadmapPane(
     creating = false
     selectedId = null
     openIssues = []
+    openIssuePage = 0
+    openIssueSlug = ''
+    moreOpenIssues = false
     issueCoverage = new Map()
     const matchToken = ++coverageToken
     clear(importList)
+    importLoadMoreBtn.hidden = true
     importConfirmBtn.disabled = false
     importStatus.textContent = 'Loading open issues…'
     renderList()
     renderEditor()
-    void api.roadmap
-      .openIssues()
-      .then(({ slug, issues }) => {
-        if (!importing || matchToken !== coverageToken) return
-        openIssues = issues
-        // Naming the queried repo surfaces a stale or fork origin at a glance.
-        importStatus.textContent = issues.length
-          ? `Pick the issues to turn into roadmap prompts (${slug}).`
-          : `No open issues found in ${slug}.`
-        renderImportList()
-        if (issues.length === 0) return
-        // Pin badges are immediate; semantic coverage lands when the model
-        // answers (or silently stays empty when no model / unparseable).
-        importStatus.textContent = `Checking existing roadmap coverage (${slug})…`
-        return api.roadmap
-          .matchOpenIssues(issues.map((i) => ({ number: i.number, title: i.title, body: i.body })))
-          .then((matches) => {
-            if (!importing || matchToken !== coverageToken) return
-            issueCoverage = new Map(matches.map((m) => [m.issueNumber, m]))
-            importStatus.textContent = `Pick the issues to turn into roadmap prompts (${slug}).`
-            renderImportList()
-          })
-          .catch(() => {
-            // Coverage is advisory — a failed match must not strand the picker.
-            if (!importing || matchToken !== coverageToken) return
-            importStatus.textContent = `Pick the issues to turn into roadmap prompts (${slug}).`
-          })
-      })
-      .catch((err: unknown) => {
-        if (!importing) return
-        importStatus.textContent = ipcErrorMessage(err, 'Could not list open issues.')
-      })
+    void loadMoreOpenIssues(matchToken)
   }
 
   async function confirmImport(): Promise<void> {
@@ -1846,6 +2068,7 @@ export function mountRoadmapPane(
   reviewCloseBtn.addEventListener('click', closeReview)
   reviewMarkResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('done'))
   reviewArchiveResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('archived'))
+  importLoadMoreBtn.addEventListener('click', () => void loadMoreOpenIssues(coverageToken))
   importConfirmBtn.addEventListener('click', () => void confirmImport())
   importCancelBtn.addEventListener('click', cancelImport)
 
@@ -1984,6 +2207,7 @@ export function mountRoadmapPane(
   })
 
   return () => {
+    document.removeEventListener('click', closeFilterOnOutsideClick)
     unregisterPopoutSeed()
     unsubs.forEach((u) => {
       u()

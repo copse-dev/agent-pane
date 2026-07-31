@@ -19,26 +19,34 @@ async function runFindFiles(args: { pattern: string; max_results?: number }): Pr
 }
 
 describe('findFilesTool truncation flag', () => {
+  const testRoot = '/tmp/copse-panel-find-files-test-root'
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(() => {
+    restoreWorkspace = setWorkspaceRootForTest(testRoot)
+  })
+
   afterEach(() => {
-    setIndexForTest(null)
+    setIndexForTest(null, testRoot)
+    restoreWorkspace?.()
   })
 
   it('does NOT report truncation when total matches equal max_results (off-by-one)', async () => {
-    setIndexForTest(['a.ts', 'b.ts', 'c.ts'])
+    setIndexForTest(['a.ts', 'b.ts', 'c.ts'], testRoot)
     const out = await runFindFiles({ pattern: '*.ts', max_results: 3 })
     assert.doesNotMatch(out, /Truncated/)
     assert.equal(out.split('\n').length, 3)
   })
 
   it('reports truncation only when more matches exist than max_results', async () => {
-    setIndexForTest(['a.ts', 'b.ts', 'c.ts', 'd.ts'])
+    setIndexForTest(['a.ts', 'b.ts', 'c.ts', 'd.ts'], testRoot)
     const out = await runFindFiles({ pattern: '*.ts', max_results: 3 })
     assert.match(out, /\[Truncated at 3\]/)
     assert.equal(out.split('\n').length, 4) // 3 paths + truncation note
   })
 
   it('returns a no-match message when nothing matches', async () => {
-    setIndexForTest(['a.ts'])
+    setIndexForTest(['a.ts'], testRoot)
     const out = await runFindFiles({ pattern: '*.md' })
     assert.match(out, /No files match/)
   })

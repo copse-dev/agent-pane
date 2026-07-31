@@ -66,7 +66,7 @@ function packDisabledSeed(enabled: readonly string[]): string[] {
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
 /** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
-function e2eWorkspaceDir(): string {
+export function e2eWorkspaceDir(): string {
   const override = process.env.COPSE_WORKSPACE_DIR?.trim()
   return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
 }
@@ -347,11 +347,14 @@ export function seedEmptyProject(
      * that needs the Memories pane visible must lift it out of `packDisabled`.
      */
     okfMemoriesEnabled?: boolean
+    /** Explicit pack directories discovered at Settings load. */
+    packSources?: readonly string[]
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    developerMode?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -393,6 +396,9 @@ export function seedEmptyProject(
   if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
   seedConfig.packDisabled =
     options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
+  if (options?.packSources) {
+    seedConfig.packSources = [...options.packSources]
+  }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
@@ -437,6 +443,9 @@ export function seedEmptyProject(
   if (options?.rightPanelPosition !== undefined) {
     settings.rightPanelPosition = options.rightPanelPosition
   }
+  if (options?.developerMode !== undefined) {
+    settings.developerMode = options.developerMode
+  }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
   }
@@ -459,7 +468,14 @@ export function seedEmptyProject(
  */
 export function seedRoadmapNotes(
   workspaceRoot: string,
-  notes: { id: string; title: string; body: string; status?: string }[],
+  notes: {
+    id: string
+    title: string
+    body: string
+    status?: string
+    category?: string
+    complexity?: string
+  }[],
 ): string {
   const slug =
     workspaceRoot
@@ -483,6 +499,8 @@ export function seedRoadmapNotes(
       `title: "${note.title}"`,
       'tags: []',
       `status: ${note.status ?? 'ready'}`,
+      ...(note.category ? [`category: ${note.category}`] : []),
+      ...(note.complexity ? [`complexity: ${note.complexity}`] : []),
       `createdAt: ${iso}`,
       `updatedAt: ${iso}`,
       '---',
@@ -1514,6 +1532,39 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
       },
     ],
   })
+}
+
+/** Populated conversation used to validate Developer mode's diagnostic surfaces. */
+export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: boolean): void {
+  const projectId = 'e2e-developer-mode-project'
+  const threadId = 'e2e-developer-mode-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Developer diagnostics',
+        status: 'idle',
+        messages: [
+          {
+            id: 'developer-mode-user-message',
+            role: 'user',
+            content: 'This persisted conversation can be exported.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 100, outputTokens: 20 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+  writeSettings({ developerMode })
 }
 
 /** ACP thread whose context snapshot represents a `usage_update` from the agent. */
@@ -3278,6 +3329,7 @@ export function seedForkResendFixture(workspaceRoot: string): {
   const threadId = 'e2e-fork-resend-thread'
   const title = 'Fork and resend'
   const now = Date.now()
+  rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],

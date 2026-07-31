@@ -20,10 +20,21 @@ afterEach(() => {
   delete process.env['COPSE_PANEL_MOCK_GH']
   delete process.env['COPSE_PANEL_MOCK_GH_STATUS']
   delete process.env['COPSE_PANEL_MOCK_GH_ACTIONS']
+  delete process.env['COPSE_PANEL_MOCK_GH_MANY_ISSUES']
   resetMockBackendStateForTest()
 })
 
-describe('mockGitHubBackend writes', () => {
+describe('mockGitHubBackend', () => {
+  it('pages through all open-issue fixtures without a total ceiling', async () => {
+    process.env['COPSE_PANEL_MOCK_GH_MANY_ISSUES'] = '1'
+    const first = await mockGitHubBackend.listWorkspaceOpenIssues(1, 20)
+    const second = await mockGitHubBackend.listWorkspaceOpenIssues(2, 20)
+    assert.equal(first.issues.length, 20)
+    assert.equal(first.hasMore, true)
+    assert.equal(second.issues.length, 5)
+    assert.equal(second.hasMore, false)
+  })
+
   it('records an approval on the PR details', async () => {
     const result = await mockGitHubBackend.approvePr(REF)
     assert.equal(result.ok, true)

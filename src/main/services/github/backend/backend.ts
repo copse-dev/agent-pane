@@ -24,6 +24,12 @@ export interface PrRef {
   number: number
 }
 
+export interface GhIssuePage {
+  issues: GhIssueSummary[]
+  /** True when another bounded page may be available. */
+  hasMore: boolean
+}
+
 /**
  * A swappable GitHub backend for the PR panel and the PR agent tools.
  *
@@ -43,8 +49,8 @@ export interface GitHubBackend {
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null>
   getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null>
   getPrChecksState(ref: PrRef): Promise<GhPrChecksState>
-  /** Open issues in the workspace repo (PRs excluded) — backs roadmap import. */
-  listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]>
+  /** One bounded page of open workspace issues (PRs excluded) — backs roadmap import. */
+  listWorkspaceOpenIssues(page: number, pageSize: number): Promise<GhIssuePage>
   /** One issue by coordinates (any state); null when missing or actually a PR. */
   getIssue(ref: PrRef): Promise<GhIssueSummary | null>
   /** Search issues in the workspace repo (any state) — backs roadmap review. */

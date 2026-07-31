@@ -1507,8 +1507,15 @@ jobs:
             echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
             exit 0
           fi
-          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository }}
-          if $PROMOTION_PR && [ "${{ needs.e2e.result }}" != "success" ]; then
+          # Demand e2e only when the `e2e` job was actually dispatched. Its own
+          # `if:` skips drafts (no `ci-full`) and zero-shard plans, so mirroring
+          # those two guards here is what keeps the demand and the dispatch in
+          # step. Without the draft guard a main-based DRAFT deadlocked: e2e
+          # skipped because it was a draft, and this gate failed because e2e had
+          # not succeeded, so `CI Passed` could never go green — and since a base
+          # retarget does not re-run CI, the red outlived the move to `develop`.
+          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          if $PROMOTION_PR && [ "${{ needs.precheck.outputs.e2e_shard_total }}" != "0" ] && [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "Promotion PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
             echo '${{ toJSON(needs) }}'
             exit 1

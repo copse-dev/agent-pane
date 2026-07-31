@@ -42,6 +42,7 @@ import type {
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
+import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
 
 export type { DetectedAcpAgent }
 
@@ -77,6 +78,11 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    onPackTabRequest: (
+      handler: (
+        request: PackBrowserTabRequest,
+      ) => Promise<{ tabId: string; webContentsId: number }>,
+    ) => () => void
   }
   security: {
     getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
@@ -392,6 +398,18 @@ export interface ApiClient {
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
     models: () => Promise<Array<{ id: string; label: string }>>
+    /**
+     * List Cursor cloud agents for the account and import those matching the
+     * given project's GitHub repo (and not already linked) as local thread stubs.
+     * Omit `projectId` to use main's active project.
+     */
+    discoverExternal: (projectId?: string) => Promise<{
+      imported: Array<{ threadId: string; agentId: string; title: string; url: string }>
+      scanned: number
+      skippedLinked: number
+      skippedWrongRepo: number
+      skippedInactive: number
+    }>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
@@ -512,6 +530,10 @@ export interface ApiClient {
       fee: number | null,
     ) => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
   }
+  decisions: {
+    list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    export: (projectId?: string) => Promise<{ path: string; count: number }>
+  }
   index: {
     query: (pattern: string) => Promise<string[]>
     resolveFileReferences: (
@@ -559,6 +581,10 @@ export interface ApiClient {
       id: string,
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    setCategory: (
+      id: string,
+      category: string,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     export: (format: import('../shared/roadmap/export.ts').RoadmapExportFormat) => Promise<{
       filename: string
@@ -568,9 +594,10 @@ export interface ApiClient {
       files: string[]
     }>
     issueUrl: (ref: string) => Promise<string | null>
-    openIssues: () => Promise<{
+    openIssues: (page: number) => Promise<{
       slug: string
       issues: import('../shared/types/git.ts').GhIssueSummary[]
+      hasMore: boolean
     }>
     importIssues: (
       issues: { number: number; title: string; body: string }[],
@@ -625,6 +652,8 @@ export interface ApiClient {
     setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
     /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
     setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
+    /** Choose and register one pack directory through a native host dialog. */
+    addSource: () => Promise<PacksListResult>
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>

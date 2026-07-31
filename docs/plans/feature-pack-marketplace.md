@@ -112,6 +112,12 @@ Names illustrative; schema lands in P1:
 Storage: Copse-owned under userData or `~/.copse/` (exact root bikeshed in P1),
 human-inspectable JSON preferred. Not electron-store blobs for payload bytes.
 
+This portable install record is intentionally separate from explicitly selected
+development directories. Selected directories remain ordinary user packs,
+stay outside marketplace discovery, and currently support only isolated
+executable tool behavior. The content hash protects snapshot consistency; it is
+not a separate trust class.
+
 ### Verification policy (v1)
 
 | Check                 | v1 expectation                                                                                                                                            |
@@ -153,6 +159,12 @@ client, Settings marketplace browser, and changes to Cursor plugin discovery.
   documented in [`../adding-a-pack.md`](../adding-a-pack.md)).
 - Exit gate: unit/integration test registers a fixture user pack, enable/disable
   is atomic, prompt trust forced untrusted; no network.
+
+The selected-directory prerequisite now exercises the stricter half of this
+boundary: explicit-path discovery, fail-closed validation, deterministic hash,
+ordinary user-pack registration, and isolated tool execution. General portable
+user-pack discovery remains outstanding; executable behavior uses the isolated
+host rather than importing code into Electron main.
 
 ### P2 — Install record + path/URL install
 

@@ -83,10 +83,12 @@ export const findFilesTool = defineTool({
     max_results: z.number().int().min(1).max(200).optional().default(50),
   }),
   async execute({ pattern, max_results }) {
-    // Workspace open schedules the index build without blocking — ride any
-    // in-flight build instead of failing during the boot window.
-    await whenFileIndexReady()
-    const idx = getIndex()
+    const root = getAgentExecutionRoot()
+    if (!root) return 'No workspace open.'
+    // Workspace/worktree open schedules the index build without blocking —
+    // ride any in-flight build instead of failing during the boot window.
+    await whenFileIndexReady(root)
+    const idx = getIndex(root)
     if (!idx) return 'File index not available. Try opening the workspace again.'
     // Take one extra so we can tell "exactly max_results total" from "more were dropped".
     const found = micromatch(idx.paths, pattern).slice(0, max_results + 1)

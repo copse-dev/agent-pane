@@ -12,6 +12,7 @@ import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import {
   executeSemanticSearch,
+  isWorktreeExecutionContext,
   semanticIndexBuildingNote,
 } from '../services/search/semantic-search.ts'
 
@@ -84,7 +85,7 @@ export const searchCodebaseTool = defineTool({
       if (mode === 'semantic') {
         return semantic.status === 'building'
           ? semanticIndexBuildingNote()
-          : isActiveSshWorkspace()
+          : isActiveSshWorkspace() || isWorktreeExecutionContext()
             ? semanticIndexBuildingNote()
             : 'Semantic search unavailable. Bundled gortex failed to install or ' +
               'gortex/vera is missing on PATH (see README.md), or retry with mode: regex.'
@@ -116,7 +117,9 @@ export const searchCodebaseTool = defineTool({
         : semanticFallback === 'unavailable'
           ? isActiveSshWorkspace()
             ? '[semantic search unavailable on SSH workspace — regex fallback]\n'
-            : '[semantic search unavailable — regex fallback]\n'
+            : isWorktreeExecutionContext()
+              ? '[semantic search unavailable in worktree threads — regex fallback]\n'
+              : '[semantic search unavailable — regex fallback]\n'
           : '[regex search]\n'
     return header + formatCodeSearchResults(lines, max_results, backend)
   },
@@ -160,7 +163,7 @@ export const semanticSearchTool = defineTool({
       return semanticIndexBuildingNote()
     }
     if (semantic.status === 'unavailable') {
-      return isActiveSshWorkspace()
+      return isActiveSshWorkspace() || isWorktreeExecutionContext()
         ? semanticIndexBuildingNote()
         : 'Semantic search unavailable. Bundled gortex failed to install or ' +
             'gortex/vera is missing on PATH (see README.md).'
