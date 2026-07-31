@@ -740,6 +740,8 @@ contextBridge.exposeInMainWorld('api', {
     attachmentData: (id: string, attachmentId: string) =>
       ipcRenderer.invoke('roadmap:attachmentData', id, attachmentId),
     setStatus: (id: string, status: string) => ipcRenderer.invoke('roadmap:setStatus', id, status),
+    setCategory: (id: string, category: string) =>
+      ipcRenderer.invoke('roadmap:setCategory', id, category),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
     export: (format: string) => ipcRenderer.invoke('roadmap:export', format),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),

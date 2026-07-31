@@ -468,7 +468,14 @@ export function seedEmptyProject(
  */
 export function seedRoadmapNotes(
   workspaceRoot: string,
-  notes: { id: string; title: string; body: string; status?: string }[],
+  notes: {
+    id: string
+    title: string
+    body: string
+    status?: string
+    category?: string
+    complexity?: string
+  }[],
 ): string {
   const slug =
     workspaceRoot
@@ -492,6 +499,8 @@ export function seedRoadmapNotes(
       `title: "${note.title}"`,
       'tags: []',
       `status: ${note.status ?? 'ready'}`,
+      ...(note.category ? [`category: ${note.category}`] : []),
+      ...(note.complexity ? [`complexity: ${note.complexity}`] : []),
       `createdAt: ${iso}`,
       `updatedAt: ${iso}`,
       '---',

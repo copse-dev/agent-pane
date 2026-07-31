@@ -1,10 +1,116 @@
-/* Roadmap search input — sits inline in the header when wide, wraps
-   onto its own row when the panel is narrow (flex-wrap: wrap on the
-   header lets the buttons drop to a second line). */
+/* Keep the dropdown's stacking context above the scrolling list. */
+.roadmap-list-header {
+  position: relative;
+  z-index: 30;
+  overflow: visible;
+}
+
+/* Search and facet filters share one compact header control. */
+.roadmap-filter {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex: 1;
+  min-width: 120px;
+  max-width: 320px;
+  gap: 4px;
+}
 .roadmap-search-input {
   flex: 1;
   min-width: 80px;
-  max-width: 240px;
+}
+.roadmap-filter-toggle {
+  flex: none;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+.roadmap-filter-toggle[aria-expanded='true'] {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.roadmap-filter-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 190px;
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.roadmap-filter-heading {
+  margin: var(--spacing-xs) 0 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.roadmap-filter-heading:first-child {
+  margin-top: 0;
+}
+.roadmap-filter-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 2px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.roadmap-filter-option input {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+/* Every category group is an accordion, one row or many, so a collapsed group
+   keeps its control as filtering changes how many rows it holds. */
+.roadmap-category-group {
+  display: flex;
+  flex-direction: column;
+}
+.roadmap-category-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 5px var(--spacing-sm);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.roadmap-category-header:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.roadmap-category-chevron {
+  width: 10px;
+  font-size: 12px;
+  text-align: center;
+}
+.roadmap-category-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.roadmap-category-items {
+  display: flex;
+  flex-direction: column;
 }
 /* Right-align the action buttons group. */
 .roadmap-action-buttons {
@@ -12,17 +118,6 @@
   gap: var(--spacing-xs);
   flex-shrink: 0;
 }
-/* Show-done filter — pressed means done rows are visible in the list. */
-.roadmap-show-done-btn {
-  text-transform: lowercase;
-  letter-spacing: 0.02em;
-  font-size: var(--font-size-sm);
-}
-.roadmap-show-done-btn.is-active {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
 /* Roadmap pane (issue #556; #645 Phase 3). The pane reuses the memories pane's
    layout primitives (memories.css) and the git-changes list classes; these rules
    only add what is roadmap-specific — quiet single-line rows and the status
@@ -146,6 +241,25 @@
 .roadmap-thread-chip-icon {
   width: 12px;
   height: 12px;
+}
+
+/* Category is independent from complexity: what kind of work this is. */
+.roadmap-category-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.roadmap-category-badge.is-bug {
+  color: var(--danger, #f14c4c);
+}
+.roadmap-category-badge.is-feature {
+  color: var(--accent);
+}
+.roadmap-category-badge.is-project {
+  color: var(--warning, #d29922);
 }
 
 /* Complexity badge — stamped on save by the small-tasks model (or heuristic). */
