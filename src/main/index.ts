@@ -100,6 +100,8 @@ import {
 } from './services/diagnostics/event-loop-watchdog.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
+import { getSetting } from './services/storage/settings.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
@@ -237,7 +239,8 @@ app
       getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
     })
     applyAppIcon([win])
-    buildAppMenu(win)
+    const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
+    buildAppMenu(win, developerMode)
     initUpdatePrompt(win)
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
     // spawns (one of them, `gh auth status`, a network round trip), and run
@@ -620,16 +623,36 @@ app
     recordStartupPhase('skills-mcp')
     await initSkillsRegistry()
     registerSkillTools(registry)
-    await loadMcpServers(registry)
-    win.webContents.send('mcp:status_changed', getMcpServerStatuses())
     await loadCustomTools(registry)
 
     recordStartupPhase('boot-complete')
     // Print the boot timeline and flag any phase over its ceiling (#994). Every
     // expensive thing above scales with something CI does not have — profile
     // size, workspace size, MCP server count — so this is the one place the
-    // number is observable on a real machine.
+    // number is observable on a real machine. Reported here, before the
+    // background work below, so the timeline covers exactly the phases that
+    // gated the boot.
     reportStartupBudget()
+
+    // MCP connects in the background rather than gating boot. Each stdio server
+    // is a process launch and each http server a network round trip, under a 30s
+    // per-server connect timeout (CONNECT_TIMEOUT_MS) — awaited here, one slow or
+    // unreachable server delayed the whole app for everyone.
+    //
+    // Tools arriving after boot is already a supported mode: `loadMcpServers` is
+    // re-run from IPC whenever config or workspace trust changes, and it guards
+    // that with a `loadGeneration` counter. The renderer already listens on
+    // `mcp:status_changed`, so the UI fills in as servers land. (Under e2e this
+    // is a no-op — `loadMcpServers` returns early there and never connects.)
+    void loadMcpServers(registry)
+      .catch((err: unknown) => {
+        console.error('[mcp] initial server load failed:', err)
+      })
+      .finally(() => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('mcp:status_changed', getMcpServerStatuses())
+        }
+      })
     disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)

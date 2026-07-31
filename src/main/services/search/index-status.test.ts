@@ -4,8 +4,10 @@ import {
   getWorkspaceIndexStatus,
   indexBuildStarted,
   indexBuildFinished,
+  isSemanticIndexScaleGuarded,
   onWorkspaceIndexStatusChanged,
   resetWorkspaceIndexStatusForTest,
+  setSemanticIndexScaleGuarded,
   setSemanticIndexUnavailable,
 } from './index-status.ts'
 
@@ -63,6 +65,24 @@ describe('index-status', () => {
     const status = getWorkspaceIndexStatus()
     assert.equal(status.semantic.phase, 'unavailable')
     assert.equal(status.fileIndex.phase, 'idle')
+  })
+
+  it('marks semantic indexing as scale-skipped with a reason (#795)', () => {
+    setSemanticIndexScaleGuarded('skipped', 'Workspace has 120,000 indexed paths')
+    const status = getWorkspaceIndexStatus().semantic
+    assert.equal(status.phase, 'skipped')
+    assert.equal(status.reason, 'Workspace has 120,000 indexed paths')
+    assert.equal(isSemanticIndexScaleGuarded(), true)
+  })
+
+  it('clears the scale-guard reason after a later successful build', () => {
+    setSemanticIndexScaleGuarded('limited', 'Nested repository vendor/wpt is oversized')
+    indexBuildStarted('semantic')
+    indexBuildFinished('semantic', true)
+    const status = getWorkspaceIndexStatus().semantic
+    assert.equal(status.phase, 'ready')
+    assert.equal(status.reason, undefined)
+    assert.equal(isSemanticIndexScaleGuarded(), false)
   })
 
   it('notifies listeners on every transition until unsubscribed', () => {

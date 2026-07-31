@@ -10,6 +10,7 @@ import {
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
+import type { RoadmapIssueCoverageMatch } from '@shared/roadmap/coverage.ts'
 import {
   ATTACHMENTS_FIELD,
   MAX_NOTE_ATTACHMENTS,
@@ -82,6 +83,18 @@ interface PendingAttachment {
   dataUrl: string
 }
 
+/** Unsaved editor state stashed when switching items or leaving a new-item form. */
+interface EditorDraft {
+  prompt: string
+  notes: string
+  issue: string
+  status: RoadmapStatus
+  pendingAttachments: PendingAttachment[]
+  removedAttachmentIds: string[]
+}
+
+const NEW_ITEM_DRAFT_KEY = '__new__'
+
 // Base64-encode via arrayBuffer() rather than FileReader so the same path runs
 // in Chromium and in the happy-dom component tests.
 async function fileToDataUrl(file: File): Promise<string> {
@@ -126,6 +139,10 @@ function itemThreadId(item: RoadmapItem): string {
 function ipcErrorMessage(err: unknown, fallback: string): string {
   if (!(err instanceof Error)) return fallback
   return err.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, '')
+}
+
+function toRoadmapStatus(value: string | null | undefined): RoadmapStatus {
+  return STATUS_OPTIONS.find((status) => status === value) ?? 'ready'
 }
 
 function itemStatus(item: RoadmapItem): RoadmapStatus {
@@ -174,6 +191,12 @@ export function mountRoadmapPane(
       }
     | undefined
   let openIssues: OpenIssue[] = []
+  let openIssuePage = 0
+  let openIssueSlug = ''
+  let moreOpenIssues = false
+  /** Model-judged coverage of open issues by existing (unpinned) roadmap items. */
+  let issueCoverage = new Map<number, RoadmapIssueCoverageMatch>()
+  let coverageToken = 0
   // While a fit check runs, its progress/error text owns the fit box and
   // renderEditor must not overwrite it from the store.
   let fitCheckInFlight = false
@@ -183,10 +206,19 @@ export function mountRoadmapPane(
   let resolutionCheckItemId: string | null = null
   let resolutionCheckToken = 0
   let loadToken = 0
+  // True while the first (or a re-triggered empty-list) fetch is in flight, so
+  // renderList() can show "Loading…" instead of the "No roadmap items yet"
+  // empty state — a large roadmap's fetch can take a while and the two look
+  // identical otherwise.
+  let loading = false
   // Search/filter query entered in the list header.
   let searchQuery = ''
   // Done items are hidden by default; the header toggle reveals them.
   let showDone = false
+  /** In-progress edits keyed by item id, or {@link NEW_ITEM_DRAFT_KEY} for a new item. */
+  const editorDrafts = new Map<string, EditorDraft>()
+  /** Ignores stale auto-save responses when the user leaves and re-enters quickly. */
+  const autoSaveToken = new Map<string, number>()
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
@@ -479,6 +511,11 @@ export function mountRoadmapPane(
     { type: 'button', class: 'memories-btn memories-btn-primary roadmap-import-confirm' },
     'Import selected',
   )
+  const importLoadMoreBtn = el(
+    'button',
+    { type: 'button', class: 'memories-btn roadmap-import-more', hidden: true },
+    'Load more',
+  )
   const importCancelBtn = el(
     'button',
     { type: 'button', class: 'memories-btn roadmap-import-cancel' },
@@ -490,7 +527,7 @@ export function mountRoadmapPane(
     el('label', { class: 'memories-label' }, 'Open issues'),
     importStatus,
     importList,
-    el('div', { class: 'memories-actions' }, importConfirmBtn, importCancelBtn),
+    el('div', { class: 'memories-actions' }, importLoadMoreBtn, importConfirmBtn, importCancelBtn),
   )
 
   const reviewStatus = el('div', { class: 'memories-meta roadmap-review-status' })
@@ -564,6 +601,113 @@ export function mountRoadmapPane(
 
   function currentItem(): RoadmapItem | null {
     return selectedId === null ? null : (items.find((item) => item.id === selectedId) ?? null)
+  }
+
+  function currentDraftKey(): string | null {
+    if (creating) return NEW_ITEM_DRAFT_KEY
+    return selectedId
+  }
+
+  function hasNewItemContent(): boolean {
+    return (
+      promptInput.value !== '' ||
+      notesInput.value !== '' ||
+      issueInput.value !== '' ||
+      pendingAttachments.length > 0
+    )
+  }
+
+  function captureEditorDraft(): EditorDraft | null {
+    const key = currentDraftKey()
+    if (!key) return null
+    const item = currentItem()
+    const dirty = creating ? hasNewItemContent() : isEditorDirty(item)
+    if (!dirty) {
+      editorDrafts.delete(key)
+      return null
+    }
+    const draft: EditorDraft = {
+      prompt: promptInput.value,
+      notes: notesInput.value,
+      issue: issueInput.value,
+      status: toRoadmapStatus(statusSelect.value),
+      pendingAttachments: pendingAttachments.map((pending) => ({ ...pending })),
+      removedAttachmentIds: [...removedAttachmentIds],
+    }
+    editorDrafts.set(key, draft)
+    return draft
+  }
+
+  function applyEditorDraft(draft: EditorDraft): void {
+    promptInput.value = draft.prompt
+    notesInput.value = draft.notes
+    issueInput.value = draft.issue
+    statusSelect.value = draft.status
+    pendingAttachments = draft.pendingAttachments.map((pending) => ({ ...pending }))
+    removedAttachmentIds.clear()
+    for (const id of draft.removedAttachmentIds) removedAttachmentIds.add(id)
+  }
+
+  function draftsMatch(a: EditorDraft, b: EditorDraft): boolean {
+    return (
+      a.prompt === b.prompt &&
+      a.notes === b.notes &&
+      a.issue === b.issue &&
+      a.status === b.status &&
+      a.pendingAttachments.length === b.pendingAttachments.length &&
+      a.pendingAttachments.every((pending, index) => {
+        const other = b.pendingAttachments[index]
+        return (
+          other !== undefined &&
+          pending.name === other.name &&
+          pending.mimeType === other.mimeType &&
+          pending.dataUrl === other.dataUrl
+        )
+      }) &&
+      a.removedAttachmentIds.length === b.removedAttachmentIds.length &&
+      a.removedAttachmentIds.every((id) => b.removedAttachmentIds.includes(id))
+    )
+  }
+
+  async function autoSaveDraft(id: string, draft: EditorDraft): Promise<void> {
+    const prompt = draft.prompt.trim()
+    if (!prompt) return
+    const token = (autoSaveToken.get(id) ?? 0) + 1
+    autoSaveToken.set(id, token)
+    const addAttachments = draft.pendingAttachments.map(({ name, mimeType, dataUrl }) => ({
+      name,
+      mimeType,
+      dataUrl,
+    }))
+    const removeIds = draft.removedAttachmentIds
+    try {
+      const updated = await api.roadmap.update(
+        id,
+        prompt,
+        draft.notes.trim() || undefined,
+        draft.status,
+        draft.issue.trim() || undefined,
+        addAttachments.length > 0 ? addAttachments : undefined,
+        removeIds.length > 0 ? removeIds : undefined,
+      )
+      if (autoSaveToken.get(id) !== token || !updated) return
+      const index = items.findIndex((item) => item.id === id)
+      if (index >= 0) items[index] = updated
+      const current = editorDrafts.get(id)
+      if (current && draftsMatch(current, draft)) editorDrafts.delete(id)
+      if (selectedId !== id) renderList()
+    } catch {
+      // The in-memory draft captured on leave remains available for restoration.
+    }
+  }
+
+  /** Stash or persist the open editor before navigating to another item or form. */
+  function leaveCurrentEditor(): void {
+    const key = currentDraftKey()
+    if (!key) return
+    const draft = captureEditorDraft()
+    if (!draft || creating || !selectedId) return
+    if (draft.prompt.trim()) void autoSaveDraft(selectedId, draft)
   }
 
   function resetAttachmentEdits(): void {
@@ -697,11 +841,17 @@ export function mountRoadmapPane(
     emptyState.hidden = true
     form.hidden = false
     if (!(opts?.preserveDirty && dirty)) {
-      promptInput.value = item?.body ?? ''
-      notesInput.value = item ? itemNotes(item) : ''
-      issueInput.value = item ? itemIssue(item) : ''
-      statusSelect.value = item ? itemStatus(item) : 'ready'
-      resetAttachmentEdits()
+      const draftKey = creating ? NEW_ITEM_DRAFT_KEY : selectedId
+      const draft = draftKey ? editorDrafts.get(draftKey) : undefined
+      if (draft) {
+        applyEditorDraft(draft)
+      } else {
+        promptInput.value = item?.body ?? ''
+        notesInput.value = item ? itemNotes(item) : ''
+        issueInput.value = item ? itemIssue(item) : ''
+        statusSelect.value = item ? itemStatus(item) : 'ready'
+        resetAttachmentEdits()
+      }
     }
     renderAttachments()
     statusLabel.hidden = !item
@@ -792,9 +942,10 @@ export function mountRoadmapPane(
     clear(listBody)
     const visible = items.filter(isListVisible)
     if (visible.length === 0) {
-      let hint =
-        'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
-      if (searchQuery) {
+      let hint = loading
+        ? 'Loading roadmap…'
+        : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
+      if (!loading && searchQuery) {
         hint = 'No roadmap items match your filter.'
       } else if (!showDone && items.some((item) => itemStatus(item) === 'done')) {
         hint = 'No open roadmap items. Turn on "done" to see completed work.'
@@ -971,7 +1122,9 @@ export function mountRoadmapPane(
       row.append(main)
       row.addEventListener('click', () => {
         if (reviewing || importing) return
-        if (item.id !== selectedId) cancelResolutionCheckUi()
+        if (item.id === selectedId) return
+        leaveCurrentEditor()
+        cancelResolutionCheckUi()
         selectedId = item.id
         creating = false
         renderList()
@@ -993,6 +1146,13 @@ export function mountRoadmapPane(
   // workspace change) refresh without it so the editor renders fresh.
   async function refresh(opts?: { preserveDirty?: boolean }): Promise<void> {
     const token = ++loadToken
+    // Only flip on the loading state (and repaint) when the list is currently
+    // empty — a background refresh of an already-populated list shouldn't
+    // flash "Loading…" over the existing rows.
+    if (items.length === 0 && !loading) {
+      loading = true
+      renderList()
+    }
     let next: RoadmapItem[]
     try {
       next = await api.roadmap.list()
@@ -1000,6 +1160,7 @@ export function mountRoadmapPane(
       next = []
     }
     if (token !== loadToken) return
+    loading = false
     items = next
     // Drop a selection whose item vanished (deleted elsewhere), but keep an
     // in-progress new-item form open. During review/import the viewer column
@@ -1019,6 +1180,7 @@ export function mountRoadmapPane(
   }
 
   function startNew(): void {
+    leaveCurrentEditor()
     cancelResolutionCheckUi()
     selectedId = null
     creating = true
@@ -1055,6 +1217,7 @@ export function mountRoadmapPane(
         )
         selectedId = created.id
         creating = false
+        editorDrafts.delete(NEW_ITEM_DRAFT_KEY)
       } else {
         const updated = await api.roadmap.update(
           selectedId,
@@ -1071,6 +1234,7 @@ export function mountRoadmapPane(
           creating = false
         }
       }
+      if (selectedId) editorDrafts.delete(selectedId)
       await refresh()
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Could not save roadmap item.')
@@ -1081,7 +1245,8 @@ export function mountRoadmapPane(
 
   async function remove(): Promise<void> {
     if (!selectedId) return
-    const item = items.find((m) => m.id === selectedId)
+    const id = selectedId
+    const item = items.find((m) => m.id === id)
     if (
       !(await showConfirmDialog({
         message: `Delete roadmap item "${nonEmptyStringOr(item?.title, 'untitled')}"?`,
@@ -1093,8 +1258,9 @@ export function mountRoadmapPane(
     }
     deleteBtn.disabled = true
     try {
-      await api.roadmap.delete(selectedId)
-      if (reviewPeekId === selectedId) {
+      await api.roadmap.delete(id)
+      editorDrafts.delete(id)
+      if (reviewPeekId === id) {
         reviewPeekId = null
       }
       selectedId = null
@@ -1108,9 +1274,11 @@ export function mountRoadmapPane(
   }
 
   function cancel(): void {
+    const key = currentDraftKey()
+    if (key) editorDrafts.delete(key)
     cancelResolutionCheckUi()
     if (reviewing && reviewPeekId) {
-      returnToReview()
+      returnToReview(false)
       return
     }
     creating = false
@@ -1283,24 +1451,113 @@ export function mountRoadmapPane(
     return items.some((i) => itemIssue(i) === short || itemIssue(i) === full)
   }
 
+  function coverageFor(issue: OpenIssue): RoadmapIssueCoverageMatch | undefined {
+    return issueCoverage.get(issue.number)
+  }
+
   function renderImportList(): void {
+    const selected = new Set(
+      [...importList.querySelectorAll<HTMLInputElement>('.roadmap-import-check')]
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => Number(checkbox.dataset['number'])),
+    )
     clear(importList)
     for (const issue of openIssues) {
       const pinned = issueAlreadyPinned(issue)
+      const covered = !pinned ? coverageFor(issue) : undefined
+      // Pin and likely coverage both block re-import; partial stays selectable
+      // so the user can still add a tighter prompt when overlap is incomplete.
+      const blocked = pinned || covered?.verdict === 'likely'
       const checkbox = el('input', {
         type: 'checkbox',
         class: 'roadmap-import-check',
         'data-number': String(issue.number),
-        disabled: pinned,
+        disabled: blocked,
       })
+      checkbox.checked = !blocked && selected.has(issue.number)
+      const rowClass =
+        'roadmap-import-row' +
+        (pinned ? ' is-pinned' : '') +
+        (covered?.verdict === 'likely' ? ' is-covered' : '')
       const label = el(
         'label',
-        { class: `roadmap-import-row${pinned ? ' is-pinned' : ''}` },
+        { class: rowClass },
         checkbox,
         el('span', { class: 'roadmap-import-title' }, `#${String(issue.number)} ${issue.title}`),
       )
-      if (pinned) label.append(el('span', { class: 'memories-meta' }, 'already on roadmap'))
+      if (pinned) {
+        label.append(el('span', { class: 'roadmap-import-coverage' }, 'already on roadmap'))
+      } else if (covered) {
+        const prefix = covered.verdict === 'likely' ? 'covered by' : 'maybe covered by'
+        label.append(
+          el(
+            'span',
+            {
+              class: 'roadmap-import-coverage',
+              title: `${prefix}: ${covered.itemTitle}`,
+            },
+            `${prefix}: ${covered.itemTitle}`,
+          ),
+        )
+      }
       importList.append(label)
+    }
+  }
+
+  function isCurrentImport(token: number): boolean {
+    return importing && token === coverageToken
+  }
+
+  async function loadMoreOpenIssues(matchToken: number): Promise<void> {
+    importLoadMoreBtn.disabled = true
+    importStatus.textContent = openIssuePage === 0 ? 'Loading open issues…' : 'Loading more issues…'
+    try {
+      let issues: OpenIssue[] = []
+      // REST issue pages can contain only pull requests, which the backend
+      // removes. Skip empty raw pages so "Load more" always makes progress.
+      do {
+        const result = await api.roadmap.openIssues(openIssuePage + 1)
+        if (!isCurrentImport(matchToken)) return
+        openIssuePage++
+        openIssueSlug = result.slug
+        moreOpenIssues = result.hasMore
+        issues = result.issues
+      } while (issues.length === 0 && moreOpenIssues)
+
+      openIssues.push(...issues)
+      renderImportList()
+      importLoadMoreBtn.hidden = !moreOpenIssues
+      if (issues.length === 0) {
+        importStatus.textContent = openIssues.length
+          ? `Pick the issues to turn into roadmap prompts (${openIssueSlug}).`
+          : `No open issues found in ${openIssueSlug}.`
+        return
+      }
+
+      // Pin badges render immediately. Semantic coverage is bounded to this
+      // page and merges into prior pages when the model answers.
+      importStatus.textContent = `Checking existing roadmap coverage (${openIssueSlug})…`
+      try {
+        const matches = await api.roadmap.matchOpenIssues(
+          issues.map((issue) => ({ number: issue.number, title: issue.title, body: issue.body })),
+        )
+        if (!isCurrentImport(matchToken)) return
+        for (const match of matches) issueCoverage.set(match.issueNumber, match)
+        renderImportList()
+      } catch {
+        // Coverage is advisory — a failed page must not strand the picker or
+        // prevent the user from loading the next page.
+      }
+      if (!isCurrentImport(matchToken)) return
+      importStatus.textContent = `Pick the issues to turn into roadmap prompts (${openIssueSlug}).`
+    } catch (err) {
+      if (!isCurrentImport(matchToken)) return
+      importStatus.textContent = ipcErrorMessage(err, 'Could not list open issues.')
+    } finally {
+      if (isCurrentImport(matchToken)) {
+        importLoadMoreBtn.disabled = false
+        importLoadMoreBtn.hidden = !moreOpenIssues
+      }
     }
   }
 
@@ -1311,26 +1568,18 @@ export function mountRoadmapPane(
     creating = false
     selectedId = null
     openIssues = []
+    openIssuePage = 0
+    openIssueSlug = ''
+    moreOpenIssues = false
+    issueCoverage = new Map()
+    const matchToken = ++coverageToken
     clear(importList)
+    importLoadMoreBtn.hidden = true
     importConfirmBtn.disabled = false
     importStatus.textContent = 'Loading open issues…'
     renderList()
     renderEditor()
-    void api.roadmap
-      .openIssues()
-      .then(({ slug, issues }) => {
-        if (!importing) return
-        openIssues = issues
-        // Naming the queried repo surfaces a stale or fork origin at a glance.
-        importStatus.textContent = issues.length
-          ? `Pick the issues to turn into roadmap prompts (${slug}).`
-          : `No open issues found in ${slug}.`
-        renderImportList()
-      })
-      .catch((err: unknown) => {
-        if (!importing) return
-        importStatus.textContent = ipcErrorMessage(err, 'Could not list open issues.')
-      })
+    void loadMoreOpenIssues(matchToken)
   }
 
   async function confirmImport(): Promise<void> {
@@ -1368,6 +1617,8 @@ export function mountRoadmapPane(
 
   function cancelImport(): void {
     importing = false
+    coverageToken++
+    issueCoverage = new Map()
     renderEditor()
   }
 
@@ -1390,6 +1641,7 @@ export function mountRoadmapPane(
   }
 
   function openReviewItem(id: string): void {
+    if (id !== selectedId) leaveCurrentEditor()
     cancelResolutionCheckUi()
     selectedId = id
     creating = false
@@ -1398,7 +1650,8 @@ export function mountRoadmapPane(
     renderEditor()
   }
 
-  function returnToReview(): void {
+  function returnToReview(saveDraft = true): void {
+    if (saveDraft) leaveCurrentEditor()
     cancelResolutionCheckUi()
     reviewPeekId = null
     selectedId = null
@@ -1630,11 +1883,14 @@ export function mountRoadmapPane(
 
   importBtn.addEventListener('click', startImport)
   reviewBtn.addEventListener('click', () => void startReview())
-  reviewBackBtn.addEventListener('click', returnToReview)
+  reviewBackBtn.addEventListener('click', () => {
+    returnToReview()
+  })
   reviewStopBtn.addEventListener('click', stopReview)
   reviewCloseBtn.addEventListener('click', closeReview)
   reviewMarkResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('done'))
   reviewArchiveResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('archived'))
+  importLoadMoreBtn.addEventListener('click', () => void loadMoreOpenIssues(coverageToken))
   importConfirmBtn.addEventListener('click', () => void confirmImport())
   importCancelBtn.addEventListener('click', cancelImport)
 
@@ -1723,6 +1979,7 @@ export function mountRoadmapPane(
     // The quick-open palette (Cmd/Ctrl+P) lands here after opening the pane:
     // select the chosen item and load fresh so its editor shows immediately.
     store.on('roadmap_reveal', (itemId) => {
+      if (itemId !== selectedId) leaveCurrentEditor()
       selectedId = itemId
       creating = false
       importing = false
@@ -1743,6 +2000,8 @@ export function mountRoadmapPane(
       importing = false
       reviewing = false
       items = []
+      editorDrafts.clear()
+      autoSaveToken.clear()
       resetAttachmentEdits()
       attachmentDataCache.clear()
       if (roadmapModeActive(store)) void refresh()

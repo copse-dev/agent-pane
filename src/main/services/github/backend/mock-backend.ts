@@ -57,6 +57,26 @@ const MOCK_OPEN_ISSUES: GhIssueSummary[] = [
   },
 ]
 
+function mockOpenIssues(): GhIssueSummary[] {
+  if (process.env['COPSE_PANEL_MOCK_GH_MANY_ISSUES'] !== '1') return MOCK_OPEN_ISSUES
+  return [
+    ...MOCK_OPEN_ISSUES,
+    ...Array.from({ length: 23 }, (_, index): GhIssueSummary => {
+      const number = 100 + index
+      return {
+        owner: 'copse-mock',
+        repo: 'demo',
+        number,
+        title: `Pagination fixture ${String(number)}`,
+        url: `https://github.com/copse-mock/demo/issues/${String(number)}`,
+        body: '',
+        labels: [],
+        state: 'open',
+      }
+    }),
+  ]
+}
+
 const prState = new Map<string, MockPrState>()
 
 // Match the real backends: state is per owner/repo/number, not per number, so
@@ -116,15 +136,21 @@ export const mockGitHubBackend: GitHubBackend = {
     return Promise.resolve(status.authenticated ? mockListWorkspaceOpenPrs().slice(0, limit) : [])
   },
 
-  listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]> {
+  listWorkspaceOpenIssues(page: number, pageSize: number) {
     const status = mockGhCliStatus()
-    return Promise.resolve(status.authenticated ? MOCK_OPEN_ISSUES.slice(0, limit) : [])
+    if (!status.authenticated) return Promise.resolve({ issues: [], hasMore: false })
+    const fixtures = mockOpenIssues()
+    const start = (page - 1) * pageSize
+    return Promise.resolve({
+      issues: fixtures.slice(start, start + pageSize),
+      hasMore: start + pageSize < fixtures.length,
+    })
   },
 
   getIssue(ref: PrRef): Promise<GhIssueSummary | null> {
     const status = mockGhCliStatus()
     if (!status.authenticated) return Promise.resolve(null)
-    return Promise.resolve(MOCK_OPEN_ISSUES.find((i) => i.number === ref.number) ?? null)
+    return Promise.resolve(mockOpenIssues().find((i) => i.number === ref.number) ?? null)
   },
 
   searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
@@ -133,12 +159,14 @@ export const mockGitHubBackend: GitHubBackend = {
     const needle = query.trim().toLowerCase()
     if (!needle) return Promise.resolve([])
     return Promise.resolve(
-      MOCK_OPEN_ISSUES.filter(
-        (issue) =>
-          issue.title.toLowerCase().includes(needle) ||
-          issue.body.toLowerCase().includes(needle) ||
-          `#${String(issue.number)}`.includes(needle),
-      ).slice(0, limit),
+      mockOpenIssues()
+        .filter(
+          (issue) =>
+            issue.title.toLowerCase().includes(needle) ||
+            issue.body.toLowerCase().includes(needle) ||
+            `#${String(issue.number)}`.includes(needle),
+        )
+        .slice(0, limit),
     )
   },
 

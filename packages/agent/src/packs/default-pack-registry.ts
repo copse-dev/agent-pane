@@ -17,10 +17,17 @@
 //
 // Electron-free (execution-guidance rule 4): pure module state. The host wires
 // this in `src/main/services/packs/pack-service.ts`.
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { PackRegistry } from './pack-registry.ts'
 import { createFirstPartyPackRegistry } from './first-party-packs.ts'
 
 let installed: PackRegistry | null = null
+const scopedRegistry = new AsyncLocalStorage<PackRegistry>()
+
+/** Scope pack enablement/storage to one explicit host run without replacing the desktop registry. */
+export function runWithDefaultPackRegistry<T>(registry: PackRegistry, fn: () => T): T {
+  return scopedRegistry.run(registry, fn)
+}
 
 /**
  * Install the process-wide pack registry the loop consults for enabled packs.
@@ -41,5 +48,5 @@ export function setDefaultPackRegistry(registry: PackRegistry | null): void {
  * unwired callers see the same shipped surface a fresh install would.
  */
 export function getDefaultPackRegistry(): PackRegistry {
-  return installed ?? createFirstPartyPackRegistry()
+  return scopedRegistry.getStore() ?? installed ?? createFirstPartyPackRegistry()
 }

@@ -1,5 +1,5 @@
 import { el, clear, on } from '../dom/helpers.ts'
-import { chevronDownIcon } from '../dom/icons.ts'
+import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../dom/icons.ts'
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
 
 export interface ModelPickerOptions {
@@ -15,6 +15,8 @@ export interface ModelPickerOptions {
   ariaLabel?: string
   /** Settings mounts before it has loaded saved values, so it refreshes explicitly. */
   loadOnMount?: boolean
+  /** Enables a recent-first view, with the complete searchable catalog one level deeper. */
+  getRecentValues?: () => readonly string[]
   /**
    * Runs only after a refresh wins its generation race. Use this for side effects
    * that must not apply from a stale in-flight load (e.g. syncing a native select).
@@ -29,6 +31,8 @@ export interface ModelPicker {
   destroy: () => void
 }
 
+const RECENT_MODEL_LIMIT = 5
+
 /**
  * The app-wide searchable model picker. Surfaces own where the current value is
  * stored; this component owns filtering, grouping, keyboard navigation, and
@@ -42,8 +46,14 @@ export function mountModelPicker(
   pickerOpts: ModelPickerOptions = {},
 ): ModelPicker {
   const variant = pickerOpts.variant ?? 'compact'
+  const recentMode = pickerOpts.getRecentValues !== undefined
   const wrap = el('div', {
-    class: ['model-picker', `model-picker-${variant}`, pickerOpts.className]
+    class: [
+      'model-picker',
+      `model-picker-${variant}`,
+      recentMode ? 'model-picker-recent-mode' : undefined,
+      pickerOpts.className,
+    ]
       .filter((part): part is string => Boolean(part))
       .join(' '),
   })
@@ -62,36 +72,97 @@ export function mountModelPicker(
     chevronDownIcon('ui-icon ui-icon-sm'),
   )
   trigger.append(labelEl, chevron)
-  const menu = el('div', { class: 'model-picker-menu', hidden: '' })
+  const menu = el('div', {
+    class: 'model-picker-menu',
+    hidden: '',
+    'aria-label': 'Choose model',
+  })
+  const recentHeader = el(
+    'div',
+    {
+      class: 'model-picker-view-title',
+      hidden: recentMode ? undefined : '',
+    },
+    'Recent',
+  )
+  const allHeader = el('div', { class: 'model-picker-all-header', hidden: '' })
+  const backButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'model-picker-back',
+      'aria-label': 'Back to recent models',
+    },
+    arrowLeftIcon('ui-icon ui-icon-sm'),
+  )
+  allHeader.append(backButton, el('span', { class: 'model-picker-view-title' }, 'All models'))
   const filter = el('input', {
     type: 'search',
     class: 'model-picker-filter',
     placeholder: 'Filter models...',
     'aria-label': 'Filter models',
     autocomplete: 'off',
+    hidden: recentMode ? '' : undefined,
   })
-  const list = el('div', { class: 'model-picker-list', role: 'listbox' })
-  menu.append(filter, list)
+  const list = el('div', {
+    class: 'model-picker-list',
+    role: 'listbox',
+    'aria-label': recentMode ? 'Recent models' : 'All models',
+  })
+  const browseButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'model-picker-browse',
+      'aria-label': 'Browse all models',
+      hidden: recentMode ? undefined : '',
+    },
+    el('span', {}, 'All models'),
+    chevronRightIcon('ui-icon ui-icon-sm'),
+  )
+  menu.append(recentHeader, allHeader, filter, list, browseButton)
   wrap.append(trigger, menu)
   root.append(wrap)
 
   let open = false
+  let view: 'recent' | 'all' = recentMode ? 'recent' : 'all'
   const cleanups: Array<() => void> = []
   let cachedOptions: ModelOption[] = []
   let activeValue: string | null = null
   let refreshGeneration = 0
+  let loadState: 'loading' | 'ready' | 'error' = 'loading'
+
+  function focusActiveOption(): void {
+    list
+      .querySelector<HTMLElement>('.model-picker-option.is-active')
+      ?.focus({ preventScroll: true })
+  }
+
+  function setView(next: 'recent' | 'all', focus = true): void {
+    view = recentMode ? next : 'all'
+    recentHeader.hidden = view !== 'recent'
+    allHeader.hidden = !recentMode || view !== 'all'
+    filter.hidden = view !== 'all'
+    browseButton.hidden = !recentMode || view !== 'recent'
+    list.setAttribute('aria-label', view === 'recent' ? 'Recent models' : 'All models')
+    if (view === 'recent') filter.value = ''
+    renderMenu(cachedOptions)
+    if (!focus) return
+    if (view === 'all') filter.focus()
+    else focusActiveOption()
+  }
 
   function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     if (next) {
       menu.removeAttribute('hidden')
-      renderMenu(cachedOptions)
-      filter.focus()
+      setView(recentMode ? 'recent' : 'all')
+      if (loadState === 'error') void refresh()
     } else {
       menu.setAttribute('hidden', '')
       filter.value = ''
-      renderMenu(cachedOptions)
+      setView(recentMode ? 'recent' : 'all', false)
       pickerOpts.onClose?.()
     }
   }
@@ -101,6 +172,21 @@ export function mountModelPicker(
     return query
       ? options.filter((opt) => `${opt.label} ${opt.value}`.toLocaleLowerCase().includes(query))
       : [...options]
+  }
+
+  function visibleOptions(options: readonly ModelOption[]): ModelOption[] {
+    if (view === 'all') return matchingOptions(options)
+    const requested = [getCurrent(), ...(pickerOpts.getRecentValues?.() ?? [])]
+    const seen = new Set<string>()
+    const recent: ModelOption[] = []
+    for (const value of requested) {
+      if (!value || seen.has(value)) continue
+      seen.add(value)
+      const option = options.find((candidate) => candidate.value === value)
+      if (option) recent.push(option)
+      if (recent.length === RECENT_MODEL_LIMIT) break
+    }
+    return recent
   }
 
   function scrollActiveOptionIntoView(): void {
@@ -117,8 +203,24 @@ export function mountModelPicker(
 
   function renderMenu(options: readonly ModelOption[]): void {
     clear(list)
+    if (options.length === 0 && loadState !== 'ready') {
+      list.append(
+        el(
+          'div',
+          {
+            class: `model-picker-status is-${loadState}`,
+            role: 'status',
+            'aria-live': 'polite',
+          },
+          loadState === 'loading'
+            ? 'Loading models…'
+            : 'Models unavailable. Close and reopen to retry.',
+        ),
+      )
+      return
+    }
     const current = getCurrent()
-    const matches = matchingOptions(options)
+    const matches = visibleOptions(options)
     const active =
       matches.find((opt) => opt.value === activeValue && !opt.disabled) ??
       matches.find((opt) => opt.value === current && !opt.disabled) ??
@@ -128,8 +230,11 @@ export function mountModelPicker(
     for (const opt of matches) {
       if (opt.group !== lastGroup) {
         lastGroup = opt.group
-        if (opt.group) list.append(el('div', { class: 'model-picker-group-label' }, opt.group))
+        if (view === 'all' && opt.group) {
+          list.append(el('div', { class: 'model-picker-group-label' }, opt.group))
+        }
       }
+      const selected = opt.value === current
       const item = el(
         'button',
         {
@@ -138,11 +243,15 @@ export function mountModelPicker(
           role: 'option',
           'data-value': opt.value,
           'aria-selected': opt.value === activeValue ? 'true' : 'false',
+          'aria-current': selected ? 'true' : undefined,
           disabled: opt.disabled ? true : undefined,
         },
-        opt.label,
+        el('span', { class: 'model-picker-option-label' }, opt.label),
+        ...(recentMode && selected
+          ? [checkIcon('ui-icon ui-icon-sm model-picker-option-check')]
+          : []),
       )
-      if (opt.value === current) item.classList.add('is-selected')
+      if (selected) item.classList.add('is-selected')
       if (opt.value === activeValue) item.classList.add('is-active')
       item.addEventListener('click', () => {
         selectOption(opt.value)
@@ -150,7 +259,13 @@ export function mountModelPicker(
       list.append(item)
     }
     if (matches.length === 0) {
-      list.append(el('div', { class: 'model-picker-empty' }, 'No matching models'))
+      list.append(
+        el(
+          'div',
+          { class: 'model-picker-empty' },
+          view === 'all' ? 'No matching models' : 'No recent models available',
+        ),
+      )
     }
     scrollActiveOptionIntoView()
   }
@@ -166,12 +281,13 @@ export function mountModelPicker(
   }
 
   function moveActive(direction: -1 | 1): void {
-    const enabledOptions = matchingOptions(cachedOptions).filter((opt) => !opt.disabled)
+    const enabledOptions = visibleOptions(cachedOptions).filter((opt) => !opt.disabled)
     if (enabledOptions.length === 0) return
     const index = enabledOptions.findIndex((opt) => opt.value === activeValue)
     const nextIndex = Math.max(0, Math.min(enabledOptions.length - 1, index + direction))
     activeValue = enabledOptions[nextIndex]?.value ?? null
     renderMenu(cachedOptions)
+    if (view === 'recent') focusActiveOption()
   }
 
   function updateTrigger(options: readonly ModelOption[]): void {
@@ -183,9 +299,20 @@ export function mountModelPicker(
 
   async function refresh(): Promise<void> {
     const generation = ++refreshGeneration
-    const options = await loadOptions(getCurrent())
-    if (generation !== refreshGeneration) return
-    cachedOptions = options
+    if (cachedOptions.length === 0) {
+      loadState = 'loading'
+      renderMenu(cachedOptions)
+    }
+    try {
+      const options = await loadOptions(getCurrent())
+      if (generation !== refreshGeneration) return
+      cachedOptions = options
+      loadState = 'ready'
+    } catch {
+      if (generation !== refreshGeneration) return
+      cachedOptions = []
+      loadState = 'error'
+    }
     pickerOpts.onOptionsLoaded?.(cachedOptions)
     renderMenu(cachedOptions)
     updateTrigger(cachedOptions)
@@ -199,10 +326,16 @@ export function mountModelPicker(
   trigger.addEventListener('click', () => {
     setOpen(!open)
   })
+  browseButton.addEventListener('click', () => {
+    setView('all')
+  })
+  backButton.addEventListener('click', () => {
+    setView('recent')
+  })
   filter.addEventListener('input', () => {
     renderMenu(cachedOptions)
   })
-  filter.addEventListener('keydown', (e) => {
+  menu.addEventListener('keydown', (e) => {
     if (e.isComposing) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -210,14 +343,29 @@ export function mountModelPicker(
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       moveActive(-1)
-    } else if (e.key === 'Enter') {
+    } else if (
+      e.key === 'Enter' &&
+      (e.target === filter ||
+        (e.target instanceof HTMLElement && e.target.matches('.model-picker-option')))
+    ) {
       e.preventDefault()
       selectOption(activeValue)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      setOpen(false)
-      trigger.focus()
+      if (view === 'all' && recentMode) setView('recent')
+      else {
+        setOpen(false)
+        if (!recentMode) trigger.focus()
+      }
+    } else if (e.key === 'ArrowRight' && view === 'recent' && recentMode) {
+      e.preventDefault()
+      e.stopPropagation()
+      setView('all')
+    } else if (e.key === 'ArrowLeft' && view === 'all' && recentMode) {
+      e.preventDefault()
+      e.stopPropagation()
+      setView('recent')
     }
   })
 

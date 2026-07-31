@@ -7,6 +7,8 @@ export interface FooterModelPickerOptions {
   isSshWorkspace?: () => boolean
   /** Called after the menu closes (e.g. return focus to the composer). */
   onClose?: () => void
+  /** Most-recent-first model values from prior threads. */
+  getRecentModels?: () => readonly string[]
 }
 
 // Composer adapter for the app-wide picker. The trigger stays compact while the
@@ -34,8 +36,15 @@ export function mountFooterModelPicker(
       enableShortcut: true,
       ariaLabel: 'Chat model',
       ...(pickerOpts.onClose ? { onClose: pickerOpts.onClose } : {}),
+      ...(pickerOpts.getRecentModels ? { getRecentValues: pickerOpts.getRecentModels } : {}),
     },
   )
+
+  // Selected-pack models can appear or disappear while this footer remains
+  // mounted. Refresh on explicit open so the menu reflects live pack state.
+  picker.root.querySelector('.model-picker-trigger')?.addEventListener('click', () => {
+    void picker.refresh()
+  })
 
   return { refresh: () => void picker.refresh(), destroy: picker.destroy }
 }

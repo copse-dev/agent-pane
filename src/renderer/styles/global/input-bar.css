@@ -271,6 +271,10 @@
 .footer-indexing[data-state='error'] {
   color: var(--danger);
 }
+.footer-indexing[data-state='limited'],
+.footer-indexing[data-state='skipped'] {
+  color: var(--warning);
+}
 .message-queued-badge {
   display: inline-block;
   margin-bottom: var(--spacing-xs);
@@ -855,6 +859,10 @@
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+.context-wheel-popover-note {
+  color: var(--text-muted);
   white-space: nowrap;
 }
 .context-wheel-popover-row {
