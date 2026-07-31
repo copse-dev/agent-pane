@@ -130,6 +130,16 @@ export function invalidateIndex(root?: string): void {
   indexes.delete(resolve(root))
 }
 
+/**
+ * Scale evidence for the #795 index policy. Path count comes from the bounded
+ * file listing; byte estimate is reserved for a later sampling slice (null today).
+ */
+export function getIndexStats(root: string): { pathCount: number; byteEstimate: number | null } | null {
+  const entry = indexes.get(resolve(root))
+  if (!entry) return null
+  return { pathCount: entry.paths.length, byteEstimate: null }
+}
+
 /** Test hook — install a fixed file index for a root without scanning it. */
 export function setIndexForTest(paths: string[] | null, root: string): void {
   const key = resolve(root)

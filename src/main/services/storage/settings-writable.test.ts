@@ -21,9 +21,11 @@ describe('settings-writable', () => {
     assert.equal(isRendererWritableSettingKey('model'), true)
     assert.equal(isRendererWritableSettingKey('appIconVariant'), true)
     assert.equal(isRendererWritableSettingKey('autoPortraitRightPanel'), true)
+    assert.equal(isRendererWritableSettingKey('developerMode'), true)
     assert.equal(parseRendererWritableSetting('theme', 'dark'), 'dark')
     assert.equal(parseRendererWritableSetting('appIconVariant', 'aurora'), 'aurora')
     assert.equal(parseRendererWritableSetting('autoPortraitRightPanel', false), false)
+    assert.equal(parseRendererWritableSetting('developerMode', true), true)
     assert.equal(parseRendererWritableSetting('uiAccentColor', '#2A9D8F'), '#2A9D8F')
   })
 
