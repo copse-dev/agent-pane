@@ -89,16 +89,22 @@ export function installSocketFirewall(signal: AbortSignal): Promise<boolean> {
 
 /**
  * Install an npm package **globally** behind Socket Firewall:
- * `sfw npm install -g --ignore-scripts <pkg>`. `sfw` proxies the registry and
+ * `sfw <npm> install -g --ignore-scripts <pkg>`. `sfw` proxies the registry and
  * blocks confirmed-malicious packages (and transitive deps); `--ignore-scripts`
  * blocks install lifecycle scripts. Ensures `sfw` itself is present first, so a
  * caller can install an ACP adapter safely without a prior manual step.
  *
  * Callers MUST pass a trusted, hard-coded package spec (e.g. from the
  * `KNOWN_ACP_AGENTS` catalog), never user input, since the spec reaches a shell-
- * free `spawn` of npm.
+ * free `spawn` of npm. Optional `npmBin` pins the npm that owns an existing
+ * global install (the sibling of a resolved agent binary) so upgrades land in
+ * the same Node prefix instead of whichever `npm` happens to be first on PATH.
  */
-export async function installGlobalNpmPackage(pkg: string, signal: AbortSignal): Promise<boolean> {
+export async function installGlobalNpmPackage(
+  pkg: string,
+  signal: AbortSignal,
+  opts: { npmBin?: string } = {},
+): Promise<boolean> {
   const emit = (text: string): void => {
     emitShellOutput(text)
   }
@@ -111,7 +117,8 @@ export async function installGlobalNpmPackage(pkg: string, signal: AbortSignal):
     }
   }
 
-  const args = ['npm', 'install', '-g', '--ignore-scripts', pkg]
+  const npmBin = opts.npmBin ?? 'npm'
+  const args = [npmBin, 'install', '-g', '--ignore-scripts', pkg]
   emit(`[safe-install] installing ${pkg} via Socket Firewall (${SFW_BIN} ${args.join(' ')})…\n`)
   return new Promise((resolve) => {
     let proc

@@ -1884,7 +1884,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([codex])
+      return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
+    })
+    ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
+      assertMainFrameSender(event, win)
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      return requestAcpPackageInstallApproval([
+        {
+          agent: codex,
+          action: 'upgrade',
+          fromVersion: '1.1.0',
+          toVersion: '1.1.7',
+        },
+      ])
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

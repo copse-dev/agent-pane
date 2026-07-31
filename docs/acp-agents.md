@@ -90,6 +90,12 @@ you've already added.
 Changes are saved immediately; reopen the model dropdown to see them. **Re-scan
 device** refreshes the installed/running status after you install something.
 
+Opening the tab also runs **auto-setup** for curated npm presets (Claude, Codex):
+missing adapters can be installed (with an approval), and an already-installed
+adapter that is behind the npm registry latest can be upgraded the same way.
+Upgrades use the `npm` beside the resolved binary so an nvm/prefix install stays
+in that prefix. Cursor is never auto-installed (its installer is not npm).
+
 > Tip: you can **Add** a known agent before installing it — Copse stores the
 > config now, and you run the shown Install/Sign in commands when ready.
 

@@ -594,21 +594,30 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     }
   }
 
-  // "Just works" setup: detect clients, install missing npm adapters (Socket
-  // Firewall), register the Claude/Cursor presets, and cache their models. Runs
-  // once per tab open; idempotent, best-effort, and never throws to the UI.
+  // "Just works" setup: detect clients, install/upgrade npm adapters (Socket
+  // Firewall), register the Claude/Cursor/Codex presets, and cache their models.
+  // Runs once per tab open; idempotent, best-effort, and never throws to the UI.
   async function autoSetup(): Promise<void> {
     try {
       const result = await api.acp.autoSetup()
-      if (result.installed.length || result.registered.length || result.modelsDetected.length) {
+      if (
+        result.installed.length ||
+        result.upgraded.length ||
+        result.registered.length ||
+        result.modelsDetected.length
+      ) {
         await reloadAgents()
         render()
         await scan()
         const bits = [
           result.installed.length ? `installed ${String(result.installed.length)}` : '',
+          result.upgraded.length ? `updated ${String(result.upgraded.length)}` : '',
           result.registered.length ? `added ${String(result.registered.length)}` : '',
-          // Only worth calling out when nothing was installed/added (a pure model refresh).
-          !result.installed.length && !result.registered.length && result.modelsDetected.length
+          // Only worth calling out when nothing was installed/updated/added (a pure model refresh).
+          !result.installed.length &&
+          !result.upgraded.length &&
+          !result.registered.length &&
+          result.modelsDetected.length
             ? `detected models for ${String(result.modelsDetected.length)}`
             : '',
         ].filter(Boolean)
