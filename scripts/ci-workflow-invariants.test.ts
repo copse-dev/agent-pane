@@ -84,8 +84,28 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       aggregate,
-      /\$PROMOTION_PR && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
+      /\$PROMOTION_PR && \[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \] && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
       'promotion PRs must fail closed unless e2e succeeds',
+    )
+  })
+
+  it('only demands promotion e2e in the cases the e2e job actually dispatches', () => {
+    // The gate demanding a job that skipped itself is a deadlock, not a
+    // fail-closed: `CI Passed` can never go green, and because `pull_request`
+    // has no `edited` trigger, retargeting away from `main` does not re-run CI,
+    // so the false red outlives the move. Both escape hatches the `e2e` job
+    // applies must therefore be mirrored on the demand side.
+    const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
+    assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
+    assert.match(
+      aggregate,
+      /PROMOTION_PR=[^\n]*github\.event\.pull_request\.draft == false \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\)/,
+      'a main-based draft skips e2e, so the gate must not demand it',
+    )
+    assert.match(
+      aggregate,
+      /\[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \]/,
+      'a zero-shard plan skips e2e, so the gate must not demand it',
     )
   })
 
