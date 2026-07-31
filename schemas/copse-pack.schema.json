@@ -41,6 +41,10 @@
       "description": "Descriptive trust claim only. A discovered manifest is always `user`; first-party trust is assigned by code and cannot be self-granted by this field.",
       "enum": ["first-party", "user"]
     },
+    "stability": {
+      "description": "Product-support status shown before enablement. Missing user-pack values are treated as experimental; every first-party pack declares this explicitly (decision 19).",
+      "enum": ["stable", "experimental"]
+    },
     "skills": {
       "description": "Existing plugin.json slot: relative path to a skills directory.",
       "type": "string"

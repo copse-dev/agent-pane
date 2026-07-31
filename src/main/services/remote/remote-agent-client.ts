@@ -222,6 +222,29 @@ function writeSession(threadId: string, session: RemoteAgentSession): void {
   storageSet(sessionKey(threadId), session)
 }
 
+/**
+ * Attach a Cursor/Claude remote session to an existing local thread so follow-up
+ * turns reuse that agent (used when importing an externally launched cloud run).
+ */
+export function seedRemoteAgentSession(input: {
+  threadId: string
+  provider: RemoteAgentProvider
+  baseUrl: string
+  agentId: string
+  url?: string
+  model?: string
+}): void {
+  const session: RemoteAgentSession = {
+    v: 1,
+    provider: input.provider,
+    baseUrl: input.baseUrl,
+    agentId: input.agentId,
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.url ? { url: input.url } : {}),
+  }
+  writeSession(input.threadId, session)
+}
+
 export function clearRemoteAgentSession(threadId: string): void {
   storageSet(sessionKey(threadId), null)
   // Clear the Claude Managed Agents session for this thread too, so a fresh chat

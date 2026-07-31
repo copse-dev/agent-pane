@@ -14,7 +14,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 // asserts:
 //  - the Packs nav button + section render;
 //  - the shipped first-party todos pack shows up in
-//    the list with a first-party trust badge and an enable toggle;
+//    the list with first-party + stability badges and an enable toggle;
 //  - toggling persists (round-trips through the electron-store) and the row
 //    marks itself disabled;
 //  - a full-section screenshot lands in tests/e2e/screenshots for visual review.
@@ -112,6 +112,7 @@ describe('settings packs (about:addons)', function () {
     await expect(longHorizonRow).toBeDisplayed()
     assert.equal(await longHorizonRow.$('.pack-name').getText(), 'copse.long-horizon-tasks')
     await expect(longHorizonRow.$('.pack-badge-first-party')).toBeDisplayed()
+    await expect(longHorizonRow.$('.pack-badge-experimental')).toHaveText('EXPERIMENTAL')
     assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
     // Roadmap plans pack (#556): listed, default-OFF (ships disabled).
     const roadmapPlansRow = packs.$('.pack-row[data-pack-id="copse.roadmap-plans"]')
@@ -190,6 +191,7 @@ describe('settings packs (about:addons)', function () {
 
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
+    await expect(todosRow.$('.pack-badge-stable')).toHaveText('STABLE')
 
     // The toggle is a checkbox and starts enabled.
     const toggle = todosRow.$('input.pack-toggle-input')

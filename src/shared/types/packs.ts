@@ -23,6 +23,8 @@ export interface PackDirectorySourceSummary {
   path: string
   contentHash: string
 }
+/** Product-support status declared by the manifest and shown in Settings. */
+export type PackStabilityLevel = 'stable' | 'experimental'
 
 /** UI contribution levels from the plan (1 = card, 2 = named panel, 3 = real view). */
 export type PackUiLevel = 1 | 2 | 3
@@ -147,6 +149,7 @@ export interface PackContributionsSummary {
 export interface PackSummary {
   id: string
   trust: PackTrustLevel
+  stability: PackStabilityLevel
   name: string
   version?: string
   description?: string

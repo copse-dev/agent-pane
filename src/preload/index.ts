@@ -626,6 +626,9 @@ contextBridge.exposeInMainWorld('api', {
     artifactImageDataUrl: (agentId: string, path: string) =>
       ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
     models: () => ipcRenderer.invoke('remoteAgent:models'),
+    /** Import outside Cursor cloud agents as local thread stubs for a project. */
+    discoverExternal: (projectId?: string) =>
+      ipcRenderer.invoke('remoteAgent:discoverExternal', projectId),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
@@ -679,6 +682,10 @@ contextBridge.exposeInMainWorld('api', {
     getPlanWorthIt: () => ipcRenderer.invoke('usage:getPlanWorthIt'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
       ipcRenderer.invoke('usage:setClaudePlanMonthlyFee', fee),
+  },
+  decisions: {
+    list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
+    export: (projectId?: string) => ipcRenderer.invoke('decisions:export', projectId),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),

@@ -926,9 +926,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <h3>Packs</h3>
             <p class="settings-section-desc">
               Feature packs installed in Copse — the tools, hooks, prompt blocks, and panels each
-              contributes. Turning a pack off drops all of its contributions from new work in one
-              action; its stored data is left in place so re-enabling it picks up where it stopped.
-              Old conversations still render a disabled pack's history. See
+              contributes. Each row declares whether the pack is stable or experimental before you
+              enable it. Turning a pack off drops all of its contributions from new work in one
+              action; its stored data and old conversation history remain available. See
               <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
               for authoring and install steps.
             </p>
@@ -1819,6 +1819,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : 'pack-badge pack-badge-user'
     trustBadge.textContent = pack.trust
     title.append(trustBadge)
+    const stabilityBadge = document.createElement('span')
+    stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
+    stabilityBadge.textContent = pack.stability
+    stabilityBadge.title =
+      pack.stability === 'experimental'
+        ? 'Experimental: behavior and compatibility may change.'
+        : 'Stable: supported as part of the current pack contract.'
+    title.append(stabilityBadge)
 
     header.append(toggleLabel, title)
     row.append(header)
