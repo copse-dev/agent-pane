@@ -14,6 +14,8 @@ import { ensureToolPermitted } from './permission-gate.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
+import { storageDelete, storageSet } from '../storage/storage.ts'
+import { readDecisionLog } from './decision-log-store.ts'
 import {
   userHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
@@ -26,13 +28,18 @@ import {
 } from '../thread-models.ts'
 
 describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
+  const projectId = 'hook-audit-project'
   let tempHome = ''
   let originalHome: string | undefined
+  let originalWorkspaceDir: string | undefined
 
   beforeEach(async () => {
     tempHome = await mkdtemp(join(tmpdir(), 'copse-gate-hooks-'))
     originalHome = process.env['HOME']
+    originalWorkspaceDir = process.env['COPSE_WORKSPACE_DIR']
     process.env['HOME'] = tempHome
+    process.env['COPSE_WORKSPACE_DIR'] = join(tempHome, 'store')
+    storageSet('activeProjectId', projectId)
     resetCursorHookSessionErrorsForTest()
     setPermissionGateForTests(null)
     await setSetting('cursorHooksEnabled', true)
@@ -41,7 +48,15 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
   afterEach(async () => {
     setApprovalHandler(null)
     await setSetting('cursorHooksEnabled', false)
+    await readDecisionLog(projectId)
+    storageDelete('activeProjectId')
     if (originalHome !== undefined) process.env['HOME'] = originalHome
+    else delete process.env['HOME']
+    if (originalWorkspaceDir !== undefined) {
+      process.env['COPSE_WORKSPACE_DIR'] = originalWorkspaceDir
+    } else {
+      delete process.env['COPSE_WORKSPACE_DIR']
+    }
     await rm(tempHome, { recursive: true, force: true })
   })
 
@@ -108,6 +123,18 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
     await writeReadFileHook('{"permission":"deny"}')
     setApprovalHandler(async () => ({ approved: true, remember: false }))
     assert.equal(await ensureToolPermitted(readFile), false)
+    const decisions = await readDecisionLog(projectId)
+    assert.equal(
+      decisions.some(
+        (event) =>
+          event.kind === 'hook' &&
+          event.actor === 'hook' &&
+          event.verdict === 'blocked' &&
+          event.subject === 'read_file' &&
+          event.source === 'toolGate',
+      ),
+      true,
+    )
   })
 
   // H1 (docs/plans/hooks-and-feature-packs.md): a hook rewrite (`updated_input`)

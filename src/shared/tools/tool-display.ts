@@ -168,7 +168,11 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   const known = TOOL_DISPLAY_NAMES[name]
   if (known) return pickLabel(known, tense)
   const mcp = parseMcp(name)
-  if (mcp) return `${mcp.server}: ${formatToolNameFallback(mcp.tool)}`
+  if (mcp) return formatToolNameFallback(mcp.tool)
+  // Strip known MCP/ACP server prefixes (dot or underscore notation) so the
+  // user sees just the tool name, not the internal server alias.
+  const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, '')
+  if (stripped !== name) return formatToolNameFallback(stripped)
   return formatToolNameFallback(name)
 }
 
@@ -276,14 +280,24 @@ export function getToolGroupKey(name: string, kind?: string): string | null {
   const builtIn = TOOL_TO_GROUP.get(name)
   if (builtIn) return builtIn
   const mcp = parseMcp(name)
-  if (mcp) return `${MCP_GROUP_PREFIX}${mcp.server}`
+  if (mcp) {
+    // Copse exposes its built-in tools through MCP to some agent clients. Keep
+    // those wrappers in the same semantic groups as their bare counterparts.
+    if (mcp.server === 'copse') {
+      const copseBuiltIn = TOOL_TO_GROUP.get(mcp.tool)
+      if (copseBuiltIn) return copseBuiltIn
+    }
+    if (mcp.server === 'copse.git') return 'git'
+    if (mcp.server === 'copse.run') return 'shell'
+    return `${MCP_GROUP_PREFIX}${mcp.server}`
+  }
   if (kind && ACP_KIND_TO_GROUP[kind]) return ACP_KIND_TO_GROUP[kind]
   return null
 }
 
 export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): string {
   if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return `${key.slice(MCP_GROUP_PREFIX.length)} (MCP)`
+    return key.slice(MCP_GROUP_PREFIX.length)
   }
   const group = TOOL_GROUPS[key]
   if (!group) return key
