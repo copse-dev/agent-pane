@@ -83,6 +83,40 @@ export function appendSubagentText(
   })
 }
 
+export function appendSubagentReasoning(
+  store: AppStore,
+  messageId: string,
+  toolCallId: string,
+  subMessageId: string,
+  text: string,
+): void {
+  updateSubagentOnToolCall(store, messageId, toolCallId, (session) => {
+    const existing = session.messages.find((m) => m.id === subMessageId)
+    if (existing) {
+      return {
+        ...session,
+        messages: session.messages.map((m) =>
+          m.id !== subMessageId ? m : { ...m, reasoning: (m.reasoning ?? '') + text },
+        ),
+      }
+    }
+    return {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: subMessageId,
+          role: 'assistant',
+          content: '',
+          toolCalls: [],
+          createdAt: Date.now(),
+          reasoning: text,
+        },
+      ],
+    }
+  })
+}
+
 export function addSubagentToolCall(
   store: AppStore,
   messageId: string,

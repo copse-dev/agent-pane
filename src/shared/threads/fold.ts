@@ -168,8 +168,15 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
 
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
   if (msg.toolSummary !== undefined) line.toolSummary = msg.toolSummary
-  if (msg.attachments !== undefined && msg.attachments.length > 0)
-    line.attachments = msg.attachments
+  if (msg.attachments !== undefined && msg.attachments.length > 0) {
+    line.attachments = msg.attachments.map((attachment, i) => {
+      const { content, ...metadata } = attachment
+      if (content === undefined) return metadata
+      const ref = `blobs/${msg.id}-attachment-${String(i)}.txt`
+      files.push({ ref, contents: content })
+      return { ...metadata, content: contentRef(ref, content, hash) }
+    })
+  }
   if (msg.model !== undefined) line.model = msg.model
   if (msg.review !== undefined) line.review = msg.review
   if (msg.origin !== undefined) line.origin = msg.origin
@@ -229,6 +236,11 @@ export function refsOfLine(line: SpineMessageLine): {
   const subagentDirs: string[] = []
   if (line.reasoning) files.push(line.reasoning.ref)
   if (line.images) for (const img of line.images) files.push(img.ref)
+  if (line.attachments) {
+    for (const attachment of line.attachments) {
+      if (attachment.content) files.push(attachment.content.ref)
+    }
+  }
   for (const tc of line.toolCalls) {
     if (tc.result !== null) files.push(tc.result.ref)
     if (tc.subagent) subagentDirs.push(tc.subagent.ref)
@@ -344,7 +356,15 @@ function foldOne(
 
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
   if (line.toolSummary !== undefined) msg.toolSummary = line.toolSummary
-  if (line.attachments !== undefined) msg.attachments = line.attachments
+  if (line.attachments !== undefined) {
+    msg.attachments = line.attachments.map((attachment) => {
+      const { content, ...metadata } = attachment
+      if (!content) return metadata
+      const snapshot = resolve(content.ref)
+      verify(content, snapshot, hash)
+      return { ...metadata, content: snapshot }
+    })
+  }
   if (line.model !== undefined) msg.model = line.model
   if (line.review !== undefined) msg.review = line.review
   if (line.origin !== undefined) msg.origin = line.origin

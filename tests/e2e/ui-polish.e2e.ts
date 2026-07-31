@@ -29,35 +29,135 @@ describe('shared UI polish', () => {
   it('integrates status, selections, pane rules, and roadmap field spacing', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    // Keep the mock turn alive long enough to inspect the live activity strip.
-    await setComposerValue('Check the current layout. [[mock:delay_ms 8000]]')
+    // Keep the mock turn alive long enough to inspect both the initial waiting
+    // row and the reasoning-token state that replaces it.
+    await setComposerValue(
+      'Check the current layout. [[mock:delay_ms 1500]] [[mock:reasoning Inspecting the conversation layout and the placement of its live reasoning indicator in the transcript. This sentence intentionally streams long enough for the visual assertion to capture the active state.]]',
+    )
     await $('.submit-btn').click()
     const activity = $('.agent-activity')
     await activity.waitForDisplayed({ timeout: 10_000 })
 
     const composerGeometry = await browser.execute(() => {
       const input = document.getElementById('input-bar')
-      const status = input?.querySelector<HTMLElement>(':scope > .agent-activity')
-      const prompt = input?.querySelector<HTMLElement>('.prompt-input')
-      if (!input || !status || !prompt) return null
-      const inputRect = input.getBoundingClientRect()
+      const messages = document.querySelector<HTMLElement>('.messages-list')
+      const status = messages?.querySelector<HTMLElement>(':scope > .agent-activity')
+      if (!input || !messages || !status) return null
+      const messagesRect = messages.getBoundingClientRect()
       const statusRect = status.getBoundingClientRect()
+      const iconPath = status.querySelector('.reasoning-activity-path')
       return {
         statusIsInsideComposer: input.contains(status),
-        leftEdge: statusRect.left - inputRect.left,
-        rightEdge: inputRect.right - statusRect.right,
-        statusRadius: getComputedStyle(status).borderTopLeftRadius,
-        promptRadius: getComputedStyle(prompt).borderTopLeftRadius,
+        statusIsInsideTranscript: messages.contains(status),
+        leftEdge: statusRect.left - messagesRect.left,
+        rightEdge: messagesRect.right - statusRect.right,
+        hasAnimatedIcon: Boolean(status.querySelector('[data-icon="reasoning-activity"]')),
+        iconAnimation: iconPath ? getComputedStyle(iconPath).animationName : '',
+        reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       }
     })
     assert.ok(composerGeometry, 'composer status geometry must exist')
-    assert.equal(composerGeometry.statusIsInsideComposer, true)
-    // Allow a hair over 1px for fractional layout (seen as ~1.02 on Linux).
-    assert.ok(Math.abs(composerGeometry.leftEdge) <= 2)
-    assert.ok(Math.abs(composerGeometry.rightEdge) <= 2)
-    assert.notEqual(composerGeometry.statusRadius, '0px')
-    assert.equal(composerGeometry.promptRadius, '0px')
-    await saveAppScreenshot('chat-activity-in-composer.png')
+    assert.equal(composerGeometry.statusIsInsideComposer, false)
+    assert.equal(composerGeometry.statusIsInsideTranscript, true)
+    assert.equal(composerGeometry.hasAnimatedIcon, true)
+    assert.equal(
+      composerGeometry.iconAnimation,
+      composerGeometry.reducedMotion ? 'none' : 'reasoning-activity-draw',
+    )
+    assert.ok(composerGeometry.leftEdge >= 0)
+    assert.ok(composerGeometry.rightEdge >= 0)
+
+    const reasoning = $('.message-reasoning-live')
+    await reasoning.waitForDisplayed({ timeout: 10_000 })
+    await expect(reasoning.$('.message-reasoning-title')).toHaveText('Reasoning…')
+    await expect(reasoning.$('[data-icon="reasoning-activity"]')).toExist()
+    await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    // Freeze the animation through one cycle. Its dash pattern must be longer
+    // than the path so retraction cannot wrap a repeated dash back onto the
+    // beginning while the tail is still visible.
+    const loopSeam = await browser.execute(() => {
+      const path = document.querySelector<SVGPathElement>(
+        '.message-reasoning-live .reasoning-activity-path',
+      )
+      if (!path) return null
+      const animation = path
+        .getAnimations()
+        .find((candidate) => candidate.animationName === 'reasoning-activity-draw')
+      if (!animation) return { animated: false as const }
+
+      const duration = animation.effect?.getTiming().duration
+      if (typeof duration !== 'number' || !Number.isFinite(duration)) return null
+
+      animation.pause()
+      const sample = (
+        currentTime: number,
+      ): {
+        dashLength: number
+        gapLength: number
+        dashOffset: number
+        opacity: number
+      } => {
+        animation.currentTime = currentTime
+        const style = getComputedStyle(path)
+        const dashPattern = style.strokeDasharray
+          .split(/[ ,]+/)
+          .map((value) => Number.parseFloat(value))
+          .filter((value) => Number.isFinite(value))
+        const dashLength = dashPattern[0] ?? 0
+        return {
+          dashLength,
+          gapLength: dashPattern[1] ?? dashLength,
+          dashOffset: Number.parseFloat(style.strokeDashoffset),
+          opacity: Number.parseFloat(style.opacity),
+        }
+      }
+
+      const blankBefore = sample(duration - 1)
+      const blankAfter = sample(1)
+      const drawing = sample(duration * 0.1)
+      const full = sample(duration * 0.5)
+      // Leave the animation frozen mid-retraction for the visual reference:
+      // only the path tail should be visible, never a second start fragment.
+      const retracting = sample(duration * 0.75)
+      const visibleIconCount = [
+        ...document.querySelectorAll<SVGSVGElement>('[data-icon="reasoning-activity"]'),
+      ].filter((icon) => {
+        const style = getComputedStyle(icon)
+        return icon.getClientRects().length > 0 && style.visibility !== 'hidden'
+      }).length
+      return {
+        animated: true as const,
+        blankDurationMs: duration * 0.02,
+        blankBefore,
+        blankAfter,
+        drawing,
+        full,
+        retracting,
+        visibleIconCount,
+      }
+    })
+    assert.ok(loopSeam, 'reasoning animation path must exist')
+    assert.equal(loopSeam.animated, !composerGeometry.reducedMotion)
+    if (loopSeam.animated) {
+      assert.ok(loopSeam.blankDurationMs >= 1000 / 60)
+      assert.equal(loopSeam.visibleIconCount, 1)
+      assert.equal(loopSeam.blankBefore.opacity, 0)
+      assert.equal(loopSeam.blankAfter.opacity, 0)
+      assert.ok(loopSeam.blankBefore.dashOffset <= -0.99)
+      assert.ok(loopSeam.blankAfter.dashOffset >= 0.99)
+      assert.ok(loopSeam.drawing.opacity > 0.99)
+      assert.ok(loopSeam.drawing.dashOffset > 0)
+      assert.ok(loopSeam.drawing.dashOffset < 1)
+      assert.ok(loopSeam.full.opacity > 0.99)
+      assert.ok(Math.abs(loopSeam.full.dashOffset) <= 0.001)
+      assert.ok(loopSeam.retracting.opacity > 0.99)
+      assert.ok(loopSeam.retracting.dashOffset < 0)
+      assert.ok(loopSeam.retracting.dashOffset > -1)
+      assert.ok(loopSeam.retracting.dashLength >= 0.99)
+      assert.ok(loopSeam.retracting.gapLength >= 0.99)
+      assert.ok(loopSeam.retracting.dashLength + loopSeam.retracting.gapLength > 1)
+    }
+    await saveAppScreenshot('chat-reasoning-in-transcript.png')
 
     await $('.stop-btn').click()
     await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })

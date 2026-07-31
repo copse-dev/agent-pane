@@ -24,7 +24,11 @@ contract is `PackManifest` in
 
 ```
 pack manifest
-├── tools      native tool names (first-party) or an MCP config path (user packs)
+├── stability  stable | experimental (missing user values fail safe to experimental)
+├── tools      native + ACP-safe tool names (first-party) or an MCP config path (user packs)
+├── models     selected-pack whole-thread routes shown in the thread picker
+├── browser    exact visible-browser origins for selected-pack model routes
+├── runtime    shared isolated entrypoint for selected-pack executable behavior
 ├── hooks      command-hook declarations (user packs); first-party function hooks are typed runtime contributions
 ├── prompt     skills / steering blocks (with trust framing: trusted vs untrusted)
 ├── ui         contributions — level 1 (cards) / 2 (named panel slot) / 3 (real renderer view)
@@ -37,8 +41,9 @@ user packs share the manifest, registry, Settings surface, and disable semantics
 First-party packs additionally supply typed runtime contributions —
 `AgentStreamChunk` emission, live loop-state access, real renderer views — which
 is why the executable bits (function hooks, native tool registrations) live on
-the runtime `RegisteredPack.contributions`, not in the serializable manifest. A
-user pack can never smuggle code through its `plugin.json`.
+the runtime `RegisteredPack.contributions`, not in the serializable manifest.
+The one user-code exception is an explicitly selected pack's isolated
+shared `runtime`; it never imports code into Electron main.
 
 `packManifestFromPluginJson()` maps a discovered `plugin.json` into a
 `PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
@@ -49,6 +54,47 @@ packs into the registry is **not wired yet** — until it is, skills/MCP from a
 `plugin.json` still load via Cursor plugin discovery (see
 [`docs/adding-a-pack.md`](adding-a-pack.md)).
 
+An explicitly selected pack directory is an ordinary **user** pack, not a new
+trust tier. Its `copse-pack.json` can declare tool names under `tools.provides`,
+whole-thread model metadata under `models.provides`, or both, implemented by one
+versioned `runtime`.
+The host validates the manifest/tree, rejects symlinks and escaping entrypoints,
+and computes a deterministic content hash. Adding the directory is the current
+explicit opt-in; behavior-derived installation consent is future product work.
+At startup the host re-hashes the source, materializes and validates a
+content-addressed snapshot, and executes only that snapshot in a standalone
+API-v1 worker. The sandbox denies direct network and filesystem writes, and the
+worker can register only the tool names and model ids declared by the manifest.
+Without the OS sandbox, execution fails closed.
+
+Selected-pack models are whole-thread routes, like remote and ACP agents rather
+than task-role models. Enabled routes appear in the footer picker. The host sends
+the current prompt, bounded validated current-turn images when declared, and a
+bounded text-only prior-conversation handoff. The worker also receives only the
+concrete durable-session operations `get`, `set`, and `delete`; the host binds
+them mechanically to the active pack and Copse thread. This lets a pack reuse an
+external conversation id and use the transcript handoff only when rebuilding a
+missing session. Disabling the pack removes its routes from new selections while
+preserving the stored session and a disabled current selection's display metadata.
+
+P4 adds one concrete host-owned gateway: a selected pack with
+`browser.origins` can operate pack-and-thread owned tabs in the visible browser
+panel through explicit `open`, `navigate`, `tabs`, `snapshot`, `click`, `type`,
+and `upload` operations. Exact-origin checks happen before navigation and every
+interaction; redirects outside the declaration fail closed. Tabs use the
+panel's persistent interactive profile and are revealed to the user, so this is
+appropriate for workflows that need an existing site login or occasional human
+interaction. The bridge never returns a webview/Electron object to the worker.
+
+Image upload converts validated base64 image data supplied by the model handler
+into an in-page `File` and assigns it to a referenced file input with
+`DataTransfer`, then dispatches `input`/`change`; it never opens a native file
+chooser. Each upload operation is capped at eight files and 8 MB decoded total.
+
+There is still no direct worker network, generic `host.call`, arbitrary IPC, or
+user-pack renderer code. Renderer contribution machinery remains deferred until
+a concrete behavior needs it rather than landing as an unused slot.
+
 ## Registry and lifecycle
 
 `PackRegistry`
@@ -58,8 +104,14 @@ groups every pack's contributions by pack id and owns the lifecycle:
 - **Grouping** — `all()` / `grouping()` enumerate packs (Settings, P3); the
   `active*()` getters (`activeToolNames`, `activeBlockingHooks`,
   `activeAsyncHooks`, `activePromptBlocks`, `activeUiContributions`,
-  `activeCapabilities`, `activePermissions`) return the contributions of
+  `activeBrowserOrigins`, `activeCapabilities`, `activePermissions`, `activeAcpToolNames`) return the contributions of
   **enabled** packs only, for **new work**.
+- **ACP tools** — a first-party pack may declare `tools.acpTools` as the subset
+  of its `tools.native` entries safe to execute through Copse's authenticated
+  localhost bridge for external ACP agents. Registration rejects user-pack,
+  non-native, and missing-runtime declarations. The bridge intersects the
+  enabled declaration with the live `ToolRegistry`, so disabling the pack or
+  removing its credential-gated tool revokes ACP exposure immediately.
 - **Capabilities** — a pack may declare named **capability** flags: pure
   cross-cutting behaviour with no tool/hook/prompt/panel (e.g. the MCP-UI canvas,
   the DevTools shortcut). Any subsystem reads one through the single
@@ -72,12 +124,13 @@ groups every pack's contributions by pack id and owns the lifecycle:
   the grant, so the authority exists only while the owning pack is enabled — the
   same flag flip that unregisters the pack's tools revokes it. The declaration
   also feeds the Settings enumeration and the install-time review.
-- **Default enablement** — `createFirstPartyPackRegistry()` seeds every pack
-  enabled, so the off-by-default set is declared once as
-  `DEFAULT_DISABLED_PACK_IDS` in `pack-service.ts` and written into `packDisabled`
-  on a profile that has never had one. Every experimental pack is in that list;
-  `copse.post-turn-review` is deliberately absent. Once `packDisabled` exists it
-  is the user's own and is never re-seeded.
+- **Stability and default enablement** — every first-party manifest declares
+  `stable` or `experimental`; missing user-pack values fail safe to experimental.
+  Settings shows the status before enablement. `createFirstPartyPackRegistry()`
+  seeds every pack enabled, then `EXPERIMENTAL_FIRST_PARTY_PACK_IDS` derives the
+  off-by-default set from those declarations and writes it into `packDisabled` on
+  a profile that has never had one. Once `packDisabled` exists it is the user's
+  own and is never re-seeded.
 - **Atomic enable/disable** — `disable(id)` flips a single flag, so every one of
   a pack's contribution kinds drops from the active getters at once: tools leave
   the model tool list, hooks stop firing, prompt blocks drop out, UI stops
@@ -85,6 +138,9 @@ groups every pack's contributions by pack id and owns the lifecycle:
   revoked. There is no partial state.
 - **Storage survives disable** — `storage(id)` is a namespaced bag that is never
   cleared on disable (decision 17), like a disabled browser extension's data.
+- **Dynamic selected-source reconciliation** — `unregister(id)` removes a
+  selected pack whose directory disappears or changes, while retaining its
+  namespaced storage. The refreshed manifest is validated before registration.
 
 First-party packs are the static list in
 [`packages/agent/src/packs/first-party-packs.ts`](../packages/agent/src/packs/first-party-packs.ts).
@@ -102,6 +158,17 @@ storage, while the Electron host supplies the local clock/thread-store service
 and the shipped renderer submits due prompts through the interactive agent controller.
 See [`docs/plans/automations.md`](plans/automations.md) for the deliberately narrow
 desktop-online cron prototype and its durable-supervisor boundary.
+
+The default-off `copse.parallel-search` pack is another level-3 first-party
+integration. It contributes the native `parallel_search` tool and calls
+Parallel's Search API directly rather than running an MCP server. Registration
+requires both an enabled pack and a configured `PARALLEL_API_KEY` (or encrypted
+key saved in Settings). Its detail view keeps the secret outside the generic
+pack-settings snapshot and states the network, billing, and ZDR boundary. The
+tool is also declared in `tools.acpTools`, so HTTP-MCP-capable external ACP
+agents can invoke the same direct API implementation through Copse's native-tool
+bridge. See
+[`docs/parallel-search.md`](parallel-search.md).
 
 ## Level-2 declarative panels (P2)
 
@@ -164,14 +231,18 @@ settings the manifest declares. This is the `about:addons` of Copse.
   surface: `api.packs.*` in the preload). Values are validated to
   `boolean` / `number` / `string ≤ 8192` so a compromised renderer cannot
   stuff arbitrary payloads.
+- **Selected-pack IPC.** Source selection is owned by the main process's native
+  directory picker. `packs:addSource` exposes only a host-validated candidate;
+  the renderer never supplies a path directly.
 - **Renderer.** The Settings dialog gains a `Packs` nav section
   (`src/renderer/views/settings-dialog.ts`). Each row shows the pack's name +
-  version + trust badge, an enable toggle, a description, contribution chips
-  (`Tools × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
+  version + trust and stability badges, an enable toggle, a description, contribution chips
+  (`Tools × N`, `Models × N`, `Browser origins × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
   identifiers in a hover title, and generic form fields for the manifest's
   `settings` schema. Disabled rows are visually greyed via `pack-row-disabled`
   so the effect of the toggle is immediately visible; per-pack settings stay
   editable so a user can configure a disabled pack before re-enabling it.
+  Selected-directory rows additionally show their source path and content hash.
 - **Projection helper.**
   [`packages/agent/src/packs/pack-summary.ts`](../packages/agent/src/packs/pack-summary.ts)
   is the pure `summarizePacks(registry, readSetting)` that projects the shared
@@ -217,6 +288,7 @@ disable is pinned by
 
 - [`docs/adding-a-pack.md`](adding-a-pack.md) — practical install / authoring guide (linked from Settings → Packs)
 - [`docs/forced-planning.md`](forced-planning.md) — `copse.forced-planning`, the first pack born as a pack rather than extracted, and the `resolvePackSetting` seam it introduced
+- [`docs/parallel-search.md`](parallel-search.md) — direct Parallel Search API pack, credentials, permissions, and ZDR boundary
 - [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) — design source of truth (Feature packs, the [two-capability-tiers](plans/hooks-and-feature-packs.md#decisions-log) and [disable-never-breaks-history](plans/hooks-and-feature-packs.md#decisions-log) decisions)
 - [`docs/cursor-plugins.md`](cursor-plugins.md) — the plugin manifest the pack manifest extends
 - [`docs/hooks.md`](hooks.md) — the hook registry a pack's hooks register through

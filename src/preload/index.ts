@@ -28,6 +28,37 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:open-tab', listener)
       }
     },
+    onPackTabRequest: (
+      handler: (
+        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+      ) => Promise<{ tabId: string; webContentsId: number }>,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+      ): void => {
+        void handler(request).then(
+          (ready) => {
+            ipcRenderer.send('packs:browser-tab-ready', {
+              requestId: request.requestId,
+              ok: true,
+              ...ready,
+            })
+          },
+          (error: unknown) => {
+            ipcRenderer.send('packs:browser-tab-ready', {
+              requestId: request.requestId,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          },
+        )
+      }
+      ipcRenderer.on('packs:browser-tab-request', listener)
+      return (): void => {
+        ipcRenderer.off('packs:browser-tab-request', listener)
+      }
+    },
   },
   security: {
     getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:getGuardedYolo', threadId),
@@ -595,6 +626,9 @@ contextBridge.exposeInMainWorld('api', {
     artifactImageDataUrl: (agentId: string, path: string) =>
       ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
     models: () => ipcRenderer.invoke('remoteAgent:models'),
+    /** Import outside Cursor cloud agents as local thread stubs for a project. */
+    discoverExternal: (projectId?: string) =>
+      ipcRenderer.invoke('remoteAgent:discoverExternal', projectId),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
@@ -648,6 +682,10 @@ contextBridge.exposeInMainWorld('api', {
     getPlanWorthIt: () => ipcRenderer.invoke('usage:getPlanWorthIt'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
       ipcRenderer.invoke('usage:setClaudePlanMonthlyFee', fee),
+  },
+  decisions: {
+    list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
+    export: (projectId?: string) => ipcRenderer.invoke('decisions:export', projectId),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
@@ -747,6 +785,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('packs:setEnabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
       ipcRenderer.invoke('packs:setSetting', id, key, value),
+    addSource: () => ipcRenderer.invoke('packs:addSource'),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),

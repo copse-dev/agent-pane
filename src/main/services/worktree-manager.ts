@@ -1,14 +1,14 @@
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
+import { copseWorktreesDir } from './storage/copse-paths.ts'
 import { createWorktreeBackup } from './github/git-service.ts'
 import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
-import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 const DISABLE_GIT_HOOKS = ['-c', 'core.hooksPath=/dev/null']
@@ -159,8 +159,7 @@ function assertOwnerId(label: string, value: string): void {
 }
 
 function worktreesRoot(): string {
-  const override = process.env['COPSE_WORKTREES_DIR']?.trim()
-  const configured = resolve(nonEmptyStringOr(override, join(homedir(), '.copse', 'worktrees')))
+  const configured = resolve(copseWorktreesDir())
   const missing: string[] = []
   let existing = configured
   for (;;) {

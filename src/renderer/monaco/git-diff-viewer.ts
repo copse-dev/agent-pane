@@ -55,24 +55,69 @@ export interface GitDiffMonaco extends MonacoShortcutApi {
   Uri: { parse(value: string): { toString(): string } }
 }
 
+export type GitDiffEditorSource = GitDiffEditor | (() => GitDiffEditor)
+
 let diffModelVersion = 0
 
 function viewerVisible(host: HTMLElement): boolean {
   return !host.hidden && host.offsetWidth > 0 && host.offsetHeight > 0
 }
 
-/** Monaco diff layout is wrong when the host was `hidden` or had zero size at create/setModel time. */
-export async function whenDiffHostVisible(host: HTMLElement): Promise<void> {
-  if (viewerVisible(host)) return
-  await new Promise<void>((resolve) => {
-    const tryResolve = (): void => {
-      if (!viewerVisible(host)) return
+function resolveDiffEditor(source: GitDiffEditorSource): GitDiffEditor {
+  return typeof source === 'function' ? source() : source
+}
+
+function unrefNodeTimer(timer: unknown): void {
+  if (typeof timer !== 'object' || timer === null || !('unref' in timer)) return
+  const { unref } = timer
+  if (typeof unref === 'function') Reflect.apply(unref, timer, [])
+}
+
+/**
+ * Wait until the diff host has a real layout box.
+ *
+ * Monaco diff layout is wrong when the host was `hidden` or zero-sized at
+ * create/setModel time. Returns false when `isCurrent` flips while waiting so
+ * callers can release a shared load queue instead of stalling behind a hidden
+ * panel (e.g. Changes auto-open while `#pane-files` is still closed).
+ */
+export async function whenDiffHostVisible(
+  host: HTMLElement,
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
+  if (!isCurrent()) return false
+  if (viewerVisible(host)) return true
+  return await new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (ok: boolean): void => {
+      if (settled) return
+      settled = true
       obs.disconnect()
-      resolve()
+      mo.disconnect()
+      clearInterval(poll)
+      resolve(ok)
     }
-    const obs = new ResizeObserver(tryResolve)
+    const tick = (): void => {
+      if (!isCurrent()) {
+        finish(false)
+        return
+      }
+      if (viewerVisible(host)) finish(true)
+    }
+    const obs = new ResizeObserver(tick)
     obs.observe(host)
-    requestAnimationFrame(tryResolve)
+    // `hidden` toggles do not always produce a ResizeObserver record when an
+    // ancestor stays `display:none` (size 0→0), so watch the attribute too.
+    const mo = new MutationObserver(tick)
+    mo.observe(host, { attributes: true, attributeFilter: ['hidden'] })
+    // Ancestor unhide (e.g. `#pane-files`) can size the host without mutating
+    // it; polling also lets superseded selections abandon the wait promptly.
+    const poll = setInterval(tick, 32)
+    // Browser timers are numeric. Under Node's DOM test environment the timer
+    // is an object whose default ref would keep coverage alive indefinitely
+    // whenever a mounted hidden host is intentionally still waiting.
+    unrefNodeTimer(poll)
+    requestAnimationFrame(tick)
   })
 }
 
@@ -104,17 +149,22 @@ export function disposeDiffModels(diffEditor: GitDiffEditor): void {
  * is shown — important right after lazy Monaco load, when the editor worker may
  * still be bootstrapping and a bare setModel + immediate getLineChanges() race
  * leaves the reveal as a no-op (change off-screen / collapse unset).
+ *
+ * Pass a factory `() => createEditor()` when the editor must not be constructed
+ * until the host is visible — creating Monaco at 0×0 (panel still closed) leaves
+ * a blank viewer even after later layout().
  */
 export async function setGitFileDiffModel(
-  diffEditor: GitDiffEditor,
+  diffEditorSource: GitDiffEditorSource,
   monaco: GitDiffMonaco,
   diff: GitFileDiff,
   host: HTMLElement,
   isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
-  await whenDiffHostVisible(host)
-  if (!isCurrent()) return false
+  const visible = await whenDiffHostVisible(host, isCurrent)
+  if (!visible || !isCurrent()) return false
 
+  const diffEditor = resolveDiffEditor(diffEditorSource)
   disposeDiffModels(diffEditor)
   const version = diffModelVersion++
   const safePath = diff.path.replace(/[^a-zA-Z0-9._/-]/g, '_')

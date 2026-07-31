@@ -38,6 +38,8 @@ import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { createAutomationPackSettings } from './automation-pack-settings.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { createParallelSearchPackSettings } from './parallel-search-pack-settings.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -54,6 +56,7 @@ import {
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 
 export type SettingsSection =
   | 'general'
@@ -89,21 +92,20 @@ function isSettingsSection(value: unknown): value is SettingsSection {
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_ACCENT_COLOR = '#2A9D8F'
-// Ships on by default as a gentle wash that matches the default "Rose" app
-// icon (its #F472B6 mark). Users can dial it up, recolour it, or set the
-// strength to Off for the plain neutral surfaces.
-export const DEFAULT_TINT_COLOR = '#F472B6'
+export const DEFAULT_ACCENT_COLOR = '#20FD85'
+// Keep the neon interaction accent independent from the deeper surface tint.
+// New users get a restrained green wash; Strong unlocks the exact site palette.
+export const DEFAULT_TINT_COLOR = '#002E2B'
 export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
   subtle: '4%',
-  medium: '7%',
-  strong: '10%',
+  medium: '8%',
+  strong: '16%',
 }
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 
-function accentTextColor(color: string): '#101918' | '#ffffff' {
+function accentTextColor(color: string): '#444444' | '#ffffff' {
   const linearChannel = (offset: number): number => {
     const channel = Number.parseInt(color.slice(offset, offset + 2), 16) / 255
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
@@ -112,7 +114,7 @@ function accentTextColor(color: string): '#101918' | '#ffffff' {
   const green = linearChannel(3)
   const blue = linearChannel(5)
   const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-  return luminance > 0.179 ? '#101918' : '#ffffff'
+  return luminance > 0.179 ? '#444444' : '#ffffff'
 }
 
 /** Apply the interaction hue and keep text on solid accent fills readable. */
@@ -130,7 +132,12 @@ export function isUiTintStrength(value: unknown): value is UiTintStrength {
 /** Push the tint onto the document root so every surface picks it up at once. */
 export function applyUiTint(color: string, strength: UiTintStrength): void {
   const root = document.documentElement
-  if (HEX_COLOR.test(color)) root.style.setProperty('--tint-hue', color)
+  if (HEX_COLOR.test(color)) {
+    root.style.setProperty('--tint-hue', color)
+    root.dataset['tintPalette'] =
+      color.toLowerCase() === DEFAULT_TINT_COLOR.toLowerCase() ? 'copse' : 'custom'
+  }
+  root.dataset['tintStrength'] = strength
   root.style.setProperty('--tint-amount', TINT_STRENGTH_AMOUNTS[strength])
 }
 
@@ -197,6 +204,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
+  { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
   // Background tasks moved to Settings > Packs (`copse.background-tasks`), which
   // also declares the `loopback-bind` sandbox relaxation (issue #1190).
   // The DevTools shortcut toggle moved to Settings > Packs (`copse.devtools-shortcut`).
@@ -881,7 +889,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
+            <fieldset data-developer-only="hooks" hidden>
               <legend>Hooks</legend>
               <p class="settings-fieldset-desc">
                 Cursor hooks from <code>~/.cursor/hooks.json</code> and Claude Code hooks from
@@ -920,13 +928,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <h3>Packs</h3>
             <p class="settings-section-desc">
               Feature packs installed in Copse — the tools, hooks, prompt blocks, and panels each
-              contributes. Turning a pack off drops all of its contributions from new work in one
-              action; its stored data is left in place so re-enabling it picks up where it stopped.
-              Old conversations still render a disabled pack's history. See
+              contributes. Each row declares whether the pack is stable or experimental before you
+              enable it. Turning a pack off drops all of its contributions from new work in one
+              action; its stored data and old conversation history remain available. See
               <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
               for authoring and install steps.
             </p>
             <div class="lmstudio-test-row">
+              <button type="button" id="packs-add-btn">Add pack…</button>
               <button type="button" id="packs-reload-btn">Reload</button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
@@ -1137,6 +1146,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 spend approval). When off, run it on demand via the <code>compare_models</code> tool.
               </p>
             </fieldset>
+
+            <fieldset>
+              <legend>Developer mode</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="developerMode" />
+                Enable developer mode
+              </label>
+              <p class="field-hint">
+                Shows Hooks in Sources and the conversation diagnostics menu. The optional
+                <code>Ctrl+Shift+I</code> shortcut is controlled separately by the
+                <code>copse.devtools-shortcut</code> pack.
+              </p>
+            </fieldset>
           </section>
 
           <div class="settings-search-results" id="settings-search-results"></div>
@@ -1303,6 +1325,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Async section content (ACP agents, Sources lists) loads only when its tab is
   // opened; search reveals those blocks too, so populate them once per open.
   let searchContentLoaded = false
+  const developerModeInput = qsRequired<HTMLInputElement>(
+    overlay,
+    `input[name="${DEVELOPER_MODE_SETTING}"]`,
+  )
+  const hooksEnabledInput = qsRequired<HTMLInputElement>(
+    overlay,
+    'input[name="cursorHooksEnabled"]',
+  )
+  const hooksFieldset = qsRequired(overlay, '[data-developer-only="hooks"]')
+
+  // Never hide an already-enabled security-sensitive feature: it must remain
+  // reachable so the user can turn its execution gate back off.
+  function syncDeveloperOnlySettings(): void {
+    hooksFieldset.hidden = !developerModeInput.checked && !hooksEnabledInput.checked
+  }
+
+  developerModeInput.checked = store.getState().developerMode
+  syncDeveloperOnlySettings()
 
   function showSection(id: SettingsSection): void {
     activeSection = id
@@ -1357,6 +1397,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const matches: { node: HTMLElement; rank: number }[] = []
     sections.forEach((sec) => {
       for (const block of topLevelBlocks(sec)) {
+        if (block.hidden) continue
         if (!block.textContent.toLowerCase().includes(query)) continue
         const legend = block.querySelector('legend')?.textContent.toLowerCase() ?? ''
         matches.push({ node: block, rank: legend.includes(query) ? 0 : 1 })
@@ -1810,8 +1851,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       pack.trust === 'first-party'
         ? 'pack-badge pack-badge-first-party'
         : 'pack-badge pack-badge-user'
-    trustBadge.textContent = pack.trust === 'first-party' ? 'first-party' : 'user'
+    trustBadge.textContent = pack.trust
     title.append(trustBadge)
+    const stabilityBadge = document.createElement('span')
+    stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
+    stabilityBadge.textContent = pack.stability
+    stabilityBadge.title =
+      pack.stability === 'experimental'
+        ? 'Experimental: behavior and compatibility may change.'
+        : 'Stable: supported as part of the current pack contract.'
+    title.append(stabilityBadge)
 
     header.append(toggleLabel, title)
     row.append(header)
@@ -1823,6 +1872,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(desc)
     }
 
+    if (pack.source?.kind === 'directory') {
+      const review = document.createElement('div')
+      review.className = 'pack-source-review'
+
+      const status = document.createElement('div')
+      status.className = 'pack-source-status'
+      status.textContent = 'Selected directory · executable behaviors run in isolation'
+      review.append(status)
+
+      const details: Array<[string, string]> = [
+        ['Source', pack.source.path],
+        ['Content', pack.source.contentHash],
+      ]
+      const detailList = document.createElement('dl')
+      detailList.className = 'pack-source-details'
+      for (const [term, value] of details) {
+        const dt = document.createElement('dt')
+        dt.textContent = term
+        const dd = document.createElement('dd')
+        dd.textContent = value
+        detailList.append(dt, dd)
+      }
+      review.append(detailList)
+      row.append(review)
+    }
+
     // Contribution enumeration — the "about:addons" surface: users see exactly
     // what flipping the toggle takes out of new work.
     const contributions = pack.contributions
@@ -1832,6 +1907,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         label: 'Tools',
         count: contributions.toolNames.length,
         title: contributions.toolNames.join(', '),
+      })
+    }
+    if (contributions.modelRoutes.length > 0) {
+      chips.push({
+        label: 'Models',
+        count: contributions.modelRoutes.length,
+        title: contributions.modelRoutes.map((route) => `${route.label} (${route.id})`).join(', '),
+      })
+    }
+    if (contributions.browserOrigins.length > 0) {
+      chips.push({
+        label: 'Browser origins',
+        count: contributions.browserOrigins.length,
+        title: contributions.browserOrigins.join(', '),
       })
     }
     if (contributions.mcpServersPath) {
@@ -1962,6 +2051,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
     ) {
       row.append(createAutomationPackSettings(store, api, pack.enabled))
+    }
+    if (
+      pack.id === PARALLEL_SEARCH_PACK_ID &&
+      pack.contributions.ui.some(
+        (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
+      )
+    ) {
+      row.append(createParallelSearchPackSettings(api))
     }
 
     // Disabling greys the whole row so the effect of the toggle is immediately
@@ -2358,6 +2455,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshPacks()
   })
 
+  qsRequired(overlay, '#packs-add-btn').addEventListener('click', () => {
+    const button = qsRequired<HTMLButtonElement>(overlay, '#packs-add-btn')
+    const status = qsRequired(overlay, '#packs-reload-status')
+    button.disabled = true
+    status.textContent = 'Choose a folder containing copse-pack.json…'
+    void api.packs
+      .addSource()
+      .then(() => refreshPacks())
+      .catch((error: unknown) => {
+        status.textContent = errorMessage(error)
+      })
+      .finally(() => {
+        button.disabled = false
+      })
+  })
+
   // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
@@ -2381,6 +2494,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
+    developerModeInput.checked = store.getState().developerMode
+    syncDeveloperOnlySettings()
     // A fresh open always starts on a section, never in a leftover search.
     searchContentLoaded = false
     if (searchInput.value) {
@@ -2429,6 +2544,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
       await loadSimpleFields(form, api)
+      syncDeveloperOnlySettings()
       wireSafetySliders(form)
       const savedWebOrigins = storedStringArray(await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING))
       textareaControl(form, 'webAllowedOrigins').value = (
@@ -2489,6 +2605,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
   settingsForm.addEventListener('change', (e) => {
     const target = e.target
+    if (target === developerModeInput || target === hooksEnabledInput) {
+      syncDeveloperOnlySettings()
+    }
     // The executor (chat) model changed — re-grade the advisor pairing hint,
     // which now lives with the advisor pack's model field (Settings → Packs).
     if (target instanceof HTMLSelectElement && target.name === 'model') {
@@ -2528,6 +2647,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : 'auto'
       const appIconVariant = data.get('appIconVariant')
       const externalDeny = parseFloat(formDataString(data, 'safetyExternalDenyThreshold'))
+      const developerMode = data.get(DEVELOPER_MODE_SETTING) === 'on'
 
       const accentColorRaw = data.get('uiAccentColor')
       const uiAccentColor =
@@ -2600,6 +2720,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         autoPortraitRightPanel,
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get('openLinksInBuiltInBrowser') === 'on',
+        developerMode,
         settings: { ...store.getState().settings, model },
       })
       store.emit('theme_changed', theme)
