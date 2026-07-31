@@ -7,7 +7,7 @@ import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
-import { createWorktreeBackup } from './github/git-service.ts'
+import { createWorktreeBackup, getDefaultBranch } from './github/git-service.ts'
 import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
 import { stopExecutionRootIndexing } from './search/workspace-indexing.ts'
 
@@ -270,10 +270,22 @@ async function listRecords(projectRoot: string): Promise<WorktreeRecord[]> {
   return parseWorktreePorcelain(result.stdout)
 }
 
+async function refExists(projectRoot: string, ref: string): Promise<boolean> {
+  return (await git(projectRoot, ['show-ref', '--verify', '--quiet', ref])).code === 0
+}
+
 async function branchExists(projectRoot: string, branch: string): Promise<boolean> {
-  return (
-    (await git(projectRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0
-  )
+  return refExists(projectRoot, `refs/heads/${branch}`)
+}
+
+/**
+ * Best-effort `git fetch origin <branch>` for a repository's default branch, so
+ * a worktree based on it starts from the latest remote tip rather than whatever
+ * the local branch happened to be pointed at. Never throws: no network / no
+ * `origin` remote just means the next resolution step falls back to the local ref.
+ */
+async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<void> {
+  await git(projectRoot, ['fetch', '--quiet', 'origin', branch])
 }
 
 async function chooseBranch(
@@ -348,16 +360,31 @@ export async function allocateThreadWorktree(
     if (existing) throw new Error(`Thread worktree is already registered: ${target}`)
 
     await assertBranchName(projectRoot, input.baseBranch, 'Base branch')
+    const defaultBranch = await getDefaultBranch(projectRoot)
+    const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
+    if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
+    const remoteRef = `refs/remotes/origin/${input.baseBranch}`
+    const useRemoteRef = isDefaultBranch && (await refExists(projectRoot, remoteRef))
+    const baseRef = useRemoteRef ? remoteRef : branchRef(input.baseBranch)
     const baseCommit = await requireGitValue(
       projectRoot,
-      ['rev-parse', '--verify', `${branchRef(input.baseBranch)}^{commit}`],
+      ['rev-parse', '--verify', `${baseRef}^{commit}`],
       `Cannot resolve base branch ${input.baseBranch}`,
     )
     const dirty = await repositoryIsDirty(projectRoot)
+    // A snapshot carries the user's uncommitted edits into the new worktree so an
+    // isolated thread continues from exactly what they're looking at. It never
+    // touches the project root either way, so when the snapshot itself can't be
+    // created, falling back to a clean worktree from `baseCommit` is safe — it
+    // just means the new worktree won't include those uncommitted edits.
     const snapshotRef = dirty
       ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot)
       : null
-    if (dirty && !snapshotRef) throw new Error('Cannot snapshot dirty project before allocation')
+    if (dirty && !snapshotRef) {
+      console.warn(
+        `[worktree] Could not snapshot dirty project for thread ${input.threadId}; allocating a clean worktree instead`,
+      )
+    }
 
     const branch = await chooseBranch(projectRoot, input.prompt, input.threadId)
     await mkdir(dirname(target), { recursive: true })
@@ -376,7 +403,7 @@ export async function allocateThreadWorktree(
       baseBranch: input.baseBranch,
       baseCommit,
       createdAt: Date.now(),
-      seededFromDirtyProject: dirty,
+      seededFromDirtyProject: snapshotRef !== null,
     }
 
     try {
