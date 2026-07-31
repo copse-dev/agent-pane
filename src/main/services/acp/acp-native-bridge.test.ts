@@ -5,12 +5,16 @@ import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import { getAdvisorContext } from '../advisor-runner-context.ts'
 import {
   startAcpNativeBridge,
+  activeBridgeToolNames,
   BRIDGE_TOOL_NAMES,
   BRIDGE_MCP_SERVER_NAME,
   isBridgedNativeToolTitle,
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
 import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
+import { definePack } from '@copse/agent/packs/pack-manifest.ts'
+import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 
 /**
  * The native-tool MCP bridge (issue #602, tier 2) exposes a curated slice of
@@ -109,6 +113,7 @@ describe('startAcpNativeBridge', () => {
 
   afterEach(async () => {
     setPermissionGateForTests(null)
+    setDefaultPackRegistry(null)
     await bridge?.close()
     bridge = null
   })
@@ -185,6 +190,60 @@ describe('startAcpNativeBridge', () => {
       params: { name: 'advisor', arguments: {} },
     })
     assert.equal(contentText(call), 'Advice: do the smallest slice first.')
+  })
+
+  it('offers enabled packs’ declared acpTools and removes them atomically on disable', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const packs = new PackRegistry()
+    packs.register(
+      definePack(
+        {
+          name: 'search-pack',
+          trust: 'first-party',
+          stability: 'experimental',
+          tools: { native: ['pack_search'], acpTools: ['pack_search'] },
+        },
+        { toolNames: ['pack_search'] },
+      ),
+    )
+    setDefaultPackRegistry(packs)
+
+    const registry = testRegistry([])
+    registry.register({
+      name: 'pack_search',
+      description: 'Search through a pack tool',
+      parameters: z.object({ query: z.string() }),
+      execute: ({ query }) => Promise.resolve(`result:${query}`),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const listed = await rpc(bridge, LIST_TOOLS)
+    assert.ok(
+      recordArrayOrEmpty(rpcResult(listed)['tools']).some((tool) => tool['name'] === 'pack_search'),
+    )
+    assert.ok(activeBridgeToolNames().includes('pack_search'))
+    assert.ok(isBridgedNativeToolTitle('copse-pack_search: pack_search'))
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 8,
+      method: 'tools/call',
+      params: { name: 'pack_search', arguments: { query: 'docs' } },
+    })
+    assert.equal(contentText(call), 'result:docs')
+
+    packs.disable('search-pack')
+    const afterDisable = await rpc(bridge, LIST_TOOLS)
+    assert.ok(
+      !recordArrayOrEmpty(rpcResult(afterDisable)['tools']).some(
+        (tool) => tool['name'] === 'pack_search',
+      ),
+    )
+    assert.ok(!isBridgedNativeToolTitle('copse-pack_search'))
   })
 
   it('isolates advisor context between concurrent ACP thread bridges', async () => {

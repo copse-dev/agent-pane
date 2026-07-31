@@ -42,6 +42,11 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "acpTools": {
+          "description": "Subset of native tools safe to offer to external ACP agents through Copse's authenticated localhost bridge (first-party only).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "mcpServers": {
           "description": "Path to an MCP config file (user packs), like the plugin.json `mcpServers` field.",
           "type": "string"
