@@ -34,6 +34,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
     openLinksInBuiltInBrowser: true,
+    developerMode: false,
     ...initial,
   }
 

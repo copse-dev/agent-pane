@@ -4,9 +4,11 @@
 // "Feature packs"). Its manifest extends the `plugin.json` shape Copse already
 // loads (name / version / description / skills / mcpServers) with the remaining
 // slots: hooks / prompt / ui / settings / storage. Following decision 15, the
-// *declarative* manifest is shared by first-party and user packs; only
-// first-party packs additionally supply the executable, typed contributions
-// (native tools, in-process function hooks, real renderer views).
+// *declarative* manifest is shared by first-party and user packs. First-party
+// packs may supply executable typed contributions in-process; an explicitly
+// selected user pack may instead provide tools and thread models through one
+// isolated runtime. The manifest describes those concrete behaviors; the host
+// supplies only their bounded invocation contracts.
 //
 // This module lives in `packages/agent` and imports nothing from the host app —
 // only hook *types* (execution-guidance rule 4). The published JSON schema
@@ -14,8 +16,11 @@
 import type { AsyncHook, BlockingHook } from '../hooks/canonical-events.ts'
 import type { PanelContributionDecl } from './pack-panel.ts'
 
-/** Whether a pack is shipped by Copse or installed by the user (decision 15). */
+/** Host-assigned pack trust class; disk manifests cannot self-promote. */
 export type PackTrust = 'first-party' | 'user'
+
+/** Product-support status shown before a user enables a pack (decision 19). */
+export type PackStability = 'stable' | 'experimental'
 
 /**
  * UI contribution levels (Feature packs section of the plan):
@@ -153,13 +158,44 @@ export interface PackStorageDecl {
  *  - `acpTools`: the subset of `native` tools safe to offer to external ACP
  *    agents through Copse's authenticated localhost native-tool bridge
  *    (first-party only).
+ *  - `provides`: tool ids implemented by an explicitly selected user pack's
+ *    shared top-level runtime.
  *  - `mcpServers`: a path to an MCP config file (user packs), like the existing
  *    plugin.json `mcpServers` field.
  */
+export interface PackToolRuntimeDecl {
+  entrypoint: string
+  apiVersion: 1
+}
+
 export interface PackToolsDecl {
   native?: readonly string[]
   acpTools?: readonly string[]
+  provides?: readonly string[]
   mcpServers?: string
+}
+
+/** One whole-thread model route an explicitly selected pack contributes. */
+export interface PackModelRouteDecl {
+  id: string
+  label: string
+  group?: string
+  description?: string
+  supportsImages?: boolean
+}
+
+export interface PackModelsDecl {
+  provides: readonly PackModelRouteDecl[]
+}
+
+/**
+ * Interactive browser-pane behavior for an explicitly selected pack. Origins
+ * are exact URL origins (scheme + host + optional port), validated host-side.
+ * The runtime receives only named browser operations scoped to these origins;
+ * this is not a network grant or generic host gateway.
+ */
+export interface PackBrowserDecl {
+  origins: readonly string[]
 }
 
 /**
@@ -176,9 +212,9 @@ export interface PackCommandHookDecl {
 /**
  * The declarative pack manifest — a superset of the plugin.json shape Copse
  * already loads. This is the JSON-serializable contract the published schema
- * validates. The *executable* first-party contributions (function hooks, native
- * tool registrations) live on {@link RegisteredPack.contributions}, never here,
- * so a manifest stays serializable and a user pack can never smuggle code.
+ * validates. First-party function hooks and in-process tools live on
+ * {@link RegisteredPack.contributions}; a selected user pack may declare the
+ * isolated runtime shared by its tool and model behaviors here.
  */
 export interface PackManifest {
   /** Pack id / name (plugin.json `name`). */
@@ -187,10 +223,18 @@ export interface PackManifest {
   description?: string
   /** Shipped by Copse vs user-installed (decision 15). */
   trust: PackTrust
+  /** Product-support status. Omitted user-pack values fail safe to `experimental`. */
+  stability?: PackStability
   /** Existing plugin.json slot: relative skills directory. */
   skills?: string
-  /** Tools slot: native names (first-party) or an MCP config path (user). */
+  /** Tools behavior: first-party names, selected-pack runtime, or MCP config. */
   tools?: PackToolsDecl
+  /** Thread-model behavior supplied by an explicitly selected pack. */
+  models?: PackModelsDecl
+  /** Exact origins the pack may operate in the visible browser pane. */
+  browser?: PackBrowserDecl
+  /** Shared isolated runtime for selected-pack executable behaviors. */
+  runtime?: PackToolRuntimeDecl
   /** Command-hook declarations (user packs). */
   hooks?: readonly PackCommandHookDecl[]
   prompt?: readonly PackPromptBlock[]
@@ -213,6 +257,10 @@ export interface PackManifest {
 export interface PackContributions {
   /** Native tool names added to the model tool list while enabled. */
   readonly toolNames: readonly string[]
+  /** Thread models offered in the footer while this pack is enabled. */
+  readonly modelRoutes: readonly PackModelRouteDecl[]
+  /** Exact interactive browser origins available while this pack is enabled. */
+  readonly browserOrigins: readonly string[]
   /** Blocking function hooks registered while enabled (first-party). */
   readonly blockingHooks: readonly BlockingHook[]
   /** Async (detached) function hooks registered while enabled (first-party). */
@@ -241,6 +289,8 @@ export interface PackContributions {
 /** Contributions a pack with nothing to offer registers (the P1 skeleton). */
 export const EMPTY_PACK_CONTRIBUTIONS: PackContributions = {
   toolNames: [],
+  modelRoutes: [],
+  browserOrigins: [],
   blockingHooks: [],
   asyncHooks: [],
   promptBlocks: [],
@@ -268,7 +318,11 @@ export interface RegisteredPack {
  * every empty array.
  */
 export function definePack(
-  manifest: PackManifest,
+  manifest: PackManifest &
+    (
+      | { trust: 'first-party'; stability: PackStability }
+      | { trust: 'user'; stability?: PackStability }
+    ),
   contributions: Partial<PackContributions> = {},
 ): RegisteredPack {
   return {
@@ -291,9 +345,13 @@ export function packManifestFromPluginJson(
     name?: string
     version?: string
     description?: string
+    stability?: PackStability
     skills?: string
     mcpServers?: string
     tools?: PackToolsDecl
+    models?: PackModelsDecl
+    browser?: PackBrowserDecl
+    runtime?: PackToolRuntimeDecl
     hooks?: readonly PackCommandHookDecl[]
     prompt?: readonly PackPromptBlock[]
     ui?: readonly PackUiContribution[]
@@ -321,6 +379,9 @@ export function packManifestFromPluginJson(
     // share the manifest; first-party packs are defined in code, not on disk).
     name: requestedName === undefined || requestedName.length === 0 ? fallbackName : requestedName,
     trust: 'user',
+    // A third-party pack that makes no support claim must never look stable by
+    // omission. Authors may explicitly declare stable once discovery lands.
+    stability: raw.stability ?? 'experimental',
   }
   if (raw.version) manifest.version = raw.version
   if (raw.description) manifest.description = raw.description
@@ -328,10 +389,14 @@ export function packManifestFromPluginJson(
   if (
     tools.native !== undefined ||
     tools.acpTools !== undefined ||
+    tools.provides !== undefined ||
     tools.mcpServers !== undefined
   ) {
     manifest.tools = tools
   }
+  if (raw.models) manifest.models = raw.models
+  if (raw.browser) manifest.browser = raw.browser
+  if (raw.runtime) manifest.runtime = raw.runtime
   if (raw.hooks) manifest.hooks = raw.hooks
   // A user pack's prompt blocks are NEVER trusted, whatever the file claims:
   // `trust: 'trusted'` means verbatim injection past the untrusted-data

@@ -100,6 +100,8 @@ import {
 } from './services/diagnostics/event-loop-watchdog.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
+import { getSetting } from './services/storage/settings.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
@@ -237,7 +239,8 @@ app
       getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
     })
     applyAppIcon([win])
-    buildAppMenu(win)
+    const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
+    buildAppMenu(win, developerMode)
     initUpdatePrompt(win)
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
     // spawns (one of them, `gh auth status`, a network round trip), and run
