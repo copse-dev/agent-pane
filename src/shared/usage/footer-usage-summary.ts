@@ -16,6 +16,15 @@ export interface FooterUsageInput {
   messages: Message[]
   contextSnapshot?: ContextSnapshot | undefined
   breakdown?: ContextBreakdown | null | undefined
+  /**
+   * The footer's chat model. When `measured.byModel` has a per-model breakdown,
+   * usage narrows to this model's own turns — excluding subagent spend (explore,
+   * post-turn review, local todo workers) folded into the thread total, so the
+   * default display reads as "what the parent conversation spent" rather than
+   * everything the turn spawned. Threads with no breakdown fall back to the
+   * thread-wide total.
+   */
+  model: string
 }
 
 /** Rough assistant + subagent text size (~4 chars/token), for footer output fallback. */
@@ -36,8 +45,13 @@ export function estimateAssistantOutputTokens(messages: Message[]): number {
 
 /** Prefer measured provider usage; fall back to context/output estimates when zero. */
 export function resolveFooterUsage(input: FooterUsageInput): FooterUsageDisplay | null {
-  const { inputTokens, outputTokens } = input.measured
-  if (inputTokens || outputTokens) {
+  const { measured } = input
+  if (measured.inputTokens || measured.outputTokens) {
+    const { byModel } = measured
+    const hasBreakdown = !!byModel && Object.keys(byModel).length > 0
+    const { inputTokens, outputTokens } = hasBreakdown
+      ? (byModel[input.model] ?? { inputTokens: 0, outputTokens: 0 })
+      : measured
     return { inputTokens, outputTokens, estimated: false }
   }
 

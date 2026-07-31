@@ -64,6 +64,48 @@ describe('resolveFooterUsage', () => {
       measured: { inputTokens: 100, outputTokens: 20 },
       running: false,
       messages: [],
+      model: 'claude-sonnet-4-6',
+    })
+    assert.deepEqual(resolved, { inputTokens: 100, outputTokens: 20, estimated: false })
+  })
+
+  it('narrows to the footer model when a per-model breakdown is present', () => {
+    const resolved = resolveFooterUsage({
+      measured: {
+        inputTokens: 9_625_891,
+        outputTokens: 121_158,
+        byModel: {
+          'openrouter:paid-model': { inputTokens: 100, outputTokens: 20 },
+          'lmstudio:qwen': { inputTokens: 9_625_791, outputTokens: 121_138 },
+        },
+      },
+      running: false,
+      messages: [],
+      model: 'openrouter:paid-model',
+    })
+    assert.deepEqual(resolved, { inputTokens: 100, outputTokens: 20, estimated: false })
+  })
+
+  it('reports zero when the breakdown exists but the footer model has not spent yet', () => {
+    const resolved = resolveFooterUsage({
+      measured: {
+        inputTokens: 5000,
+        outputTokens: 500,
+        byModel: { 'lmstudio:qwen': { inputTokens: 5000, outputTokens: 500 } },
+      },
+      running: false,
+      messages: [],
+      model: 'openrouter:paid-model',
+    })
+    assert.deepEqual(resolved, { inputTokens: 0, outputTokens: 0, estimated: false })
+  })
+
+  it('falls back to the thread-wide total when there is no breakdown (legacy threads)', () => {
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 100, outputTokens: 20 },
+      running: false,
+      messages: [],
+      model: 'openrouter:paid-model',
     })
     assert.deepEqual(resolved, { inputTokens: 100, outputTokens: 20, estimated: false })
   })
@@ -80,6 +122,7 @@ describe('resolveFooterUsage', () => {
         fillRatio: 500 / 12_000,
         updatedAt: Date.now(),
       },
+      model: 'claude-sonnet-4-6',
     })
     assert.deepEqual(resolved, {
       inputTokens: 500,
@@ -94,6 +137,7 @@ describe('resolveFooterUsage', () => {
       running: false,
       messages: [],
       breakdown: { segments: [], totalTokens: 800, contextWindow: 16_384 },
+      model: 'claude-sonnet-4-6',
     })
     assert.deepEqual(resolved, { inputTokens: 800, outputTokens: 0, estimated: true })
   })
@@ -104,6 +148,7 @@ describe('resolveFooterUsage', () => {
         measured: { inputTokens: 0, outputTokens: 0 },
         running: false,
         messages: [],
+        model: 'claude-sonnet-4-6',
       }),
       null,
     )

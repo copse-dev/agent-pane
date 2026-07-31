@@ -861,12 +861,16 @@ export function mountInputBar(
       messages: thread.messages,
       contextSnapshot: thread.contextSnapshot,
       breakdown: lastBreakdown,
+      model,
     })
     if (!display) return null
     return formatFooterUsageSummary(display, {
       costVisible,
       model,
-      measuredUsage: thread.usage,
+      // Cost against just the display's (parent-only) tokens — passing the
+      // thread-wide `usage.byModel` here would re-mix subagent spend back in
+      // and could mislabel a paid parent turn as "free (local)".
+      measuredUsage: { inputTokens: display.inputTokens, outputTokens: display.outputTokens },
       extra: extraPricing,
     })
   }
