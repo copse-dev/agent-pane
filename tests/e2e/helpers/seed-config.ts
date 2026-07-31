@@ -259,6 +259,14 @@ export function seedMessageImageFixture(
             role: 'user',
             content: 'Here is the screenshot from the failing UI.',
             images: [imageDataUrl],
+            attachments: [
+              {
+                kind: 'file',
+                label: 'running-tests.diff',
+                content:
+                  'diff --git a/src/tests.ts b/src/tests.ts\n- expect(status).toBe("idle")\n+ expect(status).toBe("running")\n',
+              },
+            ],
             toolCalls: [],
             createdAt: Date.now(),
           },
