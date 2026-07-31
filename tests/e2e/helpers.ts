@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
+import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 import { writeSeedConfig } from './helpers/seed-config.ts'
 
 /** Wait until the agent is not running and no prompts remain queued. */
@@ -32,13 +33,12 @@ export async function waitForPromptReady(timeoutMs = 15_000): Promise<void> {
 
 /** Matches `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 export function getCopseUserDataDir(): string {
-  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
-  if (override) return override
   const home = homedir()
-  if (platform() === 'darwin') {
-    return join(home, 'Library', 'Application Support', 'copse-panel')
-  }
-  return join(home, '.config', 'copse-panel')
+  const defaultDir =
+    platform() === 'darwin'
+      ? join(home, 'Library', 'Application Support', 'copse-panel')
+      : join(home, '.config', 'copse-panel')
+  return copseUserDataDir(defaultDir)
 }
 
 export async function seedProjectConfig(

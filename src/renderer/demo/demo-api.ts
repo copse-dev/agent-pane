@@ -253,6 +253,14 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
+      discoverExternal: (_projectId?: string) =>
+        resolved({
+          imported: [],
+          scanned: 0,
+          skippedLinked: 0,
+          skippedWrongRepo: 0,
+          skippedInactive: 0,
+        }),
     },
     acp: {
       detectAgents: emptyArray,
@@ -413,6 +421,10 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ packs: [] }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
+    },
+    decisions: {
+      list: emptyArray,
+      export: () => resolved({ path: '', count: 0 }),
     },
     automations: {
       list: emptyArray,
