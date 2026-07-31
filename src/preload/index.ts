@@ -711,6 +711,8 @@ contextBridge.exposeInMainWorld('api', {
     openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
+    matchOpenIssues: (issues: { number: number; title: string; body: string }[]) =>
+      ipcRenderer.invoke('roadmap:matchOpenIssues', issues),
     checkFit: (id: string) => ipcRenderer.invoke('roadmap:checkFit', id),
     prepareReview: () => ipcRenderer.invoke('roadmap:prepareReview'),
     lastReviewAt: () => ipcRenderer.invoke('roadmap:lastReviewAt'),
@@ -897,6 +899,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
+    },
+    emitAgentChunks(threadId: string, chunks: unknown[]) {
+      return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
     },
   })
 }

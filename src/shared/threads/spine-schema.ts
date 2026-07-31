@@ -6,16 +6,19 @@ import type {
   ThreadReview,
   TranscriptAttachment,
 } from '@shared/types'
+import { planArtifactRefs } from './plan-schema.ts'
 
 /**
  * On-disk format for the filesystem-native thread store (issue #644).
  *
  * A thread is a directory whose linear history is an append-only JSONL "spine"
- * (`events.jsonl`), one {@link SpineMessageLine} per finalized message. Prose
+ * (`events.jsonl`), one {@link SpineMessageLine} per finalized message, plus
+ * non-message observability lines (`hook_run`, Plan Mode `plan`). Prose
  * (message text, reasoning) lives in referenced OKF markdown files; large or
- * opaque content (tool results, images) lives in referenced blobs. This module
- * is pure — no `node:fs`/Electron — so the fidelity round-trip is unit-testable
- * without shims. See {@link foldThread} / {@link explodeMessage}.
+ * opaque content (tool results, images, plan revisions) lives in referenced
+ * files. This module is pure — no `node:fs`/Electron — so the fidelity
+ * round-trip is unit-testable without shims. See {@link foldThread} /
+ * {@link explodeMessage}.
  */
 
 /** Bump when the spine line shape changes in a backwards-incompatible way. */
@@ -39,6 +42,11 @@ export interface ContentRef {
 export interface ImageRef {
   ref: string
   sha256: string
+}
+
+/** Transcript metadata stays inline; potentially large text snapshots do not. */
+export type SpineTranscriptAttachment = Omit<TranscriptAttachment, 'content'> & {
+  content?: ContentRef
 }
 
 /** A tool call as persisted on a spine line. `running` is never written. */
@@ -85,8 +93,8 @@ export interface SpineMessageLine {
   commandSummary?: string
   /** Small-model polish for the turn tool rollup; optional, display-only. */
   toolSummary?: string
-  /** Display-only transcript attachment chips (user messages); short, inlined here. */
-  attachments?: TranscriptAttachment[]
+  /** Display metadata is inline; text snapshots are referenced blob files. */
+  attachments?: SpineTranscriptAttachment[]
   /**
    * Primary-chat model for this assistant message (picker id). Optional for
    * legacy spines written before per-message provenance existed.
@@ -212,6 +220,36 @@ export interface SpineHookRunLine {
   toolset?: string
 }
 
+/** Plan Mode lifecycle actions recorded on the spine (issue #1080, P1). */
+export const PLAN_SPINE_ACTIONS = ['create', 'revise', 'comment', 'approve', 'abandon'] as const
+export type PlanSpineAction = (typeof PLAN_SPINE_ACTIONS)[number]
+
+/**
+ * One line of `events.jsonl`: a Plan Mode lifecycle event. Artifacts live under
+ * `plans/<planId>/`; this line is the append-only commit point (same pattern as
+ * `hook_run`). Old readers ({@link parseSpine}) skip non-`message` lines.
+ */
+export interface SpinePlanLine {
+  v: number
+  type: 'plan'
+  /** Lifecycle action for this append. */
+  action: PlanSpineAction
+  /** Unique id of this spine event (not the plan id). */
+  id: string
+  planId: string
+  /** Revision touched by create/revise/comment/approve when applicable. */
+  revision?: number
+  createdAt: number
+  /** Revision markdown ref, e.g. `plans/<planId>/revision-2.md`. */
+  artifact?: ContentRef
+  /** Set when `action` is `comment`. */
+  commentId?: string
+  /** Set when `action` is `approve`. */
+  executionProfileId?: string
+  /** Content hash of the approved revision body when `action` is `approve`. */
+  contentHash?: string
+}
+
 /** Durable host-owned shell authorization record (issue #1249 / #656). */
 export interface SpinePermissionDecisionLine {
   v: number
@@ -233,7 +271,8 @@ export interface SpinePermissionDecisionLine {
 }
 
 /** Discriminated union of every line type this schema version can write. */
-export type SpineLine = SpineMessageLine | SpineHookRunLine | SpinePermissionDecisionLine
+export type SpineLine =
+  SpineMessageLine | SpineHookRunLine | SpinePlanLine | SpinePermissionDecisionLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -313,6 +352,34 @@ function isSpinePermissionDecisionLine(value: unknown): value is SpinePermission
   )
 }
 
+function isPlanSpineAction(value: unknown): value is PlanSpineAction {
+  return (
+    value === 'create' ||
+    value === 'revise' ||
+    value === 'comment' ||
+    value === 'approve' ||
+    value === 'abandon'
+  )
+}
+
+function isSpinePlanLine(value: unknown): value is SpinePlanLine {
+  if (!isRecord(value)) return false
+  return (
+    value['type'] === 'plan' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['planId'] === 'string' &&
+    typeof value['createdAt'] === 'number' &&
+    isPlanSpineAction(value['action']) &&
+    (value['revision'] === undefined || typeof value['revision'] === 'number') &&
+    (value['artifact'] === undefined || isContentRef(value['artifact'])) &&
+    (value['commentId'] === undefined || typeof value['commentId'] === 'string') &&
+    (value['executionProfileId'] === undefined ||
+      typeof value['executionProfileId'] === 'string') &&
+    (value['contentHash'] === undefined || typeof value['contentHash'] === 'string')
+  )
+}
+
 /** Parse one spine line into the {@link SpineLine} union. Null on malformed/unknown. */
 export function parseSpineLine(raw: string): SpineLine | null {
   let parsed: unknown
@@ -328,8 +395,11 @@ export function parseSpineLine(raw: string): SpineLine | null {
     if (!Array.isArray(parsed.toolCalls)) parsed.toolCalls = []
     return parsed
   }
+  if (type === 'plan' && isSpinePlanLine(parsed)) return parsed
+
   if (type === 'hook_run' && isSpineHookRunLine(parsed)) return parsed
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
+
   return null
 }
 
@@ -423,6 +493,7 @@ export function rebuildSpinePreservingNonMessageLines(
     }
     preserved.push({ raw: entry.raw, anchor: lastMessageId })
     if (entry.line?.type === 'hook_run') preservedRefs.push(...hookRunBlobRefs(entry.line))
+    if (entry.line?.type === 'plan') preservedRefs.push(...planArtifactRefs(entry.line.artifact))
   }
   if (preserved.length === 0) {
     return { body: serializeSpine(messages), preservedRefs }

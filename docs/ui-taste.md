@@ -6,13 +6,62 @@ doesn't relearn it. It complements — not replaces — the visual-eval rules in
 [`AGENTS.md`](../AGENTS.md) and the markdown invariants in
 [`src/renderer/markdown/README.md`](../src/renderer/markdown/README.md).
 
+## Brand expression versus workbench UI
+
+Copse has one visual identity with two levels of expression:
+
+- **Expressive surfaces** — the marketing site, onboarding, welcome screens, significant empty
+  states, and release or promotional material.
+- **Workbench surfaces** — chat, editor, terminal, sidebars, settings, dialogs, tool output, diffs,
+  and other information-dense application chrome.
+
+The marketing site is the reference for Copse's brand identity, but it is not a literal component
+specification for the workbench. Carry shared foundations into the app without reproducing the
+landing page's decorative density.
+
+### Shared foundations
+
+- **Space Grotesk** is the default interface and prose family.
+- **Averia Serif Libre** is a display face. Use it only through an explicit branded-heading class on
+  expressive or destination-level surfaces. Do not apply it globally to `h1`, `h2`, or `h3`;
+  utility headings, settings titles, field labels, and panel headings remain Space Grotesk.
+- Code, commands, paths, hashes, and terminal content use `--font-mono`.
+- Use the exact Copse glyph and wordmark assets rather than approximating them with text or
+  redrawing the mark.
+
+### Brand colours and semantic tokens
+
+The core brand palette is forest (`#002e2b`), neon green (`#20fd85`), pink (`#ff9fc5`), and cream
+(`#fffdf7`). Define those once as brand tokens, then bind product components through semantic tokens
+such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
+
+- Neon green is the default interaction accent: primary actions, focus, selected-row rails, and
+  links.
+- Forest may provide an optional strong interface tint, but the default workbench remains neutral
+  and low-fatigue.
+- Pink is expressive emphasis, not a product status colour. Do not use it for errors, warnings,
+  selection, or routine headings.
+- Error, warning, success, and danger continue to use their semantic tokens.
+- Light-theme interaction colours must be derived for readable contrast; do not place raw neon
+  green behind or beneath small light-theme text.
+
+### Decorative motifs
+
+Line fields, large colour tiles, oversized serif type, and broad areas of forest, pink, or neon
+belong on expressive surfaces. Keep them out of transcripts, tool cards, sidebars, settings forms,
+terminal chrome, and diff viewers.
+
+The workbench continues to favour thin dividers, restrained radii, flat list selections, quiet tool
+output, and content density.
+
 ## Attached screenshot expand
 
-Thread message images (`.message-image`) and roadmap plan image chips
-(`.roadmap-attachment-thumb`) open the shared lightbox in
-[`src/renderer/attachments/image-expand.ts`](../src/renderer/attachments/image-expand.ts)
-(`dialog.image-expand-dialog`). Wire new attachment thumbs through
-`attachImageExpand` rather than inventing a second overlay. Visual eval:
+Thread message images (`.message-image`), sent text attachments, roadmap image
+chips (`.roadmap-attachment-thumb`), and videos use the shared viewer shell in
+[`src/renderer/attachments/attachment-preview.ts`](../src/renderer/attachments/attachment-preview.ts)
+(`dialog.attachment-preview-dialog`). Each media adapter owns its content and
+resource cleanup; wire future types through `openAttachmentPreview` rather than
+inventing another overlay. Visual eval:
 [`tests/e2e/image-expand.e2e.ts`](../tests/e2e/image-expand.e2e.ts).
 
 ### Native `<dialog>` and `display`
@@ -24,6 +73,17 @@ ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and
 `forms.css` forces `dialog:not([open]) { display: none !important; }` as a backstop
 (same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
 can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
+
+## UI kit primitives (buttons, fields, action rows)
+
+When building dialogs, settings forms, or labelled controls, prefer the shared kit in
+[`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
+[`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS
+classes on native `<button>`s**, not a factory — do not invent another `*-btn-primary` stack.
+Only add a new kit primitive once **two product call sites** need it and it does more than
+class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
+(tabs+content, list+viewer chrome) over inventing more atom variants — see
+[`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
 ## Design tokens, not magic numbers
 
@@ -117,8 +177,14 @@ Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch”
 
 For primary/secondary action buttons (Save / Cancel style):
 
-- Give buttons a roomy hit area — `padding: var(--spacing-md) var(--spacing-xl)` reads better than a
-  cramped `8px 20px`.
+- Pill geometry is reserved for clear, high-value actions such as Save, Continue, Build, or the
+  primary onboarding action. Routine toolbar controls, row actions, icon buttons, filters, and
+  status indicators retain the normal UI-kit radius.
+- Paired secondary actions may use the matching outline treatment, but should not compete with the
+  primary fill.
+- Define action geometry through shared `--action-*` tokens and a UI-kit variant. Do not maintain a
+  late global selector list whose specificity overrides unrelated component styles.
+- Keep compact chrome and icon-only controls out of the action recipe.
 - Separate buttons with `gap: var(--spacing-md)`, not a tight `--spacing-sm`.
 - Keep an action bar clear of the window's bottom edge. Don't let buttons sit flush against the
   bottom; add generous bottom spacing (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`).
@@ -316,10 +382,17 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
   body (above the tool rows) so the collapsed view is only the italic heading. Standalone
   Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
-  `Reasoning` while live, `Reasoned` when settled.
+  `Reasoning…` while live, `Reasoned` when settled.
 - **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
   `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
   `reasoning` field / provider events.
+- **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
+  `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
+  into the live disclosure title so the transcript never shows two reasoning labels. The animated
+  spiral sits immediately beside the live label; settled disclosures return to a static chevron.
+- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
+  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
+  place so the existing past-tense label does not jump horizontally; do not keep animating it.
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
@@ -434,6 +507,10 @@ manual VNC glance.
 - Run with the mock LLM and no keys: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY= npm run test:e2e -- --spec <spec>`.
 - Reference screenshots that include a surface you changed (e.g. the settings footer appears in
   `settings-model-routing` shots) should be regenerated so they stay accurate.
+- Brand-system changes require representative dark- and light-workbench screenshots. Changes to
+  the strong forest tint also require a dedicated strong-tint screenshot. Regenerate marketing
+  screenshots from the consolidated branded app so the site never advertises an obsolete visual
+  system.
 - Pin `#app` to `window.innerWidth` in [`tests/e2e/helpers/screenshot.ts`](../tests/e2e/helpers/screenshot.ts)
   (`prepareE2eScreenshot`) so captures are not wider than the Electron window — otherwise table
   columns clip off the right edge of the PNG.
@@ -513,3 +590,12 @@ token, plain containment copy, and an immediate Disable action; do not reduce it
 a transient toast, icon-only state, or rounded status pill. The opt-in warning must
 name the scope, expiry, containment, and residual risk before activation. Visual
 eval: `tests/e2e/guarded-yolo.e2e.ts`.
+
+## Roadmap import picker rows
+
+`.roadmap-import-row` is a `<label>` wrapping a checkbox + title. The global `label` rule in
+`forms.css` sets `flex-direction: column`, so any row that only sets `display: flex` (without
+`flex-direction: row`) stacks the checkbox under the title and — with `align-items: center` —
+centers both. Always override `flex-direction: row` (and reset `margin-bottom`) on checkbox list
+rows built from `<label>`. Visual eval:
+[`tests/e2e/roadmap-import-picker.e2e.ts`](../tests/e2e/roadmap-import-picker.e2e.ts).

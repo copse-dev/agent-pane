@@ -8,13 +8,14 @@ import {
   registerSkillTools,
   syncGhTools,
   syncOkfMemoryTools,
+  syncParallelSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from './registry-bootstrap.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
-import { setSetting } from './storage/settings.test-shim.ts'
+import { deleteApiKey, setApiKey, setSetting } from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
@@ -24,6 +25,7 @@ import {
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -221,5 +223,30 @@ describe('syncRoadmapPlanTools', () => {
     packRegistry.disable(ROADMAP_PLANS_PACK_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
+  })
+})
+
+describe('syncParallelSearchTools', () => {
+  afterEach(() => {
+    deleteApiKey('parallel')
+    setDefaultPackRegistry(null)
+  })
+
+  it('requires both an enabled pack and a configured key', () => {
+    const packs = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(packs)
+    const registry = new ToolRegistry()
+
+    packs.enable(PARALLEL_SEARCH_PACK_ID)
+    syncParallelSearchTools(registry)
+    assert.equal(registry.has('parallel_search'), false)
+
+    setApiKey('parallel', 'test-key')
+    syncParallelSearchTools(registry)
+    assert.equal(registry.has('parallel_search'), true)
+
+    packs.disable(PARALLEL_SEARCH_PACK_ID)
+    syncParallelSearchTools(registry)
+    assert.equal(registry.has('parallel_search'), false)
   })
 })

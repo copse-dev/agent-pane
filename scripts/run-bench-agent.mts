@@ -6,9 +6,9 @@ import * as esbuild from 'esbuild'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
-const out = resolve('dist-test/bench-agent-lib.cjs')
+const out = resolve('dist-test/bench-agent-entry.cjs')
 await esbuild.build({
-  entryPoints: [resolve('scripts/bench-agent-lib.mts')],
+  entryPoints: [resolve('scripts/bench-agent-entry.mts')],
   outfile: out,
   bundle: true,
   platform: 'node',

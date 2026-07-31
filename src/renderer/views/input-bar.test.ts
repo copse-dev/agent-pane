@@ -449,6 +449,55 @@ describe('draft prompt preservation', () => {
   })
 })
 
+describe('input bar model recents', () => {
+  it('shows the current model first, followed by distinct thread models ordered by last use', async () => {
+    const active: Thread = {
+      ...thread(),
+      id: 'thread-active',
+      model: 'gpt-5.6-sol',
+      updatedAt: 1,
+    }
+    const newest: Thread = {
+      ...thread(),
+      id: 'thread-newest',
+      model: 'claude-opus-4-8',
+      updatedAt: 3,
+    }
+    const older: Thread = {
+      ...thread(),
+      id: 'thread-older',
+      model: 'claude-haiku-4-5',
+      updatedAt: 2,
+    }
+    const duplicate: Thread = {
+      ...thread(),
+      id: 'thread-duplicate',
+      model: 'claude-opus-4-8',
+      updatedAt: 0,
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: active.id,
+      threads: [active, newest, older, duplicate],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await flush()
+
+    const trigger = host.querySelector<HTMLButtonElement>('.model-picker-trigger')
+    assert.ok(trigger)
+    trigger.click()
+
+    const recentLabels = [...host.querySelectorAll<HTMLElement>('.model-picker-option')].map(
+      (option) => option.textContent.split(' — ')[0],
+    )
+    assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 4.8', 'Claude Haiku 4.5'])
+  })
+})
+
 describe('input bar branch mismatch warning', () => {
   it('does not block submit when an isolated worktree binds a different branch', async () => {
     let runs = 0
@@ -582,6 +631,8 @@ describe('input bar browse button', () => {
   it('attaches a selected file as a chip', async () => {
     const store = createStore({
       workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread()],
     })
@@ -604,6 +655,18 @@ describe('input bar browse button', () => {
     const label = chip.querySelector<HTMLElement>('.attachment-chip-label')
     assert.ok(label, 'the chip renders its name in the clipped label span')
     assert.match(label.textContent, /notes\.txt/)
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Review this file'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(store.getState().threads[0]?.messages[0]?.attachments, [
+      { kind: 'file', label: 'notes.txt', content: 'hello world' },
+    ])
   })
 })
 
