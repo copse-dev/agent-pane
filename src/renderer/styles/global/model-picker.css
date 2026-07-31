@@ -158,6 +158,10 @@
      in the all-models catalog stays clickable (ArrowDown + Enter/click). */
   max-height: inherit;
 }
+.model-picker-all-header + .model-picker-filter:not([hidden]) {
+  margin-top: 3px;
+}
+
 .model-picker-filter:not([hidden]) + .model-picker-list {
   margin-top: var(--spacing-xs);
 }
