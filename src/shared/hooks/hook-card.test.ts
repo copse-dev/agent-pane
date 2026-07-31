@@ -4,6 +4,7 @@ import {
   getHookCardStatusLabel,
   getHookCardTitle,
   hookCardFromSpineLine,
+  hookCardPerformedAction,
   hookEventLabel,
   isHookCardBlocking,
 } from './hook-card.ts'
@@ -85,13 +86,25 @@ describe('hookCardFromSpineLine (decision 10)', () => {
     assert.ok(isHookCardBlocking(card.status))
   })
 
-  it('carries the H1/H2 signal counts through for the detail line', () => {
+  it('carries action signal counts through for outcome-first display', () => {
     const card = hookCardFromSpineLine(
-      line({ decision: { updatedInput: true, injectContextChars: 40, queuedMessageChars: 8 } }),
+      line({
+        decision: {
+          updatedInput: true,
+          injectContextChars: 40,
+          agentMessageChars: 12,
+          userMessageChars: 16,
+          queuedMessageChars: 8,
+          sessionEnvKeys: 2,
+        },
+      }),
     )
     assert.equal(card.updatedInput, true)
     assert.equal(card.injectContextChars, 40)
+    assert.equal(card.agentMessageChars, 12)
+    assert.equal(card.userMessageChars, 16)
     assert.equal(card.queuedMessageChars, 8)
+    assert.equal(card.sessionEnvKeys, 2)
   })
 })
 
@@ -106,6 +119,38 @@ describe('hook card labels', () => {
   it('titles from the event and badges the status', () => {
     const card = hookCardFromSpineLine(line({ event: 'stop', decision: { permission: 'deny' } }))
     assert.equal(getHookCardTitle(card), 'Stop')
-    assert.equal(getHookCardStatusLabel(card), 'Denied')
+    assert.equal(getHookCardStatusLabel(card), 'Blocked action')
+  })
+
+  it('describes effects instead of merely saying that the hook ran', () => {
+    const passive = hookCardFromSpineLine(line())
+    assert.equal(getHookCardStatusLabel(passive), 'No changes')
+    assert.equal(hookCardPerformedAction(passive), false)
+
+    const rewritten = hookCardFromSpineLine(line({ decision: { updatedInput: true } }))
+    assert.equal(getHookCardStatusLabel(rewritten), 'Rewrote input')
+    assert.equal(hookCardPerformedAction(rewritten), true)
+
+    const multiple = hookCardFromSpineLine(
+      line({ decision: { injectContextChars: 40, queuedMessageChars: 8 } }),
+    )
+    assert.equal(getHookCardStatusLabel(multiple), 'Added context +1')
+    assert.equal(hookCardPerformedAction(multiple), true)
+  })
+
+  it('keeps non-applied outcomes passive while treating control decisions as actions', () => {
+    const allowed = hookCardFromSpineLine(line({ decision: { permission: 'allow' } }))
+    assert.equal(getHookCardStatusLabel(allowed), 'Allowed')
+    assert.equal(hookCardPerformedAction(allowed), false)
+
+    const suppressed = hookCardFromSpineLine(
+      line({ event: 'stop', decision: { haltRun: true, haltSuppressedStale: true } }),
+    )
+    assert.equal(getHookCardStatusLabel(suppressed), 'Halt ignored')
+    assert.equal(hookCardPerformedAction(suppressed), false)
+
+    const asked = hookCardFromSpineLine(line({ decision: { permission: 'ask' } }))
+    assert.equal(getHookCardStatusLabel(asked), 'Requested approval')
+    assert.equal(hookCardPerformedAction(asked), true)
   })
 })

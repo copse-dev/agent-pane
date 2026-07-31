@@ -226,6 +226,7 @@ async function boot(): Promise<void> {
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
   const savedRightPanelPosition = startupSettings.rightPanelPosition
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
+  const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
   // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
   // the document root before the layout paints — panes read both from the store
@@ -278,6 +279,7 @@ async function boot(): Promise<void> {
       : 'auto',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
+    developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
   })
   // Reflect the "open links in built-in browser" choice onto the document root so
   // CSS can flag external links with an icon (and re-sync when Settings saves).

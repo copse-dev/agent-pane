@@ -359,6 +359,7 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    developerMode?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -446,6 +447,9 @@ export function seedEmptyProject(
   }
   if (options?.rightPanelPosition !== undefined) {
     settings.rightPanelPosition = options.rightPanelPosition
+  }
+  if (options?.developerMode !== undefined) {
+    settings.developerMode = options.developerMode
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
@@ -1524,6 +1528,39 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
       },
     ],
   })
+}
+
+/** Populated conversation used to validate Developer mode's diagnostic surfaces. */
+export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: boolean): void {
+  const projectId = 'e2e-developer-mode-project'
+  const threadId = 'e2e-developer-mode-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Developer diagnostics',
+        status: 'idle',
+        messages: [
+          {
+            id: 'developer-mode-user-message',
+            role: 'user',
+            content: 'This persisted conversation can be exported.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 100, outputTokens: 20 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+  writeSettings({ developerMode })
 }
 
 /** ACP thread whose context snapshot represents a `usage_update` from the agent. */
