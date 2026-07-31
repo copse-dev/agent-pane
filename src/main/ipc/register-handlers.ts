@@ -146,6 +146,7 @@ import { getAutomationService } from '../services/automations/automation-service
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
+import { ROADMAP_CATEGORIES, isRoadmapCategory } from '@shared/roadmap/complexity.ts'
 import {
   addKnowledgeNote,
   deleteKnowledgeNote,
@@ -183,6 +184,7 @@ import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
+import { stampRoadmapCategory } from '../services/roadmap-category.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { buildRoadmapExport } from '../services/roadmap-export.ts'
 import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
@@ -506,6 +508,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
+  const zRoadmapCategory = z.union([z.literal(''), z.enum(ROADMAP_CATEGORIES)])
   const zRoadmapExportFormat = z.enum(ROADMAP_EXPORT_FORMATS)
   // Attachments arrive as base64 data URLs (what the pane's paste/drop/picker
   // produce); ~14 MB of base64 ≈ 10 MB decoded per attachment.
@@ -578,9 +581,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         status: 'ready',
         fields: roadmapFields({}, notes, issue),
       })
-      // Saving is immediate; the complexity classification (a model round-trip)
-      // stamps the note in the background and the pane refreshes on the event.
+      // Saving is immediate; the complexity and category classification (model
+      // round-trips) stamp the note in the background and the pane refreshes on
+      // the events.
       void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
+      void stampRoadmapCategory(note.id, prompt, notifyRoadmapChanged)
       if (attachments.length === 0) return note
       // Attachment files are keyed by the note id, so they land in a second
       // step once addKnowledgeNote has minted it. If that metadata write fails
@@ -632,6 +637,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       // stamp is dropped now (it graded the old prompt) and the fresh one lands
       // in the background so the save itself is immediate.
       if (promptChanged) delete fields['complexity']
+      if (promptChanged && !existing.fields['categoryManual']) {
+        delete fields['category']
+      }
       // A stored fit verdict judges a specific prompt/issue pair; either side
       // changing invalidates it (and its reasoning).
       if (promptChanged || issue !== (existing.fields['issue'] ?? '')) {
@@ -677,6 +685,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       if (updated) deleteKnowledgeAttachmentFiles(id, removed)
       if (updated && promptChanged) {
         void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
+        void stampRoadmapCategory(id, prompt, notifyRoadmapChanged)
       }
       return updated
     },
@@ -707,6 +716,37 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const existing = getKnowledgeNote(id)
     if (!existing || existing.type !== ROADMAP_TYPE) return null
     return setKnowledgeNoteStatus(id, status)
+  })
+
+  // User-chosen category override. A category word pins the `category` field
+  // and marks it `categoryManual`, so a later prompt-change re-classification
+  // does not overwrite the user's pick (see stampRoadmapCategory).
+  //
+  // The empty string is the editor's "Auto": it unpins by clearing both fields
+  // and re-runs the classifier in the background against the item's current
+  // prompt. Without that round-trip "Auto" would only ever mean "no category
+  // until I next edit the prompt", since the update path stamps on a prompt
+  // change alone. The schema admits '' or a category word and nothing else, so
+  // the two branches below are total.
+  ipcMain.handle('roadmap:setCategory', (event, rawId: unknown, rawCategory: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const input = parseIpcArgs(zRoadmapCategory.optional(), [rawCategory]) ?? ''
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return null
+    const fields = { ...existing.fields }
+    if (isRoadmapCategory(input)) {
+      fields['category'] = input
+      fields['categoryManual'] = '1'
+    } else {
+      delete fields['category']
+      delete fields['categoryManual']
+    }
+    const updated = updateKnowledgeNote(id, { fields })
+    if (updated && !isRoadmapCategory(input)) {
+      void stampRoadmapCategory(id, updated.body, notifyRoadmapChanged)
+    }
+    return updated
   })
 
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
@@ -760,7 +800,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
-    return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
+    return importIssuesAsRoadmapItems(issues, undefined, undefined, undefined, notifyRoadmapChanged)
   })
 
   // Semantic coverage for the import picker: which open issues already have a

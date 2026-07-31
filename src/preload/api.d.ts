@@ -581,6 +581,10 @@ export interface ApiClient {
       id: string,
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    setCategory: (
+      id: string,
+      category: string,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     export: (format: import('../shared/roadmap/export.ts').RoadmapExportFormat) => Promise<{
       filename: string
