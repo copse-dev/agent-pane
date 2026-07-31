@@ -76,6 +76,7 @@ export const backgroundTasksPack: RegisteredPack = definePack(
     description:
       'Background tasks — run a long-lived command (dev server, watcher, build) via the `run_background` tool that stays alive across turns, with list / logs / stop actions. A task can opt into binding a local port (reporting its http://localhost:<port> URL), which relaxes the sandbox to allow loopback binding, gated by a per-project permission grant.',
     trust: 'first-party',
+    stability: 'experimental',
     tools: { native: [BACKGROUND_TASKS_TOOL_NAME] },
     permissions: [LOOPBACK_BIND_PERMISSION_DECL],
   },

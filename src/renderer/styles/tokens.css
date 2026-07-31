@@ -1,11 +1,25 @@
+@font-face {
+  font-family: 'Pliant';
+  src: url('../../../assets/fonts/Pliant-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Averia Serif Libre';
+  src: url('../../../assets/fonts/AveriaSerifLibre-Regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
   /* ---- Whole-app tint --------------------------------------------------
      Every neutral surface is mixed from a base grey plus `--tint-amount` of
-     `--tint-hue`. At the default 0% the mix returns the base grey untouched,
-     so the app looks exactly as before. Raise `--tint-amount` (e.g. to 4–8%)
-     and/or change `--tint-hue` to wash a colour through the entire UI —
-     backgrounds, panels, hovers — in one place. Themes below re-derive the
-     same tokens from their own greys, so tinting works in light and dark. */
+     `--tint-hue`. The default is deliberately restrained; the exact Copse
+     marketing-site palette is reserved for the Strong brand-tint override in
+     themes.css. Other hues still wash through these neutral surface steps. */
   --tint-hue: var(--accent);
   --tint-amount: 0%;
 
@@ -35,15 +49,17 @@
   --chat-gradient-bottom: color-mix(in srgb, var(--bg-elevated) 24%, var(--bg-base));
   --chat-gradient-glow: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
   /* One user-configurable interaction hue drives primary actions, selection,
-     message emphasis, and theme-derived links. Teal sits more naturally beside
-     the warm default interface tint than the previous editor-blue default. */
-  --accent-color: #2a9d8f;
+     message emphasis, and theme-derived links. The default is the exact neon
+     green used by the Copse marketing site. */
+  --accent-color: #20fd85;
   --accent: var(--accent-color);
+  --accent-fill: var(--accent-color);
+  --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, white);
   --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
   --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
   --link: color-mix(in srgb, var(--accent) 65%, white);
   --link-hover: color-mix(in srgb, var(--accent) 50%, white);
-  --text-on-accent: #101918;
+  --text-on-accent: #444444;
   --error: #f48771;
   --danger: #f14c4c;
   --success: #4ec9b0;
@@ -57,7 +73,8 @@
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
   --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.1);
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Averia Serif Libre', Georgia, serif;
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   /* Interface scale (Settings → Appearance, ⌘+/-, pinch). Multiplies type and
      spacing tokens below so the shell reflows crisply instead of bitmap-zooming.
@@ -72,6 +89,12 @@
   --radius-sm: 4px;
   --radius: 6px;
   --radius-lg: 8px;
+  /* Marketing-site action recipe: 14px/22.4px semibold type inside a 36px
+     fully rounded control. Compact chrome and icon-only controls opt out. */
+  --action-radius: 999px;
+  --action-min-height: calc(36px * var(--ui-scale));
+  --action-padding-block: calc(6.8px * var(--ui-scale));
+  --action-padding-inline: calc(14px * var(--ui-scale));
   --spacing-xs: calc(4px * var(--ui-scale));
   --spacing-sm: calc(8px * var(--ui-scale));
   --spacing-md: calc(12px * var(--ui-scale));

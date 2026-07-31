@@ -6,6 +6,7 @@ import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 
 let mainWin: BrowserWindow | null = null
 
@@ -90,7 +91,7 @@ const DEVTOOLS_SHORTCUT = 'Control+Shift+I'
 /** Register the Ctrl+Shift+I DevTools shortcut (no-op if already registered). */
 export function registerDevtoolsShortcut(win: BrowserWindow): void {
   globalShortcut.register(DEVTOOLS_SHORTCUT, () => {
-    win.webContents.toggleDevTools()
+    toggleDetachedDevTools(win.webContents)
   })
 }
 
