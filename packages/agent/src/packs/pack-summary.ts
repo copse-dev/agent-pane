@@ -68,6 +68,14 @@ export interface PackPermissionOut {
 /** Contributions snapshot for one pack (renderer-facing plain data). */
 export interface PackContributionsOut {
   toolNames: readonly string[]
+  modelRoutes: readonly {
+    id: string
+    label: string
+    group?: string
+    description?: string
+    supportsImages?: boolean
+  }[]
+  browserOrigins: readonly string[]
   mcpServersPath?: string
   blockingHooks: readonly { id: string; event: string }[]
   asyncHooks: readonly { id: string; event: string }[]
@@ -85,10 +93,16 @@ export interface PackContributionsOut {
 export interface PackSummaryOut {
   id: string
   trust: PackManifest['trust']
+  stability: NonNullable<PackManifest['stability']>
   name: string
   version?: string
   description?: string
   enabled: boolean
+  source?: {
+    kind: 'directory'
+    path: string
+    contentHash: string
+  }
   contributions: PackContributionsOut
   settings: readonly PackSettingFieldOut[]
 }
@@ -182,6 +196,8 @@ export function packToSummary(
   })
   const contributionsOut: PackContributionsOut = {
     toolNames: contributions.toolNames.slice(),
+    modelRoutes: contributions.modelRoutes.map((route) => ({ ...route })),
+    browserOrigins: contributions.browserOrigins.slice(),
     blockingHooks: contributions.blockingHooks.map((h) => ({ id: h.id, event: h.event })),
     asyncHooks: contributions.asyncHooks.map((h) => ({ id: h.id, event: h.event })),
     commandHooks,
@@ -200,6 +216,9 @@ export function packToSummary(
   const summary: PackSummaryOut = {
     id: pack.id,
     trust: pack.trust,
+    // Legacy/user manifests without the field fail safe: absence is not a
+    // stability claim and must not be presented as one in Settings.
+    stability: manifest.stability ?? 'experimental',
     name: manifest.name,
     enabled,
     contributions: contributionsOut,

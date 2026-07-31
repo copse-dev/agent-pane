@@ -19,6 +19,7 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
+import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
 import {
   assertFsWriteContent,
   isIndexQueryPattern,
@@ -109,6 +110,12 @@ import {
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
+import {
+  setPackToolRuntimeController,
+  ToolingPackToolRuntimeController,
+} from '../services/packs/pack-tool-controller.ts'
+import { createPackBrowserPanelService } from '../services/packs/pack-browser-panel.ts'
+import { setPackBrowserService } from '../services/packs/pack-browser-service.ts'
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -247,6 +254,7 @@ import {
   invalidateCursorCloudModelsCache,
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
+import { discoverExternalCursorAgents } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 
 import {
@@ -288,6 +296,12 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
 }
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const packService = getPackService()
+  setPackBrowserService(createPackBrowserPanelService(win))
+  setPackToolRuntimeController(new ToolingPackToolRuntimeController(registry))
+  void packService.refreshPackSources().catch((error: unknown) => {
+    console.warn('[packs] selected-pack startup reconciliation failed:', error)
+  })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
   // getPackService() has already layered the user's explicit choices on top, so
@@ -1073,6 +1087,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await setClaudePlanMonthlyFeeUsd(fee)
     return getPlanWorthItPayload()
   })
+  // Durable permission-decision audit log (#656). `projectId` is optional — an
+  // empty/absent value falls back to the active project.
+  ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) return []
+    return readDecisionLog(resolved)
+  })
+  ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) throw new Error('No project to export decisions for.')
+    return exportDecisionLog(resolved)
+  })
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
@@ -1284,8 +1314,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Settings pack list ("about:addons") calls these to enumerate every
   // registered pack, toggle enablement atomically (P1 contract), and read /
   // write pack-scoped settings values under the manifest's declared schema.
-  ipcMain.handle('packs:list', (event) => {
+  ipcMain.handle('packs:list', async (event) => {
     assertMainFrameSender(event, win)
+    await getPackService().refreshPackSources()
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle('packs:addSource', async (event) => {
+    assertMainFrameSender(event, win)
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Add pack',
+      properties: ['openDirectory'],
+    })
+    const sourcePath = result.filePaths[0]
+    if (!result.canceled && sourcePath) {
+      await getPackService().addPackSource(sourcePath)
+    }
     return { packs: getPackService().list() }
   })
   ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
@@ -1602,6 +1645,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('remoteAgent:models', (event) => {
     assertMainFrameSender(event, win)
     return listCursorCloudModels()
+  })
+  /**
+   * Import Cursor cloud agents launched outside Copse as local thread stubs.
+   * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
+   * open project. Caller should reload/merge project threads after imports.
+   */
+  ipcMain.handle('remoteAgent:discoverExternal', (event, projectId: unknown) => {
+    assertMainFrameSender(event, win)
+    if (projectId === undefined || projectId === null) {
+      return discoverExternalCursorAgents()
+    }
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return discoverExternalCursorAgents({ projectId: id })
   })
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
