@@ -1,8 +1,8 @@
 // Contract test: atomic enable/disable (P1, decision 15/17 disable semantics).
 //
 // Disabling a pack must remove *every* contribution kind from new work in one
-// action — tools leave the model tool list, hooks stop firing, prompt blocks
-// drop out, UI stops mounting — with no partial state, while pack storage
+// action — tools leave the model tool list, thread models leave the picker,
+// hooks stop firing, prompt blocks drop out, UI stops mounting — with no partial state, while pack storage
 // persists. Re-enabling restores the contributions and the storage is intact.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -36,6 +36,8 @@ function pilotPack(): RegisteredPack {
     },
     {
       toolNames: ['update_todos'],
+      modelRoutes: [{ id: 'pilot-judge', label: 'Pilot judge' }],
+      browserOrigins: ['https://example.test'],
       blockingHooks: [blockingHook],
       asyncHooks: [asyncHook],
       promptBlocks: [{ id: 'pilot-steer', text: 'plan your work', trust: 'trusted' }],
@@ -49,6 +51,8 @@ function pilotPack(): RegisteredPack {
 function activeCounts(registry: PackRegistry): Record<string, number> {
   return {
     tools: registry.activeToolNames().length,
+    models: registry.activeModelRoutes().length,
+    browser: registry.activeBrowserOrigins().length,
     blocking: registry.activeBlockingHooks().length,
     async: registry.activeAsyncHooks().length,
     prompt: registry.activePromptBlocks().length,
@@ -65,6 +69,8 @@ describe('atomic enable/disable', () => {
 
     assert.deepEqual(activeCounts(registry), {
       tools: 1,
+      models: 1,
+      browser: 1,
       blocking: 1,
       async: 1,
       prompt: 1,
@@ -82,6 +88,8 @@ describe('atomic enable/disable', () => {
     assert.equal(registry.isEnabled('pilot'), false)
     assert.deepEqual(activeCounts(registry), {
       tools: 0,
+      models: 0,
+      browser: 0,
       blocking: 0,
       async: 0,
       prompt: 0,
@@ -107,6 +115,8 @@ describe('atomic enable/disable', () => {
     assert.equal(registry.isEnabled('pilot'), true)
     assert.deepEqual(activeCounts(registry), {
       tools: 1,
+      models: 1,
+      browser: 1,
       blocking: 1,
       async: 1,
       prompt: 1,

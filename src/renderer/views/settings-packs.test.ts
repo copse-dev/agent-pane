@@ -19,6 +19,7 @@ import { createPendingApi } from '../fake-api.test-support.ts'
 interface StubApiSpy {
   lastSetEnabled: { id: string; enabled: boolean } | null
   lastSetSetting: { id: string; key: string; value: unknown } | null
+  addSourceCalls: number
 }
 
 function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
@@ -60,6 +61,10 @@ function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
       }
       return Promise.resolve(current)
     },
+    'packs.addSource': () => {
+      spy.addSourceCalls += 1
+      return Promise.resolve(current)
+    },
   })
 }
 
@@ -73,6 +78,8 @@ const demoPack: PackSummary = {
   enabled: true,
   contributions: {
     toolNames: ['demo_tool'],
+    modelRoutes: [],
+    browserOrigins: [],
     blockingHooks: [{ id: 'demo-hook', event: 'turnStart' }],
     asyncHooks: [],
     commandHooks: [],
@@ -108,6 +115,8 @@ const modelFieldPack: PackSummary = {
   enabled: true,
   contributions: {
     toolNames: [],
+    modelRoutes: [],
+    browserOrigins: [],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [],
@@ -135,6 +144,8 @@ const disabledUserPack: PackSummary = {
   enabled: false,
   contributions: {
     toolNames: [],
+    modelRoutes: [],
+    browserOrigins: [],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [{ event: 'toolGate', command: './guard.sh' }],
@@ -142,6 +153,43 @@ const disabledUserPack: PackSummary = {
     ui: [],
     capabilities: [],
     permissions: [],
+  },
+  settings: [],
+}
+
+const selectedToolPack: PackSummary = {
+  id: 'personal.local-model',
+  trust: 'user',
+  stability: 'experimental',
+  name: 'personal.local-model',
+  version: '0.1.0',
+  description: 'A personal local model route.',
+  enabled: false,
+  source: {
+    kind: 'directory',
+    path: '/Users/example/private-packs/personal.local-model',
+    contentHash: `sha256:${'a'.repeat(64)}`,
+  },
+  contributions: {
+    toolNames: ['ask_local_model'],
+    modelRoutes: [
+      {
+        id: 'reference-judge',
+        label: 'Reference judge',
+        group: 'Personal models',
+        description: 'A second-opinion model.',
+        supportsImages: true,
+      },
+    ],
+    browserOrigins: ['https://example.test'],
+    blockingHooks: [],
+    asyncHooks: [],
+    commandHooks: [],
+    promptBlocks: [{ id: 'local-steering', trust: 'untrusted' }],
+    ui: [],
+    capabilities: [],
+    permissions: [],
+    storageNamespace: 'personal.local-model',
   },
   settings: [],
 }
@@ -168,7 +216,11 @@ describe('settings → packs list', () => {
 
   beforeEach(() => {
     document.body.innerHTML = ''
-    spy = { lastSetEnabled: null, lastSetSetting: null }
+    spy = {
+      lastSetEnabled: null,
+      lastSetSetting: null,
+      addSourceCalls: 0,
+    }
   })
 
   it('renders a nav button and empty state', async () => {
@@ -223,6 +275,28 @@ describe('settings → packs list', () => {
     assert.equal(second.querySelector<HTMLInputElement>('input.pack-toggle-input')?.checked, false)
   })
 
+  it('shows selected-directory provenance and ordinary pack controls', async () => {
+    const list = await openPacks({ packs: [selectedToolPack] }, spy)
+    const row = list.querySelector<HTMLElement>('[data-pack-id="personal.local-model"]')
+    assert.ok(row)
+    assert.equal(row.classList.contains('pack-row-disabled'), true)
+    assert.equal(row.querySelector('.pack-badge-user')?.textContent, 'user')
+    assert.equal(row.querySelector<HTMLInputElement>('.pack-toggle-input')?.disabled, false)
+    assert.match(row.textContent, /executable behaviors run in isolation/i)
+    assert.match(row.textContent, /sha256:a{64}/)
+    assert.match(row.textContent, /Models × 1/)
+    assert.match(row.textContent, /Browser origins × 1/)
+  })
+
+  it('opens the host-owned pack chooser from Settings', async () => {
+    await openPacks({ packs: [] }, spy)
+    const add = document.querySelector<HTMLButtonElement>('#packs-add-btn')
+    assert.ok(add)
+    add.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(spy.addSourceCalls, 1)
+  })
+
   it('enumerates tools / hooks / prompt / UI as chips with counts', async () => {
     const list = await openPacks({ packs: [demoPack] }, spy)
     const chips = list.querySelectorAll('.pack-chip')
@@ -239,6 +313,8 @@ describe('settings → packs list', () => {
       enabled: false,
       contributions: {
         toolNames: [],
+        modelRoutes: [],
+        browserOrigins: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],
@@ -265,6 +341,8 @@ describe('settings → packs list', () => {
       enabled: false,
       contributions: {
         toolNames: ['run_background'],
+        modelRoutes: [],
+        browserOrigins: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],
@@ -286,6 +364,8 @@ describe('settings → packs list', () => {
       id: 'copse.skeleton',
       contributions: {
         toolNames: [],
+        modelRoutes: [],
+        browserOrigins: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],

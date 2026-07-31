@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -25,16 +27,48 @@ function settingsSection(section: string) {
 
 describe('settings packs (about:addons)', function () {
   this.timeout(60_000)
+  let localPackRoot = ''
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-settings-packs')
+    localPackRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-selected-pack-'))
+    mkdirSync(join(localPackRoot, 'dist'))
+    writeFileSync(join(localPackRoot, 'dist', 'index.mjs'), 'export default {}\n')
+    writeFileSync(
+      join(localPackRoot, 'copse-pack.json'),
+      JSON.stringify({
+        name: 'personal.reference-tools',
+        version: '0.1.0',
+        description: 'A selected reference tool pack.',
+        tools: {
+          provides: ['personal_reference_judge'],
+        },
+        models: {
+          provides: [
+            {
+              id: 'reference-judge',
+              label: 'Reference judge',
+              group: 'Personal models',
+              description: 'A private second-opinion route.',
+              supportsImages: true,
+            },
+          ],
+        },
+        browser: { origins: ['https://example.test'] },
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+      }),
+    )
+    seedEmptyProject(process.cwd(), 'e2e-settings-packs', {
+      packSources: [localPackRoot],
+      model: 'pack-model:personal.reference-tools:reference-judge',
+    })
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
+    if (localPackRoot) rmSync(localPackRoot, { recursive: true, force: true })
   })
 
   it('lists installed packs with an enable toggle + contribution enumeration', async () => {
@@ -121,6 +155,27 @@ describe('settings packs (about:addons)', function () {
     await expect(automationsRow).toBeDisplayed()
     assert.equal(await automationsRow.getAttribute('data-enabled'), 'false')
 
+    // A selected directory remains an ordinary user pack. Its declared tool
+    // behavior is visible even when this platform cannot start the macOS-only
+    // isolated worker and therefore leaves the pack disabled.
+    const packToolRow = packs.$('.pack-row[data-pack-id="personal.reference-tools"]')
+    await expect(packToolRow).toBeDisplayed()
+    await expect(packToolRow.$('.pack-badge-user')).toBeDisplayed()
+    assert.equal(await packToolRow.getAttribute('data-enabled'), 'false')
+    assert.equal(await packToolRow.$('input.pack-toggle-input').isEnabled(), true)
+    const localText = await packToolRow.getText()
+    assert.match(localText, /executable behaviors run in isolation/i)
+    assert.match(localText, /Tools × 1/)
+    assert.match(localText, /Models × 1/)
+    assert.match(localText, /Browser origins × 1/)
+    assert.match(localText, /sha256:[a-f0-9]{64}/)
+
+    await packToolRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.pack-row[data-pack-id="personal.reference-tools"]',
+      'settings-selected-pack.png',
+    )
+
     // Post-turn review pack: its pack-scoped `maxReviewCycles` setting renders
     // as a generic number field seeded with the manifest default. This is the
     // "does a failing review buy the agent another turn?" knob — 1 reports the
@@ -161,5 +216,23 @@ describe('settings packs (about:addons)', function () {
     assert.ok(cls.includes('pack-row-disabled'), 'disabled row must be visually greyed')
 
     await saveElementScreenshot('#settings-dialog', 'settings-packs.png')
+
+    // The same manifest metadata is represented in the thread model picker.
+    // This fixture deliberately registers no handlers, so the selected route
+    // remains visible with its friendly label but cannot be run.
+    await browser.keys('Escape')
+    await dialog.waitForDisplayed({ reverse: true })
+    const footerPicker = $('.footer-model-host')
+    await footerPicker.$('.model-picker-trigger').click()
+    const personalModel = footerPicker.$(
+      '.model-picker-option[data-value="pack-model:personal.reference-tools:reference-judge"]',
+    )
+    await personalModel.waitForExist({ timeout: 15_000 })
+    assert.equal(await personalModel.getText(), 'Reference judge (pack disabled)')
+    assert.equal(await personalModel.isEnabled(), false)
+    await saveElementScreenshot(
+      '.footer-model-host .model-picker-menu',
+      'personal-pack-thread-model-picker.png',
+    )
   })
 })

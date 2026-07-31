@@ -27,6 +27,7 @@ function demoPack(id: string): RegisteredPack {
     { name: id, trust: 'first-party', stability: 'stable', storage: { namespace: id } },
     {
       toolNames: [`${id}_tool`],
+      browserOrigins: [`https://${id}.example.test`],
       blockingHooks: [stepHook],
       promptBlocks: [{ id: `${id}-prompt`, text: 'steer', trust: 'trusted' }],
       uiContributions: [{ id: `${id}-panel`, level: 2, slot: 'sidebar', panel: { kind: 'list' } }],
@@ -77,6 +78,10 @@ describe('PackRegistry grouping', () => {
     registry.register(demoPack('beta'))
 
     assert.deepEqual(registry.activeToolNames(), ['alpha_tool', 'beta_tool'])
+    assert.deepEqual(registry.activeBrowserOrigins(), [
+      { packId: 'alpha', origin: 'https://alpha.example.test' },
+      { packId: 'beta', origin: 'https://beta.example.test' },
+    ])
     assert.deepEqual(
       registry.activeBlockingHooks().map((h) => h.id),
       ['demo-turn-start', 'demo-turn-start'],
@@ -107,6 +112,21 @@ describe('PackRegistry grouping', () => {
       registry.disable('nope')
     }, UnknownPackError)
     assert.throws(() => registry.storage('nope'), UnknownPackError)
+    assert.throws(() => {
+      registry.unregister('nope')
+    }, UnknownPackError)
+  })
+
+  it('unregisters dynamic packs without erasing their namespaced storage', () => {
+    const registry = new PackRegistry()
+    registry.register(demoPack('local'))
+    registry.storage('local').set('session', 'kept')
+    registry.unregister('local')
+    assert.equal(registry.has('local'), false)
+    assert.deepEqual(registry.activeToolNames(), [])
+
+    registry.register(demoPack('local'))
+    assert.equal(registry.storage('local').get('session'), 'kept')
   })
 
   it('exposes only enabled packs’ explicitly declared ACP tools', () => {
@@ -223,6 +243,28 @@ describe('packManifestFromPluginJson — user-pack trust hardening (P1 review)',
     const b = packManifestFromPluginJson({}, { sourceHint: 'dir-b' })
     assert.notEqual(a.name, b.name)
     assert.equal(a.name, 'unnamed-pack-dir-a')
+  })
+
+  it('preserves explicitly selected behaviors without changing their trust tier', () => {
+    const manifest = packManifestFromPluginJson({
+      name: 'personal.review-tools',
+      tools: {
+        provides: ['personal_judge'],
+      },
+      models: {
+        provides: [{ id: 'judge', label: 'Reference judge', supportsImages: true }],
+      },
+      browser: { origins: ['https://example.test'] },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+    })
+
+    assert.equal(manifest.trust, 'user')
+    assert.deepEqual(manifest.tools, { provides: ['personal_judge'] })
+    assert.deepEqual(manifest.models, {
+      provides: [{ id: 'judge', label: 'Reference judge', supportsImages: true }],
+    })
+    assert.deepEqual(manifest.browser, { origins: ['https://example.test'] })
+    assert.deepEqual(manifest.runtime, { entrypoint: 'dist/index.mjs', apiVersion: 1 })
   })
 
   it('defaults an undeclared user-pack stability claim to experimental', () => {
