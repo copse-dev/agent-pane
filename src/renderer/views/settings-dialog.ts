@@ -933,6 +933,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               for authoring and install steps.
             </p>
             <div class="lmstudio-test-row">
+              <button type="button" id="packs-add-btn">Add pack…</button>
               <button type="button" id="packs-reload-btn">Reload</button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
@@ -1816,7 +1817,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       pack.trust === 'first-party'
         ? 'pack-badge pack-badge-first-party'
         : 'pack-badge pack-badge-user'
-    trustBadge.textContent = pack.trust === 'first-party' ? 'first-party' : 'user'
+    trustBadge.textContent = pack.trust
     title.append(trustBadge)
     const stabilityBadge = document.createElement('span')
     stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
@@ -1837,6 +1838,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(desc)
     }
 
+    if (pack.source?.kind === 'directory') {
+      const review = document.createElement('div')
+      review.className = 'pack-source-review'
+
+      const status = document.createElement('div')
+      status.className = 'pack-source-status'
+      status.textContent = 'Selected directory · executable behaviors run in isolation'
+      review.append(status)
+
+      const details: Array<[string, string]> = [
+        ['Source', pack.source.path],
+        ['Content', pack.source.contentHash],
+      ]
+      const detailList = document.createElement('dl')
+      detailList.className = 'pack-source-details'
+      for (const [term, value] of details) {
+        const dt = document.createElement('dt')
+        dt.textContent = term
+        const dd = document.createElement('dd')
+        dd.textContent = value
+        detailList.append(dt, dd)
+      }
+      review.append(detailList)
+      row.append(review)
+    }
+
     // Contribution enumeration — the "about:addons" surface: users see exactly
     // what flipping the toggle takes out of new work.
     const contributions = pack.contributions
@@ -1846,6 +1873,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         label: 'Tools',
         count: contributions.toolNames.length,
         title: contributions.toolNames.join(', '),
+      })
+    }
+    if (contributions.modelRoutes.length > 0) {
+      chips.push({
+        label: 'Models',
+        count: contributions.modelRoutes.length,
+        title: contributions.modelRoutes.map((route) => `${route.label} (${route.id})`).join(', '),
+      })
+    }
+    if (contributions.browserOrigins.length > 0) {
+      chips.push({
+        label: 'Browser origins',
+        count: contributions.browserOrigins.length,
+        title: contributions.browserOrigins.join(', '),
       })
     }
     if (contributions.mcpServersPath) {
@@ -2378,6 +2419,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   qsRequired(overlay, '#packs-reload-btn').addEventListener('click', () => {
     void refreshPacks()
+  })
+
+  qsRequired(overlay, '#packs-add-btn').addEventListener('click', () => {
+    const button = qsRequired<HTMLButtonElement>(overlay, '#packs-add-btn')
+    const status = qsRequired(overlay, '#packs-reload-status')
+    button.disabled = true
+    status.textContent = 'Choose a folder containing copse-pack.json…'
+    void api.packs
+      .addSource()
+      .then(() => refreshPacks())
+      .catch((error: unknown) => {
+        status.textContent = errorMessage(error)
+      })
+      .finally(() => {
+        button.disabled = false
+      })
   })
 
   // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the

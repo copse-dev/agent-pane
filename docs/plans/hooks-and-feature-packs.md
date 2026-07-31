@@ -155,13 +155,34 @@ revisiting this document, not silently diverging in an implementation PR.
 14. **Payloads are treated as stable now; stability is _declared_ at publish time.**
     Pre-v1 with zero consumers we don't version payloads, but every dialect wire payload
     is snapshot-tested (G4) so the publish-time stability audit is a diff review.
-15. **Feature packs are the end state; two capability tiers, one lifecycle.** Following
+15. **Feature packs are the end state; behavior declarations, one lifecycle.** Following
     VS Code's built-in-extensions model: first-party packs and user packs share the
     manifest, registry, Settings surface, and disable semantics; first-party packs
     additionally get typed `AgentStreamChunk` emission, typed loop-state access, and
     real renderer views. External hooks can never emit feature chunks (`todo_update`,
     `subagent_*`) — the typed stream stays first-party, which keeps transcripts
-    trustworthy.
+    trustworthy. An explicitly selected user pack (#1336) may declare executable
+    tool ids and/or whole-thread model-route metadata plus one versioned top-level
+    `runtime`; this does not create a new trust class. P1 validates and hashes the selected directory.
+    P2 executes only a revalidated content-addressed snapshot in a standalone
+    API-v1 worker, fails closed without the macOS OS sandbox, denies direct network
+    and filesystem writes, and validates runtime registrations against the tool
+    and model ids declared in the manifest. Selecting the directory is the current opt-in;
+    richer behavior-derived consent belongs to a later product phase. P3 adds
+    whole-thread model routes, bounded validated current-image and text-history
+    handoff, and a durable JSON session API bound by the host to pack + Copse
+    thread identity. It deliberately adds no generic `host.call`. P4 adds the
+    concrete `browser.origins` behavior: model handlers may operate only
+    pack/thread-owned tabs in the visible persistent browser pane through
+    explicit open/navigate/tabs/snapshot/click/type/upload operations. Exact
+    origins, redirects, tab ownership, attachment count, and decoded bytes are
+    host-validated. Accessibility snapshots include bounded meaningful visible
+    leaf text, semantic and pointer-affordance refs, and hidden file-input
+    upload refs plus disabled-control state without exposing selectors or
+    arbitrary scripts; disabling the pack stops the worker while its visible
+    tabs and durable session remain.
+    Direct network, arbitrary IPC/Electron access, generic host calls, and unused renderer
+    contribution placeholders remain unavailable.
 16. **Async hook outputs are epoch-scoped to their emitting turn tree.** Send-now
     currently aborts the active local run (`sendQueuedMessageNow` in
     `src/renderer/controller/message-queue.ts`), so a late async hook from a completed
@@ -541,6 +562,14 @@ pack disable or credential-driven unregister revokes exposure immediately.
 `copse.parallel-search` declares `parallel_search`; the bridge is only ACP's
 client-tool transport and the actual provider call remains the direct Parallel
 Search API.
+
+| P15 🚧 | Selected-pack executable behavior — P1/P3 | **Draft milestone (#1336):** P1 discovers an explicitly selected folder, validates and hashes its manifest/tree, and registers an ordinary user pack. P2 revalidates a content-addressed snapshot and runs its shared API-v1 runtime only inside the active macOS OS sandbox, with direct network and filesystem writes denied; declared tools register atomically. P3 adds declared whole-thread model routes to the thread picker, validates registered model ids, passes bounded current-turn images plus a bounded text-only conversation handoff, and exposes only durable session get/set/delete operations bound by the host to pack + Copse thread identity. Selecting/enabling the pack is the current opt-in; invocations do not prompt again per turn. P4 browser, origin, and renderer behaviors remain future work and expose no placeholder declarations or generic host gateway yet. |
+
+P15 P4 amendment (supersedes the P15 status row above): the selected-pack
+milestone now covers P1–P4. `browser.origins` is a concrete model behavior backed by
+visible, pack/thread-owned browser-panel tabs and the explicit operations listed
+in decision 15. Renderer slots remain deferred; P4 does not add a generic host
+gateway or service-specific code.
 
 P4 restack invariant: cancelled todos stay in durable thread state but are omitted
 from `todosToPanelListData()` so the extracted pack preserves the pre-existing UI
