@@ -133,7 +133,7 @@ export const listDirTool = defineTool({
           (paths.length > LIST_DIR_MAX_ENTRIES ? '\n[Truncated at 1000 entries]' : '')
         )
       }
-      const idx = getIndex()
+      const idx = getIndex(root)
       let paths: string[]
       if (idx) {
         const glob = path && path !== '.' ? `${path.replace(/\/$/, '')}/**` : '**'
