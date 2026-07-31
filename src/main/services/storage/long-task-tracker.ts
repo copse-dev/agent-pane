@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { at } from '@shared/array-utils.ts'
 import { getActiveProjectRoot } from '../workspace.ts'
+import { copseDataRoot } from './copse-paths.ts'
 
 /**
  * Experimental, opt-in "long-horizon tasks" feature (tracked in
@@ -64,7 +64,7 @@ export function setLongTaskRootForTest(path: string | null): void {
 }
 
 function longTaskBaseDir(): string {
-  return rootOverride ?? join(homedir(), '.copse', 'long-tasks')
+  return rootOverride ?? join(copseDataRoot(), 'long-tasks')
 }
 
 function workspaceNamespace(): string {
