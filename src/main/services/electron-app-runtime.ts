@@ -1,5 +1,3 @@
-import { copseUserDataDir } from './storage/copse-paths.ts'
-
 /**
  * App metadata and paths supplied by the Electron entry point.
  *
@@ -21,10 +19,10 @@ export function setElectronAppRuntime(next: ElectronAppRuntime | null): void {
 }
 
 export function getElectronUserDataPath(): string {
-  const configured = runtime?.userDataPath ?? copseUserDataDir('')
+  const configured = runtime?.userDataPath ?? process.env['COPSE_PANEL_USER_DATA']?.trim()
   if (!configured) {
     throw new Error(
-      'Copse userData path is unavailable outside Electron; install an ElectronAppRuntime or set COPSE_DIR (or COPSE_PANEL_USER_DATA).',
+      'Copse userData path is unavailable outside Electron; install an ElectronAppRuntime or set COPSE_PANEL_USER_DATA.',
     )
   }
   return configured

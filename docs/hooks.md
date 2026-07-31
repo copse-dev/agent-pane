@@ -103,11 +103,11 @@ would otherwise ask about.
 
 Dialect is determined by **source path**, not prefixes or content sniffing (the [dialect-by-source-path decision](./plans/hooks-and-feature-packs.md#decisions-log)):
 
-| Source path                                                  | Dialect | Adapter                                     |
-| ------------------------------------------------------------ | ------- | ------------------------------------------- |
-| `~/.cursor/hooks.json` + project                             | Cursor  | `src/main/services/hooks/cursor-adapter.ts` |
-| `~/.claude/settings.json` + project                          | Claude  | `src/main/services/hooks/claude-adapter.ts` |
-| `~/.copse/hooks.json` (or `$COPSE_DIR/hooks.json`) + project | Copse   | `src/main/services/hooks/copse-adapter.ts`  |
+| Source path                         | Dialect | Adapter                                     |
+| ----------------------------------- | ------- | ------------------------------------------- |
+| `~/.cursor/hooks.json` + project    | Cursor  | `src/main/services/hooks/cursor-adapter.ts` |
+| `~/.claude/settings.json` + project | Claude  | `src/main/services/hooks/claude-adapter.ts` |
+| `~/.copse/hooks.json` + project     | Copse   | `src/main/services/hooks/copse-adapter.ts`  |
 
 Each adapter owns **discovery, parsing, matchers, and wire marshalling both directions**:
 a Cursor hook sees Cursor's stdin shape and permission vocabulary; a Claude hook sees

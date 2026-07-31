@@ -162,8 +162,7 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 - **Renderer hardening.** Narrow `contextBridge` API, main-frame IPC gating,
   strict DOMPurify on rendered content.
 - **Filesystem-native thread history + export.** Every thread lives under
-  `~/.copse/workspace/<projectId>/<threadId>/` (or `$COPSE_DIR/workspace`; the
-  granular override is `COPSE_WORKSPACE_DIR`) with
+  `~/.copse/workspace/<projectId>/<threadId>/` (or `COPSE_WORKSPACE_DIR`) with
   `meta.json`, an event spine, readable message files, blobs, and nested subagents.
   Tool arguments/results and hook records remain inspectable and exportable.
 
