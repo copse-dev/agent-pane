@@ -465,7 +465,12 @@ function writeCatalog(projectId: string, entries: Map<string, CatalogEntry>): vo
 }
 
 function upsertCatalogEntry(projectId: string, thread: Thread): void {
-  const entries = readCatalog(projectId)
+  // If the index file is missing, rebuild from dirs first so an external seed
+  // (thread dirs without catalog.jsonl) is not collapsed to this one entry.
+  // Incomplete-but-present files are healed on read via {@link ensureCatalogMap}.
+  const entries = existsSync(catalogPath(projectId))
+    ? readCatalog(projectId)
+    : rebuildCatalogFromDisk(projectId)
   const entry = catalogEntryOf(thread)
   if (entry === null) entries.delete(thread.id)
   else entries.set(thread.id, entry)
@@ -510,7 +515,9 @@ function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry
 }
 
 function refreshCatalogLine(projectId: string, threadId: string): void {
-  const entries = readCatalog(projectId)
+  const entries = existsSync(catalogPath(projectId))
+    ? readCatalog(projectId)
+    : rebuildCatalogFromDisk(projectId)
   const entry = catalogEntryFromDisk(projectId, threadId)
   if (entry === null) {
     // Missing meta or archived — drop any stale catalog line.
@@ -521,13 +528,47 @@ function refreshCatalogLine(projectId: string, threadId: string): void {
   writeCatalog(projectId, entries)
 }
 
-async function rebuildCatalog(projectId: string): Promise<Map<string, CatalogEntry>> {
+/**
+ * Rebuild `catalog.jsonl` from on-disk thread dirs (O(threads), no full fold).
+ * Used when the index is missing or was partially written by a single-thread
+ * upsert/refresh before a full rebuild — see {@link ensureCatalogMap}.
+ */
+function rebuildCatalogFromDisk(projectId: string): Map<string, CatalogEntry> {
   const entries = new Map<string, CatalogEntry>()
-  for (const thread of await readProjectThreads(projectId)) {
-    const entry = catalogEntryOf(thread)
-    if (entry) entries.set(thread.id, entry)
+  for (const threadId of listThreadIds(projectId)) {
+    const entry = catalogEntryFromDisk(projectId, threadId)
+    if (entry) entries.set(threadId, entry)
   }
   writeCatalog(projectId, entries)
+  return entries
+}
+
+/** True when an on-disk, non-archived thread is absent from the catalog map. */
+function catalogMissingIndexedThreads(
+  projectId: string,
+  entries: Map<string, CatalogEntry>,
+): boolean {
+  for (const threadId of listThreadIds(projectId)) {
+    if (entries.has(threadId)) continue
+    if (catalogEntryFromDisk(projectId, threadId) !== null) return true
+  }
+  return false
+}
+
+/**
+ * Read the project catalog, rebuilding from thread dirs when the file is
+ * missing **or** incomplete. A lone `upsertCatalogEntry` /
+ * `refreshCatalogLine` after an external seed (e2e fixtures, import) used to
+ * write a one-line `catalog.jsonl` from an empty read — after that,
+ * `loadProjectCatalog` trusted the file and the `@`-picker hid every other
+ * thread even though the sidebar still listed them from the dirs.
+ */
+function ensureCatalogMap(projectId: string): Map<string, CatalogEntry> {
+  if (!existsSync(catalogPath(projectId))) return rebuildCatalogFromDisk(projectId)
+  const entries = readCatalog(projectId)
+  if (catalogMissingIndexedThreads(projectId, entries)) {
+    return rebuildCatalogFromDisk(projectId)
+  }
   return entries
 }
 
@@ -1014,10 +1055,8 @@ export function findThreadOwners(threadId: string): Promise<string[]> {
  * so the `@`-thread picker can hand the agent an absolute reference.
  */
 export function loadProjectCatalog(projectId: string, query?: string): Promise<ThreadCatalogHit[]> {
-  return runSerialized(queueKey(projectId), async () => {
-    const map = existsSync(catalogPath(projectId))
-      ? readCatalog(projectId)
-      : await rebuildCatalog(projectId)
+  return runSerialized(queueKey(projectId), () => {
+    const map = ensureCatalogMap(projectId)
     const entries = [...map.values()].sort((a, b) => b.updatedAt - a.updatedAt)
     const terms = (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean)
     const matched =
