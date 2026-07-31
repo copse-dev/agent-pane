@@ -1,6 +1,10 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+// A raw `require` (rather than `import * as`) so this is the exact module
+// object thread-store.ts's own `require("node:fs")` resolves to — see #1222.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+const fsModule: typeof import('node:fs') = require('node:fs')
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
@@ -542,6 +546,34 @@ describe('thread-store', () => {
       assert.deepEqual(
         loaded?.messages.map((m) => m.id),
         ['u1', 'u2'],
+      )
+    })
+
+    it('appendMessage writes only the new line for a new message id, not the whole spine (#1222)', async () => {
+      await createThread('proj-1', thread('t1'))
+      for (let i = 0; i < 200; i++) {
+        await appendMessage('proj-1', 't1', userMsg(`u${String(i)}`, `message number ${String(i)}`))
+      }
+
+      // `appendFileSync` and `writeFileSync` are the same underlying Node
+      // primitive (the former delegates to the latter with an 'a' flag), so
+      // spying on `writeFileSync` alone observes the bytes either one writes.
+      const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
+      const writeSpy = mock.method(fsModule, 'writeFileSync')
+      await appendMessage('proj-1', 't1', userMsg('u200', 'the 201st message'))
+      mock.restoreAll()
+
+      const bytesWrittenToEvents = writeSpy.mock.calls
+        .filter((c) => c.arguments[0] === eventsPath)
+        .reduce(
+          (sum, c) => sum + (typeof c.arguments[1] === 'string' ? c.arguments[1].length : 0),
+          0,
+        )
+      // One new spine line is well under 500 bytes; a full rewrite of the
+      // prior 200 lines would be tens of thousands.
+      assert.ok(
+        bytesWrittenToEvents > 0 && bytesWrittenToEvents < 500,
+        `expected a pure append (~1 line) but wrote ${String(bytesWrittenToEvents)} bytes to events.jsonl`,
       )
     })
 

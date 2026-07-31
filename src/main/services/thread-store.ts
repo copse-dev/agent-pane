@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -10,6 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
   LLMMessage,
@@ -31,7 +33,6 @@ import {
 } from '@shared/threads/fold.ts'
 import { parseOkfMessage } from '@shared/threads/okf-message.ts'
 import { parseThreadMetaValue } from '@shared/threads/thread-boundary.ts'
-import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import {
   parseSpine,
   parseSpineEntries,
@@ -90,7 +91,9 @@ const projectDir = projectStoreDir
 
 /** Root of the chat store. COPSE_DIR owns the normal profile layout. */
 function workspaceRoot(): string {
-  return copseWorkspaceDir()
+  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
+  if (override) return override
+  return join(homedir(), '.copse', 'workspace')
 }
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
@@ -181,6 +184,38 @@ function listFilesRecursive(dir: string, base: string = dir): string[] {
 }
 
 /**
+ * Message ids already present in a thread's `events.jsonl`, keyed by the
+ * thread's directory path. Seeded by one full parse per thread directory per
+ * process lifetime, this lets `appendMessage`'s common case (a brand-new
+ * finalized message id) skip parsing and re-serializing the whole spine on
+ * every call — see #1222. Anything that rewrites or removes the file outside
+ * `appendMessage` must invalidate its entry so the next append reseeds.
+ */
+const knownMessageIdsByDir = new Map<string, Set<string>>()
+
+function invalidateKnownMessageIds(dir: string): void {
+  knownMessageIdsByDir.delete(dir)
+}
+
+/** Get (seeding from disk on first use) the known message ids for a thread. */
+function knownMessageIdsFor(dir: string): Set<string> {
+  const cached = knownMessageIdsByDir.get(dir)
+  if (cached) return cached
+  const raw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+  if (raw !== '' && !raw.endsWith('\n')) {
+    // Normalize a legacy file with no trailing newline before switching to
+    // true appends below, which assume one is already there.
+    writeFileSync(join(dir, EVENTS_FILE), `${raw}\n`)
+  }
+  const ids = new Set<string>()
+  for (const entry of parseSpineEntries(raw)) {
+    if (entry.line?.type === 'message') ids.add(entry.line.id)
+  }
+  knownMessageIdsByDir.set(dir, ids)
+  return ids
+}
+
+/**
  * Write a thread directory. Files are written first, then the spine, then meta;
  * because the spine (`events.jsonl`) is written only after the files it
  * references exist, a crash mid-write never leaves the spine pointing at a
@@ -205,6 +240,7 @@ function writeThread(projectId: string, thread: Thread): void {
   const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
   writeFileSync(join(dir, EVENTS_FILE), body)
   writeFileSync(join(dir, META_FILE), `${JSON.stringify(metaOf(thread))}\n`)
+  invalidateKnownMessageIds(dir)
 
   pruneStaleFiles(dir, files, preservedRefs)
 }
@@ -801,7 +837,9 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
     }
     for (const threadId of listThreadIds(projectId)) {
       if (!keepIds.has(threadId)) {
-        rmSync(threadDir(projectId, threadId), { recursive: true, force: true })
+        const dir = threadDir(projectId, threadId)
+        rmSync(dir, { recursive: true, force: true })
+        invalidateKnownMessageIds(dir)
       }
     }
     writeCatalog(projectId, entries)
@@ -823,14 +861,17 @@ export function createThread(projectId: string, thread: Thread): Promise<void> {
 }
 
 /**
- * Persist one finalized message: its OKF/blob files, then its spine line. The
- * spine line replaces any existing line with the same id in place (idempotent
- * re-finalize / edit without reordering history) and is otherwise appended;
- * writing files before the spine keeps a crash from leaving the spine pointing
- * at a missing file. `meta.json` is left to `updateMeta` — the renderer bumps
- * `updatedAt` through it around the same time. The rewrite works on verbatim
- * spine entries so non-message lines (hook_run and unknown future types) keep
- * their exact bytes and positions.
+ * Persist one finalized message: its OKF/blob files, then its spine line. A
+ * brand-new message id (the common case) is a true append — no read, parse,
+ * or re-serialization of the rest of the spine, using the {@link
+ * knownMessageIdsFor} cache to tell new ids from re-finalized ones without
+ * paying an O(n) parse per call (#1222). A re-finalized/edited message id
+ * (rare) still replaces its existing line in place, working on verbatim spine
+ * entries so non-message lines (hook_run and unknown future types) keep their
+ * exact bytes and positions. Writing files before the spine keeps a crash
+ * from leaving the spine pointing at a missing file. `meta.json` is left to
+ * `updateMeta` — the renderer bumps `updatedAt` through it around the same
+ * time.
  */
 export function appendMessage(
   projectId: string,
@@ -842,8 +883,14 @@ export function appendMessage(
     mkdirSync(dir, { recursive: true })
     const { line, files } = explodeMessage(message, sha256)
     for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
-    const entries = parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '')
     const raw = serializeSpineLine(line)
+    const knownIds = knownMessageIdsFor(dir)
+    if (!knownIds.has(message.id)) {
+      appendFileSync(join(dir, EVENTS_FILE), `${raw}\n`)
+      knownIds.add(message.id)
+      return
+    }
+    const entries = parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '')
     const existingIndex = entries.findIndex(
       (entry) => entry.line?.type === 'message' && entry.line.id === message.id,
     )
@@ -956,7 +1003,9 @@ export function updateMetaOrThrow(
 
 export function deleteProjectThread(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
-    rmSync(threadDir(projectId, threadId), { recursive: true, force: true })
+    const dir = threadDir(projectId, threadId)
+    rmSync(dir, { recursive: true, force: true })
+    invalidateKnownMessageIds(dir)
     const entries = readCatalog(projectId)
     if (entries.delete(threadId)) writeCatalog(projectId, entries)
     // Drop the thread's reverse-index entries too, so a deleted thread can't

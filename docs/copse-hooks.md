@@ -22,7 +22,7 @@ The official JSON schema is published at
 ## On-disk layout
 
 ```
-~/.copse/hooks.json             # user hooks — always honoured (or $COPSE_DIR/hooks.json)
+~/.copse/hooks.json             # user hooks — always honoured
 <workspace>/.copse/hooks.json   # project hooks — only when the workspace is trusted
 ```
 

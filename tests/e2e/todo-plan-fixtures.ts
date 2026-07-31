@@ -7,20 +7,19 @@
 import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 import { writeSeedConfig } from './helpers/seed-config.ts'
 
 function userDataDir(): string {
-  let defaultDir: string
+  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
+  if (override) return override
   if (process.platform === 'darwin') {
-    defaultDir = join(homedir(), 'Library', 'Application Support', 'copse-panel')
-  } else if (process.platform === 'win32') {
-    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
-    defaultDir = join(appData, 'copse-panel')
-  } else {
-    defaultDir = join(homedir(), '.config', 'copse-panel')
+    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
   }
-  return copseUserDataDir(defaultDir)
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
+    return join(appData, 'copse-panel')
+  }
+  return join(homedir(), '.config', 'copse-panel')
 }
 
 export function seedTodoPlanFixtures(workspaceRoot: string): {
