@@ -168,6 +168,9 @@ Shipped packs live in `packages/agent/src/packs/`, are listed from
 
 1. `definePack(manifest, contributions)` with typed function hooks / native
    tool names as needed.
+   Add a native tool to `tools.acpTools` only when it is safe to execute without
+   native-loop-only state; registration enforces that each entry is also in
+   `tools.native` and has a runtime tool contribution.
 2. Register in `FIRST_PARTY_PACKS`.
 3. Gate any host-side tool registration on `getDefaultPackRegistry().isEnabled(id)`.
 4. Add Settings / e2e coverage for the new row and default enablement.

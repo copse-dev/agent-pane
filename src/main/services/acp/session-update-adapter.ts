@@ -53,6 +53,7 @@ const NATIVE_TOOL_ACP_KIND: Record<string, ToolKind> = {
   rename_file: 'move',
   // Network reads (web + read-only GitHub/CI).
   web_search: 'fetch',
+  parallel_search: 'fetch',
   fetch_url: 'fetch',
   gh_pr_list: 'fetch',
   gh_pr_view: 'fetch',

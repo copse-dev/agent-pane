@@ -200,9 +200,9 @@ function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   // Pin appearance so reference screenshots are deterministic: the app now
   // defaults to `system` theme (which resolves to whatever prefers-color-scheme
-  // the CI runner reports) and a pink interface tint — both would make shots
-  // depend on the host / drift with brand tweaks. Force the historical
-  // neutral-dark look here; individual specs can override via `settings`.
+  // the CI runner reports). Pin dark mode and disable any custom tint so shots
+  // do not depend on the host or saved appearance state; individual specs can
+  // override via `settings`.
   writeFileSync(
     SETTINGS_PATH,
     JSON.stringify({
@@ -218,8 +218,9 @@ function writeSettings(settings: Record<string, unknown>): void {
 /** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */
 export function seedE2eViewport(
   bounds: { width: number; height: number } = { width: 1280, height: 800 },
+  settings: Record<string, unknown> = {},
 ): void {
-  writeSettings({ windowBounds: bounds })
+  writeSettings({ windowBounds: bounds, ...settings })
 }
 
 /** Workspace + pinned theme for the preload boot-theme e2e (#41). */
@@ -2363,6 +2364,97 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 4,
+      },
+    ],
+  })
+}
+
+/** MCP and Copse-wrapped tool cards without internal server prefixes in their labels. */
+export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-mcp-tool-display-project'
+  const threadId = 'e2e-mcp-tool-display-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'MCP tool labels',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-mcp-labels',
+            role: 'user',
+            content: 'Create an issue, inspect the issue list, and check the repository state.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-mcp-single',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-mcp-create',
+                name: 'mcp__github__create_issue',
+                args: { title: 'Tool label polish' },
+                status: 'done',
+                result: 'Created issue #42',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-mcp-group',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-mcp-list',
+                name: 'mcp__github__list_issues',
+                args: {},
+                status: 'done',
+                result: '#42 Tool label polish',
+              },
+              {
+                id: 'tc-mcp-get',
+                name: 'mcp__github__get_issue',
+                args: { number: 42 },
+                status: 'done',
+                result: 'Tool label polish',
+              },
+            ],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-copse-group',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-copse-status',
+                name: 'mcp__copse__git_status',
+                args: {},
+                status: 'done',
+                result: 'working tree clean',
+              },
+              {
+                id: 'tc-copse-diff',
+                name: 'mcp__copse__git_diff',
+                args: {},
+                status: 'done',
+                result: 'no changes',
+              },
+            ],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 3,
       },
     ],
   })

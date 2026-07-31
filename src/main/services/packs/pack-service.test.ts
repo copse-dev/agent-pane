@@ -28,11 +28,13 @@ import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
+const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'packMigration.parallelSearchEnablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -67,6 +69,7 @@ function clearStorage(): void {
   // Keep the prototype's one-time default-off migration out of unrelated cases;
   // its dedicated test below deletes this marker explicitly.
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -189,6 +192,7 @@ describe('PackService', () => {
       DEVTOOLS_SHORTCUT_PACK_ID,
       BACKGROUND_TASKS_PACK_ID,
       AUTOMATIONS_PACK_ID,
+      PARALLEL_SEARCH_PACK_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
     }
@@ -207,6 +211,7 @@ describe('PackService', () => {
         DEVTOOLS_SHORTCUT_PACK_ID,
         BACKGROUND_TASKS_PACK_ID,
         AUTOMATIONS_PACK_ID,
+        PARALLEL_SEARCH_PACK_ID,
       ].sort(),
     )
   })
@@ -224,6 +229,18 @@ describe('PackService', () => {
     __resetPackServiceForTests()
     const later = getPackService()
     assert.equal(later.registry.isEnabled(AUTOMATIONS_PACK_ID), true)
+  })
+
+  it('seeds Parallel Search off once for existing profiles without erasing later choices', async () => {
+    storageDelete(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY)
+    const service = getPackService()
+    assert.equal(service.registry.isEnabled(PARALLEL_SEARCH_PACK_ID), false)
+    assert.equal(storageGet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY), true)
+
+    await service.setEnabled(PARALLEL_SEARCH_PACK_ID, true)
+    __resetPackServiceForTests()
+    const later = getPackService()
+    assert.equal(later.registry.isEnabled(PARALLEL_SEARCH_PACK_ID), true)
   })
 
   it('never re-seeds over a pack list the user already owns', () => {
