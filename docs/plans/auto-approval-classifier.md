@@ -49,6 +49,65 @@ _shapes_ and lets them run without a prompt, sorted into tiers by blast radius.
   with. (That section owns the shell auto-run controls despite its name; there is
   no "Security" section.)
 
+### How it composes with the other gates
+
+The classifier is stage 05 of six. Its authority comes from its position: it is
+reached only once the deterministic policy has already resolved to `prompt`, so
+it can turn a prompt into a run and do nothing else.
+
+```mermaid
+flowchart TD
+  CMD[run_shell command] --> SCOPE{egress widened for another process?}
+  SCOPE -- yes --> PR1[PROMPT]
+  SCOPE -- no --> TRUST{every segment trusted or trivially safe?}
+  TRUST -- yes --> AL1[ALLOW - no prompt]
+  TRUST -- no --> POLICY[scope + destructive-pattern analysis]
+
+  POLICY --> SB{OS sandbox active?}
+  SB -- yes --> EXT{hard-external or destructive?}
+  EXT -- no --> AL2[ALLOW - runs contained]
+  EXT -- yes --> PR2[PROMPT]
+
+  SB -- no --> STRICT{model confident external AND destructive?}
+  STRICT -- yes --> DENY[DENY - thrown to agent]
+  STRICT -- no --> PR3[PROMPT - no containment available]
+
+  PR2 --> AUTO{recognised low-risk shape, within level?}
+  PR3 --> AUTO
+  AUTO -- yes --> AL3[ALLOW - no prompt]
+  AUTO -- no --> ASK[ask the user]
+
+  AL2 --> RUN[execute]
+  AL3 --> RUN
+  AL1 --> RUN
+  ASK --> RUN
+
+  RUN --> BLOCK{sandbox denied it at runtime?}
+  BLOCK -- yes --> AUTO2{auto-approval consulted again}
+  AUTO2 -- no --> ASK2[ask to retry outside]
+  AUTO2 -- yes --> OUT[run unsandboxed]
+  ASK2 --> OUT
+```
+
+The second checkpoint is not decoration. On macOS an `ambiguous` command
+auto-runs _inside_ the sandbox, fails on the denied network, and only then asks
+to retry outside — which is where most of the motivating session's prompts
+actually came from. Wiring the classifier into the up-front gate alone would
+have changed almost nothing.
+
+#### Verdict authority
+
+Only two gates can authorize, and neither consults a model.
+
+| Gate                    | Allow | Prompt | Deny | Deterministic?                     |
+| ----------------------- | :---: | :----: | :--: | ---------------------------------- |
+| network-scope overlap   |   —   |   ●    |  —   | yes                                |
+| trusted-command routing |   ●   |   —    |  —   | yes — explicit user grant          |
+| scope + harm analysis   |   ●   |   ●    |  —   | yes                                |
+| safety model            |   —   |   —    |  ●   | **no** — deny-only for that reason |
+| Guarded YOLO harm gate  |   ●   |   ●    |  ●   | yes — fails closed if absent       |
+| auto-approval (this)    |   ●   |   —    |  —   | yes — from `prompt` only           |
+
 ### Tiers
 
 | Level          | Adds                                                                                                                                       |
@@ -129,6 +188,41 @@ happens. Single-quoted text is inert.
 The inert redirect forms (`2>&1`, `>/dev/null`) are stripped before tokenizing,
 because `shell-quote` yields operator objects for them and would otherwise refuse
 `git fetch origin main 2>&1` — which is most real command lines.
+
+## Test coverage
+
+Two suites, in both directions.
+
+**Positive — the motivating session.** All 27 unique shell commands were
+extracted from the exported thread and replayed through `assessAutoApproval`.
+**20 of 27 auto-approve** at `remote-write`; the other 7 are deliberate
+exclusions:
+
+| Still prompts                   | Why                                   |
+| ------------------------------- | ------------------------------------- |
+| `npm run check` (×3 variants)   | project script — repo-controlled code |
+| `npx prettier --write …` (×2)   | ephemeral runner — unpinned package   |
+| `git stash && npm test -- …`    | `npm test` in a sibling segment       |
+| `git push … --force-with-lease` | can destroy refs on the remote        |
+
+Worth noting that the session's real commit — a multi-line message with a body
+and a `Co-Authored-By` trailer — auto-approves. The newlines sit inside the
+quoted argument, and segmentation is quote-aware, so the message is not
+shattered into unrecognised fragments.
+
+**Negative — a standing forbidden list.** `assessAutoApproval — must never
+auto-approve` enumerates ~34 capabilities and asserts each prompts **at the
+highest level**, so nothing there depends on the default being conservative:
+arbitrary execution (pipe-to-shell, interpreters, `sudo`, `nc -e`), git option
+injection, the `GIT_SSH_COMMAND` environment channel, `git config` writes,
+submodule update, `gh auth token`, `gh pr create --body-file ~/.aws/credentials`,
+`gh api -X DELETE`, `gh pr merge`/`approve`, force pushes and ref deletions,
+pushes to arbitrary URLs, a remote name that merely _looks_ configured
+(`origin.attacker.example`), history and working-tree destruction, installs,
+ephemeral runners, project scripts, and reads or writes outside the workspace.
+
+Anything on that list that starts passing is a regression in the security
+posture, not a behaviour change.
 
 ## Known limitations
 

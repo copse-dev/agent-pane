@@ -600,26 +600,37 @@ function classifyNetworkGitSubcommand(
   subcommand: string,
   args: readonly string[],
   configuredRemotes: ReadonlySet<string>,
-): AutoApprovalTier | null {
+): { tier: AutoApprovalTier } | { reason: string } {
   const isPush = subcommand === 'push'
   const partitioned = partitionArgs(
     args,
     isPush ? GIT_PUSH_FLAGS : GIT_FETCH_FLAGS,
     GIT_NETWORK_VALUE_FLAGS,
   )
-  if (!partitioned) return null
+  // Distinguished from the remote check below because these reasons are written
+  // to the durable decision log: reporting a rejected `--force-with-lease` as
+  // "does not name a configured remote" would send an auditor after the wrong
+  // thing entirely.
+  if (!partitioned) return { reason: `unrecognised or unsafe flag on git ${subcommand}` }
 
   const { positional } = partitioned
-  if (!positional.every(isPlainRefToken)) return null
+  if (!positional.every(isPlainRefToken)) {
+    return { reason: `git ${subcommand} argument is not a plain ref or remote name` }
+  }
 
   const namesConfiguredRemote = positional.some((token) => configuredRemotes.has(token))
   if (!namesConfiguredRemote) {
     // No remote named: only the implicit-upstream form is acceptable, and only in
     // a repository that actually has remotes configured.
-    if (positional.length > 0 || configuredRemotes.size === 0) return null
+    if (positional.length > 0) {
+      return { reason: `git ${subcommand} does not name a configured remote` }
+    }
+    if (configuredRemotes.size === 0) {
+      return { reason: `git ${subcommand} has no configured remote to fall back on` }
+    }
   }
 
-  return isPush ? 'remote-write' : 'read'
+  return { tier: isPush ? 'remote-write' : 'read' }
 }
 
 // ---------------------------------------------------------------------------
@@ -741,13 +752,10 @@ function classifyGitSegment(
   const { subcommand, args } = split
 
   if (GIT_NETWORK_SUBCOMMANDS.has(subcommand)) {
-    const tier = classifyNetworkGitSubcommand(subcommand, args, context.configuredRemotes)
-    return tier
-      ? { tier, reason: `git ${subcommand} against a configured remote` }
-      : {
-          tier: null,
-          reason: `git ${subcommand} does not resolve to a configured remote: ${segment}`,
-        }
+    const outcome = classifyNetworkGitSubcommand(subcommand, args, context.configuredRemotes)
+    return 'tier' in outcome
+      ? { tier: outcome.tier, reason: `git ${subcommand} against a configured remote` }
+      : { tier: null, reason: `${outcome.reason}: ${segment}` }
   }
 
   // `git remote` is flagged `external` by the scope heuristic (the pattern covers
