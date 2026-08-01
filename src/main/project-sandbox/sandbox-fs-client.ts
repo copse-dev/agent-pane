@@ -28,6 +28,29 @@ export function sandboxFsWorkerPath(): string {
 /** Passed via spawn env when the worker is launched through a shell / ASRT wrap (paths may contain spaces). */
 export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
 
+/**
+ * Report a gateway op the sandbox would not serve, naming the path and the root
+ * the worker was confined to.
+ *
+ * The filesystem counterpart of {@link recordNetworkDenial}: ASRT's own error
+ * does not say which path it refused, and the two list ops below degrade to an
+ * empty array rather than throwing — so a denied directory reaches the UI as
+ * "this folder is empty", which is indistinguishable from an actually empty
+ * folder and leaves nothing to debug. A confinement mismatch (a thread worktree
+ * outside the root the worker was given, say) is invisible without this.
+ */
+function reportGatewayDenial(
+  op: string,
+  path: string,
+  root: string | undefined,
+  detail: string,
+): void {
+  console.warn(
+    `[sandbox-fs] ${op} refused for ${JSON.stringify(path)} ` +
+      `(worker root ${JSON.stringify(root ?? getWorkspaceRoot() ?? '(none)')}): ${detail}`,
+  )
+}
+
 async function invokeWorker(
   request: Record<string, unknown>,
   root?: string,
@@ -39,7 +62,12 @@ async function invokeWorker(
     assertWorkerOk(res)
     return res
   } catch (err) {
-    if (!(err instanceof SandboxFsServerUnavailable)) throw err
+    if (!(err instanceof SandboxFsServerUnavailable)) {
+      const op = typeof request['op'] === 'string' ? request['op'] : 'fs'
+      const path = typeof request['path'] === 'string' ? request['path'] : '(no path)'
+      reportGatewayDenial(op, path, root, err instanceof Error ? err.message : String(err))
+      throw err
+    }
   }
   return invokeWorkerOneShot(request, root)
 }
@@ -140,9 +168,11 @@ export async function gatewayReaddir(absPath: string, root?: string): Promise<st
     return getActiveWorkspaceFs().readdir(absPath)
   }
   const res = await invokeWorker({ op: 'readdir', path: absPath }, root)
-  return Array.isArray(res['entries'])
-    ? res['entries'].filter((entry): entry is string => typeof entry === 'string')
-    : []
+  if (!Array.isArray(res['entries'])) {
+    reportGatewayDenial('readdir', absPath, root, 'worker returned no entries')
+    return []
+  }
+  return res['entries'].filter((entry): entry is string => typeof entry === 'string')
 }
 
 export async function gatewayListDir(
@@ -153,7 +183,10 @@ export async function gatewayListDir(
     return getActiveWorkspaceFs().readdirWithTypes(absPath)
   }
   const res = await invokeWorker({ op: 'statDir', path: absPath }, root)
-  if (!Array.isArray(res['dirents'])) return []
+  if (!Array.isArray(res['dirents'])) {
+    reportGatewayDenial('statDir', absPath, root, 'worker returned no dirents')
+    return []
+  }
   return res['dirents'].flatMap((entry) =>
     isRecord(entry) && typeof entry['name'] === 'string' && typeof entry['isDir'] === 'boolean'
       ? [{ name: entry['name'], isDir: entry['isDir'] }]
