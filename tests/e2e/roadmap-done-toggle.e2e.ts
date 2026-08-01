@@ -11,6 +11,25 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 // row hover/focus. Since #1418 every status is enabled by default, so a done
 // row stays listed (struck through, refresh icon to reopen) and hiding it is
 // the Status facet's job rather than a dedicated toolbar toggle.
+
+// The toggle sits at `opacity: 0` until `.roadmap-row:hover` (roadmap.css:177).
+// A single `moveTo()` is not enough: the list re-renders around each status
+// change, and a row replaced under a stationary pointer gets no fresh
+// `mouseover`, so the icon stays hidden and `waitForDisplayed` times out on a
+// row that is perfectly healthy. Re-hover on every poll, re-querying the row so
+// a detached handle can't pin us to stale coordinates.
+const revealDoneToggle = async () => {
+  const toggle = $('.roadmap-done-toggle')
+  await browser.waitUntil(
+    async () => {
+      await $('.roadmap-row').moveTo()
+      return await toggle.isDisplayed()
+    },
+    { timeout: 15_000, timeoutMsg: 'mark-done toggle never revealed on row hover' },
+  )
+  return toggle
+}
+
 describe('roadmap done toggle', () => {
   let workspaceRoot: string
 
@@ -51,11 +70,7 @@ describe('roadmap done toggle', () => {
     await $('.roadmap-cancel-btn').click()
     await $('.roadmap-empty').waitForDisplayed({ timeout: 10_000 })
 
-    // Hover reveals the mark-done icon (opacity 0 at rest).
-    const row = $('.roadmap-row')
-    await row.moveTo()
-    const toggle = $('.roadmap-done-toggle')
-    await toggle.waitForDisplayed({ timeout: 10_000 })
+    const toggle = await revealDoneToggle()
     assert.equal(await toggle.getAttribute('title'), 'Mark done')
     await toggle.click()
     // Every status is enabled by default, so the row stays listed once done.
@@ -103,9 +118,9 @@ describe('roadmap done toggle', () => {
     await $('.roadmap-filter-toggle').click()
 
     // The same control now reopens the item.
-    await $('.roadmap-row').moveTo()
-    assert.equal(await $('.roadmap-done-toggle').getAttribute('title'), 'Reopen (set ready)')
-    await $('.roadmap-done-toggle').click()
+    const reopen = await revealDoneToggle()
+    assert.equal(await reopen.getAttribute('title'), 'Reopen (set ready)')
+    await reopen.click()
     await browser.waitUntil(
       async () =>
         (await $('.roadmap-row').isExisting()) === true &&
