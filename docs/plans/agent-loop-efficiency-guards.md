@@ -5,7 +5,9 @@ thread `178909d1` ("Cmd+L Select Browser URL") — 43 minutes and 3.38M input to
 produce a 7-line change that did not work ([#1427](https://github.com/copse-dev/agent-pane/pull/1427),
 fixed in [#1432](https://github.com/copse-dev/agent-pane/pull/1432)).
 
-Status: **proposed.** No code landed yet.
+Status: **proposed.** No code landed yet. Fix 0 was reworked after review: the original
+"give the parent a `read_file`" options are superseded by structured explore returns, which
+keep `read_file` off the parent's tool list entirely.
 
 ## Why
 
@@ -82,76 +84,177 @@ inside a fenced code block with correct indentation, and the parent copied it ou
 The failure message compounds it — `str-replace-tool.ts:50` says _"Re-read the file and
 copy the exact snippet to replace."_ In explore mode there is no tool that can do that.
 
-### Fix 0 — give explore mode a verbatim read path
+### The bytes already exist — we discard them
 
-Terminology first, because `PARENT_DELEGATED_TOOLS` is misleadingly named: it is the list
-of tools **hidden from the parent** on the grounds that reading is the subagent's job. The
-explore subagent has its own toolset (`run-subagent.ts`) and is unaffected by anything
-here. "Un-delegating `read_file`" means the parent gets its own copy — it does not take
-`read_file` away from the subagent, and does not move reading out of the subagent.
+Before reaching for a new tool, note where the exact text goes.
 
-Options, roughly in order of preference:
+`runSubagent` returns `{ summary, session }`, and `session.messages[].toolCalls[]` records
+every call the subagent made, including its verbatim `result`
+(`packages/agent/src/run-subagent.ts:306-341`). The explore subagent reads files with
+`read_file`; those exact bytes sit in the session object.
 
-1. **Give the parent an explore-gated `read_file`.** Drop `read_file` from
-   `PARENT_DELEGATED_TOOLS`, keep the other four delegated, and require that at least one
-   `explore` has completed in the current turn before `read_file` will return content.
-   Explore stays the entry point; `read_file` becomes the narrow "now quote it exactly"
-   step, not a general browsing tool.
+Then `src/main/services/subagent-service.ts:106-108`:
 
-   The gate must live in the tool's `execute`, **not** in a varying tool list.
-   `agent-service.ts:1029-1030` states the invariant — _"The tool list is fixed for the
-   whole run"_ — and `setHookRunToolset` fingerprints it before any hook fires so every
-   `hook_run` spine record references a stable toolset (decision 6). A tool list that grows
-   mid-run breaks that. So `read_file` is always present in the explore-mode list, and
-   before the first explore it returns an instructive result rather than content:
+```ts
+const usage = session.usage ?? { inputTokens: 0, outputTokens: 0 }
+return { summary, usage }
+```
 
-   > `Call explore first to locate the relevant code. read_file returns exact text for a snippet explore has already pointed you at.`
+The session is dropped, and `explore-tool.ts:19` returns `result.summary` — the last
+assistant text. So the parent receives the model's _retelling_ of bytes the harness held
+exactly, one layer down, in the same process, microseconds earlier. That is why seven
+subagent replies gave seven different line ranges for one function: each was
+re-describing something it had already read verbatim.
 
-   A tool result, not an error — the model self-corrects on the next step instead of
-   burning the turn.
+The fix is therefore not "give the parent a read tool". It is "stop throwing the reads
+away".
 
-   Run-scoped "has explore completed" state travels the same way the explore runner's own
-   context does: `AsyncLocalStorage`, per `explore-subagent-runner.ts:34`, which chose it
-   over a module-global slot precisely because parallel explores would otherwise cross
-   wires.
+### Fix 0 — explore returns structured results
 
-   Prompt text follows the gate: `EXPLORE_MODE_VARS.tools` describes `read_file` as
-   `Read exact file text for a path explore has already surfaced — required before
-str_replace`, and `understand` / `toolChoice` keep explore as the way to find and
-   understand.
+`explore` returns one document with two halves, and `read_file` stays hidden from the
+parent entirely:
 
-   Cost: some context regression in explore mode, bounded by the gate. Measurable —
-   `maxInputTokens` already exists as a scenario guard in
-   `scripts/analyze-thread-jsonl.mts`.
+- **Freeform judgement** — the prose summary as today. What the code does, where the seams
+  are, what to change. Model-authored.
+- **Deterministic candidates** — harness-extracted, model-untouched. For each `read_file`
+  the subagent performed: path, line range, and the verbatim span. Optionally
+  `search_code` / `search_codebase` hits with their exact matched lines, labelled as a
+  different provenance so index hits are never presented as quoted source.
 
-2. **Add a verbatim mode to `explore`.** An `exact: true` / `quote_lines` parameter that
-   bypasses the summarising subagent and returns raw text for a path and line range. Keeps
-   one tool in the prompt, but overloads a tool whose whole identity is "returns a summary",
-   and gives the model a decision it will get wrong.
+Precision on "structured": `ToolExecuteResult` is
+`string | { result: string; resultFormat?: 'markdown'; … }`
+(`packages/agent/src/wire-types.ts:86-98`). The model always receives text, so this means a
+structured **document** — a summary section plus fenced excerpts tagged with path and line
+range — not a typed object over the wire. That is sufficient: `str_replace` needs a fenced
+span to copy, and the header can state that the excerpt is verbatim rather than
+paraphrased.
 
-3. **Make `str_replace` tolerant of approximate input** — whitespace-insensitive matching,
-   or accept a line range plus a fuzzy anchor. Reduces the blast radius but does not fix
-   the wrong line numbers, and silent fuzzy matching on edits is its own hazard.
+Two properties fall out for free:
 
-Recommend (1), with (3) as a later independent hardening. Whichever we pick, the
-`str_replace` failure message must name a tool the agent actually has.
+- **`read_file` never appears on the parent's tool list.** Explore is not merely the
+  recommended first step, it is the only path to file content. No gate flag, no run-scoped
+  state, no refusal message — the ordering is a consequence of where the data lives.
+- **The duplicate guard gets a firmer signal.** Two explores returning the same excerpt set
+  are duplicates regardless of how differently the queries were worded — see Fix 2, which
+  otherwise has to reason about free text alone.
 
-The gate is what makes (1) safe. Without it the change is prompt guidance only — the model
-may skip explore whenever it judges reading to be faster, which is exactly the context
-regression that makes this option costly. With it, explore-first is enforced by the tool
-rather than requested in prose, so the ordering does not depend on model strength. That is
-the property the motivating run needed most.
+**Scope control.** The excerpt half must be bounded or it reintroduces the context cost
+explore mode exists to avoid. Cap total excerpt bytes against the same budget
+`readFileLimitsForSubagent` already computes (`subagent-service.ts:85`), prefer spans the
+summary actually cites, and drop the rest with an explicit note rather than silently.
 
-**Tests.** Pin the explore-mode tool list in the existing prompt-ablation tests
-(`src/main/services/agent-prompt-ablation.test.ts`). `parentTools` unit test: `read_file`
-present in both modes, the other four still delegated in explore mode. Gate tests:
-`read_file` before any explore returns the steer and no content; after one explore it
-returns content; the gate is per-turn, not per-process, and two concurrent runs do not see
-each other's state. Eval scenario: a small edit in explore mode reaches a successful
-`str_replace` with `maxExplore: 3`.
+**Tests.** `subagent-service` unit test: a subagent that read two files yields two excerpts
+with correct paths and ranges. Excerpt bytes are byte-identical to the file on disk (the
+property the whole plan turns on). Budget test: excerpts over the cap are dropped with a
+note, not truncated mid-span. Eval scenario: a small edit in explore mode reaches a
+successful `str_replace` with `maxExplore: 3` and no `read_file` on the parent.
 
-**Effort.** Small diff, moderate blast radius — it changes what every explore-mode run is
-offered. Land behind the eval harness, not on vibes.
+**Effort.** Moderate, and mostly plumbing that already exists — the data is collected, the
+change is to stop discarding it and to render it. Blast radius is smaller than any option
+that alters the parent's tool list.
+
+### Fix 0b — route parent reads through the child's session (follow-on)
+
+Once the session is retained, a parent-side read request can be served from it rather than
+from disk. Two readings of "route through the child" behave very differently and only one
+is wanted:
+
+- **Route to the child's session state** — a lookup against spans exploration already
+  pulled. No LLM call, deterministic, fast. This is the one.
+- **Route to the child agent** — resume an LLM turn to fetch. Reintroduces summarisation
+  and non-determinism, i.e. the original bug.
+
+Value beyond the excerpts in Fix 0: widening context around a span already loaded, or
+reaching a different part of a file exploration opened but only partly quoted — the
+`explore_more` shape, as a read rather than a re-exploration.
+
+When the parent asks for a path exploration never visited, the answer is _"not explored
+yet — explore that path first"_, not a silent disk fallback. A fallback would quietly
+restore general browsing and lose the enforcement property Fix 0 buys.
+
+Scope note: prior `read_file` results are exact and safe to quote. Index hits from
+`search_codebase` / `semantic_search` (`src/main/services/search/`) are a different
+provenance and must be labelled as such.
+
+### Rejected and deferred alternatives
+
+- **Give the parent an explore-gated `read_file`.** Drop `read_file` from
+  `PARENT_DELEGATED_TOOLS` and refuse to serve content until an explore has completed.
+  Workable, and cache-safe because the tool list never changes, but strictly worse than
+  Fix 0: it adds a tool, adds run-scoped gate state, and still hands the parent a general
+  read primitive. Superseded — keep only as a fallback if structured returns prove
+  impractical.
+- **Reveal `read_file` dynamically when a subagent completes.** Feasible — `tools` is one
+  array dereferenced fresh at each `provider.stream(messages, tools, signal)`
+  (`packages/agent/src/run-agent-loop.ts:540`, `:1088`), and _"The tool list is fixed for
+  the whole run"_ (`agent-service.ts:1029-1030`) is a design decision in a comment, not an
+  enforced invariant. `setHookRunToolset` fingerprints once, which a mid-run change would
+  make stale, but that is fixable by fingerprinting the superset. See "Tool-list churn and
+  prompt caching" below for the real cost. Unnecessary if Fix 0 lands.
+- **Add a verbatim mode to `explore`.** An `exact: true` / `quote_lines` parameter that
+  bypasses the summarising subagent. Overloads a tool whose identity is "returns a
+  summary" and gives the model a decision it will get wrong — Fix 0 delivers the same
+  content without a mode flag.
+- **Make `str_replace` tolerant of approximate input** — whitespace-insensitive matching,
+  or a line range plus a fuzzy anchor. Does not fix the wrong line numbers, and silent
+  fuzzy matching on edits is its own hazard. Worth revisiting later as independent
+  hardening, not as the answer here.
+
+Whichever path is taken, the `str_replace` failure message (`str-replace-tool.ts:50`) must
+name something the agent can actually do. Under Fix 0 that is _"re-run explore for this
+file and copy the verbatim excerpt"_, not _"re-read the file"_.
+
+### Tool-list churn and prompt caching
+
+Recorded because it decides how expensive any dynamic-tool design is, and the first
+estimate here was wrong.
+
+`packages/llm/src/anthropic-provider.ts:57-64` pins the tool cache breakpoint to the end of
+the array:
+
+```ts
+// The last tool gets a cache breakpoint so the (large, stable) tool
+// schemas are cached instead of re-sent every loop iteration (#582).
+...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
+```
+
+Because the breakpoint tracks `tools.length - 1`, adding a tool moves it and the cached
+entry cannot be reused — so mid-run injection currently costs the whole prefix. That is an
+artefact of the pinning, not a property of caching. Pin the breakpoint to the last
+**stable** tool and sort dynamic tools after it, and the stable-core prefix stays
+byte-identical and hits on every step whether or not the dynamic tool is present;
+revealing it then costs one tool schema plus the system block.
+
+The same file already applies this exact reordering one layer up (`:28-36`): volatile
+mid-conversation system messages are converted **last** with the breakpoint placed
+**before** them, so the entry a request writes stays a byte-identical prefix of the next
+turn's request (#1286). Anthropic allows four breakpoints, so there is room.
+
+For OpenAI / OpenRouter automatic prefix caching (`promptCacheKey`,
+`packages/llm/src/create-provider.ts:38`) the principle holds: appending preserves the
+common prefix up to the insertion point. System and messages caching is lost, but messages
+change every step anyway.
+
+Conclusion: tool-list churn is cheap _if_ the breakpoint moves first, and expensive as the
+code stands. Worth fixing on its own merits regardless of Fix 0, since it also makes the
+tool list safe to vary for pack toggles and readonly mode.
+
+### Subagent streaming (answered, no work proposed)
+
+Subagents cannot stream into the **parent model's** context. A tool result is a single
+message inserted after the assistant's `tool_call`; the wire format has no incremental tool
+result, and the parent is blocked on `await executeTool` regardless, so it could not act on
+partial output earlier.
+
+Streaming to the **UI** already works — `onSubagentChunk` emits `subagent_text`,
+`subagent_reasoning`, `subagent_tool_call`, `subagent_tool_result` as they occur
+(`run-subagent.ts:288-341`).
+
+Where a live channel would earn its keep is **supervision**, not context: watching a
+subagent circle and cutting it off mid-flight, which is a control channel rather than a
+data stream and overlaps the existing reasoning-circle detector. For the parent to pull
+more after seeing a summary, the shape is a follow-up call against a retained session
+(Fix 0b), not streaming.
 
 ---
 
@@ -179,10 +282,29 @@ Note this set is also now partly vestigial in explore mode — four of its five 
 delegated away from the parent. It is really "context-gathering tools", and should be
 whichever tools the _current_ mode actually offers.
 
-**Change.** Add `'explore'` (and `'semantic_search'`, likewise missing). Rename to
-`CONTEXT_GATHERING_TOOL_NAMES` if the vestigial framing is worth fixing at the same time.
+**Blocker: two different constants share this name.** Rename before touching either.
+
+| file                                        | type         | meaning                                           |
+| ------------------------------------------- | ------------ | ------------------------------------------------- |
+| `packages/agent/src/agent-loop-guards.ts:5` | `Set`        | tool calls that count as duplicates               |
+| `packages/agent/src/run-subagent.ts:26`     | `readonly[]` | tools the explore subagent is **allowed** to call |
+
+`subagent-service.ts:41` builds the subagent's toolset from the second, and `:51` enforces
+it as a hard allow-list (`Tool not allowed in explore subagent`). So "add `'explore'` to
+`EXPLORE_TOOL_NAMES`" is ambiguous, and applying it to the wrong constant grants the
+explore subagent the `explore` tool — recursive subagent spawning, a live capability
+change rather than a no-op.
+
+Rename first: `DUPLICATE_GUARDED_TOOL_NAMES` for the guard set,
+`SUBAGENT_ALLOWED_TOOL_NAMES` for the allow-list. Mechanical, and it makes the rest of this
+plan safe to hand to anyone.
+
+**Change.** After the rename: add `'explore'` to the guard set (and `'semantic_search'`,
+likewise missing). Do not add `'explore'` to the subagent allow-list.
 
 **Tests.** `agent-loop-guards` unit test: two identical `explore` calls, second is flagged.
+Guard against regression of the collision: assert the subagent allow-list does **not**
+contain `explore` or `investigate_ci`, so a future edit cannot silently enable recursion.
 
 **Effort.** One line plus a test. Ship first.
 
@@ -369,16 +491,26 @@ heuristic design plus fixtures.
 
 ## Sequencing
 
-1. **Fixes 1 + 2** — smallest diff, largest effect, entirely inside `agent-loop-guards.ts`
-   plus tests. No behaviour change beyond "the guard that was supposed to fire, fires".
-2. **Fix 0** — the root cause, but it changes every explore-mode run's tool set. Land it
-   behind an eval scenario with a `maxInputTokens` guard so the context cost is measured
-   rather than assumed.
-3. **Fix 3** — trivial once Fix 0 settles which tool to name.
+0. **Rename the two `EXPLORE_TOOL_NAMES` constants.** Mechanical, no behaviour change, and
+   a prerequisite for Fix 1 being safe to apply. Do this first regardless of what else
+   gets scheduled.
+1. **Fixes 1 + 2** — smallest diff, largest effect, entirely inside the guard module plus
+   tests. No behaviour change beyond "the guard that was supposed to fire, fires".
+2. **Fix 0** — the root cause. Retain the subagent session and render structured explore
+   results. Land behind an eval scenario with a `maxInputTokens` guard so the excerpt
+   budget is measured rather than assumed. Does not touch the parent's tool list, so it
+   carries less risk than the superseded gated-`read_file` option.
+3. **Fix 3** — trivial once Fix 0 settles what the `str_replace` failure message should
+   tell the model to do.
 4. **Fixes 4 + 5** — land together; check-resolution is only trustworthy if checks are
    actually executed.
-5. **Fix 7** — doctrine rule and fixtures, independent of the loop work.
-6. **Fix 6** — separate concern; split into its own issue if that schedules better.
+5. **Fix 0b** — routed reads against the retained session. Only worth building once Fix 0
+   is in use and it is clear whether excerpts alone suffice.
+6. **Tool-list cache breakpoint** — independent of everything else, worth doing on its own
+   merits since it also makes the tool list safe to vary for pack toggles and readonly
+   mode.
+7. **Fix 7** — doctrine rule and fixtures, independent of the loop work.
+8. **Fix 6** — separate concern; split into its own issue if that schedules better.
 
 ## Out of scope
 
