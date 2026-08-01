@@ -59,13 +59,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git jq sudo gnupg \
       ripgrep \
-      # ASRT's Linux backend. The app starts its project sandbox wherever a
-      # backend exists (bubblewrap here, sandbox-exec on macOS), and executable
-      # pack behavior *requires* an active sandbox — it fails closed rather than
-      # running pack code unconfined. Without bwrap the pack e2e cannot pass on
-      # this image, and project subprocesses run unsandboxed. bwrap also needs
-      # usable unprivileged user namespaces at runtime; see docker-compose.yml.
-      bubblewrap \
+      # ASRT's Linux backend, which needs BOTH of these. The app starts its
+      # project sandbox wherever a backend exists (here, sandbox-exec on macOS),
+      # and executable pack behavior *requires* an active sandbox — it fails
+      # closed rather than running pack code unconfined. Miss either package and
+      # `SandboxManager.initialize` throws, the app degrades to unsandboxed, and
+      # packs stay unavailable.
+      #
+      # bubblewrap builds the confinement; it also needs usable unprivileged
+      # user namespaces at runtime (see docker-compose.yml).
+      #
+      # socat is not optional and is easy to miss: ASRT denies network by
+      # default and routes everything through proxies reached over Unix domain
+      # sockets bind-mounted into the sandbox, shelling out to socat to bridge
+      # them. Without it init fails with "Sandbox dependencies not available:
+      # socat not installed" even when bwrap works perfectly.
+      bubblewrap socat \
       build-essential python3 python3-setuptools \
       xvfb \
       fonts-liberation \
