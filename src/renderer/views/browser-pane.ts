@@ -301,13 +301,6 @@ export function mountBrowserPane(
       navigateTab(tab, tab.urlInput.value)
     }
     tab.urlInput.addEventListener('keydown', (e) => {
-      // Cmd/Ctrl+L: select URL bar text (standard browser shortcut)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
-        e.preventDefault()
-        tab.urlInput.select()
-        return
-      }
-      // Enter: submit navigation
       if (e.key === 'Enter') {
         e.preventDefault()
         submitUrl()
