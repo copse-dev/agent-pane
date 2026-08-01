@@ -257,9 +257,27 @@ thread directories.
 
 ## Export
 
-`Export` (`⇩`) writes a single self-contained `.jsonl`
-([`export-thread.ts`](../src/renderer/export-thread.ts), `exportVersion: 5`): a
-`thread` header line then one `message` line per message, using the **same field
-names** as the spine but **inlining** the values the spine stores as refs (prose,
-tool results, full nested subagents) so the export is one portable file.
+Two exports sit side by side in the footer overflow menu
+([`export-thread.ts`](../src/renderer/export-thread.ts)); both name their
+download `<title-slug>-<YYYY-MM-DD>`.
+
+- **`Export conversation (JSONL)`** writes a single self-contained `.jsonl`
+  (`exportVersion: 5`): a `thread` header line then one `message` line per
+  message, using the **same field names** as the spine but **inlining** the
+  values the spine stores as refs (prose, tool results, full nested subagents)
+  so the export is one portable file. Built in the renderer from state it
+  already holds.
+- **`Export thread folder (ZIP)`** writes the thread's whole store directory,
+  verbatim, under a `<threadId>/` folder inside the archive — spine, `meta.json`,
+  OKF prose, blobs, plans, the `agent-history.json` sidecar and nested
+  subagent directories. The directory lives in the chat store, so the main
+  process assembles it ([`thread-archive.ts`](../src/main/services/thread-archive.ts)
+  over the `threads:exportArchive` IPC, zipped by the dependency-free writer in
+  [`zip-archive.ts`](../src/main/services/storage/zip-archive.ts)). The snapshot
+  runs on the project's write queue so it cannot catch a save mid-flight, and
+  refuses threads over `MAX_THREAD_DIRECTORY_BYTES` (512 MiB) rather than
+  loading unbounded blob data into memory. Symlinks are skipped, never followed.
+
+The JSONL stays the format for sharing a transcript; the zip is the
+full-fidelity copy for debugging or moving a thread between machines.
 ```

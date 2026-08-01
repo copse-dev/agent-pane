@@ -631,7 +631,13 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Copy thread ID', 'Export conversation (JSONL)', 'Share trace'],
+      [
+        'Enable Guarded YOLO',
+        'Copy thread ID',
+        'Export conversation (JSONL)',
+        'Export thread folder (ZIP)',
+        'Share trace',
+      ],
     )
 
     store.setState({ developerMode: false })

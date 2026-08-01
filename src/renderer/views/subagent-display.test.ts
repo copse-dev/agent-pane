@@ -313,6 +313,12 @@ describe('subagent display (component)', () => {
       ]),
     )
 
+    // The inner tool card is collapsed by default — its body (and so the
+    // result text annotateFileReferences links) is deferred until it opens.
+    host
+      .querySelector('.subagent-inner-tool .tool-group-item-header')
+      ?.dispatchEvent(new MouseEvent('click'))
+
     // Allow async annotateFileReferences to complete
     await new Promise((resolve) => setTimeout(resolve, 0))
 

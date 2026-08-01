@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
@@ -1035,6 +1035,55 @@ function agentHistoryPath(projectId: string, threadId: string): string {
  */
 export function threadBlobsDir(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), 'blobs')
+}
+
+/** Ceiling on a thread-directory snapshot, so an export cannot exhaust memory. */
+export const MAX_THREAD_DIRECTORY_BYTES = 512 * 1024 * 1024
+
+export interface ThreadDirectoryFile {
+  /** Path relative to the thread directory, POSIX-separated. */
+  path: string
+  data: Uint8Array
+  modifiedAt: Date
+}
+
+/**
+ * Snapshot every file in a thread's directory — meta, spine, OKF prose, blobs,
+ * plans and nested subagents, exactly as they sit on disk. Backs the "export
+ * the whole thread folder" download, which is a superset of the portable JSONL
+ * export. Runs on the project's write queue so the snapshot cannot catch a save
+ * mid-flight, and refuses anything over `MAX_THREAD_DIRECTORY_BYTES` rather
+ * than pulling an unbounded amount of blob data into memory.
+ */
+export function readThreadDirectory(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadDirectoryFile[]> {
+  return runSerialized(queueKey(projectId), async () => {
+    const dir = threadDir(projectId, threadId)
+    if (!existsSync(join(dir, META_FILE))) {
+      throw new Error(`No stored thread directory for ${threadId}`)
+    }
+    const dirents = await readdir(dir, { withFileTypes: true, recursive: true })
+    // `isFile()` reflects lstat, so a symlink is skipped rather than followed
+    // out of the store.
+    const paths = dirents
+      .filter((dirent) => dirent.isFile())
+      .map((dirent) => relative(dir, join(dirent.parentPath, dirent.name)).split(sep).join('/'))
+      .sort()
+    const files: ThreadDirectoryFile[] = []
+    let total = 0
+    for (const path of paths) {
+      const full = join(dir, path)
+      const stats = await stat(full)
+      total += stats.size
+      if (total > MAX_THREAD_DIRECTORY_BYTES) {
+        throw new Error('This thread is too large to export as an archive')
+      }
+      files.push({ path, data: await readFile(full), modifiedAt: stats.mtime })
+    }
+    return files
+  })
 }
 
 /** Load provider history for a thread. Missing/corrupt/future-version → `[]`. */
