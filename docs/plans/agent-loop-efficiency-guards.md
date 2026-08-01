@@ -1,6 +1,11 @@
 # Agent loop efficiency guards
 
-Tracking: [#1433](https://github.com/copse-dev/agent-pane/issues/1433). Motivating run:
+Tracking: [#1433](https://github.com/copse-dev/agent-pane/issues/1433). Items that do not
+share code with the loop guards are split out: sandbox affordances to
+[#1436](https://github.com/copse-dev/agent-pane/issues/1436), the doctrine rule to
+[#1437](https://github.com/copse-dev/agent-pane/issues/1437), the `read_skill` errors to
+[#1438](https://github.com/copse-dev/agent-pane/issues/1438), and the tool cache breakpoint
+to [#1286](https://github.com/copse-dev/agent-pane/issues/1286). Motivating run:
 thread `178909d1` ("Cmd+L Select Browser URL") — 43 minutes and 3.38M input tokens to
 produce a 7-line change that did not work ([#1427](https://github.com/copse-dev/agent-pane/pull/1427),
 fixed in [#1432](https://github.com/copse-dev/agent-pane/pull/1432)).
@@ -441,6 +446,8 @@ executable, gated behind the same approval path as any other shell command.
 
 ## Fix 6 — sandbox affordances are rediscovered by trial and error, and misreported
 
+Tracked separately at [#1436](https://github.com/copse-dev/agent-pane/issues/1436).
+
 **Problem.** Three denials in one run, each surfaced as a hard failure:
 
 - `git fetch origin main` → `CONNECT tunnel failed, response 403`. The agent concluded the
@@ -465,6 +472,8 @@ scheduling easier.
 ---
 
 ## Fix 7 — a UI change was declared done without the app ever being launched
+
+Tracked separately at [#1437](https://github.com/copse-dev/agent-pane/issues/1437).
 
 **Problem.** The shipped handler only fired when the address bar already had focus — the
 state where the shortcut is pointless. With the page focused the keystroke goes to the
@@ -506,11 +515,15 @@ heuristic design plus fixtures.
    actually executed.
 5. **Fix 0b** — routed reads against the retained session. Only worth building once Fix 0
    is in use and it is clear whether excerpts alone suffice.
-6. **Tool-list cache breakpoint** — independent of everything else, worth doing on its own
-   merits since it also makes the tool list safe to vary for pack toggles and readonly
-   mode.
-7. **Fix 7** — doctrine rule and fixtures, independent of the loop work.
-8. **Fix 6** — separate concern; split into its own issue if that schedules better.
+6. **Tool-list cache breakpoint** ([#1286](https://github.com/copse-dev/agent-pane/issues/1286))
+   — independent of everything else, worth doing on its own merits since it also makes the
+   tool list safe to vary for pack toggles and readonly mode. Worth doing early: it changes
+   the cost of any design that varies the tool list, including ones rejected above on
+   exactly that cost.
+7. **Fix 7** ([#1437](https://github.com/copse-dev/agent-pane/issues/1437)) — doctrine rule
+   and fixtures, independent of the loop work.
+8. **Fix 6** ([#1436](https://github.com/copse-dev/agent-pane/issues/1436)) — separate
+   concern, split out.
 
 ## Out of scope
 
@@ -518,4 +531,6 @@ heuristic design plus fixtures.
   explore mode for every model and should be fixed rather than out-run.
 - Prompt-engineering advice to users. Every item above is harness-side by construction.
 - The `read_skill` errors in this run (2 of 4 calls failed: unknown skill `pstack`, missing
-  `references/patterns.md`). Real, but unrelated to the loop, and low impact here.
+  `references/patterns.md`). Real, but unrelated to the loop, and low impact here — filed
+  separately as [#1438](https://github.com/copse-dev/agent-pane/issues/1438) so they
+  survive this plan closing.
