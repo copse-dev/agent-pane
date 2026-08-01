@@ -645,12 +645,6 @@ export async function runAgent(
     setActiveRunThread(threadId)
     beginHookRunRecording(threadId)
     try {
-      // Startup reconciles selected pack sources without awaiting the result,
-      // so a turn submitted moments after launch can reach this guard while the
-      // pack's runtime is still being discovered and spawned. Settle first —
-      // otherwise a perfectly healthy pack is reported as disabled purely
-      // because the user was quick.
-      await getPackService().whenPackSourcesSettled()
       const packs = getDefaultPackRegistry()
       const runtime = getPackToolRuntimeController()
       if (!packs.isEnabled(packModel.packId)) {
