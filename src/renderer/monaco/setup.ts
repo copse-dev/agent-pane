@@ -120,12 +120,39 @@ function loadMonacoBundle(): Promise<typeof Monaco> {
 
 let monacoPromise: Promise<typeof Monaco> | undefined
 
+/**
+ * Turn off the TypeScript/JavaScript language service's validation.
+ *
+ * Copse uses Monaco purely as a read-only diff/file viewer — it never offers
+ * type-checking or IntelliSense. Left on, the TS worker builds a type-checking
+ * program over every `.ts`/`.js` model, including the throwaway diff models the
+ * Changes/PR panes create and dispose per file selection. When a semantic-
+ * diagnostics pass lands on a model that the next selection already disposed,
+ * the TS compiler throws its internal `Could not find source file: '<uri>'`,
+ * which escapes as an unhandledrejection toast. Disabling both validations
+ * stops the worker from ever computing diagnostics, removing the whole class.
+ */
+function configureMonacoLanguageDefaults(monaco: typeof Monaco): void {
+  for (const defaults of [
+    monaco.typescript.typescriptDefaults,
+    monaco.typescript.javascriptDefaults,
+  ]) {
+    defaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+      noSuggestionDiagnostics: true,
+    })
+    defaults.setEagerModelSync(false)
+  }
+}
+
 // Lazily load Monaco and wire its worker environment. Memoised so the bundle is
 // injected and configured exactly once however many panes ask for it.
 export function loadMonaco(): Promise<typeof Monaco> {
   if (monacoPromise) return monacoPromise
   monacoPromise = loadMonacoBundle().then(async (monaco) => {
     configureMonacoFileRoot()
+    configureMonacoLanguageDefaults(monaco)
     // Monaco calls getWorker for language services too; each label needs its own
     // ESM worker or requests such as TypeScript diagnostics hit the editor worker.
     window.MonacoEnvironment = {

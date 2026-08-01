@@ -585,6 +585,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('menu:showBrowser', listener)
       }
     },
+    onFocusBrowserUrlBar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:focusBrowserUrlBar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:focusBrowserUrlBar', listener)
+      }
+    },
     onKeyboardShortcuts: (handler: () => void) => {
       const listener = (): void => {
         handler()

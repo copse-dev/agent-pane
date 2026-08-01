@@ -285,6 +285,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       onShowTerminal: subscribe,
       onShowChanges: subscribe,
       onShowBrowser: subscribe,
+      onFocusBrowserUrlBar: subscribe,
       onKeyboardShortcuts: subscribe,
       onUiScaleZoomIn: subscribe,
       onUiScaleZoomOut: subscribe,
