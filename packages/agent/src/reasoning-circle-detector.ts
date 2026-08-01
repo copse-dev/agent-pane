@@ -7,6 +7,7 @@ export type ReasoningCircleSignal =
   | 'repeated_heading'
   | 'repeated_plan'
   | 'runaway_list'
+  | 'repeated_turn'
 
 export interface ReasoningCircleDetectorOptions {
   /** Exact normalized prose blocks of at least this size may count as repeats. */
@@ -23,6 +24,14 @@ export interface ReasoningCircleDetectorOptions {
   minRepeatedTailChars: number
   /** Largest verbatim unit considered when testing the tail for a repeating cycle. */
   maxRepeatedTailChars: number
+  /**
+   * Smallest whole-turn text considered when comparing turns for an exact
+   * cross-turn repeat. Lower than the block/sentence minimums: two entire,
+   * separately-generated turns matching by chance is far less likely than a
+   * phrase recurring inside one turn's prose, so a short exact match is still
+   * a strong signal.
+   */
+  minRepeatedTurnChars: number
 }
 
 export const DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS: ReasoningCircleDetectorOptions = {
@@ -33,6 +42,7 @@ export const DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS: ReasoningCircleDetectorO
   maxListItems: 100,
   minRepeatedTailChars: 40,
   maxRepeatedTailChars: 2_000,
+  minRepeatedTurnChars: 24,
 }
 
 const SELF_REPORTED_CIRCLE_PATTERNS: readonly RegExp[] = [
@@ -169,6 +179,48 @@ export function detectReasoningCircle(
   if (repeatedPlan(listItems, options)) signals.push('repeated_plan')
   if (listItems.length >= options.maxListItems) signals.push('runaway_list')
   return signals
+}
+
+/**
+ * The subset of {@link detectReasoningCircle}'s signals safe to apply to plain
+ * visible output, not just reasoning. `repeated_block` and `repeated_sentence`
+ * require a verbatim paragraph or long sentence recurring several times,
+ * which prose, code, and formatted answers essentially never do by
+ * coincidence. Deliberately excluded: `repeated_tail` flags any run of a
+ * short repeating motif (indentation, separators, list markers), which is
+ * routine in legitimate code and formatted output and would misfire
+ * constantly outside prose; `self_reported_circle`, headings, and plans are
+ * reasoning-specific framing a finished answer would not use to describe
+ * itself.
+ */
+export function detectTextRepeatCircle(
+  text: string,
+  options: ReasoningCircleDetectorOptions = DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS,
+): ReasoningCircleSignal[] {
+  if (!text.trim()) return []
+  const signals: ReasoningCircleSignal[] = []
+  if (repeatedBlock(text, options)) signals.push('repeated_block')
+  if (repeatedSentence(text, options)) signals.push('repeated_sentence')
+  return signals
+}
+
+/**
+ * Detect the same short output recurring verbatim across separate LLM calls.
+ * Each call's own text may be far below `minRepeatedBlockChars` /
+ * `minRepeatedSentenceChars`, so the within-text checks above never see it —
+ * the caller is expected to carry `turns` forward across calls (unlike the
+ * per-call accumulators `detectReasoningCircle` is normally fed with).
+ * Compares whole turns exactly rather than splitting into blocks/sentences,
+ * so a much smaller minimum length is still a safe, strong signal.
+ */
+export function detectCrossTurnCircle(
+  turns: readonly string[],
+  options: ReasoningCircleDetectorOptions = DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS,
+): ReasoningCircleSignal[] {
+  const normalizedTurns = turns
+    .map(normalized)
+    .filter((turn) => turn.length >= options.minRepeatedTurnChars)
+  return repeatedValue(normalizedTurns, options.repeatLimit) ? ['repeated_turn'] : []
 }
 
 export interface ReasoningCheckpointPolicy {
