@@ -72,7 +72,27 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       '@copse/plan-usage': resolve('./packages/plan-usage/src'),
     },
     // Unit tests cover the directive parser, so they always build with it enabled.
-    define: { __COPSE_TEST_DIRECTIVES__: 'true' },
+    //
+    // `import.meta.url` is the CJS-bundling escape hatch. The output format is
+    // `cjs`, where esbuild has no `import.meta` to hand out: it synthesises an
+    // empty object and warns, so any bundled ESM dependency that reads
+    // `import.meta.url` gets `undefined`. That is only a latent papercut until a
+    // dependency does it at module scope — `@anthropic-ai/sandbox-runtime@0.0.67`
+    // added `export const VENDORED_SRT_WIN_EXE = path.join(repoRoot(), …)`, whose
+    // `repoRoot()` calls `fileURLToPath(import.meta.url)` while the module is
+    // still evaluating. `fileURLToPath(undefined)` throws ERR_INVALID_ARG_TYPE,
+    // which killed all 131 test files that transitively import the sandbox
+    // runtime before a single assertion ran. Pointing `import.meta.url` at the
+    // bundle's own path keeps such module-scope reads working (the value is the
+    // dist-test bundle rather than the dependency's own file — fine for tests,
+    // which never consume these paths, and the production build in build.mts
+    // keeps the sandbox runtime `external` so it resolves for real there).
+    define: { __COPSE_TEST_DIRECTIVES__: 'true', 'import.meta.url': '__copseImportMetaUrl' },
+    // esbuild only substitutes a `define` value that is a JSON literal or a bare
+    // identifier, so the expression lives here and `define` points at its name.
+    banner: {
+      js: "const __copseImportMetaUrl = require('node:url').pathToFileURL(__filename).href;",
+    },
     plugins: [
       {
         name: 'main-services-test-shims',
