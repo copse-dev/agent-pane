@@ -256,6 +256,20 @@ export interface PackService {
   setSetting(packId: string, key: string, value: unknown): Promise<void>
   /** Reconcile explicitly selected pack sources into the registry. */
   refreshPackSources(): Promise<void>
+  /**
+   * Resolve once no source reconciliation is in flight.
+   *
+   * Startup kicks `refreshPackSources()` off without awaiting it
+   * (`register-handlers.ts`), so the window is interactive well before a
+   * selected pack's runtime has been discovered and spawned. Anything that
+   * reads pack enablement to decide whether to fail a user's request has to
+   * settle first, or it races startup and rejects a pack that is merely late.
+   *
+   * Never rejects: a failed reconciliation is already logged and leaves the
+   * registry authoritative (the pack stays disabled), which callers then read
+   * as usual.
+   */
+  whenPackSourcesSettled(): Promise<void>
   /** Persist and discover one directory selected through the host-owned native dialog. */
   addPackSource(sourcePath: string): Promise<void>
 }
@@ -273,7 +287,21 @@ export function createPackService(registry: PackRegistry): PackService {
     if (registry.has(id)) registry.disable(id)
   }
 
-  async function refreshPackSources(): Promise<void> {
+  // The reconciliation currently in flight, so readers can settle behind it
+  // rather than racing an unawaited startup call. Cleared when it finishes, and
+  // replaced wholesale by a later refresh (each one reconciles from scratch, so
+  // waiting on the newest is always sufficient).
+  let pendingSourceRefresh: Promise<void> | null = null
+
+  function trackRefreshPackSources(): Promise<void> {
+    const run = reconcilePackSources().finally(() => {
+      if (pendingSourceRefresh === run) pendingSourceRefresh = null
+    })
+    pendingSourceRefresh = run
+    return run
+  }
+
+  async function reconcilePackSources(): Promise<void> {
     const sources = parseStringList(storageGet(PACK_SOURCES_KEY))
     const discovered: PackToolSourceCandidate[] = []
     for (const source of sources) {
@@ -407,7 +435,12 @@ export function createPackService(registry: PackRegistry): PackService {
         return current
       })
     },
-    refreshPackSources,
+    refreshPackSources: trackRefreshPackSources,
+    async whenPackSourcesSettled(): Promise<void> {
+      // Swallow: a failed reconciliation already logged, and left the registry
+      // authoritative. Callers read enablement next, not this promise's result.
+      await pendingSourceRefresh?.catch(() => undefined)
+    },
     async addPackSource(sourcePath: string): Promise<void> {
       const candidate = await discoverPackToolSource(sourcePath)
       if (
@@ -426,7 +459,7 @@ export function createPackService(registry: PackRegistry): PackService {
         ids.delete(candidate.manifest.name)
         return [...ids].sort()
       })
-      await refreshPackSources()
+      await trackRefreshPackSources()
     },
   }
 }
