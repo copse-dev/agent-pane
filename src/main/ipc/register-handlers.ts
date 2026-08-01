@@ -81,6 +81,7 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
   describeWorkspaceVideo,
   storeVideoAttachment,
@@ -1267,6 +1268,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return forkThreadHistory(pid, sourceId, targetId, messageId)
     },
   )
+  // The whole thread directory, zipped — the archive counterpart to the
+  // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
+  // download and saves it, exactly as it does for the `.jsonl`.
+  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return buildThreadArchive(pid, tid)
+  })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, q] = parseIpcArgs(z.tuple([zProjectId, z.string().max(512).optional()]), [

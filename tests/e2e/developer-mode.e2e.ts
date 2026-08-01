@@ -50,6 +50,7 @@ describe('Developer mode surfaces', function () {
       'Enable Guarded YOLO',
       'Copy thread ID',
       'Export conversation (JSONL)',
+      'Export thread folder (ZIP)',
       'Share trace',
     ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu.png')
