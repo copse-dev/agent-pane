@@ -62,15 +62,15 @@ function makeApi(): {
   }
 }
 
-function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
-  const spy = { showModalCalls: 0 }
+function shimDialog(dialog: HTMLDialogElement): { showCalls: number } {
+  const spy = { showCalls: 0 }
   let open = false
   Object.defineProperties(dialog, {
-    showModal: {
+    show: {
       configurable: true,
       value: () => {
         open = true
-        spy.showModalCalls += 1
+        spy.showCalls += 1
       },
     },
     close: {
@@ -91,7 +91,7 @@ const SETTLE_MS = 500
 
 describe('approval dialog coalescing', () => {
   let dialog: HTMLDialogElement
-  let spy: { showModalCalls: number }
+  let spy: { showCalls: number }
   let emit: (req: EmitReq) => void
   let responses: Responded[]
   // Scheduled timers, tagged by their delay so a test can fire the coalesce
@@ -130,7 +130,7 @@ describe('approval dialog coalescing', () => {
       },
     })
     dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
-    spy = shimModal(dialog)
+    spy = shimDialog(dialog)
   })
 
   const approve = (): HTMLButtonElement => {
@@ -150,11 +150,11 @@ describe('approval dialog coalescing', () => {
   it('waits for the window before opening, then pops once', () => {
     emit({ id: 'a' })
     // Still gathering the burst — nothing on screen yet.
-    assert.equal(spy.showModalCalls, 0)
+    assert.equal(spy.showCalls, 0)
     emit({ id: 'b' })
     fireWindow()
     // One prompt listing both requests.
-    assert.equal(spy.showModalCalls, 1)
+    assert.equal(spy.showCalls, 1)
     assert.deepEqual(bodies(), ['body-a', 'body-b'])
     assert.equal(approve().textContent, 'Approve all (2)')
   })
@@ -192,11 +192,11 @@ describe('approval dialog coalescing', () => {
   it('appends a request that arrives while the dialog is already open', () => {
     emit({ id: 'a' })
     fireWindow()
-    assert.equal(spy.showModalCalls, 1)
+    assert.equal(spy.showCalls, 1)
     assert.deepEqual(bodies(), ['body-a'])
     // A sibling lands after the prompt is up — it joins the open list, no new modal.
     emit({ id: 'b' })
-    assert.equal(spy.showModalCalls, 1)
+    assert.equal(spy.showCalls, 1)
     assert.deepEqual(bodies(), ['body-a', 'body-b'])
     dialog.querySelector<HTMLButtonElement>('.approval-reject')?.click()
     assert.deepEqual(

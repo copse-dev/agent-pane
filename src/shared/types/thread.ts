@@ -218,7 +218,8 @@ export interface Thread {
  * highest-fidelity result. `rebuilt` was reconstructed from the copied
  * transcript slice, which cannot carry content that only existed in the run
  * payload (the fenced blocks inlined for `@`-file / `@`-thread / shell chips).
- * `empty` means the source had no recorded history to inherit.
+ * `empty` means the source had neither recorded provider history nor a visible
+ * transcript that could be rebuilt.
  */
 export interface ForkedHistoryResult {
   source: 'copied' | 'rebuilt' | 'empty'
@@ -258,6 +259,12 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
 export interface TranscriptAttachment {
   kind: 'paste' | 'file' | 'thread' | 'shell' | 'video'
   label: string
+  /**
+   * Exact text snapshot represented by a text-like chip. Persisted out-of-line
+   * in the thread store so the sent attachment remains inspectable even when a
+   * workspace file later changes. Absent for non-text and legacy attachments.
+   */
+  content?: string
   /**
    * Where the attached file lives, for the chips that can act on it. Only
    * `video` sets it today: the chip plays the recording in a preview modal, and

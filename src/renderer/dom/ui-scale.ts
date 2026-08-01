@@ -61,7 +61,7 @@ export function attachUiScalePinchGestures(
     const target = event.target
     if (
       target instanceof Element &&
-      target.closest('.mermaid-expand-dialog, .image-expand-dialog')
+      target.closest('.mermaid-expand-dialog, .attachment-preview-dialog')
     ) {
       return
     }

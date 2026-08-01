@@ -198,12 +198,13 @@ export function mountInputBar(
     },
     {
       label: 'Copy thread ID',
-      hidden: (): boolean => !getActiveThreadId(),
+      hidden: (): boolean => !store.getState().developerMode || !getActiveThreadId(),
       onClick: copyThreadId,
     },
     {
       label: 'Export conversation (JSONL)',
-      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean =>
+        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
       onClick: (): void => {
         const thread = getActiveThread(store)
         if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
@@ -211,7 +212,8 @@ export function mountInputBar(
     },
     {
       label: 'Share trace',
-      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean =>
+        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
       onClick: shareTrace,
     },
   ])
@@ -1019,10 +1021,13 @@ export function mountInputBar(
     // trailing row. Order matters — pastes first, in composer order, so the Nth
     // placeholder maps to the Nth paste attachment.
     const attachments: TranscriptAttachment[] = [
-      ...composer.getBlocks().map((b) => ({ kind: 'paste' as const, label: b.label })),
+      ...composer
+        .getBlocks()
+        .map((b) => ({ kind: 'paste' as const, label: b.label, content: b.content })),
       ...attachedFiles.map((f) => ({
         kind: 'file' as const,
         label: f.path.split('/').pop() ?? f.path,
+        content: f.content,
       })),
       ...attachedThreads.map((t) => ({
         kind: 'thread' as const,
@@ -1031,6 +1036,7 @@ export function mountInputBar(
       ...attachedShells.map((s) => ({
         kind: 'shell' as const,
         label: s.label,
+        content: s.content,
       })),
       ...attachedVideos.map((v) => ({
         kind: 'video' as const,

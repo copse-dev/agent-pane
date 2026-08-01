@@ -11,6 +11,7 @@ import {
 import {
   getHookCardStatusLabel,
   getHookCardTitle,
+  hookCardPerformedAction,
   hookEventLabel,
   isHookCardBlocking,
   type HookCard,
@@ -41,6 +42,7 @@ import {
 } from '@shared/threads/message-model.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
+import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -163,18 +165,83 @@ function createToolHeader(
   return el('summary', { class: summaryClass }, ...children)
 }
 
+// A collapsed tool card's body (arguments + result, including a full markdown
+// render pass for ACP results) is expensive to build and, for most turns,
+// never looked at — most tool calls stay collapsed. Defer building it until
+// the card actually opens instead of paying that cost for every card up
+// front. Keyed by the card so a reused/rebuilt card gets its own deferred
+// builder; consumed (and removed) the first time it opens.
+const lazyToolCardBodies = new WeakMap<HTMLDetailsElement, () => void>()
+
+/**
+ * Build a collapsed tool card's deferred body immediately. Call this whenever
+ * code sets `card.open`/`[open]` programmatically (restoring a user's prior
+ * expansion, auto-opening a running tool) — the native `toggle` event is
+ * dispatched asynchronously per spec, so it can't be relied on to have fired
+ * by the time callers expect the body to exist. A plain click on the header
+ * is handled separately (see appendStandardToolSections) since that always
+ * precedes the browser's own default open-toggle action.
+ */
+function ensureToolCardBodyRendered(card: HTMLDetailsElement): void {
+  const build = lazyToolCardBodies.get(card)
+  if (!build) return
+  lazyToolCardBodies.delete(card)
+  build()
+}
+
+/**
+ * Run `cb` once this card's body actually exists — immediately if it was
+ * built eagerly (card starts open), otherwise deferred until it opens. For
+ * post-processing that needs the rendered result content (e.g. linking file
+ * paths in a subagent's inner tool results, see syncSubagentTimeline) rather
+ * than a shell that may still be empty.
+ */
+function onToolCardBodyBuilt(card: HTMLDetailsElement, cb: () => void): void {
+  const pending = lazyToolCardBodies.get(card)
+  if (!pending) {
+    cb()
+    return
+  }
+  lazyToolCardBodies.set(card, () => {
+    pending()
+    cb()
+  })
+}
+
 function appendStandardToolSections(
-  card: HTMLElement,
+  card: HTMLDetailsElement,
   tc: ToolCall,
   label: string,
   summaryClass: string,
   count?: number,
 ): void {
-  card.append(
-    createToolHeader(label, tc.status, summaryClass, count, tc.editStats, getToolEditPath(tc)),
-    ...appendIfPresent(createToolArgsSection(tc.args)),
-    createToolResultSection(tc.result, tc.resultFormat),
+  const header = createToolHeader(
+    label,
+    tc.status,
+    summaryClass,
+    count,
+    tc.editStats,
+    getToolEditPath(tc),
   )
+  card.append(header)
+  const buildBody = (): void => {
+    card.append(
+      ...appendIfPresent(createToolArgsSection(tc.args)),
+      createToolResultSection(tc.result, tc.resultFormat),
+    )
+  }
+  if (card.open) {
+    buildBody()
+  } else {
+    lazyToolCardBodies.set(card, buildBody)
+    header.addEventListener(
+      'click',
+      () => {
+        ensureToolCardBodyRendered(card)
+      },
+      { once: true },
+    )
+  }
 }
 
 /** Spread helper: include a section only when it was rendered (non-null). */
@@ -204,13 +271,18 @@ function summaryPreview(text: string, max = 200): string {
   return `${trimmed.slice(0, max)}…`
 }
 
-function createInnerToolCard(tc: ToolCall): HTMLElement {
+function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
   const entry = el('details', {
     class: 'tool-group-item subagent-inner-tool',
     'data-tool-id': tc.id,
     'data-status': tc.status,
   })
   appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
+  // File paths in the result become clickable links, but that pass needs the
+  // rendered result text — defer it alongside the card's own lazy body.
+  onToolCardBodyBuilt(entry, () => {
+    void annotateFileReferences(entry, api)
+  })
   return entry
 }
 
@@ -381,12 +453,14 @@ function syncSubagentTimeline(
         const fresh = el('div', { class: 'subagent-inner-tools' })
         fresh.dataset['timelineKey'] = key
         for (const inner of innerToolCalls) {
-          const entry = createInnerToolCard(inner)
-          if (openInner.has(inner.id)) entry.setAttribute('open', '')
+          const entry = createInnerToolCard(inner, api)
+          if (openInner.has(inner.id)) {
+            entry.setAttribute('open', '')
+            ensureToolCardBodyRendered(entry)
+          }
           fresh.append(entry)
         }
         subagentInnerToolsSig.set(fresh, sig)
-        void annotateFileReferences(fresh, api)
         wrap = fresh
       }
       desired.push(wrap)
@@ -524,18 +598,7 @@ function createGroupToolCard(
       'data-tool-id': tc.id,
       'data-status': tc.status,
     })
-    entry.append(
-      createToolHeader(
-        getToolCallLabel(tc),
-        tc.status,
-        'tool-group-item-header',
-        undefined,
-        tc.editStats,
-        getToolEditPath(tc),
-      ),
-      ...appendIfPresent(createToolArgsSection(tc.args)),
-      createToolResultSection(tc.result, tc.resultFormat),
-    )
+    appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
     groupItems.append(entry)
   }
 
@@ -626,23 +689,35 @@ function hookCardStatusIcon(status: HookCardStatus): SVGSVGElement {
 /** Compact facts about what a hook run did — shown under the header when useful. */
 function hookCardDetailLines(card: HookCard): string[] {
   const lines: string[] = []
+  if (card.status === 'deny') lines.push('Blocked the gated action')
+  if (card.status === 'ask') lines.push('Requested approval for the gated action')
+  if (card.status === 'halted') lines.push('Stopped the agent run')
+  if (card.updatedInput) lines.push('Rewrote the tool input')
+  if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
+    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
+  }
+  if (card.agentMessageChars !== undefined && card.agentMessageChars > 0) {
+    lines.push(`Sent ${String(card.agentMessageChars)} chars of guidance to the agent`)
+  }
+  if (card.userMessageChars !== undefined && card.userMessageChars > 0) {
+    lines.push(`Showed you a ${String(card.userMessageChars)}-char message`)
+  }
+  if (card.queuedMessageChars !== undefined && card.queuedMessageChars > 0) {
+    lines.push(`Queued a ${String(card.queuedMessageChars)}-char follow-up`)
+  }
+  if (card.sessionEnvKeys !== undefined && card.sessionEnvKeys > 0) {
+    lines.push(`Set ${String(card.sessionEnvKeys)} session environment variables`)
+  }
+  if (card.stopReason) lines.push(`Reason: ${card.stopReason}`)
+  if (card.sandboxBlocked) lines.push('Blocked by the project sandbox')
+  if (!card.parseOk) lines.push('Output did not parse as a hook response')
+  if (card.error) lines.push(`Error: ${card.error}`)
   lines.push(`Hook: ${card.hookId}`)
   if (card.executor === 'command' && card.exitCode !== undefined && card.exitCode !== null) {
     lines.push(`Exit code: ${String(card.exitCode)}`)
   }
   if (card.exitCode === null) lines.push('Process killed (timeout / output cap)')
   if (card.durationMs > 0) lines.push(`Duration: ${String(card.durationMs)}ms`)
-  if (card.updatedInput) lines.push('Rewrote the tool input')
-  if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
-    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
-  }
-  if (card.queuedMessageChars !== undefined && card.queuedMessageChars > 0) {
-    lines.push(`Queued a ${String(card.queuedMessageChars)}-char follow-up`)
-  }
-  if (card.stopReason) lines.push(`Reason: ${card.stopReason}`)
-  if (card.sandboxBlocked) lines.push('Blocked by the project sandbox')
-  if (!card.parseOk) lines.push('Output did not parse as a hook response')
-  if (card.error) lines.push(`Error: ${card.error}`)
   return lines
 }
 
@@ -653,6 +728,7 @@ function createHookCard(card: HookCard): HTMLElement {
     'data-hook-event': card.event,
     'data-hook-kind': card.kind,
     'data-status': card.status,
+    open: hookCardPerformedAction(card),
   })
   const header = el(
     'summary',
@@ -711,14 +787,22 @@ function hookGroupStatus(cards: HookCard[]): HookCardStatus {
   return worst
 }
 
-/** Summary line for the collapsed group, e.g. `12 ran` or `12 ran · 1 blocked`. */
+/** Outcome-first summary for the collapsed group, e.g. `1 action · 12 ran`. */
 function hookGroupSummaryLabel(cards: HookCard[]): string {
   const ran = `${String(cards.length)} ran`
-  const blocking = cards.filter((c) => isHookCardBlocking(c.status)).length
-  if (blocking > 0) return `${ran} · ${String(blocking)} blocked`
+  const failed = cards.filter((c) => c.status === 'blocked' || c.status === 'error').length
+  if (failed > 0) return `${String(failed)} failed · ${ran}`
+  const denied = cards.filter((c) => c.status === 'deny').length
+  if (denied > 0) return `${String(denied)} blocked · ${ran}`
+  const halted = cards.filter((c) => c.status === 'halted').length
+  if (halted > 0) return `${String(halted)} stopped · ${ran}`
   const asked = cards.filter((c) => c.status === 'ask').length
-  if (asked > 0) return `${ran} · ${String(asked)} asked`
-  return ran
+  if (asked > 0) return `${String(asked)} requested approval · ${ran}`
+  const actions = cards.filter(hookCardPerformedAction).length
+  if (actions > 0) {
+    return `${String(actions)} ${actions === 1 ? 'action' : 'actions'} · ${ran}`
+  }
+  return `No changes · ${ran}`
 }
 
 /**
@@ -815,13 +899,12 @@ function isReasoningDisclosureLive(
 }
 
 /**
- * A transcript chip: an outline icon + its (clipped) label. Display-only except
- * for a video, which becomes a button that plays the recording — the file is on
- * disk and the person who attached it otherwise has no way to see what they
- * sent, since the video deliberately never becomes model content.
+ * A transcript chip: an outline icon + its (clipped) label. Text snapshots open
+ * in the shared attachment viewer; videos use the same shell after loading their
+ * bytes from disk. Legacy chips without preview data remain display-only.
  */
 function transcriptChip(
-  attachment: Pick<TranscriptAttachment, 'kind' | 'label' | 'path'>,
+  attachment: Pick<TranscriptAttachment, 'kind' | 'label' | 'path' | 'content'>,
   api: ApiClient,
 ): HTMLElement {
   const { kind, label } = attachment
@@ -832,6 +915,8 @@ function transcriptChip(
   )
   if (kind === 'video' && attachment.path) {
     attachVideoExpand(chip, api, attachment.path, label)
+  } else if (attachment.content !== undefined) {
+    attachTextExpand(chip, attachment.content, label)
   }
   return chip
 }
@@ -978,6 +1063,13 @@ function syncNestedRollupReasoning(
 const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
+
+// Newest-first thread load (see rebuildForThread): render this many of the
+// most recent messages up front — enough to fill and slightly overfill a
+// typical viewport — then fill the rest of the history backwards in the
+// background, one chunk of this size per animation frame.
+const INITIAL_RENDER_WINDOW = 40
+const BACKFILL_CHUNK_SIZE = 30
 
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
@@ -1262,6 +1354,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // (especially scrolling up mid-stream) is never mistaken for autoscroll (#468).
   let lastProgrammaticScrollTop = -1
   let userScrolledUpAt = 0
+  // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
+  // scheduled by a since-superseded rebuild recognizes it's stale and bails
+  // instead of touching a list that has since been cleared/rebuilt again.
+  let backfillGeneration = 0
 
   function isNearBottom(): boolean {
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight
@@ -1466,13 +1562,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
         .forEach((entry) => {
           const id = entry.dataset['toolId']
-          if (id && userExpandedTools.has(id)) entry.open = true
+          if (id && userExpandedTools.has(id)) {
+            entry.open = true
+            ensureToolCardBodyRendered(entry)
+          }
         })
       return
     }
     const tc = item.toolCall
     const running = tc.status === 'running' || tc.subagent?.status === 'running'
     card.open = running || userExpandedTools.has(tc.id)
+    if (card.open) ensureToolCardBodyRendered(card)
   }
 
   function renderToolCards(
@@ -1591,17 +1691,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function appendMessageEl(threadId: string, msgId: string): void {
-    if (threadId !== store.getState().activeThreadId) return
+  /**
+   * Build one message's DOM subtree (bubble + content), without inserting it
+   * anywhere. Shared by appendMessageEl (new/live messages, inserted at the
+   * transcript's tail) and prependMessageEl (older history backfilled above
+   * the currently-rendered window — see rebuildForThread). Returns null for a
+   * message that isn't rendered inline at all (queued follow-ups render in
+   * the pinned panel instead).
+   */
+  function buildMessageEl(threadId: string, msgId: string): HTMLElement | null {
     const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
-    if (!msg) return
-
-    // Queued user follow-ups render in the pinned panel, not inline.
-    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) {
-      renderQueuedPanel(threadId)
-      return
-    }
+    if (!msg) return null
+    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) return null
 
     // A hook-originated turn (decision 10): the message role stays `user`, but a
     // marker attributes it to the hook follow-up that started it.
@@ -1625,18 +1727,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Every settled prompt can start a fork of the conversation as it stood at
     // that point; only the latest one can be resent (see syncUserActions).
     if (msg.role === 'user') body.append(buildUserActions(threadId, msgId))
+    return msgEl
+  }
 
-    // Keep the trailing comparison card (if any) last in the transcript: a new
-    // message belongs above a comparison produced for an earlier turn. Review
-    // cards are anchored inline after their own message (see renderMessageReview)
-    // and stay put — a new message naturally lands after them.
-    const trailingCard = list.querySelector('[data-comparison-card]')
-    if (trailingCard) {
-      // The activity row sits immediately above a trailing comparison. Insert
-      // the message above both so the status remains the transcript's live tail
-      // while the comparison preserves its last-child contract.
-      list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
-    } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
+  /**
+   * Wire up everything that assumes the message element is already in `list`
+   * (tool cards, inline review, hook cards). Shared by appendMessageEl and
+   * prependMessageEl once each has inserted the built element.
+   */
+  function finalizeMessageEl(threadId: string, msgId: string): void {
+    const thread = getThreadById(store, threadId)
+    const msg = thread?.messages.find((m) => m.id === msgId)
+    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
+    if (!msg || !msgEl) return
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
@@ -1649,6 +1752,35 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
+  }
+
+  function appendMessageEl(threadId: string, msgId: string): void {
+    if (threadId !== store.getState().activeThreadId) return
+    const thread = getThreadById(store, threadId)
+    const msg = thread?.messages.find((m) => m.id === msgId)
+    if (!msg) return
+
+    // Queued user follow-ups render in the pinned panel, not inline.
+    if (msg.role === 'user' && thread && queuedMessageIds(thread).has(msgId)) {
+      renderQueuedPanel(threadId)
+      return
+    }
+
+    const msgEl = buildMessageEl(threadId, msgId)
+    if (!msgEl) return
+
+    // Keep the trailing comparison card (if any) last in the transcript: a new
+    // message belongs above a comparison produced for an earlier turn. Review
+    // cards are anchored inline after their own message (see renderMessageReview)
+    // and stay put — a new message naturally lands after them.
+    const trailingCard = list.querySelector('[data-comparison-card]')
+    if (trailingCard) {
+      // The activity row sits immediately above a trailing comparison. Insert
+      // the message above both so the status remains the transcript's live tail
+      // while the comparison preserves its last-child contract.
+      list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
+    } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
+    finalizeMessageEl(threadId, msgId)
     // Model labels appear only once the primary chat has used more than one
     // model, and only at model-segment boundaries (first assistant turn of
     // each contiguous model run). Syncing after each append also backfills
@@ -1657,6 +1789,23 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncModelLabels()
     syncUserActions()
     scrollToBottom(msg.role === 'user')
+  }
+
+  /**
+   * Insert an older message above everything currently rendered (`before` is
+   * the element that was the list's first child when this backfill chunk
+   * started — see rebuildForThread). Used only for the newest-first backward
+   * fill on thread load, never for live/new messages. Deliberately skips the
+   * per-message scrollToBottom/syncModelLabels/syncUserActions that
+   * appendMessageEl does — the caller batches those once per chunk so
+   * backfilling a long thread doesn't redo O(n) work per message, and calling
+   * scrollToBottom here would fight the scroll-anchoring the caller performs.
+   */
+  function prependMessageEl(threadId: string, msgId: string, before: Node | null): void {
+    const msgEl = buildMessageEl(threadId, msgId)
+    if (!msgEl) return
+    list.insertBefore(msgEl, before)
+    finalizeMessageEl(threadId, msgId)
   }
 
   /**
@@ -1827,17 +1976,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function rebuildForThread(): void {
-    pinnedToBottom = true
-    userScrolledUpAt = 0
-    lastScrollTop = 0
-    clear(list)
-    const thread = getActiveThread(store)
-    if (thread) {
-      thread.messages.forEach((m) => {
-        appendMessageEl(thread.id, m.id)
-      })
-    }
+  /** The chrome around the message list — todos, comparison, queued panel, the
+   * activity row's position — depends only on thread state, not on how much of
+   * the history has been backfilled yet. Runs once after the initial window
+   * and never again for the same rebuild (backfill only appends further up).
+   */
+  function finishThreadChrome(thread: Thread | null): void {
     syncTodoPanel()
     // Inline review cards are rendered per message by appendMessageEl above.
     syncComparisonPanel()
@@ -1853,6 +1997,81 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // messages but above a trailing comparison card, which remains last.
     list.insertBefore(activityBar, list.querySelector('[data-comparison-card]'))
     updateScrollButton()
+  }
+
+  /**
+   * Fill in `thread.messages[0..cursor)` a chunk at a time, oldest-most-recent
+   * first within each chunk, prepending each chunk above whatever is currently
+   * the first element in `list`. One chunk runs per animation frame so a long
+   * thread's full history renders without blocking the frame that first shows
+   * the user the messages they actually scrolled in to see.
+   *
+   * Every insertion happens above the current viewport, so left alone it would
+   * push already-visible content down and yank the view out from under the
+   * user (or off the bottom, if still pinned there). Compensate scrollTop by
+   * exactly the height each chunk adds — the same "insert above, hold the
+   * anchor" trick refreshToolCards uses for a partial rebuild — so the view
+   * never visibly moves while older history streams in behind it.
+   */
+  function backfillOlderMessages(thread: Thread, cursor: number, generation: number): void {
+    if (generation !== backfillGeneration) return // superseded by a later rebuild/thread switch
+    if (thread.id !== store.getState().activeThreadId) return
+    const chunkStart = Math.max(0, cursor - BACKFILL_CHUNK_SIZE)
+    const anchor = list.firstElementChild
+    const heightBefore = list.scrollHeight
+    const scrollTopBefore = list.scrollTop
+    for (let i = chunkStart; i < cursor; i++) {
+      const m = thread.messages[i]
+      if (m) prependMessageEl(thread.id, m.id, anchor)
+    }
+    const delta = list.scrollHeight - heightBefore
+    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta)
+    // Older messages can start new model segments; appendMessageEl only syncs
+    // labels for the window it saw, so a chunk further back needs its own pass.
+    syncModelLabels()
+    // Same reason, and it matters more here: Resend buttons render visible and
+    // are hidden only by this pass, so a backfilled chunk would otherwise leave
+    // one on every older user message. Those extras are worse than clutter —
+    // runResend resends the thread's *latest* prompt, not the one beside the
+    // button, so clicking a stray one silently repeats the wrong message.
+    syncUserActions()
+    updateScrollButton()
+    if (chunkStart > 0) {
+      requestAnimationFrame(() => {
+        backfillOlderMessages(thread, chunkStart, generation)
+      })
+    }
+  }
+
+  function rebuildForThread(): void {
+    pinnedToBottom = true
+    userScrolledUpAt = 0
+    lastScrollTop = 0
+    clear(list)
+    backfillGeneration++
+    const thread = getActiveThread(store)
+    if (!thread) {
+      finishThreadChrome(null)
+      return
+    }
+    // Newest-first: render the tail the user actually lands on right away, then
+    // fill the rest of the history backwards in the background (see
+    // backfillOlderMessages) instead of blocking a thread switch on rendering
+    // — and fully building every collapsed tool card's body for — messages
+    // nobody has scrolled to yet.
+    const total = thread.messages.length
+    const initialStart = Math.max(0, total - INITIAL_RENDER_WINDOW)
+    for (let i = initialStart; i < total; i++) {
+      const m = thread.messages[i]
+      if (m) appendMessageEl(thread.id, m.id)
+    }
+    finishThreadChrome(thread)
+    if (initialStart > 0) {
+      const generation = backfillGeneration
+      requestAnimationFrame(() => {
+        backfillOlderMessages(thread, initialStart, generation)
+      })
+    }
   }
 
   function refreshToolCards(msgId: string): void {
@@ -1984,6 +2203,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   rebuildForThread()
   syncFromStore()
   return () => {
+    // Invalidate any backfillOlderMessages step still queued via
+    // requestAnimationFrame so it no-ops instead of touching a torn-down list.
+    backfillGeneration++
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

@@ -85,6 +85,7 @@ interface RoadmapCalls {
   }[]
   attachmentData: string[]
   setStatus: { id: string; status: string }[]
+  setCategory: { id: string; category: string }[]
   delete: string[]
   issueUrl: string[]
   openExternal: string[]
@@ -147,6 +148,7 @@ function makeApi(
     update: [],
     attachmentData: [],
     setStatus: [],
+    setCategory: [],
     delete: [],
     issueUrl: [],
     openExternal: [],
@@ -226,7 +228,12 @@ function makeApi(
           item.title = prompt.slice(0, 80)
           item.body = prompt
           item.status = status
-          item.fields = { ...(notes ? { notes } : {}), ...(issue ? { issue } : {}) }
+          const { notes: _notes, issue: _issue, ...rest } = item.fields
+          item.fields = {
+            ...rest,
+            ...(notes ? { notes } : {}),
+            ...(issue ? { issue } : {}),
+          }
           return { ...item }
         },
         attachmentData: async (id: string, attachmentId: string): Promise<string | null> => {
@@ -240,6 +247,18 @@ function makeApi(
           item.status = status
           return { ...item }
         },
+        setCategory: async (id: string, category: string): Promise<KnowledgeNote | null> => {
+          calls.setCategory.push({ id, category })
+          const item = items.find((i) => i.id === id)
+          if (!item) return null
+          if (category) {
+            item.fields = { ...item.fields, category, categoryManual: '1' }
+          } else {
+            const { category: _category, categoryManual: _categoryManual, ...rest } = item.fields
+            item.fields = rest
+          }
+          return { ...item }
+        },
         delete: async (id: string): Promise<boolean> => {
           calls.delete.push(id)
           const i = items.findIndex((n) => n.id === id)
@@ -250,12 +269,21 @@ function makeApi(
           calls.issueUrl.push(ref)
           return `https://github.com/octo/demo/issues/${ref.replace('#', '')}`
         },
-        openIssues: async (): Promise<{
+        openIssues: async (
+          page: number,
+        ): Promise<{
           slug: string
           issues: import('@shared/types').GhIssueSummary[]
+          hasMore: boolean
         }> => {
           calls.openIssues++
-          return { slug: 'octo/demo', issues: issues.map((i) => ({ ...i })) }
+          const pageSize = 20
+          const start = (page - 1) * pageSize
+          return {
+            slug: 'octo/demo',
+            issues: issues.slice(start, start + pageSize).map((issue) => ({ ...issue })),
+            hasMore: start + pageSize < issues.length,
+          }
         },
         checkFit: async (id: string): Promise<RoadmapFitResult> => {
           calls.checkFit.push(id)
@@ -482,6 +510,64 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('scrolls a revealed row only when it is completely outside the list viewport', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'First'), makeItem('b', 'Second')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const listBody = list.querySelector<HTMLElement>('.roadmap-list')
+      assert.ok(listBody)
+      listBody.getBoundingClientRect = (): DOMRect => new DOMRect(0, 100, 300, 200)
+      let selectedTop = 80
+      let scrollCalls = 0
+      const rectDescriptor = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        'getBoundingClientRect',
+      )
+      const scrollDescriptor = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        'scrollIntoView',
+      )
+      Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value(this: HTMLElement): DOMRect {
+          return this.classList.contains('is-selected')
+            ? new DOMRect(0, selectedTop, 300, 40)
+            : new DOMRect()
+        },
+      })
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value(this: HTMLElement): void {
+          if (this.classList.contains('is-selected')) scrollCalls++
+        },
+      })
+      try {
+        store.emit('roadmap_reveal', 'b')
+        await flush()
+        assert.ok(list.querySelector('.roadmap-row.is-selected'))
+
+        store.emit('threads_changed')
+        assert.equal(scrollCalls, 0, 'a partly visible row stays put')
+
+        selectedTop = 310
+        store.emit('threads_changed')
+        assert.equal(scrollCalls, 1, 'a fully off-screen row scrolls to the nearest edge')
+      } finally {
+        if (rectDescriptor) {
+          Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', rectDescriptor)
+        }
+        if (scrollDescriptor) {
+          Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollDescriptor)
+        }
+      }
+    } finally {
+      unmount()
+    }
+  })
+
   it('roadmap_reveal selects the item and opens its editor (quick-open palette)', async () => {
     // The palette opens the pane (mode + pane state) before emitting the reveal,
     // so mount inactive and flip both — mirroring navigateToRoadmapItem's order.
@@ -524,7 +610,13 @@ describe('roadmap pane', () => {
       assert.equal(prompt.value, 'Do the thing')
       assert.equal(notes.value, 'after #99 merges')
       assert.equal(status.value, 'blocked')
-      assert.equal(viewer.querySelector('.memories-meta')?.textContent, 'Updated 2026-07-13')
+      assert.match(
+        viewer.querySelector('.memories-meta')?.textContent ?? '',
+        // `toLocaleTimeString` follows the runner's locale, so the clock is
+        // 24-hour under en-GB and 12-hour with a meridiem under en-US. Pin the
+        // HH:MM shape and let either render pass rather than pinning a locale.
+        /^Updated 2026-07-13 at \d{2}:\d{2}(?: [AP]M)?$/,
+      )
       // Status and Delete are offered for an existing item.
       assert.equal(status.hidden, false)
       assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-delete-btn')?.hidden, false)
@@ -557,6 +649,55 @@ describe('roadmap pane', () => {
       ])
       const titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
       assert.deepEqual(titles, ['Add dark-mode screenshots to CI'], 'the new item appears')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('persists a category override on a new item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      const category = viewer.querySelector<HTMLSelectElement>('.roadmap-category-select')
+      assert.ok(prompt && category)
+      prompt.value = 'Fix startup crash'
+      category.value = 'bug'
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.setCategory, [{ id: 'new-0', category: 'bug' }])
+    } finally {
+      unmount()
+    }
+  })
+
+  it('persists and clears category overrides on an existing item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const seeded = makeItem('a', 'Ship the thing')
+    const { api, calls } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const category = viewer.querySelector<HTMLSelectElement>('.roadmap-category-select')
+      assert.ok(category)
+      category.value = 'project'
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.setCategory, [{ id: 'a', category: 'project' }])
+
+      category.value = ''
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.setCategory, [
+        { id: 'a', category: 'project' },
+        { id: 'a', category: '' },
+      ])
     } finally {
       unmount()
     }
@@ -597,9 +738,6 @@ describe('roadmap pane', () => {
       assert.deepEqual(calls.update, [
         { id: 'a', prompt: 'New prompt', notes: undefined, status: 'done', issue: undefined },
       ])
-      // Done items are filtered from the list until the show-done toggle is on.
-      assert.equal(list.querySelector('.roadmap-row'), null)
-      list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
       assert.ok(list.querySelector('.roadmap-row.is-done'), 'done is a row class, not a chip')
       assert.equal(list.querySelectorAll('.roadmap-status-badge').length, 0)
     } finally {
@@ -624,10 +762,6 @@ describe('roadmap pane', () => {
       assert.equal(calls.update.length, 0, 'status-only IPC, not a full update')
       // The toggle click must not select the row into the editor.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
-      // Done items leave the list by default.
-      assert.equal(list.querySelector('.roadmap-row'), null)
-      assert.match(list.querySelector('.roadmap-list-empty')?.textContent ?? '', /Turn on "done"/i)
-      list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
       assert.equal(
         list.querySelector<HTMLElement>('.roadmap-done-toggle')?.title,
         'Reopen (set ready)',
@@ -637,7 +771,7 @@ describe('roadmap pane', () => {
     }
   })
 
-  it('hides done items until the show-done toggle is pressed', async () => {
+  it('shows done items by default and filters them through the status facet', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([
       makeItem('a', 'Open work', 'ready'),
@@ -647,15 +781,17 @@ describe('roadmap pane', () => {
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
       await flush()
-      const showDone = list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')
-      assert.ok(showDone)
-      assert.equal(showDone.getAttribute('aria-pressed'), 'false')
+      assert.equal(list.querySelector('.roadmap-show-done-btn'), null)
       let titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
-      assert.deepEqual(titles, ['Open work'])
-      showDone.click()
-      assert.equal(showDone.getAttribute('aria-pressed'), 'true')
-      titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
       assert.deepEqual(titles, ['Open work', 'Shipped already'])
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const doneOption = [
+        ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
+      ].find((option) => option.textContent === 'done')
+      assert.ok(doneOption)
+      doneOption.querySelector<HTMLInputElement>('input')?.click()
+      titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
+      assert.deepEqual(titles, ['Open work'])
     } finally {
       unmount()
     }
@@ -668,7 +804,6 @@ describe('roadmap pane', () => {
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
       await flush()
-      list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
       list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
       await flush()
       assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'ready' }])
@@ -760,6 +895,151 @@ describe('roadmap pane', () => {
       assert.ok(badge)
       assert.equal(badge.textContent, 'high')
       assert.ok(badge.classList.contains('is-high'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('groups categories into accordions and filters category and complexity facets', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const bugHigh = makeItem('bug-high', 'Fix crash', 'ready', undefined, undefined, 'high')
+    bugHigh.fields['category'] = 'bug'
+    const bugLow = makeItem('bug-low', 'Fix typo', 'ready', undefined, undefined, 'low')
+    bugLow.fields['category'] = 'bug'
+    const feature = makeItem('feature', 'Add export', 'ready', undefined, undefined, 'medium')
+    feature.fields['category'] = 'feature'
+    const { api } = makeApi([bugHigh, bugLow, feature])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const bugGroup = list.querySelector<HTMLElement>('[data-category="bug"]')
+      assert.ok(bugGroup)
+      const bugHeader = bugGroup.querySelector<HTMLButtonElement>('.roadmap-category-header')
+      assert.ok(bugHeader)
+      assert.equal(bugHeader.getAttribute('aria-expanded'), 'true')
+      assert.equal(bugGroup.querySelectorAll('.roadmap-row').length, 2)
+      assert.deepEqual(
+        [...list.querySelectorAll('.roadmap-category-badge')].map((badge) => badge.textContent),
+        ['bug', 'bug', 'feature'],
+      )
+
+      bugHeader.click()
+      const collapsedItems = list.querySelector<HTMLElement>(
+        '[data-category="bug"] .roadmap-category-items',
+      )
+      assert.ok(collapsedItems)
+      assert.equal(collapsedItems.hidden, true)
+      assert.equal(
+        list
+          .querySelector('[data-category="bug"] .roadmap-category-header')
+          ?.getAttribute('aria-expanded'),
+        'false',
+      )
+
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const options = [...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option')]
+      const featureOption = options.find((option) => option.textContent === 'Features')
+      const highOption = options.find((option) => option.textContent === 'high')
+      assert.ok(featureOption && highOption)
+      featureOption.querySelector<HTMLInputElement>('input')?.click()
+      assert.equal(list.querySelector('[data-category="feature"]'), null)
+      highOption.querySelector<HTMLInputElement>('input')?.click()
+      assert.equal(
+        list.querySelectorAll('[data-category="bug"] .roadmap-row').length,
+        1,
+        'disabling high complexity leaves the low-complexity bug',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('keeps a collapsed group collapsed, with its header, when it drops to one row', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const bugHigh = makeItem('bug-high', 'Fix crash', 'ready', undefined, undefined, 'high')
+    bugHigh.fields['category'] = 'bug'
+    const bugLow = makeItem('bug-low', 'Fix typo', 'ready', undefined, undefined, 'low')
+    bugLow.fields['category'] = 'bug'
+    const { api } = makeApi([bugHigh, bugLow])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-category-header')?.click()
+      // Filtering the group down to a single row must not silently re-expand it
+      // or strip the only control that could collapse it again.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const highOption = [
+        ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
+      ].find((option) => option.textContent === 'high')
+      assert.ok(highOption)
+      highOption.querySelector<HTMLInputElement>('input')?.click()
+      const header = list.querySelector('[data-category="bug"] .roadmap-category-header')
+      assert.ok(header, 'a one-row group still renders its header')
+      assert.equal(header.getAttribute('aria-expanded'), 'false')
+      assert.equal(header.querySelector('.roadmap-category-count')?.textContent, '1')
+      assert.equal(
+        list.querySelector<HTMLElement>('[data-category="bug"] .roadmap-category-items')?.hidden,
+        true,
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('distinguishes an empty roadmap from one whose facets hide every item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const item = makeItem('a', 'Fix crash', 'ready')
+    item.fields['category'] = 'bug'
+    const { api } = makeApi([item])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      // No search term — only a facet is hiding the work. The onboarding copy
+      // would claim the roadmap is empty when it is merely filtered.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const bugOption = [...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option')].find(
+        (option) => option.textContent === 'Bugs',
+      )
+      assert.ok(bugOption)
+      bugOption.querySelector<HTMLInputElement>('input')?.click()
+      assert.equal(
+        list.querySelector('.roadmap-list-empty')?.textContent,
+        'No roadmap items match your filter.',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('places attachment and thread shortcuts before complexity', async () => {
+    const tracked = makeThread('t1', 'Tracked work')
+    const store = createStore({
+      filesPaneOpen: true,
+      rightPanelMode: 'roadmap',
+      threads: [tracked],
+      activeThreadId: 't1',
+    })
+    const seeded = makeItem('a', 'Ship the thing', 'ready', undefined, undefined, 'medium')
+    seeded.fields['attachments'] = JSON.stringify([
+      { id: 'att-1', name: 'context.txt', mimeType: 'text/plain', size: 1 },
+    ])
+    seeded.fields['thread'] = 't1'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const classes = [...list.querySelectorAll('.roadmap-row-meta > *')].map(
+        (element) => element.className,
+      )
+      assert.deepEqual(classes.slice(0, 3), [
+        'roadmap-attachment-badge',
+        'roadmap-thread-chip',
+        'roadmap-complexity-badge is-medium',
+      ])
     } finally {
       unmount()
     }
@@ -1097,6 +1377,51 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('loads and coverage-matches open issues in bounded pages without a total ceiling', async () => {
+    const issues = Array.from({ length: 25 }, (_, index) =>
+      makeOpenIssue(index + 1, `Issue ${String(index + 1)}`),
+    )
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([], issues)
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+
+      assert.equal(viewer.querySelectorAll('.roadmap-import-row').length, 20)
+      assert.deepEqual(
+        calls.matchOpenIssues.map((page) => page.length),
+        [20],
+      )
+      const loadMore = viewer.querySelector<HTMLButtonElement>('.roadmap-import-more')
+      assert.ok(loadMore)
+      assert.equal(loadMore.hidden, false)
+
+      const first = viewer.querySelector<HTMLInputElement>('.roadmap-import-check')
+      assert.ok(first)
+      first.click()
+      loadMore.click()
+      await flush()
+
+      assert.equal(calls.openIssues, 2)
+      assert.equal(viewer.querySelectorAll('.roadmap-import-row').length, 25)
+      assert.deepEqual(
+        calls.matchOpenIssues.map((page) => page.length),
+        [20, 5],
+      )
+      assert.equal(loadMore.hidden, true)
+      assert.equal(
+        viewer.querySelector<HTMLInputElement>('.roadmap-import-check')?.checked,
+        true,
+        'loading another page preserves the current selection',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
   it('imports issue-by-issue so items land as each prompt drafts', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls } = makeApi(
@@ -1146,12 +1471,13 @@ describe('roadmap pane', () => {
   it('surfaces a not-connected error in the picker, stripped of IPC noise', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([])
-    ;(api.roadmap as { openIssues: () => Promise<unknown> }).openIssues = (): Promise<unknown> =>
-      Promise.reject(
-        new Error(
-          "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
-        ),
-      )
+    ;(api.roadmap as { openIssues: (page: number) => Promise<unknown> }).openIssues =
+      (): Promise<unknown> =>
+        Promise.reject(
+          new Error(
+            "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
+          ),
+        )
     const { list, viewer } = mountHosts()
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {

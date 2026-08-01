@@ -53,7 +53,12 @@ describe('tool activity icon', () => {
   })
 
   it('shows the spiral only while running without shifting the tool label', async function () {
-    this.timeout(60_000)
+    // Runs a real `sleep 8` through run_shell and waits for the tool card to
+    // settle. 60s wasn't enough headroom on the constrained CI runner — bump to
+    // the 90s convention already used by other real-shell/tool-card specs
+    // (terminal-display, double-submit; see wdio.ci.conf.ts) and give the
+    // final status-flip assertion matching room to land under CI load.
+    this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await setComposerValue('Run a short shell command')
     await $('.submit-btn').click()
@@ -86,7 +91,7 @@ describe('tool activity icon', () => {
     await browser.pause(900)
     await saveAppScreenshot('tool-activity-icon-alignment.png')
 
-    await expect(card).toHaveAttribute('data-status', 'done', { wait: 20_000 })
+    await expect(card).toHaveAttribute('data-status', 'done', { wait: 40_000 })
     const settledGeometry = await browser.execute(() => {
       const settledCard = document.querySelector('.tool-card[data-status="done"]')
       const settledName = settledCard?.querySelector('.tool-name')

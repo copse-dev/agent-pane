@@ -6,13 +6,62 @@ doesn't relearn it. It complements — not replaces — the visual-eval rules in
 [`AGENTS.md`](../AGENTS.md) and the markdown invariants in
 [`src/renderer/markdown/README.md`](../src/renderer/markdown/README.md).
 
+## Brand expression versus workbench UI
+
+Copse has one visual identity with two levels of expression:
+
+- **Expressive surfaces** — the marketing site, onboarding, welcome screens, significant empty
+  states, and release or promotional material.
+- **Workbench surfaces** — chat, editor, terminal, sidebars, settings, dialogs, tool output, diffs,
+  and other information-dense application chrome.
+
+The marketing site is the reference for Copse's brand identity, but it is not a literal component
+specification for the workbench. Carry shared foundations into the app without reproducing the
+landing page's decorative density.
+
+### Shared foundations
+
+- **Space Grotesk** is the default interface and prose family.
+- **Averia Serif Libre** is a display face. Use it only through an explicit branded-heading class on
+  expressive or destination-level surfaces. Do not apply it globally to `h1`, `h2`, or `h3`;
+  utility headings, settings titles, field labels, and panel headings remain Space Grotesk.
+- Code, commands, paths, hashes, and terminal content use `--font-mono`.
+- Use the exact Copse glyph and wordmark assets rather than approximating them with text or
+  redrawing the mark.
+
+### Brand colours and semantic tokens
+
+The core brand palette is forest (`#002e2b`), neon green (`#20fd85`), pink (`#ff9fc5`), and cream
+(`#fffdf7`). Define those once as brand tokens, then bind product components through semantic tokens
+such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
+
+- Neon green is the default interaction accent: primary actions, focus, selected-row rails, and
+  links.
+- Forest may provide an optional strong interface tint, but the default workbench remains neutral
+  and low-fatigue.
+- Pink is expressive emphasis, not a product status colour. Do not use it for errors, warnings,
+  selection, or routine headings.
+- Error, warning, success, and danger continue to use their semantic tokens.
+- Light-theme interaction colours must be derived for readable contrast; do not place raw neon
+  green behind or beneath small light-theme text.
+
+### Decorative motifs
+
+Line fields, large colour tiles, oversized serif type, and broad areas of forest, pink, or neon
+belong on expressive surfaces. Keep them out of transcripts, tool cards, sidebars, settings forms,
+terminal chrome, and diff viewers.
+
+The workbench continues to favour thin dividers, restrained radii, flat list selections, quiet tool
+output, and content density.
+
 ## Attached screenshot expand
 
-Thread message images (`.message-image`) and roadmap plan image chips
-(`.roadmap-attachment-thumb`) open the shared lightbox in
-[`src/renderer/attachments/image-expand.ts`](../src/renderer/attachments/image-expand.ts)
-(`dialog.image-expand-dialog`). Wire new attachment thumbs through
-`attachImageExpand` rather than inventing a second overlay. Visual eval:
+Thread message images (`.message-image`), sent text attachments, roadmap image
+chips (`.roadmap-attachment-thumb`), and videos use the shared viewer shell in
+[`src/renderer/attachments/attachment-preview.ts`](../src/renderer/attachments/attachment-preview.ts)
+(`dialog.attachment-preview-dialog`). Each media adapter owns its content and
+resource cleanup; wire future types through `openAttachmentPreview` rather than
+inventing another overlay. Visual eval:
 [`tests/e2e/image-expand.e2e.ts`](../tests/e2e/image-expand.e2e.ts).
 
 ### Native `<dialog>` and `display`
@@ -128,9 +177,14 @@ Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch”
 
 For primary/secondary action buttons (Save / Cancel style):
 
-- Match the marketing-site action recipe through the shared `--action-*` tokens: 36px minimum
-  height, 14px horizontal padding, 14px/22.4px semibold Pliant, and a 999px pill radius. Keep
-  compact chrome and icon-only controls out of this recipe.
+- Pill geometry is reserved for clear, high-value actions such as Save, Continue, Build, or the
+  primary onboarding action. Routine toolbar controls, row actions, icon buttons, filters, and
+  status indicators retain the normal UI-kit radius.
+- Paired secondary actions may use the matching outline treatment, but should not compete with the
+  primary fill.
+- Define action geometry through shared `--action-*` tokens and a UI-kit variant. Do not maintain a
+  late global selector list whose specificity overrides unrelated component styles.
+- Keep compact chrome and icon-only controls out of the action recipe.
 - Separate buttons with `gap: var(--spacing-md)`, not a tight `--spacing-sm`.
 - Keep an action bar clear of the window's bottom edge. Don't let buttons sit flush against the
   bottom; add generous bottom spacing (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`).
@@ -374,6 +428,11 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   `--warning`; `allow` / `ok` use `--success`. The card keeps its blue family fill throughout — the
   status is a signal, not a re-skin. A sandbox block or a function-hook throw always wins over a
   printed verdict (a hook can't paint itself "allowed", F3 / decision 9).
+- **Lead with effects, then provenance.** The turn-level Hooks group always starts collapsed and
+  names an applied outcome (or “No changes”) before the quieter run count. Inside an expanded group,
+  allow-only/no-op/suppressed/failure runs stay collapsed; only applied effects start open. Put those
+  effect lines before hook id, exit code, and duration so the first answer is what changed, not that a
+  process happened to run. Every inner card remains a normal `<details>` so the user can contract it.
 - **A hook-originated turn is marked, never disguised.** The message role stays `user` for the LLM,
   but `.msg-hook-origin-marker` (a small `--accent` label: `Hook · <id> (<Event>)`) sits above the
   body so it never reads as human-typed. A human edit surfaces an italic `edited` note — authorship
@@ -453,6 +512,10 @@ manual VNC glance.
 - Run with the mock LLM and no keys: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY= npm run test:e2e -- --spec <spec>`.
 - Reference screenshots that include a surface you changed (e.g. the settings footer appears in
   `settings-model-routing` shots) should be regenerated so they stay accurate.
+- Brand-system changes require representative dark- and light-workbench screenshots. Changes to
+  the strong forest tint also require a dedicated strong-tint screenshot. Regenerate marketing
+  screenshots from the consolidated branded app so the site never advertises an obsolete visual
+  system.
 - Pin `#app` to `window.innerWidth` in [`tests/e2e/helpers/screenshot.ts`](../tests/e2e/helpers/screenshot.ts)
   (`prepareE2eScreenshot`) so captures are not wider than the Electron window — otherwise table
   columns clip off the right edge of the PNG.
