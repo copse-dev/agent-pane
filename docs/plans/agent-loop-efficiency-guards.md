@@ -84,25 +84,50 @@ copy the exact snippet to replace."_ In explore mode there is no tool that can d
 
 ### Fix 0 — give explore mode a verbatim read path
 
+Terminology first, because `PARENT_DELEGATED_TOOLS` is misleadingly named: it is the list
+of tools **hidden from the parent** on the grounds that reading is the subagent's job. The
+explore subagent has its own toolset (`run-subagent.ts`) and is unaffected by anything
+here. "Un-delegating `read_file`" means the parent gets its own copy — it does not take
+`read_file` away from the subagent, and does not move reading out of the subagent.
+
 Options, roughly in order of preference:
 
-1. **Un-delegate `read_file` and re-scope it as the exact-bytes tool.** Drop `read_file`
-   from `PARENT_DELEGATED_TOOLS`, keep the other four delegated. Describe it in
-   `EXPLORE_MODE_VARS.tools` as narrowly as possible so it does not become a general
-   browsing tool and undo the context savings explore mode exists for:
-   `read_file: Read exact file text — required before str_replace. Use explore for
-understanding; use this only to copy the literal snippet you are about to replace.`
-   Adjust `understand` and `toolChoice` to match: explore to find and understand, read_file
-   to quote.
+1. **Give the parent an explore-gated `read_file`.** Drop `read_file` from
+   `PARENT_DELEGATED_TOOLS`, keep the other four delegated, and require that at least one
+   `explore` has completed in the current turn before `read_file` will return content.
+   Explore stays the entry point; `read_file` becomes the narrow "now quote it exactly"
+   step, not a general browsing tool.
 
-   Cost: some context regression in explore mode. This is measurable —
+   The gate must live in the tool's `execute`, **not** in a varying tool list.
+   `agent-service.ts:1029-1030` states the invariant — _"The tool list is fixed for the
+   whole run"_ — and `setHookRunToolset` fingerprints it before any hook fires so every
+   `hook_run` spine record references a stable toolset (decision 6). A tool list that grows
+   mid-run breaks that. So `read_file` is always present in the explore-mode list, and
+   before the first explore it returns an instructive result rather than content:
+
+   > `Call explore first to locate the relevant code. read_file returns exact text for a snippet explore has already pointed you at.`
+
+   A tool result, not an error — the model self-corrects on the next step instead of
+   burning the turn.
+
+   Run-scoped "has explore completed" state travels the same way the explore runner's own
+   context does: `AsyncLocalStorage`, per `explore-subagent-runner.ts:34`, which chose it
+   over a module-global slot precisely because parallel explores would otherwise cross
+   wires.
+
+   Prompt text follows the gate: `EXPLORE_MODE_VARS.tools` describes `read_file` as
+   `Read exact file text for a path explore has already surfaced — required before
+str_replace`, and `understand` / `toolChoice` keep explore as the way to find and
+   understand.
+
+   Cost: some context regression in explore mode, bounded by the gate. Measurable —
    `maxInputTokens` already exists as a scenario guard in
    `scripts/analyze-thread-jsonl.mts`.
 
 2. **Add a verbatim mode to `explore`.** An `exact: true` / `quote_lines` parameter that
-   bypasses the summarising subagent and returns raw text for a path and line range.
-   Keeps one tool in the prompt, but overloads a tool whose whole identity is "returns a
-   summary", and gives the model a decision it will get wrong.
+   bypasses the summarising subagent and returns raw text for a path and line range. Keeps
+   one tool in the prompt, but overloads a tool whose whole identity is "returns a summary",
+   and gives the model a decision it will get wrong.
 
 3. **Make `str_replace` tolerant of approximate input** — whitespace-insensitive matching,
    or accept a line range plus a fuzzy anchor. Reduces the blast radius but does not fix
@@ -111,10 +136,18 @@ understanding; use this only to copy the literal snippet you are about to replac
 Recommend (1), with (3) as a later independent hardening. Whichever we pick, the
 `str_replace` failure message must name a tool the agent actually has.
 
+The gate is what makes (1) safe. Without it the change is prompt guidance only — the model
+may skip explore whenever it judges reading to be faster, which is exactly the context
+regression that makes this option costly. With it, explore-first is enforced by the tool
+rather than requested in prose, so the ordering does not depend on model strength. That is
+the property the motivating run needed most.
+
 **Tests.** Pin the explore-mode tool list in the existing prompt-ablation tests
-(`src/main/services/agent-prompt-ablation.test.ts`). Add a `parentTools` unit test
-asserting `read_file` survives in both modes and the other four stay delegated. Add a
-scenario to the eval corpus: a small edit in explore mode must reach a successful
+(`src/main/services/agent-prompt-ablation.test.ts`). `parentTools` unit test: `read_file`
+present in both modes, the other four still delegated in explore mode. Gate tests:
+`read_file` before any explore returns the steer and no content; after one explore it
+returns content; the gate is per-turn, not per-process, and two concurrent runs do not see
+each other's state. Eval scenario: a small edit in explore mode reaches a successful
 `str_replace` with `maxExplore: 3`.
 
 **Effort.** Small diff, moderate blast radius — it changes what every explore-mode run is
