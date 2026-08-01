@@ -1534,6 +1534,16 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * Flip Developer mode for a spec that seeds its own project/thread and so has
+ * no use for {@link seedDeveloperModeFixture}'s conversation. Writes the same
+ * pinned appearance defaults as {@link resetUserData}, so call it *after* that
+ * reset — not before, or the reset overwrites it.
+ */
+export function seedDeveloperModeSetting(developerMode: boolean): void {
+  writeSettings({ developerMode })
+}
+
 /** Populated conversation used to validate Developer mode's diagnostic surfaces. */
 export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: boolean): void {
   const projectId = 'e2e-developer-mode-project'
