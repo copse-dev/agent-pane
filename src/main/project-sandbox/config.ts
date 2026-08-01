@@ -230,7 +230,7 @@ export function electronRuntimeAllowReadPaths(): string[] {
   return [...new Set(paths)]
 }
 
-/** Workspace seatbelt rules plus read access for the fs worker script and Electron runtime. */
+/** Read-only workspace rules plus access for the fs worker script and Electron runtime. */
 export function fsWorkerSandboxOverlay(
   workspaceRoot: string,
   workerJsPath: string,
@@ -253,8 +253,12 @@ export function fsWorkerSandboxOverlay(
     ...workspace,
     filesystem: {
       denyRead: fs.denyRead,
-      allowWrite: fs.allowWrite,
-      denyWrite: fs.denyWrite,
+      // The worker serves reads only. Keeping the workspace writable here makes
+      // Linux bwrap materialize every non-existent mandatory deny path (such as
+      // .bashrc and .vscode) in the real checkout for the worker's whole
+      // lifetime. Git then reports those mount points as untracked files.
+      allowWrite: [],
+      denyWrite: [],
       allowGitConfig: fs.allowGitConfig,
       allowRead,
     },

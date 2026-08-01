@@ -397,18 +397,16 @@ describe('containedSandboxNetworkConfig', () => {
 })
 
 describe('fsWorkerSandboxOverlay', () => {
-  it('extends workspace allowRead with the worker script dir and Electron runtime', () => {
+  it('keeps the long-lived read worker fully read-only', () => {
     const worker = join(
       '/Applications/Copse.app/Contents/Resources/app/dist/main',
       'sandbox-fs-worker.js',
     )
     const overlay = fsWorkerSandboxOverlay('/Users/me/project', worker)
-    const allowRead = overlay.filesystem?.allowRead ?? []
-    assert.ok(allowRead.includes('/Users/me/project'))
-    assert.ok(allowRead.includes(dirname(resolve(worker))))
-    for (const p of electronRuntimeAllowReadPaths()) {
-      assert.ok(allowRead.includes(p))
-    }
+    const filesystem = overlay.filesystem
+    assert.ok(filesystem)
+    assert.deepEqual(filesystem.allowWrite, [])
+    assert.deepEqual(filesystem.denyWrite, [])
   })
 })
 
