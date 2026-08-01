@@ -301,13 +301,6 @@ export function mountBrowserPane(
       navigateTab(tab, tab.urlInput.value)
     }
     tab.urlInput.addEventListener('keydown', (e) => {
-      // Cmd/Ctrl+L: select URL bar text (standard browser shortcut)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
-        e.preventDefault()
-        tab.urlInput.select()
-        return
-      }
-      // Enter: submit navigation
       if (e.key === 'Enter') {
         e.preventDefault()
         submitUrl()
@@ -355,6 +348,27 @@ export function mountBrowserPane(
     if (!tab) return
     setActiveTab(tab.id)
     navigateTab(tab, url)
+  }
+
+  /**
+   * Cmd/Ctrl+L — focus the active tab's address bar and select what's in it, so
+   * the next keystroke replaces the URL. Opens a tab when the pane is empty,
+   * matching a browser's "there is always an address bar to type into".
+   */
+  function focusUrlBar(): void {
+    let tab = activeTabId ? tabs.get(activeTabId) : undefined
+    if (!tab) {
+      addTab({ activate: true })
+      tab = activeTabId ? tabs.get(activeTabId) : undefined
+    }
+    if (!tab) return
+    const { urlInput } = tab
+    // The pane may have only just been revealed by the menu handler; the panel is
+    // still display:none this frame and focus() on a hidden input is a no-op.
+    requestAnimationFrame(() => {
+      urlInput.focus()
+      urlInput.select()
+    })
   }
 
   function openArtefact(artefact: CanvasArtefact): void {
@@ -721,6 +735,7 @@ export function mountBrowserPane(
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
     store.on('browser_url_requested', openRequestedBrowserUrl),
+    store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
