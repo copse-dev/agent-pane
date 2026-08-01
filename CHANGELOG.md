@@ -51,6 +51,21 @@ every published entry.
 - Settings copy has been rewritten in user terms throughout, dropping references
   to how Copse is built internally, and the product no longer says "ACP" when it
   means an agent running on your machine.
+- Everyday shell commands stop asking for approval. A new deterministic
+  classifier recognises a fixed allow-list of low-risk command _shapes_ and runs
+  them without a prompt: local reads, and `git fetch` / `gh pr view` against a
+  remote already configured in the repository. Settings → Security →
+  **Auto-approve recognised low-risk commands** raises that to local commits
+  (`git add`/`commit`/`checkout -b`/`stash`) and then to pushes
+  (`git push`, `gh pr create`). Nothing else changes: project scripts
+  (`npm test`), `npx`, installs, force pushes, ref deletions, `gh api`,
+  `gh pr merge`, anything with `$(…)` or a redirection, and every command the
+  list does not recognise still prompt exactly as before. No model decides — the
+  classifier is pure pattern matching, it only ever converts a prompt into an
+  allow (never softens a block), and it is honoured only in a trusted workspace.
+  Each auto-approval is written to the decision log. Note that at the two write
+  levels `git commit`/`checkout`/`push` run your repo's git hooks, which the
+  macOS sandbox contains and Linux/Windows do not.
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,

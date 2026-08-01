@@ -260,7 +260,13 @@ export function isStructurallyReadOnlyShellCommand(command: string): boolean {
   return segments.length > 0 && segments.every(isReadOnlySimpleCommand)
 }
 
-function isReadOnlySimpleCommand(segment: string): boolean {
+/**
+ * Whether a single simple command (no pipeline, no control operators) is a
+ * read/query invocation. Exported for the auto-approval classifier, which does
+ * its own quote-aware segmentation and needs the per-segment verdict rather than
+ * {@link isStructurallyReadOnlyShellCommand}'s whole-line one.
+ */
+export function isReadOnlySimpleCommand(segment: string): boolean {
   let tokens: ReturnType<typeof parseShellCommand>
   try {
     tokens = parseShellCommand(segment)
