@@ -36,17 +36,20 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   same trust and enable gating applies as for Copse's own connections.
 - A curated slice of **Copse's own tools** (workspace read/search/edit, Git,
   shell/background commands, GitHub/CI, staged-diff visibility, archive
-  extraction, and web/browser) is offered as a per-session localhost MCP server
-  (the **native-tool bridge**, issue #602) when the agent supports http MCP
-  servers. Calls execute through the same `ToolRegistry` as built-in model runs,
-  so the normal path validation, diff queue, permission policy, sandbox escape,
-  and approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
-  Bridged calls arrive on their own async chain, so the bridge rebinds the
-  owning thread's _identity_ (not its filesystem root) around each one — that is
-  what lets `read_archive` unpack into the right conversation's directory. Tools
-  that need the native loop's transcript or orchestration state (ask_user,
-  explore subagents, todos, memories) stay private; `advisor` is the exception,
-  scoped to the whole ACP turn by agent-service.
+  extraction, video stills, and web/browser) is offered as a per-session
+  localhost MCP server (the **native-tool bridge**, issue #602) when the agent
+  supports http MCP servers. Calls execute through the same `ToolRegistry` as
+  built-in model runs, so the normal path validation, diff queue, permission
+  policy, sandbox escape, and approval dialogs apply. Disable with the
+  `acpNativeBridgeEnabled` setting. Bridged calls arrive on their own async
+  chain, so the bridge rebinds the owning thread's _identity_ (not its
+  filesystem root) around each one — that is what lets `read_archive` unpack
+  into the right conversation's directory. Results carry images as MCP image
+  content, so `video_frames` returns the stills themselves rather than a
+  manifest describing pictures the agent never received. Tools that need the
+  native loop's transcript or orchestration state (ask_user, explore subagents,
+  todos, memories) stay private; `advisor` is the exception, scoped to the whole
+  ACP turn by agent-service.
 - Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
   under the workspace seatbelt** on macOS when the project sandbox is active
   (issue #590): writes confined to the workspace, home denied except the agent's

@@ -7,6 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
@@ -92,6 +93,11 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'gh_pr_approve',
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
+  // Reading an attached/workspace recording as stills. Frames come back as MCP
+  // image content (see `toMcpContent`), so a bridged agent sees the same
+  // pictures a native run does rather than a manifest describing images it
+  // never received.
+  'video_frames',
   // Unpacking an attached/workspace zip. Bridged for the same reason the edit
   // and shell tools are: without it an ACP agent's only route into an archive
   // is `unzip` through run_shell, which has none of Copse's path-traversal,
@@ -236,6 +242,30 @@ function mergeBridgeExecuteSignal(
   return AbortSignal.any(parts)
 }
 
+/**
+ * A tool result as MCP content blocks.
+ *
+ * Text-only for almost every bridged tool; `video_frames` also returns images,
+ * and dropping those would hand the agent a manifest that says "frames follow"
+ * with nothing after it. Data URLs are split into the base64 payload and MIME
+ * type MCP wants; anything not shaped like a data URL is skipped rather than
+ * forwarded as a broken block.
+ */
+function toMcpContent(
+  result: string,
+  images: readonly ToolResultImage[] | undefined,
+): ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] {
+  const blocks: (
+    { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+  )[] = [{ type: 'text', text: result }]
+  for (const image of images ?? []) {
+    const match = /^data:([^;,]+);base64,(.+)$/s.exec(image.dataUrl)
+    if (!match?.[1] || !match[2]) continue
+    blocks.push({ type: 'image', data: match[2], mimeType: match[1] })
+  }
+  return blocks
+}
+
 function buildMcpServer(
   registry: ToolRegistry,
   advisorContext: { current: AdvisorRunnerContext | null },
@@ -284,11 +314,11 @@ function buildMcpServer(
             : withPermissionContext(),
         )
       const advisor = advisorContext.current
-      const { result } =
+      const { result, images } =
         name === 'advisor' && advisor
           ? await runWithAdvisorContext(advisor, runExecute)
           : await runExecute()
-      return { content: [{ type: 'text', text: result }] }
+      return { content: toMcpContent(result, images) }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     }

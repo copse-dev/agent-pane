@@ -18,6 +18,9 @@ every published entry.
   thread. External ACP agents get the same tool through the native-tool bridge,
   so they unpack archives with those guards rather than falling back to a raw
   `unzip`. See [docs/read-archive.md](docs/read-archive.md).
+- ACP agents can now read attached videos too: `video_frames` joins the
+  native-tool bridge, and bridged tool results carry images as MCP image content
+  so the frames themselves arrive rather than a manifest describing them.
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,
