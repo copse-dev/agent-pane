@@ -50,7 +50,11 @@ import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
-import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
+import {
+  downloadThreadArchive,
+  downloadThreadJsonl,
+  threadHasExportableContent,
+} from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
@@ -211,6 +215,14 @@ export function mountInputBar(
       },
     },
     {
+      label: 'Export thread folder (ZIP)',
+      hidden: (): boolean =>
+        !store.getState().developerMode ||
+        store.getState().activeProjectId === null ||
+        !threadHasExportableContent(getActiveThread(store)),
+      onClick: exportThreadArchive,
+    },
+    {
       label: 'Share trace',
       hidden: (): boolean =>
         !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
@@ -305,6 +317,15 @@ export function mountInputBar(
       .catch((error: unknown) => {
         showErrorToast('Failed to copy thread ID', error)
       })
+  }
+
+  function exportThreadArchive(): void {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (projectId === null || !threadHasExportableContent(thread)) return
+    void downloadThreadArchive(api, projectId, thread).catch((error: unknown) => {
+      showErrorToast('Export thread folder failed', error)
+    })
   }
 
   function shareTrace(): void {

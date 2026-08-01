@@ -277,6 +277,12 @@ export interface ApiClient {
     ) => Promise<void>
     delete: (projectId: string, threadId: string) => Promise<void>
     /**
+     * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
+     * subagents) for download. The JSONL export stays the portable single-file
+     * transcript; this is the full-fidelity copy of the store directory.
+     */
+    exportArchive: (projectId: string, threadId: string) => Promise<Uint8Array<ArrayBuffer>>
+    /**
      * Seed a fork's provider-format history from the thread it branched off.
      * Omit `throughMessageId` (or pass the source's last message id) to copy the
      * sidecar verbatim; an earlier id rebuilds history from the transcript slice.
@@ -435,6 +441,7 @@ export interface ApiClient {
     onShowTerminal: (handler: () => void) => () => void
     onShowChanges: (handler: () => void) => () => void
     onShowBrowser: (handler: () => void) => () => void
+    onFocusBrowserUrlBar: (handler: () => void) => () => void
     onKeyboardShortcuts: (handler: () => void) => () => void
     onUiScaleZoomIn: (handler: () => void) => () => void
     onUiScaleZoomOut: (handler: () => void) => () => void

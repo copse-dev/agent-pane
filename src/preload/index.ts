@@ -475,6 +475,8 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
+    exportArchive: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:exportArchive', projectId, threadId),
     fork: (
       projectId: string,
       sourceThreadId: string,
@@ -581,6 +583,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('menu:showBrowser', listener)
       return (): void => {
         ipcRenderer.off('menu:showBrowser', listener)
+      }
+    },
+    onFocusBrowserUrlBar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:focusBrowserUrlBar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:focusBrowserUrlBar', listener)
       }
     },
     onKeyboardShortcuts: (handler: () => void) => {
