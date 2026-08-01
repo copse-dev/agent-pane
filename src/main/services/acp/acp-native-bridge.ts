@@ -12,6 +12,8 @@ import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
+import { runWithThreadExecutionOwner } from '../thread-execution-context.ts'
+import { getActiveProjectId } from '../workspace.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 /**
@@ -90,6 +92,14 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'gh_pr_approve',
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
+  // Unpacking an attached/workspace zip. Bridged for the same reason the edit
+  // and shell tools are: without it an ACP agent's only route into an archive
+  // is `unzip` through run_shell, which has none of Copse's path-traversal,
+  // symlink, size or zip-bomb guards (see archive-extract.ts). Unlike the
+  // native loop this is offered unconditionally rather than gated on an
+  // attached archive — the bridge's tool list is sent once per session, so the
+  // per-turn schema cost that motivates the native gate does not apply.
+  'read_archive',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
@@ -201,6 +211,13 @@ interface BridgeExecuteContext {
   getCallSignal: () => AbortSignal
   /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
   threadId: string
+  /**
+   * Owning project, read at request time rather than captured at session start
+   * so a project switch mid-session cannot write run-scoped state to the thread
+   * store of a project the user has left. Null when no project is active, in
+   * which case owner-scoped tools fail closed rather than guessing.
+   */
+  projectId: string | null
   networkScopeAlreadyApplies: boolean
 }
 
@@ -254,8 +271,18 @@ function buildMcpServer(
       // Bridge HTTP handlers are a separate async chain from the ACP turn — rebind
       // the thread identity so approval prompts / idle-deadline pauses attribute
       // to the owning thread (and cancelApprovalsForThread can find them).
+      //
+      // The execution *owner* is rebound for the same reason: a tool that keeps
+      // run-scoped state (read_archive unpacks into the owning thread's
+      // directory) needs to know whose thread this is. Identity only — roots
+      // stay as they resolve today, so no other bridged tool changes.
+      const owner = ctx.projectId ? { projectId: ctx.projectId, threadId: ctx.threadId } : null
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        runWithActiveRunIdentity(ctx.threadId, withPermissionContext)
+        runWithActiveRunIdentity(ctx.threadId, () =>
+          owner
+            ? runWithThreadExecutionOwner(owner, withPermissionContext)
+            : withPermissionContext(),
+        )
       const advisor = advisorContext.current
       const { result } =
         name === 'advisor' && advisor
@@ -376,6 +403,7 @@ export async function startAcpNativeBridge(
         getTurnSignal: () => turnSignal,
         getCallSignal: () => callAbort.signal,
         threadId: opts.threadId,
+        projectId: getActiveProjectId(),
         networkScopeAlreadyApplies,
       })
       res.on('close', () => {

@@ -41,6 +41,24 @@ the same bargain [`video_frames`](video-frames.md) strikes: most conversations
 never see a zip and should not pay for the schema every turn. An agent that
 needs to open a zip sitting in the repo still has `run_shell`.
 
+## Over ACP
+
+`read_archive` is also offered to external ACP agents through the
+[native-tool bridge](acp-agents.md), so an agent driving your workspace unpacks
+archives the same way the built-in loop does.
+
+That is a containment argument, not a convenience one: `run_shell` is bridged
+too, so without this an ACP agent's only route into an archive is plain `unzip`,
+which has none of the guards below. Bridging the tool means the traversal,
+symlink, size and zip-bomb checks apply to external agents as well.
+
+Two differences from the native loop. The bridge offers the tool
+**unconditionally** rather than gating it on an attached archive — its tool list
+is sent once per session, so the per-turn schema cost that motivates the native
+gate does not apply. And because a bridged call runs on its own async chain, the
+bridge rebinds the owning thread's identity around it; without that the
+extraction would have no thread to belong to.
+
 ## Where it unpacks
 
 ```

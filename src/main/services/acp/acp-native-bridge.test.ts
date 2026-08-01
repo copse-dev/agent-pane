@@ -15,6 +15,11 @@ import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { definePack } from '@copse/agent/packs/pack-manifest.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { storageSet } from '../storage/storage.ts'
+import {
+  requireThreadExecutionOwner,
+  type ThreadExecutionOwner,
+} from '../thread-execution-context.ts'
 
 /**
  * The native-tool MCP bridge (issue #602, tier 2) exposes a curated slice of
@@ -162,6 +167,43 @@ describe('startAcpNativeBridge', () => {
     assert.equal(contentText(shellCall), 'ran npm test')
     assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
+  })
+
+  it('binds the owning thread so a run-scoped tool knows whose thread it is', async () => {
+    // The bridge's MCP handlers are a separate async chain from the ACP turn, so
+    // without an explicit rebind `requireThreadExecutionOwner()` throws and any
+    // tool that keeps run-scoped state (read_archive) fails on every call.
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const seen: (ThreadExecutionOwner | string)[] = []
+    const registry = testRegistry([])
+    registry.register({
+      name: 'read_archive',
+      description: 'Unpack an archive',
+      parameters: z.object({}),
+      execute: () => {
+        try {
+          seen.push(requireThreadExecutionOwner())
+        } catch (err) {
+          seen.push(err instanceof Error ? err.message : String(err))
+        }
+        return Promise.resolve('unpacked')
+      },
+    })
+    storageSet('activeProjectId', 'project-1')
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-thread',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'read_archive', arguments: {} },
+    })
+    assert.equal(contentText(call), 'unpacked')
+    assert.deepEqual(seen, [{ projectId: 'project-1', threadId: 'bridge-thread' }])
   })
 
   it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {

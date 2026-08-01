@@ -15,7 +15,9 @@ every published entry.
   explored file by file rather than described. Previously a dropped zip was read
   as text and landed in the prompt as binary noise. The extractor refuses path
   traversal, symlinks and zip bombs, and the extraction is deleted with the
-  thread. See [docs/read-archive.md](docs/read-archive.md).
+  thread. External ACP agents get the same tool through the native-tool bridge,
+  so they unpack archives with those guards rather than falling back to a raw
+  `unzip`. See [docs/read-archive.md](docs/read-archive.md).
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,
