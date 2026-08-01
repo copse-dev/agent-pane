@@ -9,6 +9,7 @@ import { mountProjectsPane } from './projects-pane.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -154,6 +155,15 @@ function createApi(options: {
       threads: {
         ...base['threads'],
         listOrphans: async () => [],
+      },
+      archive: {
+        // Mirrors storeArchiveAttachment: the stored path is under whichever
+        // thread was active at attach time.
+        attach: async (_projectId: string, threadId: string, archive: { name: string }) => ({
+          path: `/store/${threadId}/blobs/media/uuid-${archive.name}`,
+          name: archive.name,
+          sizeBytes: 8,
+        }),
       },
     } satisfies ApiClient
   })()
@@ -664,6 +674,78 @@ describe('input bar branch mismatch warning', () => {
     assert.equal(checkedOutBranch, 'feature/thread-branch')
     assert.equal(branchRefreshes, 1)
     assert.equal(warning.hidden, true)
+  })
+})
+
+describe('input bar attachments across a thread switch', () => {
+  /**
+   * An attachment is bound to the thread that was active when it was attached:
+   * `archive:attach` has already stored the file under that thread's
+   * `blobs/media/`. Carrying the chip to another thread recorded a path into a
+   * directory the receiving thread does not own — observed in the wild as a
+   * thread whose `meta.archives` pointed into a different thread's blobs, which
+   * dangles the moment the original thread is deleted.
+   */
+  it('drops attachment chips when the active thread changes', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    await handlers.attachArchive({ name: 'bundle.zip', bytes: new ArrayBuffer(8) })
+    await settle()
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .archive-chip').length,
+      1,
+      'the archive chip is attached to the active thread',
+    )
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .archive-chip').length,
+      0,
+      'switching threads clears the chip rather than re-homing it',
+    )
+  })
+
+  it('binds a stored archive to the thread that was active when it was attached', async () => {
+    // The other half of the same bug: the path the composer holds names the
+    // attaching thread's directory, which is why carrying it across a switch
+    // cannot be made correct simply by re-recording it on the new thread.
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers)
+    await handlers.attachArchive({ name: 'bundle.zip', bytes: new ArrayBuffer(8) })
+    await settle()
+
+    const chip = host.querySelector('.attachment-chips .archive-chip')
+    assert.ok(chip)
+    assert.match(chip.textContent, /bundle\.zip/)
   })
 })
 

@@ -184,6 +184,12 @@ export function isBridgedNativeToolTitle(title: string | null | undefined): bool
 export interface AcpNativeBridge {
   /** MCP endpoint the agent should connect to (session/new `mcpServers`). */
   url: string
+  /**
+   * Tool names this bridge will serve. Exposed for diagnostics: an ACP run
+   * records no toolset fingerprint of its own, so without this there is no way
+   * to answer "was the tool even offered?" after the fact.
+   */
+  toolNames: readonly string[]
   /** Per-turn bearer token the agent must send as `Authorization: Bearer …`. */
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
@@ -467,6 +473,7 @@ export async function startAcpNativeBridge(
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
+    toolNames: bridgedTools(registry).map((tool) => tool.name),
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },

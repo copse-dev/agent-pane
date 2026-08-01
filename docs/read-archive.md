@@ -34,7 +34,16 @@ Where the file goes depends on where it came from, exactly as for videos:
 The prompt gains a short reference block naming the path, saying that the
 archive is not in context, and saying that unpacking is a **one-shot step** —
 without that second half a model tends to call the tool once per entry rather
-than unpacking once and reading files.
+than unpacking once and reading files. It is phrased conditionally ("if you have
+a `read_archive` tool") and tells a model without one to **say so** rather than
+ignore the archive: the renderer composes this block from the attachment alone
+and cannot know whether the run it is addressed to was actually offered the tool
+(an ACP run whose bridge never mounted is the case that bites).
+
+An attachment belongs to the thread it was attached to — the file is already
+stored under that thread's `blobs/media/`. Switching threads therefore clears
+the composer's chips rather than carrying them, which would otherwise record a
+path into a directory the receiving thread does not own.
 
 `read_archive` is withheld from threads that have never had an archive attached,
 the same bargain [`video_frames`](video-frames.md) strikes: most conversations

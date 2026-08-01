@@ -21,6 +21,16 @@ every published entry.
 - ACP agents can now read attached videos too: `video_frames` joins the
   native-tool bridge, and bridged tool results carry images as MCP image content
   so the frames themselves arrive rather than a manifest describing them.
+- Fixed: composer attachments (files, images, videos, archives) carried across a
+  thread switch, so a zip or recording attached in one conversation could be
+  recorded against another — pointing at a file in the first thread's directory,
+  which vanished if that thread was deleted. Attachments now clear on a switch,
+  matching drafts.
+- ACP diagnosability: a native-tool bridge that fails to start is logged instead
+  of silently swallowed, the tools it offers are logged when it does start, and
+  an agent that does not advertise MCP-over-http is named as the reason the
+  bridge was withheld. Previously all three were indistinguishable from "the
+  agent chose not to use the tool".
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,

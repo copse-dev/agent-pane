@@ -529,6 +529,25 @@ export function mountInputBar(
     setThreadDraftPrompt(store, id, composer.expandedValue())
   }
 
+  /**
+   * Drop every composer attachment and its chip.
+   *
+   * Called on send, and on a thread switch: an attachment is bound to the
+   * thread that was active when it was attached — a dropped archive or video
+   * is already stored under that thread's `blobs/media/` — so carrying the chip
+   * to another thread would record a path into a directory the receiving thread
+   * does not own, and which disappears if the original thread is deleted.
+   */
+  function clearAttachments(): void {
+    attachedFiles = []
+    attachedImages = []
+    attachedVideos = []
+    attachedArchives = []
+    attachedThreads = []
+    attachedShells = []
+    clear(chips)
+  }
+
   function syncComposerThread(): void {
     const id = getActiveThreadId()
     if (id === activeComposerThreadId) return
@@ -537,6 +556,9 @@ export function mountInputBar(
     }
     const thread = getThreadById(store, id)
     composer.value = thread?.draftPrompt ?? ''
+    // Attachments are thread-bound (see clearAttachments); the draft text that
+    // just moved with the switch is not.
+    if (activeComposerThreadId !== null) clearAttachments()
     activeComposerThreadId = id
     hideCheckoutError()
     // New thread → drop the prior thread's estimate and recompute for this one.
@@ -1124,13 +1146,7 @@ export function mountInputBar(
     }
     composer.clear()
     setThreadDraftPrompt(store, id, '')
-    attachedFiles = []
-    attachedImages = []
-    attachedVideos = []
-    attachedArchives = []
-    attachedThreads = []
-    attachedShells = []
-    clear(chips)
+    clearAttachments()
     scheduleContextEstimate(0)
   }
 

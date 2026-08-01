@@ -205,11 +205,13 @@ function buildVideoRefBlock(refs: VideoRefAttachment[]): string {
 // the only way to see inside and calls it once per entry.
 const ARCHIVE_STEERING_PREAMBLE =
   'The user attached the archive(s) below. The archive itself is NOT in your context — ' +
-  'only these paths are. Use the `read_archive` tool to unpack one: it extracts the ' +
-  "archive into this conversation's own directory and returns a listing of everything " +
-  'inside. After that the contents are ordinary files — read them with read_file, grep ' +
-  'them with search_code, or summarize the tree with explore, using the paths under the ' +
-  'extraction root it gives you. Unpack once, then work with the files.'
+  'only these paths are. If you have a `read_archive` tool, use it to unpack one: it ' +
+  "extracts the archive into this conversation's own directory and returns a listing of " +
+  'everything inside. After that the contents are ordinary files — read them with ' +
+  'read_file, grep them with search_code, or summarize the tree with explore, using the ' +
+  'paths under the extraction root it gives you. Unpack once, then work with the files. ' +
+  'If no such tool is offered to you, say so and ask how to proceed — do not silently ' +
+  'ignore the archive, and do not unpack it yourself with shell commands.'
 
 function buildArchiveRefBlock(refs: ArchiveRefAttachment[]): string {
   const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`)

@@ -157,6 +157,17 @@ describe('archive refs', () => {
     assert.doesNotMatch(result, /```/)
   })
 
+  it('tells a model without the tool to speak up rather than ignore the archive', () => {
+    // The transcript that motivated this: an ACP run whose bridge never mounted
+    // got this block, had no read_archive, and quietly went off grepping —
+    // leaving the user thinking the attachment had been read.
+    const result = buildTextWithAttachments('', [], [], { archiveRefs })
+    assert.match(result, /If you have a `read_archive` tool/)
+    assert.match(result, /If no such tool is offered to you, say so/)
+    // Falling back to `unzip` would bypass every extractor guard.
+    assert.match(result, /do not unpack it yourself with shell commands/)
+  })
+
   it('says the archive is not in context and that unpacking is a one-shot step', () => {
     // The second half matters as much as the first: told only that the bytes
     // are absent, a model tends to call the tool once per entry instead of
