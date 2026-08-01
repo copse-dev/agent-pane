@@ -124,24 +124,29 @@ export function openNewThread(store: AppStore): string {
     (t) => isBlankThread(t) && !hasUnsubmittedPrompt(t) && !isThreadArchived(t),
   )
   if (existing) {
+    // Re-seed the reused blank thread's model from the current global default,
+    // so the picker reflects the settings-page default rather than whatever
+    // model was last chosen on a prior conversation. This runs even when the
+    // blank thread is already active: "New Thread" means a fresh start, so a
+    // just-changed default (or a per-thread pin from the footer picker) must not
+    // stick around. When the default is `auto:best-value`, `new_thread_opened`
+    // (below) then lets the resolver swap the sentinel for a concrete route.
+    const defaultModel = store.getState().settings?.model
+    const reseed = (list: Thread[]): Thread[] =>
+      list.map((t) => {
+        if (t.id !== existing.id) return t
+        // Drop any prior per-thread model and re-seed from the global default
+        // (omit entirely when there is no default, per exactOptionalPropertyTypes).
+        const { model: _prevModel, ...rest } = t
+        return defaultModel !== undefined ? { ...rest, model: defaultModel } : rest
+      })
     if (activeThreadId !== existing.id) {
       store.emit('composer_draft_flush')
-      // Reset the model to the current global default when reusing an existing
-      // blank thread, so the picker reflects the settings page default rather
-      // than whatever model was last chosen on a prior conversation.
-      const defaultModel = store.getState().settings?.model
-      store.setState({
-        activeThreadId: existing.id,
-        threads: threads.map((t) => {
-          if (t.id !== existing.id) return t
-          // Drop any prior per-thread model and re-seed from the global default
-          // (omit entirely when there is no default, per exactOptionalPropertyTypes).
-          const { model: _prevModel, ...rest } = t
-          return defaultModel !== undefined ? { ...rest, model: defaultModel } : rest
-        }),
-      })
-      store.emit('threads_changed')
+      store.setState({ activeThreadId: existing.id, threads: reseed(threads) })
+    } else {
+      store.setState({ threads: reseed(threads) })
     }
+    store.emit('threads_changed')
     pruneBlankThreads(store, new Set([existing.id]))
     store.emit('threads_changed')
     // Keep the side/bottom panel open; only reset the file/diff viewer content.
