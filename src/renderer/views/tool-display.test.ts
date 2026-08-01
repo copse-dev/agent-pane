@@ -206,6 +206,9 @@ describe('tool call display (component)', () => {
 
     const card = document.querySelector('.tool-card[data-tool-id="tc-advisor"]')
     assert.ok(card, 'expected an advisor tool card')
+    // Collapsed by default — its body (including .tool-result) is deferred
+    // until it opens.
+    card.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
     const resultEl = card.querySelector('.tool-result')
     assert.ok(resultEl, 'expected a tool-result section')
     assert.ok(resultEl.classList.contains('tool-result-markdown'))
@@ -236,6 +239,9 @@ describe('tool call display (component)', () => {
 
     const card = document.querySelector('.tool-card[data-tool-id="tc-acp-term"]')
     assert.ok(card, 'expected the ACP tool call to render a card')
+    // Collapsed by default — its body (including .tool-result) is deferred
+    // until it opens.
+    card.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
     const resultEl = card.querySelector('.tool-result')
     assert.ok(resultEl, 'expected a tool-result section')
     // The fence must become a real code element, not literal backticks.
