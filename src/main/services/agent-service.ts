@@ -647,6 +647,20 @@ export async function runAgent(
     try {
       const packs = getDefaultPackRegistry()
       const runtime = getPackToolRuntimeController()
+      // `isEnabled` is "registered AND not disabled", so on its own it cannot
+      // tell a pack the user switched off from one that never registered at
+      // all. Those have different causes and different fixes, and a selected
+      // pack that failed to appear is the more likely of the two: check
+      // registration first so the message names the real state.
+      //
+      // A `packSources` entry whose discovery throws is logged
+      // `[packs] selected source … is inert` and never registers; a pack whose
+      // tools fail to start is logged `[packs] pack … tools could not start`
+      // and is registered-then-disabled (pack-service.ts). So "not installed"
+      // points at the first warning and "disabled" at the second.
+      if (!packs.has(packModel.packId)) {
+        throw new Error(`The selected pack "${packModel.packId}" is not installed.`)
+      }
       if (!packs.isEnabled(packModel.packId)) {
         throw new Error(`The selected pack "${packModel.packId}" is disabled.`)
       }
