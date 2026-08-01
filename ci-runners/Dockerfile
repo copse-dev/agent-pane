@@ -59,6 +59,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git jq sudo gnupg \
       ripgrep \
+      # ASRT's Linux backend. The app starts its project sandbox wherever a
+      # backend exists (bubblewrap here, sandbox-exec on macOS), and executable
+      # pack behavior *requires* an active sandbox — it fails closed rather than
+      # running pack code unconfined. Without bwrap the pack e2e cannot pass on
+      # this image, and project subprocesses run unsandboxed. bwrap also needs
+      # usable unprivileged user namespaces at runtime; see docker-compose.yml.
+      bubblewrap \
       build-essential python3 python3-setuptools \
       xvfb \
       fonts-liberation \
