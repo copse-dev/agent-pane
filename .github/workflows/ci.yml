@@ -704,7 +704,20 @@ jobs:
       # cancelling the siblings frees the box instead of grinding them all through
       # their retry budget. Tradeoff: you see the first failing shard, not every
       # failing shard, in one run.
-      fail-fast: true
+      #
+      # `ci-full` is the exception, because there the tradeoff inverts. That label
+      # already means "run the whole heavy tier on a develop PR" — it is opt-in and
+      # rare, and it is used precisely when the e2e signal is what's wanted. With
+      # independent reds (not a whole-run problem) fail-fast surfaces exactly one
+      # per run: #1425 spent five runs learning about six specs, cancelling six
+      # shards each time, because each red hid the next. Letting a `ci-full` run
+      # report every shard costs fleet time on a PR that is already failing, and
+      # buys the complete list in one pass.
+      #
+      # Non-PR events have no labels, so `contains()` is false and fail-fast stays
+      # on for pushes, the nightly schedule, and tags — the fleet-protecting
+      # default is unchanged everywhere it was doing its job.
+      fail-fast: ${{ !contains(github.event.pull_request.labels.*.name, 'ci-full') }}
       matrix:
         shard: ${{ fromJSON(needs.precheck.outputs.e2e_shards) }}
     env:
