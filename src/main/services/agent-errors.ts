@@ -1,5 +1,5 @@
 import { RequestError } from '@agentclientprotocol/sdk'
-import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 
@@ -123,9 +123,102 @@ function formatErrorData(data: unknown): string | null {
   return null
 }
 
-function formatAcpAuthError(rpc: JsonRpcError | null, agentId?: string): string {
+/**
+ * Why an ACP turn could not authenticate. `required` is "this agent has never
+ * been signed in / its key was refused"; `expired` is "it *was* signed in and
+ * the stored credential lapsed" — a different user fix (sign in again) and the
+ * only one that says so, which is why the two are not collapsed.
+ */
+export type AcpAuthFailureKind = 'required' | 'expired'
+
+/**
+ * A lapsed credential, however the agent words it. Agents rarely use the ACP
+ * `auth_required` code for this — Claude's adapter reports an expired OAuth
+ * token as a generic `-32603 Internal error` whose *message* carries the real
+ * cause — so the text is the signal.
+ */
+const EXPIRED_AUTH_RE =
+  /re-?authenticat|(?:token|session|login|credentials?|subscription)\s+(?:has\s+|have\s+)?expired|expired\s+(?:oauth\s+|access\s+|refresh\s+|api\s+)?(?:token|session|credentials?)/i
+
+/** Auth failures that are not specifically an expiry (never signed in, key refused). */
+const AUTH_FAILURE_RE =
+  /authentication[\s_-]*(?:required|failed|error)|failed to authenticate|not (?:logged in|authenticated)|unauthenticated|invalid api key|\/login\b/i
+
+/** Every string an agent might have hidden the auth signal in, joined for matching. */
+function authSignalText(rpc: JsonRpcError | null, detail: string): string {
+  const data = rpc ? formatErrorData(rpc.data) : null
+  return [rpc?.message ?? '', detail, data ?? ''].join('\n')
+}
+
+/**
+ * Classify an ACP turn failure as a credentials problem, and say which kind.
+ * Returns `null` when the failure is something else.
+ *
+ * Without an `acpAgentId` only the unambiguous ACP `auth_required` code counts:
+ * the text heuristics below would otherwise mislabel an ordinary provider 401
+ * (whose fix is Copse's own key settings, not an external agent's login).
+ */
+export function classifyAcpAuthFailure(
+  err: unknown,
+  ctx?: ClassifyAgentErrorContext,
+): AcpAuthFailureKind | null {
+  const rpc = findJsonRpcError(err)
+  if (!ctx?.acpAgentId) return rpc?.code === -32000 ? 'required' : null
+
+  const { status, type, message } = parseProviderError(err)
+  const text = authSignalText(rpc, message ?? errorMessage(err))
+
+  // Expiry wins over the generic signals: an expired token also reports
+  // "Failed to authenticate", and only the expiry reading names the right fix.
+  if (EXPIRED_AUTH_RE.test(text)) return 'expired'
+  if (rpc?.code === -32000) return 'required'
+  if (AUTH_FAILURE_RE.test(text)) return 'required'
+  if (status === 401 || type === 'authentication_error' || text.includes('Unauthorized'))
+    return 'required'
+  return null
+}
+
+/** Where to configure the agent's credentials instead of running its login command. */
+function acpEnvHint(known: { title: string; envHints?: string[] } | undefined): string {
+  if (!known?.envHints || known.envHints.length === 0) return ''
+  return ` Alternatively, set ${known.envHints.join(' or ')} in Settings → ACP agents → ${known.title} → Environment.`
+}
+
+/** The agent's own words, kept verbatim under the guidance rather than leading with it. */
+function acpAgentReport(rpc: JsonRpcError | null): string[] {
+  if (!rpc) return []
+  const dataDetail = formatErrorData(rpc.data)
+  const report = `Agent reported: ${formatJsonRpcErrorCode(rpc.code, rpc.message)}`
+  return [dataDetail ? `${report}\nDetails: ${dataDetail}` : report]
+}
+
+const ACP_KEYS_NOT_FORWARDED =
+  'Copse’s built-in provider keys (Settings → Providers) are not passed to external agents — configure auth on the agent itself.'
+
+function formatAcpAuthError(
+  rpc: JsonRpcError | null,
+  kind: AcpAuthFailureKind,
+  agentId?: string,
+): string {
   const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
   const agentName = known?.title ?? agentId ?? 'The external agent'
+
+  // An expired credential is a *different* message: the agent is configured and
+  // was working, so install/first-run guidance would send the user the wrong
+  // way. Lead with the one action that fixes it, and keep the raw ACP code
+  // (often an unhelpful `-32603 Internal error`) below the fold.
+  if (kind === 'expired') {
+    const reauth = acpReauthCommand(known)
+    return [
+      `${agentName}’s saved sign-in has expired, so this turn could not run.`,
+      reauth
+        ? `Sign in again with \`${reauth}\`, then re-send your message.${acpEnvHint(known)}`
+        : `Run the agent’s login command again, then re-send your message.${acpEnvHint(known)}`,
+      ...acpAgentReport(rpc),
+      ACP_KEYS_NOT_FORWARDED,
+    ].join('\n\n')
+  }
+
   const code = rpc?.code ?? -32000
   const message = rpc?.message ?? 'Authentication required'
   const lines = [
@@ -134,30 +227,14 @@ function formatAcpAuthError(rpc: JsonRpcError | null, agentId?: string): string 
   const dataDetail = rpc ? formatErrorData(rpc.data) : null
   if (dataDetail) lines.push(`Details: ${dataDetail}`)
   if (known?.setup) {
-    const envHint =
-      known.envHints && known.envHints.length > 0
-        ? ` Alternatively, set ${known.envHints.join(' or ')} in Settings → ACP agents → ${known.title} → Environment.`
-        : ''
-    lines.push(`Sign in with \`${known.setup}\`.${envHint}`)
+    lines.push(`Sign in with \`${known.setup}\`.${acpEnvHint(known)}`)
   } else {
     lines.push(
       'Run the agent’s login command or add its required API keys in Settings → ACP agents → Environment for that agent.',
     )
   }
-  lines.push(
-    'Copse’s built-in provider keys (Settings → Providers) are not passed to external agents — configure auth on the agent itself.',
-  )
+  lines.push(ACP_KEYS_NOT_FORWARDED)
   return lines.join('\n\n')
-}
-
-function isAcpAuthFailure(
-  rpc: JsonRpcError | null,
-  detail: string,
-  ctx?: ClassifyAgentErrorContext,
-): boolean {
-  if (rpc?.code === -32000) return true
-  if (!ctx?.acpAgentId) return false
-  return /^Authentication required\b/i.test(detail)
 }
 
 /** Why a provider refused a request, when the cause is credentials or billing. */
@@ -207,10 +284,13 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   const raw = errorMessage(err)
   const detail = message ?? raw
 
-  if (isAcpAuthFailure(rpc, detail, ctx)) return formatAcpAuthError(rpc, ctx?.acpAgentId)
+  const authFailure = classifyAcpAuthFailure(err, ctx)
+  if (authFailure) return formatAcpAuthError(rpc, authFailure, ctx?.acpAgentId)
 
+  // ACP turns never reach here: `classifyAcpAuthFailure` already claimed every
+  // credentials failure that carries an agent id, and points at that agent's own
+  // login rather than Copse's key settings.
   if (status === 401 || type === 'authentication_error' || detail.includes('Unauthorized')) {
-    if (ctx?.acpAgentId) return formatAcpAuthError(rpc, ctx.acpAgentId)
     return 'The API key was rejected (401). The key reached the provider but was refused — check it is correct and current in Settings, and that no stale `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` is set in your shell.'
   }
 

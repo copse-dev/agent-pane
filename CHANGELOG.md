@@ -8,6 +8,20 @@ every published entry.
 
 ## Unreleased
 
+- An external agent whose sign-in has expired can now be signed back in from the
+  app. A lapsed credential used to surface as a raw
+  `ACP error -32603 (Internal error)` with no route back to a working session:
+  Claude's adapter reports an expired OAuth token as a generic internal error, so
+  the message never reached the guidance meant for auth failures. Copse now reads
+  the real cause out of that error, says which agent's sign-in expired, names the
+  command that renews it (`claude /login` — not the first-run `claude setup-token`),
+  and offers to open a shell in the **Shells** pane already running it. You finish
+  the sign-in there and re-send your message.
+- Fixed the cause of those expiries under the ACP sandbox: the Claude presets did
+  not allow `claude.com`, so an OAuth login could not reach `platform.claude.com`
+  to refresh its access token. Nothing failed at the time — the agent kept working
+  on the token it held and then died once it aged out. The presets now allow it.
+
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,

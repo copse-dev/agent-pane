@@ -99,6 +99,31 @@ in that prefix. Cursor is never auto-installed (its installer is not npm).
 > Tip: you can **Add** a known agent before installing it — Copse stores the
 > config now, and you run the shown Install/Sign in commands when ready.
 
+### When a sign-in lapses
+
+External agents hold their own credentials, and those expire. When a turn fails
+because the agent could not authenticate, Copse now says so in the agent's own
+terms and offers to fix it: the chat message names the command that signs that
+agent in again (`claude /login`, `cursor-agent login`, `codex login`, …), and a
+prompt offers to open a shell in the **Shells** pane already running it. Finish
+the sign-in there, then re-send your message — Copse cannot complete another
+program's login flow for you.
+
+The distinction matters because the commands differ. `claude setup-token` mints a
+long-lived token for an agent that has never been signed in; an OAuth session
+that has lapsed is renewed with `claude /login`. Copse tells the two apart from
+the failure and names the right one.
+
+Expiry is worth understanding rather than just re-running: an OAuth login
+refreshes its own access token in the background, so a _sandboxed_ agent that
+cannot reach its provider's token endpoint will keep working until the current
+token ages out and then fail with `OAuth access token has expired`. If that
+happens repeatedly, check the **Sandbox network audit** card at the end of the
+turn for a blocked host and add its domain to that agent's
+`sandbox.allowedDomains` override. The Claude presets allow `anthropic.com`,
+`claude.ai`, and `claude.com` (the console moved to `platform.claude.com`, which
+is where an OAuth login refreshes) for exactly this reason.
+
 ### Detect from the command line
 
 Prefer the terminal? Run the standalone detector, which prints what's installed

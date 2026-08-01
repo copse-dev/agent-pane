@@ -477,4 +477,6 @@ export interface IpcEventMap {
   'theme:changed': ['light' | 'dark']
   'terminal:output': [sessionId: string, data: string]
   'terminal:exit': [sessionId: string, code: number]
+  /** Open a fresh shell in the Shells pane already running this command. */
+  'terminal:run_command': [command: string]
 }

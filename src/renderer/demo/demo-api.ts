@@ -451,6 +451,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       setActive: resolvedVoid,
       onOutput: subscribe,
       onExit: subscribe,
+      onRunCommand: subscribe,
     },
     git: {
       isAvailable: () => resolved(true),

@@ -859,6 +859,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('terminal:exit', listener)
       }
     },
+    onRunCommand: (handler: (command: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, command: string): void => {
+        handler(command)
+      }
+      ipcRenderer.on('terminal:run_command', listener)
+      return (): void => {
+        ipcRenderer.off('terminal:run_command', listener)
+      }
+    },
   },
   git: {
     isAvailable: (projectId: string, threadId: string) =>
