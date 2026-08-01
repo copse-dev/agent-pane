@@ -43,23 +43,40 @@ services:
     environment:
       EPHEMERAL: 'true'
     init: true # PID 1 reaps stray electron/chromedriver children
-    # bubblewrap — ASRT's Linux backend — builds its confinement from user and
-    # mount namespaces. Docker's default AppArmor profile denies the mount
-    # operations it needs, so without this bwrap cannot start: the app degrades
-    # to unsandboxed, and executable packs stay unavailable because they fail
-    # closed rather than run unconfined (pack-tool-host.ts).
+    # bubblewrap — ASRT's Linux backend — builds its confinement from a user
+    # namespace. Without both entries below it cannot start at all, the app
+    # degrades to unsandboxed, and executable packs stay unavailable because
+    # they fail closed rather than run unconfined (pack-tool-host.ts).
+    #
+    # `seccomp` is the one that actually unblocks it, and it is not optional.
+    # Docker's default profile allows `clone`/`unshare` but filters their flag
+    # argument to exclude CLONE_NEWUSER for containers without CAP_SYS_ADMIN, so
+    # bwrap gets EPERM creating the namespace — before it attempts any mount:
+    #
+    #   bwrap: No permissions to create new namespace, likely because the
+    #   kernel does not allow non-privileged user namespaces.
+    #
+    # That message points at a kernel sysctl, which is a red herring here: the
+    # host kernel allows it, Docker's syscall filter is what refuses. `apparmor`
+    # covers the mount operations bwrap performs once the namespace exists.
+    #
+    # `cap_add: [SYS_ADMIN]` would also satisfy the seccomp rule, but grants a
+    # near-root capability for the whole container; dropping the syscall filter
+    # while keeping the capability set is the smaller concession. Tighter still
+    # would be a custom seccomp profile — Docker's default with the CLONE_NEWUSER
+    # mask removed — if this ever needs narrowing.
     #
     # This does loosen the *container's* confinement on boxes that execute PR
     # code. The trade is deliberate: it is what lets the app impose its own
     # per-job sandbox around the processes that actually handle repo content,
     # which is a tighter boundary than the container profile was giving those
-    # processes anyway. Remove these two lines to keep the stricter container
-    # profile and accept an unsandboxed app (the previous behaviour).
+    # processes anyway. Remove this block to keep the stricter container profile
+    # and accept an unsandboxed app (the previous behaviour).
     #
-    # Docker >= 20.10 already permits CLONE_NEWUSER under its default seccomp
-    # profile; add `- seccomp=unconfined` here only if an older Engine rejects
-    # the namespace creation.
+    # Verify after `docker compose up -d --build`:
+    #   docker compose exec runner bwrap --ro-bind / / --unshare-all true
     security_opt:
+      - seccomp=unconfined
       - apparmor=unconfined
     # Superset image runs the memory-hungry Chromium-under-Xvfb e2e suite, so
     # size for the heavy tier even though light jobs also land here. ~4-6 GB per
