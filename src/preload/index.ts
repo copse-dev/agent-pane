@@ -475,6 +475,8 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
+    exportArchive: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:exportArchive', projectId, threadId),
     fork: (
       projectId: string,
       sourceThreadId: string,
