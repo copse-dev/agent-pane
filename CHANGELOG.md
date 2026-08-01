@@ -8,6 +8,12 @@ every published entry.
 
 ## Unreleased
 
+- A thread can be exported as its whole folder, not just its transcript. The
+  footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
+  the portable single-file transcript — and adds **Export thread folder (ZIP)**,
+  a faithful copy of the thread's directory in the chat store: the event spine,
+  message prose, tool-result and image blobs, plans, the provider-history
+  sidecar, and any nested subagent sessions.
 - Threads can be forked. Right-click a thread in the sidebar and choose **Fork**
   to branch the whole conversation, or hover any prompt in the transcript and
   choose **Fork from here** to branch it as it stood at that point. The fork is a
