@@ -31,6 +31,10 @@ export interface StoreEvents {
   // Request the Roadmap pane to select a specific item (quick-open palette hit).
   roadmap_reveal: [itemId: string]
   browser_url_requested: [url: string]
+  // Cmd/Ctrl+L: focus the Browser pane's address bar and select its contents.
+  // Raised from the app menu because the key never reaches the renderer while a
+  // <webview> holds focus — see app-menu.ts.
+  browser_url_bar_focus_requested: []
   pr_open_requested: [owner: string, repo: string, number: number]
   // An MCP-UI artefact should be rendered in the canvas (Browser pane).
   canvas_artefact_requested: [artefact: CanvasArtefact]

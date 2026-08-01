@@ -6,7 +6,7 @@ import { createThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
-import { qsRequired } from '../dom/helpers.ts'
+import { el, qsRequired } from '../dom/helpers.ts'
 
 interface FakeWebview extends HTMLElement {
   src: string
@@ -236,6 +236,50 @@ describe('browser pane requested URLs', () => {
 
       const tabLabel = list.querySelector('.browser-tabs-tab-label')?.textContent
       assert.match(tabLabel ?? '', /example\.com/)
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
+      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
+      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      unmount()
+    }
+  })
+
+  it('focuses and selects the address bar on a url-bar focus request', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'browser' })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openBrowserUrl(store, 'https://example.com/docs')
+      const urlInput = qsRequired<HTMLInputElement>(viewer, '.browser-url-input')
+      // Park focus somewhere else first: the regression this guards against was a
+      // handler that only worked when the address bar was already focused.
+      const elsewhere = el('input', { type: 'text' })
+      document.body.append(elsewhere)
+      elsewhere.focus()
+      assert.notEqual(document.activeElement, urlInput)
+
+      store.emit('browser_url_bar_focus_requested')
+
+      assert.equal(document.activeElement, urlInput)
+      assert.equal(urlInput.selectionStart, 0)
+      assert.equal(urlInput.selectionEnd, urlInput.value.length)
+      assert.ok(urlInput.value.length > 0)
+      elsewhere.remove()
     } finally {
       globalThis.requestAnimationFrame = raf
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
