@@ -233,7 +233,12 @@ const READ_ONLY_SHELL_BASENAMES = new Set([
   'realpath',
 ])
 
-const READ_ONLY_GIT_SUBCOMMANDS = new Set([
+/**
+ * Git subcommands that only read. Exported so the auto-approval classifier can
+ * build its (wider) read set as a superset of this one rather than restating it —
+ * two independent lists of "which git subcommands are safe to read" would drift.
+ */
+export const READ_ONLY_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
   'status',
   'diff',
   'log',

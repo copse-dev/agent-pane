@@ -7,9 +7,9 @@ import {
   type AutoApprovalTier,
 } from '@shared/auto-approval.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
-import { splitSegments } from './command-routing.ts'
-import { isReadOnlySimpleCommand } from './permission-policy.ts'
-import { TRUST_TRANSPARENT_WRAPPERS } from './shell-argv.ts'
+import { SAFE_PREP_COMMANDS, splitSegments } from './command-routing.ts'
+import { isReadOnlySimpleCommand, READ_ONLY_GIT_SUBCOMMANDS } from './permission-policy.ts'
+import { commandName, shellRedirects, TRUST_TRANSPARENT_WRAPPERS } from './shell-argv.ts'
 
 /**
  * Deterministic auto-approval classifier — decide whether a shell command the
@@ -90,31 +90,28 @@ export interface AutoApprovalContext {
 // Lexical pre-checks
 // ---------------------------------------------------------------------------
 
-interface LexicalScan {
-  /** Command substitution, subshell grouping, backticks, or parameter expansion. */
-  substitution: boolean
-  /** A redirection that writes somewhere, ignoring the inert discard/merge forms. */
-  writingRedirect: boolean
-}
-
 /**
- * Quote-aware scan for the two lexical features that disqualify a command line.
+ * Quote-aware scan for command substitution, subshell grouping, backticks, and
+ * parameter expansion — any of which can hide an arbitrary tool from segment
+ * analysis.
  *
  * Quote awareness matters here in a way it does not for the trusted-command
  * router (which is deliberately over-broad): the most common `local-write` shape
  * is `git commit -m "fix the parser (#123)"`, and an over-broad scan would refuse
- * every commit message containing a parenthesis, a `$`, or a `>`. So the scan
- * tracks quoting and flags only what the shell would actually act on:
+ * every commit message containing a parenthesis or a `$`. So the scan tracks
+ * quoting and flags only what the shell would actually act on:
  *
  *  - unquoted `` ` ``, `$`, `(`, `)` — substitution or grouping;
  *  - `` ` `` and `$` inside double quotes — the shell still expands there;
- *  - nothing inside single quotes, where the shell expands nothing;
- *  - unquoted `<` / `>` that is not one of the inert forms (`2>&1`, `>/dev/null`).
+ *  - nothing inside single quotes, where the shell expands nothing.
  *
  * A backslash escape consumes the next character, so `\$HOME` is literal.
+ *
+ * Redirections are NOT scanned here — {@link shellRedirects} is the codebase's
+ * answer for those and already understands that `2>&1` duplicates a descriptor
+ * rather than opening a file.
  */
-function scanLexical(command: string): LexicalScan {
-  const scan: LexicalScan = { substitution: false, writingRedirect: false }
+function hasSubstitution(command: string): boolean {
   let quote: '"' | "'" | null = null
 
   for (let i = 0; i < command.length; i++) {
@@ -130,42 +127,47 @@ function scanLexical(command: string): LexicalScan {
     }
     if (quote === '"') {
       if (ch === '"') quote = null
-      else if (ch === '`' || ch === '$') scan.substitution = true
+      else if (ch === '`' || ch === '$') return true
       continue
     }
     if (ch === '"' || ch === "'") {
       quote = ch
       continue
     }
-    if (ch === '`' || ch === '$' || ch === '(' || ch === ')') {
-      scan.substitution = true
-      continue
-    }
-    if (ch === '<') {
-      scan.writingRedirect = true
-      continue
-    }
-    if (ch === '>') {
-      // Inert forms: `>&1`, `2>&1`, `>&2`, `>/dev/null`, `2>/dev/null`, `&>/dev/null`.
-      const rest = command.slice(i)
-      if (/^>\s*&\s*\d/.test(rest) || /^>\s*\/dev\/null\b/.test(rest)) continue
-      scan.writingRedirect = true
-    }
+    if (ch === '`' || ch === '$' || ch === '(' || ch === ')') return true
   }
 
-  return scan
+  return false
 }
 
 /**
- * Remove the inert redirection forms so the remainder tokenizes as plain words.
- * `shell-quote` yields an operator object for `>` and `&`, which would make
- * {@link argvOf} refuse `git fetch origin main 2>&1` — a shape that appears on
- * most real command lines. Only forms {@link scanLexical} already accepted are
- * stripped, so this can never hide a writing redirect from analysis.
+ * The only redirect target this classifier accepts: writing to the bit bucket
+ * discards output rather than persisting it anywhere.
  */
-function stripInertRedirects(segment: string): string {
+const DISCARD_TARGET = '/dev/null'
+
+/**
+ * Whether the command opens a file for writing anywhere other than `/dev/null`.
+ *
+ * Delegates to {@link shellRedirects}, which the harm gate already relies on: it
+ * parses rather than pattern-matches, and it deliberately excludes `>&`
+ * descriptor duplication because that "writes no file" — which is exactly the
+ * `2>&1` carve-out this classifier needs, since that suffix appears on most real
+ * command lines.
+ */
+function writesAFile(command: string): boolean {
+  return shellRedirects(command).some((redirect) => redirect.target !== DISCARD_TARGET)
+}
+
+/**
+ * Strip the redirect syntax that {@link writesAFile} has already cleared, so the
+ * remainder tokenizes as plain words. Purely a tokenization aid, NOT a security
+ * check: `shell-quote` yields operator objects for `>` and `&`, which would make
+ * {@link argvOf} refuse `git fetch origin main 2>&1`.
+ */
+function stripClearedRedirects(segment: string): string {
   return segment
-    .replace(/(?:^|\s)&?\d?>\s*\/dev\/null\b/g, ' ')
+    .replace(/(?:^|\s)&?\d?>{1,2}\s*\/dev\/null\b/g, ' ')
     .replace(/(?:^|\s)\d?>\s*&\s*\d/g, ' ')
     .trim()
 }
@@ -205,17 +207,13 @@ function effectiveArgv(argv: readonly string[]): string[] | null {
     // plain `git fetch` / `git diff`. None of the accepted shapes needs a
     // per-command environment override, so the whole segment prompts instead.
     if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) return null
-    if (TRUST_TRANSPARENT_WRAPPERS.has(basename(token))) {
+    if (TRUST_TRANSPARENT_WRAPPERS.has(commandName(token))) {
       index++
       continue
     }
     break
   }
   return argv.slice(index)
-}
-
-function basename(token: string): string {
-  return token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token
 }
 
 function isFlag(token: string): boolean {
@@ -227,25 +225,6 @@ function flagName(token: string): string {
   const eq = token.indexOf('=')
   return eq === -1 ? token : token.slice(0, eq)
 }
-
-/**
- * Trivially-safe preparation commands: they make directories, print, or change
- * directory and cannot exfiltrate or damage anything on their own. Any argument
- * that escapes the workspace (`cd ~`, `mkdir /etc/x`) is caught by the
- * `analyzeShellCommand` check applied to every segment.
- */
-const SAFE_PREP_COMMANDS: ReadonlySet<string> = new Set([
-  'cd',
-  'pwd',
-  'mkdir',
-  'echo',
-  'printf',
-  'true',
-  'false',
-  ':',
-  'basename',
-  'dirname',
-])
 
 /**
  * A plain ref / refspec token: branch names, tags, `HEAD~1`, `a..b`, `src:dst`.
@@ -360,25 +339,23 @@ const GIT_EXECUTING_OPTIONS: ReadonlySet<string> = new Set([
   '--config-env',
 ])
 
-/** Subcommands that only read repository state. Flags are unrestricted for these. */
+/**
+ * Subcommands that only read repository state. Built as a SUPERSET of
+ * {@link READ_ONLY_GIT_SUBCOMMANDS} — the set `permission-policy.ts` already uses
+ * for its structural read-only check — so the two cannot drift into disagreeing
+ * about whether, say, `git log` reads. The extras below are ones this classifier
+ * needs and that check does not.
+ */
 const GIT_READ_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  'status',
-  'diff',
-  'log',
-  'show',
+  ...READ_ONLY_GIT_SUBCOMMANDS,
   'shortlog',
   'describe',
   'blame',
-  'rev-parse',
   'rev-list',
-  'ls-files',
-  'ls-tree',
-  'cat-file',
   'merge-base',
   'name-rev',
   'check-ignore',
   'count-objects',
-  'grep',
   'version',
 ])
 
@@ -811,14 +788,14 @@ function classifyGitSegment(
 }
 
 function classifySegment(segment: string, context: AutoApprovalContext): SegmentVerdict {
-  const lexical = stripInertRedirects(segment)
+  const lexical = stripClearedRedirects(segment)
   const argv = argvOf(lexical)
   if (!argv) return { tier: null, reason: `unparseable segment: ${segment}` }
 
   const effective = effectiveArgv(argv)
   if (!effective)
     return { tier: null, reason: `environment assignment before the command: ${segment}` }
-  const head = basename(effective[0] ?? '')
+  const head = commandName(effective[0])
   if (!head) return { tier: null, reason: `no command word in: ${segment}` }
 
   if (head === 'git') return classifyGitSegment(effective, lexical, context)
@@ -864,11 +841,10 @@ export function assessAutoApproval(
   const trimmed = command.trim()
   if (!trimmed) return { action: 'prompt', reasons: ['empty command'] }
 
-  const lexical = scanLexical(trimmed)
-  if (lexical.substitution) {
+  if (hasSubstitution(trimmed)) {
     return { action: 'prompt', reasons: ['command substitution or parameter expansion present'] }
   }
-  if (lexical.writingRedirect) {
+  if (writesAFile(trimmed)) {
     return { action: 'prompt', reasons: ['redirection writes to a file'] }
   }
   // The destructive-pattern denylist is applied to the WHOLE line as well as per

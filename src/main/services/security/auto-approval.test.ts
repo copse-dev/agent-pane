@@ -260,6 +260,17 @@ describe('assessAutoApproval — shell-level escapes', () => {
     prompts('git status < /etc/passwd')
     assert.equal(approved('git fetch origin main 2>&1', 'read'), 'read')
     assert.equal(approved('git fetch origin main 2>/dev/null', 'read'), 'read')
+    assert.equal(approved('git fetch origin main >/dev/null 2>&1', 'read'), 'read')
+  })
+
+  it('refuses redirect forms shellRedirects does not classify as file writes', () => {
+    // `&>` and `<` are not write-redirects, so the redirect check passes them —
+    // they are caught one layer down, where the leftover operator makes the
+    // segment untokenizable. Asserted explicitly because the two checks now come
+    // from different mechanisms.
+    prompts('git status &> out.txt')
+    prompts('git status < /etc/passwd')
+    prompts('git commit -F - < /etc/passwd', 'local-write')
   })
 
   it('refuses a sibling segment that is not a recognised shape', () => {
