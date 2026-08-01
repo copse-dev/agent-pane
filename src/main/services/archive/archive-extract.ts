@@ -65,14 +65,29 @@ export interface ExtractedArchive {
   reused: boolean
 }
 
+/** Longest human-readable part of an extraction directory name. */
+const MAX_NAME_CHARS = 60
+
+/**
+ * A stored attachment is written as `<uuid>-<original name>` so two drops of
+ * `release.zip` cannot collide. That prefix is 37 characters of noise here: it
+ * would eat most of the budget below and truncate away the part a person (or a
+ * model quoting the path back) actually recognises.
+ */
+const STORED_ATTACHMENT_UUID_PREFIX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i
+
 /** Keep a directory name derived from an archive's filename free of anything path-like. */
 function sanitizeName(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? name
-  const safe = base
+  const withoutUuid = base.replace(STORED_ATTACHMENT_UUID_PREFIX, '')
+  const safe = withoutUuid
     .replace(/\.zip$/i, '')
     .replace(/[^A-Za-z0-9._-]+/g, '-')
     .replace(/^[.-]+/, '')
-    .slice(0, 60)
+    .replace(/-+$/, '')
+    .slice(0, MAX_NAME_CHARS)
+    .replace(/-+$/, '')
   return safe || 'archive'
 }
 

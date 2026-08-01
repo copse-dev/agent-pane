@@ -74,6 +74,31 @@ describe('extractArchiveForThread', () => {
     assert.equal(result.truncated, false)
   })
 
+  it('names the extraction for the archive, not the uuid the store prefixed it with', async () => {
+    // Stored attachments arrive as `<uuid>-<name>.zip`. Keeping the uuid would
+    // spend 37 of the 60 readable characters on noise and truncate away the
+    // name — and this path is what the tool result quotes back to the model.
+    const stored =
+      'd387f848-755d-44d0-b2f3-71782b265564-Refine-Approval-Prompt-Triggers-2026-08-01.zip'
+    const result = await extract(await zip({ 'a.txt': 'a' }), stored)
+
+    const dir = result.root.split('/').pop() ?? ''
+    assert.match(dir, /^Refine-Approval-Prompt-Triggers-2026-08-01-[0-9a-f]{12}$/)
+    assert.doesNotMatch(dir, /d387f848/)
+  })
+
+  it('still names an archive that was never uuid-prefixed', async () => {
+    const result = await extract(await zip({ 'a.txt': 'a' }), '/repo/fixtures/bundle.zip')
+    const dir = result.root.split('/').pop() ?? ''
+    assert.match(dir, /^bundle-[0-9a-f]{12}$/)
+  })
+
+  it('falls back to a usable name when nothing readable survives', async () => {
+    const result = await extract(await zip({ 'a.txt': 'a' }), '---.zip')
+    const dir = result.root.split('/').pop() ?? ''
+    assert.match(dir, /^archive-[0-9a-f]{12}$/)
+  })
+
   it('reuses an identical archive rather than unpacking it twice', async () => {
     const bytes = await zip({ 'a.txt': 'a' })
     const first = await extract(bytes)

@@ -74,7 +74,11 @@ extraction would have no thread to belong to.
 ~/.copse/workspace/<projectId>/<threadId>/blobs/archives/<name>-<hash>/
 ```
 
-The directory is named for the archive plus a hash of its contents, so:
+The directory is named for the archive plus a hash of its contents. A stored
+attachment is written to disk as `<uuid>-<name>.zip` so two drops of the same
+filename cannot collide, but that prefix is stripped here — it would spend most
+of the readable budget on noise, and this path is what the tool result quotes
+back to the model. So:
 
 - unpacking the same archive twice **reuses** the first extraction, which makes
   a re-read in a later turn free; and
