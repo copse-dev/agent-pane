@@ -141,7 +141,7 @@ import {
   resolveMaxReviewCycles,
 } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { getPackService } from './packs/pack-service.ts'
+import { getPackService, inertPackSources, packUnavailableReason } from './packs/pack-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -640,6 +640,8 @@ export async function runAgent(
   }
 
   if (packModel) {
+    /** Append a recorded cause to a pack error, or nothing when none was captured. */
+    const suffixFor = (reason: string | undefined): string => (reason ? ` ${reason}` : '')
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
@@ -653,22 +655,27 @@ export async function runAgent(
       // pack that failed to appear is the more likely of the two: check
       // registration first so the message names the real state.
       //
-      // A `packSources` entry whose discovery throws is logged
-      // `[packs] selected source … is inert` and never registers; a pack whose
-      // tools fail to start is logged `[packs] pack … tools could not start`
-      // and is registered-then-disabled (pack-service.ts). So "not installed"
-      // points at the first warning and "disabled" at the second.
+      // A `packSources` entry whose discovery throws never registers; a pack
+      // whose tools fail to start is registered-then-disabled. Each state now
+      // carries the cause `refreshPackSources` recorded (pack-service.ts), so a
+      // failure explains itself here instead of only in the main-process log —
+      // which, in CI, is buried in a failure artifact.
       if (!packs.has(packModel.packId)) {
-        throw new Error(`The selected pack "${packModel.packId}" is not installed.`)
+        throw new Error(
+          `The selected pack "${packModel.packId}" is not installed.${suffixFor(inertPackSources().join('; '))}`,
+        )
       }
       if (!packs.isEnabled(packModel.packId)) {
-        throw new Error(`The selected pack "${packModel.packId}" is disabled.`)
+        throw new Error(
+          `The selected pack "${packModel.packId}" is disabled.${suffixFor(packUnavailableReason(packModel.packId))}`,
+        )
       }
       if (!runtime?.isRunning(packModel.packId)) {
-        // Enabled but not running: the runtime failed to start (the reason is
-        // logged by the reconciliation). Saying "disabled" here sends users to
-        // a toggle that is already on.
-        throw new Error(`The selected pack "${packModel.packId}" is not running.`)
+        // Enabled but not running: saying "disabled" here would send users to a
+        // toggle that is already on.
+        throw new Error(
+          `The selected pack "${packModel.packId}" is not running.${suffixFor(packUnavailableReason(packModel.packId))}`,
+        )
       }
       const route = packs
         .get(packModel.packId)
