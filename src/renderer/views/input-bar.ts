@@ -8,6 +8,7 @@ import {
   setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
   recordThreadVideos,
+  recordThreadArchives,
   applyPreparedThreadCheckout,
   getThreadById,
   getActiveThread,
@@ -22,12 +23,14 @@ import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import {
   buildTextWithAttachments,
   isTextBlockAttachment,
+  type ArchiveRefAttachment,
   type ThreadRefAttachment,
   type VideoRefAttachment,
 } from '@copse/agent/build-text-with-attachments.ts'
 import { mountComposerEditor } from './composer-editor.ts'
 import {
   registerPromptAttachments,
+  type PromptArchiveAttachment,
   type PromptVideoAttachment,
 } from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
@@ -71,7 +74,9 @@ import {
 } from '@shared/git/thread-branch.ts'
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
-import { formatByteSize, type VideoAttachmentRef } from '@shared/video/video-media.ts'
+import { type VideoAttachmentRef } from '@shared/video/video-media.ts'
+import { type ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
+import { formatByteSize } from '@shared/file-bytes.ts'
 import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
@@ -376,6 +381,7 @@ export function mountInputBar(
   // the media never enters the prompt, so unlike images these cost no context.
   // The agent reads them through the `video_frames` tool.
   let attachedVideos: VideoAttachmentRef[] = []
+  let attachedArchives: ArchiveAttachmentRef[] = []
   // `@`-referenced past threads (#644): the agent gets a path reference + steering
   // preamble, nothing inlined. Composer-only state, like file/image chips.
   let attachedThreads: AttachedThreadRef[] = []
@@ -475,6 +481,13 @@ export function mountInputBar(
       path: v.path,
       name: v.name,
       size: formatByteSize(v.sizeBytes),
+    }))
+
+  const currentArchiveRefs = (): ArchiveRefAttachment[] =>
+    attachedArchives.map((a) => ({
+      path: a.path,
+      name: a.name,
+      size: formatByteSize(a.sizeBytes),
     }))
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
@@ -650,6 +663,7 @@ export function mountInputBar(
       attachedFiles.length > 0 ||
       attachedImages.length > 0 ||
       attachedVideos.length > 0 ||
+      attachedArchives.length > 0 ||
       attachedThreads.length > 0 ||
       attachedShells.length > 0
     // Show the pre-send breakdown while composing (or on fresh threads with no live
@@ -712,6 +726,7 @@ export function mountInputBar(
     const draftText = buildTextWithAttachments(rawText, attachedFiles, currentShellBlocks(), {
       threadRefs: currentThreadRefs(),
       videoRefs: currentVideoRefs(),
+      archiveRefs: currentArchiveRefs(),
     })
     const model = getActiveThread(store)?.model
     return JSON.stringify({
@@ -903,6 +918,7 @@ export function mountInputBar(
       attachedFiles.length === 0 &&
       attachedImages.length === 0 &&
       attachedVideos.length === 0 &&
+      attachedArchives.length === 0 &&
       attachedThreads.length === 0 &&
       attachedShells.length === 0
     )
@@ -965,7 +981,10 @@ export function mountInputBar(
       ? buildSkillUserText(
           invocation.skillName,
           invocation.remainder,
-          attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0,
+          attachedFiles.length > 0 ||
+            attachedImages.length > 0 ||
+            attachedVideos.length > 0 ||
+            attachedArchives.length > 0,
         )
       : rawText
 
@@ -978,6 +997,7 @@ export function mountInputBar(
           text: buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
             threadRefs: currentThreadRefs(),
             videoRefs: currentVideoRefs(),
+            archiveRefs: currentArchiveRefs(),
           }),
         },
       ]
@@ -985,6 +1005,7 @@ export function mountInputBar(
       fullContent = buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
         threadRefs: currentThreadRefs(),
         videoRefs: currentVideoRefs(),
+        archiveRefs: currentArchiveRefs(),
       })
     }
 
@@ -1066,6 +1087,11 @@ export function mountInputBar(
         // when the composer's own state is long gone.
         path: v.path,
       })),
+      ...attachedArchives.map((a) => ({
+        kind: 'archive' as const,
+        label: a.name,
+        path: a.path,
+      })),
     ]
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     const messageId = addMessage(
@@ -1081,6 +1107,7 @@ export function mountInputBar(
     // be trimmed out of a long conversation, but the tool is gated and described
     // from the thread, so the agent keeps the path for as long as the thread does.
     recordThreadVideos(store, id, attachedVideos)
+    recordThreadArchives(store, id, attachedArchives)
 
     if (isRunning()) {
       enqueueUserMessage(store, id, {
@@ -1100,6 +1127,7 @@ export function mountInputBar(
     attachedFiles = []
     attachedImages = []
     attachedVideos = []
+    attachedArchives = []
     attachedThreads = []
     attachedShells = []
     clear(chips)
@@ -1217,6 +1245,49 @@ export function mountInputBar(
     scheduleContextEstimate()
   }
 
+  async function addArchiveChip(archive: PromptArchiveAttachment): Promise<void> {
+    const projectId = store.getState().activeProjectId
+    const threadId = getActiveThreadId()
+    if (!projectId || !threadId) return
+    let ref: ArchiveAttachmentRef
+    try {
+      ref = await api.archive.attach(projectId, threadId, {
+        name: archive.name,
+        ...(archive.bytes ? { bytes: new Uint8Array(archive.bytes) } : {}),
+        ...(archive.path ? { path: archive.path } : {}),
+      })
+    } catch (err) {
+      showErrorToast('Could not attach archive', err)
+      return
+    }
+    if (attachedArchives.some((a) => a.path === ref.path)) return
+    attachedArchives.push(ref)
+
+    const chip = document.createElement('span')
+    chip.className = 'attachment-chip archive-chip'
+    const label = document.createElement('span')
+    label.className = 'attachment-chip-label'
+    label.textContent = ref.name
+    // Compressed size, which is what the user recognises from disk. It is not
+    // the context cost — the archive costs none until the agent unpacks it and
+    // reads something — but it is the honest size of what was attached.
+    const meta = document.createElement('span')
+    meta.className = 'attachment-chip-meta'
+    meta.textContent = formatByteSize(ref.sizeBytes)
+    chip.title = `${ref.name} — unpacked and read as files by the agent, not sent as an archive`
+    chip.append(attachmentIcon('archive', 'archive-chip-icon'), label, meta)
+    const remove = document.createElement('button')
+    remove.textContent = '✕'
+    remove.addEventListener('click', () => {
+      attachedArchives = attachedArchives.filter((a) => a.path !== ref.path)
+      chip.remove()
+      scheduleContextEstimate()
+    })
+    chip.append(remove)
+    chips.append(chip)
+    scheduleContextEstimate()
+  }
+
   function addImageChip(dataUrl: string, mimeType: string): void {
     attachedImages.push({ dataUrl, mimeType })
     const chip = document.createElement('span')
@@ -1257,6 +1328,7 @@ export function mountInputBar(
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
+    attachArchive: addArchiveChip,
     focusComposer: (): void => {
       requestAnimationFrame(() => {
         composer.focus()

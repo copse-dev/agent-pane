@@ -40,6 +40,21 @@ export interface VideoRefAttachment {
   size: string
 }
 
+/**
+ * An archive attached to the chat. Like a video, the bytes never become model
+ * content — but unlike a video, the agent's move is to unpack it and then read
+ * the result as ordinary files, so what it eventually sees is the contents it
+ * chose rather than a summary of them.
+ */
+export interface ArchiveRefAttachment {
+  /** Absolute path to the stored copy, inside the thread's blobs directory. */
+  path: string
+  /** Original file name, for the agent to refer to in prose. */
+  name: string
+  /** Human-readable size (e.g. `4.2 MB`). */
+  size: string
+}
+
 /** Minimum pasted plain-text length to treat as an attachment instead of inline input. */
 export const TEXT_BLOCK_MIN_CHARS = 200
 
@@ -148,6 +163,8 @@ export interface BuildTextOptions {
   threadRefs?: ThreadRefAttachment[]
   /** Videos attached to the chat, referenced by path (nothing inlined). */
   videoRefs?: VideoRefAttachment[]
+  /** Archives attached to the chat, referenced by path (nothing inlined). */
+  archiveRefs?: ArchiveRefAttachment[]
 }
 
 // One compact preamble describes the on-disk thread layout so the agent can
@@ -182,6 +199,23 @@ function buildVideoRefBlock(refs: VideoRefAttachment[]): string {
   return `${VIDEO_STEERING_PREAMBLE}\n\nAttached videos:\n${lines.join('\n')}`
 }
 
+// Says the two things a model cannot infer from a path: that the bytes are not
+// in context, and that unpacking is a one-shot step after which everything is
+// an ordinary file. Without the second half a model tends to treat the tool as
+// the only way to see inside and calls it once per entry.
+const ARCHIVE_STEERING_PREAMBLE =
+  'The user attached the archive(s) below. The archive itself is NOT in your context — ' +
+  'only these paths are. Use the `read_archive` tool to unpack one: it extracts the ' +
+  "archive into this conversation's own directory and returns a listing of everything " +
+  'inside. After that the contents are ordinary files — read them with read_file, grep ' +
+  'them with search_code, or summarize the tree with explore, using the paths under the ' +
+  'extraction root it gives you. Unpack once, then work with the files.'
+
+function buildArchiveRefBlock(refs: ArchiveRefAttachment[]): string {
+  const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`)
+  return `${ARCHIVE_STEERING_PREAMBLE}\n\nAttached archives:\n${lines.join('\n')}`
+}
+
 /**
  * The fenced block a labelled attachment inlines into the prompt. Shared by the
  * end-of-message attachment path below and the composer's inline paste chips,
@@ -204,13 +238,15 @@ export function buildTextWithAttachments(
   const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS
   const threadRefs = options.threadRefs ?? []
   const videoRefs = options.videoRefs ?? []
+  const archiveRefs = options.archiveRefs ?? []
   const blocks = [
     ...files.map((f) => renderTextBlock(f.path, f.content, cap)),
     ...textBlocks.map((b) => renderTextBlock(b.label, b.content, cap)),
-    // No truncation path — thread and video refs inline nothing, so
+    // No truncation path — thread, video and archive refs inline nothing, so
     // ATTACHMENT_MAX_CHARS never applies here.
     ...(threadRefs.length > 0 ? [buildThreadRefBlock(threadRefs)] : []),
     ...(videoRefs.length > 0 ? [buildVideoRefBlock(videoRefs)] : []),
+    ...(archiveRefs.length > 0 ? [buildArchiveRefBlock(archiveRefs)] : []),
   ]
   return [text, ...blocks].filter(Boolean).join('\n\n')
 }

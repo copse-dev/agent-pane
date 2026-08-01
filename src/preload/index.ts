@@ -494,6 +494,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
   },
+  archive: {
+    attach: (
+      projectId: string,
+      threadId: string,
+      archive: { name: string; bytes?: Uint8Array; path?: string },
+    ) => ipcRenderer.invoke('archive:attach', projectId, threadId, archive),
+  },
   video: {
     attach: (
       projectId: string,

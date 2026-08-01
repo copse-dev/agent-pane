@@ -179,6 +179,8 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         return resolvedVoid()
       },
     },
+    // The browser demo has no chat store on disk to hold an archive.
+    archive: { attach: unsupported },
     threads: {
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),

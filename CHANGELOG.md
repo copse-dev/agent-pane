@@ -8,6 +8,14 @@ every published entry.
 
 ## Unreleased
 
+- Zip archives can be attached to a chat and read. Drop a `.zip` on the composer
+  and the agent unpacks it with the new **`read_archive`** tool into the
+  conversation's own directory, then reads what is inside with its ordinary file
+  tools — so a bundle of logs, a downloaded release, or an exported thread can be
+  explored file by file rather than described. Previously a dropped zip was read
+  as text and landed in the prompt as binary noise. The extractor refuses path
+  traversal, symlinks and zip bombs, and the extraction is deleted with the
+  thread. See [docs/read-archive.md](docs/read-archive.md).
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,
