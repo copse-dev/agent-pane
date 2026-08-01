@@ -22,10 +22,12 @@ describe('shell security settings', () => {
 
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="local-models"]').click()
-    await expect(dialog.$('input[name="safetyClassifierEnabled"]')).toBeExisting()
+    await dialog.$('button[data-section="agent"]').click()
     await expect(dialog.$('input[name="postTurnReviewMinChangedLines"]')).toHaveValue('1')
-    assert.match(await dialog.getText(), /asked to approve the spend once per chat/)
+    assert.match(await dialog.getText(), /approve the spend once per chat/)
+
+    await dialog.$('button[data-section="permissions"]').click()
+    await expect(dialog.$('input[name="safetyClassifierEnabled"]')).toBeExisting()
     assert.equal(await dialog.$('input[name="safetySandboxAllowThreshold"]').isExisting(), false)
     assert.doesNotMatch(await dialog.getText(), /Sandbox auto-allow confidence/)
 

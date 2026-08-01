@@ -41,7 +41,7 @@ async function startLmStudioModelServer(): Promise<{ url: string; close: () => P
   }
 }
 
-function settingsSection(section: 'general' | 'local-models') {
+function settingsSection(section: 'general' | 'agent') {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
@@ -128,9 +128,6 @@ describe('settings model routing placement', function () {
       const generalSection = document.querySelector<HTMLElement>(
         '.settings-section[data-section="general"]',
       )
-      const localModelsSection = document.querySelector<HTMLElement>(
-        '.settings-section[data-section="local-models"]',
-      )
       const modelSection = generalSection?.querySelector<HTMLFieldSetElement>(
         '#settings-models-section',
       )
@@ -150,7 +147,8 @@ describe('settings model routing placement', function () {
           .filter((legend) =>
             ['Chat model', 'Small tasks', 'Local model roles'].includes(legend ?? ''),
           ),
-        localModelsHasRouting: !!localModelsSection?.querySelector('#settings-model-routing-host'),
+        // Model routing lives in exactly one place: the General > Models block.
+        routingHostCount: document.querySelectorAll('#settings-model-routing-host').length,
         routingFieldLabels,
       }
     })
@@ -166,7 +164,7 @@ describe('settings model routing placement', function () {
       'reviewModel',
     ])
     assert.deepEqual(placement.standaloneModelLegends, [])
-    assert.equal(placement.localModelsHasRouting, false)
+    assert.equal(placement.routingHostCount, 1)
     assert.deepEqual(placement.routingFieldLabels, [
       'Coder',
       'Research',
@@ -192,16 +190,10 @@ describe('settings model routing placement', function () {
     await scrollSettingsToLegend('Models')
     await saveElementScreenshot('#settings-dialog', 'settings-general-model-routing.png')
 
-    await $('.settings-nav-btn[data-section="local-models"]').click()
-    await expect(settingsSection('local-models')).toBeDisplayed()
-    await expect(settingsSection('local-models').$('legend=Server connection')).toBeDisplayed()
-    const localModelsHasRouting = await browser.execute(
-      () =>
-        !!document.querySelector(
-          '.settings-section[data-section="local-models"] #settings-model-routing-host',
-        ),
-    )
-    assert.equal(localModelsHasRouting, false)
+    // LM Studio's server connection now lives under its chip in the one
+    // Providers panel, not in a settings section of its own.
+    await $('.provider-chip[data-provider="lmstudio"]').click()
+    await expect(settingsSection('general').$('legend=Server connection')).toBeDisplayed()
 
     await scrollSettingsToLegend('Server connection')
     await saveElementScreenshot('#settings-dialog', 'settings-local-models-connection.png')

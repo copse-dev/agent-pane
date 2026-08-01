@@ -2,8 +2,8 @@
 // has a usable context window (see chat-default-context.ts). Local servers (LM
 // Studio et al.) reload models at a tiny default context after a reboot, so a
 // local-only setup can silently over-trim every agent run. The banner links to
-// the Local models settings section, where the LM Studio advisory in turn links
-// to the "make it restart-proof" guide.
+// Settings > General, whose Providers panel carries the LM Studio advisory that
+// in turn links to the "make it restart-proof" guide.
 
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
@@ -41,7 +41,7 @@ export function mountContextWarningBanner(api: ApiClient): ContextWarningBanner 
     )
     openBtn.addEventListener('click', () => {
       // "…not if we're already there": only offer to open settings when it's closed.
-      if (!isSettingsDialogOpen()) openSettingsDialog('local-models')
+      if (!isSettingsDialogOpen()) openSettingsDialog('general')
     })
     const closeBtn = el(
       'button',
