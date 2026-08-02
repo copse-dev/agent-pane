@@ -200,6 +200,16 @@ describe('userDataScript', () => {
     assert.doesNotMatch(script, /ttl-terminate\.sh/)
   })
 
+  it('enables capability-bearing user namespaces before starting Docker', () => {
+    const script = userDataScript(0)
+    const sysctlAt = script.indexOf('sysctl -w kernel.apparmor_restrict_unprivileged_userns=0')
+    const dockerAt = script.indexOf('systemctl enable --now docker')
+
+    assert.match(script, /\/etc\/sysctl\.d\/99-copse-bwrap-userns\.conf/)
+    assert.ok(sysctlAt >= 0)
+    assert.ok(dockerAt > sysctlAt)
+  })
+
   it('omits the shutdown when ttlMinutes is 0', () => {
     assert.doesNotMatch(userDataScript(0), /shutdown -h/)
     assert.doesNotMatch(userDataScript(0, 'x', SCW_TTL), /ttl-terminate\.sh/)
