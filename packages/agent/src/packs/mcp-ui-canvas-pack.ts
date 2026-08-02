@@ -53,6 +53,7 @@ export const mcpUiCanvasPack: RegisteredPack = definePack(
     description:
       'MCP-UI artefacts (canvas) — render self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), and ship a bundled canvas server with a render_html_artefact tool for demos, charts, and small interactive UIs.',
     trust: 'first-party',
+    stability: 'experimental',
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],
   },
   {

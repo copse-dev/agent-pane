@@ -2,12 +2,13 @@ import { app, Menu, dialog, type BrowserWindow } from 'electron'
 import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/workspace.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { checkForUpdatesManually } from '../services/auto-update.ts'
+import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 
 // Builds the native application menu. The File ▸ Open Folder… item drives the
 // same flow as the renderer's Open Folder button: pick a directory, set it as
 // the workspace, kick off indexing, and notify the renderer to swap to the
 // full layout via the 'workspace:opened' event.
-export function buildAppMenu(win: BrowserWindow): void {
+export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
   const isMac = process.platform === 'darwin'
 
   async function openFolder(): Promise<void> {
@@ -141,6 +142,19 @@ export function buildAppMenu(win: BrowserWindow): void {
             win.webContents.send('menu:showBrowser')
           },
         },
+        // Cmd/Ctrl+L must reach us even while the browser's <webview> has focus.
+        // A guest WebContents swallows its own key events, so a renderer keydown
+        // listener never fires for the case that matters — typing in the page and
+        // reaching for the address bar. The application menu sees the accelerator
+        // first, whoever holds focus, which is why this is a menu item and not a
+        // binding in keyboard-shortcuts.ts.
+        {
+          label: 'Focus Address Bar',
+          accelerator: 'CmdOrCtrl+L',
+          click: (): void => {
+            win.webContents.send('menu:focusBrowserUrlBar')
+          },
+        },
         { type: 'separator' as const },
         // Deliberately not the `reload` role: that binds Cmd+R to reloading the
         // whole renderer, which users hit expecting to refresh content (browser,
@@ -153,7 +167,16 @@ export function buildAppMenu(win: BrowserWindow): void {
             win.webContents.reload()
           },
         },
-        { role: 'toggleDevTools' as const },
+        ...(developerMode
+          ? [
+              {
+                label: 'Developer Tools',
+                click: (): void => {
+                  toggleDetachedDevTools(win.webContents)
+                },
+              },
+            ]
+          : []),
         { type: 'separator' as const },
         // Custom interface scale (CSS --ui-scale), not Chromium page zoom.
         // The built-in zoomIn/Out/resetZoom roles were unreliable in this

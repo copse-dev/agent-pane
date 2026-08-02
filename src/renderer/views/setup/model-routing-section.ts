@@ -94,19 +94,19 @@ export function createModelRoutingSection(
             fetchRoleModelOptions(api, current),
           safety: (current: string): Promise<ModelOption[]> => fetchRoleModelOptions(api, current),
           review: (current: string): Promise<ModelOption[]> =>
-            fetchRoleModelOptions(api, current, '(auto — prefer on-device)'),
+            fetchRoleModelOptions(api, current, '(auto: prefer on-device)'),
         }
       : {
           coder: (): Promise<ModelOption[]> =>
             Promise.resolve(localModelOptions(availableLocalModels)),
           research: (): Promise<ModelOption[]> =>
             Promise.resolve(
-              localModelOptions(availableLocalModels, '(auto — use default local model)'),
+              localModelOptions(availableLocalModels, '(auto: use default local model)'),
             ),
           safety: (): Promise<ModelOption[]> =>
             Promise.resolve(localModelOptions(availableLocalModels)),
           review: (): Promise<ModelOption[]> =>
-            Promise.resolve(localModelOptions(availableLocalModels, '(auto — prefer on-device)')),
+            Promise.resolve(localModelOptions(availableLocalModels, '(auto: prefer on-device)')),
         }
   const modelPickers = {
     coder: mountModelSelectPicker(localDefaultModel, {

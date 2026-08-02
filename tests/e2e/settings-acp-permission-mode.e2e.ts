@@ -48,11 +48,11 @@ describe('ACP permission-mode settings', () => {
     await $('[aria-label="Settings"]').click()
     const dialog = await $('#settings-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
-    await $('.settings-nav-btn[data-section="acp"]').click()
+    await $('.settings-nav-btn[data-section="general"]').click()
 
-    // Each agent hides behind a chip now — select the configured fixture's chip
-    // to reveal its form.
-    const chip = await $('.provider-chip[data-agent="fixture-agent"]')
+    // Device agents live under the one Providers panel now: an agent with no
+    // other capability gets a chip of its own.
+    const chip = await $('.provider-chip[data-provider="fixture-agent"]')
     await chip.waitForExist({ timeout: 15_000 })
     await chip.click()
 
@@ -61,7 +61,7 @@ describe('ACP permission-mode settings', () => {
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(
-        (candidate) => candidate.querySelector('legend')?.textContent?.trim() === 'ACP agents',
+        (candidate) => candidate.querySelector('legend')?.textContent?.trim() === 'Providers',
       )
       if (content && fieldset) content.scrollTop = Math.max(0, fieldset.offsetTop - 24)
     })
@@ -92,7 +92,11 @@ describe('ACP permission-mode settings', () => {
       'title',
       'Apply edits automatically.',
     )
-    await expect(await card.$('.field-hint*=ACP session mode')).toBeDisplayed()
+    // #1448 rewrote this hint's copy along with the rest of Settings; the field
+    // it explains is unchanged.
+    await expect(
+      await card.$('.field-hint*=How much the agent asks before it acts'),
+    ).toBeDisplayed()
 
     await browser.execute(() => {
       const cardElement = document.querySelector<HTMLElement>('.acp-agent-card')

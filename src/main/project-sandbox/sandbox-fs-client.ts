@@ -14,7 +14,11 @@ import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.
 import { runCommand } from '../services/exec/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
-import { requestViaServer, SandboxFsServerUnavailable } from './sandbox-fs-server.ts'
+import {
+  requestViaServer,
+  SandboxFsServerUnavailable,
+  shutdownSandboxFsServer,
+} from './sandbox-fs-server.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 /** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
@@ -28,10 +32,70 @@ export function sandboxFsWorkerPath(): string {
 /** Passed via spawn env when the worker is launched through a shell / ASRT wrap (paths may contain spaces). */
 export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
 
+type OneShotInvoker = (
+  request: Record<string, unknown>,
+  requestedRoot?: string,
+) => Promise<Record<string, unknown>>
+
+let oneShotInvokerForTest: OneShotInvoker | null = null
+let sandboxFsGatewayEnabledForTest: boolean | null = null
+
+export function setSandboxFsOneShotInvokerForTest(fn: OneShotInvoker | null): void {
+  oneShotInvokerForTest = fn
+}
+
+export function setSandboxFsGatewayEnabledForTest(value: boolean | null): void {
+  sandboxFsGatewayEnabledForTest = value
+}
+
+/**
+ * Report a gateway op the sandbox would not serve, naming the path and the root
+ * the worker was confined to.
+ *
+ * The filesystem counterpart of {@link recordNetworkDenial}: ASRT's own error
+ * does not say which path it refused, and the two list ops below degrade to an
+ * empty array rather than throwing — so a denied directory reaches the UI as
+ * "this folder is empty", which is indistinguishable from an actually empty
+ * folder and leaves nothing to debug. A confinement mismatch (a thread worktree
+ * outside the root the worker was given, say) is invisible without this.
+ */
+const GATEWAY_DENIAL_LOG_LIMIT = 20
+let gatewayDenialsLogged = 0
+
+function reportGatewayDenial(
+  op: string,
+  path: string,
+  root: string | undefined,
+  detail: string,
+): void {
+  // Bounded: a single file-tree walk against a confined worker can refuse every
+  // entry, and this sits in that hot path. Unbounded it would emit thousands of
+  // lines through the main-process stdout the e2e harness reads — enough to
+  // matter for run time, and enough to bury the first denial, which is the one
+  // that identifies the boundary. The first few name the mismatch; the rest add
+  // nothing a reader would act on.
+  if (gatewayDenialsLogged >= GATEWAY_DENIAL_LOG_LIMIT) return
+  gatewayDenialsLogged += 1
+  const more =
+    gatewayDenialsLogged === GATEWAY_DENIAL_LOG_LIMIT ? ' (further denials suppressed)' : ''
+  console.warn(
+    `[sandbox-fs] ${op} refused for ${JSON.stringify(path)} ` +
+      `(worker root ${JSON.stringify(root ?? getWorkspaceRoot() ?? '(none)')}): ${detail}${more}`,
+  )
+}
+
 async function invokeWorker(
   request: Record<string, unknown>,
   root?: string,
 ): Promise<Record<string, unknown>> {
+  const invokeOneShot = oneShotInvokerForTest ?? invokeWorkerOneShot
+  if (request['op'] === 'writeFile') {
+    // A writable Linux bwrap worker creates host mount points for mandatory
+    // deny paths. Stop the persistent read worker first so ASRT can clean those
+    // mounts as soon as this short-lived write worker exits.
+    shutdownSandboxFsServer()
+    return invokeOneShot(request, root)
+  }
   // Prefer the long-lived worker (no per-call process spawn). Only transport failures fall
   // back to a one-shot spawn; a `{ ok: false }` filesystem error is surfaced as-is.
   try {
@@ -39,9 +103,14 @@ async function invokeWorker(
     assertWorkerOk(res)
     return res
   } catch (err) {
-    if (!(err instanceof SandboxFsServerUnavailable)) throw err
+    if (!(err instanceof SandboxFsServerUnavailable)) {
+      const op = typeof request['op'] === 'string' ? request['op'] : 'fs'
+      const path = typeof request['path'] === 'string' ? request['path'] : '(no path)'
+      reportGatewayDenial(op, path, root, err instanceof Error ? err.message : String(err))
+      throw err
+    }
   }
-  return invokeWorkerOneShot(request, root)
+  return invokeOneShot(request, root)
 }
 
 function assertWorkerOk(parsed: { ok: boolean; error?: string }): void {
@@ -99,6 +168,7 @@ async function invokeWorkerOneShot(
 }
 
 function useSandboxFsGateway(): boolean {
+  if (sandboxFsGatewayEnabledForTest !== null) return sandboxFsGatewayEnabledForTest
   if (isSshExecutionTarget(getActiveExecutionTarget())) return false
   return isProjectSandboxEnabled()
 }
@@ -140,9 +210,11 @@ export async function gatewayReaddir(absPath: string, root?: string): Promise<st
     return getActiveWorkspaceFs().readdir(absPath)
   }
   const res = await invokeWorker({ op: 'readdir', path: absPath }, root)
-  return Array.isArray(res['entries'])
-    ? res['entries'].filter((entry): entry is string => typeof entry === 'string')
-    : []
+  if (!Array.isArray(res['entries'])) {
+    reportGatewayDenial('readdir', absPath, root, 'worker returned no entries')
+    return []
+  }
+  return res['entries'].filter((entry): entry is string => typeof entry === 'string')
 }
 
 export async function gatewayListDir(
@@ -153,7 +225,10 @@ export async function gatewayListDir(
     return getActiveWorkspaceFs().readdirWithTypes(absPath)
   }
   const res = await invokeWorker({ op: 'statDir', path: absPath }, root)
-  if (!Array.isArray(res['dirents'])) return []
+  if (!Array.isArray(res['dirents'])) {
+    reportGatewayDenial('statDir', absPath, root, 'worker returned no dirents')
+    return []
+  }
   return res['dirents'].flatMap((entry) =>
     isRecord(entry) && typeof entry['name'] === 'string' && typeof entry['isDir'] === 'boolean'
       ? [{ name: entry['name'], isDir: entry['isDir'] }]

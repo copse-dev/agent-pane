@@ -137,6 +137,18 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 
 ## Current controls
 
+- **Auto-approval classifier.** A deterministic allow-list of command _shapes_
+  (`git fetch`/`push` against a remote already configured in the repository, `gh`
+  reads and PR creation, local git operations, read-only shell commands) runs
+  without a prompt, tiered by blast radius and capped by a user-chosen level
+  (default: reads only). It is consulted only after the policy has already decided
+  to prompt, so it can turn a prompt into an allow but can never widen an `allow`
+  or soften a `deny`. It fails closed on any unrecognised segment, flag, or
+  argument, refuses substitution/redirection/interpreters, excludes destructive
+  git and `gh` forms by name, and is honoured only in a trusted workspace with
+  auto-run on. No model verdict participates. Every grant is recorded to the
+  decision log. See [`plans/auto-approval-classifier.md`](plans/auto-approval-classifier.md);
+  note the git-hook caveat recorded there.
 - **Approval and mutation gates.** Risky/external shell commands ask for explicit
   approval; custom tools prompt or use their documented remembered-grant path. File
   mutations flow through workspace guards, the diff queue, hooks, and recoverability
@@ -162,8 +174,7 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 - **Renderer hardening.** Narrow `contextBridge` API, main-frame IPC gating,
   strict DOMPurify on rendered content.
 - **Filesystem-native thread history + export.** Every thread lives under
-  `~/.copse/workspace/<projectId>/<threadId>/` (or `$COPSE_DIR/workspace`; the
-  granular override is `COPSE_WORKSPACE_DIR`) with
+  `~/.copse/workspace/<projectId>/<threadId>/` (or `COPSE_WORKSPACE_DIR`) with
   `meta.json`, an event spine, readable message files, blobs, and nested subagents.
   Tool arguments/results and hook records remain inspectable and exportable.
 
@@ -174,9 +185,14 @@ enforced, ordered by how much they widen the blast radius:
 
 - **No OS sandbox on Linux/Windows.** The seatbelt boundary is `darwin`-only. On
   other platforms, every agent-proposed shell command requires explicit approval
-  unless the user has explicitly allow-listed its binary as trusted; the optional
-  local classifier can only make strict-mode blocks, never authorize host
-  execution. Approved commands run with the user's full privilege.
+  unless the user has explicitly allow-listed its binary as trusted, or it matches
+  a shape on the deterministic auto-approval allow-list; the optional local
+  **safety-model** classifier can only make strict-mode blocks, never authorize
+  host execution. Approved commands run with the user's full privilege. The
+  auto-approval shapes are chosen to be bounded and recoverable, but off macOS
+  nothing contains them — in particular the `local-write` and `remote-write` tiers
+  run this repository's git hooks, which are code, with no containment. On those
+  platforms treat any level above `read` as a trust decision about the repository.
 - **Approved external commands lose containment.** The contained macOS profile denies
   network and out-of-workspace access, but an approved external command or retry runs
   fully outside that profile. The intended fix is scoped egress/operation grants,

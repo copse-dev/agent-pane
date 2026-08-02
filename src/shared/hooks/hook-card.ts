@@ -47,8 +47,14 @@ export interface HookCard {
   stopReason?: string
   /** Character count of injected context (blocking hooks, H2). */
   injectContextChars?: number
+  /** Character count of guidance sent to the agent on deny/ask. */
+  agentMessageChars?: number
+  /** Character count of a hook message shown to the user. */
+  userMessageChars?: number
   /** Character count of an async queued follow-up (decision 4). */
   queuedMessageChars?: number
+  /** Number of session environment variables exported for later hooks (H4). */
+  sessionEnvKeys?: number
   /** The hook ran inside the project sandbox and was blocked by it (F3, decision 7). */
   sandboxBlocked?: boolean
   /** Error message when a function hook threw (fail-hard, decision 9). */
@@ -72,7 +78,10 @@ export function hookCardFromSpineLine(line: SpineHookRunLine): HookCard {
     ...(d.updatedInput !== undefined ? { updatedInput: d.updatedInput } : {}),
     ...(d.stopReason !== undefined ? { stopReason: d.stopReason } : {}),
     ...(d.injectContextChars !== undefined ? { injectContextChars: d.injectContextChars } : {}),
+    ...(d.agentMessageChars !== undefined ? { agentMessageChars: d.agentMessageChars } : {}),
+    ...(d.userMessageChars !== undefined ? { userMessageChars: d.userMessageChars } : {}),
     ...(d.queuedMessageChars !== undefined ? { queuedMessageChars: d.queuedMessageChars } : {}),
+    ...(d.sessionEnvKeys !== undefined ? { sessionEnvKeys: d.sessionEnvKeys } : {}),
     ...(d.sandboxBlocked !== undefined ? { sandboxBlocked: d.sandboxBlocked } : {}),
     ...(line.error !== undefined ? { error: line.error } : {}),
   }
@@ -107,6 +116,21 @@ export function isHookCardBlocking(status: HookCardStatus): boolean {
   return status === 'deny' || status === 'blocked' || status === 'error' || status === 'halted'
 }
 
+/** Whether this response applied an effect, rather than merely running or reporting a failure. */
+export function hookCardPerformedAction(card: HookCard): boolean {
+  return (
+    card.status === 'deny' ||
+    card.status === 'ask' ||
+    card.status === 'halted' ||
+    card.updatedInput === true ||
+    (card.injectContextChars ?? 0) > 0 ||
+    (card.agentMessageChars ?? 0) > 0 ||
+    (card.userMessageChars ?? 0) > 0 ||
+    (card.queuedMessageChars ?? 0) > 0 ||
+    (card.sessionEnvKeys ?? 0) > 0
+  )
+}
+
 /** Human label for a canonical/dialect event name (`afterToolUse` → `After tool use`). */
 export function hookEventLabel(event: string): string {
   const spaced = event
@@ -124,22 +148,38 @@ export function getHookCardTitle(card: HookCard): string {
 
 /** Short badge label for the card's status. */
 export function getHookCardStatusLabel(card: HookCard): string {
+  const effects = [
+    card.status === 'deny' ? 'Blocked action' : undefined,
+    card.status === 'ask' ? 'Requested approval' : undefined,
+    card.status === 'halted' ? 'Stopped run' : undefined,
+    card.updatedInput ? 'Rewrote input' : undefined,
+    (card.injectContextChars ?? 0) > 0 ? 'Added context' : undefined,
+    (card.agentMessageChars ?? 0) > 0 ? 'Guided agent' : undefined,
+    (card.userMessageChars ?? 0) > 0 ? 'Notified you' : undefined,
+    (card.queuedMessageChars ?? 0) > 0 ? 'Queued follow-up' : undefined,
+    (card.sessionEnvKeys ?? 0) > 0 ? 'Set session environment' : undefined,
+  ].filter((effect): effect is string => effect !== undefined)
+  const primaryEffect = effects[0]
+  if (primaryEffect !== undefined) {
+    return effects.length === 1 ? primaryEffect : `${primaryEffect} +${String(effects.length - 1)}`
+  }
+
   switch (card.status) {
     case 'allow':
       return 'Allowed'
     case 'deny':
-      return 'Denied'
+      return 'Blocked action'
     case 'ask':
-      return 'Asked'
+      return 'Requested approval'
     case 'halted':
-      return 'Halted'
+      return 'Stopped run'
     case 'halt-suppressed':
-      return 'Halt suppressed'
+      return 'Halt ignored'
     case 'blocked':
       return 'Sandbox blocked'
     case 'error':
-      return 'Error'
+      return 'Failed'
     case 'ok':
-      return 'Ran'
+      return 'No changes'
   }
 }

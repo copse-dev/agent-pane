@@ -20,7 +20,9 @@ import {
   scalewayBlockVolumeDeleteArgs,
   scalewayBlockVolumeListArgs,
   scalewayBlockVolumeTagArgs,
+  scalewayIpCreateArgs,
   scalewayJsonArgs,
+  parseScalewayServerIpIds,
   scalewayServerFromRecord,
   scalewayTagArgs,
   scalewayTags,
@@ -198,6 +200,16 @@ describe('userDataScript', () => {
     assert.doesNotMatch(script, /ttl-terminate\.sh/)
   })
 
+  it('enables capability-bearing user namespaces before starting Docker', () => {
+    const script = userDataScript(0)
+    const sysctlAt = script.indexOf('sysctl -w kernel.apparmor_restrict_unprivileged_userns=0')
+    const dockerAt = script.indexOf('systemctl enable --now docker')
+
+    assert.match(script, /\/etc\/sysctl\.d\/99-copse-bwrap-userns\.conf/)
+    assert.ok(sysctlAt >= 0)
+    assert.ok(dockerAt > sysctlAt)
+  })
+
   it('omits the shutdown when ttlMinutes is 0', () => {
     assert.doesNotMatch(userDataScript(0), /shutdown -h/)
     assert.doesNotMatch(userDataScript(0, 'x', SCW_TTL), /ttl-terminate\.sh/)
@@ -220,6 +232,20 @@ describe('userDataScript', () => {
     // terminate only detaches SBS; TTL must delete volumes explicitly.
     assert.match(script, /\/block\/v1alpha1\/zones\/\$ZONE\/volumes\//)
     assert.match(script, /product_resource_id=\$SERVER_ID/)
+  })
+
+  it('reaches the IP delete even when terminate or a volume delete fails', () => {
+    const script = userDataScript(45, 'Copse burst runner', SCW_TTL)
+    const teardown = script.slice(script.indexOf('copse TTL: terminating'))
+    // An unattached flexible IP bills forever, so nothing between the
+    // terminate and the IP delete may short-circuit: failures set FAILED and
+    // surface once the IP is released. (The metadata guard above this region
+    // still exits early — with no server id there is no IP id either.)
+    assert.doesNotMatch(teardown, /^\s*exit 1$/m)
+    assert.match(teardown, /FAILED=1/)
+    const ipDeleteAt = teardown.indexOf('/instance/v1/zones/$ZONE/ips/$IP_ID')
+    assert.ok(ipDeleteAt > 0)
+    assert.ok(teardown.indexOf('exit "$FAILED"') > ipDeleteAt)
   })
 })
 
@@ -372,7 +398,7 @@ describe('Scaleway helpers', () => {
     assert.equal(volumes[1]?.zone, 'fr-par-1')
   })
 
-  it('deletes captured volumes when server termination times out', () => {
+  it('deletes captured volumes and IPs when server termination times out', () => {
     const calls: string[] = []
     const timeout = new Error('waiting for volume failed: timeout after 5m0s')
 
@@ -382,16 +408,70 @@ describe('Scaleway helpers', () => {
           calls.push('read volumes')
           return ['vol-root']
         },
+        readIpIds: () => {
+          calls.push('read ips')
+          return ['ip-1']
+        },
         terminate: () => {
           calls.push('terminate')
           throw timeout
         },
         deleteVolumes: (config, volumeIds) => {
-          calls.push(`delete ${config.zone} ${volumeIds.join(',')}`)
+          calls.push(`delete volumes ${config.zone} ${volumeIds.join(',')}`)
+        },
+        deleteIps: (config, ipIds) => {
+          calls.push(`delete ips ${config.zone} ${ipIds.join(',')}`)
         },
       })
     }, timeout)
-    assert.deepEqual(calls, ['read volumes', 'terminate', 'delete fr-par-1 vol-root'])
+    // A flexible IP bills until deleted, so a failed terminate must not skip it.
+    assert.deepEqual(calls, [
+      'read volumes',
+      'read ips',
+      'terminate',
+      'delete volumes fr-par-1 vol-root',
+      'delete ips fr-par-1 ip-1',
+    ])
+  })
+
+  it('parseScalewayServerIpIds accepts the single and list public IP shapes', () => {
+    assert.deepEqual(parseScalewayServerIpIds(JSON.stringify({ public_ip: { id: 'ip-1' } })), [
+      'ip-1',
+    ])
+    assert.deepEqual(
+      parseScalewayServerIpIds(
+        JSON.stringify({ server: { public_ips: [{ id: 'ip-1' }, { id: 'ip-2' }] } }),
+      ),
+      ['ip-1', 'ip-2'],
+    )
+    // The same IP reported under both keys must not be deleted twice.
+    assert.deepEqual(
+      parseScalewayServerIpIds(
+        JSON.stringify({ public_ip: { id: 'ip-1' }, public_ips: [{ id: 'ip-1' }] }),
+      ),
+      ['ip-1'],
+    )
+    assert.deepEqual(parseScalewayServerIpIds(JSON.stringify({ server: { name: 'no-ip' } })), [])
+  })
+
+  it('scalewayIpCreateArgs tags the reservation so the prune can identify it', () => {
+    assert.deepEqual(
+      scalewayIpCreateArgs({ zone: 'fr-par-1' }, 'fleet', {
+        kind: 'copse-burst',
+        managedBy: 'copse-burst-runners',
+      }),
+      [
+        'instance',
+        'ip',
+        'create',
+        'tags.0=copse-burst',
+        'tags.1=copse-burst-fleet',
+        'tags.2=copse-burst-runners',
+        'zone=fr-par-1',
+        '-o',
+        'json',
+      ],
+    )
   })
 
   it('scalewayJsonArgs appends the zone before the json output flag', () => {

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
-import { copseDataRoot } from './storage/copse-paths.ts'
 import { getActiveProjectRoot } from './workspace.ts'
 
 /**
@@ -31,7 +31,7 @@ export function setRoadmapReviewRootForTest(path: string | null): void {
 }
 
 function reviewBaseDir(): string {
-  return rootOverride ?? join(copseDataRoot(), 'roadmap-review')
+  return rootOverride ?? join(homedir(), '.copse', 'roadmap-review')
 }
 
 function workspaceNamespace(): string {

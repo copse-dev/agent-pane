@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS,
+  detectCrossTurnCircle,
   detectReasoningCircle,
+  detectTextRepeatCircle,
 } from './reasoning-circle-detector.ts'
 
 describe('reasoning circle detector', () => {
@@ -82,5 +84,56 @@ describe('reasoning circle detector', () => {
     )
     assert.deepEqual(detectReasoningCircle(short.join('\n')), [])
     assert.deepEqual(detectReasoningCircle(long.join('\n')), ['runaway_list'])
+  })
+})
+
+describe('detectTextRepeatCircle', () => {
+  it('recognises a long block re-emitted verbatim in plain visible text', () => {
+    const block =
+      'The current changes are already present in the working tree, so the request is satisfied. ' +
+      'I should confirm the state and move on without applying the same edit again.'
+    assert.deepEqual(detectTextRepeatCircle([block, block, block].join('\n\n')), [
+      'repeated_block',
+      'repeated_sentence',
+    ])
+  })
+
+  it('does not flag a repeating short motif common in code and formatted output', () => {
+    // A tail-cycle detector would flag this (any run of one repeated
+    // character trivially cycles); `detectTextRepeatCircle` deliberately
+    // excludes that check because it is routine in legitimate output.
+    assert.deepEqual(detectTextRepeatCircle('x'.repeat(400)), [])
+    assert.deepEqual(detectTextRepeatCircle('-'.repeat(80) + '\n' + '-'.repeat(80)), [])
+  })
+
+  it('permits ordinary prose with no exact repeats', () => {
+    const text =
+      'Updated the resizer test to expect the narrower default width and reran the suite ' +
+      'to confirm nothing else regressed.'
+    assert.deepEqual(detectTextRepeatCircle(text), [])
+  })
+})
+
+describe('detectCrossTurnCircle', () => {
+  it('recognises the same short turn recurring verbatim across separate calls', () => {
+    const turn = 'Checking the same file again to be sure.'
+    assert.deepEqual(detectCrossTurnCircle([turn, turn, turn]), ['repeated_turn'])
+  })
+
+  it('ignores a short match below the minimum turn length', () => {
+    assert.deepEqual(detectCrossTurnCircle(['ok', 'ok', 'ok']), [])
+  })
+
+  it('does not flag turns recurring fewer than the repeat limit', () => {
+    const turn = 'Checking the same file again to be sure.'
+    assert.deepEqual(detectCrossTurnCircle([turn, 'Something else entirely.', turn]), [])
+  })
+
+  it('permits distinct turns interspersed with the repeat, matching by content not position', () => {
+    const turn = 'Checking the same file again to be sure.'
+    assert.deepEqual(
+      detectCrossTurnCircle([turn, 'Reading the config next.', turn, 'Now the tests.', turn]),
+      ['repeated_turn'],
+    )
   })
 })

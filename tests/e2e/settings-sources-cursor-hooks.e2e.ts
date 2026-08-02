@@ -27,7 +27,7 @@ describe('settings sources hooks', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-settings-sources-hooks')
+    seedEmptyProject(process.cwd(), 'e2e-settings-sources-hooks', { developerMode: true })
     seedUserCursorHooks({
       version: 1,
       hooks: {
@@ -66,8 +66,8 @@ describe('settings sources hooks', () => {
     await expect(toggle).toBeExisting()
     assert.equal(await toggle.isSelected(), false)
     const fieldsetText = await dialog.$('fieldset:has(#sources-hooks-list)').getText()
-    assert.match(fieldsetText, /hot path/i)
-    assert.match(fieldsetText, /workspace trust/i)
+    assert.match(fieldsetText, /while the agent works/i)
+    assert.match(fieldsetText, /trust the project/i)
 
     // Collect each row's title + badges + row classes.
     const rows = await browser.execute(() => {

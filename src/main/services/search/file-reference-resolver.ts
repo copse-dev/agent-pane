@@ -46,7 +46,12 @@ async function resolveOnFilesystem(
 export async function resolveFileReferences(
   candidates: string[],
 ): Promise<FileReferenceResolution[]> {
-  const idx = getIndex()
+  // Renderer-global feature (markdown/terminal `@file` links) with no thread
+  // context of its own — stays scoped to the renderer-selected workspace root
+  // rather than any one thread's execution root.
+  const workspaceRoot = getWorkspaceRoot()
+  if (!workspaceRoot) return []
+  const idx = getIndex(workspaceRoot)
   if (!idx) return []
 
   const exactPaths = new Set(idx.paths)

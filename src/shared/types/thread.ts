@@ -4,6 +4,7 @@ import type { RemoteAgentLink } from '../remote-agent-link.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree.ts'
 import type { VideoAttachmentRef } from '../video/video-media.ts'
+import type { ArchiveAttachmentRef } from '../archive/archive-media.ts'
 export type { HookCard } from '../hooks/hook-card.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
@@ -203,6 +204,13 @@ export interface Thread {
    */
   videos?: VideoAttachmentRef[]
   /**
+   * Archives (zips) the user has attached to this thread, in the order they
+   * were sent. Read the same two ways `videos` is: `read_archive` is only
+   * offered on threads that have one, and the paths are restated in the tool's
+   * description every turn so trimming cannot lose them.
+   */
+  archives?: ArchiveAttachmentRef[]
+  /**
    * When set, the thread is archived: hidden from the sidebar and `@`-thread
    * catalog, but kept on disk under `~/.copse/workspace/<projectId>/<id>/`.
    * Soft-hide (not a delete) — restore is a later UI concern.
@@ -218,7 +226,8 @@ export interface Thread {
  * highest-fidelity result. `rebuilt` was reconstructed from the copied
  * transcript slice, which cannot carry content that only existed in the run
  * payload (the fenced blocks inlined for `@`-file / `@`-thread / shell chips).
- * `empty` means the source had no recorded history to inherit.
+ * `empty` means the source had neither recorded provider history nor a visible
+ * transcript that could be rebuilt.
  */
 export interface ForkedHistoryResult {
   source: 'copied' | 'rebuilt' | 'empty'
@@ -256,13 +265,20 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
  * `content`; `file`/`thread` chips render as a trailing row.
  */
 export interface TranscriptAttachment {
-  kind: 'paste' | 'file' | 'thread' | 'shell' | 'video'
+  kind: 'paste' | 'file' | 'thread' | 'shell' | 'video' | 'archive'
   label: string
   /**
-   * Where the attached file lives, for the chips that can act on it. Only
-   * `video` sets it today: the chip plays the recording in a preview modal, and
-   * the label alone (a bare filename) cannot find the file again after a
-   * reload. Absent for every other kind, which are display-only.
+   * Exact text snapshot represented by a text-like chip. Persisted out-of-line
+   * in the thread store so the sent attachment remains inspectable even when a
+   * workspace file later changes. Absent for non-text and legacy attachments.
+   */
+  content?: string
+  /**
+   * Where the attached file lives, for the chips that can act on it. Set by
+   * `video` (the chip plays the recording in a preview modal) and `archive`
+   * (the path is what the agent unpacks) — in both cases the label alone, a
+   * bare filename, cannot find the file again after a reload. Absent for every
+   * other kind, which are display-only.
    */
   path?: string
 }
