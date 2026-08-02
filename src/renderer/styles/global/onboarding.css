@@ -122,6 +122,10 @@
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+.onboarding-back:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .setup-install-guide {
   margin-bottom: var(--spacing-md);
   padding: var(--spacing-md);
