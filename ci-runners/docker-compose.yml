@@ -48,17 +48,19 @@ services:
     # degrades to unsandboxed, and executable packs stay unavailable because
     # they fail closed rather than run unconfined (pack-tool-host.ts).
     #
-    # `seccomp` is the one that actually unblocks it, and it is not optional.
-    # Docker's default profile allows `clone`/`unshare` but filters their flag
-    # argument to exclude CLONE_NEWUSER for containers without CAP_SYS_ADMIN, so
-    # bwrap gets EPERM creating the namespace — before it attempts any mount:
+    # `seccomp` is not optional. Docker's default profile allows `clone`/`unshare`
+    # but filters their flag argument to exclude CLONE_NEWUSER for containers
+    # without CAP_SYS_ADMIN, so bwrap gets EPERM before it attempts any mount:
     #
     #   bwrap: No permissions to create new namespace, likely because the
     #   kernel does not allow non-privileged user namespaces.
     #
-    # That message points at a kernel sysctl, which is a red herring here: the
-    # host kernel allows it, Docker's syscall filter is what refuses. `apparmor`
-    # covers the mount operations bwrap performs once the namespace exists.
+    # That specific message is Docker's syscall filter. Ubuntu 24.04 has a second,
+    # distinct host restriction: `kernel.apparmor_restrict_unprivileged_userns=1`
+    # permits the namespace but strips the capabilities bwrap needs to configure
+    # loopback, producing `Failed RTM_NEWADDR`. The cloud host bootstrap disables
+    # that restriction on these dedicated ephemeral hosts; `apparmor=unconfined`
+    # here does not override the host sysctl.
     #
     # `cap_add: [SYS_ADMIN]` would also satisfy the seccomp rule, but grants a
     # near-root capability for the whole container; dropping the syscall filter
@@ -73,8 +75,9 @@ services:
     # processes anyway. Remove this block to keep the stricter container profile
     # and accept an unsandboxed app (the previous behaviour).
     #
-    # Verify after `docker compose up -d --build`:
-    #   docker compose exec runner bwrap --ro-bind / / --unshare-all true
+    # The burst startup path runs this probe before registering any runners:
+    #   docker compose run --rm --no-deps --entrypoint bwrap runner \
+    #     --ro-bind / / --unshare-all true
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
