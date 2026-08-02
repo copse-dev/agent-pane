@@ -10,7 +10,10 @@ export function runnerComposeStartupCommands(runnersPerInstance: number): string
 
   return [
     'docker compose build --pull',
-    'docker compose run --rm --no-deps --entrypoint bwrap runner --ro-bind / / --unshare-all true',
+    // Mirror the namespace and procfs operations ASRT's Linux backend uses.
+    // A shallower `--unshare-all true` probe misses Docker's protected-system-
+    // paths restriction and admits runners whose real pack workers immediately exit.
+    'docker compose run --rm --no-deps --entrypoint bwrap runner --new-session --die-with-parent --ro-bind / / --unshare-net --unshare-pid --unshare-user --cap-drop ALL --proc /proc -- /usr/bin/true',
     `docker compose up -d --no-build --scale runner=${String(runnersPerInstance)}`,
     'docker compose ps',
   ]
