@@ -199,6 +199,11 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // On by default: clicked links open in the in-app browser pane. Off routes
   // external links to the system browser and marks them with an external icon.
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
+  { name: 'alertOnInteraction', kind: 'checkbox', default: true, save: true },
+  { name: 'alertOnThreadFinished', kind: 'checkbox', default: true, save: true },
+  { name: 'alertSystemNotification', kind: 'checkbox', default: true, save: true },
+  { name: 'alertSound', kind: 'checkbox', default: true, save: true },
+  { name: 'alertBounce', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
@@ -950,8 +955,38 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="appearance">
             <h3>Appearance</h3>
             <p class="settings-section-desc">
-              Theme, app icon, interface scale, editor font size, and window layout.
+              Theme, app icon, interface scale, window layout, and alerts.
             </p>
+
+            <fieldset data-testid="settings-alerts">
+              <legend>Alerts</legend>
+              <p class="settings-fieldset-desc">
+                Choose when Copse should get your attention and how it should alert you. Each
+                delivery method is independent.
+              </p>
+              <span class="settings-field-label">Notify me when</span>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertOnInteraction" />
+                Thread needs interaction
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertOnThreadFinished" />
+                Thread finishes
+              </label>
+              <span class="settings-field-label">Alert me with</span>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertSystemNotification" />
+                System notification
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertSound" />
+                Sound
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertBounce" />
+                Dock or taskbar animation
+              </label>
+            </fieldset>
 
             <fieldset>
               <legend>Display</legend>

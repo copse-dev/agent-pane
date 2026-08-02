@@ -50,6 +50,7 @@ function setup(
   messageDone: string[]
   messages: (id?: string) => Message[]
   gitBranchChanged: number[]
+  finishedAlerts: Array<{ threadId: string; title: string }>
   showDiff: (
     projectId: string,
     threadId: string,
@@ -82,6 +83,7 @@ function setup(
   const titleCalls: string[] = []
   const messageDone: string[] = []
   const gitBranchChanged: number[] = []
+  const finishedAlerts: Array<{ threadId: string; title: string }> = []
   store.on('message_done', (id) => messageDone.push(id))
   store.on('git_branch_changed', () => gitBranchChanged.push(1))
 
@@ -91,6 +93,7 @@ function setup(
       ...base,
       agent: {
         ...base['agent'],
+        run: async (): Promise<void> => {},
         onChunk: (h: (threadId: string, chunk: StreamChunk) => void) => {
           chunkHandler = h
           return (): void => {}
@@ -170,6 +173,11 @@ function setup(
           ],
         }),
       },
+      alerts: {
+        threadFinished: async (threadId: string, title: string): Promise<void> => {
+          finishedAlerts.push({ threadId, title })
+        },
+      },
     } satisfies ApiClient
   })()
 
@@ -195,6 +203,7 @@ function setup(
     messageDone,
     messages,
     gitBranchChanged,
+    finishedAlerts,
     showDiff,
     queueDiffs,
   }
@@ -487,19 +496,33 @@ test('context pressure persists the agent-reported used and window values', () =
   })
 })
 
-test('done finalizes the message, sets the thread idle, and resets stream state', () => {
-  const { send, messages, messageDone, store } = setup()
+test('done finalizes the message, alerts once, sets the thread idle, and resets stream state', () => {
+  const { send, messages, messageDone, store, finishedAlerts } = setup()
   send({ type: 'text', text: 'answer' })
   const firstId = at(messages(), 0).id
   send({ type: 'done' })
 
   assert.equal(requireThread(store, 't1').status, 'idle')
   assert.deepEqual(messageDone, [firstId])
+  assert.deepEqual(finishedAlerts, [{ threadId: 't1', title: 't1' }])
 
   // State was cleared, so a subsequent text chunk opens a fresh bubble.
   send({ type: 'text', text: 'next turn' })
   assert.equal(messages().length, 2)
   assert.equal(at(messages(), 1).content, 'next turn')
+})
+
+test('done does not alert between queued turns', () => {
+  const queued = thread('t1')
+  queued.pendingMessages = [
+    { messageId: 'queued-user', payload: { content: 'continue' }, createdAt: 2 },
+  ]
+  const { send, store, finishedAlerts } = setup([queued])
+
+  send({ type: 'done' })
+
+  assert.equal(requireThread(store, 't1').status, 'running')
+  assert.deepEqual(finishedAlerts, [])
 })
 
 test('first assistant text kicks off naming without waiting for done', async () => {

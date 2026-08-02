@@ -113,6 +113,10 @@ export interface IpcInvokeMap {
     args: [id: string, answers: string[]]
     result: undefined
   }
+  'alerts:threadFinished': {
+    args: [threadId: string, title: string]
+    result: undefined
+  }
 
   // MCP servers
   'mcp:list': { args: []; result: McpServerStatus[] }

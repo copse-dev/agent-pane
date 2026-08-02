@@ -11,10 +11,8 @@ import {
   requestApproval,
   runWithApprovalHandler,
   setApprovalHandler,
-  startDockAttention,
   trackAcpPermissionToolCall,
   type ApprovalRequest,
-  type DockAttention,
 } from './approval.ts'
 import { readDecisionLog } from './security/decision-log-store.ts'
 import {
@@ -304,47 +302,3 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
     )
   })
 }
-
-describe('startDockAttention', () => {
-  function fakeDock(): {
-    dock: DockAttention
-    calls: { bounce: Array<string | undefined>; cancel: number[] }
-  } {
-    const calls: { bounce: Array<string | undefined>; cancel: number[] } = {
-      bounce: [],
-      cancel: [],
-    }
-    const dock: DockAttention = {
-      bounce(type) {
-        calls.bounce.push(type)
-        return 42
-      },
-      cancelBounce(id) {
-        calls.cancel.push(id)
-      },
-    }
-    return { dock, calls }
-  }
-
-  it('bounces critically on start and cancels that bounce on stop', () => {
-    const { dock, calls } = fakeDock()
-    const stop = startDockAttention(dock)
-    assert.deepEqual(calls.bounce, ['critical'])
-    assert.deepEqual(calls.cancel, [])
-    stop()
-    assert.deepEqual(calls.cancel, [42])
-  })
-
-  it('is idempotent: a second stop is a no-op', () => {
-    const { dock, calls } = fakeDock()
-    const stop = startDockAttention(dock)
-    stop()
-    stop()
-    assert.deepEqual(calls.cancel, [42])
-  })
-
-  it('is a no-op (no throw) when there is no dock', () => {
-    const stop = startDockAttention(undefined)
-    assert.doesNotThrow(stop)
-  })
-})

@@ -436,6 +436,15 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           void syncThreadGitBranchAfterShell(store, api, threadId)
         }
         drainMessageQueue(store, api, threadId)
+        // A queued user or machine continuation immediately flips the thread
+        // back to running. Only alert when the queue drain leaves it genuinely
+        // finished, rather than chiming between consecutive turns.
+        const finishedThread = getThreadById(store, threadId)
+        if (finishedThread?.status === 'idle') {
+          void api.alerts.threadFinished(threadId, finishedThread.title).catch((error: unknown) => {
+            console.error('[alerts] failed to signal thread completion:', error)
+          })
+        }
         break
       }
     }

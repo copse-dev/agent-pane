@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
@@ -53,6 +53,7 @@ import {
   setApiKey,
   isApiKeyEncrypted,
 } from '../services/storage/settings.ts'
+import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
   isRendererWritableSettingKey,
@@ -304,6 +305,7 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
 }
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const alertUser = createElectronUserAlertSender(win, app.dock)
   const packService = getPackService()
   setPackBrowserService(createPackBrowserPanelService(win))
   setPackToolRuntimeController(new ToolingPackToolRuntimeController(registry))
@@ -930,6 +932,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
     }
     return getSetting(k, null)
+  })
+  ipcMain.handle('alerts:threadFinished', (event, rawThreadId: unknown, rawTitle: unknown) => {
+    assertMainFrameSender(event, win)
+    const [, title] = parseIpcArgs(z.tuple([zThreadId, z.string().trim().min(1).max(512)]), [
+      rawThreadId,
+      rawTitle,
+    ])
+    alertUser('thread-finished', `${title} is ready.`)
   })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
     assertMainFrameSender(event, win)
