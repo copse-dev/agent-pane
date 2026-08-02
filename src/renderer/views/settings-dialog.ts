@@ -1200,7 +1200,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void customProvidersSection.refresh()
     },
   })
-  overlay.querySelector('#settings-env-detect-host')?.append(envKeyDetectSection.root)
+  qsRequired(overlay, '#settings-env-detect-host').append(envKeyDetectSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
@@ -1325,6 +1325,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Async section content (ACP agents, Sources lists) loads only when its tab is
   // opened; search reveals those blocks too, so populate them once per open.
   let searchContentLoaded = false
+
+  // Opening the dialog runs a long serial chain of IPC round-trips to populate
+  // every section. Run each stage under its own catch so one failure is named
+  // and non-fatal rather than silently stranding every stage after it, and stamp
+  // the failed stage names on the overlay so a DOM dump (the e2e failure
+  // artifacts) records what never got populated.
+  const failedRefreshStages: string[] = []
+  async function refreshStage(name: string, run: () => Promise<void>): Promise<void> {
+    try {
+      await run()
+    } catch (err) {
+      failedRefreshStages.push(name)
+      overlay.dataset['settingsRefreshFailed'] = failedRefreshStages.join(',')
+      console.error(`[settings] open refresh stage "${name}" failed`, err)
+    }
+  }
+
   const developerModeInput = qsRequired<HTMLInputElement>(
     overlay,
     `input[name="${DEVELOPER_MODE_SETTING}"]`,
@@ -1379,6 +1396,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!query) {
       contentEl.classList.remove('settings-searching')
       searchEmpty.hidden = true
+      // `restoreLiftedBlocks()` above returns every lifted block to the marker
+      // left in its section. Anything still parked here lost its marker, and the
+      // `replaceChildren()` below is about to destroy it — taking a whole
+      // fieldset out of its section for the life of the renderer, which reads
+      // downstream as "that setting isn't displayed". Name it before it goes.
+      for (const orphan of Array.from(searchResults.children)) {
+        console.error(
+          '[settings] search results still held a block after restore:',
+          orphan.querySelector('legend')?.textContent ?? orphan.className,
+        )
+      }
       searchResults.replaceChildren()
       showSection(activeSection)
       return
@@ -2513,91 +2541,117 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (openedSection === 'sources') void refreshSources()
     searchInput.focus()
     void (async (): Promise<void> => {
-      await cursorKeySection.refreshKeyStatus()
-      await claudeAgentKeySection.refreshKeyStatus()
-      await aaKeySection.refreshKeyStatus()
-      await customProvidersSection.refresh()
-      await envKeyDetectSection.refresh()
-      await localProvidersSection.refresh()
+      // These stages used to be one unbroken `await` chain inside this
+      // `void (async …)()`. A rejection anywhere aborted every later step, and
+      // `void` left the rejection nowhere to surface — so a single failed IPC
+      // emptied the rest of the dialog with no error anywhere. That is how
+      // `.gh-cli-status` (second-to-last step) reached CI blank: `refreshStatus`
+      // writes "Checking GitHub CLI…" synchronously before its first `await`, so
+      // an empty status means it was never called, not that `gh.status()` failed.
+      failedRefreshStages.length = 0
+      delete overlay.dataset['settingsRefreshFailed']
+
+      await refreshStage('key-statuses', async () => {
+        await cursorKeySection.refreshKeyStatus()
+        await claudeAgentKeySection.refreshKeyStatus()
+        await aaKeySection.refreshKeyStatus()
+      })
+      await refreshStage('provider-sections', async () => {
+        await customProvidersSection.refresh()
+        await envKeyDetectSection.refresh()
+        await localProvidersSection.refresh()
+      })
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')
-      const model = storedString(await api.settings.get('model'))
-      await settingsModelPickers.model.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
-      // The executor (chat) model just settled — re-grade the advisor pairing
-      // hint, which lives with the advisor pack in the Packs section. No-op until
-      // that pack row has rendered (its select/hint refs are still null); pairs
-      // with the `updateAdvisorPairHint()` call in `refreshPacks()` so whichever
-      // of the two async renders finishes last shows the hint.
-      updateAdvisorPairHint()
-      const smallTasksModel = storedString(await api.settings.get('smallTasksModel'))
-      const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
-      await settingsModelPickers.smallTasksModel.refresh(
-        roleModels['small-tasks'] ?? smallTasksModel ?? '',
-      )
-      // The advisor model and the three comparison models are no longer form
-      // fields: they are pack-scoped `model` settings rendered in Settings →
-      // Packs (advisor pair hint included), populated by `refreshPacks()`.
-      const orchestrationWorkerModel = storedString(
-        await api.settings.get('orchestrationWorkerModel'),
-      )
-      await settingsModelPickers.orchestrationWorkerModel.refresh(
-        orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
-      )
-      await loadSimpleFields(form, api)
-      syncDeveloperOnlySettings()
-      wireSafetySliders(form)
-      const savedWebOrigins = storedStringArray(await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING))
-      textareaControl(form, 'webAllowedOrigins').value = (
-        savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
-      ).join('\n')
-      const savedProviderHosts = storedStringArray(
-        await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING),
-      )
-      textareaControl(form, 'approvedProviderHosts').value = (
-        Array.isArray(savedProviderHosts) ? savedProviderHosts : []
-      ).join('\n')
-      textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
-        sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
-      )
-      selectControl(form, 'theme').value = store.getState().themePreference
-      inputControl(form, 'fontSize').value = String(store.getState().fontSize)
-      const uiScaleInput = form.elements.namedItem('uiScale')
-      if (!(uiScaleInput instanceof HTMLInputElement)) {
-        throw new Error('Settings dialog template is missing "uiScale"')
-      }
-      uiScaleInput.value = String(store.getState().uiScale)
-      inputControl(form, 'autoPortraitRightPanel').checked = store.getState().autoPortraitRightPanel
-      selectControl(form, 'rightPanelPosition').value = store.getState().rightPanelPosition
+      await refreshStage('model-pickers', async () => {
+        const model = storedString(await api.settings.get('model'))
+        await settingsModelPickers.model.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
+        // The executor (chat) model just settled — re-grade the advisor pairing
+        // hint, which lives with the advisor pack in the Packs section. No-op until
+        // that pack row has rendered (its select/hint refs are still null); pairs
+        // with the `updateAdvisorPairHint()` call in `refreshPacks()` so whichever
+        // of the two async renders finishes last shows the hint.
+        updateAdvisorPairHint()
+        const smallTasksModel = storedString(await api.settings.get('smallTasksModel'))
+        const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
+        await settingsModelPickers.smallTasksModel.refresh(
+          roleModels['small-tasks'] ?? smallTasksModel ?? '',
+        )
+        // The advisor model and the three comparison models are no longer form
+        // fields: they are pack-scoped `model` settings rendered in Settings →
+        // Packs (advisor pair hint included), populated by `refreshPacks()`.
+        const orchestrationWorkerModel = storedString(
+          await api.settings.get('orchestrationWorkerModel'),
+        )
+        await settingsModelPickers.orchestrationWorkerModel.refresh(
+          orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
+        )
+      })
 
-      const savedAccentColor = await api.settings.get('uiAccentColor')
-      inputControl(form, 'uiAccentColor').value =
-        typeof savedAccentColor === 'string' && HEX_COLOR.test(savedAccentColor)
-          ? savedAccentColor
-          : DEFAULT_ACCENT_COLOR
+      await refreshStage('form-fields', async () => {
+        await loadSimpleFields(form, api)
+        syncDeveloperOnlySettings()
+        wireSafetySliders(form)
+        const savedWebOrigins = storedStringArray(
+          await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING),
+        )
+        textareaControl(form, 'webAllowedOrigins').value = (
+          savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
+        ).join('\n')
+        const savedProviderHosts = storedStringArray(
+          await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING),
+        )
+        textareaControl(form, 'approvedProviderHosts').value = (
+          Array.isArray(savedProviderHosts) ? savedProviderHosts : []
+        ).join('\n')
+        textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
+          sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
+        )
+        selectControl(form, 'theme').value = store.getState().themePreference
+        inputControl(form, 'fontSize').value = String(store.getState().fontSize)
+        const uiScaleInput = form.elements.namedItem('uiScale')
+        if (!(uiScaleInput instanceof HTMLInputElement)) {
+          throw new Error('Settings dialog template is missing "uiScale"')
+        }
+        uiScaleInput.value = String(store.getState().uiScale)
+        inputControl(form, 'autoPortraitRightPanel').checked =
+          store.getState().autoPortraitRightPanel
+        selectControl(form, 'rightPanelPosition').value = store.getState().rightPanelPosition
+      })
 
-      const savedTintColor = await api.settings.get('uiTintColor')
-      inputControl(form, 'uiTintColor').value =
-        typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
-          ? savedTintColor
-          : DEFAULT_TINT_COLOR
-      const savedTintStrength = await api.settings.get('uiTintStrength')
-      selectControl(form, 'uiTintStrength').value = isUiTintStrength(savedTintStrength)
-        ? savedTintStrength
-        : DEFAULT_TINT_STRENGTH
+      await refreshStage('appearance', async () => {
+        const savedAccentColor = await api.settings.get('uiAccentColor')
+        inputControl(form, 'uiAccentColor').value =
+          typeof savedAccentColor === 'string' && HEX_COLOR.test(savedAccentColor)
+            ? savedAccentColor
+            : DEFAULT_ACCENT_COLOR
 
-      const savedIconVariant = await api.settings.get('appIconVariant')
-      const appIconVariant = isAppIconVariant(savedIconVariant)
-        ? savedIconVariant
-        : DEFAULT_APP_ICON_VARIANT
-      const iconRadio = form.querySelector<HTMLInputElement>(
-        `input[name="appIconVariant"][value="${appIconVariant}"]`,
-      )
-      if (iconRadio) iconRadio.checked = true
+        const savedTintColor = await api.settings.get('uiTintColor')
+        inputControl(form, 'uiTintColor').value =
+          typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
+            ? savedTintColor
+            : DEFAULT_TINT_COLOR
+        const savedTintStrength = await api.settings.get('uiTintStrength')
+        selectControl(form, 'uiTintStrength').value = isUiTintStrength(savedTintStrength)
+          ? savedTintStrength
+          : DEFAULT_TINT_STRENGTH
 
-      await refreshLocalModelSelects()
-      await ghCliSection.refreshStatus()
-      await refreshMcpServers()
-      await refreshCuratedServers()
+        const savedIconVariant = await api.settings.get('appIconVariant')
+        const appIconVariant = isAppIconVariant(savedIconVariant)
+          ? savedIconVariant
+          : DEFAULT_APP_ICON_VARIANT
+        const iconRadio = form.querySelector<HTMLInputElement>(
+          `input[name="appIconVariant"][value="${appIconVariant}"]`,
+        )
+        if (iconRadio) iconRadio.checked = true
+      })
+
+      await refreshStage('local-models', () => refreshLocalModelSelects())
+      await refreshStage('gh-cli', () => ghCliSection.refreshStatus())
+      await refreshStage('mcp-servers', async () => {
+        await refreshMcpServers()
+        await refreshCuratedServers()
+      })
     })()
   })
 
