@@ -101,6 +101,24 @@ describe('blank thread reuse', () => {
     assert.equal(store.getState().activeThreadId, blankId)
   })
 
+  it('re-seeds the active blank thread model from the default on openNewThread', () => {
+    // Regression: changing the settings default (or pinning a model in the
+    // footer) then hitting "New Thread" while already sitting on a blank thread
+    // must reflect the current default, not the stale per-thread model.
+    const store = createStore()
+    store.setState({ settings: { model: 'auto:best-value' } })
+    const blankId = createThread(store)
+    // Simulate a per-thread pin left over from before (footer picker / prior default).
+    store.setState({
+      threads: store.getState().threads.map((t) => ({ ...t, model: 'gpt-4o' })),
+    })
+    assert.equal(store.getState().activeThreadId, blankId)
+
+    const openedId = openNewThread(store)
+    assert.equal(openedId, blankId)
+    assert.equal(store.getState().threads.find((t) => t.id === blankId)?.model, 'auto:best-value')
+  })
+
   it('switching away from a blank thread removes unused blanks', () => {
     const store = createStore()
     const usedId = createThread(store)
