@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import { withAppAttribution } from './app-attribution.ts'
 import { isImageUnsupportedError, yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
@@ -75,6 +76,9 @@ export class OpenAIProvider implements LLMProvider {
   // `promptCacheKey` is sent as OpenAI's `prompt_cache_key`: a stable per-thread
   // hint that routes a conversation's repeated turns to the same cache, raising
   // prompt-cache hit rates (and lowering cost) on providers that honour it (#584).
+  // `defaultHeaders` is merged over the app-attribution pair every request
+  // carries (see app-attribution.ts) — used for router-specific headers such as
+  // OpenRouter's `X-OpenRouter-Title`.
   constructor(
     model: string,
     opts: {
@@ -83,6 +87,7 @@ export class OpenAIProvider implements LLMProvider {
       includeUsage?: boolean
       extraBody?: Record<string, unknown>
       promptCacheKey?: string
+      defaultHeaders?: Readonly<Record<string, string>>
     } = {},
   ) {
     this.model = model
@@ -92,6 +97,7 @@ export class OpenAIProvider implements LLMProvider {
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
+      defaultHeaders: withAppAttribution(opts.defaultHeaders),
     })
   }
 
