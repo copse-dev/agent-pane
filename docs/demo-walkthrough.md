@@ -82,6 +82,6 @@ The frame is inert on the page (`pointer-events: none`, `aria-hidden`,
 control surface. The caption links to the real demo.
 
 `pages.yml` keeps the production homepage pinned to `site/` from `main`. For a PR,
-the branch's site is available at `/preview/pr-<n>/`, with its matching demo at
-`/preview/pr-<n>/demo/main/`. The original direct demo URL at `/demo/pr-<n>/`
-remains available.
+the branch's site is available at `/demo/pr-<n>-preview/`, with its matching demo at
+`/demo/pr-<n>-preview/demo/main/`. The original direct demo URL at
+`/demo/pr-<n>/` remains available.
