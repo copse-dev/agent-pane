@@ -14,7 +14,7 @@
 import type { ChildProcess } from 'node:child_process'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
-import { fsWorkerSandboxOverlay } from './config.ts'
+import { fsServerSandboxOverlay } from './config.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from './spawn.ts'
 import { sandboxFsWorkerPath, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES } from './sandbox-fs-client.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
@@ -131,7 +131,7 @@ function spawnWorkerProc(root: string): Promise<ChildProcess> {
     // Electron must run as Node inside seatbelt; the server flag selects the stdin request loop.
     env: { ELECTRON_RUN_AS_NODE: '1', [SANDBOX_FS_SERVER_ENV]: '1' },
     stdio: 'pipe',
-    sandboxConfig: fsWorkerSandboxOverlay(root, workerPath),
+    sandboxConfig: fsServerSandboxOverlay(root, workerPath),
   })
 }
 
@@ -209,6 +209,9 @@ export async function requestViaServer(
   request: Record<string, unknown>,
   requestedRoot?: string,
 ): Promise<SandboxFsResponse> {
+  if (request['op'] === 'writeFile') {
+    throw new Error('persistent sandbox fs server is read-only')
+  }
   const root = requestedRoot ?? getWorkspaceRoot()
   if (!root) throw new SandboxFsServerUnavailable('no workspace open')
   let worker: Worker

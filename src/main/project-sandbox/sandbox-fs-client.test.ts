@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm, mkdir, symlink, stat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -21,9 +21,19 @@ import {
   gatewayWriteFile,
   SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
   gatewayListDir,
+  setSandboxFsGatewayEnabledForTest,
+  setSandboxFsOneShotInvokerForTest,
 } from './sandbox-fs-client.ts'
+import { setWorkerSpawnerForTest, shutdownSandboxFsServer } from './sandbox-fs-server.ts'
 
 describe('sandbox-fs-client', () => {
+  afterEach(() => {
+    setSandboxFsGatewayEnabledForTest(null)
+    setSandboxFsOneShotInvokerForTest(null)
+    setWorkerSpawnerForTest(null)
+    shutdownSandboxFsServer()
+  })
+
   it('reads via direct fs when project sandbox is inactive', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'copse-sbfs-'))
     try {
@@ -135,6 +145,40 @@ describe('sandbox-fs-client', () => {
       const abs = await resolveWorkspacePath(join('sub', 'new.txt'))
       await gatewayWriteFile(abs, 'ok')
       assert.equal(await readFile(abs, 'utf-8'), 'ok')
+      restore()
+    } finally {
+      await rm(ws, { recursive: true, force: true })
+    }
+  })
+
+  it('routes sandboxed writes through a one-shot worker, not the persistent read server', async () => {
+    const ws = await mkdtemp(join(tmpdir(), 'copse-sbfs-sandbox-write-'))
+    try {
+      clearAllowedWorkspaceRootsForTest()
+      const root = await registerAllowedWorkspaceRoot(ws)
+      const restore = setWorkspaceRootForTest(root)
+      const abs = await resolveWorkspacePath(join('sub', 'new.txt'))
+      let serverSpawned = false
+      let oneShotCalled = false
+      setSandboxFsGatewayEnabledForTest(true)
+      setWorkerSpawnerForTest(() => {
+        serverSpawned = true
+        return Promise.reject(new Error('persistent server must not handle writes'))
+      })
+      setSandboxFsOneShotInvokerForTest(async (request, requestedRoot) => {
+        oneShotCalled = true
+        assert.equal(request['op'], 'writeFile')
+        assert.equal(requestedRoot, undefined)
+        await mkdir(join(root, 'sub'), { recursive: true })
+        await writeFile(abs, String(request['content']), 'utf-8')
+        return { ok: true }
+      })
+
+      await gatewayWriteFile(abs, 'ok')
+
+      assert.equal(await readFile(abs, 'utf-8'), 'ok')
+      assert.equal(oneShotCalled, true)
+      assert.equal(serverSpawned, false)
       restore()
     } finally {
       await rm(ws, { recursive: true, force: true })
