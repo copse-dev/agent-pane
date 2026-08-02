@@ -167,8 +167,33 @@ export function requireThreadExecutionContext(): ThreadExecutionContext {
   return context
 }
 
-/** Resolve the stable owner of run-scoped state without exposing its filesystem root. */
+/**
+ * Owner-only binding, for callers that own run-scoped state but have no
+ * filesystem root of their own to impose.
+ *
+ * The ACP native-tool bridge is the motivating case: its MCP request handlers
+ * are a separate async chain from the turn (see the note beside
+ * `runWithActiveRunIdentity` in `acp-native-bridge.ts`), so the full context is
+ * gone by the time a bridged tool executes. Binding the whole context there
+ * would also rebind `root`, changing path resolution for every other bridged
+ * tool; this binds identity only and leaves roots exactly as they were.
+ */
+const ownerStorage = new AsyncLocalStorage<ThreadExecutionOwner>()
+
+export function runWithThreadExecutionOwner<T>(owner: ThreadExecutionOwner, fn: () => T): T {
+  return ownerStorage.run(owner, fn)
+}
+
+/**
+ * Resolve the stable owner of run-scoped state without exposing its filesystem
+ * root. Prefers a full turn context; falls back to an owner-only binding.
+ * Throws when neither is active — run-scoped state must never be written to a
+ * guessed thread.
+ */
 export function requireThreadExecutionOwner(): ThreadExecutionOwner {
-  const { projectId, threadId } = requireThreadExecutionContext()
-  return { projectId, threadId }
+  const context = storage.getStore()
+  if (context) return { projectId: context.projectId, threadId: context.threadId }
+  const owner = ownerStorage.getStore()
+  if (owner) return owner
+  throw new Error('No thread execution context is active')
 }

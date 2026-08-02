@@ -82,11 +82,13 @@ describe('roadmap category grouping and filters', () => {
 
     await $('.roadmap-filter-toggle').click()
     assert.equal(await $('.roadmap-filter-toggle').getAttribute('aria-expanded'), 'true')
+    // `getText()` returns *rendered* text, and `.roadmap-filter-heading` carries
+    // `text-transform: uppercase` (roadmap.css) — so assert what the user sees.
     assert.equal(
       await $$('.roadmap-filter-heading')
         .map((heading) => heading.getText())
         .then((texts) => texts.join(',')),
-      'Category,Complexity,Status',
+      'CATEGORY,COMPLEXITY,STATUS',
     )
 
     await saveAppScreenshot('roadmap-category-filter.png')

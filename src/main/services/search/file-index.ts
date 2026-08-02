@@ -38,7 +38,10 @@ function isIndexableRelativePath(rel: string): boolean {
 }
 
 async function listFilesViaFind(workspaceRoot: string): Promise<string[]> {
-  const { stdout, code } = await runCommand('find', [workspaceRoot, '-type', 'f'], LIST_CMD_OPTS)
+  const { stdout, code } = await runCommand('find', [workspaceRoot, '-type', 'f'], {
+    ...LIST_CMD_OPTS,
+    cwd: workspaceRoot,
+  })
   if (code !== 0) return []
   const paths: string[] = []
   for (const full of stdout.split('\n').filter(Boolean)) {
@@ -51,7 +54,10 @@ async function listFilesViaFind(workspaceRoot: string): Promise<string[]> {
 async function listFilesViaRg(workspaceRoot: string): Promise<string[]> {
   // No `--sort path`: sorting waits for the full walk and slows SSH listings.
   // Sort relative paths in-process after the listing completes.
-  const { stdout } = await runCommand('rg', ['--files', workspaceRoot], LIST_CMD_OPTS)
+  const { stdout } = await runCommand('rg', ['--files', workspaceRoot], {
+    ...LIST_CMD_OPTS,
+    cwd: workspaceRoot,
+  })
   const paths = await Promise.all(
     stdout
       .split('\n')
