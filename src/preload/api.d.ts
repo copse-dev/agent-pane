@@ -708,6 +708,8 @@ export interface ApiClient {
     setActive: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
+    /** Main asked for a fresh shell running `command` (e.g. an agent sign-in). */
+    onRunCommand: (handler: (command: string) => void) => () => void
   }
   git: {
     isAvailable: (projectId: string, threadId: string) => Promise<boolean>

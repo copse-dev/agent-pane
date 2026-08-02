@@ -70,6 +70,14 @@ export interface KnownAcpAgent {
   sandboxedPermissionMode?: string
   /** Shell command that authenticates the agent / mints a token (e.g. `claude setup-token`). */
   setup?: string
+  /**
+   * Shell command that refreshes an *existing but expired* sign-in. Distinct from
+   * {@link setup}: minting a fresh long-lived token (`claude setup-token`) is the
+   * first-run path, while an expired OAuth session is fixed by signing in again
+   * (`claude /login`). Falls back to {@link setup} when absent — see
+   * `acpReauthCommand`.
+   */
+  reauth?: string
   /** Where to read more about the agent. */
   docsUrl?: string
   /** Short note shown by the detector (auth, caveats). */
@@ -91,6 +99,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       homeDirs: ['.gemini', '.config/gemini'],
     },
     setup: 'gemini', // first run walks through Google sign-in; or set GEMINI_API_KEY
+    reauth: 'gemini', // re-running the CLI re-prompts once the stored token lapses
     docsUrl: 'https://github.com/google-gemini/gemini-cli',
     note: 'Sign in by running `gemini` once, or set GEMINI_API_KEY.',
   },
@@ -107,10 +116,21 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     preset: true,
     sandbox: {
       // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
-      // but OAuth token refresh (console.anthropic.com / claude.ai) and
-      // telemetry move between subdomains — pinning individual hosts breaks
-      // auth ("403 Connection blocked by network allowlist") when they do.
-      allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
+      // but OAuth token refresh and telemetry move between subdomains — pinning
+      // individual hosts breaks auth ("403 Connection blocked by network
+      // allowlist") when they do. `claude.com` is not optional: the console
+      // moved to platform.claude.com, which is where an OAuth login refreshes
+      // its access token. Blocking it doesn't fail loudly — the token simply
+      // never refreshes and the next turn dies on "OAuth access token has
+      // expired. Re-authenticate to continue."
+      allowedDomains: [
+        'anthropic.com',
+        '*.anthropic.com',
+        'claude.ai',
+        '*.claude.ai',
+        'claude.com',
+        '*.claude.com',
+      ],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
@@ -123,6 +143,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     },
     sandboxedPermissionMode: 'acceptEdits',
     setup: 'claude setup-token',
+    reauth: 'claude /login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
     note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).',
   },
@@ -137,10 +158,21 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     requiresClient: 'claude',
     sandbox: {
       // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
-      // but OAuth token refresh (console.anthropic.com / claude.ai) and
-      // telemetry move between subdomains — pinning individual hosts breaks
-      // auth ("403 Connection blocked by network allowlist") when they do.
-      allowedDomains: ['anthropic.com', '*.anthropic.com', 'claude.ai', '*.claude.ai'],
+      // but OAuth token refresh and telemetry move between subdomains — pinning
+      // individual hosts breaks auth ("403 Connection blocked by network
+      // allowlist") when they do. `claude.com` is not optional: the console
+      // moved to platform.claude.com, which is where an OAuth login refreshes
+      // its access token. Blocking it doesn't fail loudly — the token simply
+      // never refreshes and the next turn dies on "OAuth access token has
+      // expired. Re-authenticate to continue."
+      allowedDomains: [
+        'anthropic.com',
+        '*.anthropic.com',
+        'claude.ai',
+        '*.claude.ai',
+        'claude.com',
+        '*.claude.com',
+      ],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
@@ -177,6 +209,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     sandboxedPermissionMode: 'acceptEdits',
     install: 'curl https://cursor.com/install | bash',
     setup: 'cursor-agent login',
+    reauth: 'cursor-agent login',
     docsUrl: 'https://docs.cursor.com/en/cli/overview',
     note: 'Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.',
   },
@@ -204,10 +237,22 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       homeDirs: ['.codex', '.config/codex'],
     },
     setup: 'codex login', // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
+    reauth: 'codex login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/codex-acp',
     note: 'OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set CODEX_API_KEY.',
   },
 ]
+
+/**
+ * Command that re-establishes a lapsed sign-in for a known agent, or `null` when
+ * the catalog has no way to sign this agent in (a custom entry, or one that only
+ * reads an API key from its environment). Prefers the dedicated {@link
+ * KnownAcpAgent.reauth} command and falls back to {@link KnownAcpAgent.setup},
+ * which is the right answer for agents whose sign-in is a single step.
+ */
+export function acpReauthCommand(known: KnownAcpAgent | undefined): string | null {
+  return known?.reauth ?? known?.setup ?? null
+}
 
 /** A {@link KnownAcpAgent} annotated with what was found on the device. */
 export interface DetectedAcpAgent extends KnownAcpAgent {
