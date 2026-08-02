@@ -29,35 +29,35 @@ const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
     name: 'anthropicKey',
     label: 'Anthropic API key',
     placeholder: 'sk-ant-…',
-    hint: 'For Claude Sonnet and Opus. Validated via a free models request — no tokens charged.',
+    hint: 'Checked with a free request, so no tokens are charged.',
   },
   openai: {
     provider: 'openai',
     name: 'openaiKey',
     label: 'OpenAI API key',
     placeholder: 'sk-…',
-    hint: 'For GPT-4o models. Validated via a free models request — no tokens charged.',
+    hint: 'Checked with a free request, so no tokens are charged.',
   },
   cursor: {
     provider: 'cursor',
     name: 'cursorKey',
     label: 'Cursor API key',
     placeholder: 'cur_…',
-    hint: 'For Cursor Cloud Agent remote runs. Validated via a free models request.',
+    hint: 'For runs on Cursor’s machines. Checked with a free request.',
   },
   openrouter: {
     provider: 'openrouter',
     name: 'openrouterKey',
     label: 'OpenRouter API key',
     placeholder: 'sk-or-…',
-    hint: 'For OpenRouter models (Claude, GPT, Gemini, Llama, and more via one key). Validated via a free key request.',
+    hint: 'One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request.',
   },
   github: {
     provider: 'github',
     name: 'githubKey',
     label: 'GitHub token',
     placeholder: 'github_pat_… or ghp_…',
-    hint: 'For Claude Cloud Agent: clones the repo and pushes branches / opens PRs. Use a fine-grained token with repo scope.',
+    hint: 'Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access.',
   },
   'artificial-analysis': {
     provider: 'artificial-analysis',
@@ -231,7 +231,7 @@ export function createApiKeysSection(
       } else {
         // Declined (or still refused): leave the entered value in place and flag
         // that it was not saved so the user can retry or set up a keyring first.
-        setInlineStatus(field.status, 'error', 'Not saved — unencrypted storage declined')
+        setInlineStatus(field.status, 'error', 'Not saved: unencrypted storage declined')
         field.status.className = keyStatusClass(false)
       }
     }

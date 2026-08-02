@@ -454,6 +454,7 @@ export interface ApiClient {
     onShowTerminal: (handler: () => void) => () => void
     onShowChanges: (handler: () => void) => () => void
     onShowBrowser: (handler: () => void) => () => void
+    onFocusBrowserUrlBar: (handler: () => void) => () => void
     onKeyboardShortcuts: (handler: () => void) => () => void
     onUiScaleZoomIn: (handler: () => void) => () => void
     onUiScaleZoomOut: (handler: () => void) => () => void

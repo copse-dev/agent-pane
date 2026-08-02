@@ -76,6 +76,7 @@ const SECTIONS: ShortcutSection[] = [
       { label: 'Terminal', keys: ['Mod', '`'] },
       { label: 'Changes', keys: ['Mod', 'Shift', 'G'] },
       { label: 'Browser', keys: ['Mod', 'Shift', 'B'] },
+      { label: 'Focus browser address bar', keys: ['Mod', 'L'] },
     ],
   },
 ]

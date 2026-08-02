@@ -16,14 +16,15 @@ describe('read terminal setting', () => {
     resetUserData()
   })
 
-  it('shows the Shells read toggle in General, on by default', async () => {
+  it('shows the Shells read toggle in Permissions, on by default', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await $('[aria-label="Settings"]').click()
 
-    const general = $('.settings-section[data-section="general"]')
-    await expect(general).toBeDisplayed()
+    await $('.settings-nav-btn[data-section="permissions"]').click()
+    const permissions = $('.settings-section[data-section="permissions"]')
+    await expect(permissions).toBeDisplayed()
 
-    const toggle = await general.$('input[name="readTerminalEnabled"]')
+    const toggle = await permissions.$('input[name="readTerminalEnabled"]')
     await expect(toggle).toBeExisting()
     assert.equal(await toggle.isSelected(), true)
 

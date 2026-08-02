@@ -20,21 +20,21 @@ describe('provider host allowlist settings', () => {
     resetUserData()
   })
 
-  it('surfaces approved provider hosts controls in Settings → General', async () => {
+  it('surfaces approved provider hosts controls in Settings → Permissions', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="general"]').click()
+    await dialog.$('button[data-section="permissions"]').click()
 
     const approval = dialog.$('input[name="providerAllowUserApproval"]')
     const hosts = dialog.$('textarea[name="approvedProviderHosts"]')
     await expect(approval).toBeExisting()
     await expect(hosts).toBeExisting()
     assert.equal(await approval.isSelected(), true)
-    assert.match(await dialog.getText(), /Approved provider hosts/)
-    assert.match(await dialog.getText(), /Ask before allowing new model provider hosts/)
+    assert.match(await dialog.getText(), /Allowed provider addresses/)
+    assert.match(await dialog.getText(), /Ask before allowing a new provider address/)
 
     await saveElementScreenshot(
       'fieldset:has(textarea[name="approvedProviderHosts"])',

@@ -182,12 +182,15 @@ describe('settings search (cross-section block filter)', () => {
   })
 
   it('ranks a heading (legend) match above a body-only match', () => {
-    // "ACP agents" names the block via its legend; other blocks (e.g. Local
-    // models routing) only mention ACP in body copy, so they sort after it.
-    search('acp')
+    // "Models" names the block via its legend; other blocks (Providers, Helpers)
+    // only mention models in body copy, so they sort after it.
+    search('models')
     const legends = resultLegends()
-    assert.ok(legends.length >= 2, `expected multiple ACP matches, got ${JSON.stringify(legends)}`)
-    assert.equal(legends[0], 'ACP agents')
+    assert.ok(
+      legends.length >= 2,
+      `expected multiple model matches, got ${JSON.stringify(legends)}`,
+    )
+    assert.equal(legends[0], 'Models')
   })
 
   it('shows an empty-state message and no results for an unknown term', () => {

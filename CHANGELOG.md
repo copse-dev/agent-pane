@@ -31,6 +31,26 @@ every published entry.
   an agent that does not advertise MCP-over-http is named as the reason the
   bridge was withheld. Previously all three were indistinguishable from "the
   agent chose not to use the tool".
+- Settings has been restructured. **General** is now three things and nothing
+  else: **Detect settings**, **Providers**, and **Models**. Everything that used
+  to be piled in alongside them moved to where it belongs: instructions, helpers
+  and skills to a new **Agent** section; auto-run, file edits, web access and
+  terminals to a new **Permissions** section; remote work over SSH to **SSH**;
+  and the built-in browser setting to **Appearance**.
+- **Providers** is now one list covering every way Copse reaches a model, so you
+  pick the company rather than the connection method. The separate **Local
+  models** and **ACP agents** sections are gone, folded into it. Choosing Cursor,
+  for example, offers both its cloud agent and the Cursor agent installed on this
+  machine, in one place. Nothing opens by default: the page shows the list until
+  you pick a provider, and no device scan or setup runs until you do.
+- Usage bars now share one colour instead of shading by severity, and the
+  value-map key has been rewritten as a real key with swatches ("Best value at
+  its level", "Included in your plan") rather than a paragraph of chart jargon.
+  The "Hide plan" toggle is gone; the Plan / Inference / Expected control already
+  answers the same question without deleting the models you pay for.
+- Settings copy has been rewritten in user terms throughout, dropping references
+  to how Copse is built internally, and the product no longer says "ACP" when it
+  means an agent running on your machine.
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,
