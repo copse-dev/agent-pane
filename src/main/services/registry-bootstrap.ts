@@ -69,6 +69,7 @@ import {
 import { readTerminalTool } from '../tools/read-terminal-tool.ts'
 import { runCheckupTool } from '../tools/checkup-tool.ts'
 import { videoFramesTool } from '../tools/video-frames-tool.ts'
+import { readArchiveTool } from '../tools/read-archive-tool.ts'
 import {
   PARALLEL_SEARCH_PACK_ID,
   PARALLEL_SEARCH_TOOL_NAME,
@@ -178,6 +179,7 @@ export function createRegistry(): ToolRegistry {
   // that have never had one (see `parentTools`) — most threads never will, and
   // the schema is not free.
   registry.register(videoFramesTool)
+  registry.register(readArchiveTool)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)

@@ -1687,6 +1687,7 @@ describe('roadmap pane', () => {
       attachTextBlock: () => {},
       attachImage: (dataUrl, mimeType) => attachedImages.push({ dataUrl, mimeType }),
       attachVideo: () => Promise.resolve(),
+      attachArchive: () => Promise.resolve(),
     })
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
