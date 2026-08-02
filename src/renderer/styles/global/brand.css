@@ -14,6 +14,7 @@ h3 {
   .settings-buttons button,
   .onboarding-primary,
   .onboarding-skip,
+  .onboarding-back,
   .ask-user-cancel,
   .ask-user-submit,
   .confirm-dialog-cancel,
@@ -47,6 +48,7 @@ h3 {
 :is(
   .settings-buttons button[type='button'],
   .onboarding-skip,
+  .onboarding-back,
   .ask-user-cancel,
   .confirm-dialog-cancel,
   .update-prompt-secondary,

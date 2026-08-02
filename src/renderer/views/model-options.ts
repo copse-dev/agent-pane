@@ -61,7 +61,7 @@ import {
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
 
-const ACP_GROUP = 'ACP agents'
+const ACP_GROUP = 'Agents on this device'
 
 const OPENROUTER_GROUP = 'OpenRouter'
 
@@ -319,10 +319,10 @@ async function remoteAgentOptions(
 
   if (isAvailable(REMOTE_AGENT_PROVIDER_ANTHROPIC)) {
     const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC)
-    // Claude Managed Agents bill against the Anthropic API key. When a Claude ACP
-    // agent is configured, note that in the heading so the user sees the ACP
-    // option (their own login) is the cheaper alternative.
-    const group = preferAcpForClaude ? `${baseGroup} — API-billed (ACP available)` : baseGroup
+    // Claude Managed Agents bill against the Anthropic API key. When a Claude
+    // device agent is configured, note that in the heading so the user sees the
+    // on-device option (their own login) is the cheaper alternative.
+    const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup
     const seen = new Set<string>()
     const add = (value: string, label: string): void => {
       if (seen.has(value)) return

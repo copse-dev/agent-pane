@@ -169,7 +169,7 @@ export function renderPlanProvider(
         <span class="usage-plan-window-stats">${String(used)}% used · ${formatReset(window.resetsAt)}${escapeHtml(severitySuffix)}</span>
       </div>
       <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window.label)} ${String(used)} percent used">
-        <div class="usage-plan-bar-fill"${severity ? ` data-severity="${escapeHtml(severity)}"` : ''} style="width: ${String(Math.min(100, used))}%"></div>
+        <div class="usage-plan-bar-fill" style="width: ${String(Math.min(100, used))}%"></div>
       </div>
     `
     card.append(row)
@@ -194,7 +194,7 @@ function renderPlanSection(
   const intro = document.createElement('p')
   intro.className = 'field-hint'
   intro.textContent =
-    'Live Claude / Codex / Hugging Face / Cursor plan windows when those accounts are signed in. Failures here never block Copse — the local ledger below still tracks this app’s usage.'
+    'Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app’s usage.'
   host.append(intro)
 
   if (error) {
@@ -414,14 +414,14 @@ export function renderModelTable(
     // (`acp:<id>#<model>`), so it's untrusted data going into innerHTML.
     const model = escapeHtml(row.model)
     const modelLabel = row.estimatedTokens
-      ? `${model} <span class="usage-estimated" title="Estimated locally — agent did not report usage">(est.)</span>`
+      ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>`
       : model
     tr.innerHTML = `
       <td><code>${modelLabel}</code></td>
       <td>${approx}${formatTokenCount(row.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row.outputTokens)}</td>
-      <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : '—'}</td>
-      <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : '—'}</td>
+      <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : '-'}</td>
+      <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : '-'}</td>
       <td>${row.isLocal ? 'free (local)' : formatUsd(row.estimatedCostUsd)}</td>
     `
     tbody.append(tr)

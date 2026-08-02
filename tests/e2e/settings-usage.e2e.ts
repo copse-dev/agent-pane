@@ -92,11 +92,11 @@ describe('settings usage panel', function () {
         '.usage-plan-provider[data-provider="claude"] .usage-plan-window[data-severity="critical"]',
       ),
     ).toBeDisplayed()
+    // Every bar shares one colour scheme: severity is carried on the row (and in
+    // its text) but never recoloured on the fill.
     await expect(
-      $(
-        '.usage-plan-provider[data-provider="claude"] .usage-plan-bar-fill[data-severity="warning"]',
-      ),
-    ).toBeDisplayed()
+      $('.usage-plan-provider[data-provider="claude"] .usage-plan-bar-fill[data-severity]'),
+    ).not.toBeDisplayed()
     await expect($('.usage-period-body .usage-headline')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(1) tbody tr')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(2) tbody tr')).toBeDisplayed()

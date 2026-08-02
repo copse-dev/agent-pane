@@ -113,9 +113,10 @@ describe('settings sources → hooks list', () => {
     const fieldset = toggle.closest('fieldset')
     assert.ok(fieldset)
     assert.equal(fieldset.querySelector('legend')?.textContent.trim(), 'Hooks')
-    // The security copy names the hot-path and workspace-trust caveats.
-    assert.match(fieldset.textContent, /hot path/)
-    assert.match(fieldset.textContent, /workspace trust/)
+    // The security copy says when the scripts run and that the project must be
+    // trusted first.
+    assert.match(fieldset.textContent, /while the agent works/)
+    assert.match(fieldset.textContent, /trust the project/)
   })
 
   it('hides the Hooks fieldset by default outside Developer mode', async () => {
