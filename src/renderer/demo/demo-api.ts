@@ -179,6 +179,8 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         return resolvedVoid()
       },
     },
+    // The browser demo has no chat store on disk to hold an archive.
+    archive: { attach: unsupported },
     threads: {
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
@@ -210,6 +212,8 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         threads = threads.filter((candidate) => candidate.id !== threadId)
         return resolvedVoid()
       },
+      // The browser demo has no chat store on disk to zip up.
+      exportArchive: unsupported,
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
@@ -269,6 +273,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       autoSetup: () =>
         resolved({
           installed: [],
+          upgraded: [],
           registered: [],
           modelsDetected: [],
           failed: [],
@@ -282,6 +287,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       onShowTerminal: subscribe,
       onShowChanges: subscribe,
       onShowBrowser: subscribe,
+      onFocusBrowserUrlBar: subscribe,
       onKeyboardShortcuts: subscribe,
       onUiScaleZoomIn: subscribe,
       onUiScaleZoomOut: subscribe,

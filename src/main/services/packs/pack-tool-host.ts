@@ -11,6 +11,7 @@ import {
   isProjectSandboxEnabled,
   spawnInProjectSandbox,
 } from '../../project-sandbox/spawn.ts'
+import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import {
   discoverPackToolSource,
@@ -144,8 +145,15 @@ export class PackToolHost {
     dependencies: PackToolHostDependencies = defaultDependencies,
   ): Promise<PackToolHost> {
     if (!dependencies.sandboxAvailable()) {
+      // Name why the sandbox is absent, not just that it is. The two causes need
+      // different fixes — an unsupported platform is a product limit, a failed
+      // init is an environment fault — and without this the distinction lives
+      // only in the main-process log.
+      const cause = !isProjectSandboxPlatform()
+        ? `No sandbox backend on ${process.platform}.`
+        : (projectSandboxInitFailure() ?? 'Sandbox init did not run.')
       throw new PackToolHostUnavailable(
-        'Executable pack behavior requires Copse’s active OS sandbox; execution failed closed.',
+        `Executable pack behavior requires Copse’s active OS sandbox; execution failed closed. ${cause}`,
       )
     }
 

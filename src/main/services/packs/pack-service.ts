@@ -266,6 +266,43 @@ export interface PackService {
  * `createHookRegistry()` calls see the same enablement the Settings list will
  * show. Exposed for tests; production callers go through `getPackService`.
  */
+/**
+ * Why a selected pack ended up unusable, keyed by pack id — and, for sources
+ * that never yielded a pack at all, keyed by source path.
+ *
+ * `refreshPackSources` is the only place that sees the real cause: the runtime
+ * threw, or the source would not load. Until now it went solely to a
+ * `console.warn`, which in CI lives inside a failure artifact. Anything
+ * downstream could therefore report the resulting *state* ("is disabled") but
+ * never the reason, so diagnosing a pack that would not start meant fetching
+ * that artifact by hand. Holding the reason here lets the error a caller
+ * already throws carry it.
+ *
+ * Module-scoped to match `getDefaultPackRegistry()` — read sites reach for it
+ * the same way they reach for the registry, without threading a service
+ * instance through.
+ */
+const packUnavailableReasons = new Map<string, string>()
+const inertSourceReasons = new Map<string, string>()
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/** Why this pack is not usable, when {@link refreshPackSources} recorded a cause. */
+export function packUnavailableReason(packId: string): string | undefined {
+  return packUnavailableReasons.get(packId)
+}
+
+/**
+ * Sources that failed discovery, as `path: reason`. A pack missing from the
+ * registry entirely is usually explained by one of these rather than by
+ * anything keyed on its id — discovery never got far enough to learn the id.
+ */
+export function inertPackSources(): readonly string[] {
+  return [...inertSourceReasons].map(([source, reason]) => `${source}: ${reason}`)
+}
+
 export function createPackService(registry: PackRegistry): PackService {
   const disabled = readDisabledIds()
   const selectedCandidates = new Map<string, PackToolSourceCandidate>()
@@ -279,7 +316,9 @@ export function createPackService(registry: PackRegistry): PackService {
     for (const source of sources) {
       try {
         discovered.push(await discoverPackToolSource(source))
+        inertSourceReasons.delete(source)
       } catch (error) {
+        inertSourceReasons.set(source, describeError(error))
         console.warn(`[packs] selected source ${JSON.stringify(source)} is inert:`, error)
       }
     }
@@ -323,12 +362,20 @@ export function createPackService(registry: PackRegistry): PackService {
         try {
           await controller.enable(current)
           registry.enable(id)
+          packUnavailableReasons.delete(id)
         } catch (error) {
           registry.disable(id)
+          // Note the cause before disabling loses it. This is the branch the
+          // selected-pack e2e lands in when the OS sandbox is unavailable:
+          // pack behavior fails closed, so the pack is registered and then
+          // switched off, which on its own is indistinguishable from a user
+          // having turned it off.
+          packUnavailableReasons.set(id, describeError(error))
           console.warn(`[packs] pack ${JSON.stringify(id)} tools could not start:`, error)
         }
       } else {
         registry.disable(id)
+        packUnavailableReasons.set(id, 'disabled in Settings → Packs')
         if (controller?.isRunning(id)) await controller.disable(id)
       }
     }

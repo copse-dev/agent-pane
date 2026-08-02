@@ -81,6 +81,11 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import { buildThreadArchive } from '../services/thread-archive.ts'
+import {
+  describeWorkspaceArchive,
+  storeArchiveAttachment,
+} from '../services/archive/archive-attachment-store.ts'
 import {
   describeWorkspaceVideo,
   storeVideoAttachment,
@@ -1267,6 +1272,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return forkThreadHistory(pid, sourceId, targetId, messageId)
     },
   )
+  // The whole thread directory, zipped — the archive counterpart to the
+  // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
+  // download and saves it, exactly as it does for the `.jsonl`.
+  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return buildThreadArchive(pid, tid)
+  })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, q] = parseIpcArgs(z.tuple([zProjectId, z.string().max(512).optional()]), [
@@ -1305,6 +1318,34 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         mimeType: payload.mimeType,
         bytes: payload.bytes,
       })
+    },
+  )
+
+  // An archive attached in the composer. Stored, never inlined — the renderer
+  // gets back a path to hand the agent, which unpacks it with `read_archive`.
+  ipcMain.handle(
+    'archive:attach',
+    async (event, projectId: unknown, threadId: unknown, archive: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            name: zNonEmptyString.max(255),
+            bytes: z.instanceof(Uint8Array).optional(),
+            path: zPathString.optional(),
+          }),
+        ]),
+        [projectId, threadId, archive],
+      )
+      if (payload.path !== undefined) {
+        // Already on disk in the workspace: reference it in place rather than
+        // storing a second copy.
+        return describeWorkspaceArchive(payload.path, payload.name)
+      }
+      if (!payload.bytes) throw new IpcValidationError('An archive needs either bytes or a path')
+      return storeArchiveAttachment(pid, tid, { name: payload.name, bytes: payload.bytes })
     },
   )
 
@@ -1884,7 +1925,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([codex])
+      return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
+    })
+    ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
+      assertMainFrameSender(event, win)
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      return requestAcpPackageInstallApproval([
+        {
+          agent: codex,
+          action: 'upgrade',
+          fromVersion: '1.1.0',
+          toVersion: '1.1.7',
+        },
+      ])
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

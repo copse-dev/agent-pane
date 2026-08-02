@@ -475,6 +475,8 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
+    exportArchive: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:exportArchive', projectId, threadId),
     fork: (
       projectId: string,
       sourceThreadId: string,
@@ -491,6 +493,13 @@ contextBridge.exposeInMainWorld('api', {
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
+  },
+  archive: {
+    attach: (
+      projectId: string,
+      threadId: string,
+      archive: { name: string; bytes?: Uint8Array; path?: string },
+    ) => ipcRenderer.invoke('archive:attach', projectId, threadId, archive),
   },
   video: {
     attach: (
@@ -581,6 +590,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('menu:showBrowser', listener)
       return (): void => {
         ipcRenderer.off('menu:showBrowser', listener)
+      }
+    },
+    onFocusBrowserUrlBar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:focusBrowserUrlBar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:focusBrowserUrlBar', listener)
       }
     },
     onKeyboardShortcuts: (handler: () => void) => {
@@ -937,6 +955,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
+    },
+    requestAcpPackageUpgradeApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageUpgradeApproval')
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

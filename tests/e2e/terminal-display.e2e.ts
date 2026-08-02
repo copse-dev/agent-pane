@@ -34,11 +34,24 @@ describe('integrated terminal', () => {
     await expect(terminalBtn).toHaveElementClass('active')
 
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
-    // User-initiated integrated terminals run outside the project seatbelt on
-    // macOS. Linux CI has no OS sandbox, so it asks before opening a host terminal.
-    if (process.platform !== 'darwin') {
-      const approval = await $('#approval-dialog')
-      await approval.waitForDisplayed({ timeout: 30_000 })
+    // User-initiated integrated terminals always spawn outside the project
+    // sandbox. `ensureTerminalPermitted` only warns about that when there is no
+    // sandbox to be outside of — `decideTerminalPermission` returns `allow` once
+    // `isProjectSandboxEnabled()` is true (permission-gate.ts).
+    //
+    // So the prompt tracks whether the sandbox actually came up, not the
+    // platform. This used to key on `process.platform !== 'darwin'` because
+    // Linux had no backend at all; now it does, and whether ASRT starts depends
+    // on the host having bubblewrap and socat — the app degrades quietly when
+    // either is missing. A platform check cannot express that; only observing
+    // the dialog can. Assert the wording whenever it does appear, so an
+    // unexpected *different* prompt still fails.
+    const approval = await $('#approval-dialog')
+    const unsandboxed = await approval
+      .waitForDisplayed({ timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (unsandboxed) {
       await expect(approval.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
       await approval.$('.approval-approve').click()
       await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })

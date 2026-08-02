@@ -716,6 +716,95 @@ describe('runAgentLoop', () => {
     assert.equal(cuts[0]?.streamOutputTokenLimit, 60)
   })
 
+  it('cuts a plain-text answer that repeats the same block within one stream (#1408)', async () => {
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    const block =
+      'The current changes are already present in the working tree, so the request is satisfied. ' +
+      'I should confirm the state and move on without applying the same edit again.'
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          yield { type: 'text', text: block }
+          yield { type: 'text', text: '\n\n' }
+          yield { type: 'text', text: block }
+          yield { type: 'text', text: '\n\n' }
+          yield { type: 'text', text: block }
+          return
+        }
+        yield { type: 'text', text: 'Recovered.' }
+        yield { type: 'done' }
+      },
+    }
+    const texts: string[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 3,
+      // Deliberately far above the size of the repeated block: without a
+      // circularity check on plain text, this only ever rides the hard cap.
+      reasoningCheckpointPolicy: {
+        intervalTokens: 50,
+        maxNonReasoningTokens: 32_000,
+        maxInitialTokens: 32_000,
+        maxRecoveryTokens: 32_000,
+      },
+      onChunk: (chunk) => {
+        if (chunk.type === 'text') texts.push(chunk.text)
+      },
+      executeTool: async () => 'ok',
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(cuts.length, 1)
+    assert.equal(cuts[0]?.cutReason, 'reasoning_circle_detected')
+    assert.equal(streamCalls, 2)
+    assert.deepEqual(texts.at(-1), 'Recovered.')
+  })
+
+  it('detects the same short reasoning recurring across separate turns (#1408)', async () => {
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    // Individually well under any single-call threshold — the point is that it
+    // recurs identically across three separate, otherwise unremarkable calls.
+    const reasoningRepeat = 'Checking the same file again to be sure.'
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls <= 3) {
+          yield { type: 'reasoning', text: reasoningRepeat }
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'text', text: 'Recovered.' }
+        yield { type: 'done' }
+      },
+    }
+    const texts: string[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 6,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 1000,
+        maxNonReasoningTokens: 32_000,
+        maxInitialTokens: 32_000,
+        maxRecoveryTokens: 32_000,
+      },
+      onChunk: (chunk) => {
+        if (chunk.type === 'text') texts.push(chunk.text)
+      },
+      executeTool: async () => 'ok',
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(streamCalls, 4)
+    assert.equal(cuts.length, 1)
+    assert.equal(cuts[0]?.cutReason, 'reasoning_circle_detected')
+    assert.deepEqual(texts, ['Recovered.'])
+  })
+
   it('applies the host-specific output cap to the final text-only turn', async () => {
     let yieldedChunks = 0
     const provider: LLMProvider = {

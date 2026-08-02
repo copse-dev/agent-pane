@@ -53,7 +53,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       </header>
 
       <p class="onboarding-tagline">
-        Set up models once — use local LLMs for everyday work and cloud models when you need them.
+        Set up models once. Use local models for everyday work and cloud models when you need them.
       </p>
 
       <nav class="onboarding-steps" aria-label="Setup steps">
@@ -73,7 +73,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       <footer class="onboarding-footer">
         <button type="button" class="onboarding-skip" id="onboarding-skip">Skip for now</button>
         <div class="onboarding-nav-buttons">
-          <button type="button" id="onboarding-back" disabled>Back</button>
+          <button type="button" id="onboarding-back" class="onboarding-back" disabled>Back</button>
           <button type="button" id="onboarding-next" class="onboarding-primary">Continue</button>
         </div>
       </footer>
@@ -99,9 +99,9 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       the hardest problems when you add API keys.
     </p>
     <ul class="onboarding-benefits">
-      <li><strong>Local first</strong> — LM Studio runs Qwen, Gemma, and other open models on your machine.</li>
-      <li><strong>Cloud when it counts</strong> — Optional Anthropic and OpenAI keys unlock Claude and GPT-4o.</li>
-      <li><strong>Best of both</strong> — We recommend configuring both so Copse can route each task to the right model.</li>
+      <li><strong>Local first</strong>: models on your own machine handle exploration, titles, and safety checks.</li>
+      <li><strong>Cloud when it counts</strong>: add an API key to reach Claude, GPT, and other frontier models.</li>
+      <li><strong>Best of both</strong>: set up both and Copse sends each task to the model that suits it.</li>
     </ul>
     <p class="field-hint">This setup takes a few minutes. You can revisit it anytime in Settings.</p>
   `
@@ -116,7 +116,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     Object.assign(document.createElement('p'), {
       className: 'settings-section-desc',
       textContent:
-        'Add one or both keys if you want frontier models in chat. Keys are validated with a free models request — no tokens are charged.',
+        'Add one or both keys if you want frontier models in chat. Each key is checked with a free request, so no tokens are charged.',
     }),
     apiKeys.root,
     envKeyDetect.root,
@@ -163,7 +163,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         status.append(
           inlineStatus(
             r.reachable ? 'ok' : 'idle',
-            r.reachable ? `running — ${String(r.models.length)} model(s)` : 'not found',
+            r.reachable ? `running, ${String(r.models.length)} model(s)` : 'not found',
           ),
         )
         detectList.append(el('div', { class: 'preferred-model-row' }, meta, status))
@@ -202,7 +202,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'We scan the usual local ports for OpenAI-compatible servers. Start LM Studio, Ollama, llama.cpp, Jan, or vLLM, then scan — anything found is set up automatically.',
+      'Start LM Studio, Ollama, llama.cpp, Jan, or vLLM, then scan. Anything found is set up for you.',
     ),
     el('div', { class: 'lmstudio-test-row' }, detectBtn, detectStatus),
     detectList,
@@ -212,7 +212,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     Object.assign(document.createElement('p'), {
       className: 'settings-section-desc',
       textContent:
-        'Local models power most of Copse’s background work. Copse auto-detects local servers — LM Studio, Ollama, llama.cpp, Jan, and vLLM — when they’re running.',
+        'Local models power most of Copse’s background work. Copse finds LM Studio, Ollama, llama.cpp, Jan, and vLLM on its own whenever they’re running.',
     }),
     detectFieldset,
     lmStudio.root,
@@ -223,7 +223,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     Object.assign(document.createElement('p'), {
       className: 'settings-section-desc',
       textContent:
-        'Choose local models for chat, exploration, and safety. Small tasks (titles, follow-ups) can use any model — configure them later in Settings → General.',
+        'Choose local models for chat, exploration, and safety. Small tasks such as titles and follow-ups can use any model, and you can change all of this later in Settings, under General.',
     }),
     routing.root,
     Object.assign(document.createElement('p'), {

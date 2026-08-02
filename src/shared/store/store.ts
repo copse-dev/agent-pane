@@ -60,6 +60,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     git_change_navigate: new Set(),
     roadmap_reveal: new Set(),
     browser_url_requested: new Set(),
+    browser_url_bar_focus_requested: new Set(),
     pr_open_requested: new Set(),
     canvas_artefact_requested: new Set(),
     settings_changed: new Set(),

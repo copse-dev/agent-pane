@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  afterSandboxedCommand,
   initProjectSandbox,
   isProjectSandboxEnabled,
   shutdownProjectSandbox,
@@ -15,6 +16,8 @@ import {
   clearAllowedWorkspaceRootsForTest,
   registerInternalWorkspaceRoot,
 } from '../services/workspace.ts'
+import { getGitStatus } from '../services/github/git-service.ts'
+import { setGitAvailableForTest } from '../services/tool-availability.ts'
 
 interface CommandResult {
   stdout: string
@@ -60,6 +63,7 @@ async function runSandboxed(
       resolve(exitCode ?? 1)
     })
   })
+  afterSandboxedCommand()
   return { stdout, stderr, code }
 }
 
@@ -68,6 +72,7 @@ describe('linked-worktree sandbox integration', () => {
 
   afterEach(async () => {
     await shutdownProjectSandbox()
+    setGitAvailableForTest(null)
     clearAllowedWorkspaceRootsForTest()
     for (const path of cleanups.splice(0).reverse()) {
       await rm(path, { recursive: true, force: true })
@@ -75,8 +80,8 @@ describe('linked-worktree sandbox integration', () => {
   })
 
   it('supports Git from a nested project root without exposing hooks, config, or siblings', async (t) => {
-    if (process.platform !== 'darwin') {
-      t.skip('macOS seatbelt integration')
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
       return
     }
 
@@ -96,6 +101,7 @@ describe('linked-worktree sandbox integration', () => {
     await writeFile(join(sibling, 'sibling-only.txt'), 'secret\n')
 
     const registration = await registerInternalWorkspaceRoot(worktree, nested)
+    setGitAvailableForTest(true)
     await initProjectSandbox()
     if (!isProjectSandboxEnabled()) {
       t.skip('ASRT sandbox unavailable')
@@ -104,6 +110,8 @@ describe('linked-worktree sandbox integration', () => {
 
     const status = await runSandboxed('git', ['status', '--short'], nested)
     assert.equal(status.code, 0, status.stderr)
+    const productStatus = await getGitStatus(nested)
+    assert.deepEqual(productStatus, { staged: [], unstaged: [] })
     await writeFile(join(nested, 'tracked.txt'), 'changed\n')
     await writeFile(join(nested, 'new.txt'), 'new\n')
     assert.match((await runSandboxed('git', ['diff', '--', '.'], nested)).stdout, /changed/)

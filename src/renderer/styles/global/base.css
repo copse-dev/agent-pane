@@ -10,13 +10,9 @@
 [hidden] {
   display: none !important;
 }
-/* The UA's default selection highlight washes out against the dark surfaces
-   (selected text becomes near-invisible — e.g. read-only inputs). Force a
-   readable accent highlight in both themes. */
-::selection {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
+/* No custom ::selection — the browser's default (blue bg, white text)
+   works well in both light and dark themes. Don't add a colour overlay:
+   it reduces contrast and makes selected text harder to read. */
 html,
 body {
   height: 100%;

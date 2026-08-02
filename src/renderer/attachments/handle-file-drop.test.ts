@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PromptAttachmentHandlers, PromptVideoAttachment } from './prompt-attachments.ts'
+import type {
+  PromptArchiveAttachment,
+  PromptAttachmentHandlers,
+  PromptVideoAttachment,
+} from './prompt-attachments.ts'
 import {
   WORKSPACE_PATH_MIME,
   attachFiles,
@@ -13,10 +17,11 @@ interface Recorded {
   files: { path: string; content: string }[]
   images: string[]
   videos: PromptVideoAttachment[]
+  archives: PromptArchiveAttachment[]
 }
 
 function recordingHandlers(): { handlers: PromptAttachmentHandlers; recorded: Recorded } {
-  const recorded: Recorded = { files: [], images: [], videos: [] }
+  const recorded: Recorded = { files: [], images: [], videos: [], archives: [] }
   return {
     recorded,
     handlers: {
@@ -29,6 +34,10 @@ function recordingHandlers(): { handlers: PromptAttachmentHandlers; recorded: Re
       },
       attachVideo: (video): Promise<void> => {
         recorded.videos.push(video)
+        return Promise.resolve()
+      },
+      attachArchive: (archive): Promise<void> => {
+        recorded.archives.push(archive)
         return Promise.resolve()
       },
     },
@@ -87,6 +96,30 @@ describe('attaching dropped files', () => {
     assert.deepEqual(recorded.videos, [
       { name: 'demo.mp4', mimeType: '', path: '/repo/docs/demo.mp4' },
     ])
+    assert.equal(recorded.files.length, 0)
+  })
+
+  it('routes a zip to the archive handler instead of inlining its bytes', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    await attachFiles([fakeFile('bundle.zip', 'application/zip')], handlers, api, null)
+    assert.equal(recorded.archives.length, 1)
+    assert.equal(recorded.archives.at(0)?.name, 'bundle.zip')
+    // The regression this guards: without the archive branch a dropped zip fell
+    // through to `file.text()` and landed in the prompt as binary mojibake.
+    assert.equal(recorded.files.length, 0)
+  })
+
+  it('recognises a zip by extension when the browser reports no MIME type', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    await attachFiles([fakeFile('release.ZIP', '')], handlers, api, null)
+    assert.equal(recorded.archives.length, 1)
+    assert.equal(recorded.files.length, 0)
+  })
+
+  it('references a workspace archive by path rather than reading it as text', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    await handleFileDrop(workspacePathDrop('/repo/fixtures/bundle.zip'), handlers, api, '/repo')
+    assert.deepEqual(recorded.archives, [{ name: 'bundle.zip', path: '/repo/fixtures/bundle.zip' }])
     assert.equal(recorded.files.length, 0)
   })
 })

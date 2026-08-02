@@ -8,6 +8,55 @@ every published entry.
 
 ## Unreleased
 
+- Zip archives can be attached to a chat and read. Drop a `.zip` on the composer
+  and the agent unpacks it with the new **`read_archive`** tool into the
+  conversation's own directory, then reads what is inside with its ordinary file
+  tools — so a bundle of logs, a downloaded release, or an exported thread can be
+  explored file by file rather than described. Previously a dropped zip was read
+  as text and landed in the prompt as binary noise. The extractor refuses path
+  traversal, symlinks and zip bombs, and the extraction is deleted with the
+  thread. External ACP agents get the same tool through the native-tool bridge,
+  so they unpack archives with those guards rather than falling back to a raw
+  `unzip`. See [docs/read-archive.md](docs/read-archive.md).
+- ACP agents can now read attached videos too: `video_frames` joins the
+  native-tool bridge, and bridged tool results carry images as MCP image content
+  so the frames themselves arrive rather than a manifest describing them.
+- Fixed: composer attachments (files, images, videos, archives) carried across a
+  thread switch, so a zip or recording attached in one conversation could be
+  recorded against another — pointing at a file in the first thread's directory,
+  which vanished if that thread was deleted. Attachments now clear on a switch,
+  matching drafts.
+- ACP diagnosability: a native-tool bridge that fails to start is logged instead
+  of silently swallowed, the tools it offers are logged when it does start, and
+  an agent that does not advertise MCP-over-http is named as the reason the
+  bridge was withheld. Previously all three were indistinguishable from "the
+  agent chose not to use the tool".
+- Settings has been restructured. **General** is now three things and nothing
+  else: **Detect settings**, **Providers**, and **Models**. Everything that used
+  to be piled in alongside them moved to where it belongs: instructions, helpers
+  and skills to a new **Agent** section; auto-run, file edits, web access and
+  terminals to a new **Permissions** section; remote work over SSH to **SSH**;
+  and the built-in browser setting to **Appearance**.
+- **Providers** is now one list covering every way Copse reaches a model, so you
+  pick the company rather than the connection method. The separate **Local
+  models** and **ACP agents** sections are gone, folded into it. Choosing Cursor,
+  for example, offers both its cloud agent and the Cursor agent installed on this
+  machine, in one place. Nothing opens by default: the page shows the list until
+  you pick a provider, and no device scan or setup runs until you do.
+- Usage bars now share one colour instead of shading by severity, and the
+  value-map key has been rewritten as a real key with swatches ("Best value at
+  its level", "Included in your plan") rather than a paragraph of chart jargon.
+  The "Hide plan" toggle is gone; the Plan / Inference / Expected control already
+  answers the same question without deleting the models you pay for.
+- Settings copy has been rewritten in user terms throughout, dropping references
+  to how Copse is built internally, and the product no longer says "ACP" when it
+  means an agent running on your machine.
+- A thread can be exported as its whole folder, not just its transcript. The
+  footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
+  the portable single-file transcript — and adds **Export thread folder (ZIP)**,
+  a faithful copy of the thread's directory in the chat store: the event spine,
+  message prose, tool-result and image blobs, plans, the provider-history
+  sidecar, and any nested subagent sessions.
 - Threads can be forked. Right-click a thread in the sidebar and choose **Fork**
   to branch the whole conversation, or hover any prompt in the transcript and
   choose **Fork from here** to branch it as it stood at that point. The fork is a

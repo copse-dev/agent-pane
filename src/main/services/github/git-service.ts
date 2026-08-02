@@ -6,7 +6,8 @@ import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
-import { spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
+import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
+import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isGitAvailableForTarget } from '../tool-availability.ts'
@@ -31,6 +32,18 @@ async function runGit(
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
   return runCommand('git', args, { cwd })
+}
+
+async function runGitRead(
+  args: string[],
+  root: string | null = getAgentExecutionRoot(),
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  const cwd = root
+  if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
+  return runCommand('git', args, {
+    cwd,
+    sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
+  })
 }
 
 function toWorkspaceRelativeGitPath(path: string, workspacePrefix: string): string | null {
@@ -270,6 +283,7 @@ async function runGitBuffer(
       cwd,
       env: gitSsh.env,
       stdio: 'pipe',
+      sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
     })
     return await new Promise<{ stdout: Buffer; code: number }>((resolve, reject) => {
       const chunks: Buffer[] = []
@@ -287,6 +301,10 @@ async function runGitBuffer(
     })
   } finally {
     gitSsh.release()
+    // Raw binary Git reads bypass command-runner, so release the same per-wrap
+    // ASRT lifecycle bookkeeping here. The read-only overlay creates no Linux
+    // write-deny mount points of its own.
+    afterSandboxedCommand()
   }
 }
 
@@ -369,7 +387,7 @@ export async function isInsideGitWorkTree(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<boolean> {
   if (!(await isGitAvailableForTarget()) || !root) return false
-  const { stdout, code } = await runGit(['rev-parse', '--is-inside-work-tree'], root)
+  const { stdout, code } = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
   return code === 0 && stdout.trim() === 'true'
 }
 
@@ -526,9 +544,12 @@ export async function getGitStatus(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<GitStatusResult | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
-  const { stdout: prefix, code: prefixCode } = await runGit(['rev-parse', '--show-prefix'], root)
+  const { stdout: prefix, code: prefixCode } = await runGitRead(
+    ['rev-parse', '--show-prefix'],
+    root,
+  )
   if (prefixCode !== 0) return null
-  const { stdout, code } = await runGit(['status', '--porcelain=v1', '-z'], root)
+  const { stdout, code } = await runGitRead(['status', '--porcelain=v1', '-z'], root)
   if (code !== 0) return null
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix.trim())
 }

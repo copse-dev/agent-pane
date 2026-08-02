@@ -340,6 +340,15 @@ async function boot(): Promise<void> {
     openRightPanelWithWorkspace(store, api, 'browser')
   })
 
+  // View ▸ Focus Address Bar (Cmd/Ctrl+L). Opens the Browser pane first so the
+  // shortcut works from anywhere, then hands off to browser-pane.ts, which owns
+  // the tabs and therefore knows which address bar is the active one.
+  api.menu.onFocusBrowserUrlBar(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'browser')
+    store.emit('browser_url_bar_focus_requested')
+  })
+
   // Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) opens the shortcut cheat sheet. Unlike
   // the panel items it needs no workspace, so it works from the welcome screen too.
   api.menu.onKeyboardShortcuts(() => {

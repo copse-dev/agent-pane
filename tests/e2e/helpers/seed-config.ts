@@ -355,6 +355,14 @@ export function seedEmptyProject(
      */
     roadmapPlansEnabled?: boolean
     developerMode?: boolean
+    /**
+     * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
+     * on). Seed `false` when a spec needs a shell approval dialog to appear
+     * regardless of whether the host has a working OS sandbox — with auto-run on,
+     * `decideShellPermission` allows anything the sandbox contains and no dialog
+     * is shown.
+     */
+    autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -445,6 +453,9 @@ export function seedEmptyProject(
   }
   if (options?.developerMode !== undefined) {
     settings.developerMode = options.developerMode
+  }
+  if (options?.autoRunSandboxCommands !== undefined) {
+    settings.autoRunSandboxCommands = options.autoRunSandboxCommands
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
@@ -1532,6 +1543,16 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
       },
     ],
   })
+}
+
+/**
+ * Flip Developer mode for a spec that seeds its own project/thread and so has
+ * no use for {@link seedDeveloperModeFixture}'s conversation. Writes the same
+ * pinned appearance defaults as {@link resetUserData}, so call it *after* that
+ * reset — not before, or the reset overwrites it.
+ */
+export function seedDeveloperModeSetting(developerMode: boolean): void {
+  writeSettings({ developerMode })
 }
 
 /** Populated conversation used to validate Developer mode's diagnostic surfaces. */

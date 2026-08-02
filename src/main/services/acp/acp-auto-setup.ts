@@ -4,6 +4,11 @@ import { probeAcpAgent } from './acp-client.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { probeAcpAgentForSettings } from './acp-agent-service.ts'
 import { resolveOnPath } from './acp-detect.ts'
+import {
+  detectOutdatedNpmAdapter,
+  npmBinBesideBinary,
+  type AcpAdapterOutdated,
+} from './acp-adapter-version.ts'
 import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -18,8 +23,11 @@ import { requestApproval } from '../approval.ts'
  *  2. Installs a missing npm adapter through Socket Firewall when the adapter opts
  *     in (`autoInstall`) and its client prerequisite is present. Script-installed
  *     binaries (Cursor) are never auto-installed; the UI shows their command.
- *  3. Registers a ready-to-use config for any preset whose binary is available.
- *  4. Best-effort detects + caches the agent's models (needs an open folder), so
+ *  3. Offers an approved upgrade when an installed autoInstall adapter is behind
+ *     the registry latest (same Socket-Firewall path; uses the npm beside the
+ *     resolved binary so nvm prefixes stay consistent).
+ *  4. Registers a ready-to-use config for any preset whose binary is available.
+ *  5. Best-effort detects + caches the agent's models (needs an open folder), so
  *     they appear in the picker without a manual "Detect".
  *
  * The planning half is a pure function so the install/register/update decisions
@@ -36,11 +44,25 @@ export interface AcpAutoSetupInput {
   configured: boolean
   /** The already-configured agent has a cached, non-empty `availableModels` list. */
   hasModels: boolean
+  /**
+   * Installed npm package is older than the registry latest. Absent/null when the
+   * agent isn't installed, isn't an npm autoInstall package, or the version check
+   * failed (offline) — never prompts an upgrade in those cases.
+   */
+  outdated?: AcpAdapterOutdated | null
+}
+
+export interface AcpAutoSetupUpgrade {
+  known: KnownAcpAgent
+  installedVersion: string
+  latestVersion: string
 }
 
 export interface AcpAutoSetupPlan {
   /** Presets whose npm package should be installed (client present, adapter missing). */
   install: KnownAcpAgent[]
+  /** Presets whose installed npm adapter is behind the registry latest. */
+  upgrade: AcpAutoSetupUpgrade[]
   /** Presets to register now (binary available or about to be installed). */
   register: KnownAcpAgent[]
   /**
@@ -52,17 +74,40 @@ export interface AcpAutoSetupPlan {
   refreshModels: KnownAcpAgent[]
 }
 
-/** Decide, from detection facts, what to install, register, and re-probe. Pure. */
+/** Decide, from detection facts, what to install, upgrade, register, and re-probe. Pure. */
 export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoSetupPlan {
   const install: KnownAcpAgent[] = []
+  const upgrade: AcpAutoSetupUpgrade[] = []
   const register: KnownAcpAgent[] = []
   const refreshModels: KnownAcpAgent[] = []
-  for (const { known, agentInstalled, clientInstalled, configured, hasModels } of inputs) {
+  for (const {
+    known,
+    agentInstalled,
+    clientInstalled,
+    configured,
+    hasModels,
+    outdated,
+  } of inputs) {
     if (!known.preset) continue
     const willInstall = Boolean(
       known.autoInstall && known.installPackage && clientInstalled && !agentInstalled,
     )
+    const willUpgrade = Boolean(
+      known.autoInstall &&
+      known.installPackage &&
+      clientInstalled &&
+      agentInstalled &&
+      outdated &&
+      !willInstall,
+    )
     if (willInstall) install.push(known)
+    if (willUpgrade && outdated) {
+      upgrade.push({
+        known,
+        installedVersion: outdated.installedVersion,
+        latestVersion: outdated.latestVersion,
+      })
+    }
     if (!configured && (agentInstalled || willInstall)) {
       // Register once the binary is (or is about to be) available and not already configured.
       register.push(known)
@@ -71,10 +116,18 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
       refreshModels.push(known)
     }
   }
-  return { install, register, refreshModels }
+  return { install, upgrade, register, refreshModels }
 }
 
 export type { AcpAutoSetupResult }
+
+/** One approved global npm change (fresh install or upgrade of a catalog package). */
+export interface AcpPackageChange {
+  agent: KnownAcpAgent
+  action: 'install' | 'upgrade'
+  fromVersion?: string
+  toVersion?: string
+}
 
 /** Merge detected models onto the latest persisted config, never a pre-await snapshot. */
 export async function updateCurrentAcpAgentModels(
@@ -122,47 +175,85 @@ export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult
   return inFlight
 }
 
-async function detectPresetInputs(): Promise<AcpAutoSetupInput[]> {
+async function detectPresetInputs(signal: AbortSignal): Promise<AcpAutoSetupInput[]> {
   const existing = new Map(listAcpAgents().map((agent) => [agent.id, agent]))
   const presets = KNOWN_ACP_AGENTS.filter((known) => known.preset)
   return Promise.all(
-    presets.map(async (known) => ({
-      known,
-      agentInstalled: (await resolveOnPath(known.command)) !== null,
-      clientInstalled: known.requiresClient
+    presets.map(async (known) => {
+      const agentPath = await resolveOnPath(known.command)
+      const agentInstalled = agentPath !== null
+      const clientInstalled = known.requiresClient
         ? (await resolveOnPath(known.requiresClient)) !== null
-        : true,
-      configured: existing.has(known.id),
-      hasModels: (existing.get(known.id)?.availableModels?.length ?? 0) > 0,
-    })),
+        : true
+      let outdated: AcpAdapterOutdated | null = null
+      if (
+        agentPath &&
+        known.autoInstall &&
+        known.installPackage &&
+        clientInstalled &&
+        !signal.aborted
+      ) {
+        outdated = await detectOutdatedNpmAdapter(agentPath, known.installPackage, signal)
+      }
+      return {
+        known,
+        agentInstalled,
+        clientInstalled,
+        configured: existing.has(known.id),
+        hasModels: (existing.get(known.id)?.availableModels?.length ?? 0) > 0,
+        outdated,
+      }
+    }),
   )
 }
 
 async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
   const result: AcpAutoSetupResult = {
     installed: [],
+    upgraded: [],
     registered: [],
     modelsDetected: [],
     failed: [],
   }
-  const inputs = await detectPresetInputs()
+  const inputs = await detectPresetInputs(signal)
   const plan = planAcpAutoSetup(inputs)
+  const packageChanges = packageChangesFromPlan(plan)
 
   const installedNow = new Set<string>()
-  const installApproved = await requestAcpPackageInstallApproval(plan.install)
+  const upgradedNow = new Set<string>()
+  const installApproved = await requestAcpPackageInstallApproval(packageChanges)
   if (!installApproved) {
-    for (const known of plan.install) {
-      result.failed.push({ id: known.id, reason: 'package install not approved' })
+    for (const change of packageChanges) {
+      result.failed.push({
+        id: change.agent.id,
+        reason:
+          change.action === 'upgrade'
+            ? 'package upgrade not approved'
+            : 'package install not approved',
+      })
     }
   } else {
-    for (const known of plan.install) {
-      if (signal.aborted || !known.installPackage) break
-      const ok = await installGlobalNpmPackage(known.installPackage, signal)
+    for (const change of packageChanges) {
+      if (signal.aborted || !change.agent.installPackage) break
+      const npmBin = await resolveNpmBinForChange(change)
+      const ok = await installGlobalNpmPackage(
+        change.agent.installPackage,
+        signal,
+        npmBin ? { npmBin } : {},
+      )
       if (ok) {
-        installedNow.add(known.id)
-        result.installed.push(known.id)
+        if (change.action === 'upgrade') {
+          upgradedNow.add(change.agent.id)
+          result.upgraded.push(change.agent.id)
+        } else {
+          installedNow.add(change.agent.id)
+          result.installed.push(change.agent.id)
+        }
       } else {
-        result.failed.push({ id: known.id, reason: 'package install failed' })
+        result.failed.push({
+          id: change.agent.id,
+          reason: change.action === 'upgrade' ? 'package upgrade failed' : 'package install failed',
+        })
       }
     }
   }
@@ -185,10 +276,19 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
   }
 
   // Retry selector detection for agents registered on an earlier run without
-  // models (installed/authenticated since). Merge onto the latest registry
-  // entry because approval, installs, and probing may outlive settings changes.
-  for (const known of plan.refreshModels) {
-    if (signal.aborted) break
+  // models (installed/authenticated since). Also re-probe after a successful
+  // upgrade so models the newer adapter advertises reach the picker.
+  const refreshAfterUpgrade = plan.upgrade
+    .map((entry) => entry.known)
+    .filter(
+      (known) =>
+        upgradedNow.has(known.id) &&
+        inputs.some((input) => input.known.id === known.id && input.configured),
+    )
+  const refreshSeen = new Set<string>()
+  for (const known of [...plan.refreshModels, ...refreshAfterUpgrade]) {
+    if (signal.aborted || refreshSeen.has(known.id)) continue
+    refreshSeen.add(known.id)
     const probed = await probeSelectors(known, cwd)
     if (
       (probed.availableModels || probed.availablePermissionModes) &&
@@ -201,19 +301,82 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
   return result
 }
 
+function packageChangesFromPlan(plan: AcpAutoSetupPlan): AcpPackageChange[] {
+  const changes: AcpPackageChange[] = plan.install.map((agent) => ({
+    agent,
+    action: 'install' as const,
+  }))
+  for (const entry of plan.upgrade) {
+    changes.push({
+      agent: entry.known,
+      action: 'upgrade',
+      fromVersion: entry.installedVersion,
+      toVersion: entry.latestVersion,
+    })
+  }
+  return changes
+}
+
+async function resolveNpmBinForChange(change: AcpPackageChange): Promise<string | undefined> {
+  if (change.action !== 'upgrade') return undefined
+  const binaryPath = await resolveOnPath(change.agent.command)
+  return binaryPath ? npmBinBesideBinary(binaryPath) : undefined
+}
+
+/** Build the approval dialog title/body for a set of package changes. Pure. */
+export function formatAcpPackageApproval(changes: readonly AcpPackageChange[]): {
+  title: string
+  body: string
+} {
+  const installs = changes.filter((change) => change.action === 'install')
+  const upgrades = changes.filter((change) => change.action === 'upgrade')
+  const title =
+    upgrades.length > 0 && installs.length === 0
+      ? 'Update ACP adapters globally?'
+      : upgrades.length > 0
+        ? 'Install or update ACP adapters?'
+        : 'Install ACP adapters globally?'
+
+  const lines: string[] = []
+  if (installs.length > 0 && upgrades.length === 0) {
+    lines.push('Copse found missing ACP adapters and wants to install these global npm packages:')
+    lines.push('')
+    for (const change of installs) {
+      if (change.agent.installPackage) lines.push(`• ${change.agent.installPackage}`)
+    }
+  } else {
+    lines.push('Copse wants to change these global npm ACP adapters:')
+    lines.push('')
+    for (const change of installs) {
+      if (change.agent.installPackage) {
+        lines.push(`• ${change.agent.installPackage} (new install)`)
+      }
+    }
+    for (const change of upgrades) {
+      if (change.agent.installPackage) {
+        const from = change.fromVersion ?? '?'
+        const to = change.toVersion ?? 'latest'
+        lines.push(`• ${change.agent.installPackage} (${from} → ${to})`)
+      }
+    }
+  }
+  lines.push('')
+  lines.push(
+    'If Socket Firewall (sfw) is not installed, Copse will first install it globally. ' +
+      'The adapter packages are then installed through Socket Firewall with lifecycle scripts disabled.',
+  )
+  return { title, body: lines.join('\n') }
+}
+
 /** Ask before mutating the user's global npm installation. */
 export async function requestAcpPackageInstallApproval(
-  agents: readonly KnownAcpAgent[],
+  changes: readonly AcpPackageChange[],
 ): Promise<boolean> {
-  const packages = agents.flatMap((agent) => (agent.installPackage ? [agent.installPackage] : []))
-  if (packages.length === 0) return true
+  if (changes.length === 0) return true
+  const { title, body } = formatAcpPackageApproval(changes)
   const { approved } = await requestApproval({
-    title: 'Install ACP adapters globally?',
-    body:
-      'Copse found missing ACP adapters and wants to install these global npm packages:\n\n' +
-      packages.map((pkg) => `• ${pkg}`).join('\n') +
-      '\n\nIf Socket Firewall (sfw) is not installed, Copse will first install it globally. ' +
-      'The adapter packages are then installed through Socket Firewall with lifecycle scripts disabled.',
+    title,
+    body,
     type: 'shell',
     allowRemember: false,
   })
