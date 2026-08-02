@@ -11,6 +11,7 @@ import {
   portBindingSandboxOverlay,
   electronRuntimeAllowReadPaths,
   ensureWorkspaceTmpDir,
+  fsServerSandboxOverlay,
   fsWorkerSandboxOverlay,
   resolveNodeToolchainAllowRead,
   sandboxNetworkConfig,
@@ -397,6 +398,19 @@ describe('containedSandboxNetworkConfig', () => {
 })
 
 describe('fsWorkerSandboxOverlay', () => {
+  it('keeps workspace writes available to short-lived workers', () => {
+    const worker = join(
+      '/Applications/Copse.app/Contents/Resources/app/dist/main',
+      'sandbox-fs-worker.js',
+    )
+    const overlay = fsWorkerSandboxOverlay('/Users/me/project', worker)
+    const workspace = workspaceSandboxOverlay('/Users/me/project')
+    const filesystem = overlay.filesystem
+    assert.ok(filesystem)
+    assert.deepEqual(filesystem.allowWrite, workspace.filesystem?.allowWrite)
+    assert.deepEqual(filesystem.denyWrite, workspace.filesystem?.denyWrite)
+  })
+
   it('extends workspace allowRead with the worker script dir and Electron runtime', () => {
     const worker = join(
       '/Applications/Copse.app/Contents/Resources/app/dist/main',
@@ -412,18 +426,16 @@ describe('fsWorkerSandboxOverlay', () => {
   })
 })
 
-describe('fsWorkerSandboxOverlay', () => {
-  it('extends workspace allowRead with the worker script dir and Electron runtime', () => {
+describe('fsServerSandboxOverlay', () => {
+  it('keeps the persistent read worker fully read-only', () => {
     const worker = join(
       '/Applications/Copse.app/Contents/Resources/app/dist/main',
       'sandbox-fs-worker.js',
     )
-    const overlay = fsWorkerSandboxOverlay('/Users/me/project', worker)
-    const allowRead = overlay.filesystem?.allowRead ?? []
-    assert.ok(allowRead.includes('/Users/me/project'))
-    assert.ok(allowRead.includes(dirname(resolve(worker))))
-    for (const p of electronRuntimeAllowReadPaths()) {
-      assert.ok(allowRead.includes(p))
-    }
+    const overlay = fsServerSandboxOverlay('/Users/me/project', worker)
+    const filesystem = overlay.filesystem
+    assert.ok(filesystem)
+    assert.deepEqual(filesystem.allowWrite, [])
+    assert.deepEqual(filesystem.denyWrite, [])
   })
 })

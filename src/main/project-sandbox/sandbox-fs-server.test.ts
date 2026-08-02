@@ -73,6 +73,19 @@ describe('sandbox-fs-server', () => {
     }
   })
 
+  it('rejects write requests without starting the persistent read worker', async () => {
+    let spawned = false
+    setWorkerSpawnerForTest(() => {
+      spawned = true
+      return Promise.resolve(echoSpawner())
+    })
+    await assert.rejects(
+      requestViaServer({ op: 'writeFile', path: '/tmp/file', content: 'nope' }),
+      /read-only/,
+    )
+    assert.equal(spawned, false)
+  })
+
   it('serves concurrent requests over one worker, correlating responses by id', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'copse-sbfs-server-'))
     const restore = setWorkspaceRootForTest(dir)

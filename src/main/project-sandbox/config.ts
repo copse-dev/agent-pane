@@ -230,7 +230,7 @@ export function electronRuntimeAllowReadPaths(): string[] {
   return [...new Set(paths)]
 }
 
-/** Workspace seatbelt rules plus read access for the fs worker script and Electron runtime. */
+/** Workspace rules plus access for the fs worker script and Electron runtime. */
 export function fsWorkerSandboxOverlay(
   workspaceRoot: string,
   workerJsPath: string,
@@ -257,6 +257,32 @@ export function fsWorkerSandboxOverlay(
       denyWrite: fs.denyWrite,
       allowGitConfig: fs.allowGitConfig,
       allowRead,
+    },
+  }
+}
+
+/**
+ * Read-only overlay for the persistent fs server.
+ *
+ * Linux bwrap materializes non-existent mandatory write-deny paths (such as
+ * .bashrc and .vscode) in the real checkout. A long-lived writable worker keeps
+ * those mount points alive for the whole app session, so Git reports them as
+ * untracked. Writes use a short-lived worker with {@link fsWorkerSandboxOverlay};
+ * the persistent server only needs reads and therefore needs no write mounts.
+ */
+export function fsServerSandboxOverlay(
+  workspaceRoot: string,
+  workerJsPath: string,
+): Partial<SandboxRuntimeConfig> {
+  const worker = fsWorkerSandboxOverlay(workspaceRoot, workerJsPath)
+  const fs = worker.filesystem
+  if (!fs) throw new Error('fsWorkerSandboxOverlay must define a filesystem config')
+  return {
+    ...worker,
+    filesystem: {
+      ...fs,
+      allowWrite: [],
+      denyWrite: [],
     },
   }
 }

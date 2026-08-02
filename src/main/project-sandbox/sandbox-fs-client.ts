@@ -14,7 +14,11 @@ import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.
 import { runCommand } from '../services/exec/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
-import { requestViaServer, SandboxFsServerUnavailable } from './sandbox-fs-server.ts'
+import {
+  requestViaServer,
+  SandboxFsServerUnavailable,
+  shutdownSandboxFsServer,
+} from './sandbox-fs-server.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 /** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
@@ -27,6 +31,22 @@ export function sandboxFsWorkerPath(): string {
 
 /** Passed via spawn env when the worker is launched through a shell / ASRT wrap (paths may contain spaces). */
 export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
+
+type OneShotInvoker = (
+  request: Record<string, unknown>,
+  requestedRoot?: string,
+) => Promise<Record<string, unknown>>
+
+let oneShotInvokerForTest: OneShotInvoker | null = null
+let sandboxFsGatewayEnabledForTest: boolean | null = null
+
+export function setSandboxFsOneShotInvokerForTest(fn: OneShotInvoker | null): void {
+  oneShotInvokerForTest = fn
+}
+
+export function setSandboxFsGatewayEnabledForTest(value: boolean | null): void {
+  sandboxFsGatewayEnabledForTest = value
+}
 
 /**
  * Report a gateway op the sandbox would not serve, naming the path and the root
@@ -55,6 +75,14 @@ async function invokeWorker(
   request: Record<string, unknown>,
   root?: string,
 ): Promise<Record<string, unknown>> {
+  const invokeOneShot = oneShotInvokerForTest ?? invokeWorkerOneShot
+  if (request['op'] === 'writeFile') {
+    // A writable Linux bwrap worker creates host mount points for mandatory
+    // deny paths. Stop the persistent read worker first so ASRT can clean those
+    // mounts as soon as this short-lived write worker exits.
+    shutdownSandboxFsServer()
+    return invokeOneShot(request, root)
+  }
   // Prefer the long-lived worker (no per-call process spawn). Only transport failures fall
   // back to a one-shot spawn; a `{ ok: false }` filesystem error is surfaced as-is.
   try {
@@ -69,7 +97,7 @@ async function invokeWorker(
       throw err
     }
   }
-  return invokeWorkerOneShot(request, root)
+  return invokeOneShot(request, root)
 }
 
 function assertWorkerOk(parsed: { ok: boolean; error?: string }): void {
@@ -127,6 +155,7 @@ async function invokeWorkerOneShot(
 }
 
 function useSandboxFsGateway(): boolean {
+  if (sandboxFsGatewayEnabledForTest !== null) return sandboxFsGatewayEnabledForTest
   if (isSshExecutionTarget(getActiveExecutionTarget())) return false
   return isProjectSandboxEnabled()
 }
