@@ -18,6 +18,11 @@ every published entry.
   ignore them. The headers are fixed constants that name the application only —
   no key, account, machine, thread, or prompt-derived value is included. See
   [docs/privacy-data-flow.md](docs/privacy-data-flow.md).
+- The homepage no longer leads with a screenshot. It embeds the browser demo and
+  replays a real recorded session in it: the prompt is typed into the composer,
+  and the answer streams back with its tool cards and token count, in the actual
+  interface. The screenshot stays as the fallback for narrow screens, a
+  reduced-motion preference, or a demo that does not load.
 - Zip archives can be attached to a chat and read. Drop a `.zip` on the composer
   and the agent unpacks it with the new **`read_archive`** tool into the
   conversation's own directory, then reads what is inside with its ordinary file

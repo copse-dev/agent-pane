@@ -1,8 +1,38 @@
 import { createDemoApi } from './demo-api.ts'
 import { selectDemoScenario } from './scenarios.ts'
+import { startAutoplay } from './autoplay.ts'
 
+/**
+ * Read a boolean query flag. Present-but-empty (`?loop`) counts as on, so the
+ * marketing embed can stay terse; `0`/`false`/`off` turn it off explicitly.
+ */
+function flag(params: URLSearchParams, name: string, fallback: boolean): boolean {
+  const raw = params.get(name)
+  if (raw === null) return fallback
+  if (raw === '') return true
+  return !['0', 'false', 'off', 'no'].includes(raw.toLowerCase())
+}
+
+const params = new URLSearchParams(window.location.search)
 const scenario = selectDemoScenario(window.location.search)
-window.api = createDemoApi(scenario)
-document.documentElement.dataset['demoScenario'] = scenario.id
 
-void import('../main.ts')
+// Someone who asked their system not to animate things gets the finished
+// transcript instead: same content, no typing and no streaming.
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+// A scenario with a recorded trace is a walkthrough, so it plays by default —
+// including for anyone opening the demo link directly. `?autoplay=0` opts out.
+const autoplay = flag(params, 'autoplay', scenario.trace !== undefined)
+
+window.api = createDemoApi(scenario, { trace: { instant: reducedMotion } })
+document.documentElement.dataset['demoScenario'] = scenario.id
+if (autoplay) document.documentElement.dataset['demoAutoplay'] = 'on'
+
+void import('../main.ts').then(() => {
+  const trace = scenario.trace
+  if (!autoplay || !trace) return
+  void startAutoplay(document, {
+    prompt: trace.prompt,
+    loop: flag(params, 'loop', false),
+    instant: reducedMotion,
+  })
+})

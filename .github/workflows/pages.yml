@@ -1,11 +1,11 @@
 name: Deploy site
 
 # Publishes the marketing site (site/) to GitHub Pages, plus browser demos
-# staged on the machine-managed `demo-previews` branch. All demos are served
-# below /demo/: persistent /demo/main/ and /demo/develop/ builds plus ephemeral
-# /demo/pr-<n>/ previews. Pages source must be set to "GitHub Actions" in repo
-# Settings → Pages (classic Pages can only serve from the repo root or /docs,
-# not /site).
+# staged on the machine-managed `demo-previews` branch. All demos and preview
+# bundles are served below /demo/: persistent /demo/main/ and /demo/develop/
+# builds plus ephemeral /demo/pr-<n>/ and /demo/pr-<n>-preview/ builds. Pages
+# source must be set to "GitHub Actions" in repo Settings → Pages (classic Pages
+# can only serve from the repo root or /docs, not /site).
 #
 # GitHub Pages allows one deployment per repo and each deploy REPLACES the whole
 # published tree, so previews cannot be deployed independently of the site. This
