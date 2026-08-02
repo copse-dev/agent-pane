@@ -206,6 +206,9 @@ export interface ApiClient {
   ask: {
     respond: (id: string, answers: string[]) => Promise<void>
   }
+  alerts: {
+    threadFinished: (threadId: string, title: string) => Promise<void>
+  }
   sshPrompt: {
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (

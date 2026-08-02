@@ -339,6 +339,10 @@ contextBridge.exposeInMainWorld('api', {
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
   },
+  alerts: {
+    threadFinished: (threadId: string, title: string) =>
+      ipcRenderer.invoke('alerts:threadFinished', threadId, title),
+  },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),

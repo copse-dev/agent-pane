@@ -212,6 +212,13 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the in-app browser pane. When off, they open in the user's default browser
   // and render an external-link icon so it's clear they leave the app.
   openLinksInBuiltInBrowser: z.boolean(),
+  // Event triggers and delivery channels are independent: users can keep a
+  // silent system notification without a Dock/taskbar animation, for example.
+  alertOnInteraction: z.boolean(),
+  alertOnThreadFinished: z.boolean(),
+  alertSystemNotification: z.boolean(),
+  alertSound: z.boolean(),
+  alertBounce: z.boolean(),
   // Auto-approve an external ACP agent's file edits/deletes/moves once a durable
   // worktree backup of the user's uncommitted work exists, instead of prompting
   // per edit. Default on. Off restores the per-edit approval modal.
