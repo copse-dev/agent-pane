@@ -1,4 +1,10 @@
 import { errorMessage } from '@shared/errors.ts'
+import {
+  AUTO_APPROVAL_LEVEL_LABELS,
+  AUTO_APPROVAL_LEVEL_SETTING,
+  AUTO_APPROVAL_LEVELS,
+  sanitizeAutoApprovalLevel,
+} from '@shared/auto-approval.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import {
   isRightPanelPosition,
@@ -631,6 +637,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="autoRunSandboxCommands" />
                 Run commands without asking when they stay inside the project folder
+              </label>
+              <label>
+                Also run recognised low-risk commands without asking
+                <select name="shellAutoApprovalLevel">
+                  ${AUTO_APPROVAL_LEVELS.map(
+                    (level) =>
+                      `<option value="${level}">${AUTO_APPROVAL_LEVEL_LABELS[level]}</option>`,
+                  ).join('')}
+                </select>
+                <span class="field-hint">
+                  Matches a fixed list of command shapes exactly — never a model's judgement, and
+                  never anything it doesn't recognise. Reads cover local queries plus
+                  <code>git fetch</code> and <code>gh pr view</code> against a remote this project
+                  already has configured; a URL never qualifies. Higher levels add local commits,
+                  then <code>git push</code> and <code>gh pr create</code>. Force pushes, deleting
+                  branches, installs, <code>npx</code>, project scripts like <code>npm test</code>,
+                  and anything containing <code>$(…)</code> always ask. Only applies in a trusted
+                  project with the setting above turned on. At the two write levels
+                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
+                  project's git hooks — the macOS sandbox contains those, Linux and Windows do not.
+                </span>
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="safetyClassifierEnabled" />
@@ -2553,6 +2580,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
           sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
         )
+        selectControl(form, 'shellAutoApprovalLevel').value = sanitizeAutoApprovalLevel(
+          await api.settings.get(AUTO_APPROVAL_LEVEL_SETTING),
+        )
         selectControl(form, 'theme').value = store.getState().themePreference
         inputControl(form, 'fontSize').value = String(store.getState().fontSize)
         const uiScaleInput = form.elements.namedItem('uiScale')
@@ -2709,6 +2739,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         approvedProviderHosts: parseApprovedProviderHosts(data.get('approvedProviderHosts')),
         providerAllowUserApproval: data.get(PROVIDER_ALLOW_USER_APPROVAL_SETTING) === 'on',
         trustedShellCommands: parseTrustedCommands(formDataString(data, 'trustedShellCommands')),
+        shellAutoApprovalLevel: sanitizeAutoApprovalLevel(data.get(AUTO_APPROVAL_LEVEL_SETTING)),
       })
 
       store.setState({
