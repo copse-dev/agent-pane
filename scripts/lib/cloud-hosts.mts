@@ -597,6 +597,16 @@ set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl docker.io docker-compose-v2 git jq make tar
+# Ubuntu 24.04 enables this AppArmor restriction by default. It lets bwrap
+# create a user namespace but strips the capabilities needed to configure the
+# namespace's loopback interface, so every sandboxed command later fails with
+# "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted". These are
+# dedicated, ephemeral runner hosts; persist the host prerequisite before any
+# runner container starts rather than weakening ASRT inside the container.
+if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+  printf '%s\n' 'kernel.apparmor_restrict_unprivileged_userns=0' > /etc/sysctl.d/99-copse-bwrap-userns.conf
+  sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+fi
 systemctl enable --now docker
 mkdir -p /opt/copse-burst
 ${ttlSnippet}
