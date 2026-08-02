@@ -48,7 +48,8 @@
   max-width: 360px;
 }
 .titlebar-drag {
-  flex: 1;
+  flex: 1 0 var(--spacing-lg);
+  min-width: var(--spacing-lg);
   height: 100%;
   -webkit-app-region: drag;
 }
