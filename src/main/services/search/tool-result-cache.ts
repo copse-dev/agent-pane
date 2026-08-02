@@ -211,6 +211,11 @@ export function invalidateToolResultCacheForChange(
   }
 }
 
+/** Execution roots with at least one live bucket — the only roots worth watching. */
+export function cachedExecutionRoots(): Set<string> {
+  return new Set(Array.from(cachesByThread.values(), (bucket) => bucket.root))
+}
+
 /** Test hook. */
 export function clearAllToolResultCachesForTest(): void {
   cachesByThread.clear()

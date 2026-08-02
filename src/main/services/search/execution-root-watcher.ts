@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import { join } from 'node:path'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
-import { invalidateToolResultCacheForChange } from './tool-result-cache.ts'
+import { cachedExecutionRoots, invalidateToolResultCacheForChange } from './tool-result-cache.ts'
 
 /**
  * Watches whichever execution roots currently hold cached tool results, so an
@@ -19,6 +19,33 @@ import { invalidateToolResultCacheForChange } from './tool-result-cache.ts'
  */
 
 const watchers = new Map<string, fs.FSWatcher>()
+
+/**
+ * Ceiling on concurrently watched roots. The cache holds at most 8 thread
+ * buckets, so at most 8 roots are ever live — but roots change as threads come
+ * and go, and a watcher outlives the bucket that created it. Without a bound
+ * they accumulate for the life of the process, each one a *recursive* watch
+ * (on Linux, an inotify watch per subdirectory of a whole checkout).
+ */
+const MAX_WATCHED_ROOTS = 8
+
+/**
+ * Close watchers for roots nothing caches anymore.
+ *
+ * Deliberately lazy — only called when about to exceed {@link MAX_WATCHED_ROOTS},
+ * never on the event path. Pruning eagerly whenever an edit emptied a bucket
+ * would close and reopen a recursive watch on every write burst, and reopening
+ * one on a large checkout is exactly the expensive operation this is trying to
+ * limit.
+ */
+function pruneUnusedWatchers(): void {
+  const live = cachedExecutionRoots()
+  for (const [root, watcher] of watchers) {
+    if (live.has(root)) continue
+    watcher.close()
+    watchers.delete(root)
+  }
+}
 
 /**
  * A moved branch pointer — `git checkout` / `git switch` from a terminal.
@@ -43,6 +70,7 @@ function isBranchPointerChange(relPath: string): boolean {
  */
 export function ensureExecutionRootWatched(root: string): boolean {
   if (watchers.has(root)) return true
+  if (watchers.size >= MAX_WATCHED_ROOTS) pruneUnusedWatchers()
   try {
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
       // fs.watch can omit the filename; without it the change can't be located,

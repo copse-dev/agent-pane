@@ -135,6 +135,43 @@ describe('execution-root-watcher', () => {
     assert.equal(getCachedToolResult(id, 'search_code', { path: 'docs' }), 'docs-hits')
   })
 
+  // Without a bound, every root a thread ever cached against keeps a recursive
+  // watch alive for the life of the process.
+  it('reclaims watchers for roots nothing caches anymore', async () => {
+    const roots: string[] = []
+    for (let i = 0; i < 9; i++) {
+      const dir = await mkdtemp(join(tmpdir(), `copse-bound-${String(i)}-`))
+      roots.push(dir)
+      assert.equal(ensureExecutionRootWatched(dir), true)
+    }
+    try {
+      // No bucket references any of them, so the 9th admission prunes the rest.
+      assert.ok(
+        watchedExecutionRootsForTest().length <= 8,
+        `expected at most 8 watched roots, got ${String(watchedExecutionRootsForTest().length)}`,
+      )
+    } finally {
+      stopAllExecutionRootWatchers()
+      await Promise.all(roots.map((dir) => rm(dir, { recursive: true, force: true })))
+    }
+  })
+
+  it('keeps watching a root that still has cached results', async () => {
+    const other = await mkdtemp(join(tmpdir(), 'copse-keep-'))
+    try {
+      ensureExecutionRootWatched(root)
+      setCachedToolResult({ threadId: 't1', root, branch: 'main' }, 'find_files', {}, 'kept')
+      // Admitting more roots than the cap must not evict one still in use.
+      for (let i = 0; i < 9; i++) ensureExecutionRootWatched(other)
+      assert.ok(
+        watchedExecutionRootsForTest().includes(root),
+        'a root with live cached results must survive pruning',
+      )
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
+  })
+
   it('stops delivering invalidations once the root is unwatched', async () => {
     ensureExecutionRootWatched(root)
     stopWatchingExecutionRoot(root)
