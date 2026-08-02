@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
-import { classifyAgentError, classifyProviderAccessFailure } from './agent-errors.ts'
+import {
+  classifyAcpAuthFailure,
+  classifyAgentError,
+  classifyProviderAccessFailure,
+} from './agent-errors.ts'
 import { AcpTurnFailure } from './acp/acp-agent-service.ts'
 
 describe('classifyAgentError', () => {
@@ -49,6 +53,35 @@ describe('classifyAgentError', () => {
     const out = classifyAgentError(err, { acpAgentId: 'cursor' })
     assert.match(out, /ACP error -32002 \(Resource not found\)/)
     assert.match(out, /file:\/\/\/missing/)
+  })
+
+  // The failure that made re-authentication undiscoverable: Claude's adapter
+  // reports a lapsed OAuth token as a generic `-32603 Internal error`, so it
+  // used to fall through to the raw "An error occurred: ACP error -32603" text
+  // with no mention of signing in.
+  it('reads an expired sign-in out of a generic ACP internal error', () => {
+    const err = new RequestError(
+      -32603,
+      'Internal error: Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue.',
+      { errorKind: 'authentication_failed' },
+    )
+    const out = classifyAgentError(err, { acpAgentId: 'claude-agent-acp' })
+    assert.match(out, /Claude’s saved sign-in has expired/)
+    assert.match(out, /claude \/login/)
+    assert.match(out, /re-send your message/)
+    // The agent's own words stay available, below the actionable guidance.
+    assert.match(out, /Agent reported: ACP error -32603 \(Internal error\)/)
+    assert.match(out, /authentication_failed/)
+    assert.doesNotMatch(out, /^An error occurred:/)
+    // First-run guidance would send the user the wrong way here.
+    assert.doesNotMatch(out, /claude setup-token/)
+  })
+
+  it('keeps first-run guidance for an agent that was never signed in', () => {
+    const out = classifyAgentError(RequestError.authRequired(), { acpAgentId: 'claude-agent-acp' })
+    assert.match(out, /requires authentication before it can run/)
+    assert.match(out, /claude setup-token/)
+    assert.doesNotMatch(out, /has expired/)
   })
 
   it('maps rate limits', () => {
@@ -110,6 +143,56 @@ describe('classifyAgentError', () => {
       classifyAgentError(new Error('something else')),
       'An error occurred: something else',
     )
+  })
+})
+
+describe('classifyAcpAuthFailure', () => {
+  const claude = { acpAgentId: 'claude-agent-acp' }
+
+  it('separates an expired sign-in from one that never happened', () => {
+    assert.equal(
+      classifyAcpAuthFailure(
+        new Error('API Error: 401 OAuth access token has expired. Re-authenticate to continue.'),
+        claude,
+      ),
+      'expired',
+    )
+    assert.equal(classifyAcpAuthFailure(RequestError.authRequired(), claude), 'required')
+    assert.equal(classifyAcpAuthFailure(new Error('HTTP 401 Unauthorized'), claude), 'required')
+    assert.equal(classifyAcpAuthFailure(new Error('Failed to authenticate'), claude), 'required')
+  })
+
+  it('reads the signal out of JSON-RPC error data, not just the message', () => {
+    assert.equal(
+      classifyAcpAuthFailure(
+        new RequestError(-32603, 'Internal error', {
+          errorKind: 'authentication_failed',
+        }),
+        claude,
+      ),
+      'required',
+    )
+  })
+
+  it('leaves non-credentials failures alone', () => {
+    assert.equal(classifyAcpAuthFailure(new Error('Overloaded'), claude), null)
+    assert.equal(classifyAcpAuthFailure(new Error('socket hang up'), claude), null)
+    assert.equal(
+      classifyAcpAuthFailure(new RequestError(-32002, 'Resource not found'), claude),
+      null,
+    )
+  })
+
+  // Without an agent id the failure belongs to Copse's own provider keys, whose
+  // fix is Settings → Providers — not an external agent's login command. Only
+  // the unambiguous ACP auth code survives that gate.
+  it('does not claim provider failures that have no ACP agent behind them', () => {
+    assert.equal(classifyAcpAuthFailure(new Error('HTTP 401 Unauthorized')), null)
+    assert.equal(
+      classifyAcpAuthFailure(new Error('Your session has expired. Re-authenticate.')),
+      null,
+    )
+    assert.equal(classifyAcpAuthFailure(RequestError.authRequired()), 'required')
   })
 })
 

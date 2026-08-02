@@ -33,6 +33,7 @@ import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
+import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
@@ -285,6 +286,12 @@ app
 
     initApproval(win, ipcMain, app.dock)
     initAskUser(win, ipcMain)
+    // Lets main-process code hand the user a running command in the Shells pane
+    // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
+    // so the request is forwarded rather than spawned here.
+    setTerminalCommandLauncher((command) => {
+      if (!win.isDestroyed()) win.webContents.send('terminal:run_command', command)
+    })
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win, ipcMain)
     initSshWorkspaceIpc(win)
