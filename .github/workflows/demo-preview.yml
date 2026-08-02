@@ -3,6 +3,8 @@ name: Demo preview
 # Publishes browser demos and self-contained site+demo bundles under the Pages
 # /demo/ namespace:
 #   /demo/main/ and /demo/develop/ are persistent branch builds.
+#   /demo/develop/preview/ is the develop marketing site, with its matching
+#   browser demo nested at /demo/develop/preview/demo/main/.
 #   /demo/pr-<n>/ remains the direct ephemeral demo URL.
 #   /demo/pr-<n>-preview/ is the PR's marketing site, with its matching browser
 #   demo nested at /demo/pr-<n>-preview/demo/main/.
@@ -122,7 +124,11 @@ jobs:
           rm -rf "previews-branch/${TARGET}"
           mkdir -p "previews-branch/${TARGET}"
           cp -R dist/demo/. "previews-branch/${TARGET}/"
-          if [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+          if [[ "$TARGET" == "develop" ]]; then
+            mkdir -p "previews-branch/${TARGET}/preview/demo/main"
+            cp -R site/. "previews-branch/${TARGET}/preview/"
+            cp -R dist/demo/. "previews-branch/${TARGET}/preview/demo/main/"
+          elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
             bundle_target="${TARGET}-preview"
             rm -rf "previews-branch/${bundle_target}"
             mkdir -p "previews-branch/${bundle_target}/demo/main"
