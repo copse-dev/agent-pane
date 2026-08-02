@@ -16,6 +16,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import type { HookCard, ModelComparison, Thread, ThreadReview } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
+import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
 export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
@@ -685,6 +686,30 @@ export function recordThreadVideos(
     const added = videos.filter((v) => !known.has(v.path))
     if (added.length === 0) return t
     return { ...t, videos: [...existing, ...added], updatedAt: Date.now() }
+  })
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
+/**
+ * Record archives sent with a message on the thread, so the attachment outlives
+ * the message that carried it (see {@link Thread.archives}). Same rules as
+ * {@link recordThreadVideos}: recorded at send, deduped by path.
+ */
+export function recordThreadArchives(
+  store: AppStore,
+  threadId: string,
+  archives: ArchiveAttachmentRef[],
+): void {
+  if (archives.length === 0) return
+  const { threads } = store.getState()
+  const updated = threads.map((t) => {
+    if (t.id !== threadId) return t
+    const existing = t.archives ?? []
+    const known = new Set(existing.map((a) => a.path))
+    const added = archives.filter((a) => !known.has(a.path))
+    if (added.length === 0) return t
+    return { ...t, archives: [...existing, ...added], updatedAt: Date.now() }
   })
   store.setState({ threads: updated })
   store.emit('threads_changed')

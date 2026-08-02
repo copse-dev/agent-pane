@@ -3,12 +3,11 @@ import { defineTool, type ToolResultImage } from '@shared/types'
 import {
   MAX_VIDEO_BYTES,
   SUPPORTED_VIDEO_EXTENSIONS,
-  fileExtension,
-  formatByteSize,
   formatTimestamp,
   frameFileName,
   parseTimePosition,
 } from '@shared/video/video-media.ts'
+import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
 import {
   peakChange,
   selectDistinctFrames,

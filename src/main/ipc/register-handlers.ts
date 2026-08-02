@@ -83,6 +83,10 @@ import {
 } from '../services/thread-store.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
+  describeWorkspaceArchive,
+  storeArchiveAttachment,
+} from '../services/archive/archive-attachment-store.ts'
+import {
   describeWorkspaceVideo,
   storeVideoAttachment,
   readVideoForPlayback,
@@ -1314,6 +1318,34 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         mimeType: payload.mimeType,
         bytes: payload.bytes,
       })
+    },
+  )
+
+  // An archive attached in the composer. Stored, never inlined — the renderer
+  // gets back a path to hand the agent, which unpacks it with `read_archive`.
+  ipcMain.handle(
+    'archive:attach',
+    async (event, projectId: unknown, threadId: unknown, archive: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            name: zNonEmptyString.max(255),
+            bytes: z.instanceof(Uint8Array).optional(),
+            path: zPathString.optional(),
+          }),
+        ]),
+        [projectId, threadId, archive],
+      )
+      if (payload.path !== undefined) {
+        // Already on disk in the workspace: reference it in place rather than
+        // storing a second copy.
+        return describeWorkspaceArchive(payload.path, payload.name)
+      }
+      if (!payload.bytes) throw new IpcValidationError('An archive needs either bytes or a path')
+      return storeArchiveAttachment(pid, tid, { name: payload.name, bytes: payload.bytes })
     },
   )
 
