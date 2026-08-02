@@ -51,6 +51,35 @@ every published entry.
 - Settings copy has been rewritten in user terms throughout, dropping references
   to how Copse is built internally, and the product no longer says "ACP" when it
   means an agent running on your machine.
+- An external agent whose sign-in has expired can now be signed back in from the
+  app. A lapsed credential used to surface as a raw
+  `ACP error -32603 (Internal error)` with no route back to a working session:
+  Claude's adapter reports an expired OAuth token as a generic internal error, so
+  the message never reached the guidance meant for auth failures. Copse now reads
+  the real cause out of that error, says which agent's sign-in expired, names the
+  command that renews it (`claude /login` — not the first-run `claude setup-token`),
+  and offers to open a shell in the **Shells** pane already running it. You finish
+  the sign-in there and re-send your message.
+- Fixed the cause of those expiries under the agent sandbox: the Claude presets
+  did not allow `claude.com`, so an OAuth login could not reach
+  `platform.claude.com` to refresh its access token. Nothing failed at the time —
+  the agent kept working on the token it held and then died once it aged out. The
+  presets now allow it.
+- Everyday shell commands stop asking for approval. A new deterministic
+  classifier recognises a fixed allow-list of low-risk command _shapes_ and runs
+  them without a prompt: local reads, and `git fetch` / `gh pr view` against a
+  remote already configured in the repository. Settings → Permissions → Shell commands →
+  **Also run recognised low-risk commands without asking** raises that to local commits
+  (`git add`/`commit`/`checkout -b`/`stash`) and then to pushes
+  (`git push`, `gh pr create`). Nothing else changes: project scripts
+  (`npm test`), `npx`, installs, force pushes, ref deletions, `gh api`,
+  `gh pr merge`, anything with `$(…)` or a redirection, and every command the
+  list does not recognise still prompt exactly as before. No model decides — the
+  classifier is pure pattern matching, it only ever converts a prompt into an
+  allow (never softens a block), and it is honoured only in a trusted workspace.
+  Each auto-approval is written to the decision log. Note that at the two write
+  levels `git commit`/`checkout`/`push` run your repo's git hooks, which the
+  macOS sandbox contains and Linux/Windows do not.
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,

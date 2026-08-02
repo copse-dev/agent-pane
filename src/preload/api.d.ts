@@ -1,4 +1,5 @@
 import type { StreamChunk, ContextBreakdown } from '@shared/types'
+import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
@@ -480,6 +481,9 @@ export interface ApiClient {
       approvedProviderHosts?: string[]
       providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
+      // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
+      // bundles that don't render the picker don't reset the user's choice.
+      shellAutoApprovalLevel?: AutoApprovalLevel
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
     /**
@@ -704,6 +708,8 @@ export interface ApiClient {
     setActive: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
+    /** Main asked for a fresh shell running `command` (e.g. an agent sign-in). */
+    onRunCommand: (handler: (command: string) => void) => () => void
   }
   git: {
     isAvailable: (projectId: string, threadId: string) => Promise<boolean>

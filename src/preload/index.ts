@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 
 contextBridge.exposeInMainWorld('api', {
   workspace: {
@@ -670,6 +671,9 @@ contextBridge.exposeInMainWorld('api', {
       approvedProviderHosts?: string[]
       providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
+      // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
+      // bundles that don't render the picker don't reset the user's choice.
+      shellAutoApprovalLevel?: AutoApprovalLevel
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
     getKeyEncrypted: (provider: string) => ipcRenderer.invoke('settings:getKeyEncrypted', provider),
@@ -864,6 +868,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('terminal:exit', listener)
       return (): void => {
         ipcRenderer.off('terminal:exit', listener)
+      }
+    },
+    onRunCommand: (handler: (command: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, command: string): void => {
+        handler(command)
+      }
+      ipcRenderer.on('terminal:run_command', listener)
+      return (): void => {
+        ipcRenderer.off('terminal:run_command', listener)
       }
     },
   },

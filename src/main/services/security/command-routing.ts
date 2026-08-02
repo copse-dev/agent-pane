@@ -54,7 +54,7 @@ export type CommandRouting =
  * *base* behaviour is harmless. Deliberately excludes `rm`, `cp`, `mv` and any
  * command whose safety depends on flags.
  */
-const SAFE_PREP_COMMANDS = new Set([
+export const SAFE_PREP_COMMANDS: ReadonlySet<string> = new Set([
   'mkdir',
   'cd',
   'pwd',
