@@ -78,6 +78,7 @@ import {
 } from '../controller/message-queue.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { lastResendableMessage, resendLastMessage } from '../controller/resend-message.ts'
+import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
 
@@ -1708,7 +1709,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // A hook-originated turn (decision 10): the message role stays `user`, but a
     // marker attributes it to the hook follow-up that started it.
     const hookOrigin = msg.origin?.kind === 'hook' ? msg.origin : null
-    const msgClass = `msg msg-${msg.role}${hookOrigin ? ' msg-hook-origin' : ''}`
+    const imageInputUnsupported =
+      msg.role === 'assistant' && isImageInputUnsupportedMessage(msg.content)
+    const msgClass = `msg msg-${msg.role}${hookOrigin ? ' msg-hook-origin' : ''}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
     if (hookOrigin) msgEl.setAttribute('data-hook-id', hookOrigin.hookId)
     const body = el('div', { class: 'message-body' })
@@ -1826,13 +1829,35 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     const resend = el(
       'button',
-      { class: 'msg-action msg-resend', type: 'button', title: 'Send this prompt again' },
+      {
+        class: 'msg-action msg-resend msg-resendable-action',
+        type: 'button',
+        title: 'Send this prompt again',
+      },
       'Resend',
     )
     resend.addEventListener('click', () => {
       runResend(threadId)
     })
-    return el('div', { class: 'msg-actions' }, fork, resend)
+    const actions = el('div', { class: 'msg-actions' }, fork, resend)
+    const message = getThreadById(store, threadId)?.messages.find((item) => item.id === msgId)
+    if ((message?.images?.length ?? 0) > 0) {
+      const imageCount = message?.images?.length ?? 0
+      const resendWithoutImages = el(
+        'button',
+        {
+          class: 'msg-action msg-resend-without-images msg-resendable-action',
+          type: 'button',
+          title: 'Send this prompt again without its images',
+        },
+        imageCount === 1 ? 'Resend without image' : 'Resend without images',
+      )
+      resendWithoutImages.addEventListener('click', () => {
+        runResend(threadId, false)
+      })
+      actions.append(resendWithoutImages)
+    }
+    return actions
   }
 
   /**
@@ -1843,7 +1868,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function syncUserActions(): void {
     const thread = getActiveThread(store)
     const resendableId = thread ? lastResendableMessage(thread)?.id : undefined
-    list.querySelectorAll<HTMLButtonElement>('.msg-resend').forEach((button) => {
+    list.querySelectorAll<HTMLButtonElement>('.msg-resendable-action').forEach((button) => {
       const owner = button.closest<HTMLElement>('[data-message-id]')?.dataset['messageId']
       button.hidden = owner !== resendableId
     })
@@ -1862,10 +1887,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     )
   }
 
-  function runResend(threadId: string): void {
-    const result = resendLastMessage(store, api, threadId)
+  function runResend(threadId: string, includeImages = true): void {
+    const result = resendLastMessage(store, api, threadId, { includeImages })
     if (!result) return
-    if (result.droppedAttachments) {
+    if (result.omittedImages) {
+      showToast('Resent without the original image.')
+    } else if (result.droppedAttachments) {
       showToast('Resent without the original attachments.')
     } else if (result.queued) {
       showToast('Resend queued behind the running turn.')
@@ -2146,6 +2173,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         hydrateRemoteArtifactImages(list, api)
       }
       if (msg?.role === 'assistant' && msgEl) {
+        msgEl.classList.toggle(
+          'msg-image-input-unsupported',
+          isImageInputUnsupportedMessage(msg.content),
+        )
+        syncUserActions()
         // Segment settled — past-tense the disclosure title even for tool-only bubbles.
         msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
           setReasoningDisclosureTitle(details, false)

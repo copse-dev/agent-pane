@@ -37,6 +37,13 @@ export interface ResendResult {
   queued: boolean
   /** The original prompt carried attachment chips that a resend cannot rebuild. */
   droppedAttachments: boolean
+  /** The user explicitly chose the text-only recovery for an image prompt. */
+  omittedImages: boolean
+}
+
+export interface ResendOptions {
+  /** Defaults true. False is the explicit “Resend without image” recovery path. */
+  includeImages?: boolean
 }
 
 /**
@@ -72,13 +79,15 @@ export function resendLastMessage(
   store: AppStore,
   api: ApiClient,
   threadId: string,
+  options: ResendOptions = {},
 ): ResendResult | null {
   const thread = getThreadById(store, threadId)
   if (!thread) return null
   const original = lastResendableMessage(thread)
   if (!original) return null
 
-  const images = original.images ?? []
+  const originalImages = original.images ?? []
+  const images = options.includeImages === false ? [] : originalImages
   const text = stripPastePlaceholders(original.content)
   const payload: AgentRunPayload = {
     content: contentOf(text, images),
@@ -113,5 +122,6 @@ export function resendLastMessage(
     messageId,
     queued: running,
     droppedAttachments: (original.attachments ?? []).length > 0,
+    omittedImages: originalImages.length > 0 && images.length === 0,
   }
 }

@@ -43,6 +43,10 @@ export interface IpcInvokeMap {
     args: [projectId: string, threadId: string, prompt: string]
     result: undefined
   }
+  'agent:describeImages': {
+    args: [projectId: string, threadId: string, model: string, userPrompt: string, images: string[]]
+    result: { text: string }
+  }
   'agent:prepareCheckout': {
     args: [
       projectId: string,
@@ -357,6 +361,10 @@ export interface IpcInvokeMap {
     result: { ok: boolean; models?: string[]; error?: string }
   }
   'lmstudio:models': { args: []; result: string[] }
+  'lmstudio:modelInfo': {
+    args: []
+    result: Array<{ id: string; supportsImages?: boolean }>
+  }
   'openrouter:models': {
     args: []
     result: Array<{
@@ -364,6 +372,7 @@ export interface IpcInvokeMap {
       name: string
       inputPricePerMTok: number | null
       outputPricePerMTok: number | null
+      supportsImages?: boolean
     }>
   }
   'lmstudio:detect': {

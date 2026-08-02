@@ -177,6 +177,7 @@ export {
   isLocalChatModel,
   buildSubagentRoute,
   listLmStudioModels,
+  listLmStudioModelInfo,
   invalidateLmStudioModelsCache,
   testLmStudio,
 } from './providers/provider-selection.ts'
