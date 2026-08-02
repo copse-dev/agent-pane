@@ -30,6 +30,8 @@ export interface AutoplayOptions {
   charsPerSecond?: number
   /** Wait before the first keystroke, so the app has settled visually. */
   startDelayMs?: number
+  /** Focus the composer before typing. Disabled when embedded in another page. */
+  focusComposer?: boolean
   /** Pause on the finished transcript before looping. */
   loopPauseMs?: number
   signal?: AbortSignal
@@ -96,13 +98,23 @@ function caretToEnd(el: HTMLElement): void {
 export async function typeIntoComposer(
   composer: HTMLElement,
   text: string,
-  options: { charsPerSecond?: number; instant?: boolean; signal?: AbortSignal } = {},
+  options: {
+    charsPerSecond?: number
+    instant?: boolean
+    signal?: AbortSignal
+    focusComposer?: boolean
+  } = {},
 ): Promise<void> {
-  const { charsPerSecond = DEFAULT_CHARS_PER_SECOND, instant = false, signal } = options
+  const {
+    charsPerSecond = DEFAULT_CHARS_PER_SECOND,
+    instant = false,
+    signal,
+    focusComposer = true,
+  } = options
   const emitInput = (): void => {
     composer.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  composer.focus()
+  if (focusComposer) composer.focus({ preventScroll: true })
   composer.textContent = ''
   emitInput()
   if (instant) {
@@ -142,6 +154,7 @@ async function playOnce(doc: Document, options: AutoplayOptions): Promise<boolea
     ...(options.charsPerSecond === undefined ? {} : { charsPerSecond: options.charsPerSecond }),
     ...(options.instant === undefined ? {} : { instant: options.instant }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.focusComposer === undefined ? {} : { focusComposer: options.focusComposer }),
   })
   if (options.signal?.aborted === true) return false
   await sleep(options.instant === true ? 0 : 320)
