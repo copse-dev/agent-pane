@@ -50,6 +50,10 @@ export const config: Options.Testrunner = {
       browserVersion: '150.0.7871.46',
       'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
+      // Without this chromedriver collects no browser log and `getLogs('browser')`
+      // comes back empty, so the renderer-side diagnostics the failure artifacts
+      // capture below would silently be nothing at all.
+      'goog:loggingPrefs': { browser: 'ALL' },
       'goog:chromeOptions': {
         binary: electronBinary,
         windowTypes: ['app', 'webview'],
@@ -100,6 +104,14 @@ export const config: Options.Testrunner = {
           (async () => {
             await browser.saveScreenshot(join(dir, `${base}.png`))
             writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
+            // The page source shows *that* an element is missing or unpopulated;
+            // the renderer console says why (e.g. the settings-dialog refresh
+            // stage that threw). Best-effort: a wedged session just yields none.
+            const consoleLogs = await browser.getLogs('browser').catch(() => [])
+            writeFileSync(
+              join(dir, `${base}.console.log`),
+              consoleLogs.map((entry) => JSON.stringify(entry)).join('\n'),
+            )
           })(),
           AFTER_TEST_SESSION_BUDGET_MS,
           'afterTest failure artifacts',
