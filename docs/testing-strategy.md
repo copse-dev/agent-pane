@@ -178,6 +178,10 @@ default direction is _down_.
 against an in-memory `ApiClient` in ordinary headless Chrome, so geometry/computed-style checks that
 do not need Electron can be evaluated without main-process or window lifecycle cost.
 
+The same build also carries the `landing` walkthrough — a recorded turn replayed through the real
+chunk path, embedded as the marketing homepage hero. See
+[`docs/demo-walkthrough.md`](demo-walkthrough.md) for how to record and swap a trace.
+
 CI runs it from the existing build job and collects its reference screenshots alongside Electron
 screenshots. After the initial `footer-compact` / `markdown-list-indent` soak, the next focused batch
 moved deterministic subagent, settings-footer, and chat-layout rendering into this tier. Continue
