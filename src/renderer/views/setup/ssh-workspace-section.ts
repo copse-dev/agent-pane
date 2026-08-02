@@ -34,7 +34,7 @@ export function createSshWorkspaceSection(
   const strictSelect = el('select', { name: 'sshStrictHostKeys' })
   strictSelect.append(
     el('option', { value: 'accept-new' }, 'Accept new host keys (recommended)'),
-    el('option', { value: 'strict' }, 'Strict — reject unknown host keys'),
+    el('option', { value: 'strict' }, 'Strict: reject unknown host keys'),
   )
 
   const draft: SshHostDraft = emptySshHostDraft()
@@ -120,7 +120,7 @@ export function createSshWorkspaceSection(
       const row = el('div', { class: 'ssh-host-row' })
       const target = host.user ? `${host.user}@${host.host}` : host.host
       row.append(
-        el('div', { class: 'ssh-host-summary' }, el('strong', {}, host.label), ` — ${target}`),
+        el('div', { class: 'ssh-host-summary' }, el('strong', {}, host.label), `: ${target}`),
         el(
           'div',
           { class: 'ssh-host-row-actions' },

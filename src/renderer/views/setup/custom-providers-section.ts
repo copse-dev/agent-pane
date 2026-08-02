@@ -21,10 +21,22 @@ import { expectRecord } from '@shared/unknown-value.ts'
 // `model:` prefix and the `apiKey.<slug>` lookup.
 
 export interface ProvidersSection {
-  root: HTMLFieldSetElement
+  root: HTMLElement
   refresh: () => Promise<void>
   /** Persist any keys typed into the per-provider key fields (called on dialog save). */
   saveKeys: () => Promise<void>
+  /** Ids this panel can render a form for, excluding the add-a-provider form. */
+  providerIds: () => string[]
+  /** Display name for an id this panel owns, or null when it owns no such id. */
+  labelFor: (id: string) => string | null
+  /** Whether the provider has a saved key (or is a user-added entry). */
+  isConfigured: (id: string) => boolean
+  /**
+   * Embedded mode only: show one provider's form (or the add form for `'other'`).
+   * An id this panel does not own leaves the panel empty, so a host that stacks
+   * several panels can hand the same id to all of them.
+   */
+  select: (id: string) => void
 }
 
 /**
@@ -54,13 +66,13 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
     id: 'openai',
     label: 'OpenAI',
     placeholder: 'sk-…',
-    hint: 'For GPT-4o / GPT-5 models. Validated via a free models request — no tokens charged.',
+    hint: 'Checked with a free request, so no tokens are charged.',
   },
   {
     id: 'anthropic',
     label: 'Anthropic',
     placeholder: 'sk-ant-…',
-    hint: 'For Claude Sonnet and Opus. Validated via a free models request — no tokens charged.',
+    hint: 'Checked with a free request, so no tokens are charged.',
   },
   {
     id: 'openrouter',
@@ -278,13 +290,25 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
 
 export function createCustomProvidersSection(
   api: ApiClient,
-  opts: { variant?: 'cloud' | 'local'; nativeProviders?: readonly NativeProvider[] } = {},
+  opts: {
+    variant?: 'cloud' | 'local'
+    nativeProviders?: readonly NativeProvider[]
+    /**
+     * Render only the form for the currently selected provider, with no legend,
+     * description, or chip row of its own. The host (providers-section.ts) owns
+     * one chip row across every provider panel and drives this one via `select`.
+     */
+    embedded?: boolean
+    /** Fired after a refresh so an embedded host can rebuild its chip row. */
+    onChanged?: () => void
+  } = {},
 ): ProvidersSection {
   // The same panel renders two ways: the cloud variant (General settings) shows
-  // hosted providers; the local variant (Local models settings) shows loopback
+  // hosted providers; the local variant shows loopback
   // OpenAI-compatible servers. Providers are partitioned by their `local` flag so
   // a given provider appears in exactly one panel.
   const isLocal = opts.variant === 'local'
+  const embedded = opts.embedded ?? false
   // Native providers (e.g. LM Studio) lead the local chip row with their own form.
   const nativeProviders = isLocal ? (opts.nativeProviders ?? []) : []
   const nativeById = new Map(nativeProviders.map((p) => [p.id, p]))
@@ -301,20 +325,22 @@ export function createCustomProvidersSection(
   const chipRow = el('div', { class: 'provider-chips', role: 'tablist' })
   const formHost = el('div', { class: 'provider-form-host' })
 
-  const fieldset = el(
-    'fieldset',
-    {},
-    el('legend', {}, isLocal ? 'Local providers' : 'Providers'),
-    el(
-      'p',
-      { class: 'settings-fieldset-desc' },
-      isLocal
-        ? 'Connect OpenAI-compatible local servers — LM Studio, Ollama, llama.cpp, Jan, and vLLM ship built in. They run on your machine and need no API key; pick one, set its URL or Fetch models, and Save — or choose “Other” to add another local endpoint.'
-        : 'Pick a provider to add or edit its API key. Privacy-forward providers Groq, Together AI, and Fireworks AI ship built in alongside Mistral, Gemini, and DeepSeek. OpenAI-compatible providers also let you set models and options; choose “Other” to add your own.',
-    ),
-    chipRow,
-    formHost,
-  )
+  const root: HTMLElement = embedded
+    ? el('div', { class: 'provider-panel-embedded' }, formHost)
+    : el(
+        'fieldset',
+        {},
+        el('legend', {}, isLocal ? 'Local providers' : 'Providers'),
+        el(
+          'p',
+          { class: 'settings-fieldset-desc' },
+          isLocal
+            ? 'Connect OpenAI-compatible servers running on your own machine. LM Studio, Ollama, llama.cpp, Jan, and vLLM are built in and need no API key: pick one, set its URL or fetch its models, then Save. Choose “Other” to add a different local endpoint.'
+            : 'Pick a provider to add or edit its API key. Groq, Together AI, and Fireworks AI are built in alongside Mistral, Gemini, and DeepSeek. OpenAI-compatible providers also let you set models and options; choose “Other” to add your own.',
+        ),
+        chipRow,
+        formHost,
+      )
 
   // Keys typed but not yet saved, kept across chip switches; flushed by saveKeys().
   const pendingKeys = new Map<string, string>()
@@ -322,7 +348,7 @@ export function createCustomProvidersSection(
   const configured = new Set<string>()
 
   let providers: ExtraProvider[] = []
-  let selected = defaultSelected
+  let selected = embedded ? '' : defaultSelected
   // OpenRouter-only custom model id (cloud panel). Loaded on refresh, edited in
   // the OpenRouter form, flushed by saveKeys — mirrors the pendingKeys pattern
   // so an unsaved edit survives chip switches and only persists on dialog Save.
@@ -361,6 +387,7 @@ export function createCustomProvidersSection(
   }
 
   function renderChips(): void {
+    if (embedded) return
     clear(chipRow)
     for (const key of chipKeys()) {
       const chip = el(
@@ -404,7 +431,7 @@ export function createCustomProvidersSection(
       else pendingKeys.delete(slug)
     })
 
-    const test = el('button', { type: 'button' }, 'Test key')
+    const test = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Test key')
     test.addEventListener('click', () => {
       void (async (): Promise<void> => {
         const key = input.value.trim()
@@ -472,7 +499,7 @@ export function createCustomProvidersSection(
       el(
         'span',
         { class: 'field-hint' },
-        'Adds a model id beyond the built-in OpenRouter shortlist to the picker. Needs the key above. Browse ids at ',
+        'Adds a model to the picker beyond the built-in OpenRouter shortlist. Needs the key above. Browse the full list at ',
         el('code', {}, 'openrouter.ai/models'),
         '.',
       ),
@@ -517,7 +544,7 @@ export function createCustomProvidersSection(
       el(
         'span',
         { class: 'field-hint' },
-        'Sends provider.zdr with every request, restricting routing to endpoints that never store prompts. Models without a ZDR endpoint fail with a routing error while this is on, and the picker only lists ZDR-capable models.',
+        'Restricts routing to providers that never store your prompts. While this is on, the model picker only lists models that can be served that way, and anything else fails to route.',
       ),
       el(
         'label',
@@ -528,7 +555,7 @@ export function createCustomProvidersSection(
       el(
         'span',
         { class: 'field-hint' },
-        'Off (default): data_collection:"deny" excludes providers that store or train on inputs — even when the ZDR toggle above is off. Turn on only if you need models served exclusively by may-train providers (common for free models).',
+        'Off by default, which rules out anyone who stores or trains on your prompts, even when the option above is off. Turn this on only if you need a model that is served exclusively by providers who may train on it, which is common for free models.',
       ),
     )
   }
@@ -580,7 +607,11 @@ export function createCustomProvidersSection(
 
     const editor = createModelsEditor(provider.models)
     const isHuggingFace = provider.id === 'huggingface'
-    const fetchBtn = el('button', { type: 'button' }, 'Fetch models')
+    const fetchBtn = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-secondary' },
+      'Fetch models',
+    )
     const fetchStatus = el('span', { class: 'key-status' })
     fetchBtn.addEventListener('click', () => {
       void (async (): Promise<void> => {
@@ -593,7 +624,7 @@ export function createCustomProvidersSection(
         if (isHuggingFace) {
           const res = await api.settings.refreshHuggingFaceModels(key || undefined)
           if (!res.ok) {
-            const hint = !key ? ' — enter your HF token and try again' : ''
+            const hint = !key ? '. Enter your Hugging Face token and try again.' : ''
             setInlineStatus(fetchStatus, 'error', `${res.error ?? 'Could not list models'}${hint}`)
             fetchStatus.className = 'key-status err'
             return
@@ -607,7 +638,7 @@ export function createCustomProvidersSection(
         if (!res.ok) {
           // Most cloud providers reject an unauthenticated /models request (Google
           // even 404s it), so nudge toward entering a key before blaming the URL.
-          const hint = !key ? ' — enter an API key and try again' : ''
+          const hint = !key ? '. Enter an API key and try again.' : ''
           setInlineStatus(fetchStatus, 'error', `${res.error ?? 'Could not list models'}${hint}`)
           fetchStatus.className = 'key-status err'
           return
@@ -621,7 +652,7 @@ export function createCustomProvidersSection(
         setInlineStatus(
           fetchStatus,
           'ok',
-          `${String(res.models.length)} model(s) — review and Save`,
+          `${String(res.models.length)} model(s). Review them, then Save.`,
         )
         fetchStatus.className = 'key-status ok'
       })()
@@ -674,7 +705,7 @@ export function createCustomProvidersSection(
         el(
           'span',
           { class: 'field-hint' },
-          'Merged into every request — e.g. OpenRouter routing hints. Most providers need none.',
+          'Added to every request, for example routing hints. Most providers need none.',
         ),
       ),
     )
@@ -735,7 +766,7 @@ export function createCustomProvidersSection(
         void (async (): Promise<void> => {
           await api.settings.deleteExtraProvider(provider.id)
           pendingKeys.delete(provider.id)
-          selected = defaultSelected
+          selected = embedded ? '' : defaultSelected
           await refresh()
         })().catch(() => {})
       })
@@ -748,8 +779,10 @@ export function createCustomProvidersSection(
   // ---- "Other" (add a provider) form --------------------------------------
   function otherForm(): HTMLElement {
     const presetSelect = el('select', {})
-    presetSelect.append(new Option('Custom (enter URL)', ''))
-    for (const ep of knownEndpoints) presetSelect.append(new Option(ep.label, ep.baseUrl))
+    presetSelect.append(el('option', { value: '' }, 'Custom (enter URL)'))
+    for (const ep of knownEndpoints) {
+      presetSelect.append(el('option', { value: ep.baseUrl }, ep.label))
+    }
 
     const labelInput = el('input', {
       type: 'text',
@@ -887,7 +920,11 @@ export function createCustomProvidersSection(
     } catch {
       providers = []
     }
+    // Embedded panels take their selection from the host, which may name a
+    // provider another panel owns; leave it unset rather than snapping back to
+    // this panel's default (that would render a form the host didn't ask for).
     if (
+      !embedded &&
       selected !== 'other' &&
       !nativeById.has(selected) &&
       !fixedById.has(selected) &&
@@ -939,6 +976,7 @@ export function createCustomProvidersSection(
     )
     renderChips()
     renderForm()
+    opts.onChanged?.()
   }
 
   async function saveKeys(): Promise<void> {
@@ -973,5 +1011,26 @@ export function createCustomProvidersSection(
     }
   }
 
-  return { root: fieldset, refresh, saveKeys }
+  function providerIds(): string[] {
+    return chipKeys().filter((key) => key !== 'other')
+  }
+
+  function labelFor(id: string): string | null {
+    return providerIds().includes(id) ? chipLabel(id) : null
+  }
+
+  function isConfigured(id: string): boolean {
+    if (configured.has(id)) return true
+    // A user-added provider counts as set up even without a key: local servers
+    // (and some gateways) accept unauthenticated requests.
+    const provider = providers.find((p) => p.id === id)
+    return provider ? !provider.builtin : false
+  }
+
+  function select(id: string): void {
+    selected = id
+    renderForm()
+  }
+
+  return { root, refresh, saveKeys, providerIds, labelFor, isConfigured, select }
 }

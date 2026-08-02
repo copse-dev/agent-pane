@@ -263,7 +263,7 @@ describe('fetchModelOptions visibility', () => {
     // The Claude Cloud Agent heading is flagged as API-billed so ACP reads as
     // the preferred (own-login) alternative.
     const claudeCloud = options.filter(
-      (o) => o.group === 'Claude Cloud Agent — API-billed (ACP available)',
+      (o) => o.group === 'Claude Cloud Agent (billed to your API key)',
     )
     assert.ok(claudeCloud.some((o) => o.value === 'remote-agent:anthropic#claude-opus-4-8'))
     // No un-annotated Claude Cloud Agent heading remains.
@@ -286,7 +286,7 @@ describe('fetchModelOptions visibility', () => {
       '',
     )
     assert.ok(options.some((o) => o.group === 'Claude Cloud Agent'))
-    assert.ok(!options.some((o) => o.group?.includes('API-billed')))
+    assert.ok(!options.some((o) => o.group?.includes('billed to your API key')))
     const firstRemoteIdx = options.findIndex((o) => o.value.startsWith('remote-agent:anthropic'))
     const firstAcpIdx = options.findIndex((o) => o.value.startsWith('acp:'))
     assert.ok(firstRemoteIdx >= 0 && firstAcpIdx >= 0)
@@ -303,7 +303,7 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    const acp = options.filter((o) => o.group === 'Gemini CLI Client (ACP)')
+    const acp = options.filter((o) => o.group === 'Gemini CLI on this device')
     assert.deepEqual(
       acp.map((o) => o.value),
       ['acp:gemini-cli'],
@@ -332,7 +332,7 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    const acp = options.filter((o) => o.group === 'Cursor Client (ACP)')
+    const acp = options.filter((o) => o.group === 'Cursor on this device')
     assert.deepEqual(
       acp.map((o) => ({ value: o.value, label: o.label })),
       [
@@ -350,7 +350,7 @@ describe('fetchModelOptions visibility', () => {
     const options = await fetchModelOptions(mockApi(), 'acp:gemini-cli')
     const current = options.find((o) => o.value === 'acp:gemini-cli')
     assert.ok(current)
-    assert.equal(current.group, 'ACP agents')
+    assert.equal(current.group, 'Agents on this device')
     assert.match(current.label, /not configured/)
   })
 
@@ -360,7 +360,7 @@ describe('fetchModelOptions visibility', () => {
       acpAgents: [{ id: 'cursor', title: 'Cursor', command: 'cursor-agent', enabled: true }],
     })
     const options = await fetchModelOptions(api, 'acp:cursor', { sshWorkspace: true })
-    assert.ok(!options.some((o) => o.group?.includes('(ACP)') && !o.disabled))
+    assert.ok(!options.some((o) => o.group?.includes('on this device') && !o.disabled))
     assert.ok(!options.some((o) => o.value === 'acp:cursor' && !o.disabled))
     const stale = options.find((o) => o.value === 'acp:cursor')
     assert.ok(stale)

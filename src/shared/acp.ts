@@ -135,12 +135,13 @@ export function isAcpModel(model: string): boolean {
 }
 
 /**
- * Model-picker group heading for an ACP agent — e.g. `Cursor Client (ACP)`.
- * Each agent gets its own heading (rather than a shared "ACP agents" group) so
- * its models can be listed bare underneath without a redundant `Title —` prefix.
+ * Model-picker group heading for a device agent, e.g. `Cursor on this device`.
+ * Each agent gets its own heading (rather than one shared group) so its models
+ * can be listed bare underneath without a redundant `Title:` prefix. "ACP" is
+ * the wire protocol and stays out of the product copy.
  */
 export function acpGroupLabel(title: string): string {
-  return `${title} Client (ACP)`
+  return `${title} on this device`
 }
 
 /**

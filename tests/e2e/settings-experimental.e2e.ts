@@ -123,21 +123,21 @@ describe('experimental settings section', () => {
     )
     assert.equal(await experimental.$('legend=Roadmap plans').isExisting(), false)
 
-    // ACP agents graduated out of Experimental into their own top-level section,
-    // so the panel's legend must no longer appear here.
+    // Device agents graduated out of Experimental and are now set up per
+    // provider under Settings > General, so no agents block belongs here.
     assert.equal(
-      await experimental.$('legend=ACP agents').isExisting(),
+      await experimental.$('legend=Agents on this device').isExisting(),
       false,
-      'ACP agents must leave Settings > Experimental after graduating to its own section',
+      'device agents must leave Settings > Experimental',
     )
 
-    // The model classifier speaks the shared intellect scale, not a separate
-    // tier vocabulary (docs/plans/advisor-strategy.md).
+    // The classifier is described in plain terms: how hard the task is and which
+    // model suits it, with no internal tool or scale vocabulary.
     const classifierHint = await experimental
       .$('legend=Model classifier')
       .parentElement()
       .$('.field-hint')
-    assert.match(await classifierHint.getText(), /shared model\s+intellect scale/i)
+    assert.match(await classifierHint.getText(), /how hard a task is/i)
 
     await saveElementScreenshot('#settings-dialog', 'settings-experimental.png')
   })
