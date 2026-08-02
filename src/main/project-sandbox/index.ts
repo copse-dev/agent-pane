@@ -3,7 +3,7 @@ import { baseSandboxConfig } from './config.ts'
 import { recordNetworkDenial } from './network-scope.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
-import { isProjectSandboxPlatform } from './state.ts'
+import { isProjectSandboxPlatform, setProjectSandboxInitFailure } from './state.ts'
 
 export {
   spawnInProjectSandbox,
@@ -58,6 +58,7 @@ export async function initProjectSandbox(): Promise<void> {
       false,
     )
     setProjectSandboxEnabled(true)
+    setProjectSandboxInitFailure(undefined)
     console.log(
       `[project-sandbox] ${
         process.platform === 'darwin' ? 'macOS seatbelt' : 'Linux bubblewrap'
@@ -65,6 +66,7 @@ export async function initProjectSandbox(): Promise<void> {
     )
   } catch (err) {
     setProjectSandboxEnabled(false)
+    setProjectSandboxInitFailure(err instanceof Error ? err.message : String(err))
     console.warn('[project-sandbox] ASRT init failed — project commands run unsandboxed:', err)
   }
 }
