@@ -1,8 +1,11 @@
 name: Demo preview
 
-# Publishes browser demos under the Pages /demo/ namespace:
+# Publishes browser demos under the Pages /demo/ namespace and self-contained
+# site+demo bundles under /preview/:
 #   /demo/main/ and /demo/develop/ are persistent branch builds.
-#   /demo/pr-<n>/ is an ephemeral build with a sticky PR comment.
+#   /demo/pr-<n>/ remains the direct ephemeral demo URL.
+#   /preview/pr-<n>/ is the PR's marketing site, with its matching browser demo
+#   nested at /preview/pr-<n>/demo/main/.
 #
 # Triggered on push (not workflow_run) so the workflow runs from the pushed
 # branch's own definition — which makes the whole flow testable on the PR that
@@ -13,8 +16,9 @@ name: Demo preview
 # demo-previews branch, and redeploys Pages. Feature branches without an open PR
 # build nothing.
 #
-# The deploy always republishes site/ from `main` (see pages.yml), so a preview
-# push can only change content below /demo/ — never the marketing site.
+# The deploy always republishes the root site/ from `main` (see pages.yml), so a
+# preview push can only change content below its /demo/ and /preview/ paths —
+# never the production marketing site at the domain root.
 
 on:
   push:
@@ -116,8 +120,9 @@ jobs:
           git -C previews-branch config user.name "github-actions[bot]"
           git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -rf "previews-branch/${TARGET}"
-          mkdir -p "previews-branch/${TARGET}"
-          cp -R dist/demo/. "previews-branch/${TARGET}/"
+          mkdir -p "previews-branch/${TARGET}/demo" "previews-branch/${TARGET}/site"
+          cp -R dist/demo/. "previews-branch/${TARGET}/demo/"
+          cp -R site/. "previews-branch/${TARGET}/site/"
           # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
           # and high-entropy map contents fail Secret scan on unrelated tips.
           find "previews-branch/${TARGET}" -type f -name '*.map' -delete
@@ -160,7 +165,8 @@ jobs:
             const base = (
               process.env.BASE_URL || 'https://copse-dev.github.io/agent-pane/'
             ).replace(/\/*$/, '/');
-            const previewUrl = `${base}demo/pr-${pr}/`;
+            const previewUrl = `${base}preview/pr-${pr}/`;
+            const demoUrl = `${previewUrl}demo/main/`;
             let scenarios = [];
             try {
               scenarios = JSON.parse(process.env.SCENARIOS || '[]');
@@ -168,13 +174,14 @@ jobs:
               scenarios = [];
             }
             const links = scenarios
-              .map((s) => `- [${s.label}](${previewUrl}?scenario=${encodeURIComponent(s.id)})`)
+              .map((s) => `- [${s.label}](${demoUrl}?scenario=${encodeURIComponent(s.id)})`)
               .join('\n');
             const body = [
               marker,
-              '## 🖥️ Demo preview',
+              '## 🖥️ PR preview',
               '',
-              `A browser build of this PR is live at **[${previewUrl}](${previewUrl})**.`,
+              `- **[Marketing site](${previewUrl})**`,
+              `- **[Browser demo](${demoUrl})**`,
               '',
               links ? 'Interactive, with a mocked backend — jump to a scenario:' : '',
               links,

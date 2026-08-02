@@ -81,5 +81,7 @@ The frame is inert on the page (`pointer-events: none`, `aria-hidden`,
 `tabindex="-1"`): it drives itself, and a scaled-down app is not a usable
 control surface. The caption links to the real demo.
 
-Note that `pages.yml` always publishes `site/` from `main`, so a change to the
-hero is only live once merged — a PR preview updates `/demo/pr-<n>/` only.
+`pages.yml` keeps the production homepage pinned to `site/` from `main`. For a PR,
+the branch's site is available at `/preview/pr-<n>/`, with its matching demo at
+`/preview/pr-<n>/demo/main/`. The original direct demo URL at `/demo/pr-<n>/`
+remains available.

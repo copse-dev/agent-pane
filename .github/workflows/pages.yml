@@ -1,11 +1,12 @@
 name: Deploy site
 
 # Publishes the marketing site (site/) to GitHub Pages, plus browser demos
-# staged on the machine-managed `demo-previews` branch. All demos are served
-# below /demo/: persistent /demo/main/ and /demo/develop/ builds plus ephemeral
-# /demo/pr-<n>/ previews. Pages source must be set to "GitHub Actions" in repo
-# Settings → Pages (classic Pages can only serve from the repo root or /docs,
-# not /site).
+# staged on the machine-managed `demo-previews` branch. Direct demos remain
+# below /demo/. Each current-format preview also carries its branch's static
+# site and demo together below /preview/<target>/, with the demo nested at
+# /preview/<target>/demo/main/. Pages source must be set to "GitHub Actions" in
+# repo Settings → Pages (classic Pages can only serve from the repo root or
+# /docs, not /site).
 #
 # GitHub Pages allows one deployment per repo and each deploy REPLACES the whole
 # published tree, so previews cannot be deployed independently of the site. This
@@ -62,11 +63,11 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           ref: main
-      # Assemble the published tree: the marketing site at the root and every
-      # machine-managed preview directory below /demo/. The previews branch may
-      # not exist yet (no demo ever published) — that is expected; we then ship
-      # site/ alone.
-      - name: Assemble site and demo previews
+      # Assemble the published tree: the production marketing site at the root,
+      # every direct demo below /demo/, and each current-format site+demo bundle
+      # below /preview/. The previews branch may not exist yet (no demo ever
+      # published) — that is expected; we then ship site/ alone.
+      - name: Assemble site and previews
         run: |
           set -euo pipefail
           rm -rf _site _previews
@@ -80,9 +81,22 @@ jobs:
             for dir in _previews/main/ _previews/develop/ _previews/pr-*/; do
               [ -d "$dir" ] || continue
               name="$(basename "$dir")"
+              # Old entries stored dist/demo directly at the target root. Keep
+              # publishing them until each branch is refreshed into the new
+              # target/{demo,site} layout.
+              demo_dir="$dir"
+              if [ -d "$dir/demo" ]; then
+                demo_dir="$dir/demo"
+              fi
               echo "Adding demo: demo/$name"
               mkdir -p "_site/demo/$name"
-              cp -R "$dir". "_site/demo/$name/"
+              cp -R "$demo_dir"/. "_site/demo/$name/"
+              if [ -d "$dir/site" ]; then
+                echo "Adding site preview: preview/$name"
+                mkdir -p "_site/preview/$name/demo/main"
+                cp -R "$dir/site"/. "_site/preview/$name/"
+                cp -R "$demo_dir"/. "_site/preview/$name/demo/main/"
+              fi
             done
           else
             echo "No demo-previews branch yet — publishing site only."
