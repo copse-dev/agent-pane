@@ -100,6 +100,10 @@ const flatIssueSchema = z.object({
   labels: z.array(z.string()).optional(),
   updatedAt: optionalString,
 })
+const pagedIssueSchema = z.object({
+  rawCount: z.number().int().nonnegative(),
+  issues: z.array(flatIssueSchema),
+})
 const issueSchema = z.object({
   number: optionalNumber,
   title: optionalString,
@@ -375,54 +379,57 @@ export const ghCliBackend: GitHubBackend = {
       .filter((entry): entry is GhPrSummary => entry != null)
   },
 
-  async listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]> {
+  async listWorkspaceOpenIssues(page: number, pageSize: number) {
     const slug = await getGithubRepoSlug()
-    if (!slug) return []
+    if (!slug) return { issues: [], hasMore: false }
     const [owner, repo] = slug.split('/')
-    if (!owner || !repo || !isGhAvailable()) return []
-    // Slim the payload inside gh itself: full issue bodies on an issue-heavy
-    // repo overflow runCommand's 100 KiB stdout cap and truncate the JSON
-    // mid-stream. The jq filter bounds each body (drafting only reads the
-    // first ~2000 chars anyway) and flattens labels to names.
+    if (!owner || !repo || !isGhAvailable()) return { issues: [], hasMore: false }
+    // Use the paginated REST endpoint rather than `gh issue list --limit N`:
+    // the latter has no cursor, turning its output limit into a product-wide
+    // ceiling. Slim each page inside gh so runCommand's 100 KiB stdout cap is
+    // a per-request safety boundary only.
     const { stdout, stderr, code } = await runGh([
-      'issue',
-      'list',
-      '--repo',
-      slug,
-      '--state',
-      'open',
-      '--limit',
-      String(limit),
-      '--json',
-      'number,title,url,body,labels,updatedAt',
+      'api',
+      `repos/${slug}/issues`,
+      '--method',
+      'GET',
+      '-f',
+      'state=open',
+      '-f',
+      `per_page=${String(pageSize)}`,
+      '-f',
+      `page=${String(page)}`,
       '--jq',
-      '[.[] | {number, title, url, updatedAt, body: ((.body // "")[0:2000]), labels: [.labels[].name]}]',
+      '{rawCount: length, issues: [.[] | select(has("pull_request") | not) | {number, title, url: .html_url, updatedAt: .updated_at, body: ((.body // "")[0:2000]), labels: [.labels[].name]}]}',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const list = safeJsonParse(stdout.trim(), decodeWithSchema(z.array(flatIssueSchema)))
-    if (!Array.isArray(list)) {
+    const result = safeJsonParse(stdout.trim(), decodeWithSchema(pagedIssueSchema))
+    if (!result) {
       // Never report unparseable output as "no issues" — surface it.
       throw new Error(
-        `Unexpected \`gh issue list\` output: ${stdout.trim().slice(0, 200) || '(empty)'}`,
+        `Unexpected \`gh api\` issue output: ${stdout.trim().slice(0, 200) || '(empty)'}`,
       )
     }
-    return list
-      .map((entry) => {
-        if (typeof entry.number !== 'number' || !entry.title || !entry.url) return null
-        const summary: GhIssueSummary = {
-          owner,
-          repo,
-          number: entry.number,
-          title: entry.title,
-          url: entry.url,
-          body: (entry.body ?? '').slice(0, 4000),
-          labels: (entry.labels ?? []).filter((name): name is string => typeof name === 'string'),
-          state: 'open',
-        }
-        if (entry.updatedAt) summary.updatedAt = entry.updatedAt
-        return summary
-      })
-      .filter((entry): entry is GhIssueSummary => entry != null)
+    return {
+      issues: result.issues
+        .map((entry) => {
+          if (typeof entry.number !== 'number' || !entry.title || !entry.url) return null
+          const summary: GhIssueSummary = {
+            owner,
+            repo,
+            number: entry.number,
+            title: entry.title,
+            url: entry.url,
+            body: (entry.body ?? '').slice(0, 4000),
+            labels: (entry.labels ?? []).filter((name): name is string => typeof name === 'string'),
+            state: 'open',
+          }
+          if (entry.updatedAt) summary.updatedAt = entry.updatedAt
+          return summary
+        })
+        .filter((entry): entry is GhIssueSummary => entry != null),
+      hasMore: result.rawCount === pageSize,
+    }
   },
 
   async getIssue(ref: PrRef): Promise<GhIssueSummary | null> {

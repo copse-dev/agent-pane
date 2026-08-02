@@ -106,10 +106,17 @@ describe('thread + terminal rename / archive', () => {
     await terminalBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 
-    // Linux asks before opening a host terminal (no OS sandbox).
-    if (process.platform !== 'darwin') {
-      const approval = await $('#approval-dialog')
-      await approval.waitForDisplayed({ timeout: 30_000 })
+    // The host-terminal prompt appears only when there is no OS sandbox to be
+    // outside of (`decideTerminalPermission`, permission-gate.ts). Linux used to
+    // qualify unconditionally; since the ASRT Linux backend was enabled it
+    // depends on the host having bubblewrap + socat, so observe rather than
+    // assume — the same shape the second shell below already uses.
+    const approval = await $('#approval-dialog')
+    const unsandboxed = await approval
+      .waitForDisplayed({ timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (unsandboxed) {
       await approval.$('.approval-approve').click()
       await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })
     }

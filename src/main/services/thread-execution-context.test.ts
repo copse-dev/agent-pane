@@ -8,6 +8,8 @@ import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
   type ThreadExecutionContextDependencies,
+  requireThreadExecutionOwner,
+  runWithThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ValidatedThreadWorktree } from './worktree-manager.ts'
@@ -105,6 +107,51 @@ describe('thread execution context', () => {
       checkoutMode: 'worktree',
       branch: 'copse/thread-1',
     })
+  })
+
+  it('registers a resolved worktree execution root with the file index (#1400)', async () => {
+    const validated: ValidatedThreadWorktree = {
+      path: '/validated/root',
+      branch: 'copse/thread-1',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+      root: '/validated/root',
+      gitDir: '/repo/.git/worktrees/thread-1',
+      commonGitDir: '/repo/.git',
+    }
+    const indexedRoots: string[] = []
+    await resolver({
+      getThreadMeta: async () => ({
+        id: 'thread-1',
+        worktree: {
+          path: '/diagnostic/path',
+          branch: 'copse/thread-1',
+          baseBranch: 'main',
+          baseCommit: 'abc123',
+          createdAt: 1,
+          seededFromDirtyProject: false,
+        },
+      }),
+      validateWorktree: async () => validated,
+      startWorktreeIndexing: (root) => {
+        indexedRoots.push(root)
+      },
+    })
+
+    assert.deepEqual(indexedRoots, ['/validated/root'])
+  })
+
+  it('never registers a shared checkout with the worktree indexer', async () => {
+    const indexedRoots: string[] = []
+    await resolver({
+      startWorktreeIndexing: (root) => {
+        indexedRoots.push(root)
+      },
+    })
+
+    assert.deepEqual(indexedRoots, [])
   })
 
   it('persists an adopted live branch when Git HEAD drifted inside the worktree', async () => {
@@ -235,5 +282,43 @@ describe('thread execution context', () => {
     assert.equal((await first).threadId, 'thread-1')
     assert.equal((await first).root, '/one')
     assert.equal(getThreadExecutionContext(), null)
+  })
+})
+
+describe('thread execution owner', () => {
+  it('throws outside any binding, so run-scoped state never lands on a guessed thread', () => {
+    assert.throws(() => requireThreadExecutionOwner(), /No thread execution context is active/)
+  })
+
+  it('resolves from an owner-only binding, for callers with no root of their own', () => {
+    const owner = { projectId: 'p1', threadId: 't1' }
+    assert.deepEqual(
+      runWithThreadExecutionOwner(owner, () => requireThreadExecutionOwner()),
+      owner,
+    )
+  })
+
+  it('prefers a full turn context over an owner-only binding around it', () => {
+    // The ACP bridge binds an owner around every call; a nested native turn
+    // inside one must still answer with its own identity.
+    const result = runWithThreadExecutionOwner({ projectId: 'outer', threadId: 'outer' }, () =>
+      runWithThreadExecutionContext(
+        {
+          projectId: 'inner',
+          threadId: 'inner',
+          projectRoot: '/repo',
+          root: '/repo',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () => requireThreadExecutionOwner(),
+      ),
+    )
+    assert.deepEqual(result, { projectId: 'inner', threadId: 'inner' })
+  })
+
+  it('does not leak an owner binding past its callback', () => {
+    runWithThreadExecutionOwner({ projectId: 'p1', threadId: 't1' }, () => undefined)
+    assert.throws(() => requireThreadExecutionOwner(), /No thread execution context is active/)
   })
 })

@@ -12,9 +12,15 @@ import {
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
 import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { at } from '@shared/array-utils.ts'
 import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { definePack } from '@copse/agent/packs/pack-manifest.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { storageSet } from '../storage/storage.ts'
+import {
+  requireThreadExecutionOwner,
+  type ThreadExecutionOwner,
+} from '../thread-execution-context.ts'
 
 /**
  * The native-tool MCP bridge (issue #602, tier 2) exposes a curated slice of
@@ -164,6 +170,84 @@ describe('startAcpNativeBridge', () => {
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
   })
 
+  it('forwards tool images as MCP image content, not just the manifest text', async () => {
+    // video_frames returns stills alongside its manifest. Dropping them would
+    // hand the agent text that says "frames follow" with nothing after it.
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'video_frames',
+      description: 'Read a video as stills',
+      parameters: z.object({}),
+      execute: () =>
+        Promise.resolve({
+          result: 'Frames follow as images, in order:',
+          images: [
+            { dataUrl: 'data:image/jpeg;base64,AAAA', name: 'frame-0.000s.jpg' },
+            { dataUrl: 'not-a-data-url', name: 'broken.jpg' },
+          ],
+        }),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'video_frames', arguments: {} },
+    })
+    const content = recordArrayOrEmpty(rpcResult(call)['content'])
+    assert.deepEqual(
+      content.map((block) => block['type']),
+      // The malformed data URL is skipped rather than forwarded broken.
+      ['text', 'image'],
+    )
+    assert.equal(at(content, 0)['text'], 'Frames follow as images, in order:')
+    assert.equal(at(content, 1)['data'], 'AAAA')
+    assert.equal(at(content, 1)['mimeType'], 'image/jpeg')
+  })
+
+  it('binds the owning thread so a run-scoped tool knows whose thread it is', async () => {
+    // The bridge's MCP handlers are a separate async chain from the ACP turn, so
+    // without an explicit rebind `requireThreadExecutionOwner()` throws and any
+    // tool that keeps run-scoped state (read_archive) fails on every call.
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const seen: (ThreadExecutionOwner | string)[] = []
+    const registry = testRegistry([])
+    registry.register({
+      name: 'read_archive',
+      description: 'Unpack an archive',
+      parameters: z.object({}),
+      execute: () => {
+        try {
+          seen.push(requireThreadExecutionOwner())
+        } catch (err) {
+          seen.push(err instanceof Error ? err.message : String(err))
+        }
+        return Promise.resolve('unpacked')
+      },
+    })
+    storageSet('activeProjectId', 'project-1')
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-thread',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'read_archive', arguments: {} },
+    })
+    assert.equal(contentText(call), 'unpacked')
+    assert.deepEqual(seen, [{ projectId: 'project-1', threadId: 'bridge-thread' }])
+  })
+
   it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     const registry = testRegistry([])
@@ -200,6 +284,7 @@ describe('startAcpNativeBridge', () => {
         {
           name: 'search-pack',
           trust: 'first-party',
+          stability: 'experimental',
           tools: { native: ['pack_search'], acpTools: ['pack_search'] },
         },
         { toolNames: ['pack_search'] },

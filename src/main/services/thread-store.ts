@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -9,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
@@ -51,6 +52,7 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { storageGet } from './storage/storage.ts'
+import { projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**
@@ -85,7 +87,9 @@ const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
-/** Root of the chat store. `COPSE_WORKSPACE_DIR` overrides it (tests, relocation). */
+const projectDir = projectStoreDir
+
+/** Root of the chat store. COPSE_DIR owns the normal profile layout. */
 function workspaceRoot(): string {
   const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
   if (override) return override
@@ -93,13 +97,7 @@ function workspaceRoot(): string {
 }
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
-export function chatStoreRoot(): string {
-  return workspaceRoot()
-}
-
-function projectDir(projectId: string): string {
-  return join(workspaceRoot(), projectId)
-}
+export const chatStoreRoot = workspaceRoot
 
 function threadDir(projectId: string, threadId: string): string {
   return join(projectDir(projectId), threadId)
@@ -186,6 +184,38 @@ function listFilesRecursive(dir: string, base: string = dir): string[] {
 }
 
 /**
+ * Message ids already present in a thread's `events.jsonl`, keyed by the
+ * thread's directory path. Seeded by one full parse per thread directory per
+ * process lifetime, this lets `appendMessage`'s common case (a brand-new
+ * finalized message id) skip parsing and re-serializing the whole spine on
+ * every call — see #1222. Anything that rewrites or removes the file outside
+ * `appendMessage` must invalidate its entry so the next append reseeds.
+ */
+const knownMessageIdsByDir = new Map<string, Set<string>>()
+
+function invalidateKnownMessageIds(dir: string): void {
+  knownMessageIdsByDir.delete(dir)
+}
+
+/** Get (seeding from disk on first use) the known message ids for a thread. */
+function knownMessageIdsFor(dir: string): Set<string> {
+  const cached = knownMessageIdsByDir.get(dir)
+  if (cached) return cached
+  const raw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+  if (raw !== '' && !raw.endsWith('\n')) {
+    // Normalize a legacy file with no trailing newline before switching to
+    // true appends below, which assume one is already there.
+    writeFileSync(join(dir, EVENTS_FILE), `${raw}\n`)
+  }
+  const ids = new Set<string>()
+  for (const entry of parseSpineEntries(raw)) {
+    if (entry.line?.type === 'message') ids.add(entry.line.id)
+  }
+  knownMessageIdsByDir.set(dir, ids)
+  return ids
+}
+
+/**
  * Write a thread directory. Files are written first, then the spine, then meta;
  * because the spine (`events.jsonl`) is written only after the files it
  * references exist, a crash mid-write never leaves the spine pointing at a
@@ -210,6 +240,7 @@ function writeThread(projectId: string, thread: Thread): void {
   const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
   writeFileSync(join(dir, EVENTS_FILE), body)
   writeFileSync(join(dir, META_FILE), `${JSON.stringify(metaOf(thread))}\n`)
+  invalidateKnownMessageIds(dir)
 
   pruneStaleFiles(dir, files, preservedRefs)
 }
@@ -470,7 +501,12 @@ function writeCatalog(projectId: string, entries: Map<string, CatalogEntry>): vo
 }
 
 function upsertCatalogEntry(projectId: string, thread: Thread): void {
-  const entries = readCatalog(projectId)
+  // If the index file is missing, rebuild from dirs first so an external seed
+  // (thread dirs without catalog.jsonl) is not collapsed to this one entry.
+  // Incomplete-but-present files are healed on read via {@link ensureCatalogMap}.
+  const entries = existsSync(catalogPath(projectId))
+    ? readCatalog(projectId)
+    : rebuildCatalogFromDisk(projectId)
   const entry = catalogEntryOf(thread)
   if (entry === null) entries.delete(thread.id)
   else entries.set(thread.id, entry)
@@ -515,7 +551,9 @@ function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry
 }
 
 function refreshCatalogLine(projectId: string, threadId: string): void {
-  const entries = readCatalog(projectId)
+  const entries = existsSync(catalogPath(projectId))
+    ? readCatalog(projectId)
+    : rebuildCatalogFromDisk(projectId)
   const entry = catalogEntryFromDisk(projectId, threadId)
   if (entry === null) {
     // Missing meta or archived — drop any stale catalog line.
@@ -526,13 +564,47 @@ function refreshCatalogLine(projectId: string, threadId: string): void {
   writeCatalog(projectId, entries)
 }
 
-async function rebuildCatalog(projectId: string): Promise<Map<string, CatalogEntry>> {
+/**
+ * Rebuild `catalog.jsonl` from on-disk thread dirs (O(threads), no full fold).
+ * Used when the index is missing or was partially written by a single-thread
+ * upsert/refresh before a full rebuild — see {@link ensureCatalogMap}.
+ */
+function rebuildCatalogFromDisk(projectId: string): Map<string, CatalogEntry> {
   const entries = new Map<string, CatalogEntry>()
-  for (const thread of await readProjectThreads(projectId)) {
-    const entry = catalogEntryOf(thread)
-    if (entry) entries.set(thread.id, entry)
+  for (const threadId of listThreadIds(projectId)) {
+    const entry = catalogEntryFromDisk(projectId, threadId)
+    if (entry) entries.set(threadId, entry)
   }
   writeCatalog(projectId, entries)
+  return entries
+}
+
+/** True when an on-disk, non-archived thread is absent from the catalog map. */
+function catalogMissingIndexedThreads(
+  projectId: string,
+  entries: Map<string, CatalogEntry>,
+): boolean {
+  for (const threadId of listThreadIds(projectId)) {
+    if (entries.has(threadId)) continue
+    if (catalogEntryFromDisk(projectId, threadId) !== null) return true
+  }
+  return false
+}
+
+/**
+ * Read the project catalog, rebuilding from thread dirs when the file is
+ * missing **or** incomplete. A lone `upsertCatalogEntry` /
+ * `refreshCatalogLine` after an external seed (e2e fixtures, import) used to
+ * write a one-line `catalog.jsonl` from an empty read — after that,
+ * `loadProjectCatalog` trusted the file and the `@`-picker hid every other
+ * thread even though the sidebar still listed them from the dirs.
+ */
+function ensureCatalogMap(projectId: string): Map<string, CatalogEntry> {
+  if (!existsSync(catalogPath(projectId))) return rebuildCatalogFromDisk(projectId)
+  const entries = readCatalog(projectId)
+  if (catalogMissingIndexedThreads(projectId, entries)) {
+    return rebuildCatalogFromDisk(projectId)
+  }
   return entries
 }
 
@@ -765,7 +837,9 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
     }
     for (const threadId of listThreadIds(projectId)) {
       if (!keepIds.has(threadId)) {
-        rmSync(threadDir(projectId, threadId), { recursive: true, force: true })
+        const dir = threadDir(projectId, threadId)
+        rmSync(dir, { recursive: true, force: true })
+        invalidateKnownMessageIds(dir)
       }
     }
     writeCatalog(projectId, entries)
@@ -787,14 +861,17 @@ export function createThread(projectId: string, thread: Thread): Promise<void> {
 }
 
 /**
- * Persist one finalized message: its OKF/blob files, then its spine line. The
- * spine line replaces any existing line with the same id in place (idempotent
- * re-finalize / edit without reordering history) and is otherwise appended;
- * writing files before the spine keeps a crash from leaving the spine pointing
- * at a missing file. `meta.json` is left to `updateMeta` — the renderer bumps
- * `updatedAt` through it around the same time. The rewrite works on verbatim
- * spine entries so non-message lines (hook_run and unknown future types) keep
- * their exact bytes and positions.
+ * Persist one finalized message: its OKF/blob files, then its spine line. A
+ * brand-new message id (the common case) is a true append — no read, parse,
+ * or re-serialization of the rest of the spine, using the {@link
+ * knownMessageIdsFor} cache to tell new ids from re-finalized ones without
+ * paying an O(n) parse per call (#1222). A re-finalized/edited message id
+ * (rare) still replaces its existing line in place, working on verbatim spine
+ * entries so non-message lines (hook_run and unknown future types) keep their
+ * exact bytes and positions. Writing files before the spine keeps a crash
+ * from leaving the spine pointing at a missing file. `meta.json` is left to
+ * `updateMeta` — the renderer bumps `updatedAt` through it around the same
+ * time.
  */
 export function appendMessage(
   projectId: string,
@@ -806,8 +883,14 @@ export function appendMessage(
     mkdirSync(dir, { recursive: true })
     const { line, files } = explodeMessage(message, sha256)
     for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
-    const entries = parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '')
     const raw = serializeSpineLine(line)
+    const knownIds = knownMessageIdsFor(dir)
+    if (!knownIds.has(message.id)) {
+      appendFileSync(join(dir, EVENTS_FILE), `${raw}\n`)
+      knownIds.add(message.id)
+      return
+    }
+    const entries = parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '')
     const existingIndex = entries.findIndex(
       (entry) => entry.line?.type === 'message' && entry.line.id === message.id,
     )
@@ -920,7 +1003,9 @@ export function updateMetaOrThrow(
 
 export function deleteProjectThread(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
-    rmSync(threadDir(projectId, threadId), { recursive: true, force: true })
+    const dir = threadDir(projectId, threadId)
+    rmSync(dir, { recursive: true, force: true })
+    invalidateKnownMessageIds(dir)
     const entries = readCatalog(projectId)
     if (entries.delete(threadId)) writeCatalog(projectId, entries)
     // Drop the thread's reverse-index entries too, so a deleted thread can't
@@ -950,6 +1035,55 @@ function agentHistoryPath(projectId: string, threadId: string): string {
  */
 export function threadBlobsDir(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), 'blobs')
+}
+
+/** Ceiling on a thread-directory snapshot, so an export cannot exhaust memory. */
+export const MAX_THREAD_DIRECTORY_BYTES = 512 * 1024 * 1024
+
+export interface ThreadDirectoryFile {
+  /** Path relative to the thread directory, POSIX-separated. */
+  path: string
+  data: Uint8Array
+  modifiedAt: Date
+}
+
+/**
+ * Snapshot every file in a thread's directory — meta, spine, OKF prose, blobs,
+ * plans and nested subagents, exactly as they sit on disk. Backs the "export
+ * the whole thread folder" download, which is a superset of the portable JSONL
+ * export. Runs on the project's write queue so the snapshot cannot catch a save
+ * mid-flight, and refuses anything over `MAX_THREAD_DIRECTORY_BYTES` rather
+ * than pulling an unbounded amount of blob data into memory.
+ */
+export function readThreadDirectory(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadDirectoryFile[]> {
+  return runSerialized(queueKey(projectId), async () => {
+    const dir = threadDir(projectId, threadId)
+    if (!existsSync(join(dir, META_FILE))) {
+      throw new Error(`No stored thread directory for ${threadId}`)
+    }
+    const dirents = await readdir(dir, { withFileTypes: true, recursive: true })
+    // `isFile()` reflects lstat, so a symlink is skipped rather than followed
+    // out of the store.
+    const paths = dirents
+      .filter((dirent) => dirent.isFile())
+      .map((dirent) => relative(dir, join(dirent.parentPath, dirent.name)).split(sep).join('/'))
+      .sort()
+    const files: ThreadDirectoryFile[] = []
+    let total = 0
+    for (const path of paths) {
+      const full = join(dir, path)
+      const stats = await stat(full)
+      total += stats.size
+      if (total > MAX_THREAD_DIRECTORY_BYTES) {
+        throw new Error('This thread is too large to export as an archive')
+      }
+      files.push({ path, data: await readFile(full), modifiedAt: stats.mtime })
+    }
+    return files
+  })
 }
 
 /** Load provider history for a thread. Missing/corrupt/future-version → `[]`. */
@@ -998,8 +1132,8 @@ export function agentHistoryExists(projectId: string, threadId: string): Promise
 
 /**
  * Project store ids that own a thread directory for `threadId` (have
- * `meta.json`). Resolves a bare thread id to the project that holds it when the
- * caller has no project context.
+ * `meta.json`). Used by the #993 legacy `llm-history:*` migration to resolve
+ * exactly one owner before writing a sidecar.
  */
 export function findThreadOwners(threadId: string): Promise<string[]> {
   return runSerialized('thread-store:owners', () => {
@@ -1019,10 +1153,8 @@ export function findThreadOwners(threadId: string): Promise<string[]> {
  * so the `@`-thread picker can hand the agent an absolute reference.
  */
 export function loadProjectCatalog(projectId: string, query?: string): Promise<ThreadCatalogHit[]> {
-  return runSerialized(queueKey(projectId), async () => {
-    const map = existsSync(catalogPath(projectId))
-      ? readCatalog(projectId)
-      : await rebuildCatalog(projectId)
+  return runSerialized(queueKey(projectId), () => {
+    const map = ensureCatalogMap(projectId)
     const entries = [...map.values()].sort((a, b) => b.updatedAt - a.updatedAt)
     const terms = (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean)
     const matched =

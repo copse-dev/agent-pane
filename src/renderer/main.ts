@@ -87,6 +87,7 @@ import { startAgentController } from './controller/agent.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
   addProjectFromPath,
@@ -225,6 +226,7 @@ async function boot(): Promise<void> {
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
   const savedRightPanelPosition = startupSettings.rightPanelPosition
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
+  const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
   // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
   // the document root before the layout paints — panes read both from the store
@@ -277,6 +279,7 @@ async function boot(): Promise<void> {
       : 'auto',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
+    developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
   })
   // Reflect the "open links in built-in browser" choice onto the document root so
   // CSS can flag external links with an icon (and re-sync when Settings saves).
@@ -295,6 +298,9 @@ async function boot(): Promise<void> {
     attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
+    // Outside Cursor cloud agents for the open project — first tick after one
+    // interval, never on editor open.
+    startExternalCursorAgentSync(store, api)
   }
   attachProjectThreadCache(store)
 
@@ -334,6 +340,15 @@ async function boot(): Promise<void> {
     openRightPanelWithWorkspace(store, api, 'browser')
   })
 
+  // View ▸ Focus Address Bar (Cmd/Ctrl+L). Opens the Browser pane first so the
+  // shortcut works from anywhere, then hands off to browser-pane.ts, which owns
+  // the tabs and therefore knows which address bar is the active one.
+  api.menu.onFocusBrowserUrlBar(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'browser')
+    store.emit('browser_url_bar_focus_requested')
+  })
+
   // Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) opens the shortcut cheat sheet. Unlike
   // the panel items it needs no workspace, so it works from the welcome screen too.
   api.menu.onKeyboardShortcuts(() => {
@@ -370,8 +385,12 @@ async function boot(): Promise<void> {
   const [firstProject] = projects
   if (firstProject) {
     const active = projects.find((p) => p.id === activeProjectId) ?? firstProject
-    await restoreProject(store, api, active.id)
+    // Mount the panel immediately rather than waiting for restoreProject() to
+    // finish — a large project's thread load (or a slow SSH connect) can take a
+    // while, and every mounted pane already renders its own empty/loading state
+    // and updates reactively once workspace_changed/threads_changed fire below.
     ensureLayout()
+    await restoreProject(store, api, active.id)
   } else {
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
     const unsubWelcome = store.on('workspace_changed', () => {

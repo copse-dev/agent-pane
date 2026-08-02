@@ -1,14 +1,15 @@
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
-import { createWorktreeBackup } from './github/git-service.ts'
+import { copseWorktreesDir } from './storage/copse-paths.ts'
+import { createWorktreeBackup, getDefaultBranch } from './github/git-service.ts'
 import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
-import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { stopExecutionRootIndexing } from './search/workspace-indexing.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 const DISABLE_GIT_HOOKS = ['-c', 'core.hooksPath=/dev/null']
@@ -154,13 +155,18 @@ export function parseWorktreePorcelain(raw: string): WorktreeRecord[] {
   return records
 }
 
+/** Drop a retired/failed worktree's internal-root authority and its index/watcher (#1400). */
+function releaseWorktreeRoot(executionRoot: string): void {
+  unregisterInternalWorkspaceRoot(executionRoot)
+  stopExecutionRootIndexing(executionRoot)
+}
+
 function assertOwnerId(label: string, value: string): void {
   if (!OWNER_ID.test(value)) throw new Error(`Invalid ${label}`)
 }
 
 function worktreesRoot(): string {
-  const override = process.env['COPSE_WORKTREES_DIR']?.trim()
-  const configured = resolve(nonEmptyStringOr(override, join(homedir(), '.copse', 'worktrees')))
+  const configured = resolve(copseWorktreesDir())
   const missing: string[] = []
   let existing = configured
   for (;;) {
@@ -264,10 +270,22 @@ async function listRecords(projectRoot: string): Promise<WorktreeRecord[]> {
   return parseWorktreePorcelain(result.stdout)
 }
 
+async function refExists(projectRoot: string, ref: string): Promise<boolean> {
+  return (await git(projectRoot, ['show-ref', '--verify', '--quiet', ref])).code === 0
+}
+
 async function branchExists(projectRoot: string, branch: string): Promise<boolean> {
-  return (
-    (await git(projectRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0
-  )
+  return refExists(projectRoot, `refs/heads/${branch}`)
+}
+
+/**
+ * Best-effort `git fetch origin <branch>` for a repository's default branch, so
+ * a worktree based on it starts from the latest remote tip rather than whatever
+ * the local branch happened to be pointed at. Never throws: no network / no
+ * `origin` remote just means the next resolution step falls back to the local ref.
+ */
+async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<void> {
+  await git(projectRoot, ['fetch', '--quiet', 'origin', branch])
 }
 
 async function chooseBranch(
@@ -342,16 +360,31 @@ export async function allocateThreadWorktree(
     if (existing) throw new Error(`Thread worktree is already registered: ${target}`)
 
     await assertBranchName(projectRoot, input.baseBranch, 'Base branch')
+    const defaultBranch = await getDefaultBranch(projectRoot)
+    const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
+    if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
+    const remoteRef = `refs/remotes/origin/${input.baseBranch}`
+    const useRemoteRef = isDefaultBranch && (await refExists(projectRoot, remoteRef))
+    const baseRef = useRemoteRef ? remoteRef : branchRef(input.baseBranch)
     const baseCommit = await requireGitValue(
       projectRoot,
-      ['rev-parse', '--verify', `${branchRef(input.baseBranch)}^{commit}`],
+      ['rev-parse', '--verify', `${baseRef}^{commit}`],
       `Cannot resolve base branch ${input.baseBranch}`,
     )
     const dirty = await repositoryIsDirty(projectRoot)
+    // A snapshot carries the user's uncommitted edits into the new worktree so an
+    // isolated thread continues from exactly what they're looking at. It never
+    // touches the project root either way, so when the snapshot itself can't be
+    // created, falling back to a clean worktree from `baseCommit` is safe — it
+    // just means the new worktree won't include those uncommitted edits.
     const snapshotRef = dirty
       ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot)
       : null
-    if (dirty && !snapshotRef) throw new Error('Cannot snapshot dirty project before allocation')
+    if (dirty && !snapshotRef) {
+      console.warn(
+        `[worktree] Could not snapshot dirty project for thread ${input.threadId}; allocating a clean worktree instead`,
+      )
+    }
 
     const branch = await chooseBranch(projectRoot, input.prompt, input.threadId)
     await mkdir(dirname(target), { recursive: true })
@@ -370,7 +403,7 @@ export async function allocateThreadWorktree(
       baseBranch: input.baseBranch,
       baseCommit,
       createdAt: Date.now(),
-      seededFromDirtyProject: dirty,
+      seededFromDirtyProject: snapshotRef !== null,
     }
 
     try {
@@ -388,7 +421,7 @@ export async function allocateThreadWorktree(
         })
       }
       await git(projectRoot, ['worktree', 'remove', canonicalPath]).catch(() => undefined)
-      unregisterInternalWorkspaceRoot(executionRoot)
+      releaseWorktreeRoot(executionRoot)
       throw error
     }
   })
@@ -472,7 +505,7 @@ export async function validateThreadWorktree(
   const registration = await registerInternalWorkspaceRoot(canonicalPath, executionRoot)
   const projectCommonGitDir = await commonGitDir(projectRoot)
   if (registration.commonGitDir !== projectCommonGitDir) {
-    unregisterInternalWorkspaceRoot(executionRoot)
+    releaseWorktreeRoot(executionRoot)
     throw new Error('Thread worktree belongs to a different repository')
   }
   return {
@@ -536,7 +569,7 @@ export async function retireThreadWorktree(
 
   const remove = await git(input.projectRoot, ['worktree', 'remove', validated.path])
   if (remove.code !== 0) throw commandFailure('Cannot retire thread worktree', remove)
-  unregisterInternalWorkspaceRoot(validated.root)
+  releaseWorktreeRoot(validated.root)
   return { status: 'removed', branch: validated.branch }
 }
 
@@ -629,7 +662,7 @@ export async function pruneSafeOrphans(
         })
         continue
       }
-      unregisterInternalWorkspaceRoot(resolve(record.path, location.projectRelativePath))
+      releaseWorktreeRoot(resolve(record.path, location.projectRelativePath))
       report.pruned.push({ threadId, path: record.path, branch: record.branch })
     }
     return report

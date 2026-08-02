@@ -31,7 +31,9 @@ function phaseLabel(phase: IndexComponentStatus['phase']): string {
 
 function describe(status: WorkspaceIndexStatus): string {
   const parts = (['fileIndex', 'semantic'] as const).map((key) => {
-    return `${componentLabel(key)}: ${phaseLabel(status[key].phase)}`
+    const component = status[key]
+    const reason = component.reason ? ` — ${component.reason}` : ''
+    return `${componentLabel(key)}: ${phaseLabel(component.phase)}${reason}`
   })
   return `Workspace index — ${parts.join(', ')}`
 }
@@ -52,11 +54,23 @@ function oldestBuildStart(status: WorkspaceIndexStatus): number | null {
   return starts.length > 0 ? Math.min(...starts) : null
 }
 
+function scaleGuardChip(status: WorkspaceIndexStatus): {
+  text: string
+  state: 'limited' | 'skipped'
+} | null {
+  const phase = status.semantic.phase
+  if (phase === 'skipped') return { text: 'Semantic index skipped', state: 'skipped' }
+  if (phase === 'limited') return { text: 'Semantic index limited', state: 'limited' }
+  return null
+}
+
 /**
  * Footer chip reporting workspace indexing: hidden when idle/ready, shows
  * "Indexing… <elapsed>" while a build runs (semantic cold builds take minutes,
- * #517) and "Indexing failed" when the last build errored. Lives in the
- * footer usage group next to the context wheel and queue indicator.
+ * #517), "Indexing failed" when the last build errored, and a persistent
+ * limited/skipped chip when the #795 scale guard refuses unbounded semantic
+ * work. Lives in the footer usage group next to the context wheel and queue
+ * indicator.
  */
 export function mountFooterIndexStatus(host: HTMLElement, api: ApiClient): { destroy: () => void } {
   const chip = el('span', { class: 'footer-indexing', hidden: '', role: 'status' })
@@ -114,6 +128,16 @@ export function mountFooterIndexStatus(host: HTMLElement, api: ApiClient): { des
       chip.title = describe(status)
       return
     }
+
+    const guarded = scaleGuardChip(status)
+    if (guarded) {
+      chip.hidden = false
+      chip.textContent = guarded.text
+      chip.dataset['state'] = guarded.state
+      chip.title = describe(status)
+      return
+    }
+
     hide()
   }
 

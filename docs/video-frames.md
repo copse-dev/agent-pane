@@ -34,6 +34,15 @@ turn asking why it cannot.
 
 Deleting the thread deletes its stored videos with it.
 
+### Over ACP
+
+`video_frames` is offered to external ACP agents through the
+[native-tool bridge](acp-agents.md), so an agent driving your workspace reads a
+recording the same way the built-in loop does — one decoder, one sampling
+policy, one set of budgets. The bridge returns the frames as MCP image content
+rather than only the manifest text; without that the agent would receive a note
+saying "frames follow" with nothing after it.
+
 ### Playing it back
 
 The chip on a sent message is clickable: it opens the recording in a preview

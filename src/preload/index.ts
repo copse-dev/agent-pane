@@ -28,6 +28,37 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:open-tab', listener)
       }
     },
+    onPackTabRequest: (
+      handler: (
+        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+      ) => Promise<{ tabId: string; webContentsId: number }>,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+      ): void => {
+        void handler(request).then(
+          (ready) => {
+            ipcRenderer.send('packs:browser-tab-ready', {
+              requestId: request.requestId,
+              ok: true,
+              ...ready,
+            })
+          },
+          (error: unknown) => {
+            ipcRenderer.send('packs:browser-tab-ready', {
+              requestId: request.requestId,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          },
+        )
+      }
+      ipcRenderer.on('packs:browser-tab-request', listener)
+      return (): void => {
+        ipcRenderer.off('packs:browser-tab-request', listener)
+      }
+    },
   },
   security: {
     getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:getGuardedYolo', threadId),
@@ -444,6 +475,8 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
+    exportArchive: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:exportArchive', projectId, threadId),
     fork: (
       projectId: string,
       sourceThreadId: string,
@@ -460,6 +493,13 @@ contextBridge.exposeInMainWorld('api', {
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
+  },
+  archive: {
+    attach: (
+      projectId: string,
+      threadId: string,
+      archive: { name: string; bytes?: Uint8Array; path?: string },
+    ) => ipcRenderer.invoke('archive:attach', projectId, threadId, archive),
   },
   video: {
     attach: (
@@ -552,6 +592,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('menu:showBrowser', listener)
       }
     },
+    onFocusBrowserUrlBar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:focusBrowserUrlBar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:focusBrowserUrlBar', listener)
+      }
+    },
     onKeyboardShortcuts: (handler: () => void) => {
       const listener = (): void => {
         handler()
@@ -595,6 +644,9 @@ contextBridge.exposeInMainWorld('api', {
     artifactImageDataUrl: (agentId: string, path: string) =>
       ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
     models: () => ipcRenderer.invoke('remoteAgent:models'),
+    /** Import outside Cursor cloud agents as local thread stubs for a project. */
+    discoverExternal: (projectId?: string) =>
+      ipcRenderer.invoke('remoteAgent:discoverExternal', projectId),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
@@ -649,6 +701,10 @@ contextBridge.exposeInMainWorld('api', {
     setClaudePlanMonthlyFee: (fee: number | null) =>
       ipcRenderer.invoke('usage:setClaudePlanMonthlyFee', fee),
   },
+  decisions: {
+    list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
+    export: (projectId?: string) => ipcRenderer.invoke('decisions:export', projectId),
+  },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
     resolveFileReferences: (candidates: string[]) =>
@@ -702,10 +758,12 @@ contextBridge.exposeInMainWorld('api', {
     attachmentData: (id: string, attachmentId: string) =>
       ipcRenderer.invoke('roadmap:attachmentData', id, attachmentId),
     setStatus: (id: string, status: string) => ipcRenderer.invoke('roadmap:setStatus', id, status),
+    setCategory: (id: string, category: string) =>
+      ipcRenderer.invoke('roadmap:setCategory', id, category),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
     export: (format: string) => ipcRenderer.invoke('roadmap:export', format),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
-    openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
+    openIssues: (page: number) => ipcRenderer.invoke('roadmap:openIssues', page),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
     matchOpenIssues: (issues: { number: number; title: string; body: string }[]) =>
@@ -747,6 +805,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('packs:setEnabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
       ipcRenderer.invoke('packs:setSetting', id, key, value),
+    addSource: () => ipcRenderer.invoke('packs:addSource'),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
@@ -897,8 +956,14 @@ if (process.env['COPSE_E2E'] === '1') {
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
+    requestAcpPackageUpgradeApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageUpgradeApproval')
+    },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
+    },
+    setSemanticIndexScaleGuard(phase: 'limited' | 'skipped', reason: string) {
+      return ipcRenderer.invoke('test:setSemanticIndexScaleGuard', phase, reason)
     },
   })
 }

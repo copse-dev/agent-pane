@@ -4,11 +4,15 @@ import type { MockScriptStep } from '@copse/llm/mock-script'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 
 const SCRIPT = [
   {
     when: 'run a short shell command',
-    tool: { name: 'run_shell', args: { command: 'sleep 8' } },
+    // Long enough that the running-state assertions (geometry probe, settle
+    // pause, screenshot) all land while the card is still `running`, including
+    // the approval round-trip on platforms without an OS sandbox.
+    tool: { name: 'run_shell', args: { command: 'sleep 15' } },
   },
   {
     when: 'run a short shell command',
@@ -53,13 +57,22 @@ describe('tool activity icon', () => {
   })
 
   it('shows the spiral only while running without shifting the tool label', async function () {
-    this.timeout(60_000)
+    // Runs a real `sleep 15` through run_shell and waits for the tool card to
+    // settle. 90s matches the convention used by other real-shell/tool-card
+    // specs (terminal-display, double-submit; see wdio.ci.conf.ts).
+    this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await setComposerValue('Run a short shell command')
     await $('.submit-btn').click()
     const card = $('.tool-card')
     await card.waitForExist({ timeout: 15_000 })
     await expect(card).toHaveAttribute('data-status', 'running')
+
+    // Without an OS sandbox (Linux CI) the agent's shell command prompts before
+    // it runs, so the command never starts and the card never leaves `running`
+    // — which is exactly how this spec failed on every CI shard-8 run. Answer
+    // the prompt; macOS seatbelt auto-runs the command and shows no dialog.
+    await approveShellCommandIfPrompted()
 
     const runningGeometry = await browser.execute(() => {
       const runningCard = document.querySelector('.tool-card[data-status="running"]')
@@ -77,7 +90,7 @@ describe('tool activity icon', () => {
       }
     })
     expect(runningGeometry.runningStatus).toBe('running')
-    expect(runningGeometry.runningText).toBe('sleep 8')
+    expect(runningGeometry.runningText).toBe('sleep 15')
     expect(runningGeometry.runningHasIcon).toBe(true)
     expect(runningGeometry.animationName).toBe(
       runningGeometry.reducedMotion ? 'none' : 'reasoning-activity-draw',
@@ -86,7 +99,7 @@ describe('tool activity icon', () => {
     await browser.pause(900)
     await saveAppScreenshot('tool-activity-icon-alignment.png')
 
-    await expect(card).toHaveAttribute('data-status', 'done', { wait: 20_000 })
+    await expect(card).toHaveAttribute('data-status', 'done', { wait: 40_000 })
     const settledGeometry = await browser.execute(() => {
       const settledCard = document.querySelector('.tool-card[data-status="done"]')
       const settledName = settledCard?.querySelector('.tool-name')

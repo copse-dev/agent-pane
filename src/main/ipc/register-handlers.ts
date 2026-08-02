@@ -19,6 +19,7 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
+import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
 import {
   assertFsWriteContent,
   isIndexQueryPattern,
@@ -41,6 +42,7 @@ import { resolveFileReferences } from '../services/search/file-reference-resolve
 import {
   getWorkspaceIndexStatus,
   onWorkspaceIndexStatusChanged,
+  setSemanticIndexScaleGuarded,
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
@@ -79,6 +81,11 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import { buildThreadArchive } from '../services/thread-archive.ts'
+import {
+  describeWorkspaceArchive,
+  storeArchiveAttachment,
+} from '../services/archive/archive-attachment-store.ts'
 import {
   describeWorkspaceVideo,
   storeVideoAttachment,
@@ -109,6 +116,12 @@ import {
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
+import {
+  setPackToolRuntimeController,
+  ToolingPackToolRuntimeController,
+} from '../services/packs/pack-tool-controller.ts'
+import { createPackBrowserPanelService } from '../services/packs/pack-browser-panel.ts'
+import { setPackBrowserService } from '../services/packs/pack-browser-service.ts'
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -138,6 +151,7 @@ import { getAutomationService } from '../services/automations/automation-service
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
+import { ROADMAP_CATEGORIES, isRoadmapCategory } from '@shared/roadmap/complexity.ts'
 import {
   addKnowledgeNote,
   deleteKnowledgeNote,
@@ -175,6 +189,7 @@ import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
+import { stampRoadmapCategory } from '../services/roadmap-category.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { buildRoadmapExport } from '../services/roadmap-export.ts'
 import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
@@ -220,6 +235,8 @@ import {
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+import { buildAppMenu } from '../windows/app-menu.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
@@ -245,6 +262,7 @@ import {
   invalidateCursorCloudModelsCache,
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
+import { discoverExternalCursorAgents } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 
 import {
@@ -286,6 +304,12 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
 }
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const packService = getPackService()
+  setPackBrowserService(createPackBrowserPanelService(win))
+  setPackToolRuntimeController(new ToolingPackToolRuntimeController(registry))
+  void packService.refreshPackSources().catch((error: unknown) => {
+    console.warn('[packs] selected-pack startup reconciliation failed:', error)
+  })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
   // getPackService() has already layered the user's explicit choices on top, so
@@ -377,7 +401,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const context = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, context.root)
     await gatewayWriteFile(abs, content, context.root)
-    if (context.checkoutMode === 'shared') scheduleIndexRebuild()
+    scheduleIndexRebuild(context.root)
   })
 
   ipcMain.handle('fs:readdir', async (event, ...rawArgs) => {
@@ -409,8 +433,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     const query = typeof pattern === 'string' ? pattern : ''
     if (query && !isIndexQueryPattern(query)) return []
-    await whenFileIndexReady()
-    const idx = getIndex()
+    // Renderer-global feature (command palette / `@` mention picker), scoped
+    // to the renderer-selected workspace root, not any one thread's execution root.
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    await whenFileIndexReady(root)
+    const idx = getIndex(root)
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
@@ -427,7 +455,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('index:resolveFileReferences', async (event, rawCandidates: unknown) => {
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
-    await whenFileIndexReady()
+    const root = getWorkspaceRoot()
+    if (root) await whenFileIndexReady(root)
     return await resolveFileReferences(candidates)
   })
 
@@ -484,6 +513,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
+  const zRoadmapCategory = z.union([z.literal(''), z.enum(ROADMAP_CATEGORIES)])
   const zRoadmapExportFormat = z.enum(ROADMAP_EXPORT_FORMATS)
   // Attachments arrive as base64 data URLs (what the pane's paste/drop/picker
   // produce); ~14 MB of base64 ≈ 10 MB decoded per attachment.
@@ -556,9 +586,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         status: 'ready',
         fields: roadmapFields({}, notes, issue),
       })
-      // Saving is immediate; the complexity classification (a model round-trip)
-      // stamps the note in the background and the pane refreshes on the event.
+      // Saving is immediate; the complexity and category classification (model
+      // round-trips) stamp the note in the background and the pane refreshes on
+      // the events.
       void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
+      void stampRoadmapCategory(note.id, prompt, notifyRoadmapChanged)
       if (attachments.length === 0) return note
       // Attachment files are keyed by the note id, so they land in a second
       // step once addKnowledgeNote has minted it. If that metadata write fails
@@ -610,6 +642,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       // stamp is dropped now (it graded the old prompt) and the fresh one lands
       // in the background so the save itself is immediate.
       if (promptChanged) delete fields['complexity']
+      if (promptChanged && !existing.fields['categoryManual']) {
+        delete fields['category']
+      }
       // A stored fit verdict judges a specific prompt/issue pair; either side
       // changing invalidates it (and its reasoning).
       if (promptChanged || issue !== (existing.fields['issue'] ?? '')) {
@@ -655,6 +690,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       if (updated) deleteKnowledgeAttachmentFiles(id, removed)
       if (updated && promptChanged) {
         void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
+        void stampRoadmapCategory(id, prompt, notifyRoadmapChanged)
       }
       return updated
     },
@@ -687,6 +723,37 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return setKnowledgeNoteStatus(id, status)
   })
 
+  // User-chosen category override. A category word pins the `category` field
+  // and marks it `categoryManual`, so a later prompt-change re-classification
+  // does not overwrite the user's pick (see stampRoadmapCategory).
+  //
+  // The empty string is the editor's "Auto": it unpins by clearing both fields
+  // and re-runs the classifier in the background against the item's current
+  // prompt. Without that round-trip "Auto" would only ever mean "no category
+  // until I next edit the prompt", since the update path stamps on a prompt
+  // change alone. The schema admits '' or a category word and nothing else, so
+  // the two branches below are total.
+  ipcMain.handle('roadmap:setCategory', (event, rawId: unknown, rawCategory: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const input = parseIpcArgs(zRoadmapCategory.optional(), [rawCategory]) ?? ''
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return null
+    const fields = { ...existing.fields }
+    if (isRoadmapCategory(input)) {
+      fields['category'] = input
+      fields['categoryManual'] = '1'
+    } else {
+      delete fields['category']
+      delete fields['categoryManual']
+    }
+    const updated = updateKnowledgeNote(id, { fields })
+    if (updated && !isRoadmapCategory(input)) {
+      void stampRoadmapCategory(id, updated.body, notifyRoadmapChanged)
+    }
+    return updated
+  })
+
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
   // always follow the workspace's *current* origin remote.
   ipcMain.handle('roadmap:issueUrl', async (event, rawRef: unknown) => {
@@ -698,8 +765,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Import-from-issues flow: list the workspace's open issues, then turn the
   // selected ones into roadmap items (prompt drafted by the small-tasks model,
   // falling back to a template — see roadmap-issue-import.ts).
-  ipcMain.handle('roadmap:openIssues', async (event) => {
+  const roadmapIssueSchema = z.object({
+    number: z.number().int().positive(),
+    title: z.string().max(512),
+    body: z.string().max(20_000),
+  })
+  const roadmapIssuePageSize = 20
+
+  ipcMain.handle('roadmap:openIssues', async (event, rawPage: unknown) => {
     assertMainFrameSender(event, win)
+    const page = parseIpcArgs(z.number().int().positive(), [rawPage])
     // The backend impls return [] for "gh missing", "not authenticated", and
     // "no origin remote" alike — fine for the PR panel, which surfaces status
     // separately, but here an empty picker must mean "no open issues". Turn
@@ -716,26 +791,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new Error('No GitHub origin remote detected in this workspace.')
     }
     // Return the slug too: an empty result names the repo it actually queried,
-    // which surfaces stale/fork origins immediately. Limit 30: even with
-    // per-issue bodies bounded at the backend, the gh CLI path must stay
-    // comfortably under runCommand's 100 KiB stdout cap.
-    return { slug, issues: await backend.listWorkspaceOpenIssues(30) }
+    // which surfaces stale/fork origins immediately. Pagination keeps every
+    // GitHub/IPC/model operation bounded without imposing a repository-wide
+    // issue ceiling on the picker.
+    return {
+      slug,
+      ...(await backend.listWorkspaceOpenIssues(page, roadmapIssuePageSize)),
+    }
   })
 
-  const zRoadmapImportIssues = z
-    .array(
-      z.object({
-        number: z.number().int().positive(),
-        title: z.string().max(512),
-        body: z.string().max(20_000),
-      }),
-    )
-    .max(20)
+  const zRoadmapImportIssues = z.array(roadmapIssueSchema).max(roadmapIssuePageSize)
 
   ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
-    return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
+    return importIssuesAsRoadmapItems(issues, undefined, undefined, undefined, notifyRoadmapChanged)
   })
 
   // Semantic coverage for the import picker: which open issues already have a
@@ -874,6 +944,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
+    }
+    // Keep the native diagnostics menu in sync with Developer mode. The
+    // Ctrl+Shift+I shortcut is owned independently by its first-party pack.
+    if (k === DEVELOPER_MODE_SETTING) {
+      const win = getMainWindow()
+      const enabled = typeof value === 'boolean' && value
+      if (win) buildAppMenu(win, enabled)
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
@@ -1064,6 +1141,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await setClaudePlanMonthlyFeeUsd(fee)
     return getPlanWorthItPayload()
   })
+  // Durable permission-decision audit log (#656). `projectId` is optional — an
+  // empty/absent value falls back to the active project.
+  ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) return []
+    return readDecisionLog(resolved)
+  })
+  ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
+    const resolved = projectId ?? getActiveProjectId()
+    if (!resolved) throw new Error('No project to export decisions for.')
+    return exportDecisionLog(resolved)
+  })
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
@@ -1179,6 +1272,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return forkThreadHistory(pid, sourceId, targetId, messageId)
     },
   )
+  // The whole thread directory, zipped — the archive counterpart to the
+  // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
+  // download and saves it, exactly as it does for the `.jsonl`.
+  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return buildThreadArchive(pid, tid)
+  })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, q] = parseIpcArgs(z.tuple([zProjectId, z.string().max(512).optional()]), [
@@ -1217,6 +1318,34 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         mimeType: payload.mimeType,
         bytes: payload.bytes,
       })
+    },
+  )
+
+  // An archive attached in the composer. Stored, never inlined — the renderer
+  // gets back a path to hand the agent, which unpacks it with `read_archive`.
+  ipcMain.handle(
+    'archive:attach',
+    async (event, projectId: unknown, threadId: unknown, archive: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            name: zNonEmptyString.max(255),
+            bytes: z.instanceof(Uint8Array).optional(),
+            path: zPathString.optional(),
+          }),
+        ]),
+        [projectId, threadId, archive],
+      )
+      if (payload.path !== undefined) {
+        // Already on disk in the workspace: reference it in place rather than
+        // storing a second copy.
+        return describeWorkspaceArchive(payload.path, payload.name)
+      }
+      if (!payload.bytes) throw new IpcValidationError('An archive needs either bytes or a path')
+      return storeArchiveAttachment(pid, tid, { name: payload.name, bytes: payload.bytes })
     },
   )
 
@@ -1275,8 +1404,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Settings pack list ("about:addons") calls these to enumerate every
   // registered pack, toggle enablement atomically (P1 contract), and read /
   // write pack-scoped settings values under the manifest's declared schema.
-  ipcMain.handle('packs:list', (event) => {
+  ipcMain.handle('packs:list', async (event) => {
     assertMainFrameSender(event, win)
+    await getPackService().refreshPackSources()
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle('packs:addSource', async (event) => {
+    assertMainFrameSender(event, win)
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Add pack',
+      properties: ['openDirectory'],
+    })
+    const sourcePath = result.filePaths[0]
+    if (!result.canceled && sourcePath) {
+      await getPackService().addPackSource(sourcePath)
+    }
     return { packs: getPackService().list() }
   })
   ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
@@ -1594,6 +1736,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return listCursorCloudModels()
   })
+  /**
+   * Import Cursor cloud agents launched outside Copse as local thread stubs.
+   * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
+   * open project. Caller should reload/merge project threads after imports.
+   */
+  ipcMain.handle('remoteAgent:discoverExternal', (event, projectId: unknown) => {
+    assertMainFrameSender(event, win)
+    if (projectId === undefined || projectId === null) {
+      return discoverExternalCursorAgents()
+    }
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return discoverExternalCursorAgents({ projectId: id })
+  })
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
@@ -1770,7 +1925,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([codex])
+      return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
+    })
+    ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
+      assertMainFrameSender(event, win)
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      return requestAcpPackageInstallApproval([
+        {
+          agent: codex,
+          action: 'upgrade',
+          fromVersion: '1.1.0',
+          toVersion: '1.1.7',
+        },
+      ])
+    })
+    ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
+      assertMainFrameSender(event, win)
+      const [parsedPhase, parsedReason] = parseIpcArgs(
+        z.tuple([z.enum(['limited', 'skipped']), z.string().min(1).max(500)]),
+        [phase, reason],
+      )
+      setSemanticIndexScaleGuarded(parsedPhase, parsedReason)
     })
   }
 }

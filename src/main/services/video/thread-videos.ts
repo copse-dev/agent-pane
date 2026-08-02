@@ -1,5 +1,5 @@
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
-import { formatByteSize } from '@shared/video/video-media.ts'
+import { formatByteSize } from '@shared/file-bytes.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { getThreadMeta } from '../thread-store.ts'
 

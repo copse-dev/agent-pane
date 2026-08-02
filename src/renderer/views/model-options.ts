@@ -33,6 +33,7 @@ export interface ModelOptionsApi {
   openRouter: Pick<ApiClient['openRouter'], 'models'>
   remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
   lmStudio: Pick<ApiClient['lmStudio'], 'models'>
+  packs?: Pick<ApiClient['packs'], 'list'>
 }
 import {
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
@@ -53,13 +54,14 @@ import {
   parseAcpModel,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import { PACK_MODEL_PREFIX, packModelValue, parsePackModelSelection } from '@shared/pack-model.ts'
 import {
   BEST_VALUE_CHAT_MODEL,
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
 
-const ACP_GROUP = 'ACP agents'
+const ACP_GROUP = 'Agents on this device'
 
 const OPENROUTER_GROUP = 'OpenRouter'
 
@@ -75,6 +77,8 @@ export interface ModelOption {
 export function modelDisplayLabel(model: string): string {
   if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
+  const packModel = parsePackModelSelection(model)
+  if (packModel) return packModel.routeId
   if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
   if (parseRemoteAgentModelSelection(model)) {
@@ -84,6 +88,38 @@ export function modelDisplayLabel(model: string): string {
   const acpId = parseAcpModel(model)
   if (acpId) return acpId
   return cloudModelDisplayLabel(model)
+}
+
+async function packModelOptions(
+  api: ModelOptionsApi,
+  includeAgentModels: boolean,
+  current: string,
+): Promise<ModelOption[]> {
+  if (!includeAgentModels) return []
+  try {
+    const result = await api.packs?.list()
+    if (!result) return []
+    const currentSelection = parsePackModelSelection(current)
+    return result.packs.flatMap((pack) =>
+      pack.contributions.modelRoutes.flatMap((route) => {
+        const selectedWhileDisabled =
+          !pack.enabled &&
+          currentSelection?.packId === pack.id &&
+          currentSelection.routeId === route.id
+        if (!pack.enabled && !selectedWhileDisabled) return []
+        return [
+          {
+            value: packModelValue(pack.id, route.id),
+            label: `${route.label}${selectedWhileDisabled ? ' (pack disabled)' : ''}`,
+            group: route.group ?? `${pack.name} — personal pack`,
+            ...(selectedWhileDisabled ? { disabled: true } : {}),
+          },
+        ]
+      }),
+    )
+  } catch {
+    return []
+  }
 }
 
 // External ACP agents the user has configured. Only enabled agents are offered;
@@ -283,10 +319,10 @@ async function remoteAgentOptions(
 
   if (isAvailable(REMOTE_AGENT_PROVIDER_ANTHROPIC)) {
     const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC)
-    // Claude Managed Agents bill against the Anthropic API key. When a Claude ACP
-    // agent is configured, note that in the heading so the user sees the ACP
-    // option (their own login) is the cheaper alternative.
-    const group = preferAcpForClaude ? `${baseGroup} — API-billed (ACP available)` : baseGroup
+    // Claude Managed Agents bill against the Anthropic API key. When a Claude
+    // device agent is configured, note that in the heading so the user sees the
+    // on-device option (their own login) is the cheaper alternative.
+    const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup
     const seen = new Set<string>()
     const add = (value: string, label: string): void => {
       if (seen.has(value)) return
@@ -416,6 +452,7 @@ export async function fetchModelOptions(
     const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude)
     const acp = acpAgentOptions(acpAgents)
     options.push(...(preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]))
+    options.push(...(await packModelOptions(api, includeAgentModels, current)))
   }
 
   // Local models: only listed when a local server is reachable and exposes some.
@@ -457,6 +494,13 @@ export async function fetchModelOptions(
       }
       if (sshWorkspace) stale.disabled = true
       options.push(stale)
+    } else if (includeAgentModels && current.startsWith(PACK_MODEL_PREFIX)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (pack disabled)`,
+        group: 'Personal packs',
+        disabled: true,
+      })
     } else {
       options.push({ value: current, label: `${current} (no key)` })
     }

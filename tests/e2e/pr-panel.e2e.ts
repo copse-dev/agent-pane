@@ -140,6 +140,10 @@ describe('PR panel (mock gh)', () => {
 
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
+    // #1448 moved the GitHub CLI fieldset out of General into Agent. Only the
+    // active section is shown, so without this the fieldset below is in a
+    // hidden section and `.gh-cli-status` reads as empty.
+    await $('.settings-nav-btn[data-section="agent"]').click()
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(

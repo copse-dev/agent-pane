@@ -26,7 +26,10 @@
 // bagged per pack to keep the top-level key namespace clean and let the P4
 // todos pack lift/shift its config into a single record.
 import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import {
+  createFirstPartyPackRegistry,
+  EXPERIMENTAL_FIRST_PARTY_PACK_IDS,
+} from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-summary.ts'
 import {
@@ -35,24 +38,29 @@ import {
   COMPARISON_MODEL_B_SETTING_ID,
   COMPARISON_JUDGE_MODEL_SETTING_ID,
 } from '@copse/agent/packs/model-comparison-pack.ts'
-import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
-import { FORCED_PLANNING_PACK_ID } from '@copse/agent/packs/forced-planning-pack.ts'
-import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
-import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
+import {
+  discoverPackToolSource,
+  registeredPackToolSource,
+  type PackToolSourceCandidate,
+} from './pack-tool-source.ts'
+import {
+  getPackToolRuntimeController,
+  setPackToolRuntimeController,
+} from './pack-tool-controller.ts'
+import { setPackBrowserService } from './pack-browser-service.ts'
+
+// P1 of #1336: selected-pack discovery is part of the production graph before
+// the isolated behavior runtime is wired by the host.
+export { discoverPackToolSource, hashPackToolSource } from './pack-tool-source.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by packs. */
 const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
@@ -60,15 +68,16 @@ const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
 /** Storage key holding the ids of packs the user disabled. */
 const PACK_DISABLED_KEY = 'packDisabled'
 
+/** Explicitly user-selected pack directories (#1336 P1). */
+const PACK_SOURCES_KEY = 'packSources'
+
 /**
  * Packs that ship registered but off.
  *
- * `createFirstPartyPackRegistry()` seeds every pack enabled, so the off-by-
- * default set is declared here and written into `packDisabled` on a profile
- * that has never had one. Every id below was opt-in before it became a pack,
- * and `copse.pii-redaction` additionally rewrites model input — defaulting any
- * of them on would hand an experimental surface to someone who never asked for
- * it. `copse.post-turn-review` is deliberately absent: it has always been on.
+ * `createFirstPartyPackRegistry()` seeds every pack enabled. The off-by-default
+ * set is derived from each first-party manifest's `experimental` stability and
+ * written into `packDisabled` on a profile that has never had one. This makes a
+ * forgotten rollout-list update impossible when a new experiment is added.
  *
  * The three packs added with the contribution kinds (#1188-#1190) join the list
  * for the same reason — each replaces a retired opt-in boolean
@@ -81,21 +90,7 @@ const PACK_DISABLED_KEY = 'packDisabled'
  * but belongs here for the same reason: it rewrites the system prompt of every
  * turn that runs on a below-threshold model.
  */
-const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
-  ADVISOR_STRATEGY_PACK_ID,
-  AUTOMATIONS_PACK_ID,
-  BACKGROUND_TASKS_PACK_ID,
-  CI_INVESTIGATOR_PACK_ID,
-  DEVTOOLS_SHORTCUT_PACK_ID,
-  FORCED_PLANNING_PACK_ID,
-  LONG_HORIZON_TASKS_PACK_ID,
-  MCP_UI_CANVAS_PACK_ID,
-  MODEL_COMPARISON_PACK_ID,
-  OKF_MEMORIES_PACK_ID,
-  PARALLEL_SEARCH_PACK_ID,
-  PII_REDACTION_PACK_ID,
-  ROADMAP_PLANS_PACK_ID,
-]
+const DEFAULT_DISABLED_PACK_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_PACK_IDS
 
 /** One-time default-off seed for the new local automations prototype. */
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
@@ -259,6 +254,10 @@ export interface PackService {
   getSetting(packId: string, key: string): unknown
   /** Persist one pack-scoped setting value under the pack's namespaced bag. */
   setSetting(packId: string, key: string, value: unknown): Promise<void>
+  /** Reconcile explicitly selected pack sources into the registry. */
+  refreshPackSources(): Promise<void>
+  /** Persist and discover one directory selected through the host-owned native dialog. */
+  addPackSource(sourcePath: string): Promise<void>
 }
 
 /**
@@ -267,19 +266,167 @@ export interface PackService {
  * `createHookRegistry()` calls see the same enablement the Settings list will
  * show. Exposed for tests; production callers go through `getPackService`.
  */
+/**
+ * Why a selected pack ended up unusable, keyed by pack id — and, for sources
+ * that never yielded a pack at all, keyed by source path.
+ *
+ * `refreshPackSources` is the only place that sees the real cause: the runtime
+ * threw, or the source would not load. Until now it went solely to a
+ * `console.warn`, which in CI lives inside a failure artifact. Anything
+ * downstream could therefore report the resulting *state* ("is disabled") but
+ * never the reason, so diagnosing a pack that would not start meant fetching
+ * that artifact by hand. Holding the reason here lets the error a caller
+ * already throws carry it.
+ *
+ * Module-scoped to match `getDefaultPackRegistry()` — read sites reach for it
+ * the same way they reach for the registry, without threading a service
+ * instance through.
+ */
+const packUnavailableReasons = new Map<string, string>()
+const inertSourceReasons = new Map<string, string>()
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/** Why this pack is not usable, when {@link refreshPackSources} recorded a cause. */
+export function packUnavailableReason(packId: string): string | undefined {
+  return packUnavailableReasons.get(packId)
+}
+
+/**
+ * Sources that failed discovery, as `path: reason`. A pack missing from the
+ * registry entirely is usually explained by one of these rather than by
+ * anything keyed on its id — discovery never got far enough to learn the id.
+ */
+export function inertPackSources(): readonly string[] {
+  return [...inertSourceReasons].map(([source, reason]) => `${source}: ${reason}`)
+}
+
 export function createPackService(registry: PackRegistry): PackService {
   const disabled = readDisabledIds()
+  const selectedCandidates = new Map<string, PackToolSourceCandidate>()
   for (const id of disabled) {
     if (registry.has(id)) registry.disable(id)
+  }
+
+  async function refreshPackSources(): Promise<void> {
+    const sources = parseStringList(storageGet(PACK_SOURCES_KEY))
+    const discovered: PackToolSourceCandidate[] = []
+    for (const source of sources) {
+      try {
+        discovered.push(await discoverPackToolSource(source))
+        inertSourceReasons.delete(source)
+      } catch (error) {
+        inertSourceReasons.set(source, describeError(error))
+        console.warn(`[packs] selected source ${JSON.stringify(source)} is inert:`, error)
+      }
+    }
+
+    const controller = getPackToolRuntimeController()
+    const discoveredById = new Map(
+      discovered.map((candidate) => [candidate.manifest.name, candidate]),
+    )
+    for (const [id, previous] of selectedCandidates) {
+      const next = discoveredById.get(id)
+      if (
+        next &&
+        next.sourcePath === previous.sourcePath &&
+        next.contentHash === previous.contentHash
+      ) {
+        continue
+      }
+      registry.disable(id)
+      if (controller?.isRunning(id)) await controller.disable(id)
+      registry.unregister(id)
+      selectedCandidates.delete(id)
+    }
+
+    for (const candidate of discovered) {
+      const id = candidate.manifest.name
+      const existing = selectedCandidates.get(id)
+      if (!existing && registry.has(id)) {
+        console.warn(
+          `[packs] selected pack id ${JSON.stringify(id)} conflicts with a registered pack.`,
+        )
+        continue
+      }
+      if (!existing) {
+        registry.register(registeredPackToolSource(candidate))
+        selectedCandidates.set(id, candidate)
+      }
+      const current = selectedCandidates.get(id)
+      if (!current) continue
+      const shouldRun = !readDisabledIds().has(id)
+      if (shouldRun && controller) {
+        try {
+          await controller.enable(current)
+          registry.enable(id)
+          packUnavailableReasons.delete(id)
+        } catch (error) {
+          registry.disable(id)
+          // Note the cause before disabling loses it. This is the branch the
+          // selected-pack e2e lands in when the OS sandbox is unavailable:
+          // pack behavior fails closed, so the pack is registered and then
+          // switched off, which on its own is indistinguishable from a user
+          // having turned it off.
+          packUnavailableReasons.set(id, describeError(error))
+          console.warn(`[packs] pack ${JSON.stringify(id)} tools could not start:`, error)
+        }
+      } else {
+        registry.disable(id)
+        packUnavailableReasons.set(id, 'disabled in Settings → Packs')
+        if (controller?.isRunning(id)) await controller.disable(id)
+      }
+    }
   }
 
   return {
     registry,
     list(): readonly PackSummaryOut[] {
-      return summarizePacks(registry, (packId, key) => readPackSettings(packId)[key])
+      return summarizePacks(registry, (packId, key) => readPackSettings(packId)[key]).map(
+        (summary) => {
+          const candidate = selectedCandidates.get(summary.id)
+          if (!candidate) return summary
+          return {
+            ...summary,
+            source: {
+              kind: 'directory' as const,
+              path: candidate.sourcePath,
+              contentHash: candidate.contentHash,
+            },
+          }
+        },
+      )
     },
     async setEnabled(packId: string, enabled: boolean): Promise<void> {
       if (!registry.has(packId)) return
+      const selected = selectedCandidates.get(packId)
+      if (selected) {
+        if (!enabled) {
+          registry.disable(packId)
+          const controller = getPackToolRuntimeController()
+          if (controller?.isRunning(packId)) await controller.disable(packId)
+          await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+            const set = new Set(parseStringList(raw))
+            set.add(packId)
+            return [...set].sort()
+          })
+          return
+        }
+        const controller = getPackToolRuntimeController()
+        if (!controller) {
+          throw new Error(`pack "${packId}" runtime is unavailable`)
+        }
+        await controller.enable(selected)
+        registry.enable(packId)
+        await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+          const set = new Set(parseStringList(raw))
+          set.delete(packId)
+          return [...set].sort()
+        })
+        return
+      }
       if (enabled) registry.enable(packId)
       else registry.disable(packId)
       await storageUpdate(PACK_DISABLED_KEY, (raw) => {
@@ -307,6 +454,27 @@ export function createPackService(registry: PackRegistry): PackService {
         return current
       })
     },
+    refreshPackSources,
+    async addPackSource(sourcePath: string): Promise<void> {
+      const candidate = await discoverPackToolSource(sourcePath)
+      if (
+        registry.has(candidate.manifest.name) &&
+        !selectedCandidates.has(candidate.manifest.name)
+      ) {
+        throw new Error(`pack id "${candidate.manifest.name}" is already registered`)
+      }
+      await storageUpdate(PACK_SOURCES_KEY, (raw) => {
+        const sources = new Set(parseStringList(raw))
+        sources.add(candidate.sourcePath)
+        return [...sources].sort()
+      })
+      await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+        const ids = new Set(parseStringList(raw))
+        ids.delete(candidate.manifest.name)
+        return [...ids].sort()
+      })
+      await refreshPackSources()
+    },
   }
 }
 
@@ -332,4 +500,6 @@ export function getPackService(): PackService {
 export function __resetPackServiceForTests(): void {
   singleton = null
   setDefaultPackRegistry(null)
+  setPackToolRuntimeController(null)
+  setPackBrowserService(null)
 }

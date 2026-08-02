@@ -2,6 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
@@ -9,6 +10,7 @@ import { mountProjectsPane } from './projects-pane.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -154,6 +156,15 @@ function createApi(options: {
       threads: {
         ...base['threads'],
         listOrphans: async () => [],
+      },
+      archive: {
+        // Mirrors storeArchiveAttachment: the stored path is under whichever
+        // thread was active at attach time.
+        attach: async (_projectId: string, threadId: string, archive: { name: string }) => ({
+          path: `/store/${threadId}/blobs/media/uuid-${archive.name}`,
+          name: archive.name,
+          sizeBytes: 8,
+        }),
       },
     } satisfies ApiClient
   })()
@@ -449,6 +460,93 @@ describe('draft prompt preservation', () => {
   })
 })
 
+describe('externally cleared draft', () => {
+  it('empties the composer when an automation consumes the active thread draft', async () => {
+    // A cron automation creates its thread with the scheduled prompt as the
+    // draft, then clears that draft once it dispatches the run. The user is
+    // already looking at the thread, so no thread switch happens — without a
+    // `thread_draft_changed` subscription the sent prompt stays in the composer
+    // and the next Enter sends it a second time.
+    const scheduled: Thread = {
+      id: 'thread-automation',
+      title: 'CI review',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      draftPrompt: 'Review CI and report any failures.',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const existing: Thread = {
+      id: 'thread-existing',
+      title: 'Existing',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: existing.id,
+      threads: [existing],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    // Selecting the automation's thread loads its draft into the composer, the
+    // same way clicking the sidebar row does.
+    store.setState({ threads: [scheduled, existing], activeThreadId: scheduled.id })
+    store.emit('threads_changed')
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.equal(composer.textContent, 'Review CI and report any failures.')
+
+    setThreadDraftPrompt(store, scheduled.id, '')
+    await settle()
+
+    assert.equal(composer.textContent, '')
+  })
+
+  it('leaves the composer alone when the draft change is its own autosave', async () => {
+    const blank: Thread = {
+      id: 'thread-blank',
+      title: 'New Thread',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: blank.id,
+      threads: [blank],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'half a thought'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    setThreadDraftPrompt(store, blank.id, 'half a thought')
+    await settle()
+
+    assert.equal(composer.textContent, 'half a thought')
+  })
+})
+
 describe('input bar model recents', () => {
   it('shows the current model first, followed by distinct thread models ordered by last use', async () => {
     const active: Thread = {
@@ -495,6 +593,73 @@ describe('input bar model recents', () => {
       (option) => option.textContent.split(' — ')[0],
     )
     assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 4.8', 'Claude Haiku 4.5'])
+  })
+})
+
+describe('input bar developer diagnostics', () => {
+  it('hides diagnostics by default and reveals them in Developer mode', async () => {
+    const populated = thread()
+    populated.messages = [
+      {
+        id: 'message-1',
+        role: 'user',
+        content: 'A persisted message makes this thread exportable.',
+        toolCalls: [],
+        createdAt: 1,
+      },
+    ]
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: populated.id,
+      threads: [populated],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const overflow = host.querySelector<HTMLElement>('.footer-overflow')
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(overflow)
+    assert.ok(trigger)
+    assert.equal(overflow.hidden, false)
+    trigger.click()
+    assert.deepEqual(
+      Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
+        item.textContent.trim(),
+      ),
+      ['Enable Guarded YOLO'],
+    )
+
+    store.setState({ developerMode: true })
+    store.emit('settings_changed')
+    assert.equal(overflow.hidden, false)
+    trigger.click()
+    assert.deepEqual(
+      Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
+        item.textContent.trim(),
+      ),
+      [
+        'Enable Guarded YOLO',
+        'Copy thread ID',
+        'Export conversation (JSONL)',
+        'Export thread folder (ZIP)',
+        'Share trace',
+      ],
+    )
+
+    store.setState({ developerMode: false })
+    store.emit('settings_changed')
+    assert.equal(overflow.hidden, false)
+    trigger.click()
+    assert.deepEqual(
+      Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
+        item.textContent.trim(),
+      ),
+      ['Enable Guarded YOLO'],
+    )
   })
 })
 
@@ -597,6 +762,78 @@ describe('input bar branch mismatch warning', () => {
     assert.equal(checkedOutBranch, 'feature/thread-branch')
     assert.equal(branchRefreshes, 1)
     assert.equal(warning.hidden, true)
+  })
+})
+
+describe('input bar attachments across a thread switch', () => {
+  /**
+   * An attachment is bound to the thread that was active when it was attached:
+   * `archive:attach` has already stored the file under that thread's
+   * `blobs/media/`. Carrying the chip to another thread recorded a path into a
+   * directory the receiving thread does not own — observed in the wild as a
+   * thread whose `meta.archives` pointed into a different thread's blobs, which
+   * dangles the moment the original thread is deleted.
+   */
+  it('drops attachment chips when the active thread changes', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    await handlers.attachArchive({ name: 'bundle.zip', bytes: new ArrayBuffer(8) })
+    await settle()
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .archive-chip').length,
+      1,
+      'the archive chip is attached to the active thread',
+    )
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .archive-chip').length,
+      0,
+      'switching threads clears the chip rather than re-homing it',
+    )
+  })
+
+  it('binds a stored archive to the thread that was active when it was attached', async () => {
+    // The other half of the same bug: the path the composer holds names the
+    // attaching thread's directory, which is why carrying it across a switch
+    // cannot be made correct simply by re-recording it on the new thread.
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers)
+    await handlers.attachArchive({ name: 'bundle.zip', bytes: new ArrayBuffer(8) })
+    await settle()
+
+    const chip = host.querySelector('.attachment-chips .archive-chip')
+    assert.ok(chip)
+    assert.match(chip.textContent, /bundle\.zip/)
   })
 })
 
@@ -814,8 +1051,8 @@ describe('input bar footer overflow menu', () => {
     const labels = [...host.querySelectorAll('.footer-overflow-item')].map(
       (item) => item.textContent,
     )
-    // Export/Share are gated on the thread having exportable content, which this
-    // blank fixture does not — hence two items here and four in the demo scenario.
-    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Copy thread ID'])
+    // Developer diagnostics are disabled for this fixture, so only the ordinary
+    // thread action remains visible.
+    assert.deepEqual(labels, ['Enable Guarded YOLO'])
   })
 })
