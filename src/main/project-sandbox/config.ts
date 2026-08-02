@@ -262,6 +262,29 @@ export function fsWorkerSandboxOverlay(
 }
 
 /**
+ * Preserve workspace read confinement without creating Linux write-deny mount
+ * points. Read-only commands cannot mutate the checkout, so an empty write
+ * allow-list already provides the required boundary; retaining denyWrite would
+ * make bubblewrap materialize protected dotfiles that commands such as
+ * `git status` then report as untracked during their own execution.
+ */
+export function readOnlyWorkspaceSandboxOverlay(
+  workspaceRoot: string,
+): Partial<SandboxRuntimeConfig> {
+  const workspace = workspaceSandboxOverlay(workspaceRoot)
+  const fs = workspace.filesystem
+  if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
+  return {
+    ...workspace,
+    filesystem: {
+      ...fs,
+      allowWrite: [],
+      denyWrite: [],
+    },
+  }
+}
+
+/**
  * Read-only overlay for the persistent fs server.
  *
  * Linux bwrap materializes non-existent mandatory write-deny paths (such as

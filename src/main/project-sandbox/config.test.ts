@@ -13,6 +13,7 @@ import {
   ensureWorkspaceTmpDir,
   fsServerSandboxOverlay,
   fsWorkerSandboxOverlay,
+  readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
   sandboxNetworkConfig,
   workspaceMandatoryWriteDenyPaths,
@@ -435,6 +436,19 @@ describe('fsServerSandboxOverlay', () => {
     const overlay = fsServerSandboxOverlay('/Users/me/project', worker)
     const filesystem = overlay.filesystem
     assert.ok(filesystem)
+    assert.deepEqual(filesystem.allowWrite, [])
+    assert.deepEqual(filesystem.denyWrite, [])
+  })
+})
+
+describe('readOnlyWorkspaceSandboxOverlay', () => {
+  it('keeps workspace read rules but creates no write-deny mount points', () => {
+    const workspace = workspaceSandboxOverlay('/Users/me/project')
+    const overlay = readOnlyWorkspaceSandboxOverlay('/Users/me/project')
+    const filesystem = overlay.filesystem
+    assert.ok(filesystem)
+    assert.deepEqual(filesystem.denyRead, workspace.filesystem?.denyRead)
+    assert.deepEqual(filesystem.allowRead, workspace.filesystem?.allowRead)
     assert.deepEqual(filesystem.allowWrite, [])
     assert.deepEqual(filesystem.denyWrite, [])
   })
