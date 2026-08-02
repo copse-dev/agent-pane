@@ -94,7 +94,9 @@ import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
+import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
+import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
@@ -149,7 +151,7 @@ import {
   resolveMaxReviewCycles,
 } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { getPackService } from './packs/pack-service.ts'
+import { getPackService, inertPackSources, packUnavailableReason } from './packs/pack-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -280,6 +282,7 @@ function parentTools(
   executorModel: string,
   threadId: string,
   threadVideos: readonly VideoAttachmentRef[],
+  threadArchives: readonly ArchiveAttachmentRef[],
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -325,8 +328,10 @@ function parentTools(
     tools = tools.filter((t) => t.name !== 'read_terminal')
   }
   // Withhold video_frames from threads that have never had a video attached,
-  // and name the attached ones in its description when they have.
+  // and name the attached ones in its description when they have. read_archive
+  // is gated the same way, on attached archives.
   tools = applyVideoToolAvailability(tools, threadVideos)
+  tools = applyArchiveToolAvailability(tools, threadArchives)
   return tools
 }
 
@@ -649,6 +654,8 @@ export async function runAgent(
   }
 
   if (packModel) {
+    /** Append a recorded cause to a pack error, or nothing when none was captured. */
+    const suffixFor = (reason: string | undefined): string => (reason ? ` ${reason}` : '')
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
@@ -656,8 +663,33 @@ export async function runAgent(
     try {
       const packs = getDefaultPackRegistry()
       const runtime = getPackToolRuntimeController()
-      if (!packs.isEnabled(packModel.packId) || !runtime?.isRunning(packModel.packId)) {
-        throw new Error(`The selected pack "${packModel.packId}" is disabled.`)
+      // `isEnabled` is "registered AND not disabled", so on its own it cannot
+      // tell a pack the user switched off from one that never registered at
+      // all. Those have different causes and different fixes, and a selected
+      // pack that failed to appear is the more likely of the two: check
+      // registration first so the message names the real state.
+      //
+      // A `packSources` entry whose discovery throws never registers; a pack
+      // whose tools fail to start is registered-then-disabled. Each state now
+      // carries the cause `refreshPackSources` recorded (pack-service.ts), so a
+      // failure explains itself here instead of only in the main-process log —
+      // which, in CI, is buried in a failure artifact.
+      if (!packs.has(packModel.packId)) {
+        throw new Error(
+          `The selected pack "${packModel.packId}" is not installed.${suffixFor(inertPackSources().join('; '))}`,
+        )
+      }
+      if (!packs.isEnabled(packModel.packId)) {
+        throw new Error(
+          `The selected pack "${packModel.packId}" is disabled.${suffixFor(packUnavailableReason(packModel.packId))}`,
+        )
+      }
+      if (!runtime?.isRunning(packModel.packId)) {
+        // Enabled but not running: saying "disabled" here would send users to a
+        // toggle that is already on.
+        throw new Error(
+          `The selected pack "${packModel.packId}" is not running.${suffixFor(packUnavailableReason(packModel.packId))}`,
+        )
       }
       const route = packs
         .get(packModel.packId)
@@ -1070,7 +1102,10 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const threadVideos = await getThreadVideos()
+    const [threadVideos, threadArchives] = await Promise.all([
+      getThreadVideos(),
+      getThreadArchives(),
+    ])
     const parentLoopTools = parentTools(
       registry,
       subagentsEnabled,
@@ -1078,6 +1113,7 @@ export async function runAgent(
       model,
       threadId,
       threadVideos,
+      threadArchives,
     )
     setHookRunToolset(parentLoopTools)
 

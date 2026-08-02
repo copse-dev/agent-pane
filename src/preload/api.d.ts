@@ -1,4 +1,5 @@
 import type { StreamChunk, ContextBreakdown } from '@shared/types'
+import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
@@ -300,6 +301,19 @@ export interface ApiClient {
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
   }
+  archive: {
+    /**
+     * Store an archive the user attached to a chat and return the reference the
+     * agent is given. Pass `bytes` for a file dropped from outside the app, or
+     * `path` for one already in the workspace (referenced, not copied). The
+     * archive itself never becomes model content — see `read_archive`.
+     */
+    attach: (
+      projectId: string,
+      threadId: string,
+      archive: { name: string; bytes?: Uint8Array; path?: string },
+    ) => Promise<import('@shared/archive/archive-media.ts').ArchiveAttachmentRef>
+  }
   video: {
     /**
      * Store a video the user attached to a chat and return the reference the
@@ -467,6 +481,9 @@ export interface ApiClient {
       approvedProviderHosts?: string[]
       providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
+      // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
+      // bundles that don't render the picker don't reset the user's choice.
+      shellAutoApprovalLevel?: AutoApprovalLevel
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
     /**

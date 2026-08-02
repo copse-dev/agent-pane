@@ -2,14 +2,34 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 // Row-level mark-done toggle on the Roadmap pane: the check icon flips a live
 // item to `done` without opening the editor. The icon is opacity-hidden until
-// row hover/focus. Done rows are filtered out by default; the header "done"
-// toggle reveals them (struck-through title, refresh icon to reopen).
+// row hover/focus. Since #1418 every status is enabled by default, so a done
+// row stays listed (struck through, refresh icon to reopen) and hiding it is
+// the Status facet's job rather than a dedicated toolbar toggle.
+
+// The toggle sits at `opacity: 0` until `.roadmap-row:hover` (roadmap.css:177).
+// A single `moveTo()` is not enough: the list re-renders around each status
+// change, and a row replaced under a stationary pointer gets no fresh
+// `mouseover`, so the icon stays hidden and `waitForDisplayed` times out on a
+// row that is perfectly healthy. Re-hover on every poll, re-querying the row so
+// a detached handle can't pin us to stale coordinates.
+const revealDoneToggle = async () => {
+  const toggle = $('.roadmap-done-toggle')
+  await browser.waitUntil(
+    async () => {
+      await $('.roadmap-row').moveTo()
+      return await toggle.isDisplayed()
+    },
+    { timeout: 15_000, timeoutMsg: 'mark-done toggle never revealed on row hover' },
+  )
+  return toggle
+}
+
 describe('roadmap done toggle', () => {
   let workspaceRoot: string
 
@@ -50,23 +70,10 @@ describe('roadmap done toggle', () => {
     await $('.roadmap-cancel-btn').click()
     await $('.roadmap-empty').waitForDisplayed({ timeout: 10_000 })
 
-    // Hover reveals the mark-done icon (opacity 0 at rest).
-    const row = $('.roadmap-row')
-    await row.moveTo()
-    const toggle = $('.roadmap-done-toggle')
-    await toggle.waitForDisplayed({ timeout: 10_000 })
+    const toggle = await revealDoneToggle()
     assert.equal(await toggle.getAttribute('title'), 'Mark done')
     await toggle.click()
-    // Done items leave the list until the show-done filter is on.
-    await $('.roadmap-list-empty').waitForDisplayed({ timeout: 10_000 })
-    assert.match(await $('.roadmap-list-empty').getText(), /Turn on "done"/i)
-    await saveAppScreenshot('roadmap-done-filtered.png')
-
-    const showDone = $('.roadmap-show-done-btn')
-    await showDone.waitForDisplayed({ timeout: 10_000 })
-    assert.equal(await showDone.getAttribute('aria-pressed'), 'false')
-    await showDone.click()
-    assert.equal(await showDone.getAttribute('aria-pressed'), 'true')
+    // Every status is enabled by default, so the row stays listed once done.
     await browser.waitUntil(async () => (await $('.roadmap-row.is-done').isExisting()) === true, {
       timeout: 10_000,
       timeoutMsg: 'done row class never appeared',
@@ -91,10 +98,29 @@ describe('roadmap done toggle', () => {
     assert.equal(doneStyles.editorStaysEmpty, true, 'toggle must not open the editor')
     await saveAppScreenshot('roadmap-done-toggle.png')
 
+    // Hiding done work is the Status facet's job now. Unchecking `done` empties
+    // the list, and the empty state says a filter — not an empty roadmap — is
+    // why nothing is showing.
+    await $('.roadmap-filter-toggle').click()
+    const doneFacet = $('.roadmap-filter-option*=done')
+    await doneFacet.waitForDisplayed({ timeout: 10_000 })
+    const doneCheckbox = doneFacet.$('input[type="checkbox"]')
+    assert.equal(await doneCheckbox.isSelected(), true, 'done starts enabled')
+    await doneCheckbox.click()
+    await $('.roadmap-list-empty').waitForDisplayed({ timeout: 10_000 })
+    assert.match(await $('.roadmap-list-empty').getText(), /match your filter/i)
+    assert.equal((await $$('.roadmap-row')).length, 0)
+    await saveAppScreenshot('roadmap-done-filtered.png')
+
+    // Re-enabling the facet brings it back, so the row can be reopened.
+    await doneCheckbox.click()
+    await $('.roadmap-row.is-done').waitForDisplayed({ timeout: 10_000 })
+    await $('.roadmap-filter-toggle').click()
+
     // The same control now reopens the item.
-    await $('.roadmap-row').moveTo()
-    assert.equal(await $('.roadmap-done-toggle').getAttribute('title'), 'Reopen (set ready)')
-    await $('.roadmap-done-toggle').click()
+    const reopen = await revealDoneToggle()
+    assert.equal(await reopen.getAttribute('title'), 'Reopen (set ready)')
+    await reopen.click()
     await browser.waitUntil(
       async () =>
         (await $('.roadmap-row').isExisting()) === true &&

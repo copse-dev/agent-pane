@@ -15,6 +15,7 @@
  * upload, and the compose invocation.
  */
 import { execFileSync } from 'node:child_process'
+import { runnerComposeStartupCommands } from './lib/runner-compose.mts'
 import {
   AWS_REGION_ENV,
   awaitHostReady,
@@ -410,8 +411,7 @@ async function provisionHost(
           '. ./.env',
           'set +a',
           'export DOCKER_BUILDKIT=1',
-          `docker compose up -d --build --pull always --scale runner=${String(config.runnersPerInstance)}`,
-          'docker compose ps',
+          ...runnerComposeStartupCommands(config.runnersPerInstance),
         ].join(' && '),
       )}`,
     ].join(' && '),

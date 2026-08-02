@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 
 contextBridge.exposeInMainWorld('api', {
   workspace: {
@@ -494,6 +495,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
   },
+  archive: {
+    attach: (
+      projectId: string,
+      threadId: string,
+      archive: { name: string; bytes?: Uint8Array; path?: string },
+    ) => ipcRenderer.invoke('archive:attach', projectId, threadId, archive),
+  },
   video: {
     attach: (
       projectId: string,
@@ -663,6 +671,9 @@ contextBridge.exposeInMainWorld('api', {
       approvedProviderHosts?: string[]
       providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
+      // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
+      // bundles that don't render the picker don't reset the user's choice.
+      shellAutoApprovalLevel?: AutoApprovalLevel
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
     getKeyEncrypted: (provider: string) => ipcRenderer.invoke('settings:getKeyEncrypted', provider),

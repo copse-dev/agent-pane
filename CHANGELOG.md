@@ -8,6 +8,29 @@ every published entry.
 
 ## Unreleased
 
+- Zip archives can be attached to a chat and read. Drop a `.zip` on the composer
+  and the agent unpacks it with the new **`read_archive`** tool into the
+  conversation's own directory, then reads what is inside with its ordinary file
+  tools — so a bundle of logs, a downloaded release, or an exported thread can be
+  explored file by file rather than described. Previously a dropped zip was read
+  as text and landed in the prompt as binary noise. The extractor refuses path
+  traversal, symlinks and zip bombs, and the extraction is deleted with the
+  thread. External ACP agents get the same tool through the native-tool bridge,
+  so they unpack archives with those guards rather than falling back to a raw
+  `unzip`. See [docs/read-archive.md](docs/read-archive.md).
+- ACP agents can now read attached videos too: `video_frames` joins the
+  native-tool bridge, and bridged tool results carry images as MCP image content
+  so the frames themselves arrive rather than a manifest describing them.
+- Fixed: composer attachments (files, images, videos, archives) carried across a
+  thread switch, so a zip or recording attached in one conversation could be
+  recorded against another — pointing at a file in the first thread's directory,
+  which vanished if that thread was deleted. Attachments now clear on a switch,
+  matching drafts.
+- ACP diagnosability: a native-tool bridge that fails to start is logged instead
+  of silently swallowed, the tools it offers are logged when it does start, and
+  an agent that does not advertise MCP-over-http is named as the reason the
+  bridge was withheld. Previously all three were indistinguishable from "the
+  agent chose not to use the tool".
 - Settings has been restructured. **General** is now three things and nothing
   else: **Detect settings**, **Providers**, and **Models**. Everything that used
   to be piled in alongside them moved to where it belongs: instructions, helpers
@@ -42,6 +65,21 @@ every published entry.
   `platform.claude.com` to refresh its access token. Nothing failed at the time —
   the agent kept working on the token it held and then died once it aged out. The
   presets now allow it.
+- Everyday shell commands stop asking for approval. A new deterministic
+  classifier recognises a fixed allow-list of low-risk command _shapes_ and runs
+  them without a prompt: local reads, and `git fetch` / `gh pr view` against a
+  remote already configured in the repository. Settings → Permissions → Shell commands →
+  **Also run recognised low-risk commands without asking** raises that to local commits
+  (`git add`/`commit`/`checkout -b`/`stash`) and then to pushes
+  (`git push`, `gh pr create`). Nothing else changes: project scripts
+  (`npm test`), `npx`, installs, force pushes, ref deletions, `gh api`,
+  `gh pr merge`, anything with `$(…)` or a redirection, and every command the
+  list does not recognise still prompt exactly as before. No model decides — the
+  classifier is pure pattern matching, it only ever converts a prompt into an
+  allow (never softens a block), and it is honoured only in a trusted workspace.
+  Each auto-approval is written to the decision log. Note that at the two write
+  levels `git commit`/`checkout`/`push` run your repo's git hooks, which the
+  macOS sandbox contains and Linux/Windows do not.
 - A thread can be exported as its whole folder, not just its transcript. The
   footer overflow menu (Developer mode) keeps **Export conversation (JSONL)** —
   the portable single-file transcript — and adds **Export thread folder (ZIP)**,

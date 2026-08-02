@@ -1,3 +1,4 @@
+import type { AutoApprovalLevel } from '../auto-approval.ts'
 import type { StreamChunk } from './stream.ts'
 import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from './mcp.ts'
@@ -134,6 +135,7 @@ export interface IpcInvokeMap {
         safetyExternalDenyThreshold: number
         safetyModel: string
         autoRunSandboxCommands: boolean
+        shellAutoApprovalLevel?: AutoApprovalLevel
         mcpAutoAllowReadOnly: boolean
         defaultReadonlyMode: boolean
         webAllowedOrigins: string[]

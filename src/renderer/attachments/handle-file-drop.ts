@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { isVideoFile } from '@shared/video/video-media.ts'
+import { isArchiveFile } from '@shared/archive/archive-media.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
@@ -58,6 +59,12 @@ async function attachWorkspacePath(
     await handlers.attachVideo({ name, mimeType: '', path })
     return
   }
+  // Likewise an archive: reading a zip as text would inline binary into the
+  // prompt, which is exactly what the archive attachment exists to avoid.
+  if (isArchiveFile({ name })) {
+    await handlers.attachArchive({ name, path })
+    return
+  }
   if (!owner) return
   try {
     const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
@@ -90,6 +97,13 @@ async function attachDroppedFile(
       mimeType: file.type || 'video/mp4',
       bytes: await file.arrayBuffer(),
     })
+    return
+  }
+
+  // Archives are stored and referenced, never inlined — same reasoning as
+  // videos, and checked before the workspace-path branch for the same reason.
+  if (isArchiveFile(file)) {
+    await handlers.attachArchive({ name: file.name, bytes: await file.arrayBuffer() })
     return
   }
 

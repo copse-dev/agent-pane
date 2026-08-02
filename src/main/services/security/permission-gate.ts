@@ -55,6 +55,7 @@ import {
   offerableTrustedCommand,
   routeShellCommand,
 } from './command-routing-config.ts'
+import { resolveAutoApproval } from './auto-approval-config.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -118,6 +119,39 @@ export interface TerminalPermissionOptions {
  * routeShellCommand — the prompt-once path that replaces a separate remembered
  * list. Returns the approval, persisting the grant on approve+remember.
  */
+/**
+ * Whether the deterministic auto-approval classifier lets `command` run without a
+ * prompt, recording the grant to the durable decision log when it does.
+ *
+ * Consulted at every point that would otherwise interrupt the user for a shell
+ * command — the up-front gate AND both sandbox-escalation prompts. Covering the
+ * escalations matters as much as the gate: on macOS a `git fetch` auto-runs
+ * *inside* the seatbelt, fails on the denied network, and only then asks to retry
+ * outside it. Recognising the shape up front but re-prompting on that retry would
+ * leave the most common commands prompting exactly as before.
+ *
+ * @param scope where the grant applies, recorded so the log distinguishes a
+ *   contained auto-approval from one that dropped containment.
+ */
+function autoApproveShell(
+  command: string,
+  scope: 'sandbox' | 'external',
+  executionRoot?: string | null,
+): boolean {
+  const decision = resolveAutoApproval(command, executionRoot)
+  if (decision.action !== 'auto-approve') return false
+  recordDecision({
+    kind: 'shell',
+    actor: 'classifier',
+    verdict: 'allowed',
+    subject: SHELL_DECISION_SUBJECT,
+    scope,
+    reasons: [`tier ${decision.tier}`, ...decision.reasons],
+    source: 'auto-approval',
+  })
+  return true
+}
+
 async function requestEscalationApproval(
   command: string,
   title: string,
@@ -206,6 +240,7 @@ export async function promptUnsandboxedShell(
   reasons: string[],
   signal?: AbortSignal,
 ): Promise<boolean> {
+  if (autoApproveShell(command, 'external')) return true
   return requestEscalationApproval(
     command,
     'Run outside sandbox?',
@@ -224,6 +259,7 @@ export async function promptExpectedSandboxBlock(
   reasons: string[],
   signal?: AbortSignal,
 ): Promise<boolean> {
+  if (autoApproveShell(command, 'external')) return true
   const { approved } = await requestApproval(
     {
       title: 'Run outside sandbox?',
@@ -564,6 +600,13 @@ export async function ensureShellCommandPermitted(
     auditGuardedYolo(approved ? 'approved' : 'declined')
     return approved
   }
+
+  // Auto-approval classifier. The policy has resolved to `prompt`, so this is the
+  // single point where a bounded-risk shape can skip the interruption — it can
+  // only ever turn a prompt into an allow, never widen an `allow` or soften a
+  // `deny` (both returned above). Deterministic and fail-closed; see
+  // auto-approval.ts for the enumerated shapes and the safety argument.
+  if (autoApproveShell(command, outsideSandbox ? 'external' : 'sandbox', workspaceRoot)) return true
 
   // A plain package install gets a dedicated, readable approval rather than the
   // generic external-command reason list. Only when the install is the *sole*

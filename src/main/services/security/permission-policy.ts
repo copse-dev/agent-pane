@@ -233,7 +233,12 @@ const READ_ONLY_SHELL_BASENAMES = new Set([
   'realpath',
 ])
 
-const READ_ONLY_GIT_SUBCOMMANDS = new Set([
+/**
+ * Git subcommands that only read. Exported so the auto-approval classifier can
+ * build its (wider) read set as a superset of this one rather than restating it —
+ * two independent lists of "which git subcommands are safe to read" would drift.
+ */
+export const READ_ONLY_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
   'status',
   'diff',
   'log',
@@ -260,7 +265,13 @@ export function isStructurallyReadOnlyShellCommand(command: string): boolean {
   return segments.length > 0 && segments.every(isReadOnlySimpleCommand)
 }
 
-function isReadOnlySimpleCommand(segment: string): boolean {
+/**
+ * Whether a single simple command (no pipeline, no control operators) is a
+ * read/query invocation. Exported for the auto-approval classifier, which does
+ * its own quote-aware segmentation and needs the per-segment verdict rather than
+ * {@link isStructurallyReadOnlyShellCommand}'s whole-line one.
+ */
+export function isReadOnlySimpleCommand(segment: string): boolean {
   let tokens: ReturnType<typeof parseShellCommand>
   try {
     tokens = parseShellCommand(segment)

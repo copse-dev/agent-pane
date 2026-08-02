@@ -1,12 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import {
-  formatByteSize,
-  formatTimestamp,
-  frameFileName,
-  isVideoFile,
-  parseTimePosition,
-} from './video-media.ts'
+import { formatTimestamp, frameFileName, isVideoFile, parseTimePosition } from './video-media.ts'
 
 describe('isVideoFile', () => {
   it('accepts anything the browser labels video/*', () => {
@@ -96,14 +90,5 @@ describe('parseTimePosition', () => {
     assert.equal(parseTimePosition(''), null)
     assert.equal(parseTimePosition('1:99'), null)
     assert.equal(parseTimePosition(-4), null)
-  })
-})
-
-describe('formatByteSize', () => {
-  it('scales to the largest unit that keeps the number small', () => {
-    assert.equal(formatByteSize(512), '512 B')
-    assert.equal(formatByteSize(1536), '1.5 KB')
-    assert.equal(formatByteSize(5 * 1024 * 1024), '5.0 MB')
-    assert.equal(formatByteSize(1024 * 1024 * 1024), '1.0 GB')
   })
 })

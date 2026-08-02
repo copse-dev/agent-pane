@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { ToolDefinition, LLMTool, ToolExecuteResult } from '@shared/types'
-import { normalizeToolExecuteResult } from '@shared/types'
+import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
@@ -143,6 +143,12 @@ export class ToolRegistry {
     result: string
     editStats?: { additions: number; deletions: number }
     resultFormat?: 'markdown'
+    /**
+     * Images a tool produced alongside its text (video_frames). Always returned
+     * by `normalizeToolExecuteResult`; declared here so callers that can render
+     * them — the ACP native-tool bridge — are not silently handed text only.
+     */
+    images?: ToolResultImage[]
   }> {
     return normalizeToolExecuteResult(await this.execute(name, rawArgs, signal))
   }

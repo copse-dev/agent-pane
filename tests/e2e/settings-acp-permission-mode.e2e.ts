@@ -92,7 +92,11 @@ describe('ACP permission-mode settings', () => {
       'title',
       'Apply edits automatically.',
     )
-    await expect(await card.$('.field-hint*=ACP session mode')).toBeDisplayed()
+    // #1448 rewrote this hint's copy along with the rest of Settings; the field
+    // it explains is unchanged.
+    await expect(
+      await card.$('.field-hint*=How much the agent asks before it acts'),
+    ).toBeDisplayed()
 
     await browser.execute(() => {
       const cardElement = document.querySelector<HTMLElement>('.acp-agent-card')
