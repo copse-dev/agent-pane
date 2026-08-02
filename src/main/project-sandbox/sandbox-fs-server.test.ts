@@ -11,6 +11,7 @@ import {
   shutdownSandboxFsServer,
   isSandboxFsServerLive,
   setWorkerSpawnerForTest,
+  setWorkerSandboxReleaseForTest,
   SandboxFsServerUnavailable,
 } from './sandbox-fs-server.ts'
 
@@ -59,6 +60,7 @@ describe('sandbox-fs-server', () => {
   afterEach(() => {
     shutdownSandboxFsServer()
     setWorkerSpawnerForTest(null)
+    setWorkerSandboxReleaseForTest(null)
   })
 
   it('rejects with SandboxFsServerUnavailable when no workspace is open', async () => {
@@ -123,6 +125,25 @@ describe('sandbox-fs-server', () => {
       await requestViaServer({ op: 'statDir', path: dir })
       await requestViaServer({ op: 'statDir', path: dir })
       assert.equal(spawnCount, 1)
+    } finally {
+      restore()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('releases the read-only worker sandbox lease after spawn, not at retirement', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'copse-sbfs-release-'))
+    const restore = setWorkspaceRootForTest(dir)
+    let releaseCount = 0
+    setWorkerSpawnerForTest(() => Promise.resolve(echoSpawner()))
+    setWorkerSandboxReleaseForTest(() => {
+      releaseCount += 1
+    })
+    try {
+      await requestViaServer({ op: 'statDir', path: dir })
+      assert.equal(releaseCount, 1)
+      shutdownSandboxFsServer()
+      assert.equal(releaseCount, 1, 'retirement must not double-release ASRT bookkeeping')
     } finally {
       restore()
       await rm(dir, { recursive: true, force: true })
