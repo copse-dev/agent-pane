@@ -6,7 +6,7 @@ import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
-import { spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
+import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isGitAvailableForTarget } from '../tool-availability.ts'
@@ -287,6 +287,10 @@ async function runGitBuffer(
     })
   } finally {
     gitSsh.release()
+    // Raw binary Git reads bypass command-runner, so they must perform the
+    // same per-command ASRT cleanup themselves. On Linux this removes the host
+    // mount points bubblewrap creates for non-existent mandatory deny paths.
+    afterSandboxedCommand()
   }
 }
 

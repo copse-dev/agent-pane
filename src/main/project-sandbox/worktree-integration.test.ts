@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  afterSandboxedCommand,
   initProjectSandbox,
   isProjectSandboxEnabled,
   shutdownProjectSandbox,
@@ -60,6 +61,7 @@ async function runSandboxed(
       resolve(exitCode ?? 1)
     })
   })
+  afterSandboxedCommand()
   return { stdout, stderr, code }
 }
 
@@ -75,8 +77,8 @@ describe('linked-worktree sandbox integration', () => {
   })
 
   it('supports Git from a nested project root without exposing hooks, config, or siblings', async (t) => {
-    if (process.platform !== 'darwin') {
-      t.skip('macOS seatbelt integration')
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
       return
     }
 
