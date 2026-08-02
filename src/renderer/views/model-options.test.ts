@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
-import { fetchModelOptions } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface MockOpts {
@@ -16,6 +16,8 @@ interface MockOpts {
   openRouterZdrOnlySetting?: boolean
   openRouterAllowTrainingSetting?: boolean
   acpAgents?: AcpAgentConfig[]
+  packModels?: Array<{ id: string; label: string; group?: string }>
+  packEnabled?: boolean
 }
 
 // availableProviders() returns explicit booleans for every provider; mirror that
@@ -66,6 +68,36 @@ function mockApi(opts: MockOpts = {}): ApiClient {
       lmStudio: {
         ...base['lmStudio'],
         models: async () => opts.lmStudioModels ?? [],
+      },
+      packs: {
+        ...base['packs'],
+        list: async () => ({
+          packs:
+            opts.packModels === undefined
+              ? []
+              : [
+                  {
+                    id: 'personal.reference-model',
+                    trust: 'user',
+                    stability: 'experimental',
+                    name: 'personal.reference-model',
+                    enabled: opts.packEnabled ?? true,
+                    contributions: {
+                      toolNames: [],
+                      modelRoutes: opts.packModels,
+                      browserOrigins: [],
+                      blockingHooks: [],
+                      asyncHooks: [],
+                      commandHooks: [],
+                      promptBlocks: [],
+                      ui: [],
+                      capabilities: [],
+                      permissions: [],
+                    },
+                    settings: [],
+                  },
+                ],
+        }),
       },
     } satisfies ApiClient
   })()
@@ -231,7 +263,7 @@ describe('fetchModelOptions visibility', () => {
     // The Claude Cloud Agent heading is flagged as API-billed so ACP reads as
     // the preferred (own-login) alternative.
     const claudeCloud = options.filter(
-      (o) => o.group === 'Claude Cloud Agent — API-billed (ACP available)',
+      (o) => o.group === 'Claude Cloud Agent (billed to your API key)',
     )
     assert.ok(claudeCloud.some((o) => o.value === 'remote-agent:anthropic#claude-opus-4-8'))
     // No un-annotated Claude Cloud Agent heading remains.
@@ -254,7 +286,7 @@ describe('fetchModelOptions visibility', () => {
       '',
     )
     assert.ok(options.some((o) => o.group === 'Claude Cloud Agent'))
-    assert.ok(!options.some((o) => o.group?.includes('API-billed')))
+    assert.ok(!options.some((o) => o.group?.includes('billed to your API key')))
     const firstRemoteIdx = options.findIndex((o) => o.value.startsWith('remote-agent:anthropic'))
     const firstAcpIdx = options.findIndex((o) => o.value.startsWith('acp:'))
     assert.ok(firstRemoteIdx >= 0 && firstAcpIdx >= 0)
@@ -271,7 +303,7 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    const acp = options.filter((o) => o.group === 'Gemini CLI Client (ACP)')
+    const acp = options.filter((o) => o.group === 'Gemini CLI on this device')
     assert.deepEqual(
       acp.map((o) => o.value),
       ['acp:gemini-cli'],
@@ -300,7 +332,7 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    const acp = options.filter((o) => o.group === 'Cursor Client (ACP)')
+    const acp = options.filter((o) => o.group === 'Cursor on this device')
     assert.deepEqual(
       acp.map((o) => ({ value: o.value, label: o.label })),
       [
@@ -318,7 +350,7 @@ describe('fetchModelOptions visibility', () => {
     const options = await fetchModelOptions(mockApi(), 'acp:gemini-cli')
     const current = options.find((o) => o.value === 'acp:gemini-cli')
     assert.ok(current)
-    assert.equal(current.group, 'ACP agents')
+    assert.equal(current.group, 'Agents on this device')
     assert.match(current.label, /not configured/)
   })
 
@@ -328,7 +360,7 @@ describe('fetchModelOptions visibility', () => {
       acpAgents: [{ id: 'cursor', title: 'Cursor', command: 'cursor-agent', enabled: true }],
     })
     const options = await fetchModelOptions(api, 'acp:cursor', { sshWorkspace: true })
-    assert.ok(!options.some((o) => o.group?.includes('(ACP)') && !o.disabled))
+    assert.ok(!options.some((o) => o.group?.includes('on this device') && !o.disabled))
     assert.ok(!options.some((o) => o.value === 'acp:cursor' && !o.disabled))
     const stale = options.find((o) => o.value === 'acp:cursor')
     assert.ok(stale)
@@ -381,6 +413,42 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(options.some((option) => option.value === 'claude-haiku-4-5'))
     assert.ok(!options.some((option) => option.value.startsWith('remote-agent:')))
     assert.ok(!options.some((option) => option.value.startsWith('acp:')))
+  })
+
+  it('shows enabled selected-pack models only in whole-thread pickers', async () => {
+    const api = mockApi({
+      packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+    })
+    const options = await fetchModelOptions(api, '')
+    assert.deepEqual(
+      options.find((option) => option.group === 'Personal models'),
+      {
+        value: 'pack-model:personal.reference-model:judge%3Adefault',
+        label: 'Reference judge',
+        group: 'Personal models',
+      },
+    )
+    assert.equal(
+      modelDisplayLabel('pack-model:personal.reference-model:judge%3Adefault'),
+      'judge:default',
+    )
+    const roles = await fetchModelOptions(api, '', { includeAgentModels: false })
+    assert.ok(!roles.some((option) => option.value.startsWith('pack-model:')))
+  })
+
+  it('keeps a disabled pack model visible but unavailable', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        packEnabled: false,
+        packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+      }),
+      'pack-model:personal.reference-model:judge%3Adefault',
+    )
+    const selected = options.find((option) => option.value.startsWith('pack-model:'))
+    assert.ok(selected)
+    assert.equal(selected.disabled, true)
+    assert.equal(selected.label, 'Reference judge (pack disabled)')
+    assert.equal(selected.group, 'Personal models')
   })
 
   it('groups hosted cloud models under a heading', async () => {

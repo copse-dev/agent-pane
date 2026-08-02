@@ -1,0 +1,90 @@
+/* Shared modal shell for attachment content. Variant modules own only the
+   preview node itself; adding another file type should not add another dialog. */
+.attachment-preview-dialog {
+  width: max-content;
+  max-width: 96vw;
+  max-height: 92vh;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-sizing: border-box;
+}
+/* Never set display on a closed dialog: author display outranks the UA rule. */
+.attachment-preview-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.attachment-preview-title {
+  max-width: min(80ch, 80vw);
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-preview-body {
+  min-width: min(280px, 80vw);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  padding: var(--spacing-md);
+}
+.attachment-preview-dialog[data-preview-kind='text'] .attachment-preview-body {
+  width: min(80vw, 920px);
+  min-height: min(320px, 50vh);
+  max-height: min(72vh, 680px);
+  align-items: stretch;
+  justify-content: stretch;
+}
+.attachment-preview-text {
+  width: 100%;
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.attachment-preview-status {
+  margin: 0;
+  max-width: min(60ch, 80vw);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.attachment-preview-close {
+  margin-top: var(--spacing-sm);
+  width: 100%;
+  min-width: min(280px, 80vw);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.attachment-preview-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.text-expandable {
+  cursor: pointer;
+}
+.text-expandable:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.text-expandable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

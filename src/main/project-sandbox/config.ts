@@ -2,7 +2,6 @@ import { accessSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { copseWorkspaceDir } from '../services/storage/copse-paths.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import {
   getChatStoreRootSync,
@@ -101,7 +100,7 @@ function gitConfigReadPaths(): string[] {
  * the user's working tree.
  */
 export function workspaceTmpDir(): string {
-  return join(copseWorkspaceDir(), 'tmp')
+  return join(homedir(), '.copse', 'workspace', 'tmp')
 }
 
 /**
@@ -231,7 +230,7 @@ export function electronRuntimeAllowReadPaths(): string[] {
   return [...new Set(paths)]
 }
 
-/** Workspace seatbelt rules plus read access for the fs worker script and Electron runtime. */
+/** Workspace rules plus access for the fs worker script and Electron runtime. */
 export function fsWorkerSandboxOverlay(
   workspaceRoot: string,
   workerJsPath: string,
@@ -258,6 +257,55 @@ export function fsWorkerSandboxOverlay(
       denyWrite: fs.denyWrite,
       allowGitConfig: fs.allowGitConfig,
       allowRead,
+    },
+  }
+}
+
+/**
+ * Preserve workspace read confinement without creating Linux write-deny mount
+ * points. Read-only commands cannot mutate the checkout, so an empty write
+ * allow-list already provides the required boundary; retaining denyWrite would
+ * make bubblewrap materialize protected dotfiles that commands such as
+ * `git status` then report as untracked during their own execution.
+ */
+export function readOnlyWorkspaceSandboxOverlay(
+  workspaceRoot: string,
+): Partial<SandboxRuntimeConfig> {
+  const workspace = workspaceSandboxOverlay(workspaceRoot)
+  const fs = workspace.filesystem
+  if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
+  return {
+    ...workspace,
+    filesystem: {
+      ...fs,
+      allowWrite: [],
+      denyWrite: [],
+    },
+  }
+}
+
+/**
+ * Read-only overlay for the persistent fs server.
+ *
+ * Linux bwrap materializes non-existent mandatory write-deny paths (such as
+ * .bashrc and .vscode) in the real checkout. A long-lived writable worker keeps
+ * those mount points alive for the whole app session, so Git reports them as
+ * untracked. Writes use a short-lived worker with {@link fsWorkerSandboxOverlay};
+ * the persistent server only needs reads and therefore needs no write mounts.
+ */
+export function fsServerSandboxOverlay(
+  workspaceRoot: string,
+  workerJsPath: string,
+): Partial<SandboxRuntimeConfig> {
+  const worker = fsWorkerSandboxOverlay(workspaceRoot, workerJsPath)
+  const fs = worker.filesystem
+  if (!fs) throw new Error('fsWorkerSandboxOverlay must define a filesystem config')
+  return {
+    ...worker,
+    filesystem: {
+      ...fs,
+      allowWrite: [],
+      denyWrite: [],
     },
   }
 }

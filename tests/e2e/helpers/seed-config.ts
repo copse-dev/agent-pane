@@ -21,24 +21,19 @@ import {
   serializeSpineLine,
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
-import {
-  copseDataRoot,
-  copseUserDataDir,
-  copseWorkspaceDir,
-} from '../../../src/main/services/storage/copse-paths.ts'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 function copsePanelUserDataDir(): string {
-  let defaultDir: string
+  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
+  if (override) return override
   if (process.platform === 'darwin') {
-    defaultDir = join(homedir(), 'Library', 'Application Support', 'copse-panel')
-  } else if (process.platform === 'win32') {
-    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
-    defaultDir = join(appData, 'copse-panel')
-  } else {
-    defaultDir = join(homedir(), '.config', 'copse-panel')
+    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
   }
-  return copseUserDataDir(defaultDir)
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
+    return join(appData, 'copse-panel')
+  }
+  return join(homedir(), '.config', 'copse-panel')
 }
 
 const USER_DATA = copsePanelUserDataDir()
@@ -70,9 +65,10 @@ function packDisabledSeed(enabled: readonly string[]): string[] {
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
-/** New-format chat-store root; mirrors the app's active Copse profile. */
-function e2eWorkspaceDir(): string {
-  return copseWorkspaceDir()
+/** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
+export function e2eWorkspaceDir(): string {
+  const override = process.env.COPSE_WORKSPACE_DIR?.trim()
+  return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
 }
 
 /** Remove a rebuildable per-project thread catalog after an app relaunch. */
@@ -109,9 +105,8 @@ function normalizeToolCall(tc: Record<string, unknown>): Record<string, unknown>
 
 /**
  * Write one seeded thread as a self-contained new-format directory under
- * `$COPSE_DIR/workspace/<projectId>/<threadId>/` (issue #644), using the same
- * explode/spine logic the app persists with. A granular `COPSE_WORKSPACE_DIR`
- * still takes precedence. The catalog is intentionally not
+ * `COPSE_WORKSPACE_DIR/<projectId>/<threadId>/` (issue #644), using the same
+ * explode/spine logic the app persists with. The catalog is intentionally not
  * written — the store rebuilds it from the thread dirs on first read.
  */
 function seedThreadDir(projectId: string, thread: Record<string, unknown>): void {
@@ -205,9 +200,9 @@ function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   // Pin appearance so reference screenshots are deterministic: the app now
   // defaults to `system` theme (which resolves to whatever prefers-color-scheme
-  // the CI runner reports) and a pink interface tint — both would make shots
-  // depend on the host / drift with brand tweaks. Force the historical
-  // neutral-dark look here; individual specs can override via `settings`.
+  // the CI runner reports). Pin dark mode and disable any custom tint so shots
+  // do not depend on the host or saved appearance state; individual specs can
+  // override via `settings`.
   writeFileSync(
     SETTINGS_PATH,
     JSON.stringify({
@@ -223,8 +218,9 @@ function writeSettings(settings: Record<string, unknown>): void {
 /** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */
 export function seedE2eViewport(
   bounds: { width: number; height: number } = { width: 1280, height: 800 },
+  settings: Record<string, unknown> = {},
 ): void {
-  writeSettings({ windowBounds: bounds })
+  writeSettings({ windowBounds: bounds, ...settings })
 }
 
 /** Workspace + pinned theme for the preload boot-theme e2e (#41). */
@@ -263,6 +259,14 @@ export function seedMessageImageFixture(
             role: 'user',
             content: 'Here is the screenshot from the failing UI.',
             images: [imageDataUrl],
+            attachments: [
+              {
+                kind: 'file',
+                label: 'running-tests.diff',
+                content:
+                  'diff --git a/src/tests.ts b/src/tests.ts\n- expect(status).toBe("idle")\n+ expect(status).toBe("running")\n',
+              },
+            ],
             toolCalls: [],
             createdAt: Date.now(),
           },
@@ -343,11 +347,22 @@ export function seedEmptyProject(
      * that needs the Memories pane visible must lift it out of `packDisabled`.
      */
     okfMemoriesEnabled?: boolean
+    /** Explicit pack directories discovered at Settings load. */
+    packSources?: readonly string[]
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    developerMode?: boolean
+    /**
+     * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
+     * on). Seed `false` when a spec needs a shell approval dialog to appear
+     * regardless of whether the host has a working OS sandbox — with auto-run on,
+     * `decideShellPermission` allows anything the sandbox contains and no dialog
+     * is shown.
+     */
+    autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -389,6 +404,9 @@ export function seedEmptyProject(
   if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
   seedConfig.packDisabled =
     options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
+  if (options?.packSources) {
+    seedConfig.packSources = [...options.packSources]
+  }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
@@ -433,6 +451,12 @@ export function seedEmptyProject(
   if (options?.rightPanelPosition !== undefined) {
     settings.rightPanelPosition = options.rightPanelPosition
   }
+  if (options?.developerMode !== undefined) {
+    settings.developerMode = options.developerMode
+  }
+  if (options?.autoRunSandboxCommands !== undefined) {
+    settings.autoRunSandboxCommands = options.autoRunSandboxCommands
+  }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
   }
@@ -448,14 +472,21 @@ export function seedEmptyProject(
 
 /**
  * Seed OKF roadmap notes for a workspace, mirroring the knowledge store's
- * on-disk layout (`$COPSE_DIR/knowledge/<slug>-<hash8>/roadmap/<id>.md`,
+ * on-disk layout (`~/.copse/knowledge/<slug>-<hash8>/roadmap/<id>.md`,
  * `src/main/services/storage/knowledge-store.ts`). No `index.jsonl` is written —
  * the store heals unindexed note files in on first read. Returns the workspace's
  * knowledge dir so specs can remove it in `after`.
  */
 export function seedRoadmapNotes(
   workspaceRoot: string,
-  notes: { id: string; title: string; body: string; status?: string }[],
+  notes: {
+    id: string
+    title: string
+    body: string
+    status?: string
+    category?: string
+    complexity?: string
+  }[],
 ): string {
   const slug =
     workspaceRoot
@@ -467,7 +498,7 @@ export function seedRoadmapNotes(
       .replace(/^-+|-+$/g, '')
       .slice(0, 64) || 'workspace'
   const hash = createHash('sha1').update(workspaceRoot).digest('hex').slice(0, 8)
-  const knowledgeDir = join(copseDataRoot(), 'knowledge', `${slug}-${hash}`)
+  const knowledgeDir = join(homedir(), '.copse', 'knowledge', `${slug}-${hash}`)
   const roadmapDir = join(knowledgeDir, 'roadmap')
   mkdirSync(roadmapDir, { recursive: true })
   const iso = new Date().toISOString()
@@ -479,6 +510,8 @@ export function seedRoadmapNotes(
       `title: "${note.title}"`,
       'tags: []',
       `status: ${note.status ?? 'ready'}`,
+      ...(note.category ? [`category: ${note.category}`] : []),
+      ...(note.complexity ? [`complexity: ${note.complexity}`] : []),
       `createdAt: ${iso}`,
       `updatedAt: ${iso}`,
       '---',
@@ -1512,6 +1545,49 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * Flip Developer mode for a spec that seeds its own project/thread and so has
+ * no use for {@link seedDeveloperModeFixture}'s conversation. Writes the same
+ * pinned appearance defaults as {@link resetUserData}, so call it *after* that
+ * reset — not before, or the reset overwrites it.
+ */
+export function seedDeveloperModeSetting(developerMode: boolean): void {
+  writeSettings({ developerMode })
+}
+
+/** Populated conversation used to validate Developer mode's diagnostic surfaces. */
+export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: boolean): void {
+  const projectId = 'e2e-developer-mode-project'
+  const threadId = 'e2e-developer-mode-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Developer diagnostics',
+        status: 'idle',
+        messages: [
+          {
+            id: 'developer-mode-user-message',
+            role: 'user',
+            content: 'This persisted conversation can be exported.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 100, outputTokens: 20 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+  writeSettings({ developerMode })
+}
+
 /** ACP thread whose context snapshot represents a `usage_update` from the agent. */
 export function seedAcpUsageUpdateFixture(workspaceRoot: string): void {
   const projectId = 'e2e-acp-usage-update-project'
@@ -2373,6 +2449,97 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
   })
 }
 
+/** MCP and Copse-wrapped tool cards without internal server prefixes in their labels. */
+export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-mcp-tool-display-project'
+  const threadId = 'e2e-mcp-tool-display-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'MCP tool labels',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-mcp-labels',
+            role: 'user',
+            content: 'Create an issue, inspect the issue list, and check the repository state.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-mcp-single',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-mcp-create',
+                name: 'mcp__github__create_issue',
+                args: { title: 'Tool label polish' },
+                status: 'done',
+                result: 'Created issue #42',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-mcp-group',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-mcp-list',
+                name: 'mcp__github__list_issues',
+                args: {},
+                status: 'done',
+                result: '#42 Tool label polish',
+              },
+              {
+                id: 'tc-mcp-get',
+                name: 'mcp__github__get_issue',
+                args: { number: 42 },
+                status: 'done',
+                result: 'Tool label polish',
+              },
+            ],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-copse-group',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-copse-status',
+                name: 'mcp__copse__git_status',
+                args: {},
+                status: 'done',
+                result: 'working tree clean',
+              },
+              {
+                id: 'tc-copse-diff',
+                name: 'mcp__copse__git_diff',
+                args: {},
+                status: 'done',
+                result: 'no changes',
+              },
+            ],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
 /** Thread showing built-in browser tool cards (navigate/snapshot/screenshot/interact). */
 export function seedBrowserToolsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-tools-project'
@@ -3183,6 +3350,7 @@ export function seedForkResendFixture(workspaceRoot: string): {
   const threadId = 'e2e-fork-resend-thread'
   const title = 'Fork and resend'
   const now = Date.now()
+  rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],

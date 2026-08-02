@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
+import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
 import {
   validateRemoteAgentBaseUrl,
   validateWebOriginPattern,
@@ -111,6 +112,9 @@ export const webAllowedOriginsSchema = z
   .max(128)
 
 export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).max(500)
+
+/** Highest auto-approval tier honoured for shell commands (see @shared/auto-approval.ts). */
+export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
@@ -245,6 +249,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // boolean is retired — the pack toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
+  developerMode: z.boolean(),
   // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party
   // pack's `devtools-shortcut` capability (Settings > Packs), so the former
   // `devtoolsShortcutEnabled` top-level boolean is retired.
@@ -328,6 +333,9 @@ export const securitySettingsSchema = z.object({
   // Allow-list of command basenames trusted to run unsandboxed with no prompt.
   // Optional so bundles that never send it don't clobber a saved list.
   trustedShellCommands: trustedShellCommandsSchema.optional(),
+  // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
+  // older renderer bundles that never send it don't reset the user's choice.
+  shellAutoApprovalLevel: autoApprovalLevelSchema.optional(),
 })
 
 export type SecuritySettings = z.infer<typeof securitySettingsSchema>

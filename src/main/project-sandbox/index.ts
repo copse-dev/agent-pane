@@ -3,6 +3,7 @@ import { baseSandboxConfig } from './config.ts'
 import { recordNetworkDenial } from './network-scope.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
+import { isProjectSandboxPlatform, setProjectSandboxInitFailure } from './state.ts'
 
 export {
   spawnInProjectSandbox,
@@ -21,16 +22,23 @@ export {
 } from './sandbox-fs-client.ts'
 
 /**
- * Start Anthropic Sandbox Runtime for macOS project subprocesses (shell, git, rg, indexer).
- * No-op on non-macOS; falls back to unsandboxed spawns if init fails.
+ * Start Anthropic Sandbox Runtime for project subprocesses (shell, git, rg, indexer)
+ * on every platform with an ASRT backend — `sandbox-exec` on macOS, `bubblewrap`
+ * on Linux. No-op elsewhere; falls back to unsandboxed spawns if init fails.
  *
- * Subprocesses inherit seatbelt filesystem rules from {@link workspaceSandboxOverlay}.
+ * Subprocesses inherit filesystem rules from {@link workspaceSandboxOverlay}.
  * When ASRT is active, renderer `fs:*` IPC is served by {@link sandbox-fs-client}
- * (seatbelt-wrapped Node worker). `fs.watch` still uses main-process watchers; content
+ * (a sandboxed Node worker). `fs.watch` still uses main-process watchers; content
  * reloads go through the same gateway.
+ *
+ * Linux needs `bubblewrap` on PATH *and* usable unprivileged user namespaces.
+ * Where either is missing (a locked-down container, say) `initialize` throws and
+ * we degrade to unsandboxed exactly as before — with one consequence worth
+ * knowing: executable pack behavior fails closed without a sandbox, so packs
+ * stay unavailable rather than running unconfined (see pack-tool-host.ts).
  */
 export async function initProjectSandbox(): Promise<void> {
-  if (process.platform !== 'darwin') {
+  if (!isProjectSandboxPlatform()) {
     setProjectSandboxEnabled(false)
     return
   }
@@ -50,9 +58,15 @@ export async function initProjectSandbox(): Promise<void> {
       false,
     )
     setProjectSandboxEnabled(true)
-    console.log('[project-sandbox] macOS seatbelt active (ASRT)')
+    setProjectSandboxInitFailure(undefined)
+    console.log(
+      `[project-sandbox] ${
+        process.platform === 'darwin' ? 'macOS seatbelt' : 'Linux bubblewrap'
+      } active (ASRT)`,
+    )
   } catch (err) {
     setProjectSandboxEnabled(false)
+    setProjectSandboxInitFailure(err instanceof Error ? err.message : String(err))
     console.warn('[project-sandbox] ASRT init failed — project commands run unsandboxed:', err)
   }
 }

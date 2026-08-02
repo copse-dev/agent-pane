@@ -132,7 +132,6 @@ help:
 	@echo "  make runners-reprovision          # clean-rebuild the fleet (after a repull)"
 	@echo "  make runners RUNNERS=5             # 5 runners"
 	@echo "  make run                           # sync deps+build, then launch"
-	@echo "  COPSE_DIR=\"\$$HOME/.copse/profiles/secondary\" make run  # launch a separate profile"
 
 # ============================================================================
 # 1) Docker CI runners

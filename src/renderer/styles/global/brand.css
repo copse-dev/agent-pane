@@ -1,0 +1,87 @@
+/* Copse brand layer — deliberately last in global.css so the shared marketing
+   action recipe wins over older component-local button geometry. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+:is(
+  .welcome-open-btn,
+  .submit-btn,
+  .settings-buttons button,
+  .onboarding-primary,
+  .onboarding-skip,
+  .onboarding-back,
+  .ask-user-cancel,
+  .ask-user-submit,
+  .confirm-dialog-cancel,
+  .confirm-dialog-confirm,
+  .update-prompt-secondary,
+  .update-prompt-primary,
+  .ssh-prompt-cancel,
+  .ssh-prompt-submit
+) {
+  height: var(--action-min-height);
+  min-height: var(--action-min-height);
+  padding: var(--action-padding-block) var(--action-padding-inline);
+  border-radius: var(--action-radius);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* The historical Settings selectors include an attribute selector and outrank
+   the generic action list above. Pin the same shared recipe at dialog scope. */
+#settings-dialog .settings-buttons button {
+  height: var(--action-min-height);
+  min-height: var(--action-min-height);
+  padding: var(--action-padding-block) var(--action-padding-inline);
+  border-radius: var(--action-radius);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+:is(
+  .settings-buttons button[type='button'],
+  .onboarding-skip,
+  .onboarding-back,
+  .ask-user-cancel,
+  .confirm-dialog-cancel,
+  .update-prompt-secondary,
+  .ssh-prompt-cancel
+) {
+  border: 1px solid currentColor;
+  color: var(--text-primary);
+}
+
+:is(
+  .welcome-open-btn,
+  .submit-btn,
+  .settings-buttons button[type='submit'],
+  .onboarding-primary,
+  .ask-user-submit,
+  .confirm-dialog-confirm:not(.confirm-dialog-danger),
+  .update-prompt-primary,
+  .ssh-prompt-submit
+) {
+  color: var(--text-on-accent);
+  background: var(--accent-fill);
+}
+
+:is(
+  .welcome-open-btn,
+  .submit-btn,
+  .settings-buttons button[type='submit'],
+  .onboarding-primary,
+  .ask-user-submit,
+  .confirm-dialog-confirm:not(.confirm-dialog-danger),
+  .update-prompt-primary,
+  .ssh-prompt-submit
+):hover {
+  opacity: 1;
+  background: var(--accent-fill-hover);
+}

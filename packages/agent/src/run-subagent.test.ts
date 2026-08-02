@@ -66,6 +66,35 @@ describe('runSubagent', () => {
     assert.ok(subagentChunks.some((c) => c.type === 'subagent_done'))
   })
 
+  it('stores reasoning chunks on the subagent message and forwards them (#1409)', async () => {
+    const subagentChunks: AgentStreamChunk[] = []
+    const { session } = await runSubagent({
+      provider: mockProvider([
+        [
+          { type: 'reasoning', text: 'Thinking about auth...' },
+          { type: 'text', text: 'Found auth in src/auth.ts' },
+          { type: 'done' },
+        ],
+      ]),
+      prompt: 'Find auth code',
+      parentGoal: 'Explain authentication',
+      tools: [],
+      parentToolCallId: 'parent-reasoning',
+      onSubagentChunk: (c) => subagentChunks.push(c),
+      executeTool: async () => '',
+    })
+
+    const msg = session.messages.find((m) => m.role === 'assistant')
+    assert.ok(msg)
+    assert.equal(msg.reasoning, 'Thinking about auth...')
+    assert.equal(msg.content, 'Found auth in src/auth.ts')
+    assert.ok(
+      subagentChunks.some(
+        (c) => c.type === 'subagent_reasoning' && c.text === 'Thinking about auth...',
+      ),
+    )
+  })
+
   it('forwards inner tool calls as subagent chunks', async () => {
     const subagentChunks: AgentStreamChunk[] = []
     await runSubagent({

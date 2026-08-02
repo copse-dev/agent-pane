@@ -20,7 +20,7 @@ describe('ZDR provider presets', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
-    const providers = $('#settings-custom-providers-host fieldset')
+    const providers = $('#settings-providers-host fieldset')
     await expect(providers).toBeDisplayed()
     await providers.$('button=Groq').waitForExist({ timeout: 15_000 })
 
@@ -29,7 +29,7 @@ describe('ZDR provider presets', () => {
       assert.ok(chipLabels.includes(label), `expected a ${label} provider chip`)
     }
 
-    await providers.$('button=Other').click()
+    await providers.$('button=Add').click()
     const knownEndpointLabels = await providers
       .$$(`select option`)
       .map((option) => option.getText())
@@ -45,7 +45,7 @@ describe('ZDR provider presets', () => {
     await expect(form).toBeDisplayed()
 
     const details = await browser.execute(() => {
-      const host = document.querySelector('#settings-custom-providers-host')
+      const host = document.querySelector('#settings-providers-host')
       const title = host?.querySelector('.provider-form-title')
       const badge = title?.querySelector('.provider-privacy-badge')
       const policyHint = host?.querySelector('.provider-privacy-hint')

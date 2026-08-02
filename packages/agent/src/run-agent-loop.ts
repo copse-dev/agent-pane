@@ -53,12 +53,24 @@ import type { ContinuationGrant } from './hooks/continuation-budget.ts'
 import type { StreamCutRecord } from './stream-cut-record.ts'
 import { truncateStreamCutReasoning } from './stream-cut-record.ts'
 import {
+  detectCrossTurnCircle,
   detectReasoningCircle,
+  detectTextRepeatCircle,
   type ReasoningCheckpointPolicy,
   type ReasoningCheckpointRecord,
+  type ReasoningCircleSignal,
 } from './reasoning-circle-detector.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
+/**
+ * Recent turns' reasoning text kept for cross-turn circle detection (#1408):
+ * `streamReasoningText` resets to empty at the top of every LLM call, so a
+ * short reasoning pattern repeating across several separate, individually
+ * small calls never trips the within-call thresholds. This window persists
+ * across calls instead, distinct from `recentFingerprints` (tool-call-only
+ * dedup).
+ */
+const RECENT_REASONING_TEXT_WINDOW = 6
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
 const MAX_REASONING_RUNAWAY_STREAK = 2
 /** Do not compact on the first tool round unless the transcript is critically full. */
@@ -904,6 +916,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // second means the model is stuck looping, so the run ends instead of re-priming.
   let reasoningRunawayStreak = 0
   const recentFingerprints: string[] = []
+  // Cross-turn reasoning fingerprint (#1408): see RECENT_REASONING_TEXT_WINDOW.
+  const recentReasoningTexts: string[] = []
 
   // The in-loop nudge *policies* live in `stepBoundary` hooks (E1); this loop
   // only fires the event at each step boundary and applies the nudge text each
@@ -1176,6 +1190,17 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
                   reasoningCheckpointPolicy.maxNonReasoningTokens,
                   reasoningCheckpointHardMax,
                 )
+                // Plain visible output rode this cap with zero semantic loop
+                // detection (#1408) — an exact-repeat check safe for prose,
+                // code, and formatted answers alike (see
+                // `detectTextRepeatCircle`) can still cut it early.
+                const textSignals = detectTextRepeatCircle(assistantText)
+                if (textSignals.length > 0) {
+                  stopReason = 'max_tokens'
+                  streamCappedAsRunaway = true
+                  streamCutReason = 'reasoning_circle_detected'
+                  break
+                }
                 if (nextReasoningCheckpoint >= nonReasoningHardMax) {
                   stopReason = 'max_tokens'
                   streamCappedAsRunaway = true
@@ -1241,6 +1266,35 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       onChunk,
       coerceTextToolCallArgs,
     )
+
+    // Cross-turn reasoning fingerprint (#1408): `streamReasoningText` resets
+    // every call, so a short reasoning pattern repeating across several
+    // separate, individually small calls never trips the mid-stream checks
+    // above. Only meaningful for turns with no tool call (the same population
+    // those checks already cover) that are themselves reasoning-dominated —
+    // a turn that landed a substantial real answer still finalizes normally
+    // even if its reasoning preamble happens to echo an earlier turn's.
+    if (reasoningCheckpointPolicy && pendingToolCalls.length === 0) {
+      const reasoningDominatedTurn =
+        streamReasoningChars > assistantText.length &&
+        assistantText.trim().length <= reasoningRunawayTextToleranceChars
+      const reasoningText = streamReasoningText.trim()
+      if (reasoningDominatedTurn && reasoningText) {
+        const crossTurnSignals: ReasoningCircleSignal[] = detectCrossTurnCircle([
+          ...recentReasoningTexts,
+          reasoningText,
+        ])
+        if (crossTurnSignals.length > 0 && !streamCappedAsRunaway) {
+          stopReason = 'max_tokens'
+          streamCappedAsRunaway = true
+          streamCutReason = 'reasoning_circle_detected'
+        }
+        recentReasoningTexts.push(reasoningText)
+        if (recentReasoningTexts.length > RECENT_REASONING_TEXT_WINDOW) {
+          recentReasoningTexts.shift()
+        }
+      }
+    }
 
     // Post-stream nudges (E1): the `truncation-continue` and `reasoning-runaway`
     // policies for this just-finished stream. Selected once here; the switch

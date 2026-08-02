@@ -87,6 +87,8 @@ import { startAgentController } from './controller/agent.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
+import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
   addProjectFromPath,
   attachProjectThreadCache,
@@ -217,28 +219,30 @@ async function boot(): Promise<void> {
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
-  const rawSavedModel = await api.settings.get('model')
+  const startupSettings = await loadStartupSettings(api.settings)
+  const rawSavedModel = startupSettings.model
   const savedModel = typeof rawSavedModel === 'string' ? rawSavedModel : null
-  const savedLayout = await api.settings.get('layout')
-  const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
-  const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
-  const savedOpenLinksInBuiltInBrowser = await api.settings.get('openLinksInBuiltInBrowser')
+  const savedLayout = startupSettings.layout
+  const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
+  const savedRightPanelPosition = startupSettings.rightPanelPosition
+  const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
+  const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
   // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
   // the document root before the layout paints — panes read both from the store
   // as they mount below, so no post-mount re-theming is needed.
-  const savedTheme = await api.settings.get('theme')
+  const savedTheme = startupSettings.theme
   const themePreference = isThemePreference(savedTheme) ? savedTheme : DEFAULT_THEME_PREFERENCE
   // `system` resolves against the OS here; a watcher below keeps it live.
   const theme = resolveTheme(themePreference)
-  const savedFontSize = await api.settings.get('fontSize')
+  const savedFontSize = startupSettings.fontSize
   const fontSize =
     typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
       ? savedFontSize
       : store.getState().fontSize
   // Interface scale drives CSS --ui-scale (spacing + type tokens). Apply before
   // paint so the shell does not flash at 100% then jump.
-  const uiScale = restoreUiScale(await api.settings.get('uiScale'))
+  const uiScale = restoreUiScale(startupSettings.uiScale)
   applyThemeToDocument(theme)
   // When the preference is `system`, follow OS light/dark flips live so the app
   // re-themes without a relaunch. Reads the preference from the store each time,
@@ -253,10 +257,10 @@ async function boot(): Promise<void> {
   )
   // Restore the interaction accent and whole-app tint before the layout paints
   // so controls and surfaces do not flash their defaults before shifting.
-  const savedAccentColor = await api.settings.get('uiAccentColor')
+  const savedAccentColor = startupSettings.uiAccentColor
   applyUiAccent(typeof savedAccentColor === 'string' ? savedAccentColor : DEFAULT_ACCENT_COLOR)
-  const savedTintColor = await api.settings.get('uiTintColor')
-  const savedTintStrength = await api.settings.get('uiTintStrength')
+  const savedTintColor = startupSettings.uiTintColor
+  const savedTintStrength = startupSettings.uiTintStrength
   applyUiTint(
     typeof savedTintColor === 'string' ? savedTintColor : DEFAULT_TINT_COLOR,
     isUiTintStrength(savedTintStrength) ? savedTintStrength : DEFAULT_TINT_STRENGTH,
@@ -275,6 +279,7 @@ async function boot(): Promise<void> {
       : 'auto',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
+    developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
   })
   // Reflect the "open links in built-in browser" choice onto the document root so
   // CSS can flag external links with an icon (and re-sync when Settings saves).
@@ -293,6 +298,9 @@ async function boot(): Promise<void> {
     attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
+    // Outside Cursor cloud agents for the open project — first tick after one
+    // interval, never on editor open.
+    startExternalCursorAgentSync(store, api)
   }
   attachProjectThreadCache(store)
 
@@ -332,6 +340,15 @@ async function boot(): Promise<void> {
     openRightPanelWithWorkspace(store, api, 'browser')
   })
 
+  // View ▸ Focus Address Bar (Cmd/Ctrl+L). Opens the Browser pane first so the
+  // shortcut works from anywhere, then hands off to browser-pane.ts, which owns
+  // the tabs and therefore knows which address bar is the active one.
+  api.menu.onFocusBrowserUrlBar(() => {
+    ensureLayout()
+    openRightPanelWithWorkspace(store, api, 'browser')
+    store.emit('browser_url_bar_focus_requested')
+  })
+
   // Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) opens the shortcut cheat sheet. Unlike
   // the panel items it needs no workspace, so it works from the welcome screen too.
   api.menu.onKeyboardShortcuts(() => {
@@ -368,8 +385,12 @@ async function boot(): Promise<void> {
   const [firstProject] = projects
   if (firstProject) {
     const active = projects.find((p) => p.id === activeProjectId) ?? firstProject
-    await restoreProject(store, api, active.id)
+    // Mount the panel immediately rather than waiting for restoreProject() to
+    // finish — a large project's thread load (or a slow SSH connect) can take a
+    // while, and every mounted pane already renders its own empty/loading state
+    // and updates reactively once workspace_changed/threads_changed fire below.
     ensureLayout()
+    await restoreProject(store, api, active.id)
   } else {
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
     const unsubWelcome = store.on('workspace_changed', () => {
@@ -441,7 +462,7 @@ function mountFullLayout(): void {
   })
   handleStopShortcut = inputBar.handleStopShortcut
   const conversationRoot = requireElement('conversation')
-  mountConversation(conversationRoot, store, api, inputRoot)
+  mountConversation(conversationRoot, store, api)
   mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')

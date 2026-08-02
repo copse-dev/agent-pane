@@ -52,6 +52,12 @@ export const SCALEWAY_ZONES = [
 export const DEFAULT_TTL_MINUTES = 240
 export const DEFAULT_VOLUME_SIZE_GB = 80
 export const DEFAULT_SCW_VOLUME_PRUNE_AGE_HOURS = 24
+/**
+ * Gap between the two unattached observations the IP prune requires before it
+ * deletes. Launch reserves an IP and attaches it within seconds, so this only
+ * needs to outlast a slow `server create`.
+ */
+export const DEFAULT_SCW_IP_PRUNE_SETTLE_SECONDS = 120
 const SSH_READY_POLL_SECONDS = 5
 const SSH_READY_TIMEOUT_MS = 10 * 60 * 1000
 
@@ -129,6 +135,26 @@ export interface ScalewayVolumeReconcileResult {
   deleted: number
   failedIds: string[]
   remaining: ScalewayBlockVolume[]
+}
+
+/**
+ * A zonal flexible IP. Scaleway bills these from reservation to deletion
+ * whether or not they are attached, so an orphan never stops charging on its
+ * own — unlike a leaked server, which at least dies with its TTL.
+ */
+export interface ScalewayFlexibleIp {
+  address: string
+  attached: boolean
+  id: string
+  tags: string[]
+  zone: string
+}
+
+export interface ScalewayIpReconcileResult {
+  candidates: number
+  deleted: number
+  failedIds: string[]
+  remaining: ScalewayFlexibleIp[]
 }
 
 /** The subset of a CLI's config that SSH plumbing needs. */
@@ -479,6 +505,11 @@ else
     (.volumes // {}) | to_entries[] | .value | select(type == "object") | .id // empty
   ')
 fi
+# Every step records its failure and carries on rather than exiting early: the
+# flexible IP is billed from reservation until deletion whether or not anything
+# is attached to it, so a flaky volume delete must not strand it. Deleting it
+# is deferred to last because the API calls above need this host's egress.
+FAILED=0
 echo "copse TTL: terminating $SERVER_ID in $ZONE"
 code=000
 for attempt in 1 2 3 4 5 6 7 8; do
@@ -498,7 +529,7 @@ for attempt in 1 2 3 4 5 6 7 8; do
 done
 if [[ ! "$code" =~ ^2 ]] && [[ "$code" != "404" ]]; then
   echo "copse TTL: failed to terminate $SERVER_ID after retries (last HTTP $code)" >&2
-  exit 1
+  FAILED=1
 fi
 for volume_id in "\${VOLUME_IDS[@]}"; do
   [[ -z "$volume_id" ]] && continue
@@ -516,20 +547,28 @@ for volume_id in "\${VOLUME_IDS[@]}"; do
   done
   if [[ ! "$vol_code" =~ ^2 ]] && [[ "$vol_code" != "404" ]]; then
     echo "copse TTL: failed to delete volume $volume_id (last HTTP $vol_code)" >&2
-    exit 1
+    FAILED=1
   fi
 done
 if [[ -n "$IP_ID" ]]; then
   echo "copse TTL: deleting flexible IP $IP_ID"
-  ip_code=$(api DELETE "/instance/v1/zones/$ZONE/ips/$IP_ID" || true)
-  if [[ "$ip_code" =~ ^2 ]] || [[ "$ip_code" == "404" ]]; then
-    echo "copse TTL: IP delete done (HTTP $ip_code)"
-  else
-    echo "copse TTL: IP delete HTTP $ip_code; body follows" >&2
+  ip_code=000
+  for attempt in 1 2 3 4 5 6 7 8; do
+    ip_code=$(api DELETE "/instance/v1/zones/$ZONE/ips/$IP_ID" || true)
+    if [[ "$ip_code" =~ ^2 ]] || [[ "$ip_code" == "404" ]]; then
+      echo "copse TTL: IP delete done (HTTP $ip_code)"
+      break
+    fi
+    echo "copse TTL: IP delete HTTP $ip_code (attempt $attempt); body follows" >&2
     cat /tmp/copse-ttl-api.body >&2 || true
-    exit 1
+    sleep $((attempt * 2))
+  done
+  if [[ ! "$ip_code" =~ ^2 ]] && [[ "$ip_code" != "404" ]]; then
+    echo "copse TTL: failed to delete flexible IP $IP_ID (last HTTP $ip_code)" >&2
+    FAILED=1
   fi
 fi
+exit "$FAILED"
 TERMINATE_EOF
 chmod 700 /opt/copse-burst/ttl-terminate.sh
 systemd-run \\
@@ -558,6 +597,16 @@ set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl docker.io docker-compose-v2 git jq make tar
+# Ubuntu 24.04 enables this AppArmor restriction by default. It lets bwrap
+# create a user namespace but strips the capabilities needed to configure the
+# namespace's loopback interface, so every sandboxed command later fails with
+# "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted". These are
+# dedicated, ephemeral runner hosts; persist the host prerequisite before any
+# runner container starts rather than weakening ASRT inside the container.
+if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+  printf '%s\n' 'kernel.apparmor_restrict_unprivileged_userns=0' > /etc/sysctl.d/99-copse-bwrap-userns.conf
+  sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+fi
 systemctl enable --now docker
 mkdir -p /opt/copse-burst
 ${ttlSnippet}
@@ -788,6 +837,71 @@ export function scalewayBlockVolumeListArgs(config: { zone: string }, managedBy:
 }
 
 /**
+ * Reserve a flexible IP up front instead of letting `server create ip=new` do
+ * it. Two reasons: `ip=new` produces an *untagged* IP (server tags do not
+ * propagate to it), which leaves a reaper unable to tell fleet garbage from a
+ * deliberately reserved address; and the id is only known to us here, so a
+ * server create that fails afterwards can still give the IP back.
+ */
+export function scalewayIpCreateArgs(
+  config: { zone: string },
+  name: string,
+  tags: FleetTags,
+): string[] {
+  return scalewayJsonArgs(config, ['instance', 'ip', 'create', ...scalewayTagArgs(name, tags)])
+}
+
+export function scalewayIpDeleteArgs(config: { zone: string }, ipId: string): string[] {
+  return scalewayArgs(config, ['instance', 'ip', 'delete', ipId])
+}
+
+export function scalewayIpListArgs(config: { zone: string }, managedBy: string): string[] {
+  return scalewayJsonArgs(config, ['instance', 'ip', 'list', `tags.0=${managedBy}`])
+}
+
+export function parseScalewayIpId(raw: string): string {
+  const parsed: unknown = JSON.parse(raw)
+  if (!isRecord(parsed)) throw new Error('Scaleway IP response was not an object')
+  const wrapped = parsed['ip']
+  const ip = isRecord(wrapped) ? wrapped : parsed
+  const id = stringFromPath(ip['id'])
+  if (!id) throw new Error(`Scaleway IP create did not return an id: ${raw}`)
+  return id
+}
+
+export function parseScalewayIps(raw: string, defaultZone: string): ScalewayFlexibleIp[] {
+  const parsed: unknown = JSON.parse(raw)
+  const values = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed['ips'])
+      ? parsed['ips']
+      : undefined
+  if (values === undefined) throw new Error('Scaleway IP response was not an array')
+  return values.map((value) => {
+    if (!isRecord(value)) throw new Error('Scaleway IP row was not an object')
+    const tags = value['tags']
+    return {
+      address: stringFromPath(value['address']),
+      // A null/absent server is the only "unused" signal the Instance IP API
+      // gives us; unlike volumes there is no detach timestamp to age against.
+      attached: isRecord(value['server']),
+      id: stringFromPath(value['id']),
+      tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      zone: stringFromPath(value['zone']) || defaultZone,
+    }
+  })
+}
+
+export function selectScalewayManagedOrphanIps(
+  ips: readonly ScalewayFlexibleIp[],
+  requiredTags: readonly string[],
+): ScalewayFlexibleIp[] {
+  return ips.filter(
+    (ip) => !ip.attached && requiredTags.every((tag) => ip.tags.includes(tag)) && ip.id !== '',
+  )
+}
+
+/**
  * Volume IDs (any type) attached to a Scaleway server, from the JSON of
  * `scw instance server get`. The server payload carries volumes as a
  * position-keyed object ({ "0": {...}, "1": {...} }), optionally under a
@@ -900,6 +1014,93 @@ export function reconcileScalewayManagedVolumes(
   }
 }
 
+export function listScalewayManagedIps(
+  base: { name?: string; tags: FleetTags },
+  zones: readonly string[],
+): ScalewayFlexibleIp[] {
+  const requiredTags = base.name
+    ? scalewayTags(base.name, base.tags)
+    : [base.tags.kind, base.tags.managedBy]
+  const ips = zones.flatMap((zone) =>
+    parseScalewayIps(capture('scw', scalewayIpListArgs({ zone }, base.tags.managedBy)), zone),
+  )
+  return ips.filter((ip) => requiredTags.every((tag) => ip.tags.includes(tag)))
+}
+
+/**
+ * Delete managed flexible IPs that no server is using.
+ *
+ * The Instance IP API exposes no creation or detach timestamp, so there is no
+ * age window to lean on the way the volume prune does. Instead the candidate
+ * set is observed twice, `settleSeconds` apart: launch reserves an IP and
+ * attaches it moments later, so the only IP that reads as unattached in both
+ * passes is one whose server never arrived or is already gone.
+ */
+export function reconcileScalewayManagedIps(
+  base: { name?: string; tags: FleetTags },
+  zones: readonly string[],
+  settleSeconds: number,
+): ScalewayIpReconcileResult {
+  const requiredTags = base.name
+    ? scalewayTags(base.name, base.tags)
+    : [base.tags.kind, base.tags.managedBy]
+  const candidates = selectScalewayManagedOrphanIps(
+    listScalewayManagedIps(base, zones),
+    requiredTags,
+  )
+  let confirmed = candidates
+  if (candidates.length > 0 && settleSeconds > 0) {
+    sleepSync(settleSeconds)
+    const stillOrphaned = new Set(
+      selectScalewayManagedOrphanIps(listScalewayManagedIps(base, zones), requiredTags).map(
+        (ip) => ip.id,
+      ),
+    )
+    confirmed = candidates.filter((ip) => stillOrphaned.has(ip.id))
+  }
+  const failedIds: string[] = []
+  for (const ip of confirmed) {
+    try {
+      capture('scw', scalewayIpDeleteArgs({ zone: ip.zone }, ip.id))
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (!isScalewayNotFound(detail)) {
+        failedIds.push(ip.id)
+        console.error(
+          `==> Warning: failed to prune flexible IP ${ip.address} (${ip.id}): ${detail}`,
+        )
+      }
+    }
+  }
+  return {
+    candidates: confirmed.length,
+    deleted: confirmed.length - failedIds.length,
+    failedIds,
+    remaining: listScalewayManagedIps(base, zones),
+  }
+}
+
+/**
+ * Release flexible IPs we know the id of. Used on the launch failure paths and
+ * as a post-terminate backstop: `server terminate with-ip=true` covers the
+ * happy path, but a terminate that errors mid-flight leaves the IP reserved
+ * and billing forever. Not-found means someone already released it.
+ */
+export function deleteScalewayIpsBestEffort(config: { zone: string }, ipIds: string[]): void {
+  for (const ipId of ipIds) {
+    if (!ipId) continue
+    try {
+      capture('scw', scalewayIpDeleteArgs(config, ipId))
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      if (isScalewayNotFound(detail)) continue
+      console.error(
+        `==> Warning: failed to delete flexible IP ${ipId} in ${config.zone}; it keeps billing until removed: ${detail}`,
+      )
+    }
+  }
+}
+
 function scalewayServerVolumeIds(config: { zone: string }, serverId: string): string[] {
   try {
     return parseScalewayVolumeIds(
@@ -909,6 +1110,45 @@ function scalewayServerVolumeIds(config: { zone: string }, serverId: string): st
     const detail = err instanceof Error ? err.message : String(err)
     console.error(
       `==> Warning: could not read volumes for ${serverId} in ${config.zone}; block storage may leak: ${detail}`,
+    )
+    return []
+  }
+}
+
+/**
+ * Flexible IP ids attached to a server, from `scw instance server get` JSON.
+ * The payload has carried the public IP as both a single `public_ip` object
+ * and a `public_ips` array depending on API version, so accept either.
+ */
+export function parseScalewayServerIpIds(raw: string): string[] {
+  const parsed: unknown = JSON.parse(raw)
+  const envelope = isRecord(parsed) ? parsed : undefined
+  const server = isRecord(envelope?.['server']) ? envelope['server'] : envelope
+  if (server === undefined) return []
+  const ids = new Set<string>()
+  const single = nestedRecord(server['public_ip']) ?? nestedRecord(server['publicIp'])
+  const id = stringFromPath(single?.['id'])
+  if (id) ids.add(id)
+  for (const key of ['public_ips', 'publicIps']) {
+    const list = server[key]
+    if (!isUnknownArray(list)) continue
+    for (const entry of list) {
+      const entryId = stringFromPath(nestedRecord(entry)?.['id'])
+      if (entryId) ids.add(entryId)
+    }
+  }
+  return [...ids]
+}
+
+function scalewayServerIpIds(config: { zone: string }, serverId: string): string[] {
+  try {
+    return parseScalewayServerIpIds(
+      capture('scw', scalewayJsonArgs(config, ['instance', 'server', 'get', serverId])),
+    )
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    console.error(
+      `==> Warning: could not read public IPs for ${serverId} in ${config.zone}; a flexible IP may leak: ${detail}`,
     )
     return []
   }
@@ -967,13 +1207,17 @@ export function deleteScalewayVolumesBestEffort(
 }
 
 interface ScalewayServerTerminationOperations {
+  deleteIps: (config: { zone: string }, ipIds: string[]) => void
   deleteVolumes: (config: { zone: string }, volumeIds: string[]) => void
+  readIpIds: (config: { zone: string }, serverId: string) => string[]
   readVolumeIds: (config: { zone: string }, serverId: string) => string[]
   terminate: (config: { zone: string }, serverId: string) => void
 }
 
 const SCALEWAY_SERVER_TERMINATION_OPERATIONS: ScalewayServerTerminationOperations = {
+  deleteIps: deleteScalewayIpsBestEffort,
   deleteVolumes: deleteScalewayVolumesBestEffort,
+  readIpIds: scalewayServerIpIds,
   readVolumeIds: scalewayServerVolumeIds,
   terminate: (config, serverId) => {
     run('scw', scalewayTerminateArgs(config, serverId))
@@ -981,12 +1225,14 @@ const SCALEWAY_SERVER_TERMINATION_OPERATIONS: ScalewayServerTerminationOperation
 }
 
 /**
- * Terminate a Scaleway server and delete its Block Storage root volume.
- * Volume IDs are captured *before* terminate because termination orphans the
- * SBS root (the CLI detaches but does not delete it) and the server metadata
- * needed to enumerate volumes disappears once it is gone. Volume deletion is
- * attempted even when `scw instance server terminate` reports a waiter timeout:
- * the server may already be gone while its detached SBS root keeps billing.
+ * Terminate a Scaleway server and release everything it keeps billing for.
+ * Volume and IP ids are captured *before* terminate because termination orphans
+ * the SBS root (the CLI detaches but does not delete it) and the server
+ * metadata needed to enumerate both disappears once it is gone. Cleanup runs
+ * even when `scw instance server terminate` reports a waiter timeout: the
+ * server may already be gone while its detached root and reserved IP bill on.
+ * `with-ip=true` handles the happy path, so the IP delete is usually a no-op
+ * 404 — it only earns its keep when terminate errors mid-flight.
  */
 export function terminateScalewayServer(
   config: { zone: string },
@@ -994,10 +1240,12 @@ export function terminateScalewayServer(
   operations: ScalewayServerTerminationOperations = SCALEWAY_SERVER_TERMINATION_OPERATIONS,
 ): void {
   const volumeIds = operations.readVolumeIds(config, serverId)
+  const ipIds = operations.readIpIds(config, serverId)
   try {
     operations.terminate(config, serverId)
   } finally {
     operations.deleteVolumes(config, volumeIds)
+    operations.deleteIps(config, ipIds)
   }
 }
 
@@ -1104,6 +1352,11 @@ export function launchScalewayServers(
   try {
     for (let index = 0; index < count; index += 1) {
       const name = `${config.name}-${Date.now().toString(36)}-${String(index + 1)}`
+      // Reserved before the server so a failed create can hand it back, and so
+      // it carries fleet tags the nightly IP prune can safely match on.
+      const ipId = parseScalewayIpId(
+        capture('scw', scalewayIpCreateArgs(config, config.name, config.tags)),
+      )
       const args = scalewayJsonArgs(config, [
         'instance',
         'server',
@@ -1113,19 +1366,20 @@ export function launchScalewayServers(
         `type=${config.type}`,
         // PLAY2 defaults to a tiny SBS root; the runner image + bake needs ~AWS-sized disk.
         `root-volume=sbs:${String(config.volumeSizeGb)}GB`,
-        'ip=new',
-        'dynamic-ip-required=true',
+        `ip=${ipId}`,
         `cloud-init=@${cloudInitPath}`,
         ...scalewayTagArgs(config.name, config.tags),
         ...(config.securityGroupId !== undefined
           ? [`security-group-id=${config.securityGroupId}`]
           : []),
       ])
+      let ipAttached = false
       try {
         const raw = capture('scw', args)
         const id = parseScalewayServer(raw).providerId
         if (!id) die(`Scaleway create did not return a server id: ${raw}`)
         ids.push(id)
+        ipAttached = true
         const volumeIds = parseScalewayVolumeIds(raw)
         if (volumeIds.length === 0) {
           volumeIds.push(...scalewayServerVolumeIds(config, id))
@@ -1137,6 +1391,11 @@ export function launchScalewayServers(
           capture('scw', scalewayBlockVolumeTagArgs(config, volumeId, config.name, config.tags))
         }
       } catch (err) {
+        // The IP outlives a failed create and bills until deleted, so release
+        // it on every exit path — including the quota bail-out, which used to
+        // return straight past cleanup and leak one IP per exhausted zone.
+        // Once it is attached the server owns it and terminate takes it down.
+        if (!ipAttached) deleteScalewayIpsBestEffort(config, [ipId])
         if (isScalewayQuotaError(err)) {
           if (ids.length > 0) {
             console.log(

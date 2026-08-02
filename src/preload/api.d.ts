@@ -1,4 +1,5 @@
 import type { StreamChunk, ContextBreakdown } from '@shared/types'
+import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
@@ -42,6 +43,7 @@ import type {
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
+import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
 
 export type { DetectedAcpAgent }
 
@@ -77,6 +79,11 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    onPackTabRequest: (
+      handler: (
+        request: PackBrowserTabRequest,
+      ) => Promise<{ tabId: string; webContentsId: number }>,
+    ) => () => void
   }
   security: {
     getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
@@ -271,6 +278,12 @@ export interface ApiClient {
     ) => Promise<void>
     delete: (projectId: string, threadId: string) => Promise<void>
     /**
+     * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
+     * subagents) for download. The JSONL export stays the portable single-file
+     * transcript; this is the full-fidelity copy of the store directory.
+     */
+    exportArchive: (projectId: string, threadId: string) => Promise<Uint8Array<ArrayBuffer>>
+    /**
      * Seed a fork's provider-format history from the thread it branched off.
      * Omit `throughMessageId` (or pass the source's last message id) to copy the
      * sidecar verbatim; an earlier id rebuilds history from the transcript slice.
@@ -287,6 +300,19 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
+  }
+  archive: {
+    /**
+     * Store an archive the user attached to a chat and return the reference the
+     * agent is given. Pass `bytes` for a file dropped from outside the app, or
+     * `path` for one already in the workspace (referenced, not copied). The
+     * archive itself never becomes model content — see `read_archive`.
+     */
+    attach: (
+      projectId: string,
+      threadId: string,
+      archive: { name: string; bytes?: Uint8Array; path?: string },
+    ) => Promise<import('@shared/archive/archive-media.ts').ArchiveAttachmentRef>
   }
   video: {
     /**
@@ -392,6 +418,18 @@ export interface ApiClient {
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
     models: () => Promise<Array<{ id: string; label: string }>>
+    /**
+     * List Cursor cloud agents for the account and import those matching the
+     * given project's GitHub repo (and not already linked) as local thread stubs.
+     * Omit `projectId` to use main's active project.
+     */
+    discoverExternal: (projectId?: string) => Promise<{
+      imported: Array<{ threadId: string; agentId: string; title: string; url: string }>
+      scanned: number
+      skippedLinked: number
+      skippedWrongRepo: number
+      skippedInactive: number
+    }>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
@@ -417,6 +455,7 @@ export interface ApiClient {
     onShowTerminal: (handler: () => void) => () => void
     onShowChanges: (handler: () => void) => () => void
     onShowBrowser: (handler: () => void) => () => void
+    onFocusBrowserUrlBar: (handler: () => void) => () => void
     onKeyboardShortcuts: (handler: () => void) => () => void
     onUiScaleZoomIn: (handler: () => void) => () => void
     onUiScaleZoomOut: (handler: () => void) => () => void
@@ -442,6 +481,9 @@ export interface ApiClient {
       approvedProviderHosts?: string[]
       providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
+      // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
+      // bundles that don't render the picker don't reset the user's choice.
+      shellAutoApprovalLevel?: AutoApprovalLevel
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
     /**
@@ -512,6 +554,10 @@ export interface ApiClient {
       fee: number | null,
     ) => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
   }
+  decisions: {
+    list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    export: (projectId?: string) => Promise<{ path: string; count: number }>
+  }
   index: {
     query: (pattern: string) => Promise<string[]>
     resolveFileReferences: (
@@ -559,6 +605,10 @@ export interface ApiClient {
       id: string,
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    setCategory: (
+      id: string,
+      category: string,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     export: (format: import('../shared/roadmap/export.ts').RoadmapExportFormat) => Promise<{
       filename: string
@@ -568,9 +618,10 @@ export interface ApiClient {
       files: string[]
     }>
     issueUrl: (ref: string) => Promise<string | null>
-    openIssues: () => Promise<{
+    openIssues: (page: number) => Promise<{
       slug: string
       issues: import('../shared/types/git.ts').GhIssueSummary[]
+      hasMore: boolean
     }>
     importIssues: (
       issues: { number: number; title: string; body: string }[],
@@ -625,6 +676,8 @@ export interface ApiClient {
     setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
     /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
     setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
+    /** Choose and register one pack directory through a native host dialog. */
+    addSource: () => Promise<PacksListResult>
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
@@ -655,6 +708,8 @@ export interface ApiClient {
     setActive: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
+    /** Main asked for a fresh shell running `command` (e.g. an agent sign-in). */
+    onRunCommand: (handler: (command: string) => void) => () => void
   }
   git: {
     isAvailable: (projectId: string, threadId: string) => Promise<boolean>
