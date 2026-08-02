@@ -156,12 +156,34 @@ export async function acquireAcpSession(
   // controller cancels in-flight bridge tool executions at dispose.
   const bridgeAbort = new AbortController()
   const shareNetworkScope = willSandboxAcpAgent(opts.config.sandbox)
+  // A bridge that fails to start used to resolve to null silently, which is
+  // indistinguishable from an agent that simply was not offered one — the
+  // failure mode behind #1430's "the agent ignored the attached archive".
+  // Startup still must not abort the turn, so the error is logged, not thrown.
   const bridge = opts.registry
     ? await startAcpNativeBridge(opts.registry, bridgeAbort.signal, {
         networkScopeAlreadyApplies: shareNetworkScope,
         threadId: opts.threadId,
-      }).catch(() => null)
+      }).catch((err: unknown) => {
+        console.error(
+          `[acp-bridge] failed to start for thread ${opts.threadId}; native tools will be unavailable this session:`,
+          err instanceof Error ? err.message : String(err),
+        )
+        return null
+      })
     : null
+  if (!opts.registry) {
+    console.warn(
+      `[acp-bridge] no tool registry supplied for thread ${opts.threadId}; native tools will be unavailable this session`,
+    )
+  } else if (bridge) {
+    // The offered tool list is the first thing anyone asks for when an agent
+    // "did not use" a native tool, and an ACP run records no toolset
+    // fingerprint of its own (that is a native-loop spine line).
+    console.info(
+      `[acp-bridge] offering ${String(bridge.toolNames.length)} native tool(s) to thread ${opts.threadId}: ${bridge.toolNames.join(', ')}`,
+    )
+  }
   const config: AcpAgentSpawnConfig = {
     ...opts.config,
     ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),

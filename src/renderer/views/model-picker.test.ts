@@ -78,6 +78,42 @@ describe('shared model picker', () => {
     picker.destroy()
   })
 
+  it('navigates recent -> all on ArrowRight and all -> recent on ArrowLeft', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    let current = 'claude-sonnet-4-6'
+    const picker = mountModelPicker(
+      host,
+      () => current,
+      (value) => {
+        current = value
+      },
+      async () => OPTIONS,
+      {
+        loadOnMount: false,
+        getRecentValues: () => ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      },
+    )
+    await picker.refresh()
+
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const menu = host.querySelector<HTMLDivElement>('.model-picker-menu')
+    assert.ok(menu)
+    const filter = host.querySelector<HTMLInputElement>('.model-picker-filter')
+    assert.ok(filter)
+
+    // In recent view: ArrowRight opens the all-models view with the filter focused.
+    menu.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    assert.equal(filter.hasAttribute('hidden'), false)
+    assert.equal(document.activeElement, filter)
+
+    // In all view: ArrowLeft returns to the recent view.
+    menu.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    assert.equal(filter.hasAttribute('hidden'), true)
+
+    picker.destroy()
+  })
+
   it('keeps a hidden select as form state and supports an automatic blank route', async () => {
     const form = document.createElement('form')
     const label = document.createElement('label')
@@ -180,6 +216,65 @@ describe('shared model picker', () => {
       [...select.options].map((option) => option.value),
       ['claude-opus-4-8'],
     )
+    picker.destroy()
+  })
+
+  it('focuses the active recent option when the catalog lands after the menu opened', async () => {
+    // Opening before `loadOptions` resolves leaves only the "Loading models…"
+    // status to focus, and the later render rebuilds every option anyway — so
+    // without re-applying focus the arrow keys have nowhere to start.
+    const host = document.createElement('div')
+    document.body.append(host)
+    let release: ((options: ModelOption[]) => void) | undefined
+    const picker = mountModelPicker(
+      host,
+      () => 'claude-sonnet-4-6',
+      () => {},
+      async () =>
+        await new Promise<ModelOption[]>((resolve) => {
+          release = resolve
+        }),
+      { loadOnMount: false, getRecentValues: () => ['claude-sonnet-4-6'] },
+    )
+    const pending = picker.refresh()
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    assert.equal(host.querySelector('.model-picker-option'), null, 'no options yet')
+
+    assert.ok(release)
+    release(OPTIONS)
+    await pending
+
+    const active = host.querySelector<HTMLElement>('.model-picker-option.is-active')
+    assert.ok(active, 'an active option renders once the catalog lands')
+    assert.equal(document.activeElement, active)
+    picker.destroy()
+  })
+
+  it('leaves focus alone when the catalog lands while the user is already in the menu', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    let release: ((options: ModelOption[]) => void) | undefined
+    const picker = mountModelPicker(
+      host,
+      () => 'claude-sonnet-4-6',
+      () => {},
+      async () =>
+        await new Promise<ModelOption[]>((resolve) => {
+          release = resolve
+        }),
+      { loadOnMount: false, getRecentValues: () => ['claude-sonnet-4-6'] },
+    )
+    const pending = picker.refresh()
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const browse = host.querySelector<HTMLButtonElement>('.model-picker-browse')
+    assert.ok(browse)
+    browse.focus()
+
+    assert.ok(release)
+    release(OPTIONS)
+    await pending
+
+    assert.equal(document.activeElement, browse)
     picker.destroy()
   })
 

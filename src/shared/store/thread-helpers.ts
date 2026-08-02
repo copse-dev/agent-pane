@@ -16,6 +16,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import type { HookCard, ModelComparison, Thread, ThreadReview } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
+import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
 export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
@@ -124,24 +125,29 @@ export function openNewThread(store: AppStore): string {
     (t) => isBlankThread(t) && !hasUnsubmittedPrompt(t) && !isThreadArchived(t),
   )
   if (existing) {
+    // Re-seed the reused blank thread's model from the current global default,
+    // so the picker reflects the settings-page default rather than whatever
+    // model was last chosen on a prior conversation. This runs even when the
+    // blank thread is already active: "New Thread" means a fresh start, so a
+    // just-changed default (or a per-thread pin from the footer picker) must not
+    // stick around. When the default is `auto:best-value`, `new_thread_opened`
+    // (below) then lets the resolver swap the sentinel for a concrete route.
+    const defaultModel = store.getState().settings?.model
+    const reseed = (list: Thread[]): Thread[] =>
+      list.map((t) => {
+        if (t.id !== existing.id) return t
+        // Drop any prior per-thread model and re-seed from the global default
+        // (omit entirely when there is no default, per exactOptionalPropertyTypes).
+        const { model: _prevModel, ...rest } = t
+        return defaultModel !== undefined ? { ...rest, model: defaultModel } : rest
+      })
     if (activeThreadId !== existing.id) {
       store.emit('composer_draft_flush')
-      // Reset the model to the current global default when reusing an existing
-      // blank thread, so the picker reflects the settings page default rather
-      // than whatever model was last chosen on a prior conversation.
-      const defaultModel = store.getState().settings?.model
-      store.setState({
-        activeThreadId: existing.id,
-        threads: threads.map((t) => {
-          if (t.id !== existing.id) return t
-          // Drop any prior per-thread model and re-seed from the global default
-          // (omit entirely when there is no default, per exactOptionalPropertyTypes).
-          const { model: _prevModel, ...rest } = t
-          return defaultModel !== undefined ? { ...rest, model: defaultModel } : rest
-        }),
-      })
-      store.emit('threads_changed')
+      store.setState({ activeThreadId: existing.id, threads: reseed(threads) })
+    } else {
+      store.setState({ threads: reseed(threads) })
     }
+    store.emit('threads_changed')
     pruneBlankThreads(store, new Set([existing.id]))
     store.emit('threads_changed')
     // Keep the side/bottom panel open; only reset the file/diff viewer content.
@@ -161,15 +167,23 @@ export function openNewThread(store: AppStore): string {
 export function switchThread(store: AppStore, id: string): void {
   if (id === store.getState().activeThreadId) return
   store.emit('composer_draft_flush')
+
+  // Fold blank-thread pruning into the switch mutation. `threads_changed` has
+  // many render and persistence subscribers, so emitting once for selection and
+  // again for pruning repeated almost the entire switch path on every click.
+  // Re-read after the draft flush because its listeners can update the active
+  // thread before this combined mutation writes the thread list back.
+  const state = store.getState()
+  const pruned = state.threads.filter((t) => !isPrunableBlankThread(t) || t.id === id)
+  const threads = pruned.length > 0 ? pruned : state.threads
   store.setState({
     activeThreadId: id,
+    threads,
     openFile: null,
     activeDiff: null,
     stagedDiffs: [],
   })
   store.emit('panel_changed')
-  store.emit('threads_changed')
-  pruneBlankThreads(store, new Set([id]))
   store.emit('threads_changed')
 }
 
@@ -677,6 +691,30 @@ export function recordThreadVideos(
     const added = videos.filter((v) => !known.has(v.path))
     if (added.length === 0) return t
     return { ...t, videos: [...existing, ...added], updatedAt: Date.now() }
+  })
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
+/**
+ * Record archives sent with a message on the thread, so the attachment outlives
+ * the message that carried it (see {@link Thread.archives}). Same rules as
+ * {@link recordThreadVideos}: recorded at send, deduped by path.
+ */
+export function recordThreadArchives(
+  store: AppStore,
+  threadId: string,
+  archives: ArchiveAttachmentRef[],
+): void {
+  if (archives.length === 0) return
+  const { threads } = store.getState()
+  const updated = threads.map((t) => {
+    if (t.id !== threadId) return t
+    const existing = t.archives ?? []
+    const known = new Set(existing.map((a) => a.path))
+    const added = archives.filter((a) => !known.has(a.path))
+    if (added.length === 0) return t
+    return { ...t, archives: [...existing, ...added], updatedAt: Date.now() }
   })
   store.setState({ threads: updated })
   store.emit('threads_changed')

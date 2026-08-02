@@ -30,7 +30,8 @@
 .thread-chip-icon,
 .mention-shell-icon,
 .shell-chip-icon,
-.video-chip-icon {
+.video-chip-icon,
+.archive-chip-icon {
   flex: none;
   width: 14px;
   height: 14px;

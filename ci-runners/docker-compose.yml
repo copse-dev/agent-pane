@@ -43,6 +43,51 @@ services:
     environment:
       EPHEMERAL: 'true'
     init: true # PID 1 reaps stray electron/chromedriver children
+    # bubblewrap — ASRT's Linux backend — builds its confinement from a user
+    # namespace. Without both entries below it cannot start at all, the app
+    # degrades to unsandboxed, and executable packs stay unavailable because
+    # they fail closed rather than run unconfined (pack-tool-host.ts).
+    #
+    # `seccomp` is not optional. Docker's default profile allows `clone`/`unshare`
+    # but filters their flag argument to exclude CLONE_NEWUSER for containers
+    # without CAP_SYS_ADMIN, so bwrap gets EPERM before it attempts any mount:
+    #
+    #   bwrap: No permissions to create new namespace, likely because the
+    #   kernel does not allow non-privileged user namespaces.
+    #
+    # That specific message is Docker's syscall filter. Ubuntu 24.04 has a second,
+    # distinct host restriction: `kernel.apparmor_restrict_unprivileged_userns=1`
+    # permits the namespace but strips the capabilities bwrap needs to configure
+    # loopback, producing `Failed RTM_NEWADDR`. The cloud host bootstrap disables
+    # that restriction on these dedicated ephemeral hosts; `apparmor=unconfined`
+    # here does not override the host sysctl. Docker also protects selected
+    # `/proc` paths even with those two profiles relaxed. ASRT mounts a fresh
+    # procfs inside its new PID namespace, so `systempaths=unconfined` is needed
+    # or the real worker launch dies with:
+    #
+    #   bwrap: Can't mount proc on /newroot/proc: Operation not permitted
+    #
+    # `cap_add: [SYS_ADMIN]` would also satisfy the seccomp rule, but grants a
+    # near-root capability for the whole container; dropping the syscall filter
+    # while keeping the capability set is the smaller concession. Tighter still
+    # would be a custom seccomp profile — Docker's default with the CLONE_NEWUSER
+    # mask removed — if this ever needs narrowing.
+    #
+    # This does loosen the *container's* confinement on boxes that execute PR
+    # code. The trade is deliberate: it is what lets the app impose its own
+    # per-job sandbox around the processes that actually handle repo content,
+    # which is a tighter boundary than the container profile was giving those
+    # processes anyway. Remove this block to keep the stricter container profile
+    # and accept an unsandboxed app (the previous behaviour).
+    #
+    # The burst startup path runs this probe before registering any runners:
+    #   docker compose run --rm --no-deps --entrypoint bwrap runner \
+    #     --new-session --die-with-parent --ro-bind / / --unshare-net \
+    #     --unshare-pid --unshare-user --cap-drop ALL --proc /proc -- /usr/bin/true
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
     # Superset image runs the memory-hungry Chromium-under-Xvfb e2e suite, so
     # size for the heavy tier even though light jobs also land here. ~4-6 GB per
     # concurrent runner; cap so one shard can't take the host down.

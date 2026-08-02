@@ -141,6 +141,56 @@ describe('video refs', () => {
   })
 })
 
+describe('archive refs', () => {
+  const archiveRefs = [
+    { name: 'bundle.zip', size: '4.2 MB', path: '/chat/proj/t1/blobs/media/a-bundle.zip' },
+  ]
+
+  it('emits one steering preamble + a line per archive, inlining nothing', () => {
+    const result = buildTextWithAttachments('what is in here?', [], [], { archiveRefs })
+    assert.match(result, /^what is in here\?/)
+    assert.equal(result.match(/read_archive/g)?.length, 1)
+    assert.match(
+      result,
+      /- "bundle\.zip" \(4\.2 MB\): \/chat\/proj\/t1\/blobs\/media\/a-bundle\.zip/,
+    )
+    assert.doesNotMatch(result, /```/)
+  })
+
+  it('tells a model without the tool to speak up rather than ignore the archive', () => {
+    // The transcript that motivated this: an ACP run whose bridge never mounted
+    // got this block, had no read_archive, and quietly went off grepping —
+    // leaving the user thinking the attachment had been read.
+    const result = buildTextWithAttachments('', [], [], { archiveRefs })
+    assert.match(result, /If you have a `read_archive` tool/)
+    assert.match(result, /If no such tool is offered to you, say so/)
+    // Falling back to `unzip` would bypass every extractor guard.
+    assert.match(result, /do not unpack it yourself with shell commands/)
+  })
+
+  it('says the archive is not in context and that unpacking is a one-shot step', () => {
+    // The second half matters as much as the first: told only that the bytes
+    // are absent, a model tends to call the tool once per entry instead of
+    // unpacking once and reading files.
+    const result = buildTextWithAttachments('', [], [], { archiveRefs })
+    assert.match(result, /NOT in your context/)
+    assert.match(result, /Unpack once, then work with the files\./)
+  })
+
+  it('adds no archive block when there are no archives', () => {
+    assert.equal(buildTextWithAttachments('hi', [], [], { archiveRefs: [] }), 'hi')
+  })
+
+  it('keeps video refs and archive refs as separate blocks', () => {
+    const result = buildTextWithAttachments('both', [], [], {
+      videoRefs: [{ name: 'a.mp4', size: '1 MB', path: '/chat/a.mp4' }],
+      archiveRefs,
+    })
+    assert.match(result, /Attached videos:/)
+    assert.match(result, /Attached archives:/)
+  })
+})
+
 describe('truncateAttachmentContent', () => {
   it('returns content unchanged when it fits the cap', () => {
     const small = 'hello\nworld'

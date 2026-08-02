@@ -1,4 +1,10 @@
 import { errorMessage } from '@shared/errors.ts'
+import {
+  AUTO_APPROVAL_LEVEL_LABELS,
+  AUTO_APPROVAL_LEVEL_SETTING,
+  AUTO_APPROVAL_LEVELS,
+  sanitizeAutoApprovalLevel,
+} from '@shared/auto-approval.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import {
   isRightPanelPosition,
@@ -28,8 +34,7 @@ import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import { fetchModelOptions, fetchSmallTasksModelOptions } from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
-import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
-import { createAcpAgentsSection } from './setup/acp-agents-section.ts'
+import { createProvidersPanel } from './setup/providers-section.ts'
 import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
@@ -38,6 +43,8 @@ import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { createAutomationPackSettings } from './automation-pack-settings.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { createParallelSearchPackSettings } from './parallel-search-pack-settings.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -54,30 +61,31 @@ import {
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 
 export type SettingsSection =
   | 'general'
   | 'usage'
-  | 'local-models'
+  | 'agent'
+  | 'permissions'
   | 'mcp'
   | 'sources'
   | 'packs'
   | 'appearance'
   | 'ssh'
-  | 'acp'
   | 'experimental'
 
 function isSettingsSection(value: unknown): value is SettingsSection {
   return (
     value === 'general' ||
     value === 'usage' ||
-    value === 'local-models' ||
+    value === 'agent' ||
+    value === 'permissions' ||
     value === 'mcp' ||
     value === 'sources' ||
     value === 'packs' ||
     value === 'appearance' ||
     value === 'ssh' ||
-    value === 'acp' ||
     value === 'experimental'
   )
 }
@@ -89,21 +97,20 @@ function isSettingsSection(value: unknown): value is SettingsSection {
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_ACCENT_COLOR = '#2A9D8F'
-// Ships on by default as a gentle wash that matches the default "Rose" app
-// icon (its #F472B6 mark). Users can dial it up, recolour it, or set the
-// strength to Off for the plain neutral surfaces.
-export const DEFAULT_TINT_COLOR = '#F472B6'
+export const DEFAULT_ACCENT_COLOR = '#20FD85'
+// Keep the neon interaction accent independent from the deeper surface tint.
+// New users get a restrained green wash; Strong unlocks the exact site palette.
+export const DEFAULT_TINT_COLOR = '#002E2B'
 export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
   subtle: '4%',
-  medium: '7%',
-  strong: '10%',
+  medium: '8%',
+  strong: '16%',
 }
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 
-function accentTextColor(color: string): '#101918' | '#ffffff' {
+function accentTextColor(color: string): '#444444' | '#ffffff' {
   const linearChannel = (offset: number): number => {
     const channel = Number.parseInt(color.slice(offset, offset + 2), 16) / 255
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
@@ -112,7 +119,7 @@ function accentTextColor(color: string): '#101918' | '#ffffff' {
   const green = linearChannel(3)
   const blue = linearChannel(5)
   const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-  return luminance > 0.179 ? '#101918' : '#ffffff'
+  return luminance > 0.179 ? '#444444' : '#ffffff'
 }
 
 /** Apply the interaction hue and keep text on solid accent fills readable. */
@@ -130,7 +137,12 @@ export function isUiTintStrength(value: unknown): value is UiTintStrength {
 /** Push the tint onto the document root so every surface picks it up at once. */
 export function applyUiTint(color: string, strength: UiTintStrength): void {
   const root = document.documentElement
-  if (HEX_COLOR.test(color)) root.style.setProperty('--tint-hue', color)
+  if (HEX_COLOR.test(color)) {
+    root.style.setProperty('--tint-hue', color)
+    root.dataset['tintPalette'] =
+      color.toLowerCase() === DEFAULT_TINT_COLOR.toLowerCase() ? 'copse' : 'custom'
+  }
+  root.dataset['tintStrength'] = strength
   root.style.setProperty('--tint-amount', TINT_STRENGTH_AMOUNTS[strength])
 }
 
@@ -197,6 +209,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
+  { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
   // Background tasks moved to Settings > Packs (`copse.background-tasks`), which
   // also declares the `loopback-bind` sandbox relaxation (issue #1190).
   // The DevTools shortcut toggle moved to Settings > Packs (`copse.devtools-shortcut`).
@@ -397,13 +410,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           </div>
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
-          <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
+          <button type="button" class="settings-nav-btn" data-section="agent">Agent</button>
+          <button type="button" class="settings-nav-btn" data-section="permissions">Permissions</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
           <button type="button" class="settings-nav-btn" data-section="packs">Packs</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
-          <button type="button" class="settings-nav-btn" data-section="acp">ACP agents</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
@@ -411,34 +424,34 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section active" data-section="general">
             <h3>General</h3>
             <p class="settings-section-desc">
-              Cloud API keys, default chat model, and task-specific model choices.
+              What Copse detected on this machine, the providers it can send work to, and the
+              models it picks by default.
             </p>
 
             <!-- JS-mounted panels sit in a host <div>. Any such host that holds a
                  top-level panel MUST carry class="settings-mount" so its injected
-                 fieldset gets the same inter-panel spacing as inline ones — see the
+                 fieldset gets the same inter-panel spacing as inline ones: see the
                  .settings-section > .settings-mount > fieldset rule in settings.css. -->
-            <div id="settings-custom-providers-host" class="settings-mount"></div>
-
             <div id="settings-env-detect-host" class="settings-mount"></div>
+
+            <div id="settings-providers-host" class="settings-mount"></div>
 
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
               <p class="settings-fieldset-desc">
-                Choose the main chat model and the models used for background tasks. Role defaults
-                prefer on-device models, but any connected cloud or on-device provider model can be
-                selected.
+                Choose the main chat model and the models used for background tasks. The defaults
+                prefer a model running on this machine, but anything from a provider you have set
+                up can be selected.
               </p>
               <label>
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks the
-                  Pareto-frontier model with the best plan-aware value and routes to that provider.
-                  Or pin a cloud, local, or remote-agent model here (or from the picker beside the
-                  chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
-                  Cloud instead of running it on this machine — configure it in the Remote agents
-                  section.
+                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks
+                  the model that gives the most for what it costs on your plan, and sends the turn
+                  to that provider. You can pin a specific model here instead, or from the picker
+                  beside the chat box. Picking a cloud agent sends each turn to that provider's
+                  machines rather than running it here; set one up under Providers.
                 </span>
               </label>
               <label>
@@ -452,57 +465,71 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <div id="settings-model-routing-host"></div>
             </fieldset>
 
-            <fieldset>
-              <legend>Remote agents</legend>
-              <p class="settings-fieldset-desc">
-                Choose <strong>Cursor Cloud Agent</strong> or <strong>Claude Agent</strong> as your
-                model to run chat turns on a remote machine. The conversation streams back here just
-                like a normal chat, but the work happens in the cloud: the agent runs its own tools,
-                pushes commits to a branch, and (optionally) opens a pull request. It does
-                <strong>not</strong> edit the files in this local workspace — review its changes in
-                the branch / PR it links in the reply.
-              </p>
-              <div class="provider-chips" role="tablist" id="settings-remote-agent-tabs"></div>
+            <!-- Cloud-agent pieces the Providers panel relocates into whichever
+                 provider offers one. The shared run options move with them but stay
+                 inside this form either way, so their values always round-trip. -->
+            <div id="settings-cloud-agent-templates" hidden>
               <div id="settings-cursor-panel" class="remote-agent-panel">
                 <div id="settings-cursor-key-host"></div>
                 <p class="field-hint" data-testid="cursor-agents-list-hint">
-                  Copse launches via Cursor's API, so runs are owned by this key but hidden on
+                  Runs Copse starts belong to this key, so they stay hidden on
                   <a href="${CURSOR_AGENTS_WEB_URL}" target="_blank" rel="noopener noreferrer">cursor.com/agents</a>
-                  until you enable <strong>Filter → Source → API</strong> (same filter in Cursor's
-                  Agents Window). Follow-along links in the chat always open the run directly.
+                  until you enable <strong>Filter → Source → API</strong> there. Follow-along links
+                  in the chat always open the run directly.
                 </p>
               </div>
-              <div id="settings-claude-panel" class="remote-agent-panel" hidden>
+              <div id="settings-claude-panel" class="remote-agent-panel">
                 <div id="settings-claude-agent-key-host"></div>
                 <p class="field-hint">
-                  Claude Agent needs an Anthropic API key plus a GitHub token: the token is used only
-                  to clone and push the repository — the agent never handles it directly. It always
-                  uses <code>https://api.anthropic.com</code>.
+                  The Claude cloud agent needs an Anthropic API key plus a GitHub token. The token
+                  is only used to clone the repository and push branches; the agent never sees it.
                 </p>
               </div>
-              <p class="settings-fieldset-desc remote-agent-common-note">
-                These apply to whichever remote agent you run. The agent works on this project's
-                <code>origin</code> repository, branching from your current branch.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="remoteAgentAutoCreatePR" />
-                Open a pull request automatically when the remote agent finishes
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
-                Push directly to the current branch instead of a new branch
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="preferAcpOverCloudAgent" />
-                Offer to switch to your Claude ACP agent when Cloud Agent can’t run (bad key or no
-                credit)
-              </label>
-            </fieldset>
+              <div id="settings-cloud-agent-options">
+                <p class="settings-fieldset-desc remote-agent-common-note">
+                  A cloud agent runs the whole turn on the provider's machines. The conversation
+                  streams back here as normal, but the work happens there: it runs its own tools and
+                  pushes commits to a branch on this project's <code>origin</code> repository,
+                  branching from your current branch. It never edits the files in this folder, so
+                  review its changes in the branch or pull request it links in the reply.
+                </p>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="remoteAgentAutoCreatePR" />
+                  Open a pull request automatically when the cloud agent finishes
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
+                  Push directly to the current branch instead of a new branch
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="preferAcpOverCloudAgent" />
+                  Offer to switch to Claude on this machine when the cloud agent can’t run (bad key
+                  or no credit)
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <div id="settings-gh-cli-host" class="settings-mount"></div>
+          <section class="settings-section" data-section="usage">
+            <h3>Usage</h3>
+            <p class="settings-section-desc">
+              Your subscription plan windows for the accounts you are signed in to, plus estimated
+              spend and free on-device token usage across every project. Costs are approximate and
+              based on published prices.
+            </p>
+            <div id="settings-usage-host" class="settings-mount"></div>
+            <div id="settings-aa-key-host" class="settings-mount"></div>
+          </section>
+
+          <section class="settings-section" data-section="agent">
+            <h3>Agent</h3>
+            <p class="settings-section-desc">
+              Standing instructions for every conversation, the helpers the agent leans on, and the
+              skills it can run.
+            </p>
 
             <fieldset>
-              <legend>Agent behavior</legend>
+              <legend>Instructions</legend>
               <label>
                 Custom instructions
                 <textarea
@@ -511,173 +538,47 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   placeholder="Always-on guidance added to every conversation (e.g. preferred style, conventions)."
                 ></textarea>
                 <span class="field-hint">
-                  Appended to the system prompt for every thread. A project
+                  Added to every conversation, in every project. A project
                   <code>AGENT.md</code>, <code>AGENTS.md</code>, or <code>CLAUDE.md</code> adds
-                  per-project instructions on top of this.
+                  instructions for that project on top of this.
                 </span>
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="externalApiSafety" />
-                External-API safety steering
+                Steer the agent toward safe API usage
               </label>
               <p class="field-hint">
                 Reminds the agent to pick compatible dependency versions and never hardcode or log
-                secrets when adding API calls.
+                secrets when it adds an API call.
               </p>
             </fieldset>
 
             <fieldset>
-              <legend>Skills</legend>
+              <legend>Helpers</legend>
               <p class="settings-fieldset-desc">
-                Reusable agent workflows invoked with <code>/skill-name</code> in the chat input.
-                Official Cursor skills are fetched at build time (not stored in git); project skills
-                live in <code>.cursor/skills/</code>.
+                Extra models the agent can hand work to, so the main model stays focused on the
+                task and cheap work stays cheap.
               </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="bundledCursorSkillsEnabled" />
-                Include bundled Cursor skills (CI, code review, verification, and more)
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="skillExternalLinkWarnings" />
-                Warn before running a skill that references external links
-              </label>
-              <p class="field-hint">
-                When an invoked skill's <code>SKILL.md</code> points at <code>http(s)</code> hosts,
-                surface a warning up front and tell the agent to treat fetch/install/run-from-network
-                steps as approval-gated.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="skillSandboxGuidance" />
-                Reinforce sandbox confinement for invoked skills
-              </label>
-              <p class="field-hint">
-                Reminds the agent that a skill's shell commands stay inside the project sandbox (or,
-                where no OS sandbox is active, require approval) rather than silently reaching the
-                network or the host filesystem.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Web access</legend>
-              <p class="settings-fieldset-desc">
-                Agent web tools are limited to these origins. New origins require approval before
-                <code>fetch_url</code> can access them.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="browserToolsEnabled" />
-                Built-in browser tools (load &amp; screenshot web UIs in-app)
-              </label>
-              <p class="field-hint">
-                Lets the agent open and inspect pages in the app's bundled browser instead of
-                installing a separate browser (e.g. Playwright). Localhost auto-runs; other origins
-                prompt.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="readTerminalEnabled" />
-                Let the agent read open Shells tabs
-              </label>
-              <p class="field-hint">
-                When on (the default), the agent gets a <code>read_terminal</code> tool while this
-                chat has an open Shells tab, and you can <code>@shell</code> a tab into the message.
-                Turn off to keep interactive terminals private from the agent.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="openLinksInBuiltInBrowser" />
-                Open links in the built-in browser
-              </label>
-              <p class="field-hint">
-                When on, http(s) links you click in chat, PR, and preview surfaces open in the
-                in-app browser pane. Turn off to open them in your default browser instead — external
-                links then show an
-                <span class="external-link-hint-icon" aria-hidden="true"></span> icon.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="webAllowUserApproval" />
-                Ask before allowing new web origins
-              </label>
-              <label>
-                Allowed web origins
-                <textarea
-                  name="webAllowedOrigins"
-                  rows="6"
-                  spellcheck="false"
-                  placeholder="https://example.com"
-                ></textarea>
-                <span class="field-hint">
-                  One per line. Supports exact origins and wildcard subdomains such as
-                  <code>https://*.duckduckgo.com</code>. Defaults include localhost and DuckDuckGo.
-                </span>
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="providerAllowUserApproval" />
-                Ask before allowing new model provider hosts
-              </label>
-              <label>
-                Approved provider hosts
-                <textarea
-                  name="approvedProviderHosts"
-                  rows="4"
-                  spellcheck="false"
-                  placeholder="api.together.xyz"
-                ></textarea>
-                <span class="field-hint">
-                  Hostnames only (one per line) that custom OpenAI-compatible providers may use.
-                  Built-in providers and localhost are always allowed. Saving a new custom provider
-                  prompts to approve its host when this is on.
-                </span>
-              </label>
-            </fieldset>
-          </section>
-
-          <section class="settings-section" data-section="usage">
-            <h3>Usage</h3>
-            <p class="settings-section-desc">
-              Subscription plan windows (Claude / Codex) when those CLIs are signed
-              in, plus estimated cloud spend and local (free) model token usage
-              across all workspaces. Plan fetch is best-effort and never blocks
-              Copse. Costs are approximate and use catalog pricing, including
-              Anthropic prompt-cache rates when cache tokens are reported.
-            </p>
-            <div id="settings-usage-host" class="settings-mount"></div>
-            <div id="settings-aa-key-host" class="settings-mount"></div>
-          </section>
-
-          <section class="settings-section" data-section="local-models">
-            <h3>Local models</h3>
-            <p class="settings-section-desc">
-              Connect to an LM Studio (or other OpenAI-compatible) server.
-            </p>
-
-            <div id="settings-local-providers-host" class="settings-mount"></div>
-
-            <fieldset>
-              <legend>Routing behavior</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="subagentsEnabled" />
-                Route reads and searches through exploration subagents
+                Hand reading and searching to an exploration helper
               </label>
               <p class="field-hint">
-                When on, the parent model uses <code>explore</code> instead of direct
-                <code>read_file</code> / search tools (summarized exploration). When off — the
-                default — the parent gets direct read/search tools, similar to ACP coding agents
-                (Read/Grep-style) and is less likely to fall back to <code>run_shell</code>.
+                When on, the main model asks a helper to explore the code and report back a
+                summary. When off (the default) it reads and searches the files itself, which
+                keeps more detail in view.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="localSubagentsEnabled" />
-                Use local models for exploration subagents when chat uses a cloud model
+                Use a model on this machine for exploration when the chat model is in the cloud
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="localTodoItemsEnabled" />
-                Use local models for todo items tagged local (requires acceptance check)
+                Use a model on this machine for to-do items marked as local
               </label>
-              <p class="field-hint">
-                Post-turn review is bundled as the <code>copse.post-turn-review</code>
-                pack — toggle it from <strong>Settings &rsaquo; Packs</strong>. The
-                threshold below still applies when the pack is on.
-              </p>
               <label>
-                Skip the review below this many changed lines (1 = only skip an empty
-                diff, 0 = always review)
+                Skip the post-turn review below this many changed lines (1 = only skip an empty
+                change, 0 = always review)
                 <input
                   type="number"
                   name="postTurnReviewMinChangedLines"
@@ -687,15 +588,83 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 />
               </label>
               <p class="field-hint">
-                When the review runs on a paid model, you'll be asked to approve the spend
-                once per chat. Set a local review model above to review for free.
+                Turn the review itself on or off under <strong>Packs</strong>. If it runs on a paid
+                model you are asked to approve the spend once per chat; choose a model on this
+                machine to review for free.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Skills</legend>
+              <p class="settings-fieldset-desc">
+                Reusable workflows you invoke with <code>/skill-name</code> in the chat input.
+                Copse ships a set of them, and each project can add its own.
               </p>
               <label class="checkbox-label">
-                <input type="checkbox" name="safetyClassifierEnabled" />
-                Use instruct model to identify dangerous external shell commands for strict-mode blocking
+                <input type="checkbox" name="bundledCursorSkillsEnabled" />
+                Include the skills that ship with Copse (CI, code review, verification, and more)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillExternalLinkWarnings" />
+                Warn before running a skill that points at the web
+              </label>
+              <p class="field-hint">
+                When a skill you invoke links to a website, say so up front and require approval
+                before the agent fetches, installs, or runs anything from it.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="skillSandboxGuidance" />
+                Keep a skill's commands inside the project
+              </label>
+              <p class="field-hint">
+                Reminds the agent that a skill's commands stay inside the project folder, or need
+                approval where that cannot be enforced, rather than quietly reaching the network or
+                the rest of your machine.
+              </p>
+            </fieldset>
+
+            <div id="settings-gh-cli-host" class="settings-mount"></div>
+          </section>
+
+          <section class="settings-section" data-section="permissions">
+            <h3>Permissions</h3>
+            <p class="settings-section-desc">
+              What the agent is allowed to do without stopping to ask you.
+            </p>
+
+            <fieldset>
+              <legend>Shell commands</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="autoRunSandboxCommands" />
+                Run commands without asking when they stay inside the project folder
               </label>
               <label>
-                Strict-mode external deny confidence
+                Also run recognised low-risk commands without asking
+                <select name="shellAutoApprovalLevel">
+                  ${AUTO_APPROVAL_LEVELS.map(
+                    (level) =>
+                      `<option value="${level}">${AUTO_APPROVAL_LEVEL_LABELS[level]}</option>`,
+                  ).join('')}
+                </select>
+                <span class="field-hint">
+                  Matches a fixed list of command shapes exactly — never a model's judgement, and
+                  never anything it doesn't recognise. Reads cover local queries plus
+                  <code>git fetch</code> and <code>gh pr view</code> against a remote this project
+                  already has configured; a URL never qualifies. Higher levels add local commits,
+                  then <code>git push</code> and <code>gh pr create</code>. Force pushes, deleting
+                  branches, installs, <code>npx</code>, project scripts like <code>npm test</code>,
+                  and anything containing <code>$(…)</code> always ask. Only applies in a trusted
+                  project with the setting above turned on. At the two write levels
+                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
+                  project's git hooks — the macOS sandbox contains those, Linux and Windows do not.
+                </span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="safetyClassifierEnabled" />
+                Check commands for danger before running them
+              </label>
+              <label>
+                Block outright above this confidence
                 <span class="slider-row">
                   <input
                     type="range"
@@ -706,62 +675,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   />
                   <output class="slider-value" for="safetyExternalDenyThreshold">1.00</output>
                 </span>
-                <span class="field-hint">Hard-block (no prompt) commands the model is at least this confident are dangerous and external. Leave at 1.00 to disable.</span>
+                <span class="field-hint">
+                  Refuse, with no prompt, any command judged this likely to be both dangerous and
+                  aimed outside the project. Leave at 1.00 to always ask instead.
+                </span>
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="autoRunSandboxCommands" />
-                Auto-run shell commands contained within the sandbox
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="acpAutoApproveEditsWithBackup" />
-                Auto-approve external agent file edits (a backup is taken first)
-              </label>
-              <p class="field-hint">
-                External ACP agents (e.g. Claude) skip the per-edit approval modal for
-                edits, deletes, and moves once Copse has snapshotted your uncommitted work to a
-                restorable <code>refs/copse/backups/*</code> ref. If an edit overwrites your
-                uncommitted work, the Changes panel offers a one-click
-                <strong>Restore pre-session changes</strong> to bring it back. Shell commands and web
-                fetches still prompt. Turn off to review every agent file edit.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="acpAutoApproveNativeBridgeTools" />
-                Auto-approve calls to Copse's own bridged tools
-              </label>
-              <p class="field-hint">
-                External ACP agents reach Copse's own tools (GitHub/CI, semantic search, staged
-                diffs, browser, web fetch) through a bridge that re-applies Copse's native
-                permission checks when each call runs — so the extra approval prompt only duplicates
-                that gate. Turn off to prompt for every bridged tool call.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="acpOverSshEnabled" />
-                Run ACP agents over SSH (experimental)
-              </label>
-              <p class="field-hint">
-                When the active project is an SSH workspace, spawn the external ACP agent on the
-                <strong>remote host</strong> where the code lives, piping its stdio over the SSH
-                connection — instead of blocking ACP. The agent must be installed and authenticated
-                on the remote host (e.g. <code>npm install -g @zed-industries/claude-code-acp</code>,
-                then <code>claude /login</code>). Requires SSH workspaces to be enabled. Off leaves
-                ACP unavailable on SSH workspaces. See <code>docs/plans/acp-over-ssh.md</code>.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Trusted commands</legend>
-              <p class="settings-fieldset-desc">
-                Commands trusted to run <strong>unsandboxed with no prompt</strong> — for tools that
-                can't run inside the workspace sandbox but are safe (e.g.
-                <code>xcodebuild</code>). A line like <code>mkdir build &amp;&amp; xcodebuild …</code>
-                runs without a prompt because <code>mkdir</code> is a trivially-safe prep step and
-                <code>xcodebuild</code> is trusted; a destructive, network, or untrusted segment
-                (e.g. <code>curl</code>, <code>npm test</code>) makes the whole line prompt as usual.
-                Only honoured in a trusted workspace and when auto-run is on; shells and interpreters
-                (<code>sh</code>, <code>bash</code>, <code>node</code>, …) can't be trusted this way.
-              </p>
               <label>
-                Trusted command names
+                Trusted commands
                 <textarea
                   name="trustedShellCommands"
                   rows="5"
@@ -769,8 +689,94 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   placeholder="xcodebuild"
                 ></textarea>
                 <span class="field-hint">
-                  One command basename per line (e.g. <code>xcodebuild</code>). Matches the command's
-                  basename only, never its arguments.
+                  One command name per line, for tools that are safe but cannot run inside the
+                  project folder (for example <code>xcodebuild</code>). These run with no prompt.
+                  A line that also does something destructive or reaches the network still asks.
+                  Only applies in a project you trust and while the first option above is on.
+                </span>
+              </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>File edits</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpAutoApproveEditsWithBackup" />
+                Let agents on this machine edit files without asking (a backup is taken first)
+              </label>
+              <p class="field-hint">
+                Copse snapshots your uncommitted work before the agent starts, so if an edit
+                overwrites something the Changes panel offers a one-click
+                <strong>Restore pre-session changes</strong>. Shell commands and web requests still
+                ask. Turn off to review every file edit.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpAutoApproveNativeBridgeTools" />
+                Let agents on this machine use Copse's own tools without asking
+              </label>
+              <p class="field-hint">
+                Copse's tools (GitHub, code search, changes, browser, web fetch) apply their own
+                permission checks each time they run, so the extra prompt only asks twice. Turn off
+                to be asked anyway.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Web and terminals</legend>
+              <p class="settings-fieldset-desc">
+                The agent can only reach the websites listed here. Anything else needs your
+                approval first.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="browserToolsEnabled" />
+                Let the agent open and screenshot web pages in Copse
+              </label>
+              <p class="field-hint">
+                Uses the browser built into Copse rather than asking you to install a separate one.
+                Pages on this machine load straight away; anything else asks.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="readTerminalEnabled" />
+                Let the agent read your open Shells tabs
+              </label>
+              <p class="field-hint">
+                When on (the default), the agent can read a Shells tab open in this chat, and you
+                can add one to a message with <code>@shell</code>. Turn off to keep your terminals
+                private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="webAllowUserApproval" />
+                Ask before allowing a new website
+              </label>
+              <label>
+                Allowed websites
+                <textarea
+                  name="webAllowedOrigins"
+                  rows="6"
+                  spellcheck="false"
+                  placeholder="https://example.com"
+                ></textarea>
+                <span class="field-hint">
+                  One per line. Whole sites work too, such as
+                  <code>https://*.duckduckgo.com</code>. This machine and DuckDuckGo are allowed by
+                  default.
+                </span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="providerAllowUserApproval" />
+                Ask before allowing a new provider address
+              </label>
+              <label>
+                Allowed provider addresses
+                <textarea
+                  name="approvedProviderHosts"
+                  rows="4"
+                  spellcheck="false"
+                  placeholder="api.together.xyz"
+                ></textarea>
+                <span class="field-hint">
+                  Host names only, one per line, that a provider you added yourself may use.
+                  Built-in providers and this machine are always allowed. Adding a provider prompts
+                  you to approve its address while this is on.
                 </span>
               </label>
             </fieldset>
@@ -802,8 +808,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Copse reviewed servers</legend>
               <p class="settings-fieldset-desc">
-                A small catalog of MCP servers we've vetted. They're off by default — flip a switch
-                to add one to the agent. No config file editing required.
+                A small catalogue of MCP servers we have checked over. They are off by default:
+                flip a switch to add one, with no config files to edit.
               </p>
               <div id="mcp-curated-list" class="mcp-curated-list">Loading…</div>
             </fieldset>
@@ -833,8 +839,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="sources">
             <h3>Sources</h3>
             <p class="settings-section-desc">
-              Everything Copse auto-loads for this workspace. Read-only — edit the underlying
-              files to change what's loaded.
+              Everything Copse loads for this project. This list is read-only: edit the files
+              themselves to change what is loaded.
             </p>
             <div class="lmstudio-test-row">
               <button type="button" id="sources-reload-btn">Reload</button>
@@ -862,7 +868,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="settings-fieldset-desc">
                 Project rules under <code>.cursor/rules/*.mdc</code> (and legacy
                 <code>.cursorrules</code>), classified by activation: always, auto (globs),
-                agent (description — catalogued for <code>read_file</code>), or manual
+                agent (chosen by description), or manual
                 (<code>@</code>-mention).
               </p>
               <div id="sources-cursor-rules-list" class="sources-group">
@@ -873,15 +879,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Skills</legend>
               <p class="settings-fieldset-desc">
-                Skills discovered on disk, tagged by where they came from. Hover a row to see its
-                path. Manage inclusion of bundled Cursor skills under General → Skills.
+                Skills found on this machine, tagged by where they came from. Hover a row to see
+                its path. Choose whether to include the ones that ship with Copse under
+                Agent → Skills.
               </p>
               <div id="sources-skills-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
               </div>
             </fieldset>
 
-            <fieldset>
+            <fieldset data-developer-only="hooks" hidden>
               <legend>Hooks</legend>
               <p class="settings-fieldset-desc">
                 Cursor hooks from <code>~/.cursor/hooks.json</code> and Claude Code hooks from
@@ -894,10 +901,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Run Cursor hooks
               </label>
               <p class="field-hint">
-                Off by default. Enabling this runs user/project scripts on the agent's hot path —
-                each gated tool call spawns matching hook commands with local execution authority.
-                Project hooks additionally require workspace trust, the same bar as running the
-                repo's build scripts. Hooks fail open: a crashing hook never blocks the agent.
+                Off by default. Turning this on runs your own scripts while the agent works: every
+                tool call it makes can start a matching hook command, with the same rights you
+                have on this machine. Project hooks also need you to trust the project, the same
+                bar as running its build scripts. A hook that fails never blocks the agent.
               </p>
               <div id="sources-hooks-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -919,14 +926,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="packs">
             <h3>Packs</h3>
             <p class="settings-section-desc">
-              Feature packs installed in Copse — the tools, hooks, prompt blocks, and panels each
-              contributes. Turning a pack off drops all of its contributions from new work in one
-              action; its stored data is left in place so re-enabling it picks up where it stopped.
-              Old conversations still render a disabled pack's history. See
+              Feature packs installed in Copse, and the tools, hooks, prompts, and panels each one
+              adds. Each row declares whether the pack is stable or experimental before you
+              enable it. Turning a pack off drops all of its contributions from new work in one
+              action; its stored data and old conversation history remain available. See
               <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
               for authoring and install steps.
             </p>
             <div class="lmstudio-test-row">
+              <button type="button" id="packs-add-btn">Add pack…</button>
               <button type="button" id="packs-reload-btn">Reload</button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
@@ -988,7 +996,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <p class="field-hint">
                 Only applies when the position above is "Automatic": splits portrait windows
-                horizontally so Projects + chat stay above Explorer, Terminal, Changes, and Plan.
+                horizontally so Projects and chat stay above Explorer, Terminal, Changes, and Plan.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="openLinksInBuiltInBrowser" />
+                Open links in the built-in browser
+              </label>
+              <p class="field-hint">
+                When on, links you click in chat, pull requests, and previews open in Copse's own
+                browser pane. Turn off to open them in your usual browser instead; external links
+                then show an
+                <span class="external-link-hint-icon" aria-hidden="true"></span> icon.
               </p>
             </fieldset>
 
@@ -1041,21 +1059,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="ssh">
             <h3>SSH</h3>
             <p class="settings-section-desc">
-              Connect Copse to a remote Linux workspace over SSH — shell, git, search, and file
-              tools run on the host while the UI stays local.
+              Work on a remote Linux machine over SSH. Commands, git, search, and files all run
+              there while Copse stays on your desktop.
             </p>
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
-          </section>
 
-          <section class="settings-section" data-section="acp">
-            <h3>ACP agents</h3>
-            <p class="settings-section-desc">
-              Drive external coding agents — Claude Code, Gemini CLI, Cursor, Codex — that run
-              locally over the Agent Client Protocol. Pick an agent to install, sign in, and add
-              it; added agents show up in the model picker as their own group.
-            </p>
-
-            <div id="settings-acp-agents-host" class="settings-mount"></div>
+            <fieldset>
+              <legend>Agents on the remote machine</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpOverSshEnabled" />
+                Run agents on the remote machine (experimental)
+              </label>
+              <p class="field-hint">
+                When a project is on a remote machine, start the agent there, next to the code,
+                instead of leaving it unavailable. The agent has to be installed and signed in on
+                that machine already.
+              </p>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="experimental">
@@ -1072,69 +1092,70 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Adds a <code>suggest_model</code> tool that places a task on the shared model
-                intellect scale (low / mid / top band — the same scale the advisor pairing uses) and
-                names a representative model, so cheap/fast models handle trivial work and
-                top-of-scale models are reserved for the hard problems. Advisory only — it does not
-                switch the model in use. While off, the tool is not registered.
+                Lets the agent judge how hard a task is and name a model that suits it, so simple
+                work goes to a cheap, fast model and the hard problems get a top one. Advice only:
+                it never switches the model you are using.
               </p>
             </fieldset>
 
             <fieldset>
               <legend>Advisor model</legend>
               <p class="field-hint">
-                The advisor strategy — the <code>advisor</code> tool that forwards your full
-                conversation transcript to a larger model for strategic guidance — is the
-                <code>copse.advisor-strategy</code> pack in
-                <strong>Settings &rsaquo; Packs</strong>. Which model it consults (and the
-                executor/advisor pairing hint) now lives with that pack as its
-                <em>Advisor model</em> setting; defaults to <code>claude-opus-4-8</code>.
+                The advisor lets the agent hand your whole conversation to a stronger model and ask
+                for a second opinion. Turn it on under <strong>Packs</strong>, where you also choose
+                which model it consults.
               </p>
             </fieldset>
 
             <fieldset>
-              <legend>Orchestration strategy</legend>
+              <legend>Delegating steps</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="orchestrationStrategyEnabled" />
-                Let the agent delegate implementation steps to a cheaper worker model
+                Let the agent hand implementation steps to a cheaper model
               </label>
               <p class="field-hint">
-                The inverse of the advisor strategy: the chat model stays the orchestrator and a
-                <code>delegate_step</code> tool hands each bounded implementation step — with the
-                context it needs — to a cheaper/faster worker model running as a subagent with
-                read/edit/shell tools. Each step returns the worker’s report plus a working-tree
-                snapshot, so the orchestrator reviews what changed before delegating the next step.
-                While off, the tool is not registered.
+                The opposite of the advisor: your chat model plans the work and passes each step,
+                with the context it needs, to a cheaper and faster model that does the editing.
+                Every step comes back with a report and a summary of what changed, so the chat
+                model can review it before moving on.
               </p>
               <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
               <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                Model that implements delegated steps. Pick something cheaper/faster than your chat
-                model; defaults to <code>claude-haiku-4-5</code>.
+                The model that carries out the delegated steps. Pick something cheaper and faster
+                than your chat model.
               </p>
             </fieldset>
 
             <fieldset>
               <legend>Model comparison</legend>
               <p class="field-hint">
-                Model comparison is bundled as the <code>copse.model-comparison</code>
-                pack — toggle it from <strong>Settings &rsaquo; Packs</strong>. When on, it
-                adds a <code>compare_models</code> tool that reviews the current diff
-                through two models independently and a judge model compares their
-                verdicts. Since a run makes up to three model calls, it asks for approval
-                before spending on any paid model. The three models it uses (Reviewer A,
-                Reviewer B, and the Judge) are configured with that pack in
-                <strong>Settings &rsaquo; Packs</strong>.
+                Reviews your current changes through two models independently, then has a third
+                compare their verdicts. Turn it on under <strong>Packs</strong>, where you also
+                choose the three models. A run makes up to three model calls, so it asks before
+                spending on a paid model.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelComparisonAutoOnReview" />
                 Run the comparison automatically after editing turns
               </label>
               <p class="field-hint">
-                When on, the comparison runs as part of the post-turn review (still gated by the
-                spend approval). When off, run it on demand via the <code>compare_models</code> tool.
+                When on, the comparison runs as part of the post-turn review, still asking before
+                it spends. When off, ask for it when you want it.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Developer mode</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="developerMode" />
+                Enable developer mode
+              </label>
+              <p class="field-hint">
+                Shows Hooks in Sources and the conversation diagnostics menu. The optional
+                <code>Ctrl+Shift+I</code> shortcut is a separate pack.
               </p>
             </fieldset>
           </section>
@@ -1157,12 +1178,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Every `qsRequired(overlay, …)` below targets an element baked into the static
   // template above; a miss throws a loud error (template/code drift) rather than a
   // silent non-null assertion.
-  const customProvidersSection = createCustomProvidersSection(api)
-  qsRequired(overlay, '#settings-custom-providers-host').append(customProvidersSection.root)
-
-  const acpAgentsSection = createAcpAgentsSection(api)
-  qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
-
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
     // Live-persist toggles must wake listeners (e.g. projects "+ Remote" button)
     // without requiring the dialog Save button.
@@ -1173,12 +1188,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
+    legend: 'Detected settings',
     onImported: () => {
       void cursorKeySection.refreshKeyStatus()
-      void customProvidersSection.refresh()
+      void providersPanel.refresh()
     },
   })
-  overlay.querySelector('#settings-env-detect-host')?.append(envKeyDetectSection.root)
+  qsRequired(overlay, '#settings-env-detect-host').append(envKeyDetectSection.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
@@ -1204,48 +1220,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-aa-key-host').append(aaKeySection.root)
 
-  // Provider tabs for the Remote agents section: a chip selects one provider and
-  // shows just its auth panel (mirrors the Providers chip row). The common run
-  // options below the panels apply to whichever remote agent is run.
-  const remoteTabsRow = qsRequired(overlay, '#settings-remote-agent-tabs')
-  const remoteTabs: ReadonlyArray<{ id: string; label: string }> = [
-    { id: 'cursor', label: 'Cursor Cloud Agent' },
-    { id: 'anthropic', label: 'Claude Agent' },
-  ]
-  const remotePanels: Record<string, HTMLElement> = {
-    cursor: qsRequired(overlay, '#settings-cursor-panel'),
-    anthropic: qsRequired(overlay, '#settings-claude-panel'),
-  }
-  function showRemoteTab(id: string): void {
-    for (const [provider, panel] of Object.entries(remotePanels)) panel.hidden = provider !== id
-    remoteTabsRow
-      .querySelectorAll<HTMLButtonElement>('.provider-chip')
-      .forEach((btn) => btn.classList.toggle('active', btn.dataset['provider'] === id))
-  }
-  for (const tab of remoteTabs) {
-    const chip = document.createElement('button')
-    chip.type = 'button'
-    chip.className = 'provider-chip'
-    chip.setAttribute('role', 'tab')
-    chip.dataset['provider'] = tab.id
-    chip.textContent = tab.label
-    chip.addEventListener('click', () => {
-      showRemoteTab(tab.id)
-    })
-    remoteTabsRow.append(chip)
-  }
-  showRemoteTab('cursor')
-
-  // Unified Local providers panel: LM Studio leads as a native chip (its bespoke
-  // server-connection + recommended-models UI), followed by the OpenAI-compatible
-  // local presets (Ollama, llama.cpp, Jan, vLLM) and an add-your-own form. The
-  // cloud Providers panel above filters local providers out via the `local` flag
-  // so each provider appears in exactly one place. The dialog keeps the LM Studio
-  // handle for getUrl()/saveConnection() in the security-bundle save below.
+  // One Providers panel covers every way Copse can reach a model: API keys, cloud
+  // agents, agents installed on this machine, and model servers you run yourself.
+  // The cloud-agent auth panels and their shared run options are built in the
+  // template above (their checkboxes must live in this form to round-trip) and
+  // relocated by the panel into whichever provider offers a cloud agent. LM Studio
+  // keeps its bespoke server UI as a native local provider; the dialog holds onto
+  // that handle for getUrl()/saveConnection() in the security-bundle save below.
   const lmStudioSection = createLmStudioSection(api, { showInstallGuide: false })
-  const localProvidersSection = createCustomProvidersSection(api, {
-    variant: 'local',
-    nativeProviders: [
+  const providersPanel = createProvidersPanel(api, {
+    nativeLocalProviders: [
       {
         id: 'lmstudio',
         label: 'LM Studio',
@@ -1253,8 +1237,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         refresh: (): Promise<void> => lmStudioSection.refreshDetection(),
       },
     ],
+    cloudAgents: [
+      {
+        vendor: 'cursor',
+        element: qsRequired(overlay, '#settings-cursor-panel'),
+        keySlugs: ['cursor'],
+      },
+      {
+        vendor: 'anthropic',
+        element: qsRequired(overlay, '#settings-claude-panel'),
+        keySlugs: ['anthropic', 'github'],
+      },
+    ],
+    cloudAgentOptions: qsRequired(overlay, '#settings-cloud-agent-options'),
   })
-  qsRequired(overlay, '#settings-local-providers-host').append(localProvidersSection.root)
+  qsRequired(overlay, '#settings-providers-host').append(providersPanel.root)
 
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
@@ -1304,6 +1301,41 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // opened; search reveals those blocks too, so populate them once per open.
   let searchContentLoaded = false
 
+  // Opening the dialog runs a long serial chain of IPC round-trips to populate
+  // every section. Run each stage under its own catch so one failure is named
+  // and non-fatal rather than silently stranding every stage after it, and stamp
+  // the failed stage names on the overlay so a DOM dump (the e2e failure
+  // artifacts) records what never got populated.
+  const failedRefreshStages: string[] = []
+  async function refreshStage(name: string, run: () => Promise<void>): Promise<void> {
+    try {
+      await run()
+    } catch (err) {
+      failedRefreshStages.push(name)
+      overlay.dataset['settingsRefreshFailed'] = failedRefreshStages.join(',')
+      console.error(`[settings] open refresh stage "${name}" failed`, err)
+    }
+  }
+
+  const developerModeInput = qsRequired<HTMLInputElement>(
+    overlay,
+    `input[name="${DEVELOPER_MODE_SETTING}"]`,
+  )
+  const hooksEnabledInput = qsRequired<HTMLInputElement>(
+    overlay,
+    'input[name="cursorHooksEnabled"]',
+  )
+  const hooksFieldset = qsRequired(overlay, '[data-developer-only="hooks"]')
+
+  // Never hide an already-enabled security-sensitive feature: it must remain
+  // reachable so the user can turn its execution gate back off.
+  function syncDeveloperOnlySettings(): void {
+    hooksFieldset.hidden = !developerModeInput.checked && !hooksEnabledInput.checked
+  }
+
+  developerModeInput.checked = store.getState().developerMode
+  syncDeveloperOnlySettings()
+
   function showSection(id: SettingsSection): void {
     activeSection = id
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
@@ -1339,16 +1371,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!query) {
       contentEl.classList.remove('settings-searching')
       searchEmpty.hidden = true
+      // `restoreLiftedBlocks()` above returns every lifted block to the marker
+      // left in its section. Anything still parked here lost its marker, and the
+      // `replaceChildren()` below is about to destroy it — taking a whole
+      // fieldset out of its section for the life of the renderer, which reads
+      // downstream as "that setting isn't displayed". Name it before it goes.
+      for (const orphan of Array.from(searchResults.children)) {
+        console.error(
+          '[settings] search results still held a block after restore:',
+          orphan.querySelector('legend')?.textContent ?? orphan.className,
+        )
+      }
       searchResults.replaceChildren()
       showSection(activeSection)
       return
     }
 
-    // Pull in the lazily-loaded section content so matched blocks (e.g. the ACP
-    // agents list / SSH host list) render fully rather than as an empty shell.
+    // Pull in the lazily-loaded section content (providers, SSH hosts, sources)
+    // so matched blocks render fully rather than as an empty shell.
     if (!searchContentLoaded) {
       searchContentLoaded = true
-      void acpAgentsSection.refresh()
+      void providersPanel.refresh()
       void sshWorkspaceSection.refresh()
       void refreshSources()
     }
@@ -1357,6 +1400,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const matches: { node: HTMLElement; rank: number }[] = []
     sections.forEach((sec) => {
       for (const block of topLevelBlocks(sec)) {
+        if (block.hidden) continue
         if (!block.textContent.toLowerCase().includes(query)) continue
         const legend = block.querySelector('legend')?.textContent.toLowerCase() ?? ''
         matches.push({ node: block, rank: legend.includes(query) ? 0 : 1 })
@@ -1394,8 +1438,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
-        // don't trigger a which/ps scan (ACP agents) or fs walk (Sources) on open.
-        if (id === 'acp') void acpAgentsSection.refresh()
+        // don't trigger an fs walk (Sources) on open. The Providers panel defers
+        // its own device scan until an agent block is actually shown.
         if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
         if (id === 'packs') void refreshPacks()
@@ -1579,7 +1623,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (res.timedOut) chips.push('timed out')
     else if (res.spawnError) chips.push('failed to start')
     chips.push(
-      `exit ${res.exitCode === null || res.exitCode === undefined ? '—' : String(res.exitCode)}`,
+      `exit ${res.exitCode === null || res.exitCode === undefined ? 'unknown' : String(res.exitCode)}`,
     )
     chips.push(`${String(res.durationMs ?? 0)} ms`)
     chips.push(res.parseOk ? 'parsed ok' : 'parse failed')
@@ -1810,8 +1854,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       pack.trust === 'first-party'
         ? 'pack-badge pack-badge-first-party'
         : 'pack-badge pack-badge-user'
-    trustBadge.textContent = pack.trust === 'first-party' ? 'first-party' : 'user'
+    trustBadge.textContent = pack.trust
     title.append(trustBadge)
+    const stabilityBadge = document.createElement('span')
+    stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
+    stabilityBadge.textContent = pack.stability
+    stabilityBadge.title =
+      pack.stability === 'experimental'
+        ? 'Experimental: behavior and compatibility may change.'
+        : 'Stable: supported as part of the current pack contract.'
+    title.append(stabilityBadge)
 
     header.append(toggleLabel, title)
     row.append(header)
@@ -1823,6 +1875,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(desc)
     }
 
+    if (pack.source?.kind === 'directory') {
+      const review = document.createElement('div')
+      review.className = 'pack-source-review'
+
+      const status = document.createElement('div')
+      status.className = 'pack-source-status'
+      status.textContent = 'Selected directory · executable behaviors run in isolation'
+      review.append(status)
+
+      const details: Array<[string, string]> = [
+        ['Source', pack.source.path],
+        ['Content', pack.source.contentHash],
+      ]
+      const detailList = document.createElement('dl')
+      detailList.className = 'pack-source-details'
+      for (const [term, value] of details) {
+        const dt = document.createElement('dt')
+        dt.textContent = term
+        const dd = document.createElement('dd')
+        dd.textContent = value
+        detailList.append(dt, dd)
+      }
+      review.append(detailList)
+      row.append(review)
+    }
+
     // Contribution enumeration — the "about:addons" surface: users see exactly
     // what flipping the toggle takes out of new work.
     const contributions = pack.contributions
@@ -1832,6 +1910,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         label: 'Tools',
         count: contributions.toolNames.length,
         title: contributions.toolNames.join(', '),
+      })
+    }
+    if (contributions.modelRoutes.length > 0) {
+      chips.push({
+        label: 'Models',
+        count: contributions.modelRoutes.length,
+        title: contributions.modelRoutes.map((route) => `${route.label} (${route.id})`).join(', '),
+      })
+    }
+    if (contributions.browserOrigins.length > 0) {
+      chips.push({
+        label: 'Browser origins',
+        count: contributions.browserOrigins.length,
+        title: contributions.browserOrigins.join(', '),
       })
     }
     if (contributions.mcpServersPath) {
@@ -1962,6 +2054,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       )
     ) {
       row.append(createAutomationPackSettings(store, api, pack.enabled))
+    }
+    if (
+      pack.id === PARALLEL_SEARCH_PACK_ID &&
+      pack.contributions.ui.some(
+        (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
+      )
+    ) {
+      row.append(createParallelSearchPackSettings(api))
     }
 
     // Disabling greys the whole row so the effect of the toggle is immediately
@@ -2198,7 +2298,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.append(`${s.name} (${s.transport}) — `, badge)
+      title.append(`${s.name} (${s.transport}): `, badge)
 
       header.append(toggleLabel, title)
       row.append(header)
@@ -2303,7 +2403,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           setInlineStatus(
             status,
             'filled',
-            `connected — ${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`,
+            `connected, ${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`,
           )
         } else if (s.state === 'error') {
           setInlineStatus(status, 'error', s.error ?? 'error')
@@ -2358,6 +2458,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshPacks()
   })
 
+  qsRequired(overlay, '#packs-add-btn').addEventListener('click', () => {
+    const button = qsRequired<HTMLButtonElement>(overlay, '#packs-add-btn')
+    const status = qsRequired(overlay, '#packs-reload-status')
+    button.disabled = true
+    status.textContent = 'Choose a folder containing copse-pack.json…'
+    void api.packs
+      .addSource()
+      .then(() => refreshPacks())
+      .catch((error: unknown) => {
+        status.textContent = errorMessage(error)
+      })
+      .finally(() => {
+        button.disabled = false
+      })
+  })
+
   // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
@@ -2381,6 +2497,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
+    developerModeInput.checked = store.getState().developerMode
+    syncDeveloperOnlySettings()
     // A fresh open always starts on a section, never in a leftover search.
     searchContentLoaded = false
     if (searchInput.value) {
@@ -2393,95 +2511,123 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
     // lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
-    if (openedSection === 'acp') void acpAgentsSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'sources') void refreshSources()
     searchInput.focus()
     void (async (): Promise<void> => {
-      await cursorKeySection.refreshKeyStatus()
-      await claudeAgentKeySection.refreshKeyStatus()
-      await aaKeySection.refreshKeyStatus()
-      await customProvidersSection.refresh()
-      await envKeyDetectSection.refresh()
-      await localProvidersSection.refresh()
+      // These stages used to be one unbroken `await` chain inside this
+      // `void (async …)()`. A rejection anywhere aborted every later step, and
+      // `void` left the rejection nowhere to surface — so a single failed IPC
+      // emptied the rest of the dialog with no error anywhere. That is how
+      // `.gh-cli-status` (second-to-last step) reached CI blank: `refreshStatus`
+      // writes "Checking GitHub CLI…" synchronously before its first `await`, so
+      // an empty status means it was never called, not that `gh.status()` failed.
+      failedRefreshStages.length = 0
+      delete overlay.dataset['settingsRefreshFailed']
+
+      await refreshStage('key-statuses', async () => {
+        await cursorKeySection.refreshKeyStatus()
+        await claudeAgentKeySection.refreshKeyStatus()
+        await aaKeySection.refreshKeyStatus()
+      })
+      await refreshStage('provider-sections', async () => {
+        await envKeyDetectSection.refresh()
+        await providersPanel.refresh()
+      })
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')
-      const model = storedString(await api.settings.get('model'))
-      await settingsModelPickers.model.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
-      // The executor (chat) model just settled — re-grade the advisor pairing
-      // hint, which lives with the advisor pack in the Packs section. No-op until
-      // that pack row has rendered (its select/hint refs are still null); pairs
-      // with the `updateAdvisorPairHint()` call in `refreshPacks()` so whichever
-      // of the two async renders finishes last shows the hint.
-      updateAdvisorPairHint()
-      const smallTasksModel = storedString(await api.settings.get('smallTasksModel'))
-      const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
-      await settingsModelPickers.smallTasksModel.refresh(
-        roleModels['small-tasks'] ?? smallTasksModel ?? '',
-      )
-      // The advisor model and the three comparison models are no longer form
-      // fields: they are pack-scoped `model` settings rendered in Settings →
-      // Packs (advisor pair hint included), populated by `refreshPacks()`.
-      const orchestrationWorkerModel = storedString(
-        await api.settings.get('orchestrationWorkerModel'),
-      )
-      await settingsModelPickers.orchestrationWorkerModel.refresh(
-        orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
-      )
-      await loadSimpleFields(form, api)
-      wireSafetySliders(form)
-      const savedWebOrigins = storedStringArray(await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING))
-      textareaControl(form, 'webAllowedOrigins').value = (
-        savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
-      ).join('\n')
-      const savedProviderHosts = storedStringArray(
-        await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING),
-      )
-      textareaControl(form, 'approvedProviderHosts').value = (
-        Array.isArray(savedProviderHosts) ? savedProviderHosts : []
-      ).join('\n')
-      textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
-        sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
-      )
-      selectControl(form, 'theme').value = store.getState().themePreference
-      inputControl(form, 'fontSize').value = String(store.getState().fontSize)
-      const uiScaleInput = form.elements.namedItem('uiScale')
-      if (!(uiScaleInput instanceof HTMLInputElement)) {
-        throw new Error('Settings dialog template is missing "uiScale"')
-      }
-      uiScaleInput.value = String(store.getState().uiScale)
-      inputControl(form, 'autoPortraitRightPanel').checked = store.getState().autoPortraitRightPanel
-      selectControl(form, 'rightPanelPosition').value = store.getState().rightPanelPosition
+      await refreshStage('model-pickers', async () => {
+        const model = storedString(await api.settings.get('model'))
+        await settingsModelPickers.model.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
+        // The executor (chat) model just settled — re-grade the advisor pairing
+        // hint, which lives with the advisor pack in the Packs section. No-op until
+        // that pack row has rendered (its select/hint refs are still null); pairs
+        // with the `updateAdvisorPairHint()` call in `refreshPacks()` so whichever
+        // of the two async renders finishes last shows the hint.
+        updateAdvisorPairHint()
+        const smallTasksModel = storedString(await api.settings.get('smallTasksModel'))
+        const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
+        await settingsModelPickers.smallTasksModel.refresh(
+          roleModels['small-tasks'] ?? smallTasksModel ?? '',
+        )
+        // The advisor model and the three comparison models are no longer form
+        // fields: they are pack-scoped `model` settings rendered in Settings →
+        // Packs (advisor pair hint included), populated by `refreshPacks()`.
+        const orchestrationWorkerModel = storedString(
+          await api.settings.get('orchestrationWorkerModel'),
+        )
+        await settingsModelPickers.orchestrationWorkerModel.refresh(
+          orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
+        )
+      })
 
-      const savedAccentColor = await api.settings.get('uiAccentColor')
-      inputControl(form, 'uiAccentColor').value =
-        typeof savedAccentColor === 'string' && HEX_COLOR.test(savedAccentColor)
-          ? savedAccentColor
-          : DEFAULT_ACCENT_COLOR
+      await refreshStage('form-fields', async () => {
+        await loadSimpleFields(form, api)
+        syncDeveloperOnlySettings()
+        wireSafetySliders(form)
+        const savedWebOrigins = storedStringArray(
+          await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING),
+        )
+        textareaControl(form, 'webAllowedOrigins').value = (
+          savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
+        ).join('\n')
+        const savedProviderHosts = storedStringArray(
+          await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING),
+        )
+        textareaControl(form, 'approvedProviderHosts').value = (
+          Array.isArray(savedProviderHosts) ? savedProviderHosts : []
+        ).join('\n')
+        textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
+          sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
+        )
+        selectControl(form, 'shellAutoApprovalLevel').value = sanitizeAutoApprovalLevel(
+          await api.settings.get(AUTO_APPROVAL_LEVEL_SETTING),
+        )
+        selectControl(form, 'theme').value = store.getState().themePreference
+        inputControl(form, 'fontSize').value = String(store.getState().fontSize)
+        const uiScaleInput = form.elements.namedItem('uiScale')
+        if (!(uiScaleInput instanceof HTMLInputElement)) {
+          throw new Error('Settings dialog template is missing "uiScale"')
+        }
+        uiScaleInput.value = String(store.getState().uiScale)
+        inputControl(form, 'autoPortraitRightPanel').checked =
+          store.getState().autoPortraitRightPanel
+        selectControl(form, 'rightPanelPosition').value = store.getState().rightPanelPosition
+      })
 
-      const savedTintColor = await api.settings.get('uiTintColor')
-      inputControl(form, 'uiTintColor').value =
-        typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
-          ? savedTintColor
-          : DEFAULT_TINT_COLOR
-      const savedTintStrength = await api.settings.get('uiTintStrength')
-      selectControl(form, 'uiTintStrength').value = isUiTintStrength(savedTintStrength)
-        ? savedTintStrength
-        : DEFAULT_TINT_STRENGTH
+      await refreshStage('appearance', async () => {
+        const savedAccentColor = await api.settings.get('uiAccentColor')
+        inputControl(form, 'uiAccentColor').value =
+          typeof savedAccentColor === 'string' && HEX_COLOR.test(savedAccentColor)
+            ? savedAccentColor
+            : DEFAULT_ACCENT_COLOR
 
-      const savedIconVariant = await api.settings.get('appIconVariant')
-      const appIconVariant = isAppIconVariant(savedIconVariant)
-        ? savedIconVariant
-        : DEFAULT_APP_ICON_VARIANT
-      const iconRadio = form.querySelector<HTMLInputElement>(
-        `input[name="appIconVariant"][value="${appIconVariant}"]`,
-      )
-      if (iconRadio) iconRadio.checked = true
+        const savedTintColor = await api.settings.get('uiTintColor')
+        inputControl(form, 'uiTintColor').value =
+          typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
+            ? savedTintColor
+            : DEFAULT_TINT_COLOR
+        const savedTintStrength = await api.settings.get('uiTintStrength')
+        selectControl(form, 'uiTintStrength').value = isUiTintStrength(savedTintStrength)
+          ? savedTintStrength
+          : DEFAULT_TINT_STRENGTH
 
-      await refreshLocalModelSelects()
-      await ghCliSection.refreshStatus()
-      await refreshMcpServers()
-      await refreshCuratedServers()
+        const savedIconVariant = await api.settings.get('appIconVariant')
+        const appIconVariant = isAppIconVariant(savedIconVariant)
+          ? savedIconVariant
+          : DEFAULT_APP_ICON_VARIANT
+        const iconRadio = form.querySelector<HTMLInputElement>(
+          `input[name="appIconVariant"][value="${appIconVariant}"]`,
+        )
+        if (iconRadio) iconRadio.checked = true
+      })
+
+      await refreshStage('local-models', () => refreshLocalModelSelects())
+      await refreshStage('gh-cli', () => ghCliSection.refreshStatus())
+      await refreshStage('mcp-servers', async () => {
+        await refreshMcpServers()
+        await refreshCuratedServers()
+      })
     })()
   })
 
@@ -2489,6 +2635,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
   settingsForm.addEventListener('change', (e) => {
     const target = e.target
+    if (target === developerModeInput || target === hooksEnabledInput) {
+      syncDeveloperOnlySettings()
+    }
     // The executor (chat) model changed — re-grade the advisor pairing hint,
     // which now lives with the advisor pack's model field (Settings → Packs).
     if (target instanceof HTMLSelectElement && target.name === 'model') {
@@ -2503,8 +2652,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await cursorKeySection.saveKeys()
       await claudeAgentKeySection.saveKeys()
       await aaKeySection.saveKeys()
-      await customProvidersSection.saveKeys()
-      await localProvidersSection.saveKeys()
+      await providersPanel.saveKeys()
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 
@@ -2528,6 +2676,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : 'auto'
       const appIconVariant = data.get('appIconVariant')
       const externalDeny = parseFloat(formDataString(data, 'safetyExternalDenyThreshold'))
+      const developerMode = data.get(DEVELOPER_MODE_SETTING) === 'on'
 
       const accentColorRaw = data.get('uiAccentColor')
       const uiAccentColor =
@@ -2590,6 +2739,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         approvedProviderHosts: parseApprovedProviderHosts(data.get('approvedProviderHosts')),
         providerAllowUserApproval: data.get(PROVIDER_ALLOW_USER_APPROVAL_SETTING) === 'on',
         trustedShellCommands: parseTrustedCommands(formDataString(data, 'trustedShellCommands')),
+        shellAutoApprovalLevel: sanitizeAutoApprovalLevel(data.get(AUTO_APPROVAL_LEVEL_SETTING)),
       })
 
       store.setState({
@@ -2600,6 +2750,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         autoPortraitRightPanel,
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get('openLinksInBuiltInBrowser') === 'on',
+        developerMode,
         settings: { ...store.getState().settings, model },
       })
       store.emit('theme_changed', theme)

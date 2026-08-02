@@ -218,6 +218,9 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     const editCards = host.querySelectorAll('[data-tool-id="tc-edit-1"]')
     assert.equal(editCards.length, 1, 'rebuilt card must replace the stale node')
     assert.notStrictEqual(editCards[0], editBefore, 'changed card should be rebuilt')
+    // The card starts collapsed, so its body (including .tool-result) isn't
+    // built until it opens — opening it is what triggers the deferred render.
+    editCards[0]?.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
     assert.match(editCards[0]?.querySelector('.tool-result')?.textContent ?? '', /wrote 2 lines/)
   })
 

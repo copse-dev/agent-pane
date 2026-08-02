@@ -1,14 +1,59 @@
+import '../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import type { Thread } from '@shared/types'
-import { threadHasExportableContent, threadToJsonl } from './export-thread.ts'
+import {
+  downloadThreadArchive,
+  threadExportBaseName,
+  threadHasExportableContent,
+  threadToJsonl,
+} from './export-thread.ts'
+import { createFakeApi } from './fake-api.test-support.ts'
 import {
   expectRecord,
   expectStringArray,
   parseJsonUnknown,
   recordArrayOrEmpty,
 } from '@shared/unknown-value.ts'
+
+/** Install `value` at `target[key]`, returning an undo that restores the original. */
+function swap(target: object, key: string, value: unknown): () => void {
+  const previous = Object.getOwnPropertyDescriptor(target, key)
+  Object.defineProperty(target, key, { configurable: true, value })
+  return (): void => {
+    if (previous) Object.defineProperty(target, key, previous)
+    else Reflect.deleteProperty(target, key)
+  }
+}
+
+/**
+ * Run a download and capture what it handed the browser: the clicked anchor and
+ * the blob behind its object URL. `click` is intercepted rather than allowed
+ * through — happy-dom would otherwise try to navigate to the blob URL.
+ */
+async function captureDownload(
+  run: () => Promise<void>,
+): Promise<{ fileName: string; type: string; blob: Blob }> {
+  const clicked: HTMLElement[] = []
+  const captured: Blob[] = []
+  const undo = [
+    swap(HTMLElement.prototype, 'click', function click(this: HTMLElement): void {
+      clicked.push(this)
+    }),
+    swap(URL, 'createObjectURL', (blob: Blob): string => {
+      captured.push(blob)
+      return `blob:test/${String(captured.length)}`
+    }),
+  ]
+  try {
+    await run()
+  } finally {
+    for (const restore of undo) restore()
+  }
+  const blob = at(captured, 0)
+  return { fileName: at(clicked, 0).getAttribute('download') ?? '', type: blob.type, blob }
+}
 
 function thread(messages: Thread['messages'] = []): Thread {
   return {
@@ -203,5 +248,63 @@ describe('export thread', () => {
     )
     const msg = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
     assert.equal(msg['model'], 'claude-sonnet-4-6')
+  })
+})
+
+describe('export thread download naming', () => {
+  const stamp = new Date('2026-04-05T06:07:08Z')
+
+  it('slugifies the title and stamps the day', () => {
+    const named = thread()
+    named.title = 'Fix the *flaky* login test'
+    assert.equal(threadExportBaseName(named, stamp), 'Fix-the-flaky-login-test-2026-04-05')
+  })
+
+  it('falls back to "thread" for an untitled thread', () => {
+    const named = thread()
+    named.title = ''
+    assert.equal(threadExportBaseName(named, stamp), 'thread-2026-04-05')
+  })
+
+  it('truncates a long title so the filename stays manageable', () => {
+    const named = thread()
+    named.title = 'x'.repeat(120)
+    assert.equal(threadExportBaseName(named, stamp), `${'x'.repeat(40)}-2026-04-05`)
+  })
+})
+
+describe('downloadThreadArchive', () => {
+  it('asks the main process for the thread directory and saves it as a .zip', async () => {
+    const named = thread()
+    named.title = 'Archive me'
+    const calls: Array<[string, string]> = []
+    const api = createFakeApi()
+    const downloaded = await captureDownload(async () => {
+      await downloadThreadArchive(
+        {
+          ...api,
+          threads: {
+            ...api.threads,
+            exportArchive: (
+              projectId: string,
+              threadId: string,
+            ): Promise<Uint8Array<ArrayBuffer>> => {
+              calls.push([projectId, threadId])
+              return Promise.resolve(new Uint8Array([80, 75, 5, 6]))
+            },
+          },
+        },
+        'project-1',
+        named,
+      )
+    })
+
+    assert.deepEqual(calls, [['project-1', 'thread-1']])
+    assert.match(downloaded.fileName, /^Archive-me-\d{4}-\d{2}-\d{2}\.zip$/)
+    assert.equal(downloaded.type, 'application/zip')
+    assert.deepEqual(
+      new Uint8Array(await downloaded.blob.arrayBuffer()),
+      new Uint8Array([80, 75, 5, 6]),
+    )
   })
 })

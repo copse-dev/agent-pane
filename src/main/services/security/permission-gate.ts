@@ -23,6 +23,7 @@ import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope
 import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
+import { recordDecision } from './decision-log-store.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
@@ -54,6 +55,7 @@ import {
   offerableTrustedCommand,
   routeShellCommand,
 } from './command-routing-config.ts'
+import { resolveAutoApproval } from './auto-approval-config.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -79,6 +81,8 @@ import {
 } from '../mcp/custom-tools-registry.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
+import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/packs/background-tasks-pack.ts'
 import { assessShellHarm } from './shell-harm.ts'
@@ -115,6 +119,39 @@ export interface TerminalPermissionOptions {
  * routeShellCommand — the prompt-once path that replaces a separate remembered
  * list. Returns the approval, persisting the grant on approve+remember.
  */
+/**
+ * Whether the deterministic auto-approval classifier lets `command` run without a
+ * prompt, recording the grant to the durable decision log when it does.
+ *
+ * Consulted at every point that would otherwise interrupt the user for a shell
+ * command — the up-front gate AND both sandbox-escalation prompts. Covering the
+ * escalations matters as much as the gate: on macOS a `git fetch` auto-runs
+ * *inside* the seatbelt, fails on the denied network, and only then asks to retry
+ * outside it. Recognising the shape up front but re-prompting on that retry would
+ * leave the most common commands prompting exactly as before.
+ *
+ * @param scope where the grant applies, recorded so the log distinguishes a
+ *   contained auto-approval from one that dropped containment.
+ */
+function autoApproveShell(
+  command: string,
+  scope: 'sandbox' | 'external',
+  executionRoot?: string | null,
+): boolean {
+  const decision = resolveAutoApproval(command, executionRoot)
+  if (decision.action !== 'auto-approve') return false
+  recordDecision({
+    kind: 'shell',
+    actor: 'classifier',
+    verdict: 'allowed',
+    subject: SHELL_DECISION_SUBJECT,
+    scope,
+    reasons: [`tier ${decision.tier}`, ...decision.reasons],
+    source: 'auto-approval',
+  })
+  return true
+}
+
 async function requestEscalationApproval(
   command: string,
   title: string,
@@ -128,6 +165,8 @@ async function requestEscalationApproval(
       title,
       body,
       type: 'shell',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external',
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
     },
@@ -159,6 +198,8 @@ async function promptShell(
       title: 'Run shell command?',
       body: formatShellPromptBody(command, reasons),
       type: 'shell',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'sandbox',
     },
     signal,
   )
@@ -199,6 +240,7 @@ export async function promptUnsandboxedShell(
   reasons: string[],
   signal?: AbortSignal,
 ): Promise<boolean> {
+  if (autoApproveShell(command, 'external')) return true
   return requestEscalationApproval(
     command,
     'Run outside sandbox?',
@@ -217,11 +259,14 @@ export async function promptExpectedSandboxBlock(
   reasons: string[],
   signal?: AbortSignal,
 ): Promise<boolean> {
+  if (autoApproveShell(command, 'external')) return true
   const { approved } = await requestApproval(
     {
       title: 'Run outside sandbox?',
       body: formatExpectedSandboxBlockPromptBody(command, reasons),
       type: 'shell',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external',
     },
     signal,
   )
@@ -267,6 +312,8 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
     title: `MCP tool: ${mcpToolLabel(toolName)}`,
     body: bodyLines.join('\n'),
     type: 'mcp',
+    subject: toolName,
+    scope: 'external',
     allowRemember: true,
   })
   if (approved && remember) await rememberMcpTool(toolName)
@@ -286,6 +333,8 @@ async function promptWebOrigin(origin: string, detail: string): Promise<boolean>
     title: 'Allow web origin?',
     body: formatWebPromptBody(origin, detail),
     type: 'web',
+    subject: origin,
+    scope: 'external',
     allowRemember: true,
     rememberLabel: 'Always allow this web origin',
   })
@@ -325,6 +374,23 @@ async function checkWebSearchPermission(): Promise<boolean> {
   return promptWebOrigin(
     decision.origin,
     `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
+  )
+}
+
+async function checkParallelSearchPermission(): Promise<boolean> {
+  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
+  const decision = decideWebFetchPermission({
+    url: PARALLEL_SEARCH_API_URL,
+    allowedOrigins: webAllowedOriginsWithDefaults(saved),
+    allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
+  })
+  if (decision.action === 'allow') return true
+  if (decision.action === 'deny') {
+    throw new Error(`Parallel Search access denied: ${decision.reasons.join('; ')}`)
+  }
+  return promptWebOrigin(
+    decision.origin,
+    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
   )
 }
 
@@ -457,6 +523,19 @@ export async function ensureShellCommandPermitted(
   const autoRun = opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
   const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
+  const classification = sandboxEnabled || guardedYolo ? null : await classifyShellScope(command)
+  if (classification) {
+    recordDecision({
+      kind: 'classification',
+      actor: 'classifier',
+      verdict: 'classified',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: classification.scope,
+      confidence: classification.confidence,
+      ...(classification.reason ? { reasons: [classification.reason] } : {}),
+      source: 'safety-classifier',
+    })
+  }
   const harmDecision = guardedYolo
     ? assessShellHarm(command, {
         workspaceRoot,
@@ -469,7 +548,7 @@ export async function ensureShellCommandPermitted(
     workspaceRoot,
     sandboxEnabled,
     autoRun,
-    classification: sandboxEnabled || guardedYolo ? null : await classifyShellScope(command),
+    classification,
     mode: guardedYolo ? 'guarded-yolo' : 'standard',
     ...(harmDecision ? { harmDecision } : {}),
     externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
@@ -522,6 +601,13 @@ export async function ensureShellCommandPermitted(
     return approved
   }
 
+  // Auto-approval classifier. The policy has resolved to `prompt`, so this is the
+  // single point where a bounded-risk shape can skip the interruption — it can
+  // only ever turn a prompt into an allow, never widen an `allow` or soften a
+  // `deny` (both returned above). Deterministic and fail-closed; see
+  // auto-approval.ts for the enumerated shapes and the safety argument.
+  if (autoApproveShell(command, outsideSandbox ? 'external' : 'sandbox', workspaceRoot)) return true
+
   // A plain package install gets a dedicated, readable approval rather than the
   // generic external-command reason list. Only when the install is the *sole*
   // flagged signal (one reason) — compound or registry-redirected commands keep
@@ -535,6 +621,8 @@ export async function ensureShellCommandPermitted(
             title: 'Run package command?',
             body: formatEphemeralRunnerPromptBody(command, { outsideSandbox, safeInstall }),
             type: 'shell',
+            subject: SHELL_DECISION_SUBJECT,
+            scope: outsideSandbox ? 'external' : 'sandbox',
           }
         : {
             title: 'Run package install?',
@@ -544,6 +632,8 @@ export async function ensureShellCommandPermitted(
               jsManager: install.jsManager,
             }),
             type: 'shell',
+            subject: SHELL_DECISION_SUBJECT,
+            scope: outsideSandbox ? 'external' : 'sandbox',
           },
       opts.signal,
     )
@@ -584,6 +674,8 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
     title: 'Allow browser navigation?',
     body: formatBrowserPromptBody(decision.origin, url),
     type: 'mcp',
+    subject: url,
+    scope: 'external',
     allowRemember: true,
   })
   if (approved && remember) await rememberBrowserOrigin(decision.origin)
@@ -604,11 +696,8 @@ const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
  *
  * The loopback port-binding relaxation is an authority the `copse.background-tasks`
  * pack DECLARES (its `loopback-bind` permission, issue #1190). It is grantable
- * ONLY while the owning pack is enabled: the gate resolves the declaration
- * through `getDefaultPackRegistry().isPermissionDeclared('loopback-bind')`, so
- * disabling the pack revokes the relaxation in the same atomic flag flip that
- * unregisters `run_background`. When the relaxation is undeclared the grant is
- * refused (the task can still run fully sandboxed without binding a port).
+ * ONLY while the owning pack is enabled: disabling the pack revokes the
+ * relaxation in the same atomic flag flip that unregisters `run_background`.
  */
 async function checkBackgroundProcessPermission(
   args: unknown,
@@ -620,10 +709,6 @@ async function checkBackgroundProcessPermission(
 
   if (!backgroundAllowsPortBinding(args)) return true
 
-  // A declared sandbox relaxation is only honoured while the owning pack is
-  // enabled (issue #1190). If the `copse.background-tasks` pack no longer
-  // declares `loopback-bind` (it was disabled), refuse the relaxation rather
-  // than silently binding a port through a revoked authority.
   if (!getDefaultPackRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION)) {
     throw new Error(
       'Loopback port binding is not available: the Background tasks pack ' +
@@ -725,6 +810,19 @@ async function promptHookAsk(check: PermissionCheck, decision: HookGateDecision)
   return approved
 }
 
+/** Record non-allow hook verdicts to the durable decision log. */
+function recordHookDecision(toolName: string, decision: HookGateDecision): void {
+  if (decision.permission === 'allow') return
+  recordDecision({
+    kind: 'hook',
+    actor: 'hook',
+    verdict: decision.permission === 'deny' ? 'blocked' : 'ask',
+    subject: toolName,
+    ...(decision.agentMessage ? { reasons: [decision.agentMessage] } : {}),
+    source: 'toolGate',
+  })
+}
+
 /**
  * Run the tool-gate hooks (Cursor `hooks.json` + Claude `.claude/settings.json`)
  * for this tool call, via the canonical `toolGate` event and its dialect adapters
@@ -770,6 +868,7 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
     { toolName: check.toolName, args: check.args },
     { workspaceRoot, executionRoot, projectTrusted, agentSession: currentAgentSessionInfo() },
   )
+  recordHookDecision(check.toolName, decision)
 
   // H3 (decision 12): a `haltRun` stops the whole turn, not just this tool call.
   // Route it through the run's abort path — attributed to the hook, spine-recorded
@@ -881,6 +980,10 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
 
   if (toolName === 'web_search') {
     return checkWebSearchPermission()
+  }
+
+  if (toolName === 'parallel_search') {
+    return checkParallelSearchPermission()
   }
 
   // Read-only GitHub CI reads (status/logs/wait) reach github.com via the `gh`

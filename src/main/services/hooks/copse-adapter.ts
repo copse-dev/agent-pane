@@ -29,6 +29,7 @@
 // the `sandbox: false` escape is surfaced on the Sources summary below, and a
 // blocked-by-sandbox run is recorded + resolved via `onFailure` in the runner.
 import * as fsp from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import micromatch from 'micromatch'
 import {
@@ -42,7 +43,6 @@ import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-
 import type { HookScope, HooksListResult, HookSummary } from '@shared/types/hooks.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
-import { copseDataRoot } from '../storage/copse-paths.ts'
 import type {
   DialectAdapter,
   DialectDiscoverOpts,
@@ -150,7 +150,7 @@ interface DiscoveredCopseHook {
 
 /** `~/.copse/hooks.json` — always trusted (the user installed it). */
 export function userCopseHooksConfigPath(): string {
-  return join(copseDataRoot(), 'hooks.json')
+  return join(homedir(), '.copse', 'hooks.json')
 }
 
 /** `<root>/.copse/hooks.json` — only honoured when the workspace is trusted. */

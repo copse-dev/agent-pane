@@ -138,4 +138,38 @@ describe('footer index status chip', () => {
     assert.match(chip.title, /semantic code index: unavailable/)
     assert.doesNotMatch(chip.title, /no backend installed/)
   })
+
+  it('shows a persistent chip when the scale guard skips semantic indexing', () => {
+    const { api, push } = makeApi(idle)
+    destroy = mountFooterIndexStatus(document.body, api).destroy
+    push({
+      fileIndex: { phase: 'ready' },
+      semantic: {
+        phase: 'skipped',
+        reason: 'Workspace has 120,000 indexed paths (cap 100,000)',
+      },
+    })
+    const chip = chipEl()
+    assert.equal(chip.hidden, false)
+    assert.equal(chip.textContent, 'Semantic index skipped')
+    assert.equal(chip.dataset['state'], 'skipped')
+    assert.match(chip.title, /120,000 indexed paths/)
+  })
+
+  it('shows a limited chip for oversized nested-repo policy outcomes', () => {
+    const { api, push } = makeApi(idle)
+    destroy = mountFooterIndexStatus(document.body, api).destroy
+    push({
+      fileIndex: { phase: 'ready' },
+      semantic: {
+        phase: 'limited',
+        reason: 'Nested repository vendor/wpt is oversized (50,000 paths)',
+      },
+    })
+    const chip = chipEl()
+    assert.equal(chip.hidden, false)
+    assert.equal(chip.textContent, 'Semantic index limited')
+    assert.equal(chip.dataset['state'], 'limited')
+    assert.match(chip.title, /vendor\/wpt/)
+  })
 })

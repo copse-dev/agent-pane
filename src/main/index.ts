@@ -33,6 +33,7 @@ import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
+import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
@@ -100,6 +101,8 @@ import {
 } from './services/diagnostics/event-loop-watchdog.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
+import { getSetting } from './services/storage/settings.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
@@ -237,7 +240,8 @@ app
       getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
     })
     applyAppIcon([win])
-    buildAppMenu(win)
+    const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
+    buildAppMenu(win, developerMode)
     initUpdatePrompt(win)
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
     // spawns (one of them, `gh auth status`, a network round trip), and run
@@ -282,6 +286,12 @@ app
 
     initApproval(win, ipcMain, app.dock)
     initAskUser(win, ipcMain)
+    // Lets main-process code hand the user a running command in the Shells pane
+    // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
+    // so the request is forwarded rather than spawned here.
+    setTerminalCommandLauncher((command) => {
+      if (!win.isDestroyed()) win.webContents.send('terminal:run_command', command)
+    })
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win, ipcMain)
     initSshWorkspaceIpc(win)

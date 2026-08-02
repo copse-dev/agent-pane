@@ -38,7 +38,7 @@ import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { listSkills } from './skills/skills-registry.ts'
-import { getSetting } from './storage/settings.ts'
+import { getSetting, resolveApiKey } from './storage/settings.ts'
 import { isGhAvailable } from './tool-availability.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
@@ -69,6 +69,13 @@ import {
 import { readTerminalTool } from '../tools/read-terminal-tool.ts'
 import { runCheckupTool } from '../tools/checkup-tool.ts'
 import { videoFramesTool } from '../tools/video-frames-tool.ts'
+import { readArchiveTool } from '../tools/read-archive-tool.ts'
+import {
+  PARALLEL_SEARCH_PACK_ID,
+  PARALLEL_SEARCH_TOOL_NAME,
+} from '@copse/agent/packs/parallel-search-pack.ts'
+import { parallelSearchTool } from '../tools/parallel-search-tool.ts'
+import { PARALLEL_SEARCH_PROVIDER_ID } from './parallel-search.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -164,11 +171,15 @@ export function createRegistry(): ToolRegistry {
   // approval. Live toggles route through {@link syncPiiTools} on
   // `packs:setEnabled`.
   syncPiiTools(registry)
+  // Optional hosted web search. The pack and a configured key are both needed,
+  // so the model never sees a tool that can only answer with setup guidance.
+  syncParallelSearchTools(registry)
   // Reading a video as stills. Registered unconditionally because a video can
   // be attached to any thread at any time, but withheld per turn from threads
   // that have never had one (see `parentTools`) — most threads never will, and
   // the schema is not free.
   registry.register(videoFramesTool)
+  registry.register(readArchiveTool)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
@@ -395,6 +406,18 @@ export function syncReadTerminalTools(registry: ToolRegistry): void {
     if (!registry.has('read_terminal')) registry.register(readTerminalTool)
   } else {
     registry.unregister('read_terminal')
+  }
+}
+
+/** Keep the hosted Parallel tool aligned with pack enablement and credentials. */
+export function syncParallelSearchTools(registry: ToolRegistry): void {
+  const available =
+    getDefaultPackRegistry().isEnabled(PARALLEL_SEARCH_PACK_ID) &&
+    resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) !== null
+  if (available) {
+    if (!registry.has(PARALLEL_SEARCH_TOOL_NAME)) registry.register(parallelSearchTool)
+  } else {
+    registry.unregister(PARALLEL_SEARCH_TOOL_NAME)
   }
 }
 

@@ -23,7 +23,11 @@ import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
-import { classifyAgentError, classifyProviderAccessFailure } from './agent-errors.ts'
+import {
+  classifyAcpAuthFailure,
+  classifyAgentError,
+  classifyProviderAccessFailure,
+} from './agent-errors.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
@@ -90,7 +94,9 @@ import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
+import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
+import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
@@ -119,7 +125,11 @@ import { runStopHooks } from './hooks/stop.ts'
 import { runPostTurnReviewHooks } from './hooks/post-turn-review.ts'
 import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
 import { registerHaltTarget, clearHaltTarget } from './hooks/halt-run.ts'
-import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
+import {
+  registerRunDeadline,
+  clearRunDeadline,
+  withRunDeadlinePaused,
+} from './hooks/run-deadline.ts'
 import { fireSessionStartHook } from './hooks/session-start.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
@@ -141,7 +151,7 @@ import {
   resolveMaxReviewCycles,
 } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { getPackService } from './packs/pack-service.ts'
+import { getPackService, inertPackSources, packUnavailableReason } from './packs/pack-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -154,8 +164,12 @@ import {
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
+import { offerAcpReauth } from './acp/acp-reauth.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { parsePackModelSelection } from '@shared/pack-model.ts'
+import { getPackToolRuntimeController } from './packs/pack-tool-controller.ts'
+import { buildPackModelTurn } from './packs/pack-model-turn.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -174,6 +188,26 @@ export {
 } from './title-generator.ts'
 
 const abortMap = new Map<string, AbortController>()
+
+function packModelResult(raw: unknown): {
+  text: string
+  inputTokens: number
+  outputTokens: number
+} {
+  if (typeof raw === 'string') return { text: raw, inputTokens: 0, outputTokens: 0 }
+  if (!isRecord(raw) || typeof raw['text'] !== 'string') {
+    throw new Error('Pack model route returned no text.')
+  }
+  const inputTokens =
+    typeof raw['inputTokens'] === 'number' && Number.isFinite(raw['inputTokens'])
+      ? Math.max(0, raw['inputTokens'])
+      : 0
+  const outputTokens =
+    typeof raw['outputTokens'] === 'number' && Number.isFinite(raw['outputTokens'])
+      ? Math.max(0, raw['outputTokens'])
+      : 0
+  return { text: raw['text'], inputTokens, outputTokens }
+}
 
 // LM Studio models advertise smaller tool-schema budgets than cloud providers,
 // so reserve more of the window for their tool definitions. Shared by the turn
@@ -248,6 +282,7 @@ function parentTools(
   executorModel: string,
   threadId: string,
   threadVideos: readonly VideoAttachmentRef[],
+  threadArchives: readonly ArchiveAttachmentRef[],
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -293,8 +328,10 @@ function parentTools(
     tools = tools.filter((t) => t.name !== 'read_terminal')
   }
   // Withhold video_frames from threads that have never had a video attached,
-  // and name the attached ones in its description when they have.
+  // and name the attached ones in its description when they have. read_archive
+  // is gated the same way, on attached archives.
   tools = applyVideoToolAvailability(tools, threadVideos)
+  tools = applyArchiveToolAvailability(tools, threadArchives)
   return tools
 }
 
@@ -573,6 +610,7 @@ export async function runAgent(
   const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
+  const packModel = parsePackModelSelection(model)
 
   const sendChunk = createAgentChunkSink(threadId, host)
 
@@ -613,6 +651,87 @@ export async function runAgent(
 
   if (resolved.fallbackNotice) {
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
+  }
+
+  if (packModel) {
+    /** Append a recorded cause to a pack error, or nothing when none was captured. */
+    const suffixFor = (reason: string | undefined): string => (reason ? ` ${reason}` : '')
+    const controller = new AbortController()
+    abortMap.set(threadId, controller)
+    setActiveRunThread(threadId)
+    beginHookRunRecording(threadId)
+    try {
+      const packs = getDefaultPackRegistry()
+      const runtime = getPackToolRuntimeController()
+      // `isEnabled` is "registered AND not disabled", so on its own it cannot
+      // tell a pack the user switched off from one that never registered at
+      // all. Those have different causes and different fixes, and a selected
+      // pack that failed to appear is the more likely of the two: check
+      // registration first so the message names the real state.
+      //
+      // A `packSources` entry whose discovery throws never registers; a pack
+      // whose tools fail to start is registered-then-disabled. Each state now
+      // carries the cause `refreshPackSources` recorded (pack-service.ts), so a
+      // failure explains itself here instead of only in the main-process log —
+      // which, in CI, is buried in a failure artifact.
+      if (!packs.has(packModel.packId)) {
+        throw new Error(
+          `The selected pack "${packModel.packId}" is not installed.${suffixFor(inertPackSources().join('; '))}`,
+        )
+      }
+      if (!packs.isEnabled(packModel.packId)) {
+        throw new Error(
+          `The selected pack "${packModel.packId}" is disabled.${suffixFor(packUnavailableReason(packModel.packId))}`,
+        )
+      }
+      if (!runtime?.isRunning(packModel.packId)) {
+        // Enabled but not running: saying "disabled" here would send users to a
+        // toggle that is already on.
+        throw new Error(
+          `The selected pack "${packModel.packId}" is not running.${suffixFor(packUnavailableReason(packModel.packId))}`,
+        )
+      }
+      const route = packs
+        .get(packModel.packId)
+        ?.contributions.modelRoutes.find((candidate) => candidate.id === packModel.routeId)
+      if (!route) throw new Error(`Pack model route "${packModel.routeId}" is unavailable.`)
+
+      const result = packModelResult(
+        await runtime.invokeModel(
+          packModel.packId,
+          packModel.routeId,
+          buildPackModelTurn({
+            threadId,
+            prompt: outboundPrompt,
+            priorMessages,
+            supportsImages: route.supportsImages === true,
+          }),
+          controller.signal,
+        ),
+      )
+      sendChunk({ type: 'text', text: result.text })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+        messages: [
+          ...priorMessages,
+          { role: 'user', content: outboundPrompt },
+          { role: 'assistant', content: result.text },
+        ],
+      }
+    } catch (err) {
+      sendChunk({ type: 'text', text: errorMessage(err) })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: [...priorMessages, { role: 'user', content: outboundPrompt }],
+      }
+    } finally {
+      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+      endHookRunRecording(threadId)
+      clearActiveRunThread(threadId)
+      abortMap.delete(threadId)
+    }
   }
 
   // Running an ACP turn is reachable two ways: the user picked an `acp:<id>`
@@ -700,6 +819,28 @@ export async function runAgent(
       const partial = err instanceof AcpTurnFailure ? err.partial : null
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
+      // A credentials failure is the one ACP error the user can't act on from
+      // the chat alone — the fix lives in a separate program's login flow. Offer
+      // to open it, after the diagnosis has been streamed so the ask arrives
+      // with its explanation already on screen. The idle deadline is paused for
+      // the wait, exactly as it is around approval dialogs, so a user thinking
+      // it over can't have the turn aborted underneath the modal.
+      const authFailure = controller.signal.aborted
+        ? null
+        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
+      if (authFailure) {
+        // Best-effort: the turn has already reported its failure, and a broken
+        // offer must not escalate a handled error into an unhandled one.
+        const launched = await withRunDeadlinePaused(threadId, () =>
+          offerAcpReauth({ agentId: acpRunAgentId, kind: authFailure }).catch(() => null),
+        )
+        if (launched) {
+          sendChunk({
+            type: 'text',
+            text: `\n\nOpened a terminal running \`${launched}\`. Finish signing in there, then re-send your message.`,
+          })
+        }
+      }
       sendChunk({ type: 'done' })
       return {
         usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },
@@ -961,7 +1102,10 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const threadVideos = await getThreadVideos()
+    const [threadVideos, threadArchives] = await Promise.all([
+      getThreadVideos(),
+      getThreadArchives(),
+    ])
     const parentLoopTools = parentTools(
       registry,
       subagentsEnabled,
@@ -969,6 +1113,7 @@ export async function runAgent(
       model,
       threadId,
       threadVideos,
+      threadArchives,
     )
     setHookRunToolset(parentLoopTools)
 

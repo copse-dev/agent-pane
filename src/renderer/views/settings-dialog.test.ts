@@ -16,6 +16,9 @@ import {
   closeSettingsDialog,
   isSettingsDialogOpen,
   applyUiAccent,
+  applyUiTint,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
 } from './settings-dialog.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
@@ -94,11 +97,27 @@ describe('accent colour', () => {
   it('applies the hue and chooses readable text for light and dark accents', () => {
     applyUiAccent('#2A9D8F')
     assert.equal(document.documentElement.style.getPropertyValue('--accent-color'), '#2A9D8F')
-    assert.equal(document.documentElement.style.getPropertyValue('--text-on-accent'), '#101918')
+    assert.equal(document.documentElement.style.getPropertyValue('--text-on-accent'), '#444444')
 
     applyUiAccent('#312E81')
     assert.equal(document.documentElement.style.getPropertyValue('--accent-color'), '#312E81')
     assert.equal(document.documentElement.style.getPropertyValue('--text-on-accent'), '#ffffff')
+  })
+})
+
+describe('interface tint', () => {
+  it('defaults to a restrained Copse wash and exposes the full palette at Strong', () => {
+    assert.equal(DEFAULT_TINT_COLOR, '#002E2B')
+    assert.equal(DEFAULT_TINT_STRENGTH, 'subtle')
+
+    applyUiTint(DEFAULT_TINT_COLOR, DEFAULT_TINT_STRENGTH)
+    assert.equal(document.documentElement.style.getPropertyValue('--tint-hue'), '#002E2B')
+    assert.equal(document.documentElement.style.getPropertyValue('--tint-amount'), '4%')
+    assert.equal(document.documentElement.dataset['tintPalette'], 'copse')
+    assert.equal(document.documentElement.dataset['tintStrength'], 'subtle')
+
+    applyUiTint(DEFAULT_TINT_COLOR, 'strong')
+    assert.equal(document.documentElement.dataset['tintStrength'], 'strong')
   })
 })
 
@@ -148,13 +167,30 @@ describe('settings search (cross-section block filter)', () => {
     assert.deepEqual(resultLegends(), ['Model comparison'])
   })
 
+  it('does not render the retired standalone DevTools shortcut fieldset', () => {
+    assert.equal(
+      Array.from(document.querySelectorAll('legend')).some(
+        (l) => l.textContent.trim() === 'DevTools shortcut',
+      ),
+      false,
+    )
+  })
+
+  it('excludes developer-only settings from search while Developer mode is off', () => {
+    search('cursor hooks')
+    assert.deepEqual(resultLegends(), [])
+  })
+
   it('ranks a heading (legend) match above a body-only match', () => {
-    // "ACP agents" names the block via its legend; other blocks (e.g. Local
-    // models routing) only mention ACP in body copy, so they sort after it.
-    search('acp')
+    // "Models" names the block via its legend; other blocks (Providers, Helpers)
+    // only mention models in body copy, so they sort after it.
+    search('models')
     const legends = resultLegends()
-    assert.ok(legends.length >= 2, `expected multiple ACP matches, got ${JSON.stringify(legends)}`)
-    assert.equal(legends[0], 'ACP agents')
+    assert.ok(
+      legends.length >= 2,
+      `expected multiple model matches, got ${JSON.stringify(legends)}`,
+    )
+    assert.equal(legends[0], 'Models')
   })
 
   it('shows an empty-state message and no results for an unknown term', () => {

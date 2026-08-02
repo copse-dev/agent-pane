@@ -107,6 +107,12 @@ export function mountTerminalsPane(
     }
   })
 
+  // Main-process surfaces (the ACP re-authentication offer) route through the
+  // same path as the in-app callers on `request_terminal_command`.
+  const unsubRunCommand = api.terminal.onRunCommand((command) => {
+    runCommandInNewShell(command)
+  })
+
   const unsubExit = api.terminal.onExit((id, code) => {
     const tab = [...tabs.values()].find((t) => t.sessionId === id)
     if (!tab) return
@@ -613,6 +619,7 @@ export function mountTerminalsPane(
     resizeObserver.disconnect()
     unsubOutput()
     unsubExit()
+    unsubRunCommand()
     void (async (): Promise<void> => {
       for (const tab of tabs.values()) {
         if (tab.nameTimer != null) clearTimeout(tab.nameTimer)

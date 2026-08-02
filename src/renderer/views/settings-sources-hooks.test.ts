@@ -84,9 +84,10 @@ const WARNING: HookValidationWarning = {
 async function openSources(
   hooksResult: HooksListResult,
   testResult?: HookTestResult,
+  developerMode = true,
 ): Promise<HTMLElement> {
   document.body.innerHTML = ''
-  mountSettingsDialog(createStore(), stubApi(hooksResult, testResult))
+  mountSettingsDialog(createStore({ developerMode }), stubApi(hooksResult, testResult))
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="sources"]',
   )
@@ -112,9 +113,17 @@ describe('settings sources → hooks list', () => {
     const fieldset = toggle.closest('fieldset')
     assert.ok(fieldset)
     assert.equal(fieldset.querySelector('legend')?.textContent.trim(), 'Hooks')
-    // The security copy names the hot-path and workspace-trust caveats.
-    assert.match(fieldset.textContent, /hot path/)
-    assert.match(fieldset.textContent, /workspace trust/)
+    // The security copy says when the scripts run and that the project must be
+    // trusted first.
+    assert.match(fieldset.textContent, /while the agent works/)
+    assert.match(fieldset.textContent, /trust the project/)
+  })
+
+  it('hides the Hooks fieldset by default outside Developer mode', async () => {
+    await openSources({ hooks: [], warnings: [] }, undefined, false)
+    const fieldset = document.querySelector<HTMLElement>('[data-developer-only="hooks"]')
+    assert.ok(fieldset)
+    assert.equal(fieldset.hidden, true)
   })
 
   it('shows the empty state when nothing is configured', async () => {

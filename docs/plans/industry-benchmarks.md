@@ -39,12 +39,21 @@ also lowers the per-stream reasoning-runaway guard to 2k output tokens without c
 the desktop default. The one bounded stream after that recovery nudge may use a 4k cap, giving
 a complex local-model thought one chance to reach a tool call without returning to an unbounded
 runaway. Its host-specific recovery nudge directs a stalled terminal agent to
-take concrete tool action instead of asking for a chat-style final answer. It also replaces
+create the best current deliverable candidate instead of continuing analysis with the requested
+path absent. The terminal host exposes a bounded `write_file` tool for text deliverables, repeats
+the original task beside recovery, and directs the next action to that tool and the task's exact
+output path. When the task names that path explicitly, the next recovery turn exposes only
+`write_file`, constrains its path schema to those requested outputs, and forces that function via
+the OpenAI-compatible provider API. A malformed recovery call is rejected once before the normal
+toolset is restored, avoiding an unproductive rejection loop. It also replaces
 the pressure-triggered tool-less answer turn for this host with one tool-enabled recovery
 instruction, because terminal success is durable environment state rather than prose; the
-configured output cap still bounds finalization. The recovery also treats available `/tests` as
-the verifier authority instead of accepting an ad hoc smoke check, and requires a best-effort edit
-before any further read-only inspection. The
+configured output cap still bounds finalization. The recovery probes `/tests` once, treats it as
+the verifier authority when available, and avoids repeatedly searching for hidden verifier files
+when the harness has not mounted them during the agent phase. The agent must never create or modify
+that verifier-owned path to satisfy a workspace checker. Task-local checks must be invoked with
+their real runner—a silent script that merely defines tests is not accepted as verification.
+The recovery also requires a best-effort edit before any further read-only inspection. The
 terminal host also treats a short visible planning preamble on an otherwise reasoning-dominated
 cut as part of the same bounded runaway streak. The launcher defaults to one task and one attempt
 for local smoke testing. Its prompt also preserves forensic/stateful inputs before potentially
@@ -92,6 +101,38 @@ default. The #1149 forced-write and task-specific warning mechanisms remain benc
 two paired targeted runs favored v3, the generic reasoning checkpoint policy is also used by the
 built-in Copse agent: 2K reasoning checkpoints inside the existing 32K product ceiling, with a 4K
 recovery ceiling. ACP and other externally hosted agents are unchanged.
+
+## Terminal-Bench experiment log
+
+These runs hold the model and sampling/runtime inputs fixed unless a row says otherwise. The model
+is **`qwen3.6-35b-a3b` via LM Studio**, with one attempt, no analyst steering, a 2,048-token normal
+stream cap, and a 600-second maximum command timeout. A zero is recorded as a failure even when a
+plumbing metric improves; creating a file or reaching a later verifier assertion is not a solve.
+
+| Commit / mechanism                                      | Run                                                                             | Result and failure observed                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main` baseline                                         | [29919412657](https://github.com/copse-dev/agent-pane/actions/runs/29919412657) | Four tasks, all zero. `cancel-async-tasks` reached 5/6 assertions but exceeded concurrent cleanup; `circuit-fibsqrt` planned without editing; `break-filter-js-from-html` produced the wrong bypass; `chess-best-move` used 34 tools over about 697 seconds and never created `move.txt`.                                                                                                                                                                                                          |
+| `b6a7237c8`, action-oriented terminal guidance          | [29921552045](https://github.com/copse-dev/agent-pane/actions/runs/29921552045) | Four tasks, all zero. Cancel improved to about 75 seconds and 9 tools but remained 5/6. Circuit still made no material edit. Chess fell to about 484 seconds and 24 tools but still omitted `move.txt`. HTML regressed to about 924 seconds and 63 tools; it fabricated `/tests`, copied a task-local filter there, and treated that as verifier evidence.                                                                                                                                         |
+| `c347b281f`, exact output path repeated in recovery     | [29923112614](https://github.com/copse-dev/agent-pane/actions/runs/29923112614) | Circuit and chess both zero. Neither prose recovery nor repeating the original task caused the model to create the required output. This established a ceiling for advisory wording alone.                                                                                                                                                                                                                                                                                                         |
+| `d0c6c0761`, bounded `write_file` tool                  | [29924128442](https://github.com/copse-dev/agent-pane/actions/runs/29924128442) | Chess zero after about 450 seconds and 23 tools. The model used `write_file` six times for helpers and notes but still omitted `move.txt`, showing that tool availability did not change finalization intent.                                                                                                                                                                                                                                                                                      |
+| `c5eb0e575`, hard post-recovery output gate             | [29925349604](https://github.com/copse-dev/agent-pane/actions/runs/29925349604) | Regression: agent timeout at 900 seconds, 70 tool calls, about 1.17M input tokens, and no output. The model ignored the rejection text 61 times. This design was superseded; a persistent reject-and-retry gate amplifies a non-compliant local model instead of recovering it.                                                                                                                                                                                                                    |
+| `0c699efb2`, provider-forced constrained recovery write | [29927496212](https://github.com/copse-dev/agent-pane/actions/runs/29927496212) | Chess remained zero, but did not time out: about 371 seconds, 25 tools, and 317k input tokens. LM Studio honored four recovery requests exposing only `write_file` with `path = /app/move.txt`; the verifier advanced from `FileNotFoundError` to content validation. The model nevertheless put its in-progress Python image-analysis script in `content`, then overwrote the file with an empty string. Constraining a function schema changes the envelope, not the model's unfinished intent.  |
+| `0c699efb2`, cancel-task output review                  | [29934243978](https://github.com/copse-dev/agent-pane/actions/runs/29934243978) | Cancel remained 5/6, but completed in about 50 seconds with 3 tools and 7k input tokens. The model's self-test cancelled coroutines inside one process and declared success; the verifier sent SIGINT to a subprocess and observed two starts but zero cleanups. This isolates a validation-fidelity gap rather than an output-finalization failure.                                                                                                                                               |
+| `41fe6b84f`, external-boundary prompt guidance          | [29936346482](https://github.com/copse-dev/agent-pane/actions/runs/29936346482) | Cancel remained 5/6 in about 53 seconds with 4 tools and 9.6k input tokens. Despite explicit guidance, the model labelled `Task.cancel()` as a KeyboardInterrupt simulation and declared success. The same SIGINT verifier assertion failed. Advisory prose did not override the model's invalid equivalence, so the next experiment moves that distinction into deterministic tool-result feedback.                                                                                               |
+| `b29a8431c`, in-process cancellation warning            | [29938187079](https://github.com/copse-dev/agent-pane/actions/runs/29938187079) | Cancel remained 5/6 after about 201 seconds, 23 model requests, 166.5k input tokens, and 23k output tokens. The warning caused the model to add and pass a real-SIGINT subprocess test, but its child wrapper caught `BaseException` around `run_tasks`. That allowed caller-side `asyncio.run` teardown to perform cleanup and masked the same queued-task failure. The warning improved test mechanism but not test fidelity.                                                                    |
+| `6e4279095`, caller-side suppression warning            | [29939652212](https://github.com/copse-dev/agent-pane/actions/runs/29939652212) | Regression to 4/6 in about 61 seconds, 9 model requests, 28.4k input tokens, and 3.9k output tokens. The model ran a real SIGINT test, but its replacement stopped using the semaphore. Its smoke-test output showed all five tasks starting and an unhandled thread traceback, then printed “All tests passed”; the final test asserted only that cleanup appeared. This exposed a broader failure to evaluate command output and named invariants.                                               |
+| `c633ac819`, failed-validation evidence warning         | [29941310392](https://github.com/copse-dev/agent-pane/actions/runs/29941310392) | Cancel returned to 5/6 after about 166 seconds, 15 model requests, 71.7k input tokens, and 11.2k output tokens. The model accepted that a nonzero checker had failed, fixed the checker, measured peak concurrency, and identified cancellation while waiting on the semaphore as the remaining issue. It then incorrectly required a queued, never-started callable to run cleanup, exhausted two reasoning caps, and never applied its diagnosis to `run.py`. No score improvement was achieved. |
+
+The retained capsules for these runs were listed, checksum-verified, safely extracted, and reviewed
+with `scripts/debug-terminal-bench.mts`. Changes should not be described as score improvements until
+the official verifier reward moves; protocol progress and regressions belong in this table so a
+failed mechanism is not rediscovered later.
+
+The sequence above did not improve official reward with `qwen3.6-35b-a3b`. It did establish that
+structured write recovery and explicit validation evidence can change the model's trajectory, but
+additional task-specific nudges would overfit observed verifier failures. A subsequent experiment
+should change model capability or expose legitimate task-local validation, not add another special
+case for this task.
 
 ## The framing: benchmarks as harness evals, not model evals
 

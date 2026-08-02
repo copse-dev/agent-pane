@@ -73,6 +73,7 @@ describe('selection-to-chat', () => {
       },
       attachImage: () => {},
       attachVideo: () => Promise.resolve(),
+      attachArchive: () => Promise.resolve(),
       focusComposer: () => {
         focused = true
       },

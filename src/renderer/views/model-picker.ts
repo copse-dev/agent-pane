@@ -316,6 +316,12 @@ export function mountModelPicker(
     pickerOpts.onOptionsLoaded?.(cachedOptions)
     renderMenu(cachedOptions)
     updateTrigger(cachedOptions)
+    // The menu can be opened before `loadOptions` resolves: `setView` then had
+    // only the "Loading models…" status to focus, so nothing took it and arrow
+    // keys had nowhere to start. `renderMenu` also rebuilds every option, which
+    // destroys a focused one. Re-apply once the options land — but never steal
+    // focus from the filter or from an option the user has already moved to.
+    if (open && view === 'recent' && !menu.contains(document.activeElement)) focusActiveOption()
   }
 
   function sync(): void {
@@ -358,6 +364,14 @@ export function mountModelPicker(
         setOpen(false)
         if (!recentMode) trigger.focus()
       }
+    } else if (e.key === 'ArrowRight' && view === 'recent' && recentMode) {
+      e.preventDefault()
+      e.stopPropagation()
+      setView('all')
+    } else if (e.key === 'ArrowLeft' && view === 'all' && recentMode) {
+      e.preventDefault()
+      e.stopPropagation()
+      setView('recent')
     }
   })
 

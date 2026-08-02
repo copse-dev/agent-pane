@@ -39,6 +39,15 @@ const ATTACHMENT_ICON_PATHS: Record<TranscriptAttachment['kind'], string[]> = {
     'M17 16.5h4',
     'M20 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z',
   ],
+  // lucide `file-archive` — a zip the agent unpacks into readable files
+  archive: [
+    'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z',
+    'M14 2v5h5',
+    'M10 6h2',
+    'M10 10h2',
+    'M10 14h2',
+    'M10 18h2',
+  ],
 }
 
 /** The outline icon for an attachment kind, at a caller-styled size/color. */

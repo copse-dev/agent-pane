@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
-import { RENDERER_WRITABLE_SETTING_SCHEMAS, webAllowedOriginsSchema } from './settings-writable.ts'
+import {
+  autoApprovalLevelSchema,
+  RENDERER_WRITABLE_SETTING_SCHEMAS,
+  webAllowedOriginsSchema,
+} from './settings-writable.ts'
 
 // A provider base URL carries the provider's API key as an Authorization header,
 // so it must be a safe credential URL (https:, or http: only for loopback) and
@@ -66,6 +70,9 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   safetyModel: z.string().max(256),
   reviewModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
+  // Highest tier the deterministic auto-approval classifier may grant without a
+  // prompt (see src/main/services/security/auto-approval.ts).
+  shellAutoApprovalLevel: autoApprovalLevelSchema,
   mcpAutoAllowReadOnly: z.boolean(),
   safeInstallEnabled: z.boolean(),
   mockFollowUps: z.boolean(),

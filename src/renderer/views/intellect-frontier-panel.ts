@@ -1198,6 +1198,34 @@ export function renderProviderGroupedList(
 }
 
 /**
+ * The chart key. Each entry draws the same mark the chart draws, so a reader
+ * matches shape to shape instead of decoding a sentence of prose.
+ */
+export function renderFrontierKey(): HTMLElement {
+  // Swatches are CSS-drawn spans, not <svg>: the key sits in the same subtree
+  // tests scan for the chart, and a second svg there would be ambiguous.
+  const entries: Array<[string, string]> = [
+    ['frontier', 'Best value at its level'],
+    ['dominated', 'Another model gives more for the money'],
+    ['estimated', 'Score is an estimate'],
+    ['discovery', 'Available once you set it up'],
+    ['plan', 'Included in your plan'],
+  ]
+  return el(
+    'ul',
+    { class: 'field-hint frontier-key' },
+    ...entries.map(([mark, label]) =>
+      el(
+        'li',
+        { class: 'frontier-key-item' },
+        el('span', { class: 'frontier-key-swatch', 'data-mark': mark }),
+        label,
+      ),
+    ),
+  )
+}
+
+/**
  * Render the scatter, guarding against a render error taking the whole settings
  * dialog down — a broken chart degrades to a quiet note. Shared by the inline
  * panel and the pop-out (which passes a larger size).
@@ -1311,7 +1339,6 @@ export function createIntellectFrontierPanel(
   let showUnpriced = false
   let zdrOnly = false
   let noTrainingOnly = false
-  let hidePlan = false
   let costAxis: FrontierCostAxis = 'blended'
   let planCoverageMode: PlanCoverageMode = 'plan'
   let windowExhaustion: ReadonlyMap<string, { hit: number; total: number }> = new Map()
@@ -1329,7 +1356,6 @@ export function createIntellectFrontierPanel(
   let expandUnpricedBtn: HTMLButtonElement | null = null
   let expandZdrBtn: HTMLButtonElement | null = null
   let expandNoTrainingBtn: HTMLButtonElement | null = null
-  let expandPlanBtn: HTMLButtonElement | null = null
   let expandCostAxisGroup: HTMLElement | null = null
 
   function toggleDiscover(): void {
@@ -1346,10 +1372,6 @@ export function createIntellectFrontierPanel(
   }
   function toggleNoTrainingOnly(): void {
     noTrainingOnly = !noTrainingOnly
-    render()
-  }
-  function toggleHidePlan(): void {
-    hidePlan = !hidePlan
     render()
   }
   function setCostAxis(next: FrontierCostAxis): void {
@@ -1383,16 +1405,6 @@ export function createIntellectFrontierPanel(
     btn.setAttribute('aria-pressed', noTrainingOnly ? 'true' : 'false')
     btn.title =
       'Show only routes known not to train on prompts. Includes local, ZDR, and retained-but-no-training providers; unknown policies are hidden.'
-  }
-
-  function syncPlanBtn(btn: HTMLButtonElement | null): void {
-    if (!btn) return
-    btn.textContent = hidePlan ? 'Show plan' : 'Hide plan'
-    btn.classList.toggle('active', hidePlan)
-    btn.setAttribute('aria-pressed', hidePlan ? 'true' : 'false')
-    btn.title = hidePlan
-      ? 'Show models currently covered by a subscription plan'
-      : 'Hide models currently covered by a subscription plan'
   }
 
   function makeCostAxisGroup(): HTMLElement {
@@ -1502,11 +1514,6 @@ export function createIntellectFrontierPanel(
     class: 'frontier-btn frontier-no-training-toggle',
   })
   noTrainingBtn.addEventListener('click', toggleNoTrainingOnly)
-  const planBtn = el('button', {
-    type: 'button',
-    class: 'frontier-btn frontier-plan-toggle',
-  })
-  planBtn.addEventListener('click', toggleHidePlan)
   const costAxisGroup = makeCostAxisGroup()
   const planCoverageGroup = makePlanCoverageGroup()
   const expandBtn = el(
@@ -1538,11 +1545,6 @@ export function createIntellectFrontierPanel(
       class: 'frontier-btn frontier-no-training-toggle',
     })
     expandNoTrainingBtn.addEventListener('click', toggleNoTrainingOnly)
-    expandPlanBtn = el('button', {
-      type: 'button',
-      class: 'frontier-btn frontier-plan-toggle',
-    })
-    expandPlanBtn.addEventListener('click', toggleHidePlan)
     expandCostAxisGroup = makeCostAxisGroup()
     expandPlanCoverageGroup = makePlanCoverageGroup()
     const bigChart = el('div', { class: 'frontier-chart frontier-expand-chart' })
@@ -1555,7 +1557,6 @@ export function createIntellectFrontierPanel(
       expandUnpricedBtn = null
       expandZdrBtn = null
       expandNoTrainingBtn = null
-      expandPlanBtn = null
       expandCostAxisGroup = null
       expandPlanCoverageGroup = null
       dialog.remove()
@@ -1571,7 +1572,6 @@ export function createIntellectFrontierPanel(
         expandPlanCoverageGroup,
         expandZdrBtn,
         expandNoTrainingBtn,
-        expandPlanBtn,
         expandDiscoverBtn,
         expandUnpricedBtn,
         close,
@@ -1599,15 +1599,11 @@ export function createIntellectFrontierPanel(
       { class: 'frontier-controls' },
       el('span', { class: 'frontier-control-group' }, costAxisGroup),
       el('span', { class: 'frontier-control-group' }, planCoverageGroup),
-      el('span', { class: 'frontier-control-group' }, zdrBtn, noTrainingBtn, planBtn),
+      el('span', { class: 'frontier-control-group' }, zdrBtn, noTrainingBtn),
       el('span', { class: 'frontier-control-group' }, discoverBtn, unpricedBtn, expandBtn),
     ),
     chartHost,
-    el(
-      'p',
-      { class: 'field-hint frontier-legend' },
-      'Filled accent = on the frontier · grey = dominated (better value exists at its level) · hollow ring / (~) = estimated value · faded = discoverable (set up a provider to use) · dashed ring = included in your plan — hover any point for exactly how its number was derived.',
-    ),
+    renderFrontierKey(),
     liveNotes,
     compositeHost,
   )
@@ -1862,14 +1858,7 @@ export function createIntellectFrontierPanel(
           }),
         ).length
       : 0
-    const hiddenByPlan = hidePlan
-      ? privacyBlendedPoints.filter((point) => point.plan !== undefined).length
-      : 0
-    const blendedPoints = hidePlan
-      ? computeParetoFrontier(
-          privacyBlendedPoints.filter((point) => point.plan === undefined).map(asFrontierCandidate),
-        )
-      : privacyBlendedPoints
+    const blendedPoints = privacyBlendedPoints
     const taskCostAvailable = blendedPoints.some(
       (p) => typeof p.costPerTask === 'number' && p.costPerTask > 0,
     )
@@ -1895,8 +1884,6 @@ export function createIntellectFrontierPanel(
     syncZdrBtn(expandZdrBtn)
     syncNoTrainingBtn(noTrainingBtn)
     syncNoTrainingBtn(expandNoTrainingBtn)
-    syncPlanBtn(planBtn)
-    syncPlanBtn(expandPlanBtn)
     // A verified feed can carry a hundred-plus priced models; the map's job is
     // the frontier, so dominated LIVE points collapse into a disclosure rather
     // than each claiming a labelled dot. Curated/local/provider points always
@@ -1964,15 +1951,6 @@ export function createIntellectFrontierPanel(
           'span',
           {},
           `No training: hiding ${String(hiddenByNoTraining)} model${hiddenByNoTraining === 1 ? '' : 's'} on training or unknown-policy routes. `,
-        ),
-      )
-    }
-    if (hidePlan && hiddenByPlan > 0) {
-      liveNoteParts.push(
-        el(
-          'span',
-          {},
-          `Plan models hidden: ${String(hiddenByPlan)} currently covered model${hiddenByPlan === 1 ? '' : 's'}. `,
         ),
       )
     }

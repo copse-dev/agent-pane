@@ -200,6 +200,19 @@ describe('createIntellectFrontierPanel', () => {
     assert.doesNotMatch(panel.root.textContent, /own composite scale/)
   })
 
+  it('keys the chart with a swatch per mark, in plain words', () => {
+    const panel = createIntellectFrontierPanel(async () => [])
+    const items = [...panel.root.querySelectorAll('.frontier-key .frontier-key-item')]
+    assert.deepEqual(
+      items.map((item) => item.querySelector('.frontier-key-swatch')?.getAttribute('data-mark')),
+      ['frontier', 'dominated', 'estimated', 'discovery', 'plan'],
+    )
+    const text = items.map((item) => item.textContent).join(' ')
+    // Plain words only: no chart jargon, no em dashes.
+    assert.doesNotMatch(text, /dominated|frontier|—/)
+    assert.match(text, /Included in your plan/)
+  })
+
   it('plots verified live models with attribution, and refuses a renormalised feed', async () => {
     const verifiedFeed = {
       ok: true,
@@ -705,16 +718,8 @@ describe('plan coverage on the map', () => {
     // And a label carries the "· plan" suffix.
     const labels = [...panel.root.querySelectorAll('text.frontier-label')].map((t) => t.textContent)
     assert.ok(labels.some((l) => l.includes('· plan')))
-
-    const hidePlan = panel.root.querySelector<HTMLButtonElement>('button.frontier-plan-toggle')
-    assert.ok(hidePlan)
-    hidePlan.click()
-    const hiddenLabels = [
-      ...panel.root.querySelectorAll<SVGTextElement>('text.frontier-label'),
-    ].map((label) => label.textContent)
-    assert.ok(hiddenLabels.every((label) => !label.includes('· plan')))
-    assert.equal(hidePlan.textContent, 'Show plan')
-    assert.equal(hidePlan.getAttribute('aria-pressed'), 'true')
+    // Plan-covered models stay on the map; "Inference" re-prices them instead.
+    assert.equal(panel.root.querySelector('button.frontier-plan-toggle'), null)
   })
 
   it('does not badge a model whose plan window is spent', async () => {

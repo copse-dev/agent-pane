@@ -85,6 +85,34 @@ afterEach(() => {
 })
 
 describe('tool call display (component)', () => {
+  it('reserves the activity icon slot when a running tool settles', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      id: 'tc-shell',
+      name: 'run_shell',
+      args: {},
+      status: 'running',
+      result: null,
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const runningCard = qsRequired(host, '[data-tool-id="tc-shell"]')
+    const runningSlot = qsRequired(runningCard, '.tool-activity-icon-slot')
+    assert.equal(runningCard.querySelector('.tool-name')?.textContent, 'Running command')
+    assert.ok(runningSlot.querySelector('[data-icon="reasoning-activity"]'))
+
+    updateToolCall(store, messageId, 'tc-shell', { status: 'done', result: 'passed' })
+
+    const settledCard = qsRequired(host, '[data-tool-id="tc-shell"]')
+    const settledSlot = qsRequired(settledCard, '.tool-activity-icon-slot')
+    assert.equal(settledCard.querySelector('.tool-name')?.textContent, 'Ran command')
+    assert.equal(settledSlot.childElementCount, 0, 'settled slot stays reserved but empty')
+  })
+
   it('rolls the turn into one collapsed italic summary with reasoning nested inside', () => {
     mountWithTools()
 
@@ -178,6 +206,9 @@ describe('tool call display (component)', () => {
 
     const card = document.querySelector('.tool-card[data-tool-id="tc-advisor"]')
     assert.ok(card, 'expected an advisor tool card')
+    // Collapsed by default — its body (including .tool-result) is deferred
+    // until it opens.
+    card.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
     const resultEl = card.querySelector('.tool-result')
     assert.ok(resultEl, 'expected a tool-result section')
     assert.ok(resultEl.classList.contains('tool-result-markdown'))
@@ -208,6 +239,9 @@ describe('tool call display (component)', () => {
 
     const card = document.querySelector('.tool-card[data-tool-id="tc-acp-term"]')
     assert.ok(card, 'expected the ACP tool call to render a card')
+    // Collapsed by default — its body (including .tool-result) is deferred
+    // until it opens.
+    card.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
     const resultEl = card.querySelector('.tool-result')
     assert.ok(resultEl, 'expected a tool-result section')
     // The fence must become a real code element, not literal backticks.

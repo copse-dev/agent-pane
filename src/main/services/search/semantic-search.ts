@@ -1,5 +1,6 @@
 import { buildSearchRoutingPromptBlock } from '@copse/agent/search-routing.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { getWorkspaceIndexStatus } from './index-status.ts'
 import {
@@ -9,6 +10,7 @@ import {
   isSemanticSearchAvailable,
   searchSemanticContent,
 } from './semantic-index.ts'
+import { semanticIndexPending } from './workspace-index-gate.ts'
 
 export function buildSemanticSearchPromptBlock(): string {
   return buildSearchRoutingPromptBlock(isSemanticSearchAvailable())
@@ -39,7 +41,23 @@ export function semanticIndexBuildingNote(): string {
       'Use regex search (search_code, or search_codebase with mode: regex) instead.'
     )
   }
-  const startedAt = getWorkspaceIndexStatus().semantic.startedAt
+  if (isWorktreeExecutionContext()) {
+    return (
+      'Semantic search is unavailable inside worktree threads (v1) — the native ' +
+      'index only tracks the shared workspace checkout. Use regex search ' +
+      '(search_code, or search_codebase with mode: regex) instead.'
+    )
+  }
+  const semantic = getWorkspaceIndexStatus().semantic
+  if (semantic.phase === 'limited' || semantic.phase === 'skipped') {
+    const detail = semantic.reason ? ` (${semantic.reason})` : ''
+    return (
+      `Semantic index is ${semantic.phase} for this workspace${detail}. ` +
+      'Text/regex search remains available — use search_code, or search_codebase with mode: regex, ' +
+      'or read_file.'
+    )
+  }
+  const startedAt = semantic.startedAt
   const elapsed =
     startedAt !== undefined
       ? ` (${String(Math.round((Date.now() - startedAt) / 1000))}s so far)`
@@ -51,15 +69,38 @@ export function semanticIndexBuildingNote(): string {
   )
 }
 
+/**
+ * True when the active agent turn is running inside a worktree thread's linked
+ * checkout rather than the shared workspace root. gortex/vera only ever index
+ * the workspace root (`scopeGortexToActiveRepo` scopes the shared daemon to
+ * one active repo), so semantic search inside a worktree thread must fall back
+ * to regex/text search rather than silently answering from the wrong checkout
+ * (#1400) — the same posture already taken for SSH workspaces.
+ */
+export function isWorktreeExecutionContext(): boolean {
+  return getThreadExecutionContext()?.checkoutMode === 'worktree'
+}
+
 /** Native gortex/vera semantic search only. */
 export async function executeSemanticSearch(
   request: SemanticSearchRequest,
   signal: AbortSignal,
 ): Promise<SemanticSearchOutcome> {
-  const root = getWorkspaceRoot()
+  const root = getAgentExecutionRoot()
   const maxResults = request.maxResults ?? 20
 
-  if (!root || !isSemanticSearchAvailable()) return { status: 'unavailable' }
+  if (!root || !isSemanticSearchAvailable() || isWorktreeExecutionContext()) {
+    return { status: 'unavailable' }
+  }
+
+  const semanticPhase = getWorkspaceIndexStatus().semantic.phase
+  if (semanticPhase === 'limited' || semanticPhase === 'skipped') {
+    return { status: 'unavailable' }
+  }
+
+  if (semanticIndexPending(root)) {
+    return { status: 'building' }
+  }
 
   if (!isSemanticIndexReady(root)) {
     // Kick (or join) the build in the background rather than awaiting it —
