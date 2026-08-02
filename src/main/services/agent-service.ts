@@ -23,7 +23,11 @@ import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
-import { classifyAgentError, classifyProviderAccessFailure } from './agent-errors.ts'
+import {
+  classifyAcpAuthFailure,
+  classifyAgentError,
+  classifyProviderAccessFailure,
+} from './agent-errors.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
@@ -121,7 +125,11 @@ import { runStopHooks } from './hooks/stop.ts'
 import { runPostTurnReviewHooks } from './hooks/post-turn-review.ts'
 import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
 import { registerHaltTarget, clearHaltTarget } from './hooks/halt-run.ts'
-import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
+import {
+  registerRunDeadline,
+  clearRunDeadline,
+  withRunDeadlinePaused,
+} from './hooks/run-deadline.ts'
 import { fireSessionStartHook } from './hooks/session-start.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
@@ -156,6 +164,7 @@ import {
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
+import { offerAcpReauth } from './acp/acp-reauth.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { parsePackModelSelection } from '@shared/pack-model.ts'
@@ -810,6 +819,28 @@ export async function runAgent(
       const partial = err instanceof AcpTurnFailure ? err.partial : null
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
+      // A credentials failure is the one ACP error the user can't act on from
+      // the chat alone — the fix lives in a separate program's login flow. Offer
+      // to open it, after the diagnosis has been streamed so the ask arrives
+      // with its explanation already on screen. The idle deadline is paused for
+      // the wait, exactly as it is around approval dialogs, so a user thinking
+      // it over can't have the turn aborted underneath the modal.
+      const authFailure = controller.signal.aborted
+        ? null
+        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
+      if (authFailure) {
+        // Best-effort: the turn has already reported its failure, and a broken
+        // offer must not escalate a handled error into an unhandled one.
+        const launched = await withRunDeadlinePaused(threadId, () =>
+          offerAcpReauth({ agentId: acpRunAgentId, kind: authFailure }).catch(() => null),
+        )
+        if (launched) {
+          sendChunk({
+            type: 'text',
+            text: `\n\nOpened a terminal running \`${launched}\`. Finish signing in there, then re-send your message.`,
+          })
+        }
+      }
       sendChunk({ type: 'done' })
       return {
         usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },
