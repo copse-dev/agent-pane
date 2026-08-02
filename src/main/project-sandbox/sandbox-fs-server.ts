@@ -14,7 +14,7 @@
 import type { ChildProcess } from 'node:child_process'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
-import { fsWorkerSandboxOverlay } from './config.ts'
+import { fsServerSandboxOverlay } from './config.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from './spawn.ts'
 import { sandboxFsWorkerPath, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES } from './sandbox-fs-client.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
@@ -50,6 +50,17 @@ interface Worker {
   alive: boolean
 }
 
+interface SpawnedWorkerProcess {
+  proc: ChildProcess
+  /**
+   * Release ASRT's per-wrap lifecycle bookkeeping once the process has started.
+   * The persistent worker has no write-deny mounts of its own, so retaining this
+   * lease for its whole lifetime would prevent unrelated one-shot commands from
+   * cleaning up their Linux bubblewrap mount points.
+   */
+  releaseSandbox: () => void
+}
+
 let live: Worker | null = null
 let spawning: { root: string; promise: Promise<Worker> } | null = null
 
@@ -72,8 +83,6 @@ function failWorker(w: Worker, err: Error): void {
     // already closed
   }
   terminateProcessTree(w.proc)
-  // Mirror the one-shot path: let ASRT clean up the per-spawn seatbelt profile.
-  afterSandboxedCommand()
 }
 
 function handleLine(w: Worker, line: string): void {
@@ -119,24 +128,44 @@ function onData(w: Worker, chunk: string): void {
 /** Test seam — swap how the worker subprocess is created (the real path needs a macOS sandbox). */
 type WorkerSpawner = (root: string) => Promise<ChildProcess>
 let spawnerForTest: WorkerSpawner | null = null
+let releaseSandboxForTest: (() => void) | null = null
 export function setWorkerSpawnerForTest(fn: WorkerSpawner | null): void {
   spawnerForTest = fn
 }
 
-function spawnWorkerProc(root: string): Promise<ChildProcess> {
-  if (spawnerForTest) return spawnerForTest(root)
+/** Test seam for observing the persistent worker's early ASRT lease release. */
+export function setWorkerSandboxReleaseForTest(fn: (() => void) | null): void {
+  releaseSandboxForTest = fn
+}
+
+async function spawnWorkerProc(root: string): Promise<SpawnedWorkerProcess> {
+  if (spawnerForTest) {
+    return {
+      proc: await spawnerForTest(root),
+      releaseSandbox: releaseSandboxForTest ?? ((): void => {}),
+    }
+  }
   const workerPath = sandboxFsWorkerPath()
-  return spawnInProjectSandbox(process.execPath, [workerPath], {
-    cwd: root,
-    // Electron must run as Node inside seatbelt; the server flag selects the stdin request loop.
-    env: { ELECTRON_RUN_AS_NODE: '1', [SANDBOX_FS_SERVER_ENV]: '1' },
-    stdio: 'pipe',
-    sandboxConfig: fsWorkerSandboxOverlay(root, workerPath),
-  })
+  return {
+    proc: await spawnInProjectSandbox(process.execPath, [workerPath], {
+      cwd: root,
+      // Electron must run as Node inside seatbelt; the server flag selects the stdin request loop.
+      env: { ELECTRON_RUN_AS_NODE: '1', [SANDBOX_FS_SERVER_ENV]: '1' },
+      stdio: 'pipe',
+      sandboxConfig: fsServerSandboxOverlay(root, workerPath),
+    }),
+    releaseSandbox: afterSandboxedCommand,
+  }
 }
 
 async function spawnWorker(root: string): Promise<Worker> {
-  const proc = await spawnWorkerProc(root)
+  const spawned = await spawnWorkerProc(root)
+  // fsServerSandboxOverlay is read-only and creates no mandatory write-deny
+  // mount points. Release its ASRT counter immediately: keeping it active for
+  // the whole app session makes cleanup from short Git/fs commands defer
+  // forever, leaving .bashrc/.gitconfig/etc. visible as untracked files.
+  spawned.releaseSandbox()
+  const { proc } = spawned
   if (!proc.stdout || !proc.stdin) {
     terminateProcessTree(proc)
     throw new SandboxFsServerUnavailable('worker pipes unavailable')
@@ -209,6 +238,9 @@ export async function requestViaServer(
   request: Record<string, unknown>,
   requestedRoot?: string,
 ): Promise<SandboxFsResponse> {
+  if (request['op'] === 'writeFile') {
+    throw new Error('persistent sandbox fs server is read-only')
+  }
   const root = requestedRoot ?? getWorkspaceRoot()
   if (!root) throw new SandboxFsServerUnavailable('no workspace open')
   let worker: Worker

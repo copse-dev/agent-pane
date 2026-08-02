@@ -38,7 +38,7 @@
     },
     {
       "id": "download-extract-binary",
-      "query": "download a release archive and extract the binary out of the tarball or zip",
+      "query": "download the semantic search backend release, verify its checksum, and extract its executable from a tarball or zip",
       "expectedPaths": ["scripts/fetch-gortex.mts"]
     },
     {

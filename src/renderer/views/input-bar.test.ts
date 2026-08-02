@@ -2,6 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
@@ -456,6 +457,93 @@ describe('draft prompt preservation', () => {
     // "Show more" appears (the window only pages past SIDEBAR_THREADS_PAGE_SIZE).
     assert.equal(projectsHost.querySelectorAll('.chats-list .chat-row').length, 3)
     assert.equal(projectsHost.querySelector('.chats-show-more'), null)
+  })
+})
+
+describe('externally cleared draft', () => {
+  it('empties the composer when an automation consumes the active thread draft', async () => {
+    // A cron automation creates its thread with the scheduled prompt as the
+    // draft, then clears that draft once it dispatches the run. The user is
+    // already looking at the thread, so no thread switch happens — without a
+    // `thread_draft_changed` subscription the sent prompt stays in the composer
+    // and the next Enter sends it a second time.
+    const scheduled: Thread = {
+      id: 'thread-automation',
+      title: 'CI review',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      draftPrompt: 'Review CI and report any failures.',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const existing: Thread = {
+      id: 'thread-existing',
+      title: 'Existing',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: existing.id,
+      threads: [existing],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    // Selecting the automation's thread loads its draft into the composer, the
+    // same way clicking the sidebar row does.
+    store.setState({ threads: [scheduled, existing], activeThreadId: scheduled.id })
+    store.emit('threads_changed')
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.equal(composer.textContent, 'Review CI and report any failures.')
+
+    setThreadDraftPrompt(store, scheduled.id, '')
+    await settle()
+
+    assert.equal(composer.textContent, '')
+  })
+
+  it('leaves the composer alone when the draft change is its own autosave', async () => {
+    const blank: Thread = {
+      id: 'thread-blank',
+      title: 'New Thread',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: blank.id,
+      threads: [blank],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'half a thought'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    setThreadDraftPrompt(store, blank.id, 'half a thought')
+    await settle()
+
+    assert.equal(composer.textContent, 'half a thought')
   })
 })
 
