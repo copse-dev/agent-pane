@@ -2,7 +2,7 @@
 
 Status: **Resolved (deterministic core shipped)** — the `read` tier is on by
 default; `local-write` and `remote-write` are one dropdown away in
-Settings → Local models → Routing behavior, beside the other auto-run controls.
+Settings → Permissions → Shell commands, beside the auto-run toggle.
 
 ## Motivation
 
@@ -44,10 +44,9 @@ _shapes_ and lets them run without a prompt, sorted into tiers by blast radius.
   wrapper applying the auto-run and workspace-trust gates.
 - `permission-gate.ts` — consulted at the up-front gate **and** at both
   sandbox-escalation prompts.
-- Settings → Local models → Routing behavior → "Auto-approve recognised low-risk
-  commands", beside the auto-run toggle and the trusted-command list it composes
-  with. (That section owns the shell auto-run controls despite its name; there is
-  no "Security" section.)
+- Settings → Permissions → Shell commands → "Also run recognised low-risk
+  commands without asking", directly under the auto-run toggle and above the
+  trusted-command list it composes with.
 
 ### How it composes with the other gates
 

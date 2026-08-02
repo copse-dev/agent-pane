@@ -54,8 +54,8 @@ every published entry.
 - Everyday shell commands stop asking for approval. A new deterministic
   classifier recognises a fixed allow-list of low-risk command _shapes_ and runs
   them without a prompt: local reads, and `git fetch` / `gh pr view` against a
-  remote already configured in the repository. Settings → Local models → Routing behavior →
-  **Auto-approve recognised low-risk commands** raises that to local commits
+  remote already configured in the repository. Settings → Permissions → Shell commands →
+  **Also run recognised low-risk commands without asking** raises that to local commits
   (`git add`/`commit`/`checkout -b`/`stash`) and then to pushes
   (`git push`, `gh pr create`). Nothing else changes: project scripts
   (`npm test`), `npx`, installs, force pushes, ref deletions, `gh api`,
