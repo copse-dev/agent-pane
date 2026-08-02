@@ -44,6 +44,7 @@ import type {
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 export type { DetectedAcpAgent }
 
@@ -79,6 +80,10 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    sharePageText: (webContentsId: number) => Promise<void>
+    shareScreenshot: (webContentsId: number) => Promise<void>
+    onShareText: (handler: (share: BrowserTextShare) => void) => () => void
+    onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPackTabRequest: (
       handler: (
         request: PackBrowserTabRequest,
