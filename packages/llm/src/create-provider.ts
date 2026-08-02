@@ -1,4 +1,5 @@
 import { AnthropicProvider } from './anthropic-provider.ts'
+import { OPENROUTER_ATTRIBUTION_HEADERS } from './app-attribution.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 import { ResponsesProvider } from './responses-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
@@ -114,6 +115,11 @@ export const createLMStudioProvider = createLocalOpenAIProvider
 //   `data_collection: 'deny'`, which excludes providers that store or train
 //   on inputs. Kept independent of `zdrOnly` so relaxing ZDR (to reach
 //   retained-but-not-trained endpoints) does not silently re-admit trainers.
+//
+// OpenRouter also gets `X-OpenRouter-Title` on top of the `HTTP-Referer` +
+// `X-Title` pair every provider receives, because it renamed that header and
+// accepts either; sending both with one value keeps attribution independent of
+// which name wins. See app-attribution.ts.
 export function createOpenRouterProvider(
   model: string,
   apiKey: string,
@@ -126,6 +132,7 @@ export function createOpenRouterProvider(
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
     includeUsage: true,
+    defaultHeaders: OPENROUTER_ATTRIBUTION_HEADERS,
     extraBody: {
       provider: {
         require_parameters: true,

@@ -8,6 +8,16 @@ every published entry.
 
 ## Unreleased
 
+- Copse now identifies itself to model providers. Every provider request carries
+  the de facto attribution pair `HTTP-Referer: https://copse.dev/` and
+  `X-Title: Copse`, with OpenRouter also receiving `X-OpenRouter-Title` (the
+  renamed form of the same header, sent with the same value so it does not
+  matter which name that router prefers). OpenRouter uses this to attribute
+  traffic to an app page and its public rankings; Vercel AI Gateway and Requesty
+  use it for dashboard attribution; providers that do not recognise the headers
+  ignore them. The headers are fixed constants that name the application only —
+  no key, account, machine, thread, or prompt-derived value is included. See
+  [docs/privacy-data-flow.md](docs/privacy-data-flow.md).
 - Zip archives can be attached to a chat and read. Drop a `.zip` on the composer
   and the agent unpacks it with the new **`read_archive`** tool into the
   conversation's own directory, then reads what is inside with its ordinary file
