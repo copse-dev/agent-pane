@@ -33,6 +33,7 @@ import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
+import { createElectronUserAlertSender } from './services/user-alerts-electron.ts'
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
@@ -284,8 +285,9 @@ app
       if (!win.isDestroyed()) win.webContents.send('agent:hook_queue_message', payload)
     })
 
-    initApproval(win, ipcMain, app.dock)
-    initAskUser(win, ipcMain)
+    const alertUser = createElectronUserAlertSender(win, app.dock)
+    initApproval(win, ipcMain, alertUser)
+    initAskUser(win, ipcMain, alertUser)
     // Lets main-process code hand the user a running command in the Shells pane
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.

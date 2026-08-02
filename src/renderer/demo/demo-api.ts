@@ -196,6 +196,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     approval: { respond: resolvedVoid },
     ask: { respond: resolvedVoid },
+    alerts: { threadFinished: resolvedVoid },
     sshPrompt: {
       respond: resolvedVoid,
       onRequest: subscribe,
