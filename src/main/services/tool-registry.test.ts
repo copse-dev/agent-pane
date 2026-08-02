@@ -9,7 +9,10 @@ import {
   type ThreadExecutionContext,
 } from './thread-execution-context.ts'
 import { clearAllToolResultCachesForTest } from './search/tool-result-cache.ts'
-import { stopAllExecutionRootWatchers } from './search/execution-root-watcher.ts'
+import {
+  setExecutionRootWatchForTest,
+  stopAllExecutionRootWatchers,
+} from './search/execution-root-watcher.ts'
 import { z } from 'zod'
 
 describe('ToolRegistry', () => {
@@ -85,17 +88,19 @@ describe('ToolRegistry', () => {
     let root = ''
     let searchCalls = 0
 
-    // A real directory: the registry only caches a root it can fs.watch, so a
-    // fabricated path would silently disable caching and pass every assertion
-    // for the wrong reason.
     beforeEach(async () => {
       root = await mkdtemp(join(tmpdir(), 'copse-tool-cache-'))
       searchCalls = 0
       clearAllToolResultCachesForTest()
       setPermissionGateForTests(async () => true)
+      // Caching is gated on being able to watch the root. A container that
+      // refuses an inotify watch would disable caching outright and make every
+      // assertion below pass for the wrong reason, so decide it here.
+      setExecutionRootWatchForTest(() => true)
     })
 
     afterEach(async () => {
+      setExecutionRootWatchForTest(null)
       stopAllExecutionRootWatchers()
       clearAllToolResultCachesForTest()
       setPermissionGateForTests(null)

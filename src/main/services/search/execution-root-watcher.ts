@@ -29,6 +29,21 @@ const watchers = new Map<string, fs.FSWatcher>()
  */
 const MAX_WATCHED_ROOTS = 8
 
+type WatchDecision = (root: string) => boolean
+
+let watchOverride: WatchDecision | null = null
+
+/**
+ * Test hook — decide watchability without touching the filesystem.
+ *
+ * Tests of *caching* behaviour should not depend on whether the host grants an
+ * inotify watch: a container can refuse one, which would silently disable
+ * caching and make those tests assert the wrong thing for the wrong reason.
+ */
+export function setExecutionRootWatchForTest(decide: WatchDecision | null): void {
+  watchOverride = decide
+}
+
 /**
  * Close watchers for roots nothing caches anymore.
  *
@@ -64,29 +79,48 @@ function isBranchPointerChange(relPath: string): boolean {
 }
 
 /**
+ * Translate one `fs.watch` event into a cache invalidation.
+ *
+ * Split out from the watcher callback so the mapping is testable without
+ * depending on the OS actually delivering an event — container filesystems
+ * vary in whether (and when) recursive watches fire, which would otherwise make
+ * these cases untestable in CI.
+ */
+export function handleExecutionRootEvent(root: string, filename: string | null): void {
+  // fs.watch can omit the filename; without it the change can't be located, so
+  // nothing under this root can be trusted.
+  if (filename === null) {
+    invalidateToolResultCacheForChange(root, null)
+    return
+  }
+  if (isBranchPointerChange(filename)) {
+    invalidateToolResultCacheForChange(root, null)
+    return
+  }
+  // Ignore churn under build output / deps / .git — none of it is searched, and
+  // a burst there would clear the cache continuously.
+  if (isIgnoredWorkspacePath(filename)) return
+  invalidateToolResultCacheForChange(root, join(root, filename))
+}
+
+/**
  * Idempotently watch `root`. Returns false when no watcher could be
  * established — the caller must then treat the root as uncacheable rather than
  * cache results it can never invalidate.
+ *
+ * Note this only reports whether the watch could be *created*. Node defers the
+ * underlying recursive setup, so a constrained container can hand back a
+ * watcher that never fires; that degrades to serving a result for the rest of
+ * the thread, which is why the identity checks (root, branch) and the
+ * mutating-tool invalidation are not allowed to depend on it.
  */
 export function ensureExecutionRootWatched(root: string): boolean {
+  if (watchOverride) return watchOverride(root)
   if (watchers.has(root)) return true
   if (watchers.size >= MAX_WATCHED_ROOTS) pruneUnusedWatchers()
   try {
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
-      // fs.watch can omit the filename; without it the change can't be located,
-      // so nothing under this root can be trusted.
-      if (filename === null) {
-        invalidateToolResultCacheForChange(root, null)
-        return
-      }
-      if (isBranchPointerChange(filename)) {
-        invalidateToolResultCacheForChange(root, null)
-        return
-      }
-      // Ignore churn under build output / deps / .git — none of it is searched,
-      // and a burst there would clear the cache continuously.
-      if (isIgnoredWorkspacePath(filename)) return
-      invalidateToolResultCacheForChange(root, join(root, filename))
+      handleExecutionRootEvent(root, filename)
     })
     watchers.set(root, watcher)
     return true
