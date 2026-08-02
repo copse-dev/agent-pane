@@ -100,13 +100,27 @@
             >
           </div>
         </div>
+        <!--
+          The visual is the app itself: hero-demo.js swaps this poster for an
+          iframe of the published browser demo, which types a recorded prompt
+          and streams the recorded answer back. The screenshot stays as the
+          sizer and the fallback — no JS, a narrow screen, reduced-motion, or a
+          demo that fails to load all leave it exactly as it was.
+        -->
         <figure class="hero-visual">
-          <img
-            src="screenshots/chat-layout-three-pane.png"
-            alt="Copse with a projects sidebar, agent conversation, and editor panel"
-            width="1280"
-            height="800"
-          />
+          <div class="hero-demo" data-demo-src="demo/main/?scenario=landing&amp;loop=1">
+            <img
+              class="hero-demo-poster"
+              src="screenshots/chat-layout-three-pane.png"
+              alt="Copse with a projects sidebar, agent conversation, and editor panel"
+              width="1280"
+              height="800"
+            />
+          </div>
+          <figcaption class="hero-demo-caption">
+            A recorded session, replayed in the real interface.
+            <a href="demo/main/?scenario=landing">Open the demo</a>
+          </figcaption>
         </figure>
       </section>
 
@@ -371,5 +385,6 @@
           })
       }
     </script>
+    <script src="hero-demo.js" defer></script>
   </body>
 </html>
