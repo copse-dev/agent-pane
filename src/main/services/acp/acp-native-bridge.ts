@@ -7,11 +7,14 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
+import { runWithThreadExecutionOwner } from '../thread-execution-context.ts'
+import { getActiveProjectId } from '../workspace.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 /**
@@ -90,6 +93,19 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'gh_pr_approve',
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
+  // Reading an attached/workspace recording as stills. Frames come back as MCP
+  // image content (see `toMcpContent`), so a bridged agent sees the same
+  // pictures a native run does rather than a manifest describing images it
+  // never received.
+  'video_frames',
+  // Unpacking an attached/workspace zip. Bridged for the same reason the edit
+  // and shell tools are: without it an ACP agent's only route into an archive
+  // is `unzip` through run_shell, which has none of Copse's path-traversal,
+  // symlink, size or zip-bomb guards (see archive-extract.ts). Unlike the
+  // native loop this is offered unconditionally rather than gated on an
+  // attached archive — the bridge's tool list is sent once per session, so the
+  // per-turn schema cost that motivates the native gate does not apply.
+  'read_archive',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
@@ -168,6 +184,12 @@ export function isBridgedNativeToolTitle(title: string | null | undefined): bool
 export interface AcpNativeBridge {
   /** MCP endpoint the agent should connect to (session/new `mcpServers`). */
   url: string
+  /**
+   * Tool names this bridge will serve. Exposed for diagnostics: an ACP run
+   * records no toolset fingerprint of its own, so without this there is no way
+   * to answer "was the tool even offered?" after the fact.
+   */
+  toolNames: readonly string[]
   /** Per-turn bearer token the agent must send as `Authorization: Bearer …`. */
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
@@ -201,6 +223,13 @@ interface BridgeExecuteContext {
   getCallSignal: () => AbortSignal
   /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
   threadId: string
+  /**
+   * Owning project, read at request time rather than captured at session start
+   * so a project switch mid-session cannot write run-scoped state to the thread
+   * store of a project the user has left. Null when no project is active, in
+   * which case owner-scoped tools fail closed rather than guessing.
+   */
+  projectId: string | null
   networkScopeAlreadyApplies: boolean
 }
 
@@ -217,6 +246,30 @@ function mergeBridgeExecuteSignal(
   }
   if (parts.length === 1) return sessionSignal
   return AbortSignal.any(parts)
+}
+
+/**
+ * A tool result as MCP content blocks.
+ *
+ * Text-only for almost every bridged tool; `video_frames` also returns images,
+ * and dropping those would hand the agent a manifest that says "frames follow"
+ * with nothing after it. Data URLs are split into the base64 payload and MIME
+ * type MCP wants; anything not shaped like a data URL is skipped rather than
+ * forwarded as a broken block.
+ */
+function toMcpContent(
+  result: string,
+  images: readonly ToolResultImage[] | undefined,
+): ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] {
+  const blocks: (
+    { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+  )[] = [{ type: 'text', text: result }]
+  for (const image of images ?? []) {
+    const match = /^data:([^;,]+);base64,(.+)$/s.exec(image.dataUrl)
+    if (!match?.[1] || !match[2]) continue
+    blocks.push({ type: 'image', data: match[2], mimeType: match[1] })
+  }
+  return blocks
 }
 
 function buildMcpServer(
@@ -254,14 +307,24 @@ function buildMcpServer(
       // Bridge HTTP handlers are a separate async chain from the ACP turn — rebind
       // the thread identity so approval prompts / idle-deadline pauses attribute
       // to the owning thread (and cancelApprovalsForThread can find them).
+      //
+      // The execution *owner* is rebound for the same reason: a tool that keeps
+      // run-scoped state (read_archive unpacks into the owning thread's
+      // directory) needs to know whose thread this is. Identity only — roots
+      // stay as they resolve today, so no other bridged tool changes.
+      const owner = ctx.projectId ? { projectId: ctx.projectId, threadId: ctx.threadId } : null
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        runWithActiveRunIdentity(ctx.threadId, withPermissionContext)
+        runWithActiveRunIdentity(ctx.threadId, () =>
+          owner
+            ? runWithThreadExecutionOwner(owner, withPermissionContext)
+            : withPermissionContext(),
+        )
       const advisor = advisorContext.current
-      const { result } =
+      const { result, images } =
         name === 'advisor' && advisor
           ? await runWithAdvisorContext(advisor, runExecute)
           : await runExecute()
-      return { content: [{ type: 'text', text: result }] }
+      return { content: toMcpContent(result, images) }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     }
@@ -376,6 +439,7 @@ export async function startAcpNativeBridge(
         getTurnSignal: () => turnSignal,
         getCallSignal: () => callAbort.signal,
         threadId: opts.threadId,
+        projectId: getActiveProjectId(),
         networkScopeAlreadyApplies,
       })
       res.on('close', () => {
@@ -409,6 +473,7 @@ export async function startAcpNativeBridge(
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
+    toolNames: bridgedTools(registry).map((tool) => tool.name),
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },

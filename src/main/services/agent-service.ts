@@ -90,7 +90,9 @@ import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
+import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
+import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
@@ -271,6 +273,7 @@ function parentTools(
   executorModel: string,
   threadId: string,
   threadVideos: readonly VideoAttachmentRef[],
+  threadArchives: readonly ArchiveAttachmentRef[],
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -316,8 +319,10 @@ function parentTools(
     tools = tools.filter((t) => t.name !== 'read_terminal')
   }
   // Withhold video_frames from threads that have never had a video attached,
-  // and name the attached ones in its description when they have.
+  // and name the attached ones in its description when they have. read_archive
+  // is gated the same way, on attached archives.
   tools = applyVideoToolAvailability(tools, threadVideos)
+  tools = applyArchiveToolAvailability(tools, threadArchives)
   return tools
 }
 
@@ -1039,7 +1044,10 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const threadVideos = await getThreadVideos()
+    const [threadVideos, threadArchives] = await Promise.all([
+      getThreadVideos(),
+      getThreadArchives(),
+    ])
     const parentLoopTools = parentTools(
       registry,
       subagentsEnabled,
@@ -1047,6 +1055,7 @@ export async function runAgent(
       model,
       threadId,
       threadVideos,
+      threadArchives,
     )
     setHookRunToolset(parentLoopTools)
 
