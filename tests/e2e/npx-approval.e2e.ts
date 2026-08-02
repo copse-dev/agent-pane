@@ -13,6 +13,20 @@ describe('npx package command approval', () => {
     seedEmptyProject(process.cwd(), 'e2e-npx-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      // `npx` is an *ambiguous* external matcher (shell-scope.ts, #500 option 1):
+      // when an OS sandbox is the real boundary it deliberately auto-runs inside
+      // the sandbox instead of prompting, and only escalates if the sandbox
+      // actually blocks it. So this dialog exists only where auto-run does not
+      // apply — and this spec used to get that for free on Linux CI, because
+      // there was no sandbox to auto-run into. Since the ASRT Linux backend was
+      // enabled there is one, `npx tsc --noEmit` is allowed outright, and the
+      // first dialog to appear is the unrelated "Install Socket Firewall?"
+      // prompt from `prepareCommand`.
+      //
+      // Seed the setting that reaches this prompt on every platform rather than
+      // keying on host capability. The dialog's wording is this spec's subject;
+      // which of the two configurations opens it is not.
+      autoRunSandboxCommands: false,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

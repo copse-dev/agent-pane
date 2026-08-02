@@ -355,6 +355,14 @@ export function seedEmptyProject(
      */
     roadmapPlansEnabled?: boolean
     developerMode?: boolean
+    /**
+     * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
+     * on). Seed `false` when a spec needs a shell approval dialog to appear
+     * regardless of whether the host has a working OS sandbox — with auto-run on,
+     * `decideShellPermission` allows anything the sandbox contains and no dialog
+     * is shown.
+     */
+    autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -445,6 +453,9 @@ export function seedEmptyProject(
   }
   if (options?.developerMode !== undefined) {
     settings.developerMode = options.developerMode
+  }
+  if (options?.autoRunSandboxCommands !== undefined) {
+    settings.autoRunSandboxCommands = options.autoRunSandboxCommands
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
