@@ -6,6 +6,7 @@ import type {
   ResponseStreamEvent,
   Tool,
 } from 'openai/resources/responses/responses'
+import { withAppAttribution } from './app-attribution.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
@@ -37,7 +38,11 @@ export class ResponsesProvider implements LLMProvider {
     this.model = model
     this.serverTools = opts.serverTools ?? []
     this.extraBody = opts.extraBody
-    this.client = new OpenAI({ baseURL: opts.baseURL, apiKey: opts.apiKey })
+    this.client = new OpenAI({
+      baseURL: opts.baseURL,
+      apiKey: opts.apiKey,
+      defaultHeaders: withAppAttribution(),
+    })
   }
 
   stream(

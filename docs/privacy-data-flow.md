@@ -60,6 +60,15 @@ requests carry `store: false`. Settings → Providers badges each provider with
 its default retention/training posture; see
 [provider-data-policies.md](provider-data-policies.md).
 
+Every provider request also carries two fixed app-attribution headers,
+`HTTP-Referer: https://copse.dev/` and `X-Title: Copse` (OpenRouter additionally
+receives `X-OpenRouter-Title: Copse`, the renamed form of the same header). They
+name the application, not the user: the values are identical in every install
+and are not derived from a key, account, machine, thread, or prompt. OpenRouter
+treats this pair as public attribution — it is what places an app on its
+rankings and app pages — while Vercel AI Gateway and Requesty use it for private
+dashboard attribution and other providers ignore it.
+
 Experimental on-device PII redaction can redact the text the user typed before a
 provider, remote-agent, or ACP path receives it. It is off by default, fails open
 if the redactor cannot load, and does not cover repository files or tool output.

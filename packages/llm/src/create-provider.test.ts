@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
+import { APP_ATTRIBUTION_TITLE, APP_ATTRIBUTION_URL } from './app-attribution.ts'
 import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
 import type { LLMProvider } from './wire-types.ts'
@@ -118,6 +119,67 @@ async function captureRequest(provider: OpenAIProvider): Promise<CapturedRequest
   for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
   return captured.request ?? {}
 }
+
+// The attribution headers are handed to the SDK client at construction, so they
+// are read back from the client's stored options rather than from a request
+// body. `_options` is the SDK's own record of what it was configured with.
+function clientDefaultHeader(provider: LLMProvider, name: string): unknown {
+  const client: unknown = Reflect.get(provider, 'client')
+  assert.ok(client !== null && typeof client === 'object')
+  const options: unknown = Reflect.get(client, '_options')
+  assert.ok(options !== null && typeof options === 'object')
+  const headers: unknown = Reflect.get(options, 'defaultHeaders')
+  assert.ok(headers !== null && typeof headers === 'object')
+  return Reflect.get(headers, name)
+}
+
+describe('app attribution headers', () => {
+  it('identifies Copse to direct Anthropic and OpenAI', () => {
+    for (const provider of [
+      createProvider('claude-sonnet-4-6', { anthropicApiKey: 'sk-ant-test' }),
+      createProvider('gpt-4o', { openAiApiKey: 'sk-test' }),
+    ]) {
+      assert.equal(clientDefaultHeader(provider, 'HTTP-Referer'), APP_ATTRIBUTION_URL)
+      assert.equal(clientDefaultHeader(provider, 'X-Title'), APP_ATTRIBUTION_TITLE)
+    }
+  })
+
+  it('identifies Copse to local and custom OpenAI-compatible servers', () => {
+    const local = createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local')
+    assert.equal(clientDefaultHeader(local, 'X-Title'), APP_ATTRIBUTION_TITLE)
+
+    const provider: ExtraProvider = {
+      id: 'acme',
+      label: 'Acme',
+      prefix: 'acme:',
+      baseUrl: 'https://api.acme.example/v1',
+      builtin: false,
+      local: false,
+      keyLabel: 'Key',
+      keyPlaceholder: '…',
+      keyHint: '',
+      fallbackContextWindow: 128_000,
+      models: [],
+    }
+    const custom = createExtraCloudProvider(provider, 'some-model', 'key', ['api.acme.example'])
+    assert.equal(clientDefaultHeader(custom, 'X-Title'), APP_ATTRIBUTION_TITLE)
+  })
+
+  it('identifies Copse on the Responses transport too', () => {
+    const preset = BUILTIN_EXTRA_PROVIDERS.find((p) => p.apiStyle === 'responses')
+    assert.ok(preset)
+    const responses = createExtraCloudProvider(preset, 'sonar', 'key')
+    assert.equal(clientDefaultHeader(responses, 'HTTP-Referer'), APP_ATTRIBUTION_URL)
+    assert.equal(clientDefaultHeader(responses, 'X-Title'), APP_ATTRIBUTION_TITLE)
+  })
+
+  it('sends both OpenRouter title header names with one value', () => {
+    const router = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test')
+    assert.equal(clientDefaultHeader(router, 'HTTP-Referer'), APP_ATTRIBUTION_URL)
+    assert.equal(clientDefaultHeader(router, 'X-Title'), APP_ATTRIBUTION_TITLE)
+    assert.equal(clientDefaultHeader(router, 'X-OpenRouter-Title'), APP_ATTRIBUTION_TITLE)
+  })
+})
 
 describe('createProvider prompt cache key', () => {
   it('threads promptCacheKey into the OpenAI request body', async () => {
