@@ -132,9 +132,7 @@ describe('settings usage model value map ZDR filter', () => {
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-zdr.png')
 
     const noTrainingBtn = fieldset.$('button.frontier-no-training-toggle')
-    const planBtn = fieldset.$('button.frontier-plan-toggle')
     await expect(noTrainingBtn).toBeDisplayed()
-    await expect(planBtn).toBeDisplayed()
 
     // No-training is broader than ZDR: direct Anthropic/OpenAI routes return,
     // while a training DeepSeek route is replaced by Fireworks for the same model.
@@ -150,13 +148,6 @@ describe('settings usage model value map ZDR filter', () => {
       false,
     )
     await expect(chart.$('circle.frontier-point[data-model-id^="fireworks:"]')).toExist()
-
-    await planBtn.click()
-    await browser.waitUntil(async () => (await planBtn.getText()) === 'Show plan', {
-      timeout: 5000,
-      timeoutMsg: 'Hide plan toggle did not activate',
-    })
-    assert.doesNotMatch(await chart.getText(), /· plan/)
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-privacy.png')

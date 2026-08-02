@@ -11,23 +11,47 @@ import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import type { ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
 
-// Settings panel for external ACP agents Copse drives as a client (the `acp:<id>`
-// models). It scans the device (acp:detectAgents) and lists the known agents with
-// their install + sign-in commands ("preinstall" guidance), one-click add, plus a
-// CRUD editor over the `registeredAcpAgents` setting for configured/custom agents.
+// Settings panel for the coding agents installed on the user's own device that
+// Copse drives as a client (the `acp:<id>` models). It scans the device
+// (acp:detectAgents) and lists the known agents with their install + sign-in
+// commands ("preinstall" guidance), one-click add, plus a CRUD editor over the
+// `registeredAcpAgents` setting for configured/custom agents.
 //
-// The panel mirrors the unified "Providers" panel (custom-providers-section.ts):
-// a chip row selects one agent and shows just its form, so each agent is hidden
-// away until picked rather than every card being expanded at once. Known agents
-// lead the row, followed by any custom-configured agents, then an "Add agent"
-// chip. A dot marks the agents you've added.
+// ACP is the wire protocol and stays out of the product copy: to the user these
+// are simply "agents on this device".
+//
+// Standalone, the panel owns a chip row that selects one agent and shows just
+// its form. Embedded (the default in Settings), providers-section.ts owns a
+// single chip row across every provider capability and drives this panel via
+// `select`.
 //
 // Pure helpers (parse/format/upsert/knownToConfig) are exported and unit-tested;
 // the rest is thin DOM glue that persists on every change via settings.set.
 
 export interface AcpAgentsSection {
-  root: HTMLFieldSetElement
+  root: HTMLElement
+  /** Full refresh: re-read the config, scan the device, run auto-setup. */
   refresh: () => Promise<void>
+  /**
+   * Config-only refresh. Re-reads the saved agents and repaints without the
+   * device scan, so a host can paint its chips before paying for a PATH walk.
+   */
+  reload: () => Promise<void>
+  /**
+   * Device scan only: refreshes the installed / running badges without the
+   * auto-setup pass, which may install adapters. For a host that wants correct
+   * badges as soon as an agent is on screen but shouldn't install anything until
+   * the user has actually chosen that agent.
+   */
+  scan: () => Promise<void>
+  /** Ids this panel can render a form for, excluding the add-an-agent form. */
+  agentIds: () => string[]
+  /** Display name for an id this panel owns, or null when it owns no such id. */
+  labelFor: (id: string) => string | null
+  /** Whether the user has added this agent. */
+  isConfigured: (id: string) => boolean
+  /** Embedded mode only: show one agent's form (or the add form for `'other'`). */
+  select: (id: string) => void
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
@@ -145,7 +169,19 @@ function detectedStatus(detected: DetectedAcpAgent | undefined): HTMLElement {
   return status
 }
 
-export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
+export function createAcpAgentsSection(
+  api: ApiClient,
+  opts: {
+    /**
+     * Render only the selected agent's form, with no legend, description, or
+     * chip row of its own; the host drives the selection via `select`.
+     */
+    embedded?: boolean
+    /** Fired after a refresh so an embedded host can rebuild its chip row. */
+    onChanged?: () => void
+  } = {},
+): AcpAgentsSection {
+  const embedded = opts.embedded ?? false
   let agents: AcpAgentConfig[] = []
   let detectedById = new Map<string, DetectedAcpAgent>()
   const knownById = new Map(KNOWN_ACP_AGENTS.map((k) => [k.id, k]))
@@ -158,28 +194,38 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
   const formHost = el('div', { class: 'provider-form-host' })
   const scanStatus = el('span', { class: 'key-status' })
 
-  const rescanBtn = el('button', { type: 'button' }, 'Re-scan device')
+  const rescanBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary' },
+    'Re-scan device',
+  )
   rescanBtn.addEventListener('click', () => void scan())
 
-  const fieldset = el(
-    'fieldset',
-    {},
-    el('legend', {}, 'ACP agents'),
-    el(
-      'p',
-      { class: 'settings-fieldset-desc' },
-      'Drive an external coding agent that runs locally on this device (Gemini CLI, ' +
-        'Claude Code, …) over the Agent Client Protocol. The agent is a separate program, ' +
-        'not bundled with Copse — install it with the command shown, then sign it in. ' +
-        'Pick an agent below to install, add, or configure it; added agents appear in the ' +
-        'model picker as their own group. Open a folder before using one, since it acts in ' +
-        "that workspace and its writes go through Copse's diff-approval queue. Not available " +
-        'in SSH remote workspaces (agents are not spawned on the remote host).',
-    ),
-    el('div', { class: 'provider-actions' }, rescanBtn, scanStatus),
-    chipRow,
-    formHost,
-  )
+  const root: HTMLElement = embedded
+    ? el(
+        'div',
+        { class: 'provider-panel-embedded' },
+        el('div', { class: 'provider-actions' }, rescanBtn, scanStatus),
+        formHost,
+      )
+    : el(
+        'fieldset',
+        {},
+        el('legend', {}, 'Agents on this device'),
+        el(
+          'p',
+          { class: 'settings-fieldset-desc' },
+          'Run a coding agent that is installed on this machine (Claude, Gemini CLI, ' +
+            'Cursor, Codex) and drive it from Copse. Each agent is a separate program: ' +
+            'install it with the command shown, then sign in. Agents you add appear in ' +
+            'the model picker under their own heading. Open a folder first, since the ' +
+            'agent works in that folder and its edits go through the review queue. Not ' +
+            'available in remote SSH workspaces.',
+        ),
+        el('div', { class: 'provider-actions' }, rescanBtn, scanStatus),
+        chipRow,
+        formHost,
+      )
 
   async function persist(next: AcpAgentConfig[]): Promise<void> {
     agents = next
@@ -229,6 +275,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
   }
 
   function renderChips(): void {
+    if (embedded) return
     clear(chipRow)
     for (const key of chipKeys()) {
       const chip = el(
@@ -460,8 +507,8 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         el(
           'span',
           { class: 'field-hint' },
-          'ACP session mode. Relaxes or tightens the agent’s own approval prompting. ' +
-            'Sandboxed Claude presets default to acceptEdits.',
+          'How much the agent asks before it acts. Leave this on Agent default ' +
+            'unless you want to loosen or tighten its own prompts.',
         ),
       ),
       el('label', { class: 'checkbox-label' }, enabledBox, ' Enabled (shown in the model picker)'),
@@ -521,7 +568,6 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         'div',
         { class: 'acp-agent-card-head' },
         el('strong', {}, agent.title),
-        el('code', {}, `acp:${agent.id}`),
         ...(known ? [detectedStatus(detectedById.get(known.id))] : []),
         remove,
       ),
@@ -551,8 +597,9 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       el(
         'p',
         { class: 'field-hint' },
-        'Point Copse at any command that speaks ACP over stdio. Give it an id, the ' +
-          'command to launch, and the arguments that put it into ACP mode.',
+        'Add any agent program installed on this machine that Copse can drive. ' +
+          'Give it a name, the command that launches it, and the arguments it ' +
+          'needs to start in agent mode.',
       ),
       agentForm({
         submitLabel: 'Add agent',
@@ -581,9 +628,14 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
 
   function render(): void {
     // Keep the selection valid as agents are added/removed (or on first paint).
-    if (selected !== 'other' && !chipKeys().includes(selected)) selected = defaultSelected()
+    // An embedded panel takes its selection from the host, which may name a
+    // provider that has no agent at all, so leave an unknown id unresolved.
+    if (!embedded && selected !== 'other' && !chipKeys().includes(selected)) {
+      selected = defaultSelected()
+    }
     renderChips()
     renderForm()
+    opts.onChanged?.()
   }
 
   async function reloadAgents(): Promise<void> {
@@ -638,5 +690,27 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     await autoSetup()
   }
 
-  return { root: fieldset, refresh }
+  function agentIds(): string[] {
+    return chipKeys().filter((key) => key !== 'other')
+  }
+
+  function labelFor(id: string): string | null {
+    return agentIds().includes(id) ? chipLabel(id) : null
+  }
+
+  function isConfigured(id: string): boolean {
+    return agents.some((agent) => agent.id === id)
+  }
+
+  function select(id: string): void {
+    selected = id
+    renderForm()
+  }
+
+  async function reload(): Promise<void> {
+    await reloadAgents()
+    render()
+  }
+
+  return { root, refresh, reload, scan, agentIds, labelFor, isConfigured, select }
 }

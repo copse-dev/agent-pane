@@ -493,6 +493,37 @@ dialog.settings-overlay::backdrop {
   background: var(--success);
 }
 
+/* One provider can offer several things at once (an API key, a cloud agent, a
+   copy installed on this machine). Each is a titled block, stacked. */
+.provider-vendor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+.provider-capability {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border);
+}
+.provider-vendor > .provider-capability:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.provider-capability-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.provider-panel-embedded {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
 .provider-form {
   display: flex;
   flex-direction: column;
@@ -604,9 +635,55 @@ dialog.settings-overlay::backdrop {
 .provider-model-remove:hover {
   color: var(--error);
 }
+/* The base `button` rule strips every border and background, so an action with
+   no recipe of its own reads as a run of text. Everything you can press in a
+   provider form gets real button chrome. */
+.provider-save,
+.provider-secondary,
+.provider-delete,
+.provider-add-model {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.3;
+}
+.provider-save:hover:not(:disabled),
+.provider-secondary:hover:not(:disabled),
+.provider-delete:hover:not(:disabled),
+.provider-add-model:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+.provider-save:disabled,
+.provider-secondary:disabled,
+.provider-delete:disabled,
+.provider-add-model:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Saving or adding is the form's confirming action, so it carries the accent. */
+.provider-save {
+  border-color: var(--accent);
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+}
+.provider-save:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+  color: var(--text-on-accent);
+}
+.provider-delete {
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+  color: var(--error);
+}
 .provider-add-model {
   align-self: flex-start;
-  font-size: var(--font-size-sm);
 }
 .provider-advanced summary {
   cursor: pointer;
@@ -787,12 +864,6 @@ dialog.settings-overlay::backdrop {
   background: var(--accent);
   border-radius: inherit;
 }
-.usage-plan-bar-fill[data-severity='warning'] {
-  background: var(--warning);
-}
-.usage-plan-bar-fill[data-severity='critical'] {
-  background: var(--danger);
-}
 .usage-period-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -817,6 +888,43 @@ dialog.settings-overlay::backdrop {
 .frontier-controls .frontier-btn,
 .frontier-controls .frontier-cost-axis {
   margin-left: 0;
+}
+.frontier-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--spacing-md);
+  margin: var(--spacing-sm) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.frontier-key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Each swatch repeats the chart's own mark: filled = best value, grey =
+   beaten, ring = estimated, faded = not set up, dashed halo = on your plan. */
+.frontier-key-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.frontier-key-swatch[data-mark='dominated'] {
+  background: var(--border-strong);
+}
+.frontier-key-swatch[data-mark='estimated'] {
+  background: var(--bg-base);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.frontier-key-swatch[data-mark='discovery'] {
+  opacity: 0.55;
+}
+.frontier-key-swatch[data-mark='plan'] {
+  margin: 0 3px;
+  outline: 1px dashed var(--accent);
+  outline-offset: 3px;
 }
 .frontier-banded {
   display: flex;
