@@ -38,7 +38,11 @@ export function createEnvKeyDetectSection(
 ): EnvKeyDetectSection {
   const legend = opts.legend ?? 'Detect existing API keys'
 
-  const scanBtn = el('button', { type: 'button' }, 'Scan environment')
+  const scanBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary' },
+    'Scan environment',
+  )
   const importBtn = el(
     'button',
     {

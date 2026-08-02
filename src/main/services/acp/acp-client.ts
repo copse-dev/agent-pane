@@ -695,6 +695,13 @@ export async function openAcpSession(
         url: config.nativeBridge.url,
         headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
       })
+    } else if (config.nativeBridge) {
+      // The bridge started but this agent cannot mount an http MCP server, so
+      // none of Copse's native tools reach it. Silence here reads downstream as
+      // "the agent chose not to use the tool", which is a different bug.
+      console.warn(
+        '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
+      )
     }
     let session: ManagedAcpSession | null = null
     let resumed = false

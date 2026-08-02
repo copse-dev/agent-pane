@@ -24,8 +24,13 @@ describe('Cursor Cloud Agent settings list hint', () => {
     const general = $('.settings-section[data-section="general"]')
     await expect(general).toBeDisplayed()
 
-    // Cursor is the default remote-agent tab; scroll the Remote agents fieldset
-    // into view so the sticky footer does not cover the hint.
+    // The Cursor cloud agent lives under the Cursor provider chip; select it,
+    // then scroll the Providers block into view so the sticky footer does not
+    // cover the hint.
+    const cursorChip = general.$('.provider-chip[data-provider="cursor"]')
+    await cursorChip.waitForExist({ timeout: 15_000 })
+    await cursorChip.click()
+
     await browser.execute(() => {
       document
         .querySelector<HTMLElement>('[data-testid="cursor-agents-list-hint"]')
