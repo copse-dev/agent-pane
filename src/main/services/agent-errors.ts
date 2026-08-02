@@ -178,10 +178,15 @@ export function classifyAcpAuthFailure(
   return null
 }
 
-/** Where to configure the agent's credentials instead of running its login command. */
+/**
+ * Where to configure the agent's credentials instead of running its login
+ * command. Names the agent rather than a settings sub-path: Providers groups
+ * agents under their vendor chip (Claude sits under Anthropic), and that mapping
+ * lives in the renderer — repeating it here would be a second copy to rot.
+ */
 function acpEnvHint(known: { title: string; envHints?: string[] } | undefined): string {
   if (!known?.envHints || known.envHints.length === 0) return ''
-  return ` Alternatively, set ${known.envHints.join(' or ')} in Settings → ACP agents → ${known.title} → Environment.`
+  return ` Alternatively, set ${known.envHints.join(' or ')} for ${known.title} in Settings → General → Providers.`
 }
 
 /** The agent's own words, kept verbatim under the guidance rather than leading with it. */
@@ -230,7 +235,7 @@ function formatAcpAuthError(
     lines.push(`Sign in with \`${known.setup}\`.${acpEnvHint(known)}`)
   } else {
     lines.push(
-      'Run the agent’s login command or add its required API keys in Settings → ACP agents → Environment for that agent.',
+      'Run the agent’s login command, or add its required API keys to that agent’s environment in Settings → General → Providers.',
     )
   }
   lines.push(ACP_KEYS_NOT_FORWARDED)

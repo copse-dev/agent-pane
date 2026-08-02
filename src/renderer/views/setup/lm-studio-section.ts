@@ -156,7 +156,7 @@ export function createLmStudioSection(
       setInlineStatus(
         testStatus,
         'ok',
-        `Connected — ${String(result.models?.length ?? 0)} model(s): ${list}`,
+        `Connected. ${String(result.models?.length ?? 0)} model(s): ${list}`,
       )
       testStatus.classList.add('ok')
       await refreshDetection()
@@ -207,7 +207,7 @@ export function createLmStudioSection(
                 return
               }
               if (job.status === 'already_downloaded') {
-                setInlineStatus(progress, 'ok', 'Already downloaded — load it in LM Studio')
+                setInlineStatus(progress, 'ok', 'Already downloaded. Load it in LM Studio.')
                 return
               }
               if (!job.jobId) {
@@ -218,7 +218,7 @@ export function createLmStudioSection(
               const sizeHint = job.totalSizeBytes
                 ? formatBytes(job.totalSizeBytes)
                 : `~${String(model.downloadGb)} GB`
-              setInlineStatus(progress, 'pending', `Downloading ${sizeHint} — may take ${eta}…`)
+              setInlineStatus(progress, 'pending', `Downloading ${sizeHint}. May take ${eta}…`)
               pollDownload(job.jobId, progress, () => {
                 downloadBtn.disabled = false
                 void refreshDetection()
@@ -256,7 +256,7 @@ export function createLmStudioSection(
             return
           }
           if (status.status === 'completed' || status.status === 'already_downloaded') {
-            setInlineStatus(progressEl, 'ok', 'Download complete — load the model in LM Studio')
+            setInlineStatus(progressEl, 'ok', 'Download complete. Load the model in LM Studio.')
             clearInterval(timer)
             downloadPollers.delete(jobId)
             onDone()
