@@ -59,15 +59,28 @@ export function setSandboxFsGatewayEnabledForTest(value: boolean | null): void {
  * folder and leaves nothing to debug. A confinement mismatch (a thread worktree
  * outside the root the worker was given, say) is invisible without this.
  */
+const GATEWAY_DENIAL_LOG_LIMIT = 20
+let gatewayDenialsLogged = 0
+
 function reportGatewayDenial(
   op: string,
   path: string,
   root: string | undefined,
   detail: string,
 ): void {
+  // Bounded: a single file-tree walk against a confined worker can refuse every
+  // entry, and this sits in that hot path. Unbounded it would emit thousands of
+  // lines through the main-process stdout the e2e harness reads — enough to
+  // matter for run time, and enough to bury the first denial, which is the one
+  // that identifies the boundary. The first few name the mismatch; the rest add
+  // nothing a reader would act on.
+  if (gatewayDenialsLogged >= GATEWAY_DENIAL_LOG_LIMIT) return
+  gatewayDenialsLogged += 1
+  const more =
+    gatewayDenialsLogged === GATEWAY_DENIAL_LOG_LIMIT ? ' (further denials suppressed)' : ''
   console.warn(
     `[sandbox-fs] ${op} refused for ${JSON.stringify(path)} ` +
-      `(worker root ${JSON.stringify(root ?? getWorkspaceRoot() ?? '(none)')}): ${detail}`,
+      `(worker root ${JSON.stringify(root ?? getWorkspaceRoot() ?? '(none)')}): ${detail}${more}`,
   )
 }
 
