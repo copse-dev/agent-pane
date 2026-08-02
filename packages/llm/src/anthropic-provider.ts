@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import { withAppAttribution } from './app-attribution.ts'
 import { anthropicMaxOutputTokens, supportsMidConversationSystem } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
@@ -12,7 +13,10 @@ export class AnthropicProvider implements LLMProvider {
 
   constructor(model: string, opts: { apiKey?: string } = {}) {
     this.model = model
-    this.client = new Anthropic({ apiKey: opts.apiKey ?? process.env['ANTHROPIC_API_KEY'] })
+    this.client = new Anthropic({
+      apiKey: opts.apiKey ?? process.env['ANTHROPIC_API_KEY'],
+      defaultHeaders: withAppAttribution(),
+    })
   }
 
   stream(
