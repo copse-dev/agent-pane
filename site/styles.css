@@ -983,11 +983,27 @@ footer a:hover {
   background: var(--green);
 }
 
+/*
+  The figure is now the panel plus its caption, so the clipped, rounded panel
+  treatment moved down to `.hero-demo` — the caption has to sit outside it,
+  otherwise it lands on top of the demo's own composer.
+*/
 .marketing-site .hero-visual {
   position: relative;
   z-index: 1;
   align-self: center;
   margin: 0;
+  /* The panel's `min-width` used to be neutralised by `overflow: hidden` here
+     (a scroll container's automatic minimum size is zero). With the clipping
+     moved down to `.hero-demo`, this grid item would otherwise take its minimum
+     size from the screenshot's `min-width` and push the whole hero — headline
+     included — wider than the viewport. */
+  min-width: 0;
+}
+
+.marketing-site .hero-demo {
+  position: relative;
+  display: block;
   overflow: hidden;
   contain: paint;
   border-radius: 22px 0 0 22px;
@@ -1006,6 +1022,77 @@ footer a:hover {
   object-position: left center;
   opacity: 0.76;
   filter: saturate(0.68) sepia(0.08);
+}
+
+/*
+  Live demo layer. The screenshot stays in flow and sizes the panel; the iframe
+  is laid over it and only becomes visible once `hero-demo.js` sees it load. So
+  the hero holds its exact geometry whether the demo appears or not, and a
+  failed load degrades to the picture rather than to a hole.
+*/
+.marketing-site .hero-demo-poster {
+  transition: opacity 600ms ease;
+}
+
+.marketing-site .hero-demo-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Rendered at a desktop viewport, then scaled to the panel's height — the
+     overflowing width crops on the right, like the screenshot's
+     `object-position: left center`. hero-demo.js keeps the scale in step with
+     the panel; the fallback is the 590/800 the design lays out at. */
+  width: 1280px;
+  height: 800px;
+  border: 0;
+  transform: scale(var(--hero-demo-scale, 0.7375));
+  transform-origin: top left;
+  opacity: 0;
+  transition: opacity 700ms ease;
+  /* Decorative: the walkthrough drives itself, and clicks would fight the page
+     (focus traps, captured scroll). The caption link opens the real demo. */
+  pointer-events: none;
+  /* Lighter than the screenshot's treatment — moving text has to stay legible —
+     but tinted enough to belong to the same hero. */
+  filter: saturate(0.86) sepia(0.04);
+}
+
+.marketing-site .hero-demo.is-live .hero-demo-frame {
+  opacity: 0.94;
+}
+
+.marketing-site .hero-demo.is-live .hero-demo-poster {
+  opacity: 0;
+}
+
+.marketing-site .hero-demo-caption {
+  padding: 12px 24px 0 0;
+  color: var(--white-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.marketing-site .hero-demo-caption a {
+  color: var(--green);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.marketing-site .hero-demo-caption a:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* hero-demo.js already declines to embed the demo here; belt and braces in
+     case the frame was inserted before the preference changed. */
+  .marketing-site .hero-demo-frame {
+    display: none;
+  }
+
+  .marketing-site .hero-demo.is-live .hero-demo-poster {
+    opacity: 0.76;
+  }
 }
 
 .marketing-site .line-field {
