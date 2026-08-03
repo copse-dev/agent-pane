@@ -12,6 +12,31 @@ function composer(): HTMLElement {
 }
 
 describe('typeIntoComposer', () => {
+  it('focuses the composer without scrolling its containing page', async () => {
+    const el = composer()
+    let focusOptions: FocusOptions | undefined
+    el.focus = (options?: FocusOptions): void => {
+      focusOptions = options
+    }
+
+    await typeIntoComposer(el, 'hello', { instant: true })
+
+    assert.deepEqual(focusOptions, { preventScroll: true })
+  })
+
+  it('types without taking focus when embedded in another page', async () => {
+    const el = composer()
+    let focused = false
+    el.focus = (): void => {
+      focused = true
+    }
+
+    await typeIntoComposer(el, 'hello', { instant: true, focusComposer: false })
+
+    assert.equal(focused, false)
+    assert.equal(el.textContent, 'hello')
+  })
+
   it('grows the composer one keystroke at a time, firing input as a person would', async () => {
     const el = composer()
     const snapshots: string[] = []
