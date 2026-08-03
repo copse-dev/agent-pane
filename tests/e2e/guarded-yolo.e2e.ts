@@ -92,7 +92,14 @@ describe('Guarded YOLO shell mode', function () {
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
-    expect(await dialog.$('.approval-body').getText()).toContain('recursive/forced delete')
+    expect(await dialog.$('.approval-advice').getText()).toContain('recursive/forced delete')
+    expect(await dialog.$('.approval-body').getText()).toContain(
+      'rm -rf tests/e2e/.bounded-delete-missing',
+    )
+    expect(await dialog.$('.approval-body').getText()).not.toContain('Potential harm')
+    expect(await dialog.$('.approval-advice').getText()).toContain(
+      'Guarded YOLO cannot skip this confirmation',
+    )
     await saveElementScreenshot('#approval-dialog', 'guarded-yolo-harm-prompt.png')
     await dialog.$('.approval-reject').click()
     await waitForAgentIdle()

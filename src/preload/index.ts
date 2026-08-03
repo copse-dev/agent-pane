@@ -116,6 +116,13 @@ contextBridge.exposeInMainWorld('api', {
   agent: {
     run: (projectId: string, threadId: string, prompt: string) =>
       ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    describeImages: (
+      projectId: string,
+      threadId: string,
+      model: string,
+      userPrompt: string,
+      images: string[],
+    ) => ipcRenderer.invoke('agent:describeImages', projectId, threadId, model, userPrompt, images),
     prepareCheckout: (
       projectId: string,
       threadId: string,
@@ -161,6 +168,8 @@ contextBridge.exposeInMainWorld('api', {
         threadId?: string
         title: string
         body: string
+        bodyAdvice?: string
+        bodyFooter?: string
         type: string
         allowRemember?: boolean
         rememberLabel?: string
@@ -175,6 +184,8 @@ contextBridge.exposeInMainWorld('api', {
           threadId?: string
           title: string
           body: string
+          bodyAdvice?: string
+          bodyFooter?: string
           type: string
           allowRemember?: boolean
           rememberLabel?: string
@@ -338,6 +349,10 @@ contextBridge.exposeInMainWorld('api', {
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
+  },
+  alerts: {
+    threadFinished: (threadId: string, title: string) =>
+      ipcRenderer.invoke('alerts:threadFinished', threadId, title),
   },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
@@ -516,6 +531,7 @@ contextBridge.exposeInMainWorld('api', {
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),
+    modelInfo: () => ipcRenderer.invoke('lmstudio:modelInfo'),
     detect: (url?: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:detect', url, apiKey),
     download: (modelId: string, url?: string, apiKey?: string) =>
       ipcRenderer.invoke('lmstudio:download', modelId, url, apiKey),

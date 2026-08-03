@@ -11,6 +11,7 @@
 export * from './wire-types.ts'
 
 // Provider construction + the interface every provider implements.
+export * from './app-attribution.ts'
 export * from './create-provider.ts'
 export * from './responses-provider.ts'
 

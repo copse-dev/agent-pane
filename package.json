@@ -68,6 +68,7 @@
     "test:e2e:agent-eval": "wdio run wdio.eval.conf.ts",
     "test:e2e:markdown": "wdio run wdio.conf.ts --spec tests/e2e/markdown-ordered-list-spacing.e2e.ts --spec tests/e2e/markdown-streaming-table.e2e.ts --spec tests/e2e/markdown-streaming-list.e2e.ts --spec tests/e2e/markdown-streaming-heading.e2e.ts --spec tests/e2e/markdown-streaming-blockquote.e2e.ts --spec tests/e2e/markdown-nbsp-metadata.e2e.ts",
     "analyze:thread": "node scripts/run-analyze-thread.mts",
+    "demo:trace": "node scripts/run-build-demo-trace.mts",
     "bench:semantic": "node scripts/semantic-search-bench.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
     "sync:local-models": "node scripts/sync-local-models.mts",

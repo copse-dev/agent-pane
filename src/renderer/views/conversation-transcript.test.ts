@@ -104,4 +104,25 @@ describe('user transcript attachment chips', () => {
     assert.ok(textEl.querySelector('br'), 'single newlines render as line breaks')
     assert.match(textEl.textContent, /line one\s*line two/)
   })
+
+  it('shows a text-only resend recovery for an image prompt rejected by its model', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'Describe this', ['data:image/png;base64,abc'])
+    addMessage(
+      store,
+      threadId,
+      'assistant',
+      'The selected model has no endpoint that supports image input. Choose an image-capable model in the composer and Resend, or use Resend without image on your prompt.',
+    )
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    assert.ok(document.querySelector('.msg-image-input-unsupported'))
+    assert.equal(
+      document.querySelector('.msg-resend-without-images')?.textContent,
+      'Resend without image',
+    )
+  })
 })

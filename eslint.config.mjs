@@ -135,6 +135,22 @@ export default ts.config(
     },
   },
   {
+    // Marketing-site scripts: plain browser JS served as-is from `site/`, with
+    // no build step and no TS project to type-check against.
+    files: ['site/**/*.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
     // Synchronous first-paint theme script copied to dist; not part of the TS project graph.
     files: ['src/renderer/theme-boot.js'],
     extends: [ts.configs.disableTypeChecked],

@@ -46,6 +46,8 @@ describe('shared UI polish', () => {
       const messagesRect = messages.getBoundingClientRect()
       const statusRect = status.getBoundingClientRect()
       const iconPath = status.querySelector('.reasoning-activity-path')
+      const activityIcon = status.querySelector('.reasoning-activity-icon')
+      const submitButton = document.querySelector<HTMLElement>('.submit-btn')
       return {
         statusIsInsideComposer: input.contains(status),
         statusIsInsideTranscript: messages.contains(status),
@@ -53,6 +55,8 @@ describe('shared UI polish', () => {
         rightEdge: messagesRect.right - statusRect.right,
         hasAnimatedIcon: Boolean(status.querySelector('[data-icon="reasoning-activity"]')),
         iconAnimation: iconPath ? getComputedStyle(iconPath).animationName : '',
+        iconColor: activityIcon ? getComputedStyle(activityIcon).color : '',
+        buttonTint: submitButton ? getComputedStyle(submitButton).backgroundColor : '',
         reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       }
     })
@@ -60,6 +64,7 @@ describe('shared UI polish', () => {
     assert.equal(composerGeometry.statusIsInsideComposer, false)
     assert.equal(composerGeometry.statusIsInsideTranscript, true)
     assert.equal(composerGeometry.hasAnimatedIcon, true)
+    assert.equal(composerGeometry.iconColor, composerGeometry.buttonTint)
     assert.equal(
       composerGeometry.iconAnimation,
       composerGeometry.reducedMotion ? 'none' : 'reasoning-activity-draw',

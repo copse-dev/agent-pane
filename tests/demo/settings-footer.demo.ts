@@ -17,6 +17,35 @@ describe('browser-hosted settings footer geometry', () => {
     await $('.settings-section[data-section="general"]').waitForDisplayed()
   })
 
+  it('keeps the browser-demo traffic lights in the settings titlebar', async () => {
+    const trafficLights = await browser.execute(() => {
+      const header = document.querySelector<HTMLElement>('.settings-header')
+      if (!header) return null
+      const headerRect = header.getBoundingClientRect()
+      const lights = getComputedStyle(header, '::before')
+      return {
+        content: lights.content,
+        background: lights.backgroundColor,
+        boxShadow: lights.boxShadow,
+        left: Number.parseFloat(lights.left),
+        top: Number.parseFloat(lights.top),
+        headerHeight: headerRect.height,
+      }
+    })
+
+    assert.ok(trafficLights, 'settings header must exist')
+    assert.notEqual(trafficLights.content, 'none', 'traffic lights must render in settings')
+    assert.equal(trafficLights.background, 'rgb(255, 95, 87)')
+    assert.match(trafficLights.boxShadow, /rgb\(254, 188, 46\)/)
+    assert.match(trafficLights.boxShadow, /rgb\(40, 200, 64\)/)
+    assert.equal(trafficLights.left, 18)
+    assert.ok(
+      Math.abs(trafficLights.top - trafficLights.headerHeight / 2) <= 1,
+      'traffic lights must stay vertically centred in the settings titlebar',
+    )
+    await saveElementScreenshot('#settings-dialog', 'settings-demo-traffic-lights.png')
+  })
+
   it('keeps the scroll panel full width with a narrower centered form column', async () => {
     const geometry = await browser.execute(() => {
       const body = document.querySelector<HTMLElement>('.settings-body')
