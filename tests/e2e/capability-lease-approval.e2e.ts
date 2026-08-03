@@ -58,7 +58,9 @@ describe('turn-tree shell replay approval', () => {
     await expect(dialog.$('.approval-heading')).toHaveText('Run shell command?')
     const leaseOption = dialog.$('.approval-turn-tree')
     await expect(leaseOption).toBeDisplayed()
-    await expect(leaseOption).toHaveText('Allow 2 exact retries for this task (15 minutes)')
+    await expect(leaseOption).toHaveText(
+      'Allow retries for this task (up to 10, for 15 minutes)',
+    )
     await expect(leaseOption.$('.approval-turn-tree-input')).toBeChecked()
 
     await saveAppScreenshot('capability-lease-approval.png')

@@ -3,7 +3,8 @@ import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { parseShellComposition } from './command-routing.ts'
 
 export const SHELL_REPLAY_LEASE_TTL_MS = 15 * 60_000
-export const SHELL_REPLAY_LEASE_MAX_REPLAYS = 2
+export const SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS = 10
+export const SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS = 2
 
 export interface ShellReplayLeaseIdentity {
   projectId: string
@@ -52,7 +53,10 @@ export class ShellReplayLeaseStore {
       identity: { ...identity },
       command,
       expiresAt: this.now() + SHELL_REPLAY_LEASE_TTL_MS,
-      remainingReplays: SHELL_REPLAY_LEASE_MAX_REPLAYS,
+      remainingReplays:
+        identity.containment === 'project-sandbox'
+          ? SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS
+          : SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
     }
     this.leases.set(lease.id, lease)
     return { ...lease, identity: { ...lease.identity } }

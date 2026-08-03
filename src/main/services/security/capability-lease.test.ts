@@ -2,7 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
-  SHELL_REPLAY_LEASE_MAX_REPLAYS,
+  SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
+  SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS,
   SHELL_REPLAY_LEASE_TTL_MS,
   ShellReplayLeaseStore,
   replayLeaseCore,
@@ -22,7 +23,7 @@ describe('ShellReplayLeaseStore', () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
     store.issue(identity, 'npm test -- permission-gate')
 
-    for (let index = 0; index < SHELL_REPLAY_LEASE_MAX_REPLAYS; index++) {
+    for (let index = 0; index < SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS; index++) {
       assert.deepEqual(
         store.consume(identity, 'npm test -- permission-gate', () => false),
         {
@@ -38,6 +39,13 @@ describe('ShellReplayLeaseStore', () => {
         matched: false,
       },
     )
+  })
+
+  it('uses a lower replay bound outside the project sandbox', () => {
+    const store = new ShellReplayLeaseStore()
+    const lease = store.issue({ ...identity, containment: 'external' }, 'npm test')
+
+    assert.equal(lease.remainingReplays, SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS)
   })
 
   it('binds a lease to project, thread, turn tree, and execution root', () => {

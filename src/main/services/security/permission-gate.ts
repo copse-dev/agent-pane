@@ -103,8 +103,8 @@ import {
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 
-const SANDBOX_REPLAY_LABEL = 'Allow 2 exact retries for this task (15 minutes)'
-const EXTERNAL_REPLAY_LABEL = 'Allow 2 exact retries outside the sandbox (15 minutes)'
+const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
+const EXTERNAL_REPLAY_LABEL = 'Allow retries outside the sandbox (up to 2, for 15 minutes)'
 
 function issueShellReplayLease(identity: ShellReplayLeaseIdentity, command: string): void {
   const core = replayLeaseCore(command, (segment) =>
