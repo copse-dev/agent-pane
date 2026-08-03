@@ -104,7 +104,11 @@ async function main(): Promise<void> {
   )
   const scenario = runnableScenarioSchema.parse(readJson(scenarioPath))
   const selected = selectedPrompt(scenario.promptVariants)
-  const workspaceRoot = mkdtempSync(join(tmpdir(), scenario.workspace.prefix ?? `${scenario.id}-`))
+  const workspaceParent = resolve(process.env['COPSE_EVAL_WORKSPACE_PARENT'] ?? tmpdir())
+  mkdirSync(workspaceParent, { recursive: true })
+  const workspaceRoot = mkdtempSync(
+    join(workspaceParent, scenario.workspace.prefix ?? `${scenario.id}-`),
+  )
   const artifactDir = resolve(process.env['COPSE_EVAL_ARTIFACT_DIR'] ?? 'tests/e2e/artifacts')
   const keepWorkspace = process.env['COPSE_EVAL_KEEP_WORKSPACE'] === '1'
   const modelId = firstNonEmpty(process.env['COPSE_EVAL_MODEL']?.trim()) ?? LM_STUDIO_MODEL_IDS.chat
@@ -117,7 +121,7 @@ async function main(): Promise<void> {
     firstNonEmpty(process.env['LM_STUDIO_API_KEY']?.trim(), process.env['LM_API_TOKEN']?.trim()) ??
     'lm-studio'
   const timeoutMs = Number(process.env['COPSE_EVAL_IDLE_MS'] ?? 15 * 60_000)
-  let approvalCount = 0
+  const approvalCapabilities: string[] = []
 
   try {
     await initProjectSandbox()
@@ -150,9 +154,17 @@ async function main(): Promise<void> {
         loadMcpServers: false,
         workspaceTrusted: true,
         interaction: {
-          approve: () => {
-            approvalCount++
-            return Promise.resolve({ approved: true, remember: false })
+          approve: (request) => {
+            approvalCapabilities.push(
+              request.allowTurnTreeLease === true
+                ? 'shell-exact-replay-offered'
+                : `${request.type}:${request.title}`,
+            )
+            return Promise.resolve({
+              approved: true,
+              remember: false,
+              grantScope: request.allowTurnTreeLease === true ? 'turn-tree' : 'once',
+            })
           },
           stagedDiff: () => Promise.resolve(true),
         },
@@ -177,9 +189,9 @@ async function main(): Promise<void> {
 
     const tracePath = safeWorkspacePath(workspaceRoot, scenario.autonomy.tracePath)
     const trace = decodeAutonomyTrace(readJson(tracePath))
-    const harnessEvents: AutonomyTrace['events'] = Array.from({ length: approvalCount }, () => ({
+    const harnessEvents: AutonomyTrace['events'] = approvalCapabilities.map((capability) => ({
       type: 'approval_requested',
-      capability: 'synthetic-matrix-execution',
+      capability,
     }))
     const traceWithoutReport: AutonomyTrace = {
       scenarioId: trace.scenarioId,

@@ -469,3 +469,21 @@ export function analyzeShellCommand(
   // OS sandbox (it contains any real escape) but still prompt without one.
   return { verdict: hasHard || outsidePath !== null ? 'external' : 'ambiguous', reasons }
 }
+
+const REPLAYABLE_OPAQUE_LOCAL_REASONS: ReadonlySet<string> = new Set([
+  REASON_LOCAL_EXECUTABLE,
+  REASON_INTERPRETER_FILE,
+])
+
+/**
+ * True only when a command prompts because it executes opaque local code—not
+ * because it requests network or outside-workspace access. Callers may offer an
+ * explicit bounded replay grant for this shape.
+ */
+export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): boolean {
+  return (
+    analysis.verdict === 'external' &&
+    analysis.reasons.length > 0 &&
+    analysis.reasons.every((reason) => REPLAYABLE_OPAQUE_LOCAL_REASONS.has(reason))
+  )
+}
