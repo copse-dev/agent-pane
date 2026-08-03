@@ -661,7 +661,7 @@ export function renderFrontierSvg(
         'font-size': '9',
         fill: 'var(--text-secondary)',
       },
-      'intellect (canonical index)',
+      'intellect',
     ),
   )
 
