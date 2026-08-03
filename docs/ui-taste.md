@@ -242,6 +242,17 @@ copied. The contract test
 the policy: body defaults to non-selectable, the content regions opt back in, and the permission
 prompt stays non-selectable.
 
+## Responsive titlebar chrome
+
+Titlebar compactness follows the space its rendered contents actually need, not the window's aspect
+ratio or a fixed viewport breakpoint. Workspace names, branches, enabled panel packs, editor labels,
+and UI scale all change that width. Measure the full label state and collapse secondary labels only
+when it would overflow; expand them again when room returns.
+
+The flexible `.titlebar-drag` region always keeps at least `--spacing-lg` of width. Interactive
+controls must not consume that last draggable strip, even when every optional panel mode is visible.
+The regression state lives in [`tests/e2e/titlebar-compact.e2e.ts`](../tests/e2e/titlebar-compact.e2e.ts).
+
 ## Sticky footers inside scroll containers (gotcha)
 
 A `position: sticky; bottom: 0` element **cannot extend past its containing block's content box**.
