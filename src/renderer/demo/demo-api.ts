@@ -55,6 +55,10 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     },
     browser: {
       onOpenTab: subscribe,
+      sharePageText: unsupported,
+      shareScreenshot: unsupported,
+      onShareText: subscribe,
+      onShareImage: subscribe,
       onPackTabRequest: subscribe,
     },
     security: {

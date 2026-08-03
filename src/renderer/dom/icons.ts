@@ -114,6 +114,32 @@ export function searchIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+export function fileTextIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'file-text',
+    [
+      'M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z',
+      'M14 2v6h6',
+      'M8 13h8',
+      'M8 17h8',
+    ],
+    className,
+  )
+}
+
+export function imageIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'image',
+    [
+      'M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3',
+      'm21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21',
+      'M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7',
+      'M9 9h.01',
+    ],
+    className,
+  )
+}
+
 /** Lightning/zap — marks the hook-card family (a hook fired / triggered). */
 export function zapIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
