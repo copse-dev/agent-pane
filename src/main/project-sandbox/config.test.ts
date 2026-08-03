@@ -229,6 +229,8 @@ describe('workspaceSandboxOverlay', () => {
       git(repo, ['worktree', 'add', '-q', '-b', 'thread-b', sibling])
       const executionRoot = join(worktree, 'packages', 'app')
       mkdirSync(executionRoot, { recursive: true })
+      const siblingPackage = join(worktree, 'packages', 'other')
+      mkdirSync(siblingPackage)
 
       const registration = await registerInternalWorkspaceRoot(worktree, executionRoot)
       const siblingGitDir = realpathSync.native(
@@ -267,12 +269,15 @@ describe('workspaceSandboxOverlay', () => {
       assert.equal(registration.primaryCheckoutRoot, repo)
       assert.ok(denyRead.includes(repo))
       assert.ok(denyRead.includes(`${repo}/**`))
-      // Nested execution root also gets the enclosing worktree's remaining
-      // children denied so a sibling package under the same checkout can no
-      // longer be read; the exact checkout path stays readable via the
-      // discovery-read ancestors and the executionRoot allow keeps `packages/app`.
-      assert.ok(denyRead.includes(`${worktree}/**`))
+      // Nested execution roots deny the concrete siblings around their ancestor
+      // chain rather than masking the whole checkout. The broad mask makes
+      // Linux bubblewrap unable to create mandatory deny mount points inside
+      // the re-bound execution root.
+      assert.ok(denyRead.includes(siblingPackage))
+      assert.ok(denyRead.includes(`${siblingPackage}/**`))
+      assert.ok(!denyRead.includes(`${worktree}/**`))
       assert.ok(!denyRead.includes(worktree))
+      assert.ok(!denyRead.includes(join(worktree, '.git')))
       assert.ok(allowRead.includes(executionRoot))
       assert.ok(allowRead.includes(`${executionRoot}/**`))
       await assert.rejects(
