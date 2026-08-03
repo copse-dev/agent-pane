@@ -23,6 +23,27 @@ import type {
 import { el } from '../dom/helpers.ts'
 import { arrowRightIcon, checkIcon, circleIcon, closeIcon } from '../dom/icons.ts'
 
+// A long-running plan can accumulate far more rows than fit on screen; cap the
+// list to this many before it scrolls internally instead of growing forever.
+const MAX_VISIBLE_ROWS = 5
+
+/**
+ * Once `list` has real rows in it, measure where row `maxVisible` starts and
+ * clamp the list to that height so exactly `maxVisible` rows show before it
+ * scrolls — row heights vary (labels wrap to one or two lines), so a fixed
+ * pixel guess would either clip a row mid-line or leave dead space.
+ */
+function capVisibleRows(list: HTMLUListElement, maxVisible: number): void {
+  requestAnimationFrame(() => {
+    const cutoff = list.children.item(maxVisible)
+    if (!(cutoff instanceof HTMLElement)) return
+    const height = cutoff.getBoundingClientRect().top - list.getBoundingClientRect().top
+    if (height <= 0) return
+    list.style.maxHeight = `${String(height)}px`
+    list.style.overflowY = 'auto'
+  })
+}
+
 function statusIcon(status: PanelEntryStatus | undefined): SVGSVGElement {
   switch (status) {
     case 'completed':
@@ -147,6 +168,7 @@ export function createPackPanelEl(
     const list = el('ul', { class: 'pack-panel-list', role: 'list' })
     for (const row of data.rows) list.append(renderRow(row))
     panel.append(list)
+    if (data.rows.length > MAX_VISIBLE_ROWS) capVisibleRows(list, MAX_VISIBLE_ROWS)
   } else {
     const tree = el('ul', { class: 'pack-panel-tree', role: 'group' })
     for (const root of data.roots) tree.append(renderTreeNode(root))
