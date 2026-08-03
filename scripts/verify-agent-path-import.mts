@@ -30,16 +30,16 @@ try {
       '@copse/llm': resolve('packages/llm/src'),
       '@copse/plan-usage': resolve('packages/plan-usage/src'),
     },
-    external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown', 'mermaid'],
-    // Same CJS `import.meta.url` shim run-tests.mts applies, for the same reason:
-    // a bundled ESM dependency that reads `import.meta.url` at module scope (the
-    // sandbox runtime's `VENDORED_SRT_WIN_EXE`) would otherwise be handed the
-    // empty `import.meta` esbuild synthesises for `cjs` and throw on load, so
-    // this check would report a broken plain-Node agent path that isn't broken.
-    define: { 'import.meta.url': '__copseImportMetaUrl' },
-    banner: {
-      js: "const __copseImportMetaUrl = require('node:url').pathToFileURL(__filename).href;",
-    },
+    // Preserve the dependency's real ESM import.meta.url for vendored runtime assets.
+    external: [
+      'electron',
+      'node-pty',
+      'jsdom',
+      '@mozilla/readability',
+      'turndown',
+      'mermaid',
+      '@anthropic-ai/sandbox-runtime',
+    ],
     logLevel: 'silent',
   })
 
