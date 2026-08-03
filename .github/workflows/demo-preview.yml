@@ -121,36 +121,72 @@ jobs:
           fi
           git -C previews-branch config user.name "github-actions[bot]"
           git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf "previews-branch/${TARGET}"
-          mkdir -p "previews-branch/${TARGET}"
-          cp -R dist/demo/. "previews-branch/${TARGET}/"
-          if [[ "$TARGET" == "develop" ]]; then
-            mkdir -p "previews-branch/${TARGET}/preview/demo/main"
-            cp -R site/. "previews-branch/${TARGET}/preview/"
-            cp -R dist/demo/. "previews-branch/${TARGET}/preview/demo/main/"
-          elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
-            bundle_target="${TARGET}-preview"
-            rm -rf "previews-branch/${bundle_target}"
-            mkdir -p "previews-branch/${bundle_target}/demo/main"
-            cp -R site/. "previews-branch/${bundle_target}/"
-            cp -R dist/demo/. "previews-branch/${bundle_target}/demo/main/"
-            printf '%s\n' "$SHA" > "previews-branch/${bundle_target}/.head-sha"
-            find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
-            git -C previews-branch add "$bundle_target"
-          fi
-          # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
-          # and high-entropy map contents fail Secret scan on unrelated tips.
-          find "previews-branch/${TARGET}" -type f -name '*.map' -delete
-          printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
-          git -C previews-branch add "$TARGET"
-          if git -C previews-branch diff --cached --quiet; then
-            echo "No preview change for ${LABEL}"
-            echo "published=false" >> "$GITHUB_OUTPUT"
-          else
+          # Every branch publishes into demo-previews, but `concurrency` is keyed
+          # on github.ref, so two branches building at once are NOT serialised —
+          # they clone the same tip and the loser's push is rejected non-fast-
+          # forward ("Updates were rejected because the remote contains work that
+          # you do not have locally"), failing the job on a change that was
+          # perfectly valid. Targets never share a directory (main/, develop/,
+          # pr-<n>/, pr-<n>-preview/), so the loser just needs to re-stack onto
+          # the winner's tip: re-fetch, hard-reset onto the new tip, re-apply
+          # this target's build, re-commit, push again.
+          published=false
+          unchanged=false
+          for attempt in 1 2 3 4 5; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "Push rejected; restacking onto the new demo-previews tip (attempt ${attempt})"
+              sleep $(( attempt * 5 ))
+              # The clone is shallow, so refresh it the same way rather than pulling
+              # full history. An orphan first publish has no remote branch to fetch;
+              # in that case there is nothing to restack onto and the retry is a
+              # plain re-push. `clean -fdx` also drops the previous attempt's
+              # untracked bundle dirs so the rebuild below starts from the tip.
+              if git -C previews-branch fetch --depth=1 origin demo-previews 2>/dev/null; then
+                git -C previews-branch reset --hard FETCH_HEAD
+                git -C previews-branch clean -fdx
+              fi
+            fi
+            rm -rf "previews-branch/${TARGET}"
+            mkdir -p "previews-branch/${TARGET}"
+            cp -R dist/demo/. "previews-branch/${TARGET}/"
+            if [[ "$TARGET" == "develop" ]]; then
+              mkdir -p "previews-branch/${TARGET}/preview/demo/main"
+              cp -R site/. "previews-branch/${TARGET}/preview/"
+              cp -R dist/demo/. "previews-branch/${TARGET}/preview/demo/main/"
+            elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+              bundle_target="${TARGET}-preview"
+              rm -rf "previews-branch/${bundle_target}"
+              mkdir -p "previews-branch/${bundle_target}/demo/main"
+              cp -R site/. "previews-branch/${bundle_target}/"
+              cp -R dist/demo/. "previews-branch/${bundle_target}/demo/main/"
+              printf '%s\n' "$SHA" > "previews-branch/${bundle_target}/.head-sha"
+              find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
+              git -C previews-branch add "$bundle_target"
+            fi
+            # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
+            # and high-entropy map contents fail Secret scan on unrelated tips.
+            find "previews-branch/${TARGET}" -type f -name '*.map' -delete
+            printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
+            git -C previews-branch add "$TARGET"
+            if git -C previews-branch diff --cached --quiet; then
+              # Reached on the first pass when the build is byte-identical to what
+              # is already published, and on a retry when the winning push carried
+              # the same content for this target.
+              echo "No preview change for ${LABEL}"
+              unchanged=true
+              break
+            fi
             git -C previews-branch commit -m "demo preview: ${LABEL} (${SHA})"
-            git -C previews-branch push origin demo-previews
-            echo "published=true" >> "$GITHUB_OUTPUT"
+            if git -C previews-branch push origin demo-previews; then
+              published=true
+              break
+            fi
+          done
+          if [ "$published" = false ] && [ "$unchanged" = false ]; then
+            echo "Could not publish ${LABEL} to demo-previews after 5 attempts" >&2
+            exit 1
           fi
+          echo "published=${published}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: publish

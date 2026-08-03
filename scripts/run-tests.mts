@@ -64,7 +64,17 @@ async function bundleTests(testFiles: string[]): Promise<void> {
     platform: 'node',
     format: 'cjs',
     sourcemap: true,
-    external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown', 'mermaid'],
+    // Preserve the dependency's real ESM import.meta.url for vendored runtime assets.
+    // Production externalizes it for the same reason.
+    external: [
+      'electron',
+      'node-pty',
+      'jsdom',
+      '@mozilla/readability',
+      'turndown',
+      'mermaid',
+      '@anthropic-ai/sandbox-runtime',
+    ],
     alias: {
       '@shared': resolve('./src/shared'),
       '@copse/agent': resolve('./packages/agent/src'),

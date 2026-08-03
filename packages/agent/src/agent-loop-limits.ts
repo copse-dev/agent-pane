@@ -12,8 +12,7 @@ export const DEFAULT_MAX_LLM_CALLS = 40
  */
 export const MAX_STREAM_OUTPUT_TOKENS = 32_000
 
-/** Rough chars-per-token used by the in-loop token estimates (matches trim-history). */
-const CHARS_PER_TOKEN = 4
+import { CHARS_PER_TOKEN } from './token-estimate.ts'
 
 /**
  * True once a single stream's accumulated output characters exceed
