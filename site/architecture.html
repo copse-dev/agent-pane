@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html class="marketing-root" lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; img-src 'self'; font-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'"
     />
     <title>Architecture — Copse</title>
     <meta
@@ -20,6 +20,7 @@
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://copse.dev/architecture.html" />
+    <link rel="icon" href="brand-mark.svg" />
     <link rel="stylesheet" href="styles.css" />
     <style>
       .architecture-container {
@@ -473,53 +474,66 @@
       }
     </style>
   </head>
-  <body>
-    <main class="architecture-container">
-      <a class="architecture-back" href="index.html">← Back to Copse</a>
-      <div class="architecture-heading">
-        <span class="arch-eyebrow">
-          <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
-            <path
-              d="M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24"
-              fill="none"
-              stroke="url(#eyebrow-wave)"
-              stroke-width="3.5"
-              stroke-linecap="round"
-            />
-            <defs>
-              <linearGradient id="eyebrow-wave" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#7c3aed" />
-                <stop offset="1" stop-color="#22d3ee" />
-              </linearGradient>
-            </defs>
-          </svg>
-          System map
-        </span>
-        <h1>How Copse fits together</h1>
-        <p>
-          Explore the desktop runtime, agent turn, safety gates, persistent data, UI bridge,
-          auxiliary agents, workspace services, build pipeline, and the audited changes now on main.
-          Choose a view, then select any component to see its responsibilities and source files.
-        </p>
-      </div>
+  <body class="marketing-site content-site">
+    <a class="skip-link" href="#main-content">Skip to content</a>
 
-      <div class="arch-map">
-        <div class="arch-tabs" id="arch-tabs" role="group" aria-label="System view"></div>
-        <div class="arch-board">
-          <div class="arch-canvas" id="arch-canvas" aria-live="polite"></div>
-          <div class="arch-picker" id="arch-picker" aria-label="Components"></div>
-          <div class="arch-flow" id="arch-flow"></div>
-          <div class="arch-legend" id="arch-legend" aria-hidden="true"></div>
+    <header class="site-header">
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a class="wordmark" href="index.html" aria-label="Copse home">
+          <img class="wordmark-image" src="brand-wordmark.svg" alt="" width="78" height="25" />
+        </a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="architecture.html" aria-current="page">Architecture</a>
+          <a href="privacy.html">Privacy</a>
         </div>
-        <section class="arch-inspector" id="arch-inspector" aria-live="polite"></section>
-      </div>
+        <a class="nav-cta" href="index.html#download">Download</a>
+      </nav>
+    </header>
 
-      <p class="architecture-note">
-        Verified against <code class="inline-code">origin/main</code> at
-        <code class="inline-code">cf0a14c2</code>. All 226 cited source paths exist at that
-        revision; the Main delta view summarizes the 46 incoming commits.
-      </p>
-    </main>
+    <div class="page-content-stage content-page-stage">
+      <main id="main-content" class="architecture-container content-container">
+        <header class="architecture-heading content-heading">
+          <p class="section-kicker">System map</p>
+          <h1>How Copse fits together</h1>
+          <p>
+            Explore the desktop runtime, agent turn, safety gates, persistent data, UI bridge,
+            auxiliary agents, workspace services, build pipeline, and the audited changes now on
+            main. Choose a view, then select any component to see its responsibilities and source
+            files.
+          </p>
+        </header>
+
+        <div class="arch-map">
+          <div class="arch-tabs" id="arch-tabs" role="group" aria-label="System view"></div>
+          <div class="arch-board">
+            <div class="arch-canvas" id="arch-canvas" aria-live="polite"></div>
+            <div class="arch-picker" id="arch-picker" aria-label="Components"></div>
+            <div class="arch-flow" id="arch-flow"></div>
+            <div class="arch-legend" id="arch-legend" aria-hidden="true"></div>
+          </div>
+          <section class="arch-inspector" id="arch-inspector" aria-live="polite"></section>
+        </div>
+
+        <p class="architecture-note">
+          Verified against <code class="inline-code">origin/main</code> at
+          <code class="inline-code">cf0a14c2</code>. All 226 cited source paths exist at that
+          revision; the Main delta view summarizes the 46 incoming commits.
+        </p>
+      </main>
+
+      <footer class="site-footer">
+        <a class="wordmark footer-wordmark" href="index.html" aria-label="Copse home">
+          <img class="wordmark-image" src="brand-wordmark.svg" alt="" width="78" height="25" />
+        </a>
+        <p>Free &amp; open source · Made for developers who pair with agents every day</p>
+        <div>
+          <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
+          <a href="architecture.html" aria-current="page">Architecture</a>
+          <a href="privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
 
     <script>
       ;(() => {
