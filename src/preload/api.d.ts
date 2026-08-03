@@ -154,6 +154,7 @@ export interface ApiClient {
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
       }) => void,
     ) => () => void
     onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
