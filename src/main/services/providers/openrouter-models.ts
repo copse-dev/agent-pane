@@ -11,6 +11,8 @@ export interface OpenRouterModelSummary {
   free: boolean
   /** `supported_parameters` advertises `tools` (i.e. can do function calling). */
   supportsTools: boolean
+  /** Whether the catalog explicitly says image is an accepted input modality. */
+  supportsImages?: boolean
   /** Catalog pricing converted from USD/token to USD/million tokens. */
   inputPricePerMTok: number | null
   outputPricePerMTok: number | null
@@ -22,6 +24,8 @@ export interface OpenRouterModelOption {
   name: string
   inputPricePerMTok: number | null
   outputPricePerMTok: number | null
+  /** Absent when the upstream catalog does not describe input modalities. */
+  supportsImages?: boolean
 }
 
 // The base is overridable via a (hidden) setting so e2e can point it at a local
@@ -69,6 +73,23 @@ function outputsText(architecture: unknown): boolean {
   return output.includes('text')
 }
 
+/**
+ * OpenRouter encodes the request/response shape as e.g. `text+image->text`.
+ * Missing architecture is unknown (not false): older/custom catalog rows may
+ * still accept images even though they do not advertise modalities.
+ */
+function imageInputSupport(architecture: unknown): boolean | undefined {
+  if (!isRecord(architecture)) return undefined
+  const inputModalities = architecture['input_modalities']
+  if (Array.isArray(inputModalities)) {
+    return inputModalities.some((modality) => modality === 'image')
+  }
+  const modality = architecture['modality']
+  if (typeof modality !== 'string' || !modality.trim()) return undefined
+  const input = modality.includes('->') ? (modality.split('->')[0] ?? '') : modality
+  return input.split('+').some((part) => part.trim() === 'image')
+}
+
 function supportsTools(supportedParameters: unknown): boolean {
   return Array.isArray(supportedParameters) && supportedParameters.includes('tools')
 }
@@ -79,12 +100,14 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
   const id = typeof rec['id'] === 'string' ? rec['id'] : null
   if (!id) return null
   if (!outputsText(rec['architecture'])) return null
+  const supportsImages = imageInputSupport(rec['architecture'])
   return {
     id,
     name: typeof rec['name'] === 'string' && rec['name'] ? rec['name'] : id,
     contextLength: parsePositiveInt(rec['context_length']),
     free: isFreePricing(rec['pricing']),
     supportsTools: supportsTools(rec['supported_parameters']),
+    ...(supportsImages !== undefined ? { supportsImages } : {}),
     inputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['prompt']),
     outputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['completion']),
   }
@@ -237,6 +260,7 @@ export async function listFreeOpenRouterModels(): Promise<OpenRouterModelOption[
       name: m.name,
       inputPricePerMTok: m.inputPricePerMTok,
       outputPricePerMTok: m.outputPricePerMTok,
+      ...(m.supportsImages !== undefined ? { supportsImages: m.supportsImages } : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
   if (getSetting<boolean>('openRouterZdrOnly', true)) {

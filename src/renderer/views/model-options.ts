@@ -32,7 +32,8 @@ export interface ModelOptionsApi {
   settings: Pick<ApiClient['settings'], 'availableProviders' | 'extraProviders' | 'get'>
   openRouter: Pick<ApiClient['openRouter'], 'models'>
   remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
-  lmStudio: Pick<ApiClient['lmStudio'], 'models'>
+  lmStudio: Pick<ApiClient['lmStudio'], 'models'> &
+    Partial<Pick<ApiClient['lmStudio'], 'modelInfo'>>
   packs?: Pick<ApiClient['packs'], 'list'>
 }
 import {
@@ -67,11 +68,19 @@ const OPENROUTER_GROUP = 'OpenRouter'
 
 const CHAT_DEFAULT_GROUP = 'Chat default'
 
+const KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
+  'mistral-small-latest',
+  'open-mistral-nemo',
+  'mistral-large-latest',
+] as const
+
 export interface ModelOption {
   value: string
   label: string
   group?: string
   disabled?: boolean
+  /** Image-input support when known; absent means the provider did not advertise it. */
+  supportsImages?: boolean
 }
 
 export function modelDisplayLabel(model: string): string {
@@ -112,6 +121,7 @@ async function packModelOptions(
             value: packModelValue(pack.id, route.id),
             label: `${route.label}${selectedWhileDisabled ? ' (pack disabled)' : ''}`,
             group: route.group ?? `${pack.name} — personal pack`,
+            ...(route.supportsImages !== undefined ? { supportsImages: route.supportsImages } : {}),
             ...(selectedWhileDisabled ? { disabled: true } : {}),
           },
         ]
@@ -179,7 +189,7 @@ async function openRouterOptions(
     /* keep the plain heading */
   }
 
-  let liveModels: Array<{ id: string; name: string }> = []
+  let liveModels: Array<{ id: string; name: string; supportsImages?: boolean }> = []
   try {
     liveModels = await api.openRouter.models()
   } catch {
@@ -196,17 +206,22 @@ async function openRouterOptions(
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
-  const add = (id: string, label: string): void => {
+  const add = (id: string, label: string, supportsImages?: boolean): void => {
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
     // Intellect-only hint (no catalog pricing for OpenRouter ids), matched via
     // the measurement alias map. `group` carries the ZDR/retention annotation.
     const hint = modelIntellectHint(id)
-    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
+    entries.push({
+      value,
+      label: hint ? `${label} — ${hint}` : label,
+      group,
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
+    })
   }
 
-  for (const model of liveModels) add(model.id, model.name || model.id)
+  for (const model of liveModels) add(model.id, model.name || model.id, model.supportsImages)
   if (customId) add(customId, `${customId} (custom)`)
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
@@ -257,7 +272,20 @@ function extraProviderOptions(
     // matched via the measurement alias map. `group` carries the data-policy
     // annotation (may-train / retention-varies).
     const hint = modelIntellectHint(id)
-    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
+    const supportsImages =
+      provider.id === 'gemini'
+        ? true
+        : provider.id === 'deepseek' ||
+            (provider.id === 'mistral' &&
+              KNOWN_TEXT_ONLY_MISTRAL_MODELS.some((known) => known === id))
+          ? false
+          : undefined
+    entries.push({
+      value,
+      label: hint ? `${label} — ${hint}` : label,
+      group,
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
+    })
   }
 
   for (const model of provider.models) add(model.id, model.id)
@@ -411,7 +439,12 @@ export async function fetchModelOptions(
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue
     const hint = cloudModelIntellectHint(value)
-    options.push({ value, label: hint ? `${label} — ${hint}` : label, group: cloudGroup })
+    options.push({
+      value,
+      label: hint ? `${label} — ${hint}` : label,
+      group: cloudGroup,
+      supportsImages: true,
+    })
   }
 
   options.push(...(await openRouterOptions(api, isAvailable('openrouter'), current)))
@@ -457,17 +490,24 @@ export async function fetchModelOptions(
 
   // Local models: only listed when a local server is reachable and exposes some.
   const lmGroup = 'Local models'
-  let models: string[]
+  let models: Array<{ id: string; supportsImages?: boolean }>
   try {
-    models = await api.lmStudio.models()
+    const modelInfo = api.lmStudio.modelInfo ? await api.lmStudio.modelInfo() : []
+    models = modelInfo.length > 0 ? modelInfo : (await api.lmStudio.models()).map((id) => ({ id }))
   } catch {
     models = []
   }
-  for (const id of models) {
+  for (const model of models) {
+    const { id } = model
     const hint = [localModelRoleHint(id), localModelIntellectHint(id)]
       .filter((part): part is string => part !== null)
       .join(' · ')
-    options.push({ value: `lmstudio:${id}`, label: hint ? `${id} — ${hint}` : id, group: lmGroup })
+    options.push({
+      value: `lmstudio:${id}`,
+      label: hint ? `${id} — ${hint}` : id,
+      group: lmGroup,
+      ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
+    })
   }
 
   if (current && !options.some((o) => o.value === current)) {

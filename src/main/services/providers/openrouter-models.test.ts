@@ -17,7 +17,7 @@ const SAMPLE = {
       context_length: 262144,
       pricing: { prompt: '0', completion: '0' },
       supported_parameters: ['tools', 'temperature'],
-      architecture: { modality: 'text->text', output_modalities: ['text'] },
+      architecture: { modality: 'text+image->text', output_modalities: ['text'] },
     },
     {
       id: 'z-ai/glm-4.5-air:free',
@@ -88,12 +88,14 @@ describe('parseOpenRouterModelsPayload', () => {
     assert.equal(qwen.contextLength, 262144)
     assert.equal(qwen.inputPricePerMTok, 0)
     assert.equal(qwen.outputPricePerMTok, 0)
+    assert.equal(qwen.supportsImages, true)
 
     const claude = models.find((m) => m.id === 'anthropic/claude-3.5-sonnet')
     assert.ok(claude)
     assert.equal(claude.free, false)
     assert.equal(claude.inputPricePerMTok, 3)
     assert.equal(claude.outputPricePerMTok, 15)
+    assert.equal(claude.supportsImages, false)
   })
 
   it('tolerates null pricing and array-shaped junk rows', () => {

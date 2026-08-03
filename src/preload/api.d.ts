@@ -108,6 +108,13 @@ export interface ApiClient {
   }
   agent: {
     run: (projectId: string, threadId: string, prompt: string) => Promise<void>
+    describeImages: (
+      projectId: string,
+      threadId: string,
+      model: string,
+      userPrompt: string,
+      images: string[],
+    ) => Promise<{ text: string }>
     prepareCheckout: (
       projectId: string,
       threadId: string,
@@ -343,6 +350,7 @@ export interface ApiClient {
         name: string
         inputPricePerMTok: number | null
         outputPricePerMTok: number | null
+        supportsImages?: boolean
       }>
     >
   }
@@ -379,6 +387,7 @@ export interface ApiClient {
       apiKey?: string,
     ) => Promise<{ ok: boolean; models?: string[]; error?: string }>
     models: () => Promise<string[]>
+    modelInfo: () => Promise<Array<{ id: string; supportsImages?: boolean }>>
     detect: (
       url?: string,
       apiKey?: string,

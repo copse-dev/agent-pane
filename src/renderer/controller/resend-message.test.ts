@@ -152,6 +152,19 @@ test('carries the prompt images and the thread working context', () => {
   assert.deepEqual(resent?.images, ['data:image/png;base64,abc'])
 })
 
+test('can explicitly resend an image prompt as text only', () => {
+  const store = createProjectStore()
+  const { api, runs } = fakeApi()
+  const threadId = createThread(store)
+  addMessage(store, threadId, 'user', 'What is wrong here?', ['data:image/png;base64,abc'])
+
+  const result = resendLastMessage(store, api, threadId, { includeImages: false })
+
+  assert.equal(result?.omittedImages, true)
+  assert.equal(runs[0]?.[1].content, 'What is wrong here?')
+  assert.equal(getThread(store, threadId).messages.at(-1)?.images, undefined)
+})
+
 test('strips paste placeholders and reports the attachments it cannot rebuild', () => {
   const store = createProjectStore()
   const { api, runs } = fakeApi()
