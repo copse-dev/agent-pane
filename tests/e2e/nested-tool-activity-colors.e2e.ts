@@ -15,7 +15,7 @@ describe('nested tool activity colors', () => {
     resetUserData()
   })
 
-  it('mutes rollup-body spirals while the outer activity stays green', async () => {
+  it('mutes rollup-body spirals while the outer activity uses the action accent', async () => {
     const rollupElement = $('.tool-card-rollup')
     await rollupElement.waitForExist({ timeout: 15_000 })
 
@@ -54,7 +54,7 @@ describe('nested tool activity colors', () => {
           outerColor: null,
           nestedToolColor: null,
           nestedReasoningColor: null,
-          successColor: null,
+          accentColor: null,
           secondaryColor: null,
         }
       }
@@ -67,14 +67,14 @@ describe('nested tool activity colors', () => {
       const outerIcon = outerSlot.querySelector('.reasoning-activity-icon')
       const nestedToolIcon = nestedToolSlot.querySelector('.reasoning-activity-icon')
       const nestedReasoningIcon = nestedReasoningHost.querySelector('.reasoning-activity-icon')
-      const successProbe = document.createElement('span')
+      const accentProbe = document.createElement('span')
       const secondaryProbe = document.createElement('span')
-      successProbe.style.color = 'var(--success)'
+      accentProbe.style.color = 'var(--accent)'
       secondaryProbe.style.color = 'var(--text-secondary)'
-      document.body.append(successProbe, secondaryProbe)
-      const successColor = getComputedStyle(successProbe).color
+      document.body.append(accentProbe, secondaryProbe)
+      const accentColor = getComputedStyle(accentProbe).color
       const secondaryColor = getComputedStyle(secondaryProbe).color
-      successProbe.remove()
+      accentProbe.remove()
       secondaryProbe.remove()
 
       return {
@@ -84,12 +84,12 @@ describe('nested tool activity colors', () => {
         nestedReasoningColor: nestedReasoningIcon
           ? getComputedStyle(nestedReasoningIcon).color
           : null,
-        successColor,
+        accentColor,
         secondaryColor,
       }
     })
     expect(colors.missing).toEqual([])
-    expect(colors.outerColor).toBe(colors.successColor)
+    expect(colors.outerColor).toBe(colors.accentColor)
     expect(colors.nestedToolColor).toBe(colors.secondaryColor)
     expect(colors.nestedReasoningColor).toBe(colors.secondaryColor)
     expect(colors.nestedToolColor).not.toBe(colors.outerColor)
