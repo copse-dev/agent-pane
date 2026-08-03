@@ -17,11 +17,10 @@
 :root {
   /* ---- Whole-app tint --------------------------------------------------
      Every neutral surface is mixed from a base grey plus `--tint-amount` of
-     `--tint-hue`. The default is deliberately restrained; the exact Copse
-     marketing-site palette is reserved for the Strong brand-tint override in
-     themes.css. Other hues still wash through these neutral surface steps. */
-  --tint-hue: var(--accent);
-  --tint-amount: 0%;
+     `--tint-hue`. These values match the first-run Appearance defaults so the
+     renderer has the right colour before startup settings finish loading. */
+  --tint-hue: #244c25;
+  --tint-amount: 4%;
 
   --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
   --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #252526);
@@ -49,9 +48,8 @@
   --chat-gradient-bottom: color-mix(in srgb, var(--bg-elevated) 24%, var(--bg-base));
   --chat-gradient-glow: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
   /* One user-configurable interaction hue drives primary actions, selection,
-     message emphasis, and theme-derived links. The default is the exact neon
-     green used by the Copse marketing site. */
-  --accent-color: #20fd85;
+     message emphasis, and theme-derived links. */
+  --accent-color: #ff93d0;
   --accent: var(--accent-color);
   --accent-fill: var(--accent-color);
   --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, white);

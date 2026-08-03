@@ -40,6 +40,11 @@ Object.assign(globalThis, {
   // without this, tests that need `.style` / `.hidden` either throw at runtime
   // or fail typecheck after narrowing only to Element.
   HTMLElement: win.HTMLElement,
+  HTMLInputElement: win.HTMLInputElement,
+  HTMLSelectElement: win.HTMLSelectElement,
+  HTMLTextAreaElement: win.HTMLTextAreaElement,
+  HTMLFormElement: win.HTMLFormElement,
+  FormData: win.FormData,
   // Labels wrap settings/routing selects; `instanceof HTMLLabelElement` must
   // resolve to happy-dom's class the same way HTMLElement does.
   HTMLLabelElement: win.HTMLLabelElement,

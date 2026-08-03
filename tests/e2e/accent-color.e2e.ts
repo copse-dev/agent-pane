@@ -53,7 +53,17 @@ async function accentSnapshot(): Promise<AccentSnapshot | null> {
   })
 }
 
-describe('custom accent colour', () => {
+async function setTintStrength(strength: 'off' | 'subtle' | 'medium' | 'strong'): Promise<void> {
+  await browser.execute((nextStrength) => {
+    const input = document.querySelector<HTMLInputElement>('input[name="uiTintStrength"]')
+    if (!input) return
+    input.value = String(['off', 'subtle', 'medium', 'strong'].indexOf(nextStrength))
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }, strength)
+}
+
+describe('custom interface colours', () => {
   before(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
@@ -71,19 +81,19 @@ describe('custom accent colour', () => {
     resetUserData()
   })
 
-  it('uses restrained Copse surfaces by default and reserves the site palette for Strong', async () => {
+  it('uses the requested defaults and supports stronger interface tinting', async () => {
     const defaults = await accentSnapshot()
     expect(defaults).not.toBeNull()
-    expect(defaults?.accentColor).toBe('#20fd85')
+    expect(defaults?.accentColor).toBe('#ff93d0')
     // Chromium serializes a color-mix result through the modern color(srgb)
     // syntax on macOS and legacy rgb() on some Linux runners.
-    expect(['rgb(29, 31, 31)', 'color(srgb 0.112941 0.120157 0.119686)']).toContain(
+    expect(['rgb(30, 32, 30)', 'color(srgb 0.118588 0.124863 0.118745)']).toContain(
       defaults?.bodyBackground,
     )
     expect(defaults?.tintStrength).toBe('subtle')
     expect(defaults?.bodyFontFamily).toContain('Pliant')
     expect(defaults?.textOnAccent).toBe('#444444')
-    expect(defaults?.submitBackground).toBe('rgb(32, 253, 133)')
+    expect(defaults?.submitBackground).toBe('rgb(255, 147, 208)')
     expect(defaults?.submitColor).toBe('rgb(68, 68, 68)')
     expect(defaults?.submitFontWeight).toBe('600')
     expect(defaults?.submitHeight).toBe(36)
@@ -100,11 +110,11 @@ describe('custom accent colour', () => {
       timeout: 30_000,
       timeoutMsg: 'expected the saved/default accent to load into Appearance settings',
     })
-    expect((await accentInput.getValue()).toLowerCase()).toBe('#20fd85')
+    expect((await accentInput.getValue()).toLowerCase()).toBe('#ff93d0')
     const tintInput = await $('input[name="uiTintColor"]')
-    const tintStrength = await $('select[name="uiTintStrength"]')
-    expect((await tintInput.getValue()).toLowerCase()).toBe('#002e2b')
-    expect(await tintStrength.getValue()).toBe('subtle')
+    const tintStrength = await $('input[name="uiTintStrength"]')
+    expect((await tintInput.getValue()).toLowerCase()).toBe('#244c25')
+    expect(await tintStrength.getValue()).toBe('1')
     const settingsActions = await browser.execute(() => {
       const save = document.querySelector<HTMLElement>('.settings-buttons button[type="submit"]')
       const cancel = document.querySelector<HTMLElement>('.settings-buttons button[type="button"]')
@@ -136,7 +146,12 @@ describe('custom accent colour', () => {
       () => getComputedStyle(document.querySelector('.settings-section.active h3')!).fontFamily,
     )
     expect(headingFont).toContain('Averia Serif Libre')
-    await tintStrength.selectByAttribute('value', 'strong')
+    await setTintStrength('strong')
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => document.documentElement.dataset['tintStrength'] === 'strong'),
+      { timeout: 10_000, timeoutMsg: 'expected tint strength to preview before saving' },
+    )
     await $('.settings-buttons button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
     await browser.waitUntil(
@@ -144,10 +159,12 @@ describe('custom accent colour', () => {
         const snapshot = await accentSnapshot()
         return (
           snapshot?.tintStrength === 'strong' &&
-          ['rgb(0, 46, 43)', 'color(srgb 0 0.180392 0.168627)'].includes(snapshot.bodyBackground)
+          ['rgb(31, 37, 31)', 'color(srgb 0.121412 0.14651 0.122039)'].includes(
+            snapshot.bodyBackground,
+          )
         )
       },
-      { timeout: 10_000, timeoutMsg: 'expected Strong to apply the exact Copse site palette' },
+      { timeout: 10_000, timeoutMsg: 'expected Strong to apply the selected interface tint' },
     )
     await saveAppScreenshot('accent-strong-green.png')
 
@@ -160,6 +177,10 @@ describe('custom accent colour', () => {
       input.value = '#7c3aed'
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await browser.waitUntil(async () => (await accentSnapshot())?.accentColor === '#7c3aed', {
+      timeout: 10_000,
+      timeoutMsg: 'expected the accent colour to preview before saving',
     })
     const iconLabels = await browser.execute(() =>
       Array.from(document.querySelectorAll<HTMLElement>('.app-icon-label'), (label) =>
@@ -192,13 +213,21 @@ describe('custom accent colour', () => {
       const theme = document.querySelector<HTMLSelectElement>('select[name="theme"]')
       const accent = document.querySelector<HTMLInputElement>('input[name="uiAccentColor"]')
       const tint = document.querySelector<HTMLInputElement>('input[name="uiTintColor"]')
-      const strength = document.querySelector<HTMLSelectElement>('select[name="uiTintStrength"]')
+      const strength = document.querySelector<HTMLInputElement>('input[name="uiTintStrength"]')
       if (!theme || !accent || !tint || !strength) return
       theme.value = 'light'
-      accent.value = '#20fd85'
-      tint.value = '#002e2b'
-      strength.value = 'subtle'
+      accent.value = '#ff93d0'
+      tint.value = '#244c25'
+      strength.value = '1'
+      accent.dispatchEvent(new Event('change', { bubbles: true }))
+      tint.dispatchEvent(new Event('change', { bubbles: true }))
+      strength.dispatchEvent(new Event('change', { bubbles: true }))
+      theme.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    await browser.waitUntil(
+      async () => browser.execute(() => document.documentElement.dataset['theme'] === 'light'),
+      { timeout: 10_000, timeoutMsg: 'expected theme to preview before saving' },
+    )
     await $('.settings-buttons button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
     await browser.waitUntil(
@@ -211,15 +240,15 @@ describe('custom accent colour', () => {
       { timeout: 10_000, timeoutMsg: 'expected the restrained light theme to apply' },
     )
     const lightDefault = await accentSnapshot()
-    expect(lightDefault?.submitBackground).toBe('rgb(32, 253, 133)')
-    expect(['rgb(10, 76, 40)', 'color(srgb 0.0376471 0.297647 0.156471)']).toContain(
+    expect(lightDefault?.submitBackground).toBe('rgb(255, 147, 208)')
+    expect(['rgb(77, 44, 62)', 'color(srgb 0.3 0.172941 0.244706)']).toContain(
       lightDefault?.linkColor,
     )
     await saveAppScreenshot('accent-light-default.png')
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="appearance"]').click()
-    await $('select[name="uiTintStrength"]').selectByAttribute('value', 'medium')
+    await setTintStrength('medium')
     await $('.settings-buttons button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
     await browser.waitUntil(
@@ -227,12 +256,12 @@ describe('custom accent colour', () => {
         browser.execute(() => document.documentElement.dataset['tintStrength'] === 'medium'),
       { timeout: 10_000, timeoutMsg: 'expected the Medium light tint to apply' },
     )
-    expect((await accentSnapshot())?.submitBackground).toBe('rgb(32, 253, 133)')
+    expect((await accentSnapshot())?.submitBackground).toBe('rgb(255, 147, 208)')
     await saveAppScreenshot('accent-light-medium.png')
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="appearance"]').click()
-    await $('select[name="uiTintStrength"]').selectByAttribute('value', 'strong')
+    await setTintStrength('strong')
     await $('.settings-buttons button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
     await browser.waitUntil(
