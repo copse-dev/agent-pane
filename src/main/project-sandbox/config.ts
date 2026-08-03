@@ -540,7 +540,6 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'hooks'),
         join(internalRoot.commonGitDir, 'hooks/**'),
-        `${internalRoot.gitDir}/hooks/**`,
       ]
     : []
   return {

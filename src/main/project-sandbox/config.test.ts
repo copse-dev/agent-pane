@@ -261,6 +261,10 @@ describe('workspaceSandboxOverlay', () => {
       assert.ok(denyRead.includes(`${sibling}/**`))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'config')))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'hooks/**')))
+      // Linked worktrees load hooks from commonGitDir/hooks, never from their
+      // per-worktree admin directory. Denying the nonexistent latter path makes
+      // Linux bubblewrap abort while trying to create a read-only mount point.
+      assert.ok(!denyWrite.includes(join(registration.gitDir, 'hooks/**')))
       // Bug fix: the shared primary checkout must also be denied for reads —
       // ASRT default-allows all reads and the base home-deny only covers
       // layouts where the primary tree lives under $HOME. `tmpRoot` is a
