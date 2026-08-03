@@ -360,6 +360,35 @@ function createSubagentMessageEl(content: string, streaming: boolean, api: ApiCl
   return textEl
 }
 
+/**
+ * Does the subagent's own timeline already show this text?
+ *
+ * A subagent's result for the parent is its final assistant message verbatim
+ * (see `runSubagent`: `summary = assistantTexts.at(-1)`), so rendering both the
+ * timeline and the parent result printed the same summary twice — once inside
+ * the indented timeline, once again below it. Compared on collapsed whitespace
+ * so trailing-newline drift between the two copies still counts as a match.
+ */
+function timelineShowsText(session: SubagentSession, text: string): boolean {
+  const target = text.replace(/\s+/g, ' ').trim()
+  if (!target) return false
+  return session.messages.some((m) => m.content.replace(/\s+/g, ' ').trim() === target)
+}
+
+/**
+ * The result text to render below the timeline, or `''` when there is nothing
+ * left to add — the subagent already said it in the timeline above, or it has
+ * not settled yet.
+ */
+function parentResultText(
+  tc: ToolCall,
+  session: SubagentSession,
+  status: ToolCall['status'],
+): string {
+  if (status !== 'done' || !tc.result) return ''
+  return timelineShowsText(session, tc.result) ? '' : tc.result
+}
+
 function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['status'] {
   if (tc.status === 'running' || session.status === 'running') return 'running'
   if (session.status === 'error' || tc.status === 'error') return 'error'
@@ -494,7 +523,10 @@ function subagentChromeSignature(
   status: ToolCall['status'],
 ): string {
   const preview = status !== 'running' ? (session.summary ?? tc.result ?? '') : ''
-  const result = status === 'done' ? (tc.result ?? '') : ''
+  // The dedupe verdict is part of the chrome: a timeline that grows to include
+  // the result must drop the duplicate copy below it, even though `tc.result`
+  // itself never changed.
+  const result = parentResultText(tc, session, status)
   return JSON.stringify({
     label,
     status,
@@ -558,12 +590,13 @@ function populateSubagentCard(
 
   card.append(timeline)
 
-  if (tc.result && status === 'done') {
+  const parentResult = parentResultText(tc, session, status)
+  if (parentResult) {
     const resultEl = el('div', {
       class:
         'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
     })
-    setAssistantMarkdown(resultEl, tc.result, false, api)
+    setAssistantMarkdown(resultEl, parentResult, false, api)
     card.append(resultEl)
   }
 
@@ -1607,7 +1640,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       )
       .forEach((node) => {
         const id = node.dataset['toolId']
-        if (id) userExpandedTools.add(id)
+        // Running tools are auto-expanded so their work is visible as it
+        // streams; that is not a user preference. Without this guard the
+        // auto-expansion was read back as one on the very next tick and
+        // pinned the card open forever — an explore subagent that had just
+        // dumped a wall of file text never contracted once it finished (the
+        // same guard rollups and groups above already apply).
+        if (id && node.dataset['status'] !== 'running') userExpandedTools.add(id)
       })
 
     const nestReasoning = Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
