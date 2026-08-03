@@ -30,7 +30,16 @@ try {
       '@copse/llm': resolve('packages/llm/src'),
       '@copse/plan-usage': resolve('packages/plan-usage/src'),
     },
-    external: ['electron', 'node-pty', 'jsdom', '@mozilla/readability', 'turndown', 'mermaid'],
+    // Preserve the dependency's real ESM import.meta.url for vendored runtime assets.
+    external: [
+      'electron',
+      'node-pty',
+      'jsdom',
+      '@mozilla/readability',
+      'turndown',
+      'mermaid',
+      '@anthropic-ai/sandbox-runtime',
+    ],
     logLevel: 'silent',
   })
 

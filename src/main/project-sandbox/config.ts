@@ -1,6 +1,6 @@
-import { accessSync, mkdirSync, realpathSync, statSync } from 'node:fs'
+import { accessSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getSetting } from '../services/storage/settings.ts'
 import {
@@ -86,6 +86,45 @@ function gitConfigReadPaths(): string[] {
     join(home, '.gitignore'),
     join(home, '.gitignore_global'),
   ]
+}
+
+/**
+ * Deny the existing siblings around a nested execution root without masking
+ * the whole checkout tree.
+ *
+ * ASRT's Linux backend implements a directory read deny with a tmpfs mount.
+ * Denying `${checkoutRoot}/**` therefore hides the checkout and re-binds the
+ * nested execution root on top. A later mandatory deny for a missing file such
+ * as `.gitconfig` then cannot create its bind-mount target and bubblewrap
+ * refuses to start. Enumerating siblings preserves the same read boundary while
+ * leaving the ancestor chain mounted normally. The overlay is rebuilt for every
+ * command, and only the execution root is writable, so a sandboxed command
+ * cannot create a new sibling between enumeration and execution.
+ */
+function nestedCheckoutSiblingDenyPaths(checkoutRoot: string, executionRoot: string): string[] {
+  const relativeRoot = relative(checkoutRoot, executionRoot)
+  const segments = relativeRoot.split(sep).filter(Boolean)
+  if (segments.length === 0 || relativeRoot.startsWith(`..${sep}`) || relativeRoot === '..') {
+    return []
+  }
+
+  const denyPaths: string[] = []
+  let cursor = checkoutRoot
+  for (const segment of segments) {
+    try {
+      for (const entry of readdirSync(cursor, { withFileTypes: true })) {
+        if (entry.name === segment || (cursor === checkoutRoot && entry.name === '.git')) continue
+        const sibling = join(cursor, entry.name)
+        denyPaths.push(sibling, `${sibling}/**`)
+      }
+    } catch {
+      // Fail closed if the checkout changes or becomes unreadable while the
+      // overlay is being built. This is the former broad-deny behaviour.
+      return [`${checkoutRoot}/**`]
+    }
+    cursor = join(cursor, segment)
+  }
+  return [...new Set(denyPaths)]
 }
 
 /**
@@ -449,12 +488,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.checkoutRoot, '.git'),
         internalRoot.gitDir,
         `${internalRoot.gitDir}/**`,
-        internalRoot.commonGitDir,
         join(internalRoot.commonGitDir, 'objects/**'),
         join(internalRoot.commonGitDir, 'refs/**'),
         join(internalRoot.commonGitDir, 'logs/**'),
         join(internalRoot.commonGitDir, 'info/**'),
-        join(internalRoot.commonGitDir, 'worktrees'),
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'packed-refs'),
         join(internalRoot.commonGitDir, 'shallow'),
@@ -489,21 +526,18 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       ? [internalRoot.primaryCheckoutRoot, `${internalRoot.primaryCheckoutRoot}/**`]
       : []
   // Nested execution root (e.g. `worktree/packages/app` under `worktree`):
-  // deny the enclosing worktree's remaining children so a sibling package can
-  // no longer be read. The exact `checkoutRoot` path stays out of the deny
-  // list — `worktreeDiscoveryRead` still needs it in `allowRead` for git's
-  // ancestor probe — and `${executionRoot}/**` in allowRead is more specific
-  // than `${checkoutRoot}/**`, so ASRT keeps the agent's own tree readable.
+  // deny siblings at every level of the ancestor chain. Do not broadly deny
+  // `${checkoutRoot}/**`: Linux ASRT realizes that as a tmpfs and can no longer
+  // materialize mandatory deny mounts inside the re-bound execution root.
   const nestedCheckoutDeny =
     internalRoot && internalRoot.root !== internalRoot.checkoutRoot
-      ? [`${internalRoot.checkoutRoot}/**`]
+      ? nestedCheckoutSiblingDenyPaths(internalRoot.checkoutRoot, internalRoot.root)
       : []
   const gitAdminDenyWrite = internalRoot
     ? [
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'hooks'),
         join(internalRoot.commonGitDir, 'hooks/**'),
-        `${internalRoot.gitDir}/hooks/**`,
       ]
     : []
   return {
