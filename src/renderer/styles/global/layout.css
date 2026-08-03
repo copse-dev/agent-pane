@@ -1415,6 +1415,10 @@
   outline: none;
   border-color: var(--accent);
 }
+.browser-url-input::selection {
+  color: var(--text-on-accent);
+  background: var(--accent);
+}
 .browser-go-btn {
   flex-shrink: 0;
   padding: 4px 10px;
@@ -1470,6 +1474,11 @@
 .browser-menu-item .ui-icon {
   flex-shrink: 0;
   color: var(--text-secondary);
+}
+.browser-menu-separator {
+  height: 1px;
+  margin: var(--spacing-xs);
+  background: var(--border);
 }
 .browser-webview-host {
   flex: 1;
