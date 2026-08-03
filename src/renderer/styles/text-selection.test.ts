@@ -58,9 +58,11 @@ describe('text-selection policy', () => {
   })
 
   it('keeps the permission prompt non-selectable (it is chrome, not content)', () => {
-    assert.ok(
-      !selectableSelectors().includes('.approval-body'),
-      '.approval-body is a permission prompt message and must stay non-selectable',
-    )
+    for (const selector of ['.approval-body', '.approval-advice', '.approval-footer']) {
+      assert.ok(
+        !selectableSelectors().includes(selector),
+        `${selector} is a permission prompt message and must stay non-selectable`,
+      )
+    }
   })
 })

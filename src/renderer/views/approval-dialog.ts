@@ -101,6 +101,8 @@ export function mountApprovalDialog(
     threadId: string | undefined
     title: string
     body: string
+    bodyAdvice: string | undefined
+    bodyFooter: string | undefined
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
@@ -216,7 +218,13 @@ export function mountApprovalDialog(
           readComparisonModels = pickers.read
           rowChildren.push(pickers.root)
         } else {
+          if (req.bodyAdvice) {
+            rowChildren.push(el('div', { class: 'approval-advice' }, req.bodyAdvice))
+          }
           rowChildren.push(el('pre', { class: 'approval-body' }, req.body))
+          if (req.bodyFooter) {
+            rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
+          }
         }
         return el('div', { class: 'approval-item' }, ...rowChildren)
       }),
@@ -369,6 +377,8 @@ export function mountApprovalDialog(
       threadId,
       title,
       body,
+      bodyAdvice,
+      bodyFooter,
       type,
       allowRemember,
       rememberLabel,
@@ -380,6 +390,8 @@ export function mountApprovalDialog(
         threadId,
         title,
         body,
+        bodyAdvice,
+        bodyFooter,
         type,
         allowRemember,
         rememberLabel,

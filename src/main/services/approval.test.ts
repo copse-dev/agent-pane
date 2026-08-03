@@ -13,6 +13,7 @@ import {
   setApprovalHandler,
   trackAcpPermissionToolCall,
   type ApprovalRequest,
+  type ApprovalResponse,
 } from './approval.ts'
 import { readDecisionLog } from './security/decision-log-store.ts'
 import {
@@ -153,6 +154,25 @@ describe('requestApproval pluggable transport', () => {
       requestApproval({ ...req, body: 'different command' }),
     ])
     assert.equal(handlerCalls, 2)
+  })
+
+  it('does not coalesce requests that differ in advice or footer', async () => {
+    const pending: Array<(response: ApprovalResponse) => void> = []
+    setApprovalHandler(
+      (request) =>
+        new Promise((resolve) => {
+          assert.equal(request.body, req.body)
+          pending.push(resolve)
+        }),
+    )
+
+    const first = requestApproval({ ...req, bodyAdvice: 'First warning' })
+    const second = requestApproval({ ...req, bodyAdvice: 'Second warning' })
+    const third = requestApproval({ ...req, bodyFooter: 'Different question' })
+
+    assert.equal(pending.length, 3)
+    for (const resolve of pending) resolve({ approved: false, remember: false })
+    await Promise.all([first, second, third])
   })
 
   it('does not coalesce identical requests across scoped headless handlers', async () => {
