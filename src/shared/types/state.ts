@@ -19,7 +19,7 @@ export type Theme = 'light' | 'dark'
 // keeps both: `themePreference` (this) and `theme` (the resolved value panes read).
 export type ThemePreference = 'system' | Theme
 export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light', 'dark']
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system'
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'dark'
 export function isThemePreference(value: unknown): value is ThemePreference {
   return typeof value === 'string' && (THEME_PREFERENCES as readonly string[]).includes(value)
 }

@@ -1,4 +1,4 @@
-import type { AppState } from '@shared/types'
+import { DEFAULT_THEME_PREFERENCE, type AppState } from '@shared/types'
 import { DEFAULT_LAYOUT } from '@shared/types/layout.ts'
 import type { StoreEvents } from './events.ts'
 
@@ -28,7 +28,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     rightPanelMode: 'explorer',
     layout: { ...DEFAULT_LAYOUT },
     theme: 'dark',
-    themePreference: 'system',
+    themePreference: DEFAULT_THEME_PREFERENCE,
     fontSize: 14,
     uiScale: 1,
     autoPortraitRightPanel: true,

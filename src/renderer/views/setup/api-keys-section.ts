@@ -213,6 +213,7 @@ export function createApiKeysSection(
   }
 
   async function saveKeys(): Promise<void> {
+    let savedAny = false
     for (const field of fields) {
       const key = field.input.value.trim()
       if (!key) {
@@ -228,6 +229,7 @@ export function createApiKeysSection(
       }
       if (result.ok) {
         field.input.value = ''
+        savedAny = true
       } else {
         // Declined (or still refused): leave the entered value in place and flag
         // that it was not saved so the user can retry or set up a keyring first.
@@ -235,7 +237,7 @@ export function createApiKeysSection(
         field.status.className = keyStatusClass(false)
       }
     }
-    await refreshKeyStatus()
+    if (savedAny) await refreshKeyStatus()
   }
 
   return { root: fieldset, refreshKeyStatus, saveKeys }
