@@ -20,8 +20,13 @@ export function bindChatComposerLayout(store: AppStore): () => void {
 
     if (centered) {
       pane.style.setProperty('--chat-composer-height', '0px')
-      const composer = input.querySelector<HTMLElement>('.prompt-input')
-      composer?.focus()
+      // The browser demo can be embedded high on another page. Taking focus
+      // there focuses its iframe too, which scrolls the containing page back to
+      // the demo while a visitor is reading further down.
+      if (document.documentElement.dataset['demoEmbedded'] !== 'on') {
+        const composer = input.querySelector<HTMLElement>('.prompt-input')
+        composer?.focus({ preventScroll: true })
+      }
       return
     }
 

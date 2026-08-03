@@ -787,7 +787,7 @@ footer a:hover {
 }
 
 .marketing-site .nav-links a,
-.marketing-site .nav-release {
+.marketing-site .nav-cta {
   font-size: 0.875rem;
   font-weight: 600;
   text-decoration: none;
@@ -802,7 +802,7 @@ footer a:hover {
   color: var(--green);
 }
 
-.marketing-site .nav-release {
+.marketing-site .nav-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -813,6 +813,11 @@ footer a:hover {
   border-radius: 999px;
   color: var(--forest);
   background: var(--green);
+}
+
+.marketing-site .nav-cta:hover {
+  color: var(--forest);
+  background: var(--pink);
 }
 
 .marketing-site main {
@@ -983,116 +988,94 @@ footer a:hover {
   background: var(--green);
 }
 
-/*
-  The figure is now the panel plus its caption, so the clipped, rounded panel
-  treatment moved down to `.hero-demo` — the caption has to sit outside it,
-  otherwise it lands on top of the demo's own composer.
-*/
 .marketing-site .hero-visual {
   position: relative;
   z-index: 1;
   align-self: center;
   margin: 0;
-  /* The panel's `min-width` used to be neutralised by `overflow: hidden` here
-     (a scroll container's automatic minimum size is zero). With the clipping
-     moved down to `.hero-demo`, this grid item would otherwise take its minimum
-     size from the screenshot's `min-width` and push the whole hero — headline
-     included — wider than the viewport. */
   min-width: 0;
 }
 
 .marketing-site .hero-demo {
   position: relative;
   display: block;
+  height: auto;
+  aspect-ratio: 8 / 5;
   overflow: hidden;
   contain: paint;
   border-radius: 22px 0 0 22px;
-  background: var(--forest-raised);
+  background: #202220;
   box-shadow: none;
-}
-
-.marketing-site .hero-visual img {
-  display: block;
-  width: 100%;
-  max-width: none;
-  height: 590px;
-  min-width: 714px;
-  min-height: 590px;
-  object-fit: cover;
-  object-position: left center;
-  opacity: 0.76;
-  filter: saturate(0.68) sepia(0.08);
-}
-
-/*
-  Live demo layer. The screenshot stays in flow and sizes the panel; the iframe
-  is laid over it and only becomes visible once `hero-demo.js` sees it load. So
-  the hero holds its exact geometry whether the demo appears or not, and a
-  failed load degrades to the picture rather than to a hole.
-*/
-.marketing-site .hero-demo-poster {
-  transition: opacity 600ms ease;
 }
 
 .marketing-site .hero-demo-frame {
   position: absolute;
-  top: 0;
-  left: 0;
-  /* Rendered at a desktop viewport, then scaled to the panel's height — the
-     overflowing width crops on the right, like the screenshot's
-     `object-position: left center`. hero-demo.js keeps the scale in step with
-     the panel; the fallback is the 590/800 the design lays out at. */
+  top: var(--hero-demo-top, 0);
+  left: var(--hero-demo-left, 0);
   width: 1280px;
   height: 800px;
   border: 0;
   transform: scale(var(--hero-demo-scale, 0.7375));
   transform-origin: top left;
-  opacity: 0;
-  transition: opacity 700ms ease;
-  /* Decorative: the walkthrough drives itself, and clicks would fight the page
-     (focus traps, captured scroll). The caption link opens the real demo. */
   pointer-events: none;
-  /* Lighter than the screenshot's treatment — moving text has to stay legible —
-     but tinted enough to belong to the same hero. */
+  opacity: 0.94;
   filter: saturate(0.86) sepia(0.04);
 }
 
-.marketing-site .hero-demo.is-live .hero-demo-frame {
-  opacity: 0.94;
+.marketing-site .hero-demo.is-interactive .hero-demo-frame {
+  pointer-events: auto;
 }
 
-.marketing-site .hero-demo.is-live .hero-demo-poster {
-  opacity: 0;
+.marketing-site .hero-demo-activate {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 20px 18px;
+  border: 0;
+  color: var(--cream);
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
 }
 
-.marketing-site .hero-demo-caption {
-  padding: 12px 24px 0 0;
-  color: var(--white-muted);
-  font-size: 0.8rem;
-  line-height: 1.5;
-  text-align: right;
+.marketing-site .hero-demo-activate span {
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 253, 247, 0.28);
+  border-radius: 999px;
+  background: rgba(0, 37, 33, 0.78);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1;
+  backdrop-filter: blur(8px);
 }
 
-.marketing-site .hero-demo-caption a {
-  color: var(--green);
+.marketing-site .hero-demo.is-interactive .hero-demo-activate {
+  display: none;
+}
+
+.marketing-site .hero-demo-popout {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  margin: 0 16px 10px auto;
+  border: 1px solid rgba(255, 253, 247, 0.28);
+  border-radius: 6px;
+  color: rgba(255, 253, 247, 0.76);
+  background: rgba(255, 253, 247, 0.07);
+  font-size: 13px;
+  line-height: 1;
   text-decoration: none;
-  white-space: nowrap;
+  backdrop-filter: blur(8px);
 }
 
-.marketing-site .hero-demo-caption a:hover {
-  text-decoration: underline;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  /* hero-demo.js already declines to embed the demo here; belt and braces in
-     case the frame was inserted before the preference changed. */
-  .marketing-site .hero-demo-frame {
-    display: none;
-  }
-
-  .marketing-site .hero-demo.is-live .hero-demo-poster {
-    opacity: 0.76;
-  }
+.marketing-site .hero-demo-popout:hover {
+  color: var(--cream);
+  border-color: var(--green);
+  background: rgba(255, 253, 247, 0.12);
 }
 
 .marketing-site .line-field {
@@ -1197,21 +1180,67 @@ footer a:hover {
 }
 
 .marketing-site .feature-stage-image {
+  position: relative;
   margin: 0;
   overflow: hidden;
   border-radius: 20px;
   background: var(--forest-raised);
 }
 
+.marketing-site .feature-stage-image::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 14px;
+  left: 18px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow:
+    16px 0 0 #febc2e,
+    32px 0 0 #28c840;
+  pointer-events: none;
+}
+
+.marketing-site .feature-stage-image::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 68px;
+  height: 36px;
+  border-radius: 18px 0 0 0;
+  background: #242525;
+  pointer-events: none;
+}
+
 .marketing-site .feature-stage-image img {
   display: block;
   width: 100%;
   height: auto;
-  min-height: 620px;
+  min-height: 600px;
+  border-radius: 18px 18px 0 0;
   object-fit: cover;
-  object-position: center;
-  opacity: 0.78;
-  filter: saturate(0.65);
+  object-position: left top;
+  opacity: 0.92;
+  filter: saturate(0.82);
+  transition: transform 180ms ease;
+}
+
+.marketing-site .feature-stage-image img.is-detail {
+  transform: scale(1.45);
+}
+
+.marketing-site .feature-stage-image figcaption {
+  position: relative;
+  z-index: 1;
+  padding: 16px 20px 18px;
+  color: var(--white-muted);
+  border-top: 1px solid rgba(32, 253, 133, 0.22);
+  background: var(--forest-raised);
+  font-size: 0.83rem;
 }
 
 .marketing-site .feature-list {
@@ -1232,11 +1261,40 @@ footer a:hover {
   line-height: 1.2;
 }
 
+.marketing-site .feature-trigger {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+}
+
+.marketing-site .feature-trigger::after {
+  content: '+';
+  float: right;
+  color: var(--green);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+}
+
+.marketing-site .feature-trigger[aria-expanded='true']::after {
+  content: '−';
+}
+
 .marketing-site .feature-list-item p {
+  display: none;
   margin: 24px 0 0;
   color: var(--cream);
   font-size: 1rem;
   line-height: 1.75;
+}
+
+.marketing-site .feature-list-item.is-expanded p {
+  display: block;
 }
 
 .marketing-site .pill-centered {
@@ -1257,24 +1315,89 @@ footer a:hover {
 }
 
 .marketing-site .spotlight-card figure {
+  --screenshot-top: 26px;
+  --screenshot-left: 26px;
+  position: relative;
   height: 300px;
   margin: 0 0 28px;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: 40px;
   background: var(--green);
 }
 
+.marketing-site .spotlight-card figure::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--screenshot-top) + 8px);
+  left: calc(var(--screenshot-left) + 10px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow:
+    10px 0 0 #febc2e,
+    20px 0 0 #28c840;
+  pointer-events: none;
+}
+
+.marketing-site .spotlight-card figure::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: var(--screenshot-top);
+  left: var(--screenshot-left);
+  width: 44px;
+  height: 22px;
+  border-radius: 14px 0 0 0;
+  background: #242525;
+  pointer-events: none;
+}
+
 .marketing-site .spotlight-card img {
+  position: absolute;
+  top: 26px;
+  left: 26px;
   display: block;
-  width: 100%;
-  height: 100%;
-  padding: 26px 0 0 26px;
+  width: calc(100% - 52px);
+  height: calc(100% - 52px);
+  border-radius: 14px;
+  background: var(--forest-deep);
   object-fit: cover;
   object-position: left top;
 }
 
-.marketing-site .spotlight-card h3,
-.marketing-site .providers h2 {
+.marketing-site .spotlight-card-zoomed img {
+  width: calc(100% - 26px);
+  height: calc(100% - 26px);
+}
+
+.marketing-site .spotlight-card-zoomed-bottom-right img {
+  top: 0;
+  left: 0;
+  border-radius: 0 0 14px 0;
+  object-position: right bottom;
+}
+
+.marketing-site .spotlight-card-zoomed-bottom-right figure {
+  --screenshot-top: 0px;
+  --screenshot-left: 0px;
+  border-radius: 14px 14px 40px 14px;
+}
+
+.marketing-site .spotlight-card-zoomed-top-left img {
+  border-radius: 14px 0 0 0;
+}
+
+.marketing-site .spotlight-card-zoomed-top-left figure {
+  border-radius: 40px 14px 14px 14px;
+}
+
+.marketing-site .spotlight-card-zoomed-top-left figure::after {
+  border-radius: 0;
+}
+
+.marketing-site .spotlight-card h3 {
   margin: 0 0 22px;
   color: var(--pink);
   font-family: var(--marketing-serif);
@@ -1295,8 +1418,73 @@ footer a:hover {
   margin: 0 auto;
 }
 
+.marketing-site .page-content-stage {
+  overflow: clip;
+}
+
 .marketing-site .providers {
   padding: 70px 0 110px;
+}
+
+.marketing-site .providers-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+  gap: 72px;
+  align-items: end;
+  margin-bottom: 46px;
+}
+
+.marketing-site .section-kicker,
+.marketing-site .mode-label {
+  margin: 0 0 10px;
+  color: var(--green);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.marketing-site .providers h2 {
+  margin: 0;
+  color: var(--pink);
+  font-family: var(--marketing-serif);
+  font-size: clamp(3rem, 5vw, 4.6rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.marketing-site .providers-heading > p {
+  margin: 0;
+  color: var(--white-muted);
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.marketing-site .provider-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin-bottom: 42px;
+}
+
+.marketing-site .provider-modes article {
+  padding: 26px;
+  border: 1px solid rgba(32, 253, 133, 0.2);
+  border-radius: 12px;
+}
+
+.marketing-site .provider-modes h3,
+.marketing-site .privacy-callout h3 {
+  margin: 0 0 12px;
+  color: var(--cream);
+  font-size: 1.12rem;
+  font-weight: 600;
+}
+
+.marketing-site .provider-modes article > p:last-child {
+  margin: 0;
+  color: var(--white-muted);
 }
 
 .marketing-site .provider-strip {
@@ -1306,6 +1494,42 @@ footer a:hover {
   overflow-x: auto;
   padding-bottom: 12px;
   scrollbar-color: var(--green) transparent;
+}
+
+.marketing-site .privacy-callout {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(420px, 1.5fr) auto;
+  gap: 36px;
+  align-items: center;
+  padding: 30px;
+  margin-top: 42px;
+  border-radius: 14px;
+  color: var(--forest);
+  background: var(--pink);
+}
+
+.marketing-site .privacy-callout .section-kicker,
+.marketing-site .privacy-callout h3,
+.marketing-site .privacy-callout p,
+.marketing-site .privacy-callout a {
+  color: var(--forest);
+}
+
+.marketing-site .privacy-callout p {
+  margin: 0;
+}
+
+.marketing-site .privacy-callout a {
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.marketing-site .privacy-callout a:hover {
+  text-decoration: underline;
 }
 
 .marketing-site .provider-strip > div {
@@ -1364,30 +1588,38 @@ footer a:hover {
 .marketing-site .other-features {
   position: relative;
   padding: 0 0 120px;
+  overflow: visible;
 }
 
-.marketing-site .other-features::before {
-  content: '';
+.marketing-site .other-features-spiral {
   position: absolute;
   z-index: 0;
-  top: -220px;
-  left: 50%;
-  width: 100vw;
-  height: calc(100% + 310px);
+  top: -360px;
+  left: 72%;
+  width: min(1680px, 112vw);
+  height: auto;
+  overflow: visible;
   pointer-events: none;
-  background: repeating-radial-gradient(
-    ellipse 58% 74% at 73% 54%,
-    transparent 0 10%,
-    rgba(32, 253, 133, 0.055) 14% 18%,
-    transparent 23% 30%
-  );
-  filter: blur(14px);
-  transform: translateX(-50%) scale(1.04);
-  transform-origin: 72% 54%;
-  animation: other-features-drift 18s ease-in-out infinite alternate;
+  filter: blur(34px) drop-shadow(0 0 64px rgba(32, 253, 133, 0.24));
+  opacity: 0.18;
+  color: var(--green);
+  transform: translateX(-50%) rotate(-8deg) scale(1.06);
+  transform-origin: center;
 }
 
-.marketing-site .other-features > * {
+.marketing-site .other-features-spiral-path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 152;
+  stroke-linecap: round;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  animation: other-features-spiral-draw 2.5s ease-in-out infinite;
+  will-change: stroke-dashoffset, opacity;
+}
+
+.marketing-site .other-features > :not(.other-features-spiral) {
   position: relative;
   z-index: 1;
 }
@@ -1441,7 +1673,7 @@ footer a:hover {
   width: min(1380px, calc(100% - 32px));
   min-height: 330px;
   padding: 58px 78px 58px 180px;
-  margin: 0 auto 80px;
+  margin: 0 auto 32px;
   overflow: hidden;
   border-radius: 24px;
   color: var(--forest);
@@ -1472,14 +1704,33 @@ footer a:hover {
   letter-spacing: -0.02em;
 }
 
-@keyframes other-features-drift {
-  from {
-    background-position: -34px 8px;
-    transform: translateX(-50%) scale(1.02) rotate(-1deg);
+@keyframes other-features-spiral-draw {
+  0%,
+  1% {
+    stroke-dashoffset: 1;
+    opacity: 0;
   }
-  to {
-    background-position: 38px -18px;
-    transform: translateX(-50%) scale(1.08) rotate(1deg);
+
+  2% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+
+  46%,
+  56% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  98% {
+    stroke-dashoffset: -1;
+    opacity: 1;
+  }
+
+  99%,
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
   }
 }
 
@@ -1504,37 +1755,18 @@ footer a:hover {
   );
 }
 
-.marketing-site .command-row {
+.marketing-site .download-secondary {
   display: flex;
-  align-items: center;
-  width: min(620px, 100%);
+  flex-wrap: wrap;
+  gap: 24px;
   margin-top: 24px;
-  overflow: hidden;
-  border: 1px solid rgba(0, 46, 43, 0.32);
-  border-radius: 10px;
-  background: rgba(255, 253, 247, 0.32);
 }
 
-.marketing-site .command-row code {
-  min-width: 0;
-  padding: 12px 14px;
-  overflow: hidden;
-  font-size: 0.82rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.marketing-site .command-row button {
-  align-self: stretch;
-  min-width: 82px;
-  margin-left: auto;
-  border: 0;
-  border-left: 1px solid rgba(0, 46, 43, 0.28);
-  color: var(--cream);
-  background: var(--forest);
-  cursor: pointer;
-  font: inherit;
+.marketing-site .download-secondary a {
+  color: var(--forest);
+  font-size: 0.9rem;
   font-weight: 700;
+  text-decoration-color: rgba(0, 46, 43, 0.34);
 }
 
 .marketing-site .pill-pink {
@@ -1547,11 +1779,11 @@ footer a:hover {
 
 .marketing-site .site-footer {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 22px 48px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 32px;
   align-items: center;
   width: min(1320px, calc(100% - 56px));
-  padding: 0 0 54px;
+  padding: 0 0 32px;
   margin: 0 auto;
   color: var(--white-muted);
   text-align: left;
@@ -1561,6 +1793,12 @@ footer a:hover {
   display: inline-flex;
 }
 
+.marketing-site .site-footer > p {
+  margin: 0;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
 .marketing-site .site-footer > div {
   display: flex;
   gap: 28px;
@@ -1568,12 +1806,6 @@ footer a:hover {
 
 .marketing-site .site-footer a {
   text-decoration: none;
-}
-
-.marketing-site .site-footer > p {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-size: 0.85rem;
 }
 
 @media (max-width: 1080px) {
@@ -1606,12 +1838,9 @@ footer a:hover {
     margin-left: auto;
   }
 
-  .marketing-site .hero-visual img {
-    width: 100%;
-    max-width: 100%;
+  .marketing-site .hero-demo {
     height: auto;
-    min-width: 0;
-    min-height: 0;
+    aspect-ratio: 8 / 5;
   }
 
   .marketing-site .feature-stage {
@@ -1628,6 +1857,16 @@ footer a:hover {
 
   .marketing-site .spotlight-card:last-child {
     grid-column: 1 / -1;
+  }
+
+  .marketing-site .providers-heading,
+  .marketing-site .privacy-callout {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .marketing-site .provider-modes {
+    grid-template-columns: 1fr 1fr;
   }
 
   .marketing-site .other-grid {
@@ -1659,7 +1898,7 @@ footer a:hover {
     display: none;
   }
 
-  .marketing-site .nav-release {
+  .marketing-site .nav-cta {
     padding: 10px 16px;
   }
 
@@ -1684,12 +1923,6 @@ footer a:hover {
 
   .marketing-site .hero-visual {
     width: calc(100% - 24px);
-  }
-
-  .marketing-site .hero-visual img {
-    width: 660px;
-    max-width: none;
-    height: 420px;
   }
 
   .marketing-site .manifesto {
@@ -1729,6 +1962,7 @@ footer a:hover {
   }
 
   .marketing-site .spotlight-grid,
+  .marketing-site .provider-modes,
   .marketing-site .other-grid {
     grid-template-columns: 1fr;
   }
@@ -1755,7 +1989,7 @@ footer a:hover {
     width: calc(100% - 24px);
     min-height: 0;
     padding: 68px 24px 44px 82px;
-    margin-bottom: 62px;
+    margin-bottom: 32px;
   }
 
   .marketing-site .download-lines {
@@ -1768,15 +2002,6 @@ footer a:hover {
     font-size: 3.6rem;
   }
 
-  .marketing-site .command-row {
-    align-items: stretch;
-  }
-
-  .marketing-site .command-row code {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
   .marketing-site .pill-pink {
     justify-self: start;
     min-width: 0;
@@ -1784,14 +2009,15 @@ footer a:hover {
 
   .marketing-site .site-footer {
     grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .marketing-site .site-footer > p {
+    text-align: left;
   }
 
   .marketing-site .site-footer > div {
     flex-wrap: wrap;
-  }
-
-  .marketing-site .site-footer > p {
-    grid-column: auto;
   }
 }
 
@@ -1802,5 +2028,10 @@ footer a:hover {
     animation: none !important;
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+
+  .marketing-site .other-features-spiral-path {
+    stroke-dashoffset: 0;
+    opacity: 1;
   }
 }

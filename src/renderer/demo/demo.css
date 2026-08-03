@@ -1,0 +1,23 @@
+/* The browser demo has no native window chrome, but it reserves the same
+   traffic-light inset as the macOS app. Fill that deliberate gap so embedded
+   and full-page demos retain the window silhouette visitors see in Copse. */
+html[data-demo-scenario] :is(#titlebar, .settings-header)::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 18px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow:
+    20px 0 0 #febc2e,
+    40px 0 0 #28c840;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+html[data-demo-scenario] .settings-header {
+  position: relative;
+}
