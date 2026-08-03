@@ -24,6 +24,7 @@ import {
   sleepMs,
   streamRetryDelayMs,
 } from '@copse/llm/stream-retry.ts'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import {
   probeAcpAgent,
   runAcpSessionPrompt,
@@ -134,9 +135,6 @@ export interface RunAcpAgentResult {
   /** Turn token usage the agent reported (ACP `PromptResponse.usage`), if any. */
   usage: { inputTokens: number; outputTokens: number }
 }
-
-/** Matches the ~4 chars/token heuristic used across the app (trim-history.ts). */
-const CHARS_PER_TOKEN = 4
 
 export interface AcpTurnUsage {
   inputTokens: number

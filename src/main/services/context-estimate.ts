@@ -7,12 +7,10 @@ import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { buildSkillsCatalogBlock, buildInvokedSkillsBlock } from './skills/skill-prompt.ts'
 import { estimateMessageTokens, ESTIMATED_IMAGE_TOKENS } from '@copse/agent/trim-history.ts'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { composeContextBreakdown } from '@copse/agent/context-breakdown.ts'
 import { PARENT_DELEGATED_TOOLS } from './agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
-
-/** Matches the ~4 chars/token heuristic used for history trimming (trim-history.ts). */
-const CHARS_PER_TOKEN = 4
 
 /** MCP tools are registered with a `[MCP:<server>]` description prefix (mcp-registry.ts). */
 function isMcpTool(tool: LLMTool): boolean {
