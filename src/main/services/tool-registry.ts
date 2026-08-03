@@ -1,11 +1,24 @@
 import { z } from 'zod'
 import type { ToolDefinition, LLMTool, ToolExecuteResult } from '@shared/types'
 import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
-import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
+import {
+  getReadonlyToolBlockReason,
+  isToolAllowedInReadonlyMode,
+} from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
+import { ensureExecutionRootWatched } from './search/execution-root-watcher.ts'
+import {
+  CACHEABLE_TOOLS,
+  getCachedToolResult,
+  invalidateThreadToolCache,
+  setCachedToolResult,
+  type ToolCacheIdentity,
+} from './search/tool-result-cache.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
 
@@ -113,10 +126,9 @@ export class ToolRegistry {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     const parsed = tool.parse(rawArgs)
+    const mcpAnnotations = name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined
     if (isAgentRunReadonly()) {
-      const blockReason = getReadonlyToolBlockReason(name, {
-        mcpAnnotations: name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined,
-      })
+      const blockReason = getReadonlyToolBlockReason(name, { mcpAnnotations })
       if (blockReason) return blockReason
     }
     // The check is passed by reference so the gate can stamp back a hook's
@@ -124,7 +136,37 @@ export class ToolRegistry {
     const check: PermissionCheck = { toolName: name, args: parsed }
     const permitted = await ensurePermitted(check)
     if (!permitted) return `User rejected the ${name} tool call.`
-    const result = await tool.execute(rawArgs, signal)
+
+    // Search caching is scoped to a thread's fixed execution root, so it needs
+    // the trusted per-turn context — never the renderer-selected workspace.
+    // Outside an agent turn (plain IPC, tests) there is no thread to key on and
+    // nothing is cached.
+    const context = getThreadExecutionContext()
+    const identity: ToolCacheIdentity | null = context
+      ? { threadId: context.threadId, root: context.root, branch: context.branch }
+      : null
+    const cacheable = identity !== null && CACHEABLE_TOOLS.has(name)
+    const cached = cacheable ? getCachedToolResult(identity, name, parsed) : undefined
+    let result: ToolExecuteResult
+    if (cached !== undefined) {
+      result = cached
+    } else {
+      result = await tool.execute(rawArgs, signal)
+      if (identity && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
+        // A tool that can mutate the workspace ran — this thread's cached
+        // results may now be stale.
+        invalidateThreadToolCache(identity.threadId)
+      } else if (
+        // Only cache what we can invalidate. SSH workspaces have no local
+        // fs.watch, and a root we failed to watch would be stuck serving stale
+        // results for the rest of the thread.
+        cacheable &&
+        !isActiveSshWorkspace() &&
+        ensureExecutionRootWatched(identity.root)
+      ) {
+        setCachedToolResult(identity, name, parsed, result)
+      }
+    }
     // H2: a `toolGate` hook injected context into the current turn. Append the
     // pre-built system-reminder block (10k-capped) to this call's textual
     // result so the model reads it right after the tool output.
