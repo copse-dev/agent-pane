@@ -200,6 +200,7 @@ contextBridge.exposeInMainWorld('api', {
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
       }) => void,
     ) => {
       const listener = (
@@ -215,6 +216,7 @@ contextBridge.exposeInMainWorld('api', {
           comparisonModels?: { a: string; b: string; judge: string }
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
+          turnTreeLeaseDefault?: boolean
         },
       ): void => {
         handler(req)

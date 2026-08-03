@@ -807,9 +807,38 @@ describe('turn-tree shell replay leases', () => {
         assert.equal(await ensureShellCommandPermitted('npm test', options), true)
         assert.equal(await ensureShellCommandPermitted('npm test', options), true)
         assert.equal(await ensureShellCommandPermitted('npm test | rg failed', options), true)
-        assert.equal(await ensureShellCommandPermitted('ls -la', options), true)
       })
       assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('does not extend a lease to separate sandbox-safe commands', async () => {
+    shellReplayLeaseStore.clear()
+    const requests: Array<{ lease: boolean; defaultLease: boolean }> = []
+    setApprovalHandler(async (request) => {
+      requests.push({
+        lease: request.allowTurnTreeLease === true,
+        defaultLease: request.turnTreeLeaseDefault === true,
+      })
+      return {
+        approved: true,
+        remember: false,
+        grantScope: requests.length === 1 ? 'turn-tree' : 'once',
+      }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        await ensureShellCommandPermitted('npm test', options)
+        await ensureShellCommandPermitted('ls -la', options)
+      })
+      assert.deepEqual(requests, [
+        { lease: true, defaultLease: true },
+        { lease: false, defaultLease: false },
+      ])
     } finally {
       shellReplayLeaseStore.clear()
       setApprovalHandler(null)
@@ -878,10 +907,11 @@ describe('turn-tree shell replay leases', () => {
 
   it('offers bounded external replay only for opaque local execution', async () => {
     shellReplayLeaseStore.clear()
-    const requests: Array<{ lease: boolean; scope?: string }> = []
+    const requests: Array<{ lease: boolean; defaultLease: boolean; scope?: string }> = []
     setApprovalHandler(async (request) => {
       requests.push({
         lease: request.allowTurnTreeLease === true,
+        defaultLease: request.turnTreeLeaseDefault === true,
         ...(request.scope ? { scope: request.scope } : {}),
       })
       return {
@@ -904,8 +934,9 @@ describe('turn-tree shell replay leases', () => {
       )
 
       assert.deepEqual(requests, [
-        { lease: true, scope: 'external' },
-        { lease: false, scope: 'external' },
+        { lease: true, defaultLease: false, scope: 'external' },
+        { lease: false, defaultLease: false, scope: 'sandbox' },
+        { lease: false, defaultLease: false, scope: 'external' },
       ])
     } finally {
       shellReplayLeaseStore.clear()

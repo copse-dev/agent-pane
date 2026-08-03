@@ -68,7 +68,7 @@ export function mountApprovalDialog(
     'label',
     { class: 'approval-remember approval-turn-tree' },
     el('input', { type: 'checkbox', class: 'approval-turn-tree-input' }),
-    'Allow 2 exact retries and 8 sandbox-safe follow-ups for this task (15 minutes)',
+    'Allow 2 exact retries for this task (15 minutes)',
   )
   // One heading for the whole prompt (fixed); the items scroll under it so a big
   // batch doesn't push the buttons off screen.
@@ -122,6 +122,7 @@ export function mountApprovalDialog(
     comparisonModels?: ComparisonModelSelection
     allowTurnTreeLease: boolean | undefined
     turnTreeLeaseLabel: string | undefined
+    turnTreeLeaseDefault: boolean | undefined
   }
 
   // Requests waiting for their turn (background threads, or arrived before the
@@ -256,7 +257,10 @@ export function mountApprovalDialog(
       )
     turnTreeLeaseLabel.hidden = !offersTurnTreeLease
     if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false
-    else turnTreeLeaseText.textContent = leaseLabel
+    else {
+      turnTreeLeaseText.textContent = leaseLabel
+      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true)
+    }
   }
 
   /** Cancel any pending settle window and re-enable Approve. */
@@ -408,6 +412,7 @@ export function mountApprovalDialog(
       comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel,
+      turnTreeLeaseDefault,
     }) => {
       const pending: PendingApproval = {
         id,
@@ -420,6 +425,7 @@ export function mountApprovalDialog(
         showWhileSettingsOpen,
         allowTurnTreeLease,
         turnTreeLeaseLabel,
+        turnTreeLeaseDefault,
       }
       if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)

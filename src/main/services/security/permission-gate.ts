@@ -103,10 +103,8 @@ import {
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 
-const SANDBOX_REPLAY_LABEL =
-  'Allow 2 exact retries and 8 sandbox-safe follow-ups for this task (15 minutes)'
-const EXTERNAL_REPLAY_LABEL =
-  'Allow 2 exact retries outside the sandbox and 8 sandbox-safe follow-ups (15 minutes)'
+const SANDBOX_REPLAY_LABEL = 'Allow 2 exact retries for this task (15 minutes)'
+const EXTERNAL_REPLAY_LABEL = 'Allow 2 exact retries outside the sandbox (15 minutes)'
 
 function issueShellReplayLease(identity: ShellReplayLeaseIdentity, command: string): void {
   const core = replayLeaseCore(command, (segment) =>
@@ -213,6 +211,7 @@ async function requestEscalationApproval(
         ? {
             allowTurnTreeLease: true,
             turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseDefault: false,
           }
         : {}),
     },
@@ -255,6 +254,7 @@ async function promptShell(
         ? {
             allowTurnTreeLease: true,
             turnTreeLeaseLabel: SANDBOX_REPLAY_LABEL,
+            turnTreeLeaseDefault: true,
           }
         : {}),
     },
@@ -756,24 +756,6 @@ export async function ensureShellCommandPermitted(
         threadId: leaseIdentity.threadId,
       })
       return true
-    }
-
-    if (!outsideSandbox && sandboxCommandNormallyAllowed(command, leaseIdentity.executionRoot)) {
-      const leaseId = shellReplayLeaseStore.consumeCompanion(leaseIdentity)
-      if (leaseId) {
-        recordDecision({
-          kind: 'shell',
-          actor: 'system',
-          verdict: 'allowed',
-          subject: SHELL_DECISION_SUBJECT,
-          scope: 'sandbox',
-          reasons: ['sandbox-safe companion command allowed by turn-tree lease'],
-          source: `turn-tree-capability-lease:${leaseId}`,
-          projectId: leaseIdentity.projectId,
-          threadId: leaseIdentity.threadId,
-        })
-        return true
-      }
     }
   }
 

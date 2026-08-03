@@ -2,7 +2,6 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
-  SHELL_REPLAY_LEASE_MAX_COMPANIONS,
   SHELL_REPLAY_LEASE_MAX_REPLAYS,
   SHELL_REPLAY_LEASE_TTL_MS,
   ShellReplayLeaseStore,
@@ -132,17 +131,6 @@ describe('ShellReplayLeaseStore', () => {
       replayLeaseCore('node first.mjs; node second.mjs', () => false),
       null,
     )
-  })
-
-  it('bounds sandbox-safe companion operations to the same turn-tree owner', () => {
-    const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
-    store.issue({ ...identity, containment: 'external' }, 'node executor.mjs')
-
-    for (let index = 0; index < SHELL_REPLAY_LEASE_MAX_COMPANIONS; index++) {
-      assert.equal(store.consumeCompanion(identity), 'lease-1')
-    }
-    assert.equal(store.consumeCompanion(identity), null)
-    assert.equal(store.consumeCompanion({ ...identity, turnTreeId: asTurnTreeId('tree-2') }), null)
   })
 
   it('rejects altered, piped input, unsupported control flow, and unauthorized companions', () => {

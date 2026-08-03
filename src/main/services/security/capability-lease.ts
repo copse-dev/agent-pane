@@ -4,7 +4,6 @@ import { parseShellComposition } from './command-routing.ts'
 
 export const SHELL_REPLAY_LEASE_TTL_MS = 15 * 60_000
 export const SHELL_REPLAY_LEASE_MAX_REPLAYS = 2
-export const SHELL_REPLAY_LEASE_MAX_COMPANIONS = 8
 
 export interface ShellReplayLeaseIdentity {
   projectId: string
@@ -20,7 +19,6 @@ export interface ShellReplayLease {
   command: string
   expiresAt: number
   remainingReplays: number
-  remainingCompanions: number
 }
 
 export type ShellReplayMatch =
@@ -55,7 +53,6 @@ export class ShellReplayLeaseStore {
       command,
       expiresAt: this.now() + SHELL_REPLAY_LEASE_TTL_MS,
       remainingReplays: SHELL_REPLAY_LEASE_MAX_REPLAYS,
-      remainingCompanions: SHELL_REPLAY_LEASE_MAX_COMPANIONS,
     }
     this.leases.set(lease.id, lease)
     return { ...lease, identity: { ...lease.identity } }
@@ -77,25 +74,10 @@ export class ShellReplayLeaseStore {
         continue
       }
       lease.remainingReplays--
-      if (lease.remainingReplays === 0 && lease.remainingCompanions === 0) {
-        this.leases.delete(lease.id)
-      }
+      if (lease.remainingReplays === 0) this.leases.delete(lease.id)
       return { matched: true, leaseId: lease.id, companionSegments }
     }
     return { matched: false }
-  }
-
-  consumeCompanion(identity: ShellReplayLeaseIdentity): string | null {
-    this.prune()
-    for (const lease of this.leases.values()) {
-      if (!sameOwner(lease.identity, identity) || lease.remainingCompanions <= 0) continue
-      lease.remainingCompanions--
-      if (lease.remainingReplays === 0 && lease.remainingCompanions === 0) {
-        this.leases.delete(lease.id)
-      }
-      return lease.id
-    }
-    return null
   }
 
   revoke(id: string): boolean {
@@ -109,10 +91,7 @@ export class ShellReplayLeaseStore {
   private prune(): void {
     const now = this.now()
     for (const [id, lease] of this.leases) {
-      if (
-        lease.expiresAt <= now ||
-        (lease.remainingReplays <= 0 && lease.remainingCompanions <= 0)
-      ) {
+      if (lease.expiresAt <= now || lease.remainingReplays <= 0) {
         this.leases.delete(id)
       }
     }

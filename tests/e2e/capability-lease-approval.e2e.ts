@@ -48,7 +48,7 @@ describe('turn-tree shell replay approval', () => {
     resetUserData()
   })
 
-  it('offers an explicit bounded grant for exact retries', async function () {
+  it('defaults a sandboxed command to bounded task retries', async function () {
     this.timeout(90_000)
     await setComposerValue('Retry the local version command exactly once')
     await $('.submit-btn').click()
@@ -58,9 +58,8 @@ describe('turn-tree shell replay approval', () => {
     await expect(dialog.$('.approval-heading')).toHaveText('Run shell command?')
     const leaseOption = dialog.$('.approval-turn-tree')
     await expect(leaseOption).toBeDisplayed()
-    await expect(leaseOption).toHaveText(
-      'Allow 2 exact retries and 8 sandbox-safe follow-ups for this task (15 minutes)',
-    )
+    await expect(leaseOption).toHaveText('Allow 2 exact retries for this task (15 minutes)')
+    await expect(leaseOption.$('.approval-turn-tree-input')).toBeChecked()
 
     await saveAppScreenshot('capability-lease-approval.png')
     await dialog.$('.approval-reject').click()
