@@ -249,6 +249,11 @@ describe('workspaceSandboxOverlay', () => {
       assert.ok(!allowRead.includes(`${worktree}/**`))
       assert.ok(allowWrite.includes(`${registration.gitDir}/**`))
       assert.ok(allowRead.includes(join(registration.commonGitDir, 'config')))
+      // Linux realizes broad allowRead entries as read-only binds after the
+      // per-worktree write bind. Rebinding either ancestor here would make the
+      // validated gitDir read-only again and prevent Git creating index.lock.
+      assert.ok(!allowRead.includes(registration.commonGitDir))
+      assert.ok(!allowRead.includes(join(registration.commonGitDir, 'worktrees')))
       assert.ok(allowWrite.includes(join(registration.commonGitDir, 'objects/**')))
       assert.ok(allowWrite.includes(join(registration.commonGitDir, 'refs/**')))
       assert.ok(!allowWrite.includes(registration.commonGitDir))
