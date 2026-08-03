@@ -1,11 +1,9 @@
 import type { StreamCutRecord } from '@copse/agent/stream-cut-record.ts'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { appendStreamStat } from './thread-store.ts'
 import { getHookRunRecordingContext, type HookRunRecordingSnapshot } from './hook-run-recorder.ts'
 
 const STREAM_STATS_SCHEMA_VERSION = 1
-
-/** Rough chars-per-token for eval estimates (matches agent-loop-limits). */
-const CHARS_PER_TOKEN = 4
 
 export interface StreamStatLine extends StreamCutRecord {
   schemaVersion: typeof STREAM_STATS_SCHEMA_VERSION

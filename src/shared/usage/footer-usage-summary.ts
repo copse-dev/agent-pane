@@ -1,8 +1,7 @@
 import { formatThreadUsageCost } from '@copse/llm/estimate-cost.ts'
 import type { ContextBreakdown, ContextSnapshot, Message, ThreadUsage } from '@shared/types'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { formatTokenCount } from './format-usage-summary.ts'
-
-const CHARS_PER_TOKEN = 4
 
 export interface FooterUsageDisplay {
   inputTokens: number
