@@ -17,11 +17,12 @@ import {
   isSettingsDialogOpen,
   applyUiAccent,
   applyUiTint,
+  DEFAULT_ACCENT_COLOR,
   DEFAULT_TINT_COLOR,
   DEFAULT_TINT_STRENGTH,
 } from './settings-dialog.ts'
 import { qsRequired } from '../dom/helpers.ts'
-import { createPendingApi } from '../fake-api.test-support.ts'
+import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
 
 // Recursive stub: api.<anything>.<nested>() returns a never-settling promise, so
 // the dialog can mount without a hand-written ApiClient. Mounting fires off some
@@ -106,18 +107,112 @@ describe('accent colour', () => {
 })
 
 describe('interface tint', () => {
-  it('defaults to a restrained Copse wash and exposes the full palette at Strong', () => {
-    assert.equal(DEFAULT_TINT_COLOR, '#002E2B')
+  it('uses the requested first-run colours and keeps the site palette opt-in', () => {
+    assert.equal(DEFAULT_ACCENT_COLOR, '#FF93D0')
+    assert.equal(DEFAULT_TINT_COLOR, '#244C25')
     assert.equal(DEFAULT_TINT_STRENGTH, 'subtle')
 
     applyUiTint(DEFAULT_TINT_COLOR, DEFAULT_TINT_STRENGTH)
-    assert.equal(document.documentElement.style.getPropertyValue('--tint-hue'), '#002E2B')
+    assert.equal(document.documentElement.style.getPropertyValue('--tint-hue'), '#244C25')
     assert.equal(document.documentElement.style.getPropertyValue('--tint-amount'), '4%')
-    assert.equal(document.documentElement.dataset['tintPalette'], 'copse')
+    assert.equal(document.documentElement.dataset['tintPalette'], 'custom')
     assert.equal(document.documentElement.dataset['tintStrength'], 'subtle')
 
-    applyUiTint(DEFAULT_TINT_COLOR, 'strong')
+    applyUiTint('#002E2B', 'strong')
+    assert.equal(document.documentElement.dataset['tintPalette'], 'copse')
     assert.equal(document.documentElement.dataset['tintStrength'], 'strong')
+  })
+})
+
+describe('appearance live preview', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    document.documentElement.removeAttribute('style')
+    delete document.documentElement.dataset['theme']
+    delete document.documentElement.dataset['tintPalette']
+    delete document.documentElement.dataset['tintStrength']
+  })
+
+  it('applies theme, accent, tint, and strength as their controls change', () => {
+    const store = createStore()
+    applyUiAccent(DEFAULT_ACCENT_COLOR)
+    applyUiTint(DEFAULT_TINT_COLOR, DEFAULT_TINT_STRENGTH)
+    mountSettingsDialog(store, stubApi())
+    const form = qsRequired<HTMLFormElement>(document, '.settings-content')
+    const theme = qsRequired<HTMLSelectElement>(form, 'select[name="theme"]')
+    const accent = qsRequired<HTMLInputElement>(form, 'input[name="uiAccentColor"]')
+    const tint = qsRequired<HTMLInputElement>(form, 'input[name="uiTintColor"]')
+    const strength = qsRequired<HTMLInputElement>(form, 'input[name="uiTintStrength"]')
+
+    theme.value = 'light'
+    accent.value = '#345678'
+    tint.value = '#123456'
+    strength.value = '2'
+    tint.dispatchEvent(new Event('change', { bubbles: true }))
+
+    assert.equal(store.getState().theme, 'light')
+    assert.equal(document.documentElement.dataset['theme'], 'light')
+    assert.equal(document.documentElement.style.getPropertyValue('--accent-color'), '#345678')
+    assert.equal(document.documentElement.style.getPropertyValue('--tint-hue'), '#123456')
+    assert.equal(document.documentElement.style.getPropertyValue('--tint-amount'), '8%')
+  })
+
+  it('restores the opening appearance when Cancel closes a live preview', () => {
+    const store = createStore()
+    applyUiAccent(DEFAULT_ACCENT_COLOR)
+    applyUiTint(DEFAULT_TINT_COLOR, DEFAULT_TINT_STRENGTH)
+    mountSettingsDialog(store, stubApi())
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog()
+
+    const accent = qsRequired<HTMLInputElement>(dialog, 'input[name="uiAccentColor"]')
+    accent.value = '#345678'
+    accent.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.equal(document.documentElement.style.getPropertyValue('--accent-color'), '#345678')
+
+    closeSettingsDialog()
+    dialog.dispatchEvent(new Event('close'))
+    assert.equal(
+      document.documentElement.style.getPropertyValue('--accent-color'),
+      DEFAULT_ACCENT_COLOR,
+    )
+    assert.equal(document.documentElement.style.getPropertyValue('--tint-hue'), DEFAULT_TINT_COLOR)
+  })
+
+  it('persists only the changed theme and skips unrelated slow save work', async () => {
+    const base = createFakeApi()
+    const settingWrites: [string, unknown][] = []
+    let securityWrites = 0
+    let iconApplies = 0
+    const api: ApiClient = {
+      ...base,
+      settings: {
+        ...base.settings,
+        set: async (name, value) => {
+          settingWrites.push([name, value])
+        },
+        setSecurity: async () => {
+          securityWrites += 1
+        },
+      },
+      appIcon: {
+        apply: async () => {
+          iconApplies += 1
+        },
+      },
+    }
+    mountSettingsDialog(createStore(), api)
+    const form = qsRequired<HTMLFormElement>(document, '.settings-content')
+    const theme = qsRequired<HTMLSelectElement>(form, 'select[name="theme"]')
+    theme.value = 'light'
+    theme.dispatchEvent(new Event('change', { bubbles: true }))
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(settingWrites, [['theme', 'light']])
+    assert.equal(securityWrites, 0)
+    assert.equal(iconApplies, 0)
   })
 })
 

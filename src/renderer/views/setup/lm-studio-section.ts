@@ -32,6 +32,7 @@ export interface LmStudioSection {
   getUrl: () => string
   getApiKey: () => string
   refreshDetection: () => Promise<void>
+  saveApiKey: () => Promise<void>
   saveConnection: (opts?: { safetyModel?: string }) => Promise<void>
   destroy: () => void
 }
@@ -355,8 +356,7 @@ export function createLmStudioSection(
   }
 
   async function saveConnection(opts?: { safetyModel?: string }): Promise<void> {
-    const lmKey = keyInput.value.trim()
-    if (lmKey) await api.settings.setKey('lmstudio', lmKey)
+    await saveApiKey()
     const lmUrl = urlInput.value.trim()
     const currentSafety = optionalString(await api.settings.get('safetyModel'))
     const currentExternalDeny = optionalNumber(
@@ -395,10 +395,16 @@ export function createLmStudioSection(
         : {}),
       providerAllowUserApproval: currentProviderApproval ?? true,
     })
-    keyInput.value = ''
     const lmSet = await api.settings.getKey('lmstudio')
     setInlineStatus(keyStatus, lmSet ? 'filled' : 'idle', lmSet ? 'saved' : 'not set')
     keyStatus.className = 'key-status'
+  }
+
+  async function saveApiKey(): Promise<void> {
+    const lmKey = keyInput.value.trim()
+    if (!lmKey) return
+    await api.settings.setKey('lmstudio', lmKey)
+    keyInput.value = ''
   }
 
   void (async (): Promise<void> => {
@@ -414,6 +420,7 @@ export function createLmStudioSection(
     getUrl: () => urlInput.value.trim(),
     getApiKey: () => keyInput.value.trim(),
     refreshDetection,
+    saveApiKey,
     saveConnection,
     destroy: stopAllPollers,
   }

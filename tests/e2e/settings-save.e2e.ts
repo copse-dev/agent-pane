@@ -26,6 +26,17 @@ describe('settings save', () => {
     await $('[aria-label="Settings"]').click()
     await expect($('#settings-dialog')).toBeDisplayed()
 
+    // Dirty one security-bundle field so this still exercises setSecurity now
+    // that untouched settings are deliberately skipped on Save.
+    await browser.execute(() => {
+      const autoRun = document.querySelector<HTMLInputElement>(
+        'input[name="autoRunSandboxCommands"]',
+      )
+      if (!autoRun) return
+      autoRun.checked = !autoRun.checked
+      autoRun.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
     await $('#settings-dialog button[type="submit"]').click()
 
     // Dialog hides on a successful save; a failed setSecurity leaves it visible.

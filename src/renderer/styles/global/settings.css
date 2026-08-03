@@ -18,6 +18,7 @@ dialog.settings-overlay {
   padding: 0;
   border: none;
   color: inherit;
+  overflow: hidden;
 }
 dialog.settings-overlay::backdrop {
   background: var(--bg-base);
@@ -79,6 +80,8 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-md);
   border-right: 1px solid var(--border);
   background: var(--bg-elevated);
+  min-height: 0;
+  overflow-y: auto;
 }
 .settings-nav-btn {
   text-align: left;

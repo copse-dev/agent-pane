@@ -198,11 +198,9 @@ export function seedOnboardingFixture(): void {
 
 function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
-  // Pin appearance so reference screenshots are deterministic: the app now
-  // defaults to `system` theme (which resolves to whatever prefers-color-scheme
-  // the CI runner reports). Pin dark mode and disable any custom tint so shots
-  // do not depend on the host or saved appearance state; individual specs can
-  // override via `settings`.
+  // Pin appearance so reference screenshots are deterministic. Most fixtures
+  // keep tint off so existing shots do not inherit first-run appearance changes;
+  // individual specs can override via `settings`.
   writeFileSync(
     SETTINGS_PATH,
     JSON.stringify({
