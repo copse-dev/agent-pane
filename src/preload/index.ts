@@ -168,6 +168,8 @@ contextBridge.exposeInMainWorld('api', {
         threadId?: string
         title: string
         body: string
+        bodyAdvice?: string
+        bodyFooter?: string
         type: string
         allowRemember?: boolean
         rememberLabel?: string
@@ -182,6 +184,8 @@ contextBridge.exposeInMainWorld('api', {
           threadId?: string
           title: string
           body: string
+          bodyAdvice?: string
+          bodyFooter?: string
           type: string
           allowRemember?: boolean
           rememberLabel?: string

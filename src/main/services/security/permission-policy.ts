@@ -310,8 +310,37 @@ function isReadOnlyGitCommand(argv: readonly string[]): boolean {
 }
 
 export function formatShellPromptBody(command: string, reasons: string[]): string {
-  const detail = reasons.length ? `\n\nReason: ${reasons.join('; ')}` : ''
-  return `${command}${detail}`
+  return flattenShellPromptParts(formatShellPromptParts(command, reasons))
+}
+
+/** Structured shell prompt: advice and footer stay outside the monospaced command block. */
+export interface ShellPromptParts {
+  command: string
+  bodyAdvice?: string
+  bodyFooter?: string
+}
+
+export function flattenShellPromptParts(parts: ShellPromptParts): string {
+  return [parts.bodyAdvice, parts.command, parts.bodyFooter].filter(Boolean).join('\n\n')
+}
+
+export function shellPromptToApprovalFields(parts: ShellPromptParts): {
+  body: string
+  bodyAdvice?: string
+  bodyFooter?: string
+} {
+  return {
+    body: parts.command,
+    ...(parts.bodyAdvice ? { bodyAdvice: parts.bodyAdvice } : {}),
+    ...(parts.bodyFooter ? { bodyFooter: parts.bodyFooter } : {}),
+  }
+}
+
+export function formatShellPromptParts(command: string, reasons: string[]): ShellPromptParts {
+  return {
+    command,
+    ...(reasons.length ? { bodyFooter: `Reason: ${reasons.join('; ')}` } : {}),
+  }
 }
 
 /** Read the `command` field of a run_background tool call. */
@@ -328,22 +357,43 @@ export function backgroundAllowsPortBinding(args: unknown): boolean {
 }
 
 export function formatPortBindingPromptBody(workspaceRoot: string, command: string): string {
-  return (
-    `The agent wants to start a long-running background task that binds a ` +
-    `loopback port and stays alive across turns:\n\n${command || '(no command given)'}\n\n` +
-    `Project: ${workspaceRoot}\n\n` +
-    `It runs with the project's sandbox filesystem rules, relaxed only to allow ` +
-    `binding on localhost.`
-  )
+  return flattenShellPromptParts(formatPortBindingPromptParts(workspaceRoot, command))
+}
+
+export function formatPortBindingPromptParts(
+  workspaceRoot: string,
+  command: string,
+): ShellPromptParts {
+  return {
+    command: command || '(no command given)',
+    bodyAdvice:
+      'The agent wants to start a long-running background task that binds a ' +
+      'loopback port and stays alive across turns:\n\n' +
+      `Project: ${workspaceRoot}`,
+    bodyFooter:
+      "It runs with the project's sandbox filesystem rules, relaxed only to allow " +
+      'binding on localhost.',
+  }
 }
 
 export function formatExternalSandboxPromptBody(command: string, reasons: string[]): string {
+  return flattenShellPromptParts(formatExternalSandboxPromptParts(command, reasons))
+}
+
+export function formatExternalSandboxPromptParts(
+  command: string,
+  reasons: string[],
+): ShellPromptParts {
   const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
-  return (
-    `This command needs access the macOS project sandbox blocks (${detail}).\n\n` +
-    `${command}\n\n` +
-    `Allow running it once outside the sandbox?`
-  )
+  return {
+    command,
+    bodyAdvice: `This command needs access the macOS project sandbox blocks (${detail}).`,
+    bodyFooter: 'Allow running it once outside the sandbox?',
+  }
+}
+
+export function formatExpectedSandboxBlockPromptBody(command: string, reasons: string[]): string {
+  return flattenShellPromptParts(formatExpectedSandboxBlockPromptParts(command, reasons))
 }
 
 /**
@@ -352,16 +402,27 @@ export function formatExternalSandboxPromptBody(command: string, reasons: string
  * this is NOT backed by a recorded sandbox violation — it is the agent's
  * expectation — so the wording says so plainly and invites more scrutiny.
  */
-export function formatExpectedSandboxBlockPromptBody(command: string, reasons: string[]): string {
+export function formatExpectedSandboxBlockPromptParts(
+  command: string,
+  reasons: string[],
+): ShellPromptParts {
   const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
-  return (
-    `The agent expects this command to need access the macOS project sandbox blocks ` +
-    `(${detail}) and is asking to run it outside the sandbox up front, rather than ` +
-    `letting it fail inside first.\n\n` +
-    `${command}\n\n` +
-    `This is the agent's expectation, not a confirmed sandbox block. ` +
-    `Allow running it once outside the sandbox?`
-  )
+  return {
+    command,
+    bodyAdvice:
+      `The agent expects this command to need access the macOS project sandbox blocks ` +
+      `(${detail}) and is asking to run it outside the sandbox up front, rather than ` +
+      'letting it fail inside first.',
+    bodyFooter:
+      "This is the agent's expectation, not a confirmed sandbox block. " +
+      'Allow running it once outside the sandbox?',
+  }
+}
+
+/** Advice shown outside the monospaced command block for Guarded YOLO harm prompts. */
+export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
+  const harm = reasons.length ? `Potential harm: ${reasons.join('; ')}` : 'Potential harm: unknown'
+  return `${harm}\n\nGuarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?`
 }
 
 /**
@@ -374,6 +435,13 @@ export function formatInstallPromptBody(
   command: string,
   opts: { outsideSandbox: boolean; safeInstall: boolean; jsManager: boolean },
 ): string {
+  return flattenShellPromptParts(formatInstallPromptParts(command, opts))
+}
+
+export function formatInstallPromptParts(
+  command: string,
+  opts: { outsideSandbox: boolean; safeInstall: boolean; jsManager: boolean },
+): ShellPromptParts {
   const access = opts.outsideSandbox
     ? 'It runs once outside the macOS sandbox with network access.'
     : 'It fetches packages over the network.'
@@ -382,15 +450,11 @@ export function formatInstallPromptBody(
         opts.jsManager ? ', and install lifecycle scripts are disabled' : ''
       }.`
     : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
-  return [
-    command.trim(),
-    '',
-    `This installs packages. ${access}`,
-    '',
-    scan,
-    '',
-    'Allow this install?',
-  ].join('\n')
+  return {
+    command: command.trim(),
+    bodyAdvice: `This installs packages. ${access}\n\n${scan}`,
+    bodyFooter: 'Allow this install?',
+  }
 }
 
 /**
@@ -402,21 +466,24 @@ export function formatEphemeralRunnerPromptBody(
   command: string,
   opts: { outsideSandbox: boolean; safeInstall: boolean },
 ): string {
+  return flattenShellPromptParts(formatEphemeralRunnerPromptParts(command, opts))
+}
+
+export function formatEphemeralRunnerPromptParts(
+  command: string,
+  opts: { outsideSandbox: boolean; safeInstall: boolean },
+): ShellPromptParts {
   const access = opts.outsideSandbox
     ? 'It runs once outside the macOS sandbox with network access.'
     : 'It may reach the network.'
   const scan = opts.safeInstall
     ? 'Socket Firewall (sfw) scans packages for known-malicious code.'
     : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
-  return [
-    command.trim(),
-    '',
-    `This may download and run code from the network. ${access}`,
-    '',
-    scan,
-    '',
-    'Allow this command?',
-  ].join('\n')
+  return {
+    command: command.trim(),
+    bodyAdvice: `This may download and run code from the network. ${access}\n\n${scan}`,
+    bodyFooter: 'Allow this command?',
+  }
 }
 
 /** True when macOS seatbelt is active and an approved shell command should bypass ASRT. */
