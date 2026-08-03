@@ -265,6 +265,19 @@ export async function listLmStudioModels(): Promise<string[]> {
   return r.ok ? r.models.map((m) => m.id) : []
 }
 
+/** List local models with the capability metadata LM Studio advertises. */
+export async function listLmStudioModelInfo(): Promise<
+  Array<{ id: string; supportsImages?: boolean }>
+> {
+  const url = localServerUrl()
+  const result = await fetchLmStudioModelsCached(url)
+  if (!result.ok) return []
+  return result.models.map((model) => ({
+    id: model.id,
+    ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
+  }))
+}
+
 // Drop the cache so the next models query refetches (e.g. right after a manual
 // "Test connection" succeeds, or settings change).
 export function invalidateLmStudioModelsCache(): void {

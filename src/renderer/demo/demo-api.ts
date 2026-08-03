@@ -143,6 +143,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         emitChunk(threadId, { type: 'done', stopReason: 'end_turn' })
         return resolvedVoid()
       },
+      describeImages: () => resolved({ text: 'Demo image description.' }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts
       // a retry error where the demo's answer should be. Nothing is checked out
@@ -290,6 +291,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     lmStudio: {
       test: () => resolved({ ok: false, error: 'Unavailable in demo' }),
       models: emptyArray,
+      modelInfo: emptyArray,
       detect: () =>
         resolved({
           serverRunning: false,

@@ -6,6 +6,8 @@ import { isRecord } from '@shared/unknown-value.ts'
 export interface LmStudioModelInfo {
   id: string
   contextLength: number | null
+  /** Image-input support advertised by LM Studio's native model catalog. */
+  supportsImages?: boolean
 }
 
 export function lmStudioApiKey(override?: string): string {
@@ -32,6 +34,19 @@ function parsePositiveInt(value: unknown): number | null {
     return n > 0 ? n : null
   }
   return null
+}
+
+function parseVisionCapability(record: Record<string, unknown>): boolean | undefined {
+  const capabilities = record['capabilities']
+  if (isRecord(capabilities) && typeof capabilities['vision'] === 'boolean') {
+    return capabilities['vision']
+  }
+  if (Array.isArray(capabilities)) {
+    if (capabilities.includes('vision')) return true
+    if (capabilities.every((capability) => typeof capability === 'string')) return false
+  }
+  if (record['type'] === 'vlm') return true
+  return undefined
 }
 
 /** Best-effort context length from one LM Studio /models row (OpenAI or native v1). */
@@ -75,7 +90,12 @@ function parseOpenAiModelsPayload(json: unknown): LmStudioModelInfo[] {
           ? rec['model']
           : null
     if (!id) continue
-    out.push({ id, contextLength: parseContextFromModelRecord(rec) })
+    const supportsImages = parseVisionCapability(rec)
+    out.push({
+      id,
+      contextLength: parseContextFromModelRecord(rec),
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
+    })
   }
   return out
 }
@@ -114,7 +134,12 @@ function parseNativeV1ModelsPayload(json: unknown): LmStudioModelInfo[] {
       (typeof rec['model_key'] === 'string' && rec['model_key']) ||
       null
     if (!id) continue
-    out.push({ id, contextLength: effectiveContextFromNativeModelRecord(rec) })
+    const supportsImages = parseVisionCapability(rec)
+    out.push({
+      id,
+      contextLength: effectiveContextFromNativeModelRecord(rec),
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
+    })
   }
   return out
 }
@@ -124,14 +149,20 @@ function mergeOpenAiWithNativeContext(
   native: LmStudioModelInfo[],
 ): LmStudioModelInfo[] {
   const contextById = new Map<string, number>()
+  const imageSupportById = new Map<string, boolean>()
   for (const m of native) {
     if (m.contextLength) contextById.set(m.id, m.contextLength)
+    if (m.supportsImages !== undefined) imageSupportById.set(m.id, m.supportsImages)
   }
   if (openAi.length === 0) return native
-  return openAi.map((m) => ({
-    id: m.id,
-    contextLength: contextById.get(m.id) ?? m.contextLength,
-  }))
+  return openAi.map((m) => {
+    const supportsImages = imageSupportById.get(m.id) ?? m.supportsImages
+    return {
+      id: m.id,
+      contextLength: contextById.get(m.id) ?? m.contextLength,
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
+    }
+  })
 }
 
 async function fetchJson(

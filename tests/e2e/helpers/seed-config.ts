@@ -555,7 +555,7 @@ export function seedProjectSwitchFixture(
  */
 export function seedOpenRouterFixture(
   workspaceRoot: string,
-  options?: { apiBase?: string; freeMode?: boolean },
+  options?: { apiBase?: string; freeMode?: boolean; localServerUrl?: string },
 ): void {
   const projectId = 'e2e-openrouter-project'
   const now = Date.parse('2026-07-28T10:00:00.000Z')
@@ -606,6 +606,7 @@ export function seedOpenRouterFixture(
     openRouterModel: 'anthropic/claude-3.5-sonnet',
     ...(options?.freeMode ? { openRouterFreeMode: true } : {}),
     ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
+    ...(options?.localServerUrl ? { localServerUrl: options.localServerUrl } : {}),
     apiKey: {
       openrouter: {
         v: 1,
