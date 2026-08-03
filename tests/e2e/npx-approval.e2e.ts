@@ -1,14 +1,10 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('npx package command approval', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-npx-approval-project', {
       subagentsEnabled: false,
@@ -47,11 +43,14 @@ describe('npx package command approval', () => {
 
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('npx tsc --noEmit')
-    expect(body).toContain('download and run code from the network')
-    expect(body).toContain('Allow this command?')
+    expect(body).not.toContain('download and run code')
+    const advice = await dialog.$('.approval-advice').getText()
+    expect(advice).toContain('download and run code from the network')
+    const footer = await dialog.$('.approval-footer').getText()
+    expect(footer).toContain('Allow this command?')
     expect(body).not.toContain('installs packages')
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'npx-approval-dialog.png'))
+    await saveAppScreenshot('npx-approval-dialog.png')
     await dialog.$('.approval-reject').click()
   })
 })
