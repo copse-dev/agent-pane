@@ -71,6 +71,12 @@ select,
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* Keep native password semantics and request Chromium's filled-circle mask
+   instead of exposing the inherited font's literal period glyph. */
+input[type='password'] {
+  -webkit-text-security: disc;
+}
 /* Monaco gutter chrome stays non-selectable even inside editors */
 .monaco-editor .margin,
 .monaco-editor .line-numbers {
