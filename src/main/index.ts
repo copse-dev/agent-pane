@@ -58,6 +58,7 @@ import {
   suggestToolTurnSummary,
   testLmStudio,
   listLmStudioModels,
+  listLmStudioModelInfo,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
 import {
@@ -94,7 +95,9 @@ import {
   parseIpcArgs,
   zProjectId,
   zThreadId,
+  describeImagesSchema,
 } from './ipc/ipc-guards.ts'
+import { describeImagesForHandoff } from './services/image-description.ts'
 import {
   recordStartupPhase,
   startEventLoopWatchdog,
@@ -316,6 +319,8 @@ app
 
     ipcMain.handle('lmstudio:models', () => listLmStudioModels())
 
+    ipcMain.handle('lmstudio:modelInfo', () => listLmStudioModelInfo())
+
     ipcMain.handle('openrouter:models', () => listFreeOpenRouterModels())
 
     ipcMain.handle('lmstudio:detect', async (event, url?: unknown, apiKey?: unknown) => {
@@ -454,6 +459,15 @@ app
         await saveAgentHistory(projectId, threadId, result.messages)
       },
     )
+
+    ipcMain.handle('agent:describeImages', async (event, ...rawArgs: unknown[]) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, model, userPrompt, images] = parseIpcArgs(
+        describeImagesSchema,
+        rawArgs,
+      )
+      return describeImagesForHandoff({ projectId, threadId, model, userPrompt, images })
+    })
 
     ipcMain.handle(
       'agent:estimateContext',

@@ -291,6 +291,11 @@
 .msg-actions:focus-within {
   opacity: 1;
 }
+/* A deterministic image-input failure keeps both recovery actions visible on
+   the latest prompt, so switching model/resending does not depend on hover. */
+.msg-user:not(:has(~ .msg-user)):has(~ .msg-image-input-unsupported) .msg-actions {
+  opacity: 1;
+}
 .msg-action {
   font-size: 11px;
   color: var(--text-muted);

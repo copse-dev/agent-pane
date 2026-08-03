@@ -58,6 +58,12 @@ function createApi(options: {
   onPrepareCheckout?: () => Promise<PreparedThreadCheckout>
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
   listSkills?: () => Promise<SkillSummary[]>
+  availableProviders?: () => Promise<
+    Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
+  >
+  openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
+  lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
+  onDescribeImages?: ApiClient['agent']['describeImages']
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -67,6 +73,7 @@ function createApi(options: {
         ...base['agent'],
         abort: options.onAbort ?? (async (): Promise<void> => {}),
         run: options.onRun ?? (async (): Promise<void> => {}),
+        describeImages: options.onDescribeImages ?? base['agent'].describeImages,
         clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
         prepareCheckout:
           options.onPrepareCheckout ??
@@ -124,10 +131,22 @@ function createApi(options: {
       lmStudio: {
         ...base['lmStudio'],
         models: async () => [],
+        modelInfo:
+          options.lmStudioModelInfo ??
+          (async (): Promise<Array<{ id: string; supportsImages?: boolean }>> => []),
+      },
+      openRouter: {
+        ...base['openRouter'],
+        models: options.openRouterModels ?? (async (): Promise<[]> => []),
       },
       settings: {
         ...base['settings'],
-        availableProviders: async () => ({ anthropic: true, openai: true }),
+        availableProviders:
+          options.availableProviders ??
+          (async (): Promise<{ anthropic: true; openai: true }> => ({
+            anthropic: true,
+            openai: true,
+          })),
         extraProviders: async () => [],
         get: async () => undefined,
         set: async (): Promise<void> => {},
@@ -904,6 +923,171 @@ describe('input bar browse button', () => {
     assert.deepEqual(store.getState().threads[0]?.messages[0]?.attachments, [
       { kind: 'file', label: 'notes.txt', content: 'hello world' },
     ])
+  })
+})
+
+describe('input bar image compatibility', () => {
+  function imageModelApi(onRun?: () => Promise<void>): ApiClient {
+    return createApi({
+      currentBranch: 'main',
+      ...(onRun ? { onRun } : {}),
+      availableProviders: async () => ({ openrouter: true }),
+      openRouterModels: async () => [
+        {
+          id: 'deepseek/deepseek-v4-flash',
+          name: 'DeepSeek V4 Flash',
+          inputPricePerMTok: 0,
+          outputPricePerMTok: 0,
+          supportsImages: false,
+        },
+        {
+          id: 'anthropic/claude-sonnet',
+          name: 'Claude Sonnet',
+          inputPricePerMTok: 3,
+          outputPricePerMTok: 15,
+          supportsImages: true,
+        },
+      ],
+      lmStudioModelInfo: async () => [
+        { id: 'qwen/qwen3-vl', supportsImages: true },
+        { id: 'qwen/qwen3-text', supportsImages: false },
+      ],
+    })
+  }
+
+  function imageModelStore(): ReturnType<typeof createStore> {
+    return createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread(), model: 'openrouter:deepseek/deepseek-v4-flash' }],
+    })
+  }
+
+  it('warns before send and keeps the image prompt intact while suggesting a supporting model', async () => {
+    let runs = 0
+    const store = imageModelStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      imageModelApi(async () => {
+        runs++
+      }),
+    )
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'Describe this screenshot'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    getPromptAttachmentHandlers()?.attachImage('data:image/png;base64,abc', 'image/png')
+    await flush()
+
+    const warning = host.querySelector<HTMLElement>('.composer-image-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /DeepSeek V4 Flash can’t read image input/)
+    assert.match(warning.textContent, /Use Claude Sonnet/)
+    assert.match(warning.textContent, /Describe locally with qwen\/qwen3-vl/)
+
+    host.querySelector<HTMLButtonElement>('.submit-btn')?.click()
+    await flush()
+    assert.equal(runs, 0, 'known-incompatible image prompt must not reach the provider')
+    assert.equal(composer.textContent, 'Describe this screenshot')
+    assert.equal(host.querySelectorAll('.image-chip').length, 1)
+
+    host.querySelector<HTMLButtonElement>('.composer-image-model-btn')?.click()
+    await flush()
+    assert.equal(
+      store.getState().threads[0]?.model,
+      'openrouter:anthropic/claude-sonnet',
+      'suggestion switches the thread but leaves sending to the user',
+    )
+    assert.equal(composer.textContent, 'Describe this screenshot')
+    assert.equal(host.querySelectorAll('.image-chip').length, 1)
+    assert.equal(warning.hidden, true)
+  })
+
+  it('can continue immediately by sending the prompt without its image', async () => {
+    let runs = 0
+    const store = imageModelStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      imageModelApi(async () => {
+        runs++
+      }),
+    )
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'Continue from my text'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    getPromptAttachmentHandlers()?.attachImage('data:image/png;base64,abc', 'image/png')
+    await flush()
+
+    host.querySelector<HTMLButtonElement>('.composer-image-without-btn')?.click()
+    await flush()
+    assert.equal(runs, 1)
+    const sent = store.getState().threads[0]?.messages.at(-1)
+    assert.ok(sent)
+    assert.equal(sent.content, 'Continue from my text')
+    assert.equal(sent.images, undefined)
+  })
+
+  it('can describe locally, disclose the handoff, and send text to the selected model', async () => {
+    let runs = 0
+    let descriptorModel = ''
+    let descriptorPrompt = ''
+    const store = imageModelStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const api = imageModelApi(async () => {
+      runs++
+    })
+    api.agent.describeImages = async (
+      _projectId,
+      _threadId,
+      model,
+      prompt,
+      images,
+    ): Promise<{ text: string }> => {
+      descriptorModel = model
+      descriptorPrompt = prompt
+      assert.deepEqual(images, ['data:image/png;base64,abc'])
+      return { text: 'A dark settings panel with a Sources section.' }
+    }
+    mountInputBar(host, store, api)
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'Check the colour section'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    getPromptAttachmentHandlers()?.attachImage('data:image/png;base64,abc', 'image/png')
+    await flush()
+
+    host.querySelector<HTMLButtonElement>('.composer-image-describe-btn')?.click()
+    await flush()
+
+    assert.equal(descriptorModel, 'lmstudio:qwen/qwen3-vl')
+    assert.equal(descriptorPrompt, 'Check the colour section')
+    assert.equal(runs, 1)
+    assert.equal(
+      store.getState().threads[0]?.model,
+      'openrouter:deepseek/deepseek-v4-flash',
+      'the final turn stays on the originally selected text-only model',
+    )
+    const sent = store.getState().threads[0]?.messages.at(-1)
+    assert.ok(sent)
+    assert.equal(sent.images, undefined)
+    assert.match(sent.content, /^Check the colour section/)
+    assert.match(sent.content, /\[Image description generated by qwen\/qwen3-vl\]/)
+    assert.match(sent.content, /A dark settings panel with a Sources section\./)
+    assert.equal(host.querySelectorAll('.image-chip').length, 0)
   })
 })
 
