@@ -21,11 +21,14 @@ interface EmitReq {
   body?: string
   allowRemember?: boolean
   rememberLabel?: string
+  allowTurnTreeLease?: boolean
+  turnTreeLeaseLabel?: string
 }
 interface Responded {
   id: string
   approved: boolean
   remember: boolean
+  grantScope?: 'turn-tree'
 }
 
 function makeApi(): {
@@ -40,8 +43,19 @@ function makeApi(): {
       handler = h
       return () => {}
     },
-    'approval.respond': (id: string, approved: boolean, remember: boolean): Promise<void> => {
-      responses.push({ id, approved, remember })
+    'approval.respond': (
+      id: string,
+      approved: boolean,
+      remember: boolean,
+      _comparisonModels: unknown,
+      grantScope?: 'once' | 'turn-tree',
+    ): Promise<void> => {
+      responses.push({
+        id,
+        approved,
+        remember,
+        ...(grantScope === 'turn-tree' ? { grantScope } : {}),
+      })
       return Promise.resolve()
     },
   }
@@ -56,6 +70,10 @@ function makeApi(): {
         type: 'shell',
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
+        allowTurnTreeLease: req.allowTurnTreeLease,
+        turnTreeLeaseLabel:
+          req.turnTreeLeaseLabel ??
+          (req.allowTurnTreeLease ? 'Allow exact retries for this task' : undefined),
       })
     },
     responses,
@@ -271,6 +289,28 @@ describe('approval dialog coalescing', () => {
     emit({ id: 'b', allowRemember: true, rememberLabel: 'Always allow Codex web fetches' })
     fireWindow()
     assert.equal(remember.hidden, true)
+  })
+
+  it('offers bounded task retries only when every request is eligible', () => {
+    const lease = qsRequired(dialog, '.approval-turn-tree')
+    emit({ id: 'a', allowTurnTreeLease: true })
+    emit({ id: 'b', allowTurnTreeLease: true })
+    fireWindow()
+    assert.equal(lease.hidden, false)
+    const input = qsRequired<HTMLInputElement>(lease, '.approval-turn-tree-input')
+    input.checked = true
+    approve().click()
+    assert.ok(responses.every((response) => response.grantScope === 'turn-tree'))
+  })
+
+  it('hides task retries for mixed eligibility and defaults to one-shot approval', () => {
+    const lease = qsRequired(dialog, '.approval-turn-tree')
+    emit({ id: 'a', allowTurnTreeLease: true })
+    emit({ id: 'b' })
+    fireWindow()
+    assert.equal(lease.hidden, true)
+    approve().click()
+    assert.ok(responses.every((response) => response.grantScope === undefined))
   })
 
   it('coalesces the opening burst under a single scheduled window', () => {

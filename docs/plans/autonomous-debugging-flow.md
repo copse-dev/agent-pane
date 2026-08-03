@@ -152,6 +152,22 @@ A lease records turn-tree, project, execution root, normalized capability, conta
 expiry, invocation limit, and revocation state. It is not an arbitrary command-prefix
 allow-list.
 
+The first native shell capability is a bounded exact replay. It covers commands inside
+the project sandbox and may explicitly cover an outside-sandbox replay only when the
+command's sole external reason is opaque local execution (for example a workspace script),
+never network or outside-path access. The prompt names that containment.
+The gate reuses the shared quote-aware shell composition parser to identify the sole
+constituent requiring approval. It can compose that byte-identical constituent with a
+`cd` to the canonical execution root, `;`/`&&`, and read-only commands or output pipelines
+such as `rg`, `head`, and `jq` only when every additional constituent independently passes
+ordinary sandbox policy. The original command runs unchanged after the complete
+composition is authorized. The same lease may authorize a small fixed number of separate
+follow-up commands only when each would independently auto-run under the ordinary
+project-sandbox policy. Piped input to the leased command, a different working directory,
+environment changes, file redirects, substitutions, grouping, background/`||` control
+flow, destructive operations, new external access, and containment escalation never
+compose with the lease.
+
 Acceptance:
 
 - one approval can authorize only the declared bounded test matrix;
