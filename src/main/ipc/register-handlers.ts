@@ -1,9 +1,14 @@
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { z } from 'zod'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
+import {
+  captureBrowserPageText,
+  captureBrowserScreenshot,
+} from '../services/browser/browser-share.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
@@ -349,6 +354,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
+
+  function interactiveBrowserContents(
+    event: Electron.IpcMainInvokeEvent,
+    rawId: unknown,
+  ): WebContents {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(z.number().int().positive(), [rawId])
+    const contents = webContents.fromId(id)
+    if (!contents || contents.isDestroyed() || contents.session !== getInAppBrowserSession()) {
+      throw new IpcValidationError('Browser sharing rejected: unknown interactive browser tab')
+    }
+    return contents
+  }
+
+  ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
+    const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
+    if (!win.isDestroyed()) win.webContents.send('browser:share-text', share)
+  })
+
+  ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
+    const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
+    if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+  })
 
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)

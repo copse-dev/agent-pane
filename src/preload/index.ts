@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   browser: {
+    sharePageText: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:share-page-text', webContentsId),
+    shareScreenshot: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:share-screenshot', webContentsId),
     onOpenTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
@@ -27,6 +31,34 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('browser:open-tab', listener)
       return (): void => {
         ipcRenderer.off('browser:open-tab', listener)
+      }
+    },
+    onShareText: (
+      handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        share: import('@shared/types/browser-share.ts').BrowserTextShare,
+      ): void => {
+        handler(share)
+      }
+      ipcRenderer.on('browser:share-text', listener)
+      return (): void => {
+        ipcRenderer.off('browser:share-text', listener)
+      }
+    },
+    onShareImage: (
+      handler: (share: import('@shared/types/browser-share.ts').BrowserImageShare) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        share: import('@shared/types/browser-share.ts').BrowserImageShare,
+      ): void => {
+        handler(share)
+      }
+      ipcRenderer.on('browser:share-image', listener)
+      return (): void => {
+        ipcRenderer.off('browser:share-image', listener)
       }
     },
     onPackTabRequest: (
