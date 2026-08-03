@@ -4,8 +4,19 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import {
+  createEvalProject,
+  loadEvalScenario,
+  seedEvalWorkspace,
+} from './tests/e2e/helpers/agent-eval-scenario.ts'
+import {
+  DEFAULT_APP_CHAT_MODEL,
+  LM_STUDIO_MODEL_IDS,
+  resolveLocalServerUrl,
+} from './src/shared/lm-studio-defaults.ts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
+const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
 const KEEP_EVAL_WDIO = process.env.COPSE_EVAL_KEEP_WDIO === '1'
 
 /** WDIO config for real local-model agent evals (not mock LLM). */
@@ -17,6 +28,7 @@ const chromedriverBinary = join(
 
 let evalUserDataDir: string | null = null
 let evalChromeProfileDir: string | null = null
+let cleanupEvalProject: (() => void) | null = null
 
 function cleanupEvalRunDirs(): void {
   if (KEEP_EVAL_WDIO) return
@@ -66,7 +78,7 @@ export const config: Options.Testrunner = {
   afterTest: async (test) => {
     await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'agent eval')
   },
-  beforeSession(_config, capabilities) {
+  async beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
     if (process.env.COPSE_EVAL_USE_MOCK === '1') {
       process.env.COPSE_PANEL_MOCK_LLM = '1'
@@ -83,12 +95,45 @@ export const config: Options.Testrunner = {
     process.env.COPSE_PANEL_USER_DATA = evalUserDataDir
     const evalWorkspaceDir = join(evalUserDataDir, 'workspace')
     process.env.COPSE_WORKSPACE_DIR = evalWorkspaceDir
+    const scenarioPath = process.env.COPSE_EVAL_SCENARIO?.trim() || DEFAULT_SCENARIO
+    const scenario = loadEvalScenario(scenarioPath)
+    const project = createEvalProject(scenario)
+    cleanupEvalProject = project.cleanup
+    seedEvalWorkspace(project.root, scenario)
+    process.env.COPSE_EVAL_WORKSPACE_ROOT = project.root
+
+    const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
+    const subagentsEnabled =
+      process.env.COPSE_EVAL_SUBAGENTS === '0'
+        ? false
+        : process.env.COPSE_EVAL_SUBAGENTS === '1'
+          ? true
+          : !useMock
+    const { resetUserData, seedEmptyProject } = await import('./tests/e2e/helpers/seed-config.ts')
+    resetUserData()
+    seedEmptyProject(project.root, `${scenario.id}-project`, {
+      subagentsEnabled,
+      autoRunSandboxCommands: scenario.autonomy?.requireShellApproval !== true,
+      ...(useMock
+        ? { model: 'claude-sonnet-4-6' }
+        : {
+            model: DEFAULT_APP_CHAT_MODEL,
+            localServerUrl: resolveLocalServerUrl(undefined, {
+              COPSE_EVAL_LM_STUDIO_URL:
+                process.env.COPSE_EVAL_LOCAL_SERVER_URL ?? process.env.COPSE_EVAL_LM_STUDIO_URL,
+            }),
+            localDefaultModel: LM_STUDIO_MODEL_IDS.chat,
+            subagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
+            localSubagentsEnabled: true,
+          }),
+    })
 
     const evalEnv: Record<string, string> = {
       COPSE_E2E: '1',
       COPSE_AGENT_EVAL: '1',
       COPSE_PANEL_USER_DATA: evalUserDataDir,
       COPSE_WORKSPACE_DIR: evalWorkspaceDir,
+      COPSE_EVAL_WORKSPACE_ROOT: project.root,
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
     }
@@ -121,6 +166,8 @@ export const config: Options.Testrunner = {
   },
   afterSession() {
     rmSync(EVAL_ENV_FILE, { force: true })
+    cleanupEvalProject?.()
+    cleanupEvalProject = null
     cleanupEvalRunDirs()
   },
 }
