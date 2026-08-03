@@ -93,6 +93,29 @@ The oracle records:
 - terminal classification; and
 - whether a causal claim is supported by the A/B evidence.
 
+The default eval driver runs the real product agent loop in an ephemeral Docker
+container. The container is the host boundary; the agent also initializes the product's
+ASRT sandbox and fails before inference unless seatbelt or bwrap is active:
+
+```bash
+npm run eval:autonomy
+```
+
+`npm run eval:autonomy:host` runs the same fail-closed headless driver directly on a
+supported host while iterating.
+
+The same scenario can be driven through Electron when renderer, approval-dialog, or
+thread-persistence coverage is needed:
+
+```bash
+npm run eval:autonomy:ui
+```
+
+Headless mode runs all prompt variants by default;
+`COPSE_EVAL_PROMPT_VARIANT=0..2` selects one while iterating. UI mode runs variant 0
+unless the same variable selects another. Headless is the behavioral gate; UI mode is
+an optional integration probe, not a prerequisite for running the autonomy regression.
+
 Acceptance:
 
 - approvals are at most one;
