@@ -91,7 +91,7 @@
   height: var(--font-size-lg);
   flex-shrink: 0;
   overflow: visible;
-  color: var(--success);
+  color: var(--accent);
 }
 .reasoning-activity-path {
   fill: none;
