@@ -1,3 +1,4 @@
+import './demo.css'
 import { createDemoApi } from './demo-api.ts'
 import { selectDemoScenario } from './scenarios.ts'
 import { startAutoplay } from './autoplay.ts'
@@ -22,10 +23,14 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 // A scenario with a recorded trace is a walkthrough, so it plays by default —
 // including for anyone opening the demo link directly. `?autoplay=0` opts out.
 const autoplay = flag(params, 'autoplay', scenario.trace !== undefined)
+// Focusing a control inside an iframe also focuses the iframe itself, which
+// makes Chromium scroll the containing marketing page back to the hero.
+const embedded = flag(params, 'embedded', false)
 
 window.api = createDemoApi(scenario, { trace: { instant: reducedMotion } })
 document.documentElement.dataset['demoScenario'] = scenario.id
 if (autoplay) document.documentElement.dataset['demoAutoplay'] = 'on'
+if (embedded) document.documentElement.dataset['demoEmbedded'] = 'on'
 
 void import('../main.ts').then(() => {
   const trace = scenario.trace
@@ -34,5 +39,6 @@ void import('../main.ts').then(() => {
     prompt: trace.prompt,
     loop: flag(params, 'loop', false),
     instant: reducedMotion,
+    focusComposer: !embedded,
   })
 })
