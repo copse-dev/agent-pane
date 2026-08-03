@@ -331,4 +331,92 @@ describe('subagent display (component)', () => {
     assert.equal(firstLink.dataset['fileReferencePath'], 'src/main/index.ts')
     assert.equal(secondLink.dataset['fileReferencePath'], 'src/renderer/index.ts')
   })
+
+  it('shows the summary once when the parent result repeats the timeline', () => {
+    mountWithSubagent()
+
+    const card = qsRequired<HTMLDetailsElement>(document, '.tool-card-subagent')
+    // `summary` is the subagent's last assistant message verbatim, so the
+    // parent result would otherwise print it a second time below the timeline.
+    assert.equal(card.querySelectorAll('.subagent-parent-result').length, 0)
+    const copies = [...card.querySelectorAll('.subagent-message-assistant')].filter((node) =>
+      node.textContent.includes('README describes Copse setup and dev workflow.'),
+    )
+    assert.equal(copies.length, 1, 'the summary should render exactly once')
+  })
+
+  it('still renders a parent result the subagent never said in its timeline', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')
+    const diverged = structuredClone(exploreCall)
+    diverged.result = 'Exploration completed with no summary.'
+    addToolCall(store, messageId, diverged)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const result = host.querySelector('.subagent-parent-result')
+    assert.ok(result, 'a result absent from the timeline is still shown')
+    assert.match(result.textContent, /Exploration completed with no summary\./)
+  })
+
+  it('auto-contracts an explore card once the subagent finishes', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    const running = structuredClone(exploreCall)
+    running.status = 'running'
+    running.result = null
+    const runningSession = running.subagent
+    assert.ok(runningSession)
+    runningSession.status = 'running'
+    runningSession.summary = ''
+    addToolCall(store, messageId, running)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
+    assert.equal(card.open, true, 'a running explore card auto-expands')
+
+    // The turn settles. The auto-expansion was never a user preference, so the
+    // wall of explored text must collapse rather than stay pinned open.
+    const settledCall = structuredClone(exploreCall)
+    assert.ok(settledCall.subagent)
+    updateToolCall(store, messageId, 'tc-explore-1', {
+      status: 'done',
+      result: settledCall.result,
+      subagent: settledCall.subagent,
+    })
+
+    const settled = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
+    assert.equal(settled.open, false, 'a finished explore card contracts')
+  })
+
+  it('keeps a card the user expanded after it settled open across later ticks', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')
+    addToolCall(store, messageId, structuredClone(exploreCall))
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
+    card.open = true
+
+    const session = structuredClone(exploreCall.subagent)
+    assert.ok(session)
+    const innerCall = session.messages[0]?.toolCalls[0]
+    assert.ok(innerCall)
+    innerCall.result = '# Copse\n\nUpdated readme contents.\n'
+    updateToolCall(store, messageId, 'tc-explore-1', { subagent: session })
+
+    assert.equal(
+      qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent').open,
+      true,
+      'an expansion made after the tool settled is a real preference',
+    )
+  })
 })
