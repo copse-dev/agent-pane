@@ -4,6 +4,7 @@ import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
@@ -136,7 +137,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         emitChunk(threadId, {
           type: 'usage',
           model: DEMO_MODEL,
-          inputTokens: Math.max(1, Math.ceil(prompt.length / 4)),
+          inputTokens: Math.max(1, Math.ceil(prompt.length / CHARS_PER_TOKEN)),
           outputTokens: 18,
           estimated: true,
         })
@@ -154,9 +155,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       estimateContext: (_projectId: string, _threadId: string, payload: string) =>
         resolved({
           segments: [
-            { key: 'message', label: 'Your message', tokens: Math.ceil(payload.length / 4) },
+            {
+              key: 'message',
+              label: 'Your message',
+              tokens: Math.ceil(payload.length / CHARS_PER_TOKEN),
+            },
           ],
-          totalTokens: Math.ceil(payload.length / 4),
+          totalTokens: Math.ceil(payload.length / CHARS_PER_TOKEN),
           contextWindow: 200_000,
         }),
       abort: () => {

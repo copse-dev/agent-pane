@@ -1,7 +1,8 @@
 import type { LLMMessage, UserContent } from '@copse/llm/wire-types.ts'
+import { CHARS_PER_TOKEN, ESTIMATED_IMAGE_TOKENS } from './token-estimate.ts'
 
-/** Flat estimate per image block (avoids counting base64 at ~4 chars/token). */
-export const ESTIMATED_IMAGE_TOKENS = 1600
+// Re-exported so existing consumers keep importing from a single module.
+export { ESTIMATED_IMAGE_TOKENS } from './token-estimate.ts'
 
 export const CANCELLED_TOOL_RESULT = 'Tool execution cancelled.'
 
@@ -16,10 +17,10 @@ export function getLastMeasuredInputTokens(): number | null {
 }
 
 function estimateUserContentTokens(content: UserContent): number {
-  if (typeof content === 'string') return content.length / 4
+  if (typeof content === 'string') return content.length / CHARS_PER_TOKEN
   let total = 0
   for (const block of content) {
-    if (block.type === 'text') total += block.text.length / 4
+    if (block.type === 'text') total += block.text.length / CHARS_PER_TOKEN
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- explicit guard so future non-image block types are not miscounted as images
     else if (block.type === 'image') total += ESTIMATED_IMAGE_TOKENS
   }
@@ -36,7 +37,7 @@ function toolResultImageAdjustment(toolResults: LLMMessage & { role: 'tool' }): 
   let adjustment = 0
   for (const result of toolResults.toolResults) {
     for (const image of result.images ?? []) {
-      adjustment -= image.dataUrl.length / 4
+      adjustment -= image.dataUrl.length / CHARS_PER_TOKEN
       adjustment += ESTIMATED_IMAGE_TOKENS
     }
   }
@@ -46,14 +47,17 @@ function toolResultImageAdjustment(toolResults: LLMMessage & { role: 'tool' }): 
 function estimateSingleMessageTokens(message: LLMMessage): number {
   switch (message.role) {
     case 'system':
-      return message.content.length / 4
+      return message.content.length / CHARS_PER_TOKEN
     case 'user':
       return estimateUserContentTokens(message.content)
     case 'assistant':
-      if (typeof message.content === 'string') return message.content.length / 4
-      return JSON.stringify(message.content).length / 4
+      if (typeof message.content === 'string') return message.content.length / CHARS_PER_TOKEN
+      return JSON.stringify(message.content).length / CHARS_PER_TOKEN
     case 'tool':
-      return JSON.stringify(message.toolResults).length / 4 + toolResultImageAdjustment(message)
+      return (
+        JSON.stringify(message.toolResults).length / CHARS_PER_TOKEN +
+        toolResultImageAdjustment(message)
+      )
     default:
       return 0
   }
@@ -110,13 +114,13 @@ export function conversationTokenBudget(
 
 export function estimateConversationTokens(messages: LLMMessage[]): number {
   const conv = conversationMessages(messages)
-  let total = JSON.stringify(conv).length / 4
+  let total = JSON.stringify(conv).length / CHARS_PER_TOKEN
   for (const m of conv) {
     if (m.role === 'tool') total += toolResultImageAdjustment(m)
     if (m.role === 'user' && Array.isArray(m.content)) {
       for (const block of m.content) {
         if (block.type === 'image') {
-          total -= block.dataUrl.length / 4
+          total -= block.dataUrl.length / CHARS_PER_TOKEN
           total += ESTIMATED_IMAGE_TOKENS
         }
       }
@@ -143,12 +147,12 @@ export function effectiveConversationTokens(messages: LLMMessage[]): number {
  * instead of re-stringifying the entire conversation every iteration (#583).
  */
 function conversationMessageEstimate(message: LLMMessage): number {
-  let tokens = (JSON.stringify(message).length + 1) / 4
+  let tokens = (JSON.stringify(message).length + 1) / CHARS_PER_TOKEN
   if (message.role === 'tool') tokens += toolResultImageAdjustment(message)
   if (message.role === 'user' && Array.isArray(message.content)) {
     for (const block of message.content) {
       if (block.type === 'image') {
-        tokens -= block.dataUrl.length / 4
+        tokens -= block.dataUrl.length / CHARS_PER_TOKEN
         tokens += ESTIMATED_IMAGE_TOKENS
       }
     }
