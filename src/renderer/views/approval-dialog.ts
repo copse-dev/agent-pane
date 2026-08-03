@@ -68,7 +68,7 @@ export function mountApprovalDialog(
     'label',
     { class: 'approval-remember approval-turn-tree' },
     el('input', { type: 'checkbox', class: 'approval-turn-tree-input' }),
-    'Allow 2 exact retries for this task (15 minutes)',
+    'Allow retries for this task (up to 10, for 15 minutes)',
   )
   // One heading for the whole prompt (fixed); the items scroll under it so a big
   // batch doesn't push the buttons off screen.
