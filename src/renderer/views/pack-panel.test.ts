@@ -113,6 +113,52 @@ describe('createPackPanelEl (list)', () => {
     assert.equal(qsRequired(secondRow, '.pack-panel-badge-assigned-model').textContent, 'local')
   })
 
+  it('leaves the list unclamped when there are 5 rows or fewer', () => {
+    const data: PanelListData = {
+      kind: 'list',
+      rows: Array.from({ length: 5 }, (_, i) => ({
+        id: `t${String(i)}`,
+        label: `row ${String(i)}`,
+        status: 'pending' as const,
+      })),
+    }
+    const panel = createPackPanelEl(data)
+    const list = qsRequired(panel, '.pack-panel-list')
+    assert.equal(list.style.maxHeight, '')
+    assert.equal(list.style.overflowY, '')
+  })
+
+  it('clamps the list to exactly 5 rows of measured height once there are more', () => {
+    const ROW_HEIGHT = 20
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- saved only to restore the prototype afterward, never called unbound
+    const patchedRect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement): DOMRect {
+      if (this.classList.contains('pack-panel-row')) {
+        const index = Array.from(this.parentElement?.children ?? []).indexOf(this)
+        return new DOMRect(0, index * ROW_HEIGHT, 300, ROW_HEIGHT)
+      }
+      return new DOMRect(0, 0, 300, 0)
+    }
+    try {
+      const data: PanelListData = {
+        kind: 'list',
+        rows: Array.from({ length: 8 }, (_, i) => ({
+          id: `t${String(i)}`,
+          label: `row ${String(i)}`,
+          status: 'pending' as const,
+        })),
+      }
+      const panel = createPackPanelEl(data)
+      const list = qsRequired(panel, '.pack-panel-list')
+      // Row heights vary with wrapped labels, so the cap is measured (top of the
+      // 6th row) rather than a fixed pixel guess — here that's 5 * ROW_HEIGHT.
+      assert.equal(list.style.maxHeight, `${String(5 * ROW_HEIGHT)}px`)
+      assert.equal(list.style.overflowY, 'auto')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = patchedRect
+    }
+  })
+
   it('omits cancelled todos and computes progress from visible rows', () => {
     const data = todosToPanelListData([
       { id: 'done', content: 'Done step', status: 'completed' },
