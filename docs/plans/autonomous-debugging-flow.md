@@ -161,12 +161,12 @@ constituent requiring approval. It can compose that byte-identical constituent w
 `cd` to the canonical execution root, `;`/`&&`, and read-only commands or output pipelines
 such as `rg`, `head`, and `jq` only when every additional constituent independently passes
 ordinary sandbox policy. The original command runs unchanged after the complete
-composition is authorized. The same lease may authorize a small fixed number of separate
-follow-up commands only when each would independently auto-run under the ordinary
-project-sandbox policy. Piped input to the leased command, a different working directory,
-environment changes, file redirects, substitutions, grouping, background/`||` control
-flow, destructive operations, new external access, and containment escalation never
-compose with the lease.
+composition is authorized. Separate follow-up commands are evaluated only through ordinary
+project-sandbox policy; the lease adds no authority for them. Piped input to the leased
+command, a different working directory, environment changes, file redirects, substitutions,
+grouping, background/`||` control flow, destructive operations, new external access, and
+containment escalation never compose with the lease. Sandboxed prompts select the bounded
+task lease by default; outside-sandbox prompts default to a one-shot grant.
 
 Acceptance:
 

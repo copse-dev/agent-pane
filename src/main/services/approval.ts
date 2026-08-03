@@ -32,6 +32,8 @@ export interface ApprovalRequest {
   allowTurnTreeLease?: boolean
   /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
   turnTreeLeaseLabel?: string
+  /** Whether the bounded task lease is selected when the prompt opens. */
+  turnTreeLeaseDefault?: boolean
   /** Secret-free operation or tool name stored in the durable decision log. */
   subject?: string
   /** Scope the decision applies at, such as `sandbox` or `external`. */
@@ -71,6 +73,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     comparisonModels: req.comparisonModels ?? null,
     allowTurnTreeLease: req.allowTurnTreeLease ?? false,
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
+    turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
   })
 }
 
