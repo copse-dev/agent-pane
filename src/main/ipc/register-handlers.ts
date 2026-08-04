@@ -152,7 +152,9 @@ import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
+import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -1505,6 +1507,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (id === PARALLEL_SEARCH_PACK_ID) {
       syncParallelSearchTools(registry)
+    }
+    if (id === DARK_FACTORY_PACK_ID) {
+      syncDarkFactorySensor()
     }
     return { packs: getPackService().list() }
   })

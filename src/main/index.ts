@@ -121,6 +121,7 @@ import {
 import { getAutomationService } from './services/automations/automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
+import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
@@ -312,6 +313,7 @@ app
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
+    disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     void taskSupervisor.start().catch((error: unknown) => {
       console.error('[task-supervisor] Startup reconciliation failed:', error)
     })
@@ -652,10 +654,13 @@ let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
 let disposeLongTaskWake: (() => void) | undefined
+let disposeDarkFactorySensor: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
   getAutomationService().stop()
+  disposeDarkFactorySensor?.()
+  disposeDarkFactorySensor = undefined
   await taskSupervisor.shutdown()
   disposeLongTaskWake?.()
   disposeLongTaskWake = undefined
