@@ -11,10 +11,10 @@ on:
 
 # CodeQL is advisory rather than a required PR check. Scan the trusted main tip
 # after merges plus a weekly safety-net run instead of scanning every PR update.
-# Deliberately NOT extended to `develop`: every commit reaches `main` via a
-# promotion, so coverage is unchanged — it just arrives batched, a few times a
-# day instead of ~20. The weekly run remains the backstop for anything sitting on
-# `develop` between promotions.
+# Deliberately scans trunk rather than `release`: every commit reaches `release`
+# via a promotion from `main`, so scanning `main` covers the same code and
+# surfaces findings a promotion earlier. The weekly run remains the backstop for
+# anything sitting on `main` between promotions.
 # Both triggers stay on the self-hosted check fleet; there is intentionally no
 # GitHub-hosted fallback here because the scan can wait for fleet capacity.
 #
