@@ -49,7 +49,9 @@ import {
 import {
   ACP_MODEL_PREFIX,
   acpGroupLabel,
+  acpModelChoiceLabel,
   acpModelValue,
+  acpModelVersionName,
   enabledClaudeAcpAgent,
   parseAcpAgentConfigs,
   parseAcpModel,
@@ -139,7 +141,7 @@ async function packModelOptions(
 function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
   const options: ModelOption[] = []
   for (const agent of agents.filter((agent) => agent.enabled)) {
-    // Each agent gets its own heading ("<Title> Client (ACP)"), so models list
+    // Each agent gets its own heading ("<Title> on this device"), so models list
     // bare underneath without a redundant "<Title> —" prefix.
     const group = acpGroupLabel(agent.title)
     const models = agent.availableModels ?? []
@@ -148,11 +150,18 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       // "agent default" entry is dropped — it's redundant and confusing).
       // ACP agents expose no token pricing, so the hint is intellect-only —
       // resolved via the measurement alias map (agent labels like "Opus 4.8").
+      // Agents that label models by family alone keep the version in the
+      // description, which is both what the row shows and what resolves.
       for (const model of models) {
-        const hint = modelIntellectHint(model.value) ?? modelIntellectHint(model.label)
+        const label = acpModelChoiceLabel(model)
+        const versioned = acpModelVersionName(model.description)
+        const hint =
+          modelIntellectHint(model.value) ??
+          (versioned === null ? null : modelIntellectHint(versioned)) ??
+          modelIntellectHint(model.label)
         options.push({
           value: acpModelValue(agent.id, model.value),
-          label: hint ? `${model.label} — ${hint}` : model.label,
+          label: hint ? `${label} — ${hint}` : label,
           group,
         })
       }
