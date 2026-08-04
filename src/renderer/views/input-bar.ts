@@ -60,8 +60,7 @@ import {
 } from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
-import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
-import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
+import { type ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
   FALLBACK_APP_CHAT_MODEL,
@@ -693,17 +692,19 @@ export function mountInputBar(
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
-  // Pricing for extra-provider models (e.g. HF), keyed by `<slug>:<id>` selection.
-  // The static cloud catalog has no entry for these, so the footer cost reads here.
-  let extraPricing: ExtraPricing = {}
-  function refreshExtraPricing(): void {
-    // Best-effort: a missing/failed provider list just leaves the footer cost
+  // Rates for every model outside the static cloud catalog — OpenRouter routes
+  // and extra providers alike — keyed by model selection. Resolved in the main
+  // process (see model-pricing-store.ts) so the footer and the usage ledger
+  // price an identical thread identically.
+  let modelPricing: ModelPricingMap = {}
+  function refreshModelPricing(): void {
+    // Best-effort: a missing/failed pricing map just leaves the footer cost
     // resting on the static cloud catalog, so never let it throw.
     try {
       void api.settings
-        .extraProviders()
-        .then((providers) => {
-          extraPricing = extraProviderPricingMap(providers)
+        .modelPricing()
+        .then((pricing) => {
+          modelPricing = pricing
           updateFooter()
         })
         .catch(() => {})
@@ -867,7 +868,7 @@ export function mountInputBar(
       costVisible,
       model,
       measuredUsage: thread.usage,
-      extra: extraPricing,
+      pricing: modelPricing,
     })
   }
 
@@ -1722,7 +1723,7 @@ export function mountInputBar(
     store.on('settings_changed', () => {
       modelPicker.refresh()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
-      refreshExtraPricing()
+      refreshModelPricing()
       updateFooter()
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
@@ -1745,7 +1746,7 @@ export function mountInputBar(
 
   updateFooter()
   void refreshAutomaticCheckoutPreview()
-  refreshExtraPricing()
+  refreshModelPricing()
   syncComposerThread()
   scheduleContextEstimate(0)
   window.addEventListener('beforeunload', stopContextEstimates)
