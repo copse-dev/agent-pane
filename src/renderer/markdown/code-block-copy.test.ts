@@ -74,4 +74,14 @@ describe('attachCodeBlockCopyButtons', () => {
     // The mermaid block is untouched.
     assert.equal(qs<HTMLPreElement>(root, 'pre.mermaid')?.dataset['copyAttached'], undefined)
   })
+
+  it('skips pre blocks without code children', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<pre>plain preformatted text</pre>'
+
+    attachCodeBlockCopyButtons(root)
+
+    assert.equal(root.querySelector('.code-block-shell'), null)
+    assert.equal(qs<HTMLPreElement>(root, 'pre')?.dataset['copyAttached'], undefined)
+  })
 })
