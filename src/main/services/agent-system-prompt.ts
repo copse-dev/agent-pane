@@ -17,9 +17,12 @@ import {
   BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
   MEMORY_TOOLS_BLOCK,
+  OPUS_5_RESPONSE_LENGTH_BLOCK,
+  OPUS_5_TONE_REMINDER,
   PII_REDACTION_BLOCK,
   READ_TERMINAL_BLOCK,
 } from './agent-prompt.ts'
+import { isOpus5Model } from '@copse/llm/model-catalog.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
@@ -40,6 +43,12 @@ export async function buildSystemPrompt(opts: {
   threadId?: string
   /** Current user turn — drives Auto-Attached / Manual Cursor rule selection (#636). */
   userPrompt?: UserContent
+  /**
+   * Model the turn will run on. Only gates the Opus 5 conciseness steering;
+   * omit it (headless smoke checks, composer estimates without a pinned model)
+   * and the prompt stays model-agnostic.
+   */
+  model?: string
 }): Promise<string> {
   const { subagentsEnabled, invokedSkills, threadId } = opts
   const skillsToolsLine = buildSkillsToolsPromptLine()
@@ -69,10 +78,12 @@ export async function buildSystemPrompt(opts: {
     getSetting<boolean>(READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT) &&
     (threadId ? hasTerminalSessions(threadId) : hasTerminalSessions())
   const customInstructions = getSettingTrimmed('customInstructions')
+  const opus5 = opts.model != null && isOpus5Model(opts.model)
   return (
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
       .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
+    (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
     (readTerminalEnabled ? READ_TERMINAL_BLOCK : '') +
@@ -82,6 +93,7 @@ export async function buildSystemPrompt(opts: {
     (await buildInvokedSkillsBlock(invokedSkills, { sandboxActive: isProjectSandboxActive() })) +
     agentRulesCatalog +
     buildSemanticSearchPromptBlock() +
+    (opus5 ? OPUS_5_TONE_REMINDER : '') +
     (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
   )
