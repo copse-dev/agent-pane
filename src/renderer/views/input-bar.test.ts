@@ -1312,3 +1312,63 @@ describe('input bar footer overflow menu', () => {
     assert.deepEqual(labels, ['Enable Guarded YOLO'])
   })
 })
+
+describe('input bar footer usage counter', () => {
+  function usageThread(): Thread {
+    return {
+      ...thread(),
+      model: 'claude-sonnet-4-6',
+      usage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+    }
+  }
+
+  async function mountWithUsage(): Promise<HTMLElement> {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [usageThread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+    return host
+  }
+
+  it('shows the total on the counter and the in/out/cost split on hover', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    assert.equal(counter.textContent, '13.1M tokens')
+
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.ok(popover)
+    assert.equal(popover.hidden, true)
+
+    counter.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Usage · 13\.1M tokens/)
+    assert.match(popover.textContent, /Input\s*12\.9M/)
+    assert.match(popover.textContent, /Output\s*211\.0k/)
+    assert.match(popover.textContent, /Cost/)
+
+    counter.dispatchEvent(new Event('mouseleave'))
+    assert.equal(popover.hidden, true)
+  })
+
+  it('no longer toggles the breakdown on click', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    counter.click()
+    await settle()
+
+    assert.equal(counter.textContent, '13.1M tokens')
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.equal(popover?.hidden, true)
+  })
+})
