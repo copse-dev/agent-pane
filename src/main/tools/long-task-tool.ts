@@ -2,11 +2,18 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import {
   createLongTask,
-  loadLongTasks,
+  loadLongTasksForRoot,
   setStepDone,
   taskProgress,
   type LongTask,
 } from '../services/storage/long-task-tracker.ts'
+import {
+  getThreadExecutionContext,
+  requireThreadExecutionOwner,
+  resolveThreadExecutionContext,
+} from '../services/thread-execution-context.ts'
+import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
+import { scheduleLongTaskWake } from '../services/supervisor/long-task-wake.ts'
 
 function formatTask(task: LongTask): string {
   const p = taskProgress(task)
@@ -26,9 +33,9 @@ function formatTask(task: LongTask): string {
 export const trackLongTaskTool = defineTool({
   name: 'track_long_task',
   description:
-    'Track a long, multi-step task within this PR durably across sessions. `create` records a goal and a checklist of steps; `check` marks a step done (or undone); `status` shows progress and the next step; `list` shows all tracked tasks. Use it for grind work (lint/type backlogs, deep research) so you can resume from the last checkpoint and know when every step is complete.',
+    'Track a long, multi-step task within this PR durably across sessions. `create` records a goal and checklist; `check` marks a step done; `status` and `list` inspect progress; `continue` schedules one supervised follow-up turn. Use it for grind work so you can resume from the last checkpoint and know when every step is complete.',
   parameters: z.object({
-    action: z.enum(['create', 'check', 'status', 'list']),
+    action: z.enum(['create', 'check', 'status', 'list', 'continue']),
     title: z.string().optional().describe('For action=create: short task title.'),
     goal: z
       .string()
@@ -44,17 +51,27 @@ export const trackLongTaskTool = defineTool({
       .boolean()
       .optional()
       .describe('For action=check: whether the step is done (default true).'),
+    delaySeconds: z
+      .number()
+      .min(0.1)
+      .max(3600)
+      .optional()
+      .describe('For action=continue: delay before one supervised continuation (default 1s).'),
   }),
-  execute({ action, title, goal, steps, taskId, stepId, done }) {
+  async execute({ action, title, goal, steps, taskId, stepId, done, delaySeconds }) {
+    const owner = requireThreadExecutionOwner()
+    const context =
+      getThreadExecutionContext() ??
+      (await resolveThreadExecutionContext(owner.projectId, owner.threadId))
     if (action === 'create') {
       if (!title?.trim()) return 'track_long_task create requires a title.'
       if (!steps || steps.length === 0) return 'track_long_task create requires at least one step.'
-      const task = createLongTask({ title, goal: goal ?? '', steps })
+      const task = createLongTask({ title, goal: goal ?? '', steps }, context.projectRoot)
       return `Created long task ${task.id}.\n${formatTask(task)}`
     }
     if (action === 'check') {
       if (!taskId || !stepId) return 'track_long_task check requires taskId and stepId.'
-      const updated = setStepDone(taskId, stepId, done ?? true)
+      const updated = setStepDone(taskId, stepId, done ?? true, context.projectRoot)
       if (!updated) return `No task/step matching ${taskId}/${stepId}.`
       const p = taskProgress(updated)
       const tail = p.complete ? ' — all steps complete ✓' : ` — next: ${p.nextStep ?? '(none)'}`
@@ -62,10 +79,27 @@ export const trackLongTaskTool = defineTool({
     }
     if (action === 'status') {
       if (!taskId) return 'track_long_task status requires a taskId.'
-      const task = loadLongTasks().find((t) => t.id === taskId)
+      const task = loadLongTasksForRoot(context.projectRoot).find((t) => t.id === taskId)
       return task ? formatTask(task) : `No task with id "${taskId}".`
     }
-    const tasks = loadLongTasks()
+    if (action === 'continue') {
+      if (!taskId) return 'track_long_task continue requires a taskId.'
+      const task = loadLongTasksForRoot(context.projectRoot).find(
+        (candidate) => candidate.id === taskId,
+      )
+      if (!task) return `No task with id "${taskId}".`
+      if (taskProgress(task).complete) return `Long task ${taskId} is already complete.`
+      const turnTreeId = getActiveRunTurnTreeId()
+      if (!turnTreeId) return 'Cannot schedule a continuation outside an active turn tree.'
+      const scheduled = await scheduleLongTaskWake({
+        context,
+        turnTreeId,
+        longTaskId: taskId,
+        delayMs: (delaySeconds ?? 1) * 1_000,
+      })
+      return `Scheduled one supervised continuation for long task ${taskId} at ${new Date(scheduled.wakeAt).toISOString()} (task ${scheduled.taskId}).`
+    }
+    const tasks = loadLongTasksForRoot(context.projectRoot)
     if (tasks.length === 0) {
       return 'No long tasks tracked. Use track_long_task create to start one.'
     }

@@ -78,6 +78,34 @@ async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
   await assertNoErrorToasts('agent eval idle')
 }
 
+async function waitForBackgroundWake(
+  expectation: NonNullable<EvalScenario['backgroundWake']>,
+): Promise<void> {
+  if (expectation.reloadRenderer === true) {
+    await browser.execute(() => window.location.reload())
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  }
+  const timeoutMs = expectation.timeoutMs ?? 5 * 60_000
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      await approvePendingDiffs()
+      const texts = await $$('.msg-assistant .message-text').map((element) => element.getText())
+      const completed = texts.some((text) => text.includes(expectation.finalAssistantContains))
+      const stop = $('.stop-btn')
+      const idle = (await stop.isExisting()) && (await stop.getProperty('hidden')) === true
+      return completed && idle
+    },
+    {
+      timeout: timeoutMs,
+      interval: 250,
+      timeoutMsg: `Background wake did not finish with ${expectation.finalAssistantContains}`,
+    },
+  )
+  await browser.pause(500)
+  await assertNoErrorToasts('background wake eval idle')
+}
+
 async function attachPromptFiles(attachments: PromptAttachment[]): Promise<void> {
   const files = attachments.map(resolvePromptAttachment)
   if (files.length === 0) return
@@ -310,6 +338,10 @@ describe('agent eval drive', () => {
       await typePrompt(prompt)
       await $('.submit-btn').click()
       await waitForEvalAgentIdle(idleTimeout)
+    }
+    if (scenario.backgroundWake) {
+      assert.equal(prompts.length, 1, 'background wake eval requires exactly one human prompt')
+      await waitForBackgroundWake(scenario.backgroundWake)
     }
 
     assertWorkspaceExpectations(workspaceRoot, scenario)

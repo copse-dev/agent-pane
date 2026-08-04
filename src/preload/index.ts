@@ -834,6 +834,20 @@ contextBridge.exposeInMainWorld('api', {
     setThread: (id: string, threadId: string) =>
       ipcRenderer.invoke('roadmap:setThread', id, threadId),
   },
+  supervisor: {
+    list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),
+    cancel: (projectId: string, taskId: string) =>
+      ipcRenderer.invoke('supervisor:cancel', projectId, taskId),
+    onChanged: (callback: (projectId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, projectId: string): void => {
+        callback(projectId)
+      }
+      ipcRenderer.on('supervisor:changed', listener)
+      return (): void => {
+        ipcRenderer.off('supervisor:changed', listener)
+      }
+    },
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },

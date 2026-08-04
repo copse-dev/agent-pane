@@ -9,7 +9,13 @@ import {
   type ThreadExecutionContext,
 } from './thread-execution-context.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
-import { loadAgentHistory, saveAgentHistory } from './thread-store.ts'
+import {
+  loadAgentHistory,
+  loadAgentTurnEpoch,
+  saveAgentHistory,
+  saveAgentTurnEpoch,
+  type AgentTurnEpoch,
+} from './thread-store.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 
 export interface AgentDispatchPayload {
@@ -38,6 +44,8 @@ export type MachineDispatchResult = 'completed' | 'duplicate' | 'stale' | 'budge
 export interface AgentDispatcherDependencies {
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
   saveHistory: (projectId: string, threadId: string, messages: LLMMessage[]) => Promise<void>
+  loadEpoch: (projectId: string, threadId: string) => Promise<AgentTurnEpoch | null>
+  saveEpoch: (projectId: string, threadId: string, epoch: AgentTurnEpoch) => Promise<void>
   prepareExecutionContext: (
     projectId: string,
     threadId: string,
@@ -56,6 +64,8 @@ export interface AgentDispatcherDependencies {
 const defaultDependencies: AgentDispatcherDependencies = {
   loadHistory: loadAgentHistory,
   saveHistory: saveAgentHistory,
+  loadEpoch: loadAgentTurnEpoch,
+  saveEpoch: saveAgentTurnEpoch,
   prepareExecutionContext: prepareThreadExecutionContext,
   run: runAgent,
 }
@@ -69,6 +79,7 @@ export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
   private readonly active = new Map<string, Promise<void>>()
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
+  private readonly epochWrites = new Map<string, Promise<void>>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
   private readonly host: AgentHost<StreamChunk>
   private readonly registry: ToolRegistry
@@ -86,7 +97,13 @@ export class AgentDispatcher {
 
   async dispatch(request: AgentDispatchRequest): Promise<void> {
     const key = dispatchKey(request.projectId, request.threadId)
-    this.observeRendererEpoch(key, request.payload)
+    const epochWrite = this.observeRendererEpoch(key, request)
+    this.epochWrites.set(key, epochWrite)
+    try {
+      await epochWrite
+    } finally {
+      if (this.epochWrites.get(key) === epochWrite) this.epochWrites.delete(key)
+    }
     await this.dispatchInternal(request)
   }
 
@@ -126,25 +143,30 @@ export class AgentDispatcher {
     this.epochs.delete(key)
   }
 
-  private observeRendererEpoch(key: string, payload: AgentDispatchPayload): void {
+  private async observeRendererEpoch(key: string, request: AgentDispatchRequest): Promise<void> {
+    const { payload } = request
     if (payload.turnTreeId === undefined) return
     const used = Math.max(0, payload.continuationBudgetUsed ?? 0)
     const current = this.epochs.get(key)
-    this.epochs.set(key, {
+    const next = {
       turnTreeId: payload.turnTreeId,
       continuationUsed:
         current?.turnTreeId === payload.turnTreeId
           ? Math.max(current.continuationUsed, used)
           : used,
-    })
+    }
+    await this.dependencies.saveEpoch(request.projectId, request.threadId, next)
+    this.epochs.set(key, next)
   }
 
   private async executeMachine(
     request: MachineAgentDispatchRequest,
   ): Promise<MachineDispatchResult> {
     const key = dispatchKey(request.projectId, request.threadId)
-    const active = this.active.get(key)
-    if (active) {
+    await this.epochWrites.get(key)
+    for (;;) {
+      const active = this.active.get(key)
+      if (!active) break
       try {
         await active
       } catch {
@@ -152,17 +174,26 @@ export class AgentDispatcher {
       }
     }
 
-    const epoch = this.epochs.get(key)
+    let epoch = this.epochs.get(key)
+    if (!epoch) {
+      const persisted = await this.dependencies.loadEpoch(request.projectId, request.threadId)
+      if (persisted) {
+        epoch = persisted
+        this.epochs.set(key, persisted)
+      }
+    }
     if (epoch?.turnTreeId !== request.turnTreeId) return 'stale'
     if (!canContinue(epoch.continuationUsed)) return 'budget-exhausted'
 
-    epoch.continuationUsed += 1
+    const nextEpoch = { ...epoch, continuationUsed: epoch.continuationUsed + 1 }
+    await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
+    this.epochs.set(key, nextEpoch)
     await this.dispatchInternal({
       ...request,
       payload: {
         ...request.payload,
         turnTreeId: request.turnTreeId,
-        continuationBudgetUsed: epoch.continuationUsed,
+        continuationBudgetUsed: nextEpoch.continuationUsed,
       },
     })
     return 'completed'
