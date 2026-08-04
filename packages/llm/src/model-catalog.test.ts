@@ -8,6 +8,7 @@ import {
   getModelInfo,
   inferCloudModelProvider,
   MODEL_CATALOG,
+  isOpus5Model,
   supportsMidConversationSystem,
   TRACKED_MODELS,
 } from './model-catalog.ts'
@@ -103,5 +104,16 @@ describe('model catalog', () => {
     // Unknown ids default to the safe path rather than guessing.
     assert.equal(supportsMidConversationSystem('claude-unknown'), false)
     assert.equal(supportsMidConversationSystem('gpt-5'), false)
+  })
+
+  it('identifies the Opus 5 family without catching neighbouring Opus ids', () => {
+    assert.equal(isOpus5Model('claude-opus-5'), true)
+    // Prefix match so dated snapshots and suffixed routing ids resolve too.
+    assert.equal(isOpus5Model('claude-opus-5-20260101'), true)
+
+    assert.equal(isOpus5Model('claude-opus-4-8'), false)
+    assert.equal(isOpus5Model('claude-sonnet-5'), false)
+    assert.equal(isOpus5Model('claude-fable-5'), false)
+    assert.equal(isOpus5Model('gpt-5'), false)
   })
 })

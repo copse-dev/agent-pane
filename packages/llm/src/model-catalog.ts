@@ -130,3 +130,18 @@ const MID_CONVERSATION_SYSTEM_PREFIXES = [
 export function supportsMidConversationSystem(model: string): boolean {
   return MID_CONVERSATION_SYSTEM_PREFIXES.some((prefix) => model.startsWith(prefix))
 }
+
+/**
+ * Whether `model` is in the Claude Opus 5 family.
+ *
+ * Opus 5's default user-facing responses run longer than other models', and
+ * effort tunes how much it thinks rather than how much it says — so the fix is
+ * a prompt-side conciseness instruction, not a parameter. Callers use this to
+ * gate that instruction to the one family that needs it; everything else keeps
+ * the model-agnostic prompt unchanged.
+ *
+ * Prefix match so dated snapshots and suffixed routing ids resolve too.
+ */
+export function isOpus5Model(model: string): boolean {
+  return model.startsWith('claude-opus-5')
+}

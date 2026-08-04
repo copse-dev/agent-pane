@@ -8,6 +8,15 @@ every published entry.
 
 ## Unreleased
 
+- Answers on Claude Opus 5 are shorter. That model's default replies run longer
+  than other models', and the effort setting tunes how much it thinks rather
+  than how much it says, so the system prompt now asks for concision explicitly
+  when a turn runs on Opus 5 — with a short reminder near the end of the prompt,
+  as Anthropic's
+  [Opus 5 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5#response-length-and-verbosity)
+  recommends. It is the only model-conditional text in the prompt; every other
+  model sees exactly what it saw before. The steering sits ahead of your custom
+  and project instructions, so asking for fuller explanations there still wins.
 - Copse now identifies itself to model providers. Every provider request carries
   the de facto attribution pair `HTTP-Referer: https://copse.dev/` and
   `X-Title: Copse`, with OpenRouter also receiving `X-OpenRouter-Title` (the
