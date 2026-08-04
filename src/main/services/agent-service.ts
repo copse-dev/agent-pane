@@ -1077,6 +1077,7 @@ export async function runAgent(
       invokedSkills,
       threadId,
       userPrompt: outboundPrompt,
+      model,
     })
 
     const messages: LLMMessage[] = [
