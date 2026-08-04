@@ -35,6 +35,16 @@ const OTHER_CONTEXT: ThreadExecutionContext = {
   branch: null,
 }
 
+async function waitForBackgroundExit(id: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const info = listBackgroundProcesses(OWNER).find((entry) => entry.id === id)
+    if (info && !info.running) return
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error(`Background process ${id} did not exit`)
+}
+
 describe('detectServerUrl', () => {
   it('reads a vite-style Local URL', () => {
     assert.equal(detectServerUrl('  ➜  Local:   http://localhost:5173/'), 'http://localhost:5173')
@@ -102,6 +112,24 @@ describe('background process manager', () => {
     assert.equal(info.running, false)
     assert.equal(info.exitCode, 3)
     assert.equal(info.url, null)
+  })
+
+  it('retains completed state and logs after the starting caller returns', async () => {
+    const info = await startBackgroundProcess({
+      command: `node -e "setTimeout(() => console.log('background-complete'), 100)"`,
+      cwd: process.cwd(),
+      waitMs: 10,
+      owner: OWNER,
+    })
+    assert.equal(info.running, true)
+
+    await waitForBackgroundExit(info.id)
+
+    const completed = listBackgroundProcesses(OWNER).find((entry) => entry.id === info.id)
+    assert.ok(completed)
+    assert.equal(completed.running, false)
+    assert.equal(completed.exitCode, 0)
+    assert.match(getBackgroundProcessLogs(info.id, OWNER) ?? '', /background-complete/)
   })
 
   it('does not surface a URL for a plain task that did not opt into port binding', async () => {
