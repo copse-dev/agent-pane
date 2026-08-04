@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type {
   SupervisedTaskAuditEvent,
+  SupervisedTaskArchive,
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
 import {
@@ -19,6 +20,7 @@ function memoryKey(projectId: string, taskId: string): string {
 class MemoryTaskStore implements SupervisedTaskStore {
   readonly tasks = new Map<string, SupervisedTaskMeta>()
   readonly audit: SupervisedTaskAuditEvent[] = []
+  readonly archived: SupervisedTaskArchive[] = []
   readonly diagnostics: LoadedSupervisedTasks['diagnostics']
 
   constructor(
@@ -51,6 +53,37 @@ class MemoryTaskStore implements SupervisedTaskStore {
     this.tasks.set(memoryKey(meta.projectId, meta.taskId), meta)
     this.audit.push(audit)
     return Promise.resolve()
+  }
+
+  compactTerminalTasks(before: number): Promise<number> {
+    let compacted = 0
+    for (const [key, task] of this.tasks) {
+      if (
+        task.updatedAt >= before ||
+        (task.state !== 'cancelled' && task.state !== 'failed' && task.state !== 'completed')
+      ) {
+        continue
+      }
+      this.tasks.delete(key)
+      this.archived.push({
+        v: 1,
+        taskId: task.taskId,
+        projectId: task.projectId,
+        threadId: task.threadId,
+        handler: task.handler,
+        provenance: task.provenance,
+        state: task.state,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        attempt: task.attempt,
+      })
+      compacted++
+    }
+    return Promise.resolve(compacted)
+  }
+
+  loadTaskArchive(projectId: string): Promise<SupervisedTaskArchive[]> {
+    return Promise.resolve(this.archived.filter((task) => task.projectId === projectId))
   }
 }
 
@@ -219,6 +252,36 @@ describe('TaskSupervisor', () => {
     assert.deepEqual(
       store.audit.map((event) => event.action),
       ['wake', 'start', 'complete'],
+    )
+  })
+
+  it('compacts expired terminal tasks before restart reconciliation', async () => {
+    const expired = persistedTask({
+      taskId: 'expired',
+      state: 'completed',
+      updatedAt: 300,
+      finishedAt: 300,
+    })
+    const recent = persistedTask({
+      taskId: 'recent',
+      state: 'failed',
+      updatedAt: 950,
+      finishedAt: 950,
+    })
+    const store = new MemoryTaskStore([expired, recent])
+    const supervisor = new TaskSupervisor({
+      store,
+      clock: new FakeClock(1_000),
+      terminalRetentionMs: 100,
+    })
+
+    await supervisor.start()
+
+    assert.equal(supervisor.get(expired.projectId, expired.taskId), null)
+    assert.equal(supervisor.get(recent.projectId, recent.taskId)?.state, 'failed')
+    assert.deepEqual(
+      store.archived.map((task) => task.taskId),
+      ['expired'],
     )
   })
 

@@ -128,6 +128,24 @@ export const supervisedTaskMetaSchema = z.object({
 })
 export type SupervisedTaskMeta = z.infer<typeof supervisedTaskMetaSchema>
 
+/** Compact support record retained after an old terminal task directory is removed. */
+export const supervisedTaskArchiveSchema = z.object({
+  v: z.literal(1),
+  taskId: z.string().min(1),
+  projectId: z.string().min(1),
+  threadId: z.string().min(1),
+  handler: z.string().min(1),
+  provenance: taskProvenanceSchema,
+  state: z.enum(TASK_TERMINAL_STATES),
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+  finishedAt: z.number().int().optional(),
+  attempt: z.number().int().nonnegative(),
+  lastError: z.string().min(1).optional(),
+  resultRef: taskResultRefSchema.optional(),
+})
+export type SupervisedTaskArchive = z.infer<typeof supervisedTaskArchiveSchema>
+
 /** One append-only JSONL line in `tasks/<taskId>/audit.jsonl`. */
 export const supervisedTaskAuditEventSchema = z.object({
   v: z.literal(1),

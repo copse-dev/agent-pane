@@ -63,10 +63,12 @@ export interface TaskSupervisorDependencies {
   onError?: (error: unknown) => void
   maxConcurrent?: number
   concurrencyClassLimits?: Readonly<Record<string, number>>
+  terminalRetentionMs?: number
 }
 
 export type SupervisedEventSourceStart = (emit: (event: string) => void) => (() => void) | undefined
 export type SupervisedTaskListener = (task: SupervisedTaskMeta) => void
+export const DEFAULT_TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
 
 const systemClock: TaskSupervisorClock = {
   now: () => Date.now(),
@@ -113,6 +115,7 @@ export class TaskSupervisor {
   private readonly onError: (error: unknown) => void
   private readonly maxConcurrent: number
   private readonly concurrencyClassLimits: Readonly<Record<string, number>>
+  private readonly terminalRetentionMs: number
   private readonly tasks = new Map<string, SupervisedTaskMeta>()
   private readonly handlers = new Map<string, SupervisedTaskHandler>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout> | number>()
@@ -152,6 +155,10 @@ export class TaskSupervisor {
       })
     this.maxConcurrent = maxConcurrent
     this.concurrencyClassLimits = dependencies.concurrencyClassLimits ?? {}
+    this.terminalRetentionMs = dependencies.terminalRetentionMs ?? DEFAULT_TERMINAL_RETENTION_MS
+    if (!Number.isFinite(this.terminalRetentionMs) || this.terminalRetentionMs < 0) {
+      throw new Error('Task supervisor terminal retention must be a non-negative duration')
+    }
   }
 
   registerHandler(kind: string, handler: SupervisedTaskHandler): () => void {
@@ -323,6 +330,7 @@ export class TaskSupervisor {
   }
 
   private async startInternal(): Promise<void> {
+    await this.store.compactTerminalTasks(this.clock.now() - this.terminalRetentionMs)
     const loaded = await this.store.loadAll()
     for (const diagnostic of loaded.diagnostics) this.onDiagnostic(diagnostic)
     for (const task of loaded.tasks) this.tasks.set(taskKey(task.projectId, task.taskId), task)
