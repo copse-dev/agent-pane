@@ -60,6 +60,20 @@ export const storedExtraProviderSchema = z.object({
 
 export const extraProvidersSchema = z.array(storedExtraProviderSchema).max(64)
 
+// Cached per-MTok rates from the OpenRouter catalog, keyed by the
+// `openrouter:<modelId>` selection string. Written after each successful catalog
+// fetch so the usage ledger can price OpenRouter turns offline (and after a
+// model is delisted upstream). Entries are re-validated on read by
+// `parseModelPricingMap`, so this schema only has to keep the store's shape sane.
+const modelPricingEntrySchema = z.object({
+  inputPricePerMTok: z.number().min(0),
+  outputPricePerMTok: z.number().min(0),
+  cacheReadPricePerMTok: z.number().min(0).optional(),
+  cacheCreationPricePerMTok: z.number().min(0).optional(),
+})
+
+export const openRouterPricingSchema = z.record(z.string().max(256), modelPricingEntrySchema)
+
 const MAIN_ONLY_SETTING_SCHEMAS = {
   windowBounds: windowBoundsSchema,
   // Security / safety toggles read in the main process.
@@ -85,6 +99,8 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // User's OpenAI-compatible providers: preset overrides + custom definitions.
   // Managed via dedicated IPC (settings:saveExtraProvider), not settings:set.
   extraProviders: extraProvidersSchema,
+  // Written by the OpenRouter catalog fetch; read by the cost estimator.
+  openRouterPricing: openRouterPricingSchema,
 } as const satisfies Record<string, z.ZodType>
 
 const SETTING_SCHEMAS: Record<string, z.ZodType> = {
