@@ -12,9 +12,10 @@ every published entry.
   at it opens a tooltip in the same style as the context wheel beside it: input
   and output tokens, the prompt-cache read/write split when the provider reports
   one, and the estimated cost — broken down per model once a thread has used more
-  than one. Estimated counts are labelled as such rather than priced. The click
-  that used to swap the label for an inline `1200 in / 80 out · ~$0.02` string is
-  gone; the counter now always reads as the plain total.
+  than one, plus a line for how much of the total was delegated to subagents.
+  Estimated counts are labelled as such rather than priced. The click that used
+  to swap the label for an inline `1200 in / 80 out · ~$0.02` string is gone; the
+  counter now always reads as the plain total.
 - Copse now identifies itself to model providers. Every provider request carries
   the de facto attribution pair `HTTP-Referer: https://copse.dev/` and
   `X-Title: Copse`, with OpenRouter also receiving `X-OpenRouter-Title` (the
