@@ -31,7 +31,7 @@ COPY packages ./packages
 COPY scripts ./scripts
 COPY src ./src
 COPY tests/e2e/fixtures/synthetic-autonomy-executor.mjs ./tests/e2e/fixtures/
-COPY tests/e2e/scenarios/autonomy-regression.json ./tests/e2e/scenarios/
+COPY tests/e2e/scenarios/*.json ./tests/e2e/scenarios/
 RUN mkdir -p /artifacts /app/dist-test \
     && chown -R eval:eval /artifacts
 

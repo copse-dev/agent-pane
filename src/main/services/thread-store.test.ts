@@ -26,7 +26,9 @@ import {
   listAgentPrLinks,
   listOrphanProjectStores,
   loadAgentHistory,
+  loadAgentTurnEpoch,
   saveAgentHistory,
+  saveAgentTurnEpoch,
   clearAgentHistory,
   agentHistoryExists,
   findThreadOwners,
@@ -865,6 +867,17 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     assert.equal(await agentHistoryExists('proj-1', 't1'), true)
     assert.deepEqual(await loadAgentHistory('proj-1', 't1'), history)
     assert.ok(existsSync(join(root, 'proj-1', 't1', 'agent-history.json')))
+  })
+
+  it('round-trips and clears the durable machine-turn epoch', async () => {
+    await createThread('proj-1', thread('t1'))
+    const epoch = { turnTreeId: 'tree-1', continuationUsed: 2 }
+    await saveAgentTurnEpoch('proj-1', 't1', epoch)
+    assert.deepEqual(await loadAgentTurnEpoch('proj-1', 't1'), epoch)
+    assert.ok(existsSync(join(root, 'proj-1', 't1', 'agent-epoch.json')))
+
+    await clearAgentHistory('proj-1', 't1')
+    assert.equal(await loadAgentTurnEpoch('proj-1', 't1'), null)
   })
 
   it('fails closed on corrupt or future-version agent-history sidecars', async () => {

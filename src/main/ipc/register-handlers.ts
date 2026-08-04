@@ -152,7 +152,12 @@ import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
+import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
+import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -1437,6 +1442,40 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await getPackService().refreshPackSources()
     return { packs: getPackService().list() }
   })
+  ipcMain.handle('supervisor:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+    const activeStates = new Set(['queued', 'running', 'waiting', 'blocked'])
+    const tasks: SupervisedTaskSummary[] = getTaskSupervisor()
+      .list(projectId)
+      .filter((task) => activeStates.has(task.state))
+      .map((task) => ({
+        taskId: task.taskId,
+        projectId: task.projectId,
+        threadId: task.threadId,
+        handler: task.handler,
+        state: task.state,
+        updatedAt: task.updatedAt,
+      }))
+    return { tasks }
+  })
+  ipcMain.handle('supervisor:cancel', async (event, rawProjectId: unknown, rawTaskId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+    const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
+    const task = await getTaskSupervisor().cancel(projectId, taskId)
+    const summary: SupervisedTaskSummary | null = task
+      ? {
+          taskId: task.taskId,
+          projectId: task.projectId,
+          threadId: task.threadId,
+          handler: task.handler,
+          state: task.state,
+          updatedAt: task.updatedAt,
+        }
+      : null
+    return { task: summary }
+  })
   ipcMain.handle('packs:addSource', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
@@ -1505,6 +1544,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (id === PARALLEL_SEARCH_PACK_ID) {
       syncParallelSearchTools(registry)
+    }
+    if (id === DARK_FACTORY_PACK_ID) {
+      syncDarkFactorySensor()
+    }
+    if (id === AUTOMATIONS_PACK_ID) {
+      getTaskSupervisor().syncCronTasks()
+      await getAutomationService().sync()
     }
     return { packs: getPackService().list() }
   })
