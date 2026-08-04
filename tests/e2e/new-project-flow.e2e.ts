@@ -73,9 +73,12 @@ describe('new project flow', () => {
     await expect($('.prompt-input')).toHaveValue(expect.stringContaining('Introduce this project'))
     await saveAppScreenshot('new-project-active.png')
 
-    // The folder was scaffolded with AGENT.md + README.md.
-    expect(existsSync(join(parent, 'AGENT.md'))).toBe(true)
-    expect(existsSync(join(parent, 'README.md'))).toBe(true)
+    // The folder was scaffolded under `<parent>/<name>` with AGENT.md + README.md
+    // and initialised as a git repo.
+    const projectDir = join(parent, projectName)
+    expect(existsSync(join(projectDir, 'AGENT.md'))).toBe(true)
+    expect(existsSync(join(projectDir, 'README.md'))).toBe(true)
+    expect(existsSync(join(projectDir, '.git'))).toBe(true)
   })
 
   it('sidebar + menu offers New project / Open folder once a project already exists', async () => {

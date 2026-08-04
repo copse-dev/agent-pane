@@ -47,7 +47,6 @@ export function openNewProjectDialog(
   const browseBtn = el('button', { type: 'button', class: 'new-project-browse' }, 'Browse…')
   const pathPreview = el('p', { class: 'field-hint new-project-path-preview' })
   const error = el('p', { class: 'new-project-error field-hint', hidden: true })
-  const status = el('p', { class: 'field-hint' })
   const okBtn = el('button', { type: 'button', class: 'ui-btn primary' }, 'Create')
   const cancelBtn = el('button', { type: 'button', class: 'ui-btn' }, 'Cancel')
 
@@ -60,7 +59,6 @@ export function openNewProjectDialog(
   function renderError(message: string): void {
     error.textContent = message
     error.hidden = false
-    status.textContent = ''
   }
 
   nameInput.addEventListener('input', updatePathPreview)
@@ -74,12 +72,6 @@ export function openNewProjectDialog(
     })()
   })
 
-  /**
-   * Default the parent directory to the user's home when no default was
-   * inferred (no prior local project). Home is resolved from the main process
-   * only in the create call; here a bare fallback shows an empty field plus a
-   * hint so the user always picks — never assumes a machine-specific path.
-   */
   dialog.append(
     el('h3', {}, 'New project'),
     el(
@@ -96,22 +88,30 @@ export function openNewProjectDialog(
     ),
     pathPreview,
     error,
-    status,
     el('div', { class: 'new-project-actions' }, cancelBtn, okBtn),
   )
 
   return new Promise((resolve) => {
     let settled = false
+    // The <dialog> element is a module-level singleton reused across opens, so
+    // listeners bound to it (rather than to the per-open children) would stack
+    // up on every call. Tie them to this open and drop them when it settles.
+    const perOpen = new AbortController()
     const finish = (value: NewProjectPick | null): void => {
       if (settled) return
       settled = true
+      perOpen.abort()
       dialog.close()
       resolve(value)
     }
 
-    dialog.addEventListener('cancel', () => {
-      finish(null)
-    })
+    dialog.addEventListener(
+      'cancel',
+      () => {
+        finish(null)
+      },
+      { signal: perOpen.signal },
+    )
     cancelBtn.addEventListener('click', () => {
       finish(null)
     })
@@ -132,12 +132,16 @@ export function openNewProjectDialog(
 
     // Enter in the name field submits (unless it would be a lone Enter on a
     // browse-focused state — browsers already gate native form submits).
-    dialog.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.target === nameInput) {
-        e.preventDefault()
-        okBtn.click()
-      }
-    })
+    dialog.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Enter' && e.target === nameInput) {
+          e.preventDefault()
+          okBtn.click()
+        }
+      },
+      { signal: perOpen.signal },
+    )
 
     dialog.showModal()
     nameInput.focus()

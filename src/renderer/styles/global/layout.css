@@ -70,10 +70,6 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.projects-open-btn {
-  font-size: 11px;
-  color: var(--accent);
-}
 /* Projects header "+" — at least as large as the per-project "+" (new thread)
    so the two affordances read as one family, with extra room around it so the
    primary create affordance is comfortable to hit. */

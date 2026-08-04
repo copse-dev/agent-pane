@@ -16,6 +16,7 @@ import {
   resolveProjectViewState,
   type ProjectViewStateRegistry,
 } from './project-view-state.ts'
+import { showErrorToast } from '../views/toast.ts'
 
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
@@ -584,7 +585,16 @@ export async function createNewProject(store: AppStore, api: ApiClient): Promise
   const parentDir = inferred !== '' ? inferred : home
   const picked = await openNewProjectDialog(api, parentDir)
   if (!picked) return false
-  const root = await api.workspace.createNewProject(picked.name.trim(), picked.parentDir.trim())
+  // Scaffolding rejects on ordinary user mistakes ("Folder already exists and is
+  // not empty", an unwritable parent), and every call site fires this as a
+  // floating promise — without this the dialog just closes and nothing happens.
+  let root: string
+  try {
+    root = await api.workspace.createNewProject(picked.name, picked.parentDir)
+  } catch (err: unknown) {
+    showErrorToast('Could not create project', err)
+    return false
+  }
   await addProjectFromPath(store, api, root)
   // Activation creates a blank thread when the project has none; seed that new
   // thread (or, if one already existed, the active one) with the starter prompt.

@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import type { StreamChunk, Thread } from '@shared/types'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
@@ -81,7 +80,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       isTrusted: () => resolved(true),
       setTrusted: emptyArray,
       unsandboxedProjectHooks: emptyArray,
-      createNewProject: (name: string, parentDir: string) => resolved(join(parentDir, name)),
+      // The demo bundle is browser-targeted (no `node:path`), and demo paths are
+      // display-only POSIX strings, so join by hand rather than importing path.
+      createNewProject: (name: string, parentDir: string) =>
+        resolved(`${parentDir.replace(/\/+$/, '')}/${name}`),
       pickParentDirectory: () => resolved(null),
       getHomeDirectory: () => resolved(''),
       onOpened: subscribe,
