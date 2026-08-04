@@ -108,7 +108,60 @@ describe('FileSupervisedTaskStore', () => {
     const escaped = queuedTask('project-1', '../escaped')
 
     try {
-      await assert.rejects(store.saveTransition(escaped, event(escaped, 'event-1')), /outside/)
+      await assert.rejects(
+        store.saveTransition(escaped, event(escaped, 'event-1')),
+        /outside|path separators/,
+      )
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('compacts expired terminal tasks into queryable support summaries', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-supervisor-retention-'))
+    const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: root })
+    const oldCompleted: SupervisedTaskMeta = {
+      ...queuedTask('project-1', 'old-completed'),
+      state: 'completed',
+      updatedAt: 100,
+      finishedAt: 100,
+    }
+    const recentFailed: SupervisedTaskMeta = {
+      ...queuedTask('project-1', 'recent-failed'),
+      state: 'failed',
+      updatedAt: 900,
+      finishedAt: 900,
+      lastError: 'keep live',
+    }
+    const oldActive = queuedTask('project-1', 'old-active')
+
+    try {
+      await store.saveTransition(oldCompleted, event(oldCompleted, 'old-complete'))
+      await store.saveTransition(recentFailed, event(recentFailed, 'recent-fail'))
+      await store.saveTransition(oldActive, event(oldActive, 'old-active'))
+
+      assert.equal(await store.compactTerminalTasks(500), 1)
+      assert.equal(await store.compactTerminalTasks(500), 0)
+      assert.equal(await store.get('project-1', 'old-completed'), null)
+      assert.deepEqual((await store.loadAll()).tasks.map((task) => task.taskId).sort(), [
+        'old-active',
+        'recent-failed',
+      ])
+      assert.deepEqual(await store.loadTaskArchive('project-1'), [
+        {
+          v: 1,
+          taskId: 'old-completed',
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          handler: 'test',
+          provenance: 'agent',
+          state: 'completed',
+          createdAt: 1,
+          updatedAt: 100,
+          finishedAt: 100,
+          attempt: 0,
+        },
+      ])
     } finally {
       await rm(root, { recursive: true, force: true })
     }

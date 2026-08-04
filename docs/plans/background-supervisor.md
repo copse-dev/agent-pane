@@ -192,6 +192,8 @@ dark-factory poller implementation, and changes to `run_background`.
 
 - [x] Desktop list of supervised tasks (queued/running/waiting/blocked) with cancel in
       the Terminal pane.
+- [x] Expired terminal task directories compact into queryable, permission-free support
+      summaries before restart reconciliation (30-day default retention).
 - [ ] Recurring schedules only after P2–P4 retention, permission, and concurrency proofs.
 - [x] Component and Electron e2e proof of list + cancel.
 - [ ] Cron behind an explicit flag.
