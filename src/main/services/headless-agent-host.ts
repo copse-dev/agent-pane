@@ -180,6 +180,7 @@ export async function runHeadlessAgent(
                             registry,
                             {
                               model: profile.model,
+                              turnTreeId: randomUUID(),
                               invokedSkills: [...(run.invokedSkills ?? [])],
                               resolvePackSetting: (packId, key) =>
                                 packRegistry.has(packId)

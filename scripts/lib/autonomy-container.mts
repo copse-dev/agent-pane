@@ -29,12 +29,15 @@ export function autonomyContainerRunArgs(
     '--cpus=2',
     '--tmpfs=/tmp:rw,nosuid,nodev,size=1g',
     '--tmpfs=/home/eval:rw,nosuid,nodev,size=512m',
+    '--tmpfs=/workspace:rw,nosuid,nodev,mode=1777,size=1g',
     '--tmpfs=/app/dist-test:rw,nosuid,nodev,mode=1777,size=256m',
     '--add-host=host.docker.internal:host-gateway',
     '--volume',
     `${artifactDir}:/artifacts`,
     '--env',
     `COPSE_EVAL_LOCAL_SERVER_URL=${autonomyContainerProviderUrl(env)}`,
+    '--env',
+    'COPSE_EVAL_WORKSPACE_PARENT=/workspace',
   ]
 
   for (const name of [

@@ -21,11 +21,16 @@ interface EmitReq {
   body?: string
   allowRemember?: boolean
   rememberLabel?: string
+  allowTurnTreeLease?: boolean
+  turnTreeLeaseLabel?: string
+  turnTreeLeaseDefault?: boolean
+  turnTreeLeaseSubject?: string
 }
 interface Responded {
   id: string
   approved: boolean
   remember: boolean
+  grantScope?: 'turn-tree'
 }
 
 function makeApi(): {
@@ -40,8 +45,19 @@ function makeApi(): {
       handler = h
       return () => {}
     },
-    'approval.respond': (id: string, approved: boolean, remember: boolean): Promise<void> => {
-      responses.push({ id, approved, remember })
+    'approval.respond': (
+      id: string,
+      approved: boolean,
+      remember: boolean,
+      _comparisonModels: unknown,
+      grantScope?: 'once' | 'turn-tree',
+    ): Promise<void> => {
+      responses.push({
+        id,
+        approved,
+        remember,
+        ...(grantScope === 'turn-tree' ? { grantScope } : {}),
+      })
       return Promise.resolve()
     },
   }
@@ -56,6 +72,16 @@ function makeApi(): {
         type: 'shell',
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
+        allowTurnTreeLease: req.allowTurnTreeLease,
+        turnTreeLeaseLabel:
+          req.turnTreeLeaseLabel ??
+          (req.allowTurnTreeLease ? 'Allow exact retries for this task' : undefined),
+        turnTreeLeaseDefault: req.turnTreeLeaseDefault,
+        // The real label is one shared constant, so the subject is what tells two
+        // batched offers apart. Default it to a single command unless a test
+        // deliberately varies it.
+        turnTreeLeaseSubject:
+          req.turnTreeLeaseSubject ?? (req.allowTurnTreeLease ? 'npm test' : undefined),
       })
     },
     responses,
@@ -271,6 +297,51 @@ describe('approval dialog coalescing', () => {
     emit({ id: 'b', allowRemember: true, rememberLabel: 'Always allow Codex web fetches' })
     fireWindow()
     assert.equal(remember.hidden, true)
+  })
+
+  it('includes bounded sandbox retries in the approval by default', () => {
+    const lease = qsRequired(dialog, '.approval-turn-tree')
+    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseDefault: true })
+    emit({ id: 'b', allowTurnTreeLease: true, turnTreeLeaseDefault: true })
+    fireWindow()
+    assert.equal(lease.hidden, false)
+    const input = qsRequired<HTMLInputElement>(lease, '.approval-turn-tree-input')
+    assert.equal(input.checked, true)
+    approve().click()
+    assert.ok(responses.every((response) => response.grantScope === 'turn-tree'))
+  })
+
+  it('hides task retries when batched offers cover different commands', () => {
+    const lease = qsRequired(dialog, '.approval-turn-tree')
+    // Same label — it is one shared constant in the gate — but different
+    // commands. One tick box issues one lease PER request, so offering it here
+    // would grant retries for a command the tick never named.
+    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseSubject: 'npm test' })
+    emit({ id: 'b', allowTurnTreeLease: true, turnTreeLeaseSubject: 'npm run build' })
+    fireWindow()
+    assert.equal(lease.hidden, true)
+    approve().click()
+    assert.ok(responses.every((response) => response.grantScope === undefined))
+  })
+
+  it('defaults outside-sandbox retries to one-shot approval', () => {
+    const lease = qsRequired(dialog, '.approval-turn-tree')
+    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseDefault: false })
+    fireWindow()
+    const input = qsRequired<HTMLInputElement>(lease, '.approval-turn-tree-input')
+    assert.equal(input.checked, false)
+    approve().click()
+    assert.ok(responses.every((response) => response.grantScope === undefined))
+  })
+
+  it('hides task retries for mixed eligibility and defaults to one-shot approval', () => {
+    const lease = qsRequired(dialog, '.approval-turn-tree')
+    emit({ id: 'a', allowTurnTreeLease: true })
+    emit({ id: 'b' })
+    fireWindow()
+    assert.equal(lease.hidden, true)
+    approve().click()
+    assert.ok(responses.every((response) => response.grantScope === undefined))
   })
 
   it('coalesces the opening burst under a single scheduled window', () => {

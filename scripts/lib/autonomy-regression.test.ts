@@ -152,6 +152,8 @@ describe('autonomy regression container', () => {
     assert.ok(args.includes('LM_STUDIO_API_KEY'))
     assert.ok(!args.some((arg) => arg.includes('secret-value')))
     assert.ok(args.includes('COPSE_EVAL_LOCAL_SERVER_URL=http://host.docker.internal:1234/v1'))
+    assert.ok(args.includes('--tmpfs=/workspace:rw,nosuid,nodev,mode=1777,size=1g'))
+    assert.ok(args.includes('COPSE_EVAL_WORKSPACE_PARENT=/workspace'))
   })
 
   it('leaves a non-loopback provider URL unchanged', () => {

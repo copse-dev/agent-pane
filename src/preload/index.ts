@@ -198,6 +198,9 @@ contextBridge.exposeInMainWorld('api', {
         rememberLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
+        allowTurnTreeLease?: boolean
+        turnTreeLeaseLabel?: string
+        turnTreeLeaseSubject?: string
       }) => void,
     ) => {
       const listener = (
@@ -211,6 +214,10 @@ contextBridge.exposeInMainWorld('api', {
           allowRemember?: boolean
           rememberLabel?: string
           comparisonModels?: { a: string; b: string; judge: string }
+          allowTurnTreeLease?: boolean
+          turnTreeLeaseLabel?: string
+          turnTreeLeaseDefault?: boolean
+          turnTreeLeaseSubject?: string
         },
       ): void => {
         handler(req)
@@ -366,7 +373,9 @@ contextBridge.exposeInMainWorld('api', {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
-    ) => ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels),
+      grantScope?: 'once' | 'turn-tree',
+    ) =>
+      ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels, grantScope),
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
