@@ -94,10 +94,14 @@
 }
 .approval-remember {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+}
+.approval-turn-tree {
+  margin-bottom: var(--spacing-md);
 }
 .approval-comparison-models {
   display: flex;

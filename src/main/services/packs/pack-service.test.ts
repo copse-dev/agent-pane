@@ -31,6 +31,7 @@ import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
@@ -283,6 +284,7 @@ describe('PackService', () => {
       DEVTOOLS_SHORTCUT_PACK_ID,
       BACKGROUND_TASKS_PACK_ID,
       AUTOMATIONS_PACK_ID,
+      DARK_FACTORY_PACK_ID,
       PARALLEL_SEARCH_PACK_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
@@ -302,6 +304,7 @@ describe('PackService', () => {
         DEVTOOLS_SHORTCUT_PACK_ID,
         BACKGROUND_TASKS_PACK_ID,
         AUTOMATIONS_PACK_ID,
+        DARK_FACTORY_PACK_ID,
         PARALLEL_SEARCH_PACK_ID,
       ].sort(),
     )

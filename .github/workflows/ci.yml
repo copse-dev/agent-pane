@@ -848,6 +848,70 @@ jobs:
             pkill -KILL -f '[g]ortex' 2>/dev/null || true
           }
 
+          capture_e2e_runner_diagnostics() {
+            local attempt="$1"
+            local attempt_status="$2"
+            local diagnostics_dir="e2e-failure-artifacts"
+            local diagnostics_file="${diagnostics_dir}/runner-attempt-${attempt}.txt"
+
+            mkdir -p "$diagnostics_dir"
+            {
+              echo "captured_at=$(date --iso-8601=seconds 2>/dev/null || date)"
+              echo "attempt=$attempt"
+              echo "exit_status=$attempt_status"
+              echo "runner_name=${RUNNER_NAME:-unknown}"
+              echo "runner_os=${RUNNER_OS:-unknown}"
+              echo "runner_arch=${RUNNER_ARCH:-unknown}"
+              echo "runner_environment=${RUNNER_ENVIRONMENT:-unknown}"
+              echo "github_run_id=${GITHUB_RUN_ID:-unknown}"
+              echo "github_job=${GITHUB_JOB:-unknown}"
+              echo "shard=${{ matrix.shard }}/${SHARD_TOTAL}"
+              echo
+              echo "## system"
+              uname -a || true
+              cat /etc/hostname 2>/dev/null || true
+              echo
+              echo "## cgroup"
+              # Docker uses cgroup v2 on the burst hosts, while the v1 files
+              # keep the artifact useful on older/self-managed Linux runners.
+              for cgroup_file in \
+                /sys/fs/cgroup/memory.current \
+                /sys/fs/cgroup/memory.peak \
+                /sys/fs/cgroup/memory.max \
+                /sys/fs/cgroup/memory.events \
+                /sys/fs/cgroup/memory.events.local \
+                /sys/fs/cgroup/pids.current \
+                /sys/fs/cgroup/pids.peak \
+                /sys/fs/cgroup/pids.max \
+                /sys/fs/cgroup/cpu.stat \
+                /sys/fs/cgroup/io.stat \
+                /sys/fs/cgroup/memory/memory.usage_in_bytes \
+                /sys/fs/cgroup/memory/memory.max_usage_in_bytes \
+                /sys/fs/cgroup/memory/memory.limit_in_bytes \
+                /sys/fs/cgroup/memory/memory.failcnt \
+                /sys/fs/cgroup/pids/pids.current \
+                /sys/fs/cgroup/pids/pids.max; do
+                if [ -r "$cgroup_file" ]; then
+                  echo "### $cgroup_file"
+                  cat "$cgroup_file"
+                fi
+              done
+              echo
+              echo "## memory"
+              free -h || true
+              echo
+              echo "## processes by RSS"
+              ps -eo pid,ppid,state,etimes,rss,vsz,comm --sort=-rss | head -n 80 || true
+              echo
+              echo "## filesystems"
+              df -h / /tmp /dev/shm || true
+              echo
+              echo "## limits"
+              ulimit -a || true
+            } >"$diagnostics_file" 2>&1
+            echo "Saved runner diagnostics to $diagnostics_file"
+          }
+
           trap cleanup_e2e_processes EXIT
           # Two attempts, not three: attempt 2 absorbs the flaky-session-startup
           # case this retry exists for, while a deterministic failure (e.g. a
@@ -859,8 +923,11 @@ jobs:
             if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"
               exit 0
+            else
+              attempt_status=$?
             fi
             echo "::endgroup::"
+            capture_e2e_runner_diagnostics "$attempt" "$attempt_status" || true
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
@@ -900,9 +967,10 @@ jobs:
           # default 90-day retention made this the largest draw on the org's
           # Actions storage quota. Expire fast, keeping a small debug window.
           retention-days: 3
-      # On failure, surface the screenshot + page source captured in afterTest so
-      # the constrained-runner render/OOM flakes can be inspected. Skipped when a
-      # hard runner OOM ("shutdown signal") kills the job before this step runs.
+      # On failure, surface the screenshot + page source captured in afterTest,
+      # plus the per-attempt cgroup/process snapshot above. The latter is still
+      # available when ChromeDriver is too dead to capture browser artifacts.
+      # Skipped only when a hard runner OOM kills the whole job before this step.
       - uses: actions/upload-artifact@v7
         if: failure()
         continue-on-error: true

@@ -33,6 +33,31 @@ describe('two-step stop shortcut', function () {
 
     const stopButton = $('.stop-btn')
     await expect(stopButton).toHaveElementClass('stop-pending')
+
+    const actionGeometry = await browser.execute(() => {
+      const stop = document.querySelector<HTMLElement>('.stop-btn')
+      const send = document.querySelector<HTMLElement>('.submit-btn')
+      if (!stop || !send) return null
+      const geometry = (button: HTMLElement) => {
+        const rect = button.getBoundingClientRect()
+        const style = getComputedStyle(button)
+        return {
+          height: rect.height,
+          borderRadius: style.borderRadius,
+          paddingInline: style.paddingInline,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          lineHeight: style.lineHeight,
+        }
+      }
+      return {
+        stop: geometry(stop),
+        send: geometry(send),
+      }
+    })
+    expect(actionGeometry).not.toBeNull()
+    expect(actionGeometry?.stop).toEqual(actionGeometry?.send)
+
     await saveElementScreenshot('#input-bar', 'two-step-stop-armed.png')
 
     await browser.keys('Escape')
