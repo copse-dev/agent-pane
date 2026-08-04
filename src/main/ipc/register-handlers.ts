@@ -1,12 +1,4 @@
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  shell,
-  webContents,
-  type WebContents,
-} from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
