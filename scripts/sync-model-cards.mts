@@ -100,34 +100,6 @@ const dataFileSchema: z.ZodType<CardDataFile> = z.object({
   wanted: z.array(wantedCardSchema).optional(),
 })
 
-/**
- * Reject a data file that would ship a broken or ambiguous link: one card per
- * model id, https only, and every `wanted` publisher known to discovery.
- */
-export function validateCards(data: CardDataFile): void {
-  const problems: string[] = []
-  const seen = new Set<string>()
-  for (const card of data.cards) {
-    if (seen.has(card.modelId)) {
-      problems.push(`${card.modelId}: more than one card — the UI shows exactly one link per model`)
-    }
-    seen.add(card.modelId)
-    if (!card.url.startsWith('https://')) {
-      problems.push(`${card.modelId}: card URL must be https (got '${card.url}')`)
-    }
-  }
-  for (const want of data.wanted ?? []) {
-    if (!(want.publisher in PUBLISHERS)) {
-      problems.push(
-        `${want.modelId}: unknown publisher '${want.publisher}' — add it to PUBLISHERS in scripts/sync-model-cards.mts`,
-      )
-    }
-  }
-  if (problems.length > 0) {
-    throw new Error(`[sync-model-cards] Refusing to write cards:\n  - ${problems.join('\n  - ')}`)
-  }
-}
-
 // ---------------------------------------------------------------------------
 // discovery configuration
 // ---------------------------------------------------------------------------
@@ -200,6 +172,34 @@ export const PUBLISHERS: Record<string, PublisherConfig> = {
     allowHosts: ['www.llama.com', 'llama.com', 'developer.meta.com'],
     kind: 'model-card',
   },
+}
+
+/**
+ * Reject a data file that would ship a broken or ambiguous link: one card per
+ * model id, https only, and every `wanted` publisher known to discovery.
+ */
+export function validateCards(data: CardDataFile): void {
+  const problems: string[] = []
+  const seen = new Set<string>()
+  for (const card of data.cards) {
+    if (seen.has(card.modelId)) {
+      problems.push(`${card.modelId}: more than one card — the UI shows exactly one link per model`)
+    }
+    seen.add(card.modelId)
+    if (!card.url.startsWith('https://')) {
+      problems.push(`${card.modelId}: card URL must be https (got '${card.url}')`)
+    }
+  }
+  for (const want of data.wanted ?? []) {
+    if (!(want.publisher in PUBLISHERS)) {
+      problems.push(
+        `${want.modelId}: unknown publisher '${want.publisher}' — add it to PUBLISHERS in scripts/sync-model-cards.mts`,
+      )
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`[sync-model-cards] Refusing to write cards:\n  - ${problems.join('\n  - ')}`)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -445,7 +445,23 @@ async function discover(data: CardDataFile, delayMs: number): Promise<number> {
     }
   }
   data.cards = [...byModel.values()].sort((a, b) => a.modelId.localeCompare(b.modelId))
+  data.wanted = graduateWanted(wanted, data.cards)
   return changed
+}
+
+/**
+ * Drop a model from `wanted` once it holds a real per-model card. `wanted` is a
+ * statement of outstanding intent — leaving a satisfied model there makes every
+ * later run re-solicit a card it already has, and hides which models are still
+ * missing one. A model whose only card is an `index` placeholder stays wanted,
+ * because the exact card is still outstanding.
+ */
+export function graduateWanted(
+  wanted: readonly WantedCard[],
+  cards: readonly CardEntry[],
+): WantedCard[] {
+  const carded = new Set(cards.filter((c) => c.kind !== 'index').map((c) => c.modelId))
+  return wanted.filter((w) => !carded.has(w.modelId))
 }
 
 async function verify(data: CardDataFile, delayMs: number): Promise<void> {

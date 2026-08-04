@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  graduateWanted,
   pickCardUrl,
   renderFile,
   titleFromUrl,
@@ -134,6 +135,41 @@ describe('validateCards', () => {
     assert.throws(() => {
       validateCards(data)
     }, /unknown publisher/)
+  })
+})
+
+describe('graduateWanted', () => {
+  const want = (modelId: string): { modelId: string; publisher: string; match: string[] } => ({
+    modelId,
+    publisher: 'openai',
+    match: [modelId],
+  })
+
+  it('drops a model once it holds a real per-model card', () => {
+    const out = graduateWanted(
+      [want('gpt-4o'), want('gpt-5')],
+      [card({ modelId: 'gpt-4o', kind: 'system-card' })],
+    )
+    assert.deepEqual(
+      out.map((w) => w.modelId),
+      ['gpt-5'],
+    )
+  })
+
+  it('keeps a model whose only card is an index placeholder', () => {
+    // The exact card is still outstanding, so the intent still stands.
+    const out = graduateWanted(
+      [want('claude-opus-4-8')],
+      [card({ modelId: 'claude-opus-4-8', kind: 'index' })],
+    )
+    assert.deepEqual(
+      out.map((w) => w.modelId),
+      ['claude-opus-4-8'],
+    )
+  })
+
+  it('leaves an empty wanted list empty', () => {
+    assert.deepEqual(graduateWanted([], [card()]), [])
   })
 })
 
