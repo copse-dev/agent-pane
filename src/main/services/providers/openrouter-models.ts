@@ -1,6 +1,7 @@
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { getSetting } from '../storage/settings.ts'
+import { rememberOpenRouterPricing } from './model-pricing-store.ts'
 import { isRecord, optionalRecord } from '@shared/unknown-value.ts'
 
 export interface OpenRouterModelSummary {
@@ -16,6 +17,13 @@ export interface OpenRouterModelSummary {
   /** Catalog pricing converted from USD/token to USD/million tokens. */
   inputPricePerMTok: number | null
   outputPricePerMTok: number | null
+  /**
+   * Prompt-caching rates, when the route bills them separately. Absent (rather
+   * than null) for the many routes that publish no caching prices, so a row
+   * without caching stays byte-identical to what earlier versions parsed.
+   */
+  cacheReadPricePerMTok?: number | null
+  cacheCreationPricePerMTok?: number | null
 }
 
 /** Picker-facing subset (already filtered to free + tool-capable). */
@@ -101,6 +109,12 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
   if (!id) return null
   if (!outputsText(rec['architecture'])) return null
   const supportsImages = imageInputSupport(rec['architecture'])
+  const pricing = optionalRecord(rec['pricing'])
+  // Caching rates are optional in the catalog and only meaningful for routes
+  // that actually bill cached input, so an absent field stays absent rather
+  // than becoming a null the estimator would have to special-case.
+  const cacheRead = pricePerMTok(pricing?.['input_cache_read'])
+  const cacheWrite = pricePerMTok(pricing?.['input_cache_write'])
   return {
     id,
     name: typeof rec['name'] === 'string' && rec['name'] ? rec['name'] : id,
@@ -108,8 +122,10 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
     free: isFreePricing(rec['pricing']),
     supportsTools: supportsTools(rec['supported_parameters']),
     ...(supportsImages !== undefined ? { supportsImages } : {}),
-    inputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['prompt']),
-    outputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['completion']),
+    inputPricePerMTok: pricePerMTok(pricing?.['prompt']),
+    outputPricePerMTok: pricePerMTok(pricing?.['completion']),
+    ...(cacheRead !== null ? { cacheReadPricePerMTok: cacheRead } : {}),
+    ...(cacheWrite !== null ? { cacheCreationPricePerMTok: cacheWrite } : {}),
   }
 }
 
@@ -174,6 +190,11 @@ export async function fetchOpenRouterModelsCached(): Promise<{
   if (cache && cache.key === key && now - cache.at < MODELS_TTL_MS) return cache.result
   const result = await fetchOpenRouterModels()
   cache = { key, at: now, result }
+  // Snapshot the catalog's rates so the usage ledger can price OpenRouter turns
+  // without a network round-trip (and after a model leaves the catalog). Best
+  // effort by design: pricing is a display concern, never a reason to fail a
+  // model list. Fire-and-forget so the picker isn't held up by a settings write.
+  if (result.ok) void rememberOpenRouterPricing(result.models).catch(() => {})
   return result
 }
 

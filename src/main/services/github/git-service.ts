@@ -22,6 +22,7 @@ import {
   type GitChange,
   type GitChangeStatus,
   type GitFileDiff,
+  type GitPromptState,
   type GitStatusResult,
 } from '@shared/types/git.ts'
 
@@ -718,6 +719,35 @@ export async function getCurrentBranchName(
   if (code !== 0) return null
   const branch = stdout.trim()
   return branch && branch !== 'HEAD' ? branch : null
+}
+
+/** Full SHA of the current `HEAD` commit, or null when unavailable / no commits yet. */
+export async function getCurrentCommitHash(
+  root: string | null = getAgentExecutionRoot(),
+): Promise<string | null> {
+  if (!root) return null
+  const { stdout, code } = await runGit(['rev-parse', 'HEAD'], root)
+  if (code !== 0) return null
+  const hash = stdout.trim()
+  return hash || null
+}
+
+/**
+ * Snapshot the repository state a prompt is about to be sent against: the HEAD
+ * commit it starts from and whether the working tree is dirty. Captured once per
+ * submit so the spine can record what state a turn started from.
+ */
+export async function getGitPromptState(
+  root: string | null = getAgentExecutionRoot(),
+): Promise<GitPromptState> {
+  const [startingCommit, status] = await Promise.all([
+    getCurrentCommitHash(root),
+    getGitStatus(root),
+  ])
+  return {
+    startingCommit,
+    dirty: Boolean(status && (status.staged.length > 0 || status.unstaged.length > 0)),
+  }
 }
 
 const ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'

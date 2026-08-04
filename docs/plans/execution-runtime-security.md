@@ -88,6 +88,12 @@ to enforced containment.
 10. **Classifiers never grant authority.** Static or model-based classification can
     route, explain, or hard-deny. Enforcement and explicit grants remain the security
     boundary.
+11. **Unattended work has a non-human principal.** Scheduled, event-triggered, and
+    detached tasks never inherit the ambient credentials or remembered approvals of
+    the developer who last opened the project. An automation principal is bound to one
+    workflow/project/task or campaign target, names its allowed runtime and credential
+    references, expires, and is recorded on every grant and external effect. Human
+    takeover is an explicit principal/lease transition, not silent credential adoption.
 
 Changing one of these decisions requires updating this document in the same change.
 
@@ -107,6 +113,7 @@ interface ExecutionRuntimeCapabilities {
 }
 
 interface ExecutionGrant {
+  principalId: string
   projectId: string
   threadId: string
   turnId: string
@@ -116,6 +123,16 @@ interface ExecutionGrant {
   credentialRef?: string
   expiresAt: number
   remembered: boolean
+}
+
+interface ExecutionPrincipal {
+  id: string
+  kind: 'human' | 'automation' | 'provider-managed'
+  projectId: string
+  workflowId?: string
+  taskId?: string
+  campaignId?: string
+  expiresAt?: number
 }
 
 interface ExecutionRuntime {
@@ -173,6 +190,12 @@ SSH-workspace, and managed-agent GitHub paths.
 Package registries and cloud CLIs can follow once the GitHub path proves the model.
 Generic open-proxy behavior is explicitly out of scope.
 
+Internal APIs and database replicas follow the same rule: prefer typed, operation-scoped
+connectors and read-only service identities over handing a guest a general VPN route or
+database credential. Every connector declares destination, operation/query class,
+result-size/redaction limits, expiry, and audit fields. Write-capable production data
+access is not implied by repository or build access.
+
 For provisioned cloud runtimes, deny cloud-instance metadata endpoints and private
 network ranges by default. Control-plane, artifact, Git, package, and model origins are
 separate grants; allowing one must not imply the others.
@@ -184,6 +207,8 @@ The thread spine should gain versioned events for:
 - `permission_decision` — proposed operation, pure-policy verdict, reasons, and
   decision owner;
 - `execution_grant` — exact approved scope and expiry;
+- `execution_principal` — principal kind/scope plus create, renew, handoff, revoke, and
+  expiry transitions (never raw credential material);
 - `runtime_state` — desired/observed transition, runtime kind, and capability snapshot;
 - `process_run` — canonical tool-call reference or redacted argv/command identity,
   cwd, start/exit, and bounded output refs;
@@ -214,6 +239,8 @@ Exit gate: documentation and tests never call SSH or managed-agent execution
 ### R1 — runtime contract and always-on audit
 
 - Introduce the capability and grant types through `ThreadExecutionContext`.
+- Introduce explicit human/automation/provider-managed execution principals and bind
+  every grant to one; existing interactive runs resolve to the initiating human.
 - Wrap existing local and SSH spawn paths behind an `ExecutionRuntime` adapter without
   behavior changes.
 - Record permission decisions, runtime state, and process identity directly in the
@@ -221,7 +248,7 @@ Exit gate: documentation and tests never call SSH or managed-agent execution
 - Make the approval prompt display the runtime and properties the grant changes.
 
 Exit gate: one conformance suite drives local and SSH adapters, and a thread export can
-answer which runtime executed every recorded process.
+answer which principal and runtime executed every recorded process.
 
 ### R2 — brokered local egress and credentials
 
@@ -310,3 +337,6 @@ one recoverable or terminal state without corrupting the workspace.
 - [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) remains binding for hook
   sandboxing and permission-event integration. An audit subscriber must not become the
   only persistence path for canonical runtime events.
+- [`background-agents-capability-map.md`](background-agents-capability-map.md) assigns
+  device independence, trigger identity, campaign isolation, and production feedback to
+  their existing owners; this plan owns enforcement identity and effects.

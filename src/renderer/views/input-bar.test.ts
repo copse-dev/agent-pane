@@ -64,6 +64,7 @@ function createApi(options: {
   openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
   lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
   onDescribeImages?: ApiClient['agent']['describeImages']
+  promptState?: { startingCommit: string | null; dirty: boolean }
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -118,6 +119,7 @@ function createApi(options: {
       git: {
         ...base['git'],
         branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+        promptState: async () => options.promptState ?? { startingCommit: null, dirty: false },
         checkoutBranch: async (
           _projectId: string,
           _threadId: string,
@@ -378,6 +380,76 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepared.gitBranch, 'copse/first-message')
     assert.equal(prepared.messages[0]?.content, 'Start in isolation')
     assert.equal(composer.textContent, '')
+  })
+})
+
+describe('input bar prompt git-state capture', () => {
+  it('stamps the sent message with the fetched startingCommit and dirty flag', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'What changed?'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal(message.startingCommit, 'a'.repeat(40))
+    assert.equal(message.dirty, true)
+  })
+
+  it('omits startingCommit and leaves dirty false outside a git repository', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: null, dirty: false },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Hello'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal('startingCommit' in message, false)
+    assert.equal(message.dirty, false)
   })
 })
 
@@ -1238,5 +1310,65 @@ describe('input bar footer overflow menu', () => {
     // Developer diagnostics are disabled for this fixture, so only the ordinary
     // thread action remains visible.
     assert.deepEqual(labels, ['Enable Guarded YOLO'])
+  })
+})
+
+describe('input bar footer usage counter', () => {
+  function usageThread(): Thread {
+    return {
+      ...thread(),
+      model: 'claude-sonnet-4-6',
+      usage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+    }
+  }
+
+  async function mountWithUsage(): Promise<HTMLElement> {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [usageThread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+    return host
+  }
+
+  it('shows the total on the counter and the in/out/cost split on hover', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    assert.equal(counter.textContent, '13.1M tokens')
+
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.ok(popover)
+    assert.equal(popover.hidden, true)
+
+    counter.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Usage · 13\.1M tokens/)
+    assert.match(popover.textContent, /Input\s*12\.9M/)
+    assert.match(popover.textContent, /Output\s*211\.0k/)
+    assert.match(popover.textContent, /Cost/)
+
+    counter.dispatchEvent(new Event('mouseleave'))
+    assert.equal(popover.hidden, true)
+  })
+
+  it('no longer toggles the breakdown on click', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    counter.click()
+    await settle()
+
+    assert.equal(counter.textContent, '13.1M tokens')
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.equal(popover?.hidden, true)
   })
 })

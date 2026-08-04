@@ -1,0 +1,11 @@
+{
+  "id": "question-node-version",
+  "description": "Question-shaped task that should be answered after inspection without modifying the workspace.",
+  "prompt": "What Node.js version does this package require, and would Node 20 satisfy it? Investigate and answer without changing files.",
+  "fixture": "benchmarks/fixtures/doctrine-question",
+  "userIntent": "question",
+  "inScopePaths": ["package.json"],
+  "grade": { "kind": "final-contains", "needle": "22.18" },
+  "maxSteps": 8,
+  "timeoutMs": 180000
+}

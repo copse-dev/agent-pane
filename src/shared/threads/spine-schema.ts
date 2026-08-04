@@ -110,6 +110,15 @@ export interface SpineMessageLine {
    */
   origin?: QueuedMessageOrigin
   editedByUser?: boolean
+  /**
+   * Repository state this prompt started from (user messages only), captured at
+   * send time. `startingCommit` is the HEAD SHA the turn began on; `dirty`
+   * records whether the working tree had uncommitted changes at that moment.
+   * Absent outside a git repo or for messages sent through a path that doesn't
+   * capture it (e.g. resend).
+   */
+  startingCommit?: string
+  dirty?: boolean
   toolCalls: SpineToolCall[]
 }
 

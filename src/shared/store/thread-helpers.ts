@@ -275,7 +275,7 @@ export function addMessage(
   content = '',
   images?: string[],
   attachments?: TranscriptAttachment[],
-  opts?: { model?: string },
+  opts?: { model?: string; startingCommit?: string; dirty?: boolean },
 ): string {
   const id = randomUUID()
   const { threads } = store.getState()
@@ -293,6 +293,10 @@ export function addMessage(
               ...(images?.length ? { images } : {}),
               ...(attachments?.length ? { attachments } : {}),
               ...(opts?.model !== undefined ? { model: opts.model } : {}),
+              ...(opts?.startingCommit !== undefined
+                ? { startingCommit: opts.startingCommit }
+                : {}),
+              ...(opts?.dirty !== undefined ? { dirty: opts.dirty } : {}),
               toolCalls: [],
               createdAt: Date.now(),
             },

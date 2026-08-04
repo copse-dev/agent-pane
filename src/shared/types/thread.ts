@@ -328,6 +328,15 @@ export interface Message {
   origin?: QueuedMessageOrigin
   editedByUser?: boolean
   /**
+   * Repository state this prompt started from (user messages only), captured at
+   * send time. `startingCommit` is the HEAD SHA the turn began on; `dirty`
+   * records whether the working tree had uncommitted changes at that moment.
+   * Best-effort: absent outside a git repo, or for messages sent through a path
+   * that doesn't capture it (e.g. resend).
+   */
+  startingCommit?: string
+  dirty?: boolean
+  /**
    * Hook cards (executions / deny-ask decisions / halts) that fired during this
    * message's turn (decision 10). **Display-only and derived** — populated at
    * fold time from the thread's always-on spine `hook_run` records (decision 6)
