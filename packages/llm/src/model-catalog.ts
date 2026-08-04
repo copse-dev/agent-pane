@@ -14,9 +14,9 @@
 //   3. Run `npm run sync:models`.
 
 import { MODEL_CATALOG } from './model-catalog.generated.ts'
-// Leaf modules with no imports of their own — safe here, where importing
-// `extra-providers.ts` (→ pareto-frontier.ts → this module) would cycle.
-import { LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX } from './reserved-prefixes.ts'
+// A leaf module — safe here, where importing `extra-providers.ts` for the same
+// parsing (→ pareto-frontier.ts → this module) would cycle.
+import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
 
 export interface ModelInfo {
   /** USD per million input tokens. */
@@ -135,37 +135,14 @@ export function supportsMidConversationSystem(model: string): boolean {
 }
 
 /**
- * Routing namespaces that never front an upstream Anthropic model, so their
- * ids must not be unwrapped and matched: LM Studio serves local weights, and a
- * GGUF can be named anything (`lmstudio:claude-opus-5-distill-q4` is not Opus
- * 5). `remote-agent:` speaks to a cloud agent that owns its own prompt.
- */
-const NON_UPSTREAM_MODEL_PREFIXES = [LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX] as const
-
-/** A `<slug>:` routing namespace, matching the slug grammar in extra-providers.ts. */
-const ROUTING_SLUG_RE = /^[a-z0-9-]+:/
-
-/**
- * The upstream model id behind a Copse model selection, or `''` when the
- * selection cannot be one.
+ * Namespaces that put a first-party cloud model id on the wire, so a family
+ * check against that id means something.
  *
- * The picker stores routed selections as `<slug>:<modelId>` — `openrouter:`,
- * `lmstudio:`, and every OpenAI-compatible extra provider — and aggregators
- * address models by vendor, so a single Opus 5 can arrive as `claude-opus-5`
- * or as `openrouter:anthropic/claude-opus-5`. Strip the routing slug, then the
- * vendor segment, so both land on the same id.
- *
- * `acp:` / `pack-model:` selections branch to their own turn runners before any
- * of this is consulted; they are left to fall through the generic strip, which
- * cannot produce a false match because what follows their prefix is an agent or
- * pack id, not a model id.
+ * The rest cannot: `lmstudio` serves local weights, where a GGUF may be named
+ * after a model it is merely distilled from, and `remote-agent` / `acp` /
+ * `pack-model` hand the turn to something that owns its own prompt.
  */
-function upstreamModelId(model: string): string {
-  if (NON_UPSTREAM_MODEL_PREFIXES.some((prefix) => model.startsWith(prefix))) return ''
-  const routed = ROUTING_SLUG_RE.test(model) ? model.slice(model.indexOf(':') + 1) : model
-  const vendor = routed.indexOf('/')
-  return vendor === -1 ? routed : routed.slice(vendor + 1)
-}
+const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter', 'extra-provider'])
 
 /**
  * Whether `model` resolves to the Claude Opus 5 family.
@@ -176,9 +153,13 @@ function upstreamModelId(model: string): string {
  * gate that instruction to the one family that needs it; everything else keeps
  * the model-agnostic prompt unchanged.
  *
- * Prefix match on the unwrapped id, so dated snapshots (`claude-opus-5-…`) and
- * an aggregator's variant suffixes (`…claude-opus-5:beta`) resolve too.
+ * Takes a stored model selection, not a bare id: the same Opus 5 reaches this
+ * as `claude-opus-5` or `openrouter:anthropic/claude-opus-5` depending on how
+ * it was picked, and both must steer the same. Prefix match on the resolved id,
+ * so dated snapshots (`claude-opus-5-…`) and an aggregator's variant suffixes
+ * (`…claude-opus-5:beta`) resolve too.
  */
 export function isOpus5Model(model: string): boolean {
-  return upstreamModelId(model).startsWith('claude-opus-5')
+  const selection = parseModelSelection(model)
+  return CLOUD_ROUTED.has(selection.namespace) && selection.modelId.startsWith('claude-opus-5')
 }

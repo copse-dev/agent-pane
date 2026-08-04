@@ -15,9 +15,8 @@
 // User-added providers store everything. The effective provider list is the
 // presets merged with the stored overrides/customs via `resolveExtraProviders`.
 
-import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
 import { isSafeCredentialBaseUrl } from './credential-url.ts'
-import { LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX } from './reserved-prefixes.ts'
+import { isProviderSlug, parseModelSelection } from './model-selection.ts'
 import { blendedRate } from './pareto-frontier.ts'
 
 /** Fallback context window for any provider/model whose size we don't know. */
@@ -385,23 +384,15 @@ export const BUILTIN_EXTRA_PROVIDER_SLUGS: readonly string[] = BUILTIN_EXTRA_PRO
 )
 const BUILTIN_BY_SLUG = new Map(BUILTIN_EXTRA_PROVIDERS.map((p) => [p.id, p]))
 
-// Prefixes that look like `<slug>:<id>` but are NOT extra providers, so model
-// classification can stay list-free (works in synchronous renderer paths).
-const NON_EXTRA_PREFIXES: readonly string[] = [
-  OPENROUTER_MODEL_PREFIX,
-  LMSTUDIO_MODEL_PREFIX,
-  REMOTE_AGENT_MODEL_PREFIX,
-]
-const SLUG_RE = /^[a-z0-9-]+$/
+// Which `<slug>:<id>` selections are extra providers — and which are one of the
+// reserved namespaces wearing the same shape — is decided by the shared parser,
+// so a new namespace is taught to `model-selection.ts` alone. Classification
+// stays list-free and synchronous, which the renderer paths need.
 
 /** The slug of an extra-provider selection, or `null` for any other model. */
 export function extraProviderSlugFromModel(model: string): string | null {
-  const colon = model.indexOf(':')
-  if (colon <= 0) return null
-  const slug = model.slice(0, colon)
-  if (!SLUG_RE.test(slug)) return null
-  if (NON_EXTRA_PREFIXES.includes(`${slug}:`)) return null
-  return slug
+  const selection = parseModelSelection(model)
+  return selection.namespace === 'extra-provider' ? selection.slug : null
 }
 
 export function isExtraProviderModel(model: string): boolean {
@@ -410,8 +401,10 @@ export function isExtraProviderModel(model: string): boolean {
 
 /** Strip the provider slug to get the upstream model id. */
 export function extraProviderModelId(model: string): string {
-  const slug = extraProviderSlugFromModel(model)
-  return slug ? model.slice(slug.length + 1) : model
+  const selection = parseModelSelection(model)
+  // `id`, not `modelId`: an endpoint that addresses models as `vendor/model`
+  // expects that whole string back on the wire.
+  return selection.namespace === 'extra-provider' ? selection.id : model
 }
 
 /** Encode an upstream model id as a Copse model selection for `slug`. */
@@ -543,7 +536,7 @@ function mergeBuiltin(base: ExtraProvider, override: StoredExtraProvider): Extra
 function customToProvider(stored: StoredExtraProvider): ExtraProvider | null {
   const slug = typeof stored.slug === 'string' ? stored.slug.trim() : ''
   const baseUrl = typeof stored.baseUrl === 'string' ? stored.baseUrl.trim() : ''
-  if (!SLUG_RE.test(slug) || !baseUrl) return null
+  if (!isProviderSlug(slug) || !baseUrl) return null
   // Fail closed: a base URL carries the provider's API key, so a tampered or
   // synced settings.json that bypasses the write-time schema must not resurrect
   // a custom provider pointing the key at an unsafe host. See credential-url.ts.
