@@ -817,11 +817,11 @@ describe('turn-tree shell replay leases', () => {
 
   it('does not extend a lease to separate sandbox-safe commands', async () => {
     shellReplayLeaseStore.clear()
-    const requests: Array<{ lease: boolean; defaultLease: boolean }> = []
+    const requests: Array<{ lease: boolean; subject?: string }> = []
     setApprovalHandler(async (request) => {
       requests.push({
         lease: request.allowTurnTreeLease === true,
-        defaultLease: request.turnTreeLeaseDefault === true,
+        ...(request.turnTreeLeaseSubject ? { subject: request.turnTreeLeaseSubject } : {}),
       })
       return {
         approved: true,
@@ -835,10 +835,9 @@ describe('turn-tree shell replay leases', () => {
         await ensureShellCommandPermitted('npm test', options)
         await ensureShellCommandPermitted('ls -la', options)
       })
-      assert.deepEqual(requests, [
-        { lease: true, defaultLease: true },
-        { lease: false, defaultLease: false },
-      ])
+      // The offer names the exact command it would cover, so the renderer can
+      // refuse to batch it with an unrelated one.
+      assert.deepEqual(requests, [{ lease: true, subject: 'npm test' }, { lease: false }])
     } finally {
       shellReplayLeaseStore.clear()
       setApprovalHandler(null)
@@ -907,11 +906,10 @@ describe('turn-tree shell replay leases', () => {
 
   it('offers bounded external replay only for opaque local execution', async () => {
     shellReplayLeaseStore.clear()
-    const requests: Array<{ lease: boolean; defaultLease: boolean; scope?: string }> = []
+    const requests: Array<{ lease: boolean; scope?: string }> = []
     setApprovalHandler(async (request) => {
       requests.push({
         lease: request.allowTurnTreeLease === true,
-        defaultLease: request.turnTreeLeaseDefault === true,
         ...(request.scope ? { scope: request.scope } : {}),
       })
       return {
@@ -934,9 +932,9 @@ describe('turn-tree shell replay leases', () => {
       )
 
       assert.deepEqual(requests, [
-        { lease: true, defaultLease: false, scope: 'external' },
-        { lease: false, defaultLease: false, scope: 'sandbox' },
-        { lease: false, defaultLease: false, scope: 'external' },
+        { lease: true, scope: 'external' },
+        { lease: false, scope: 'sandbox' },
+        { lease: false, scope: 'external' },
       ])
     } finally {
       shellReplayLeaseStore.clear()

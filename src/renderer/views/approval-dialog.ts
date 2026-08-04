@@ -122,7 +122,7 @@ export function mountApprovalDialog(
     comparisonModels?: ComparisonModelSelection
     allowTurnTreeLease: boolean | undefined
     turnTreeLeaseLabel: string | undefined
-    turnTreeLeaseDefault: boolean | undefined
+    turnTreeLeaseSubject: string | undefined
   }
 
   // Requests waiting for their turn (background threads, or arrived before the
@@ -247,19 +247,32 @@ export function mountApprovalDialog(
     if (grant === null) rememberInput.checked = false
     else rememberLabelText.textContent = grant
 
+    // One tick box settles the whole batch, but the main process issues a lease
+    // per request — so the offer is only coherent when every batched request
+    // would lease the SAME command. The label alone can't establish that: it's a
+    // fixed string shared by every shell prompt, so unrelated commands compare
+    // equal on it. Match on the subject too, and hide the box otherwise, exactly
+    // as rememberGrant() does rather than applying one grant to unrelated calls.
     const leaseLabel = batch[0]?.turnTreeLeaseLabel
+    const leaseSubject = batch[0]?.turnTreeLeaseSubject
     const offersTurnTreeLease =
       batch.length > 0 &&
       leaseLabel !== undefined &&
+      leaseSubject !== undefined &&
       batch.every(
         (request) =>
-          request.allowTurnTreeLease === true && request.turnTreeLeaseLabel === leaseLabel,
+          request.allowTurnTreeLease === true &&
+          request.turnTreeLeaseLabel === leaseLabel &&
+          request.turnTreeLeaseSubject === leaseSubject,
       )
     turnTreeLeaseLabel.hidden = !offersTurnTreeLease
     if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false
     else {
       turnTreeLeaseText.textContent = leaseLabel
-      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true)
+      // Always starts unchecked. A lease is a standing grant to re-run without
+      // asking again, so it has to be the user's affirmative act — there is
+      // deliberately no way for a caller to pre-tick it.
+      turnTreeLeaseInput.checked = false
     }
   }
 
@@ -412,7 +425,7 @@ export function mountApprovalDialog(
       comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel,
-      turnTreeLeaseDefault,
+      turnTreeLeaseSubject,
     }) => {
       const pending: PendingApproval = {
         id,
@@ -425,7 +438,7 @@ export function mountApprovalDialog(
         showWhileSettingsOpen,
         allowTurnTreeLease,
         turnTreeLeaseLabel,
-        turnTreeLeaseDefault,
+        turnTreeLeaseSubject,
       }
       if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)
