@@ -50,8 +50,8 @@ class MemoryStore implements SupervisedTaskStore {
 }
 
 class FixedClock implements TaskSupervisorClock {
-  private readonly value: number
-  private callback: (() => void) | null = null
+  private value: number
+  private timer: { callback: () => void; delayMs: number } | null = null
 
   constructor(value: number) {
     this.value = value
@@ -61,19 +61,21 @@ class FixedClock implements TaskSupervisorClock {
     return this.value
   }
 
-  setTimeout(callback: () => void, _delayMs: number): number {
-    this.callback = callback
+  setTimeout(callback: () => void, delayMs: number): number {
+    this.timer = { callback, delayMs }
     return 1
   }
 
   clearTimeout(_handle: ReturnType<typeof setTimeout> | number): void {
-    this.callback = null
+    this.timer = null
   }
 
   fire(): void {
-    const callback = this.callback
-    this.callback = null
-    callback?.()
+    const timer = this.timer
+    this.timer = null
+    if (!timer) return
+    this.value += timer.delayMs
+    timer.callback()
   }
 }
 
@@ -105,6 +107,7 @@ function dependencies(overrides: Partial<LongTaskWakeDependencies> = {}): LongTa
     resolveContext: () => Promise.resolve(context),
     autoRunSandboxCommands: () => true,
     projectSandboxEnabled: () => true,
+    workspaceTarget: () => ({ kind: 'local' }),
     loadTasks: () => [longTask],
     now: () => 100,
     abortThread: (): void => {},
@@ -211,7 +214,7 @@ describe('long-task supervised wake', () => {
           return 'completed'
         },
       },
-      dependencies(),
+      dependencies({ now: () => clock.now() }),
     )
 
     try {
@@ -264,6 +267,54 @@ describe('long-task supervised wake', () => {
       assert.equal(dispatched, false)
       assert.equal(store.tasks.get(scheduled.taskId)?.state, 'blocked')
       assert.match(store.tasks.get(scheduled.taskId)?.lastError ?? '', /permissions/)
+    } finally {
+      dispose()
+      await supervisor.shutdown()
+    }
+  })
+
+  it('blocks when the SSH host identity changes after scheduling', async () => {
+    const store = new MemoryStore()
+    const clock = new FixedClock(100)
+    const supervisor = new TaskSupervisor({
+      store,
+      clock,
+      createId: (): string => 'supervised-target-blocked',
+    })
+    let targetId = 'host-a'
+    let dispatched = false
+    const dispose = installLongTaskWakeConsumer(
+      supervisor,
+      {
+        dispatchMachine: (): Promise<'completed'> => {
+          dispatched = true
+          return Promise.resolve('completed')
+        },
+      },
+      dependencies({
+        workspaceTarget: () => ({ kind: 'ssh', id: targetId }),
+      }),
+    )
+
+    try {
+      const scheduled = await scheduleLongTaskWake({
+        context,
+        turnTreeId,
+        longTaskId: 't1',
+        delayMs: 100,
+      })
+      assert.equal(store.tasks.get(scheduled.taskId)?.permissionSnapshot.workspaceTargetKind, 'ssh')
+      assert.equal(
+        store.tasks.get(scheduled.taskId)?.permissionSnapshot.workspaceTargetId,
+        'host-a',
+      )
+      targetId = 'host-b'
+      clock.fire()
+      await supervisor.waitForIdle()
+
+      assert.equal(dispatched, false)
+      assert.equal(store.tasks.get(scheduled.taskId)?.state, 'blocked')
+      assert.match(store.tasks.get(scheduled.taskId)?.lastError ?? '', /workspace changed/)
     } finally {
       dispose()
       await supervisor.shutdown()

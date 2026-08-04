@@ -76,6 +76,7 @@
         "projectSandboxEnabled": { "type": "boolean" },
         "executionRoot": { "type": "string", "minLength": 1 },
         "workspaceTargetKind": { "type": "string", "enum": ["local", "ssh"] },
+        "workspaceTargetId": { "type": "string", "minLength": 1 },
         "capabilityProfileId": { "type": "string", "minLength": 1 },
         "extra": { "type": "object", "additionalProperties": true }
       }

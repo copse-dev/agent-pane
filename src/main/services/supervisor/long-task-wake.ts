@@ -6,6 +6,7 @@ import type { MachineAgentDispatchRequest, MachineDispatchResult } from '../agen
 import { abortAgent } from '../agent-service.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { getSetting } from '../storage/settings.ts'
+import { resolveSshExecutionTargetForCwd } from '../ssh-workspace/execution-target.ts'
 import { loadLongTasksForRoot, taskProgress, type LongTask } from '../storage/long-task-tracker.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { resolveThreadExecutionContext } from '../thread-execution-context.ts'
@@ -40,6 +41,10 @@ export interface LongTaskWakeDependencies {
   resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
   autoRunSandboxCommands: () => boolean
   projectSandboxEnabled: () => boolean
+  workspaceTarget: (executionRoot: string) => {
+    kind: 'local' | 'ssh'
+    id?: string
+  }
   loadTasks: (root: string) => LongTask[]
   now: () => number
   abortThread: (threadId: string) => void
@@ -50,6 +55,10 @@ const defaultDependencies: LongTaskWakeDependencies = {
   resolveContext: resolveThreadExecutionContext,
   autoRunSandboxCommands: () => getSetting<boolean>('autoRunSandboxCommands', true),
   projectSandboxEnabled: isProjectSandboxEnabled,
+  workspaceTarget: (executionRoot) => {
+    const target = resolveSshExecutionTargetForCwd(executionRoot)
+    return target?.kind === 'ssh' ? { kind: 'ssh', id: target.hostId } : { kind: 'local' }
+  },
   loadTasks: loadLongTasksForRoot,
   now: Date.now,
   abortThread: abortAgent,
@@ -121,9 +130,12 @@ export function installLongTaskWakeConsumer(
         }
       }
       const snapshot = task.permissionSnapshot
+      const workspaceTarget = dependencies.workspaceTarget(context.root)
       const permissionsChanged =
         snapshot.autoRunSandboxCommands !== dependencies.autoRunSandboxCommands() ||
         snapshot.projectSandboxEnabled !== dependencies.projectSandboxEnabled() ||
+        snapshot.workspaceTargetKind !== workspaceTarget.kind ||
+        snapshot.workspaceTargetId !== workspaceTarget.id ||
         (snapshot.executionRoot !== undefined && snapshot.executionRoot !== context.root)
       if (permissionsChanged || task.contentHash !== executionIdentity(context)) {
         return {
@@ -188,6 +200,7 @@ export function installLongTaskWakeConsumer(
     }
     const now = dependencies.now()
     const wakeAt = now + delayMs
+    const workspaceTarget = dependencies.workspaceTarget(context.root)
     const task = await supervisor.enqueue({
       projectId: context.projectId,
       threadId: context.threadId,
@@ -199,7 +212,8 @@ export function installLongTaskWakeConsumer(
         capturedAt: now,
         autoRunSandboxCommands: dependencies.autoRunSandboxCommands(),
         projectSandboxEnabled: dependencies.projectSandboxEnabled(),
-        workspaceTargetKind: 'local',
+        workspaceTargetKind: workspaceTarget.kind,
+        ...(workspaceTarget.id ? { workspaceTargetId: workspaceTarget.id } : {}),
         executionRoot: context.root,
       },
       reapproveOnWake: false,
