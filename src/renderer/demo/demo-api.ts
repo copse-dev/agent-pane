@@ -90,6 +90,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     browser: {
       onOpenTab: subscribe,
+      sharePageText: unsupported,
+      shareScreenshot: unsupported,
+      onShareText: subscribe,
+      onShareImage: subscribe,
       onPackTabRequest: subscribe,
     },
     security: {
@@ -492,6 +496,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       abortReview: () => resolved(false),
       onChanged: subscribe,
       setThread: () => resolved(null),
+    },
+    supervisor: {
+      list: () => resolved({ tasks: [] }),
+      cancel: () => resolved({ task: null }),
+      onChanged: subscribe,
     },
     skills: { list: emptyArray },
     plugins: { list: emptyArray },

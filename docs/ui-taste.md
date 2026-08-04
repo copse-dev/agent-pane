@@ -85,6 +85,21 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
+### Agent-authored dialog copy and secrets
+
+- Agent-authored prose in a dialog follows the same sanitized Markdown contract as transcript
+  prose. Render commands and paths as inline code; never show raw backtick delimiters as UI copy.
+  Suggested-answer buttons may render sanitized, phrasing-only Markdown (`code`, emphasis, and
+  strong text); block or interactive Markdown remains literal because buttons are controls, not
+  document containers.
+- Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
+  provider/ACP wording in a visually subordinate technical-details block so it remains copyable
+  without competing with the fix.
+- Password inputs retain native `type="password"` semantics and use Chromium’s filled-disc mask
+  (`-webkit-text-security: disc`). At compact UI sizes, use a large enough system-font mask that the
+  glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
+  text-field overlay.
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
@@ -226,6 +241,17 @@ copied. The contract test
 [`src/renderer/styles/text-selection.test.ts`](../src/renderer/styles/text-selection.test.ts) pins
 the policy: body defaults to non-selectable, the content regions opt back in, and the permission
 prompt stays non-selectable.
+
+## Responsive titlebar chrome
+
+Titlebar compactness follows the space its rendered contents actually need, not the window's aspect
+ratio or a fixed viewport breakpoint. Workspace names, branches, enabled panel packs, editor labels,
+and UI scale all change that width. Measure the full label state and collapse secondary labels only
+when it would overflow; expand them again when room returns.
+
+The flexible `.titlebar-drag` region always keeps at least `--spacing-lg` of width. Interactive
+controls must not consume that last draggable strip, even when every optional panel mode is visible.
+The regression state lives in [`tests/e2e/titlebar-compact.e2e.ts`](../tests/e2e/titlebar-compact.e2e.ts).
 
 ## Sticky footers inside scroll containers (gotcha)
 

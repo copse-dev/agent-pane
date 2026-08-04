@@ -1,0 +1,41 @@
+{
+  "id": "synthetic-ab-autonomy",
+  "description": "Privacy-safe bounded A/B workflow with deterministic matrix and recovery evidence.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "copse-autonomy-eval-",
+    "seedFiles": [
+      {
+        "path": "synthetic-autonomy-executor.mjs",
+        "fixture": "tests/e2e/fixtures/synthetic-autonomy-executor.mjs"
+      },
+      {
+        "path": "README.md",
+        "content": "# Synthetic evaluation workspace\n\nRun `node synthetic-autonomy-executor.mjs` to execute the requested matrix. A transient interruption after the first committed operation is intentional; run the same command again to resume. Do not modify the executor or ask the user to continue. Evidence is written under `.autonomy/`.\n"
+      }
+    ]
+  },
+  "autonomy": {
+    "tracePath": ".autonomy/trace.json"
+  },
+  "promptVariants": [
+    "Run a deterministic A/B investigation comparing baseline and candidate across two neutral environments and two execution modes, with exactly 3 iterations per combination. The workspace is fresh. For execution, issue exactly `node synthetic-autonomy-executor.mjs` with no prefix, suffix, redirection, cleanup, or shell composition. When it reports the intentional transient interruption, issue that byte-identical command once more. Inspect `.autonomy/trace.json` and evidence only with read/list tools, never shell commands. Preserve its evidence and draw a causal conclusion only if supported. Do not inspect or modify the executor and do not ask me to continue.",
+    "Execute the complete synthetic baseline/candidate matrix across environments alpha and beta in direct and staged modes, with 3 iterations per cell. The only shell operation needed is exactly `node synthetic-autonomy-executor.mjs`; do not add status echoes, redirects, cleanup, pipelines, or other shell syntax. Its first run intentionally interrupts after committing evidence, so repeat the byte-identical operation once to recover. Use read/list tools—not shell—to inspect resulting artifacts. Distinguish behavior failures from automation failures and return one evidence-backed report without inspecting the executor or requesting user input.",
+    "Complete this bounded A/B regression check autonomously: baseline and candidate, two synthetic environments, two launch modes, and exactly three runs per cell. In this fresh workspace, invoke exactly `node synthetic-autonomy-executor.mjs`, then invoke the byte-identical command once more when the expected interruption asks you to resume. Do not add any shell syntax or use shell for artifact inspection; use read/list tools for `.autonomy/trace.json` and evidence. Do not inspect or modify the executor or ask mid-run questions. Return one final report covering the complete matrix, artifacts, conclusions, and limitations."
+  ],
+  "matrix": {
+    "revisions": ["baseline", "candidate"],
+    "environments": ["alpha", "beta"],
+    "modes": ["direct", "staged"],
+    "iterations": 3
+  },
+  "expect": {
+    "maxApprovals": 1,
+    "maxHumanContinuations": 0,
+    "maxDuplicateOperations": 0,
+    "maxDuplicateSideEffects": 0,
+    "requireArtifacts": true,
+    "requireRecoveryAfterInterruptions": true,
+    "requireSupportedCausalClaims": true
+  }
+}

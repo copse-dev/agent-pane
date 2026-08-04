@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   commandHead,
+  parseShellComposition,
   resolveCommandRouting,
   splitSegments,
   trustableCommandHead,
@@ -59,6 +60,27 @@ describe('splitSegments', () => {
   it('does not let an escaped quote flip quote state', () => {
     // echo "a \" b" ; ls  → the \" stays inside the string, so ; still splits.
     assert.deepEqual(splitSegments('echo "a \\" b" ; ls'), ['echo "a \\" b"', 'ls'])
+  })
+})
+
+describe('parseShellComposition', () => {
+  it('retains top-level operators while preserving source segments', () => {
+    assert.deepEqual(parseShellComposition('cd /work && node run.mjs; ls out | rg failure'), {
+      segments: ['cd /work', 'node run.mjs', 'ls out', 'rg failure'],
+      operators: ['&&', ';', '|'],
+    })
+  })
+
+  it('fails closed on substitutions, grouping, malformed quotes, and empty segments', () => {
+    for (const command of [
+      'node $(cat command)',
+      '(node run.mjs)',
+      'echo `whoami`',
+      'echo "x',
+      'a;;b',
+    ]) {
+      assert.equal(parseShellComposition(command), null, command)
+    }
   })
 })
 

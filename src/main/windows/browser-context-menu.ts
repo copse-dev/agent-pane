@@ -9,6 +9,7 @@ import {
 import { basename, extname } from 'node:path'
 import { getMainWindow } from './create-main-window.ts'
 import { isExternalHttpUrl } from './web-contents-lockdown.ts'
+import { browserSelectionShare } from '../services/browser/browser-share.ts'
 
 /**
  * Subset of Electron's context-menu params that decide which browser-guest items
@@ -18,6 +19,7 @@ import { isExternalHttpUrl } from './web-contents-lockdown.ts'
 export type BrowserContextMenuParams = {
   x: number
   y: number
+  pageURL: string
   linkURL: string
   srcURL: string
   mediaType: Electron.ContextMenuParams['mediaType']
@@ -35,6 +37,7 @@ export type BrowserContextMenuActions = {
   copyImageAt: (x: number, y: number) => void
   writeClipboardText: (text: string) => void
   openTab: (url: string) => void
+  shareSelection: (text: string, pageUrl: string) => void
   saveImageAs: (srcURL: string) => void | Promise<void>
   inspectElement: (x: number, y: number) => void
 }
@@ -143,12 +146,20 @@ export function buildBrowserContextMenuTemplate(
       },
     )
   } else if (params.selectionText.length > 0 && params.editFlags.canCopy) {
-    editItems.push({
-      label: 'Copy',
-      click: (): void => {
-        actions.copy()
+    editItems.push(
+      {
+        label: 'Copy',
+        click: (): void => {
+          actions.copy()
+        },
       },
-    })
+      {
+        label: 'Share Selection with Thread',
+        click: (): void => {
+          actions.shareSelection(params.selectionText, params.pageURL)
+        },
+      },
+    )
   }
   if (params.editFlags.canSelectAll && (params.isEditable || params.selectionText.length > 0)) {
     editItems.push({
@@ -240,6 +251,11 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
       },
       openTab: (url) => {
         getMainWindow()?.webContents.send('browser:open-tab', url)
+      },
+      shareSelection: (text, pageUrl) => {
+        const win = getMainWindow()
+        if (!win || win.isDestroyed()) return
+        win.webContents.send('browser:share-text', browserSelectionShare(contents, text, pageUrl))
       },
       saveImageAs: (srcURL) => saveImageAs(contents, srcURL),
       inspectElement: (x, y) => {

@@ -1,8 +1,8 @@
 # Dark-factory PR orchestrator
 
-Status: **proposed** — design/decision doc only; nothing is implemented. Feature flag
-will be `prOrchestratorEnabled` (experimental, default off), following the
-`ciInvestigatorEnabled` template.
+Status: **active (sensor foundation)** — the experimental `copse.dark-factory` pack
+gates one supervisor-registered adaptive fleet-poll event source and is default-off.
+Fleet discovery, GitHub observations, history, incidents, and actuators remain proposed.
 
 Related design lineage: [#690](https://github.com/copse-dev/agent-pane/issues/690)
 (copse-CLI fleet-manager parity — the _actions_ layer this consumes),
@@ -54,7 +54,7 @@ What exists to build on, and what is net-new:
 | Follow-up suggestions on PR signals  | `pr-context-service.ts` → `follow-up-service.ts` ("Debug CI" chip)                                                   | ✅ turn-triggered, passive                                                                             |
 | PR pane                              | `src/renderer/views/pr-pane.ts`                                                                                      | ✅ event-driven refresh, **no polling**; per-row CI dot from an in-memory session cache                |
 | Knowledge store (typed OKF notes)    | `src/main/services/storage/knowledge-store.ts`                                                                       | ✅ new note types need no store change                                                                 |
-| Shared supervisor / PR poller        | App-open cron ticker exists in `services/automations`; supervisor P1 is schema-only                                  | ❌ no shared main service or PR/CI poller; the automation ticker is renderer-mediated and not reusable |
+| Scheduler / background poller        | `src/main/services/supervisor/dark-factory-sensor.ts`                                                                | ⚠️ adaptive, feature-gated event source exists; no fleet/GitHub observation consumer yet               |
 | Headless agent invocation            | —                                                                                                                    | ❌ `runAgent` requires an IPC-driven chat turn; subagent runners only work inside one                  |
 | Check-run history / cross-PR memory  | —                                                                                                                    | ❌ all CI reads are stateless                                                                          |
 | Flake/outage detection               | —                                                                                                                    | ❌ nothing correlates failures across PRs or over time                                                 |
