@@ -8,6 +8,14 @@ every published entry.
 
 ## Unreleased
 
+- The context wheel no longer goes blank on hover while the agent is working.
+  Mid-run the pre-send estimate is deliberately suppressed — it describes the
+  _next_ prompt, not the one in flight — but that left the wheel with nothing to
+  show for the whole run, and the part-by-part breakdown only came back once the
+  turn ended. It now falls back to the aggregate it is already drawing
+  ("Context · 54.0k / 180.0k (30%)"), which needs no estimate to produce. Chat
+  windows that never report a breakdown at all — subagents and remote agents —
+  gain the same hover summary.
 - The footer token counter explains itself on hover instead of on click. Pointing
   at it opens a tooltip in the same style as the context wheel beside it: input
   and output tokens, the prompt-cache read/write split when the provider reports
