@@ -1,14 +1,22 @@
-# Contained autonomy for long-horizon work
+# Unattended runs on a contained runtime
 
-**Status: Proposed.** Nothing here is implemented. This plan proposes a per-thread
-_container_ runtime plus a _non-blocking_ permission tier, so a long-horizon run can
-keep working for hours without stopping at a modal — and says precisely which prompts
-that removes and which it must not.
+**Status: Proposed.** Nothing here is implemented. This plan proposes an **unattended
+run**: a per-thread container runtime plus its own autonomy mode, so long-horizon work can
+continue for hours without a human present — and says precisely which prompts containment
+removes and which it must not.
+
+"Unattended run" is a first-class concept of its own, **not** a containment tier bolted
+onto Guarded YOLO (Decision 5). Guarded YOLO stays what it is: a live, thread-scoped
+capability the user grants while watching. An unattended run is the opposite situation —
+nobody is watching — and it earns a separate ledger, a separate arming flow, and a separate
+audit story.
 
 Security, egress, credential, lifecycle, checkpoint, and audit requirements are owned by
 [`execution-runtime-security.md`](execution-runtime-security.md); provisioning providers
-and cost UX by [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md). This plan owns
-the product question those two defer: **when containment is available, what changes about
+and cost UX by [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md); the non-blocking
+`defer` outcome and its review queue by
+[`deferred-approvals.md`](deferred-approvals.md). This plan owns the product question the
+others defer: **when containment is available and nobody is watching, what changes about
 asking the user, and what must not.**
 
 ## Why this plan exists
@@ -47,13 +55,18 @@ separable levers**, and the container is only one of them.
 - **Lever A — containment raises the auto-run ceiling.** Actions whose blast radius is
   confined to a disposable guest need no human. Writing outside the workspace, installing
   a toolchain, running an unrecognised binary, `sudo` inside the guest, deleting the
-  checkout: all recoverable by `docker rm`. Today most of these prompt.
+  checkout: all recoverable by `docker rm`. Today most of these prompt. This plan owns
+  Lever A.
 - **Lever B — deferral removes the _blocking_ property of the rest.** A run that must
   survive the user being asleep cannot ask questions synchronously. The remaining
-  decisions become a reviewed queue, not a modal.
+  decisions become a reviewed queue, not a modal. Lever B is
+  [`deferred-approvals.md`](deferred-approvals.md) — separate work, no container required,
+  and valuable on its own.
 
 Lever B is worth more for overnight work than Lever A, is cheaper to build, and works on
-today's host sandbox with no Docker at all. Ship it first.
+today's host sandbox with no Docker at all. It ships first, and this plan depends on it:
+an unattended run without deferral just deadlocks at the first thing containment does not
+cover.
 
 **What containment does not buy.** A container narrows filesystem, process, and (with a
 broker) network blast radius. It does nothing about effects whose blast radius _leaves_
@@ -143,17 +156,24 @@ Changing one of these requires updating this document in the same change.
    recorded and surfaced with the exact `host:port` — the pattern `recordNetworkDenial`
    already implements for ASRT — and become deferred requests. A denial never auto-widens
    the allowlist, and there is no unrestricted profile.
-5. **Autonomy is per-thread, session-only, and explicitly armed.** It reuses the Guarded
-   YOLO ledger shape (`GuardedYoloRegistry`): nothing in settings, so no migration,
-   restart, or default can turn it on. Arming names the runtime and the budgets.
-6. **The gate never blocks during an autonomy run.** Every decision resolves to `allow`,
-   `deny`, or `defer`. `defer` returns a typed error to the agent — "queued for review,
-   continue with other work" — and appends to a review queue. A run ends by budget, by
-   completion, or by the user; never by a modal nobody is there to answer.
+5. **An unattended run is its own concept, separate from Guarded YOLO.** The two answer
+   different questions — Guarded YOLO is "I am watching, stop asking me"; an unattended run
+   is "I am not here, keep working safely" — and conflating them would put a
+   nobody-is-watching grant behind a control designed for a watching user. Separate
+   registry, separate arming flow, separate audit vocabulary, and the two are **mutually
+   exclusive** on a thread. What is copied from `GuardedYoloRegistry` is its shape, not its
+   storage: per-thread, session-only, never read from or written to settings, so no
+   migration, restart, or default can turn it on. Arming names the runtime and the budgets.
+6. **The gate never blocks during an unattended run.** Every decision resolves to `allow`,
+   `deny`, or `defer`, with `defer` and its review queue owned by
+   [`deferred-approvals.md`](deferred-approvals.md). This plan does not define that
+   outcome; it requires it, and an unattended run may not be armable until deferral is
+   available. A run ends by budget, by completion, or by the user; never by a modal nobody
+   is there to answer.
 7. **Budgets are mandatory, not optional.** Wall-clock TTL, token/cost ceiling, and idle
    reap are set at arm time and enforced by the runtime. Hitting one **suspends** the run
    with its state intact; it does not silently continue and does not silently discard.
-8. **Every autonomy run produces a review record.** Image digest, capability record,
+8. **Every unattended run produces a review record.** Image digest, capability record,
    egress allow/deny log, deferred queue, commits produced, tokens/cost, teardown outcome.
    Modelled on the bench capsule manifest; written to the thread spine as canonical events
    per `execution-runtime-security.md`, not to a hook subscriber.
@@ -166,23 +186,34 @@ Changing one of these requires updating this document in the same change.
 
 ## Phases
 
-Each phase is independently shippable and independently valuable. A2 is deliberately first
-after measurement, because it needs no Docker at all.
+Each phase is independently shippable and independently valuable. Deferral
+([`deferred-approvals.md`](deferred-approvals.md)) is a hard dependency of U2 onward and
+ships on its own track; nothing here waits on it before U2.
 
-### A0 — measure which prompts a container would actually remove
+### U0 — measure which prompts a container would actually remove
 
 Before building a runtime, instrument the thing we are claiming to fix. `recordDecision`
-and `recordPermissionDecision` (`security/decision-log-store.ts`) already write decisions;
-add a **prompt-cause** dimension (sandbox escalation, hard-external, no containment
-available, harm gate, network-scope overlap, MCP/web origin, install) and a summary over a
-run.
+(`security/decision-log-store.ts`) already writes every gate decision to a durable
+`decisions.jsonl`; add a **prompt-cause** dimension (sandbox escalation, hard-external, no
+containment available, harm gate, network-scope overlap, MCP/web origin, install) and a
+report over it.
+
+The instrumentation itself is shared with `deferred-approvals.md` phase D0 — same prompt
+sites, same taxonomy — and is built once. It has **landed**, including the classification
+this plan needs: `promptCauseContainment()` in `src/shared/threads/prompt-cause.ts` answers,
+for each cause, whether a container would have removed that prompt. Causes that cannot be
+settled from the cause alone (an MCP tool call, the harm gate) report `mixed` and are
+counted separately rather than folded into either side — a summary that quietly counted
+them as removable would overstate the case for building the runtime.
+
+What remains for U0 is the data: `npm run report:prompt-causes` over real long runs.
 
 Exit gate: a report over at least ten real long runs, on macOS and on Linux, breaking down
-prompts by cause and by "would a container have removed this?" If the answer is dominated
-by outward-effect prompts rather than containment prompts, A3 is not worth building and
-this plan stops at A2.
+prompts by cause and by whether containment removes them. If the answer is dominated by
+outward-effect prompts rather than containment prompts, U2 is not worth building and this
+plan stops — the deferral track alone is the answer.
 
-### A1 — local Docker runtime provider
+### U1 — local Docker runtime provider
 
 This is `copse-cloud-workspaces.md` C1 narrowed to local Docker and to one consumer.
 
@@ -206,48 +237,38 @@ Exit gate: a thread can run its full existing tool surface against a provisioned
 killing the app mid-provision, mid-run, and mid-teardown converges to one observable state;
 an orphan is detected and offered for teardown after restart; teardown is idempotent.
 
-### A2 — non-blocking deferral and the review queue
+### U2 — the unattended-run mode and its container tier
 
-No Docker. Works on the host sandbox today.
+Only after U0 justifies it, U1 provides the runtime, and `deferred-approvals.md` provides
+the non-blocking outcome.
 
-- Add `defer` to the gate's outcome vocabulary alongside `allow`/`deny`, mapped onto the
-  headless contract's permission vocabulary (`packages/agent/src/headless-contract.ts`)
-  rather than inventing a fourth dialect.
-- A deferred decision returns a typed tool error naming the reason and telling the agent
-  to continue with other work; it does not fail the turn.
-- A per-thread review queue: what was requested, when, the exact command/URL/argument, the
-  reason, and the point in the transcript. Reviewing one can approve-and-replay,
-  approve-for-the-rest-of-the-run, or reject with a note the agent sees.
-- The queue is visible while the run continues, and summarised when it ends.
-
-Exit gate: a run whose every escalation is deferred completes without a modal, records
-each deferral, and the user can approve one afterwards and have it replay against the same
-runtime. An e2e spec covers the queue's states.
-
-### A3 — the `container` containment tier
-
-Only after A0 justifies it and A1 provides the runtime.
-
-- Extend `GuardedYoloContainment` to `'container' | 'project-sandbox' | 'unsandboxed'` and
-  make the tier a property of the resolved runtime, never of a setting.
-- In `ensureShellCommandPermitted` (`security/permission-gate.ts`), the container tier
-  auto-allows the contained-blast-radius classes in the table above, including the ones the
-  host tier must prompt for (writes outside the workspace root, unrecognised binaries,
-  privilege changes inside the guest).
+- A new `UnattendedRunRegistry` beside — never inside — `GuardedYoloRegistry`: per-thread,
+  session-only, mutually exclusive with Guarded YOLO on the same thread (Decision 5).
+  Arming records the runtime, the budgets, and the egress allowlist in one place.
+- The containment tier is a property of the **resolved runtime**, never of a setting:
+  `container` when the thread runs on a Copse-provisioned container,
+  `project-sandbox` / `unsandboxed` otherwise. It reuses the honest-capability vocabulary
+  rather than a second one.
+- In `ensureShellCommandPermitted` (`security/permission-gate.ts`), an unattended run on
+  the container tier auto-allows the contained-blast-radius classes in the table above,
+  including the ones the host tier must prompt for (writes outside the workspace root,
+  unrecognised binaries, privilege changes inside the guest).
 - The harm gate (`assessShellHarm`) stays, with its meaning narrowed to what the container
   does not contain: outward effects and the guest's own Git remote configuration. Its
-  outcome under autonomy is `defer`, not a prompt.
+  outcome in an unattended run is `defer`, not a prompt.
 - Attempts to reach the host — mounts, the Docker socket, host paths — are `deny` with a
   recorded reason. They should be impossible; the gate records them because a hit means
   either the image or the policy is wrong.
-- `unsandboxed` + autonomy remains available only with an explicit, separately-worded
-  confirmation and is never the default of anything.
+- An unattended run on anything weaker than `container` is **not** offered by default. If
+  it is ever allowed, it is behind separately-worded confirmation naming what is not
+  contained, and it is never the default of anything.
 
 Exit gate: a permission matrix test enumerating command classes × runtime tier ×
-autonomy state, asserting the exact verdict, with the negative cases (host escape denied,
-outward effect deferred) as first-class assertions.
+unattended state, asserting the exact verdict, with the negative cases (host escape denied,
+outward effect deferred, Guarded YOLO and unattended never both active) as first-class
+assertions.
 
-### A4 — egress and credential enforcement
+### U3 — egress and credential enforcement
 
 - Deny-by-default egress at the container boundary with a named per-run allowlist;
   denials recorded with `host:port` and raised as deferred requests.
@@ -263,7 +284,7 @@ Exit gate: the canary is absent from every guest surface; an unapproved origin f
 an explainable denial; one thread's runtime cannot reuse another's grant; approved work
 still succeeds.
 
-### A5 — long-horizon integration
+### U4 — long-horizon integration
 
 Wire the runtime and the queue into the features that actually want them.
 
@@ -282,7 +303,7 @@ Wire the runtime and the queue into the features that actually want them.
 Exit gate: an overnight run on a real backlog completes or suspends cleanly, produces a
 reviewable diff and a complete record, and never blocks on a modal.
 
-### A6 — acceptance measured with the eval we already have
+### U5 — acceptance measured with the eval we already have
 
 The point of building on the eval harness is that it can grade the result.
 
@@ -292,15 +313,15 @@ The point of building on the eval harness is that it can grade the result.
 - Compare against the host-sandbox arm on: task completion, wall-clock to completion,
   human interventions required, tokens/cost, deferrals raised, and deferrals a human then
   approved (a high approve-rate means the gate is too tight; a high reject-rate means the
-  autonomy tier is too loose).
+  unattended tier is too loose).
 - Report as a paired comparison with intervals, the same discipline `industry-benchmarks.md`
   applies to profile ablations. This is trend evidence for a product decision, not a
   leaderboard claim.
 
-Exit gate: a written result. Contained autonomy ships on by-offer only if it improves
+Exit gate: a written result. Unattended runs ship on by-offer only if they improve
 completion-without-intervention without a materially worse reject-rate on deferrals.
 
-### A7 — beyond the laptop (deferred)
+### U6 — beyond the laptop (deferred)
 
 Remote hosts via `cloud-hosts.mts`, per-thread containers, and checkpoint/suspend/resume
 belong to `copse-cloud-workspaces.md` C4–C6 and `execution-runtime-security.md` R4–R5. This
@@ -313,24 +334,24 @@ plan does not duplicate them; it should be a clean consumer when they land.
 | Runtime lifecycle  | unit        | State machine converges; `stop` idempotent; orphan reconciliation                     |
 | Provider           | integration | Provision → exec → teardown against a real local daemon; skipped when absent          |
 | Target routing     | unit        | Container host routes shell/fs/git/search through the SSH adapter unchanged           |
-| Permission matrix  | unit        | Command class × tier × autonomy → exact verdict, including every deny and defer       |
-| Deferral queue     | unit + e2e  | Ordering, replay after approval, reject-with-note, survives run end                   |
+| Permission matrix  | unit        | Command class × tier × unattended → exact verdict, including every deny and defer     |
+| Mode exclusivity   | unit        | Guarded YOLO and an unattended run are never active on the same thread                |
 | Egress             | integration | Allowlisted origin succeeds; metadata/private/unlisted denied and recorded            |
 | Secret canary      | integration | Absent from guest env, fs, image layers, run record                                   |
 | Budgets            | unit        | TTL, token, and idle limits suspend rather than continue or discard                   |
 | Review record      | unit        | Complete and integrity-checked before it is presented as a record                     |
 | UI honesty         | e2e         | Capability text matches the resolved runtime; BYO SSH never shows a containment claim |
-| End-to-end outcome | bench       | A6's paired comparison                                                                |
+| End-to-end outcome | bench       | U5's paired comparison                                                                |
 
 ## Risks and open questions
 
-- **A0 may kill A3.** If most prompts in real long runs are outward-effect prompts, the
-  container removes few of them and A2 alone is the answer. That is a good outcome to
-  discover for the cost of instrumentation.
+- **U0 may kill U2.** If most prompts in real long runs are outward-effect prompts, the
+  container removes few of them and the deferral track alone is the answer. That is a good
+  outcome to discover for the cost of instrumentation.
 - **Docker is not on most users' machines**, and on macOS and Windows it is a VM with real
   file-IO cost. Bind-mounting a large repo into a Linux VM is slow enough to change what
   "long-horizon" means. Mitigation: git carry-in into a container-local volume (already the
-  design), and measure image pull and first-build latency in A1 before committing to a
+  design), and measure image pull and first-build latency in U1 before committing to a
   default.
 - **Trust laundering.** A contained agent cannot hurt the host, but it can produce a
   plausible malicious commit that the user merges. The diff review is the boundary, and it
@@ -338,19 +359,22 @@ plan does not duplicate them; it should be a clean consumer when they land.
   obvious rather than burying them.
 - **Injection runway.** Six unattended hours is a long time for repo/web content to steer
   the agent. Egress allowlist, budgets, and the deferral record are the containment; the
-  plan should not ship A3/A5 without A4.
+  plan should not ship U2/U4 without U3.
 - **Cost.** An unattended run can spend a lot. The token/cost ceiling is a Decision, not a
   setting to forget; the arming UI must state the ceiling in currency.
 - **Image drift.** A baked image goes stale on lockfile change. Same answer as remote-e2e:
   lockhash gate plus explicit rebake, but this one needs an in-app surface.
-- **Open — one mode or two?** Recommendation: extend Guarded YOLO's ledger rather than
-  adding a parallel mode, so there is one place where "this thread may act without asking"
-  lives, with containment as a property of it. The alternative — a distinct "unattended
-  run" concept — reads more clearly in the UI but risks two ledgers and two audit paths.
-  Decide before A3.
-- **Open — what does a deferral do to a run's momentum?** An agent told "queued, carry on"
-  may loop on the same blocked action. The nudge/steering machinery in the bench profiles
-  is the closest prior art; A2 should measure repeat-request rate.
+- **Resolved — one mode or two?** Two. An unattended run is its own concept, separate from
+  Guarded YOLO, per Decision 5. The cost is two ledgers and two audit vocabularies; the
+  mutual-exclusion test in U2's exit gate is what keeps that cost bounded.
+- **Two ledgers, one question.** With the modes separate, every place that asks "may this
+  thread act without asking?" must consult both. That is a real duplication risk: a gate
+  path that checks one and forgets the other fails open. The mitigation is that the
+  unattended check is derived from the runtime and the registry together, and the matrix
+  test enumerates both modes rather than testing each alone.
+- **Deferral is a dependency, not a detail.** U2 cannot ship before
+  [`deferred-approvals.md`](deferred-approvals.md) D1, and its risks (agent looping on a
+  deferred action, an unread queue) are inherited whole.
 
 ## Non-goals
 
@@ -358,25 +382,30 @@ plan does not duplicate them; it should be a clean consumer when they land.
 - Running the model loop, or provider credentials, inside the guest.
 - Auto-approving any effect that leaves the container.
 - A second execution transport, permission vocabulary, event stream, or scheduler.
-- Requiring Docker for any existing workflow, or changing any default without A6.
+- Defining the `defer` outcome or its review queue — owned by `deferred-approvals.md`.
+- Changing Guarded YOLO, which keeps its current meaning and scope untouched.
+- Requiring Docker for any existing workflow, or changing any default without U5.
 - Cloud provisioning, checkpointing, or suspend/resume — owned elsewhere.
 
 ## Relationship to existing plans
 
 - [`execution-runtime-security.md`](execution-runtime-security.md) owns the capability,
   grant, egress, credential, lifecycle, checkpoint, and audit contracts. This plan is a
-  consumer and must not fork them; A1 is its R4 narrowed to local Docker, A4 its R2.
+  consumer and must not fork them; U1 is its R4 narrowed to local Docker, U3 its R2.
 - [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) owns provisioning providers and
-  cost UX. A1 is C1 restricted to `local-docker`; A7 hands the rest back.
+  cost UX. U1 is C1 restricted to `local-docker`; U6 hands the rest back.
 - [`long-horizon-tasks.md`](long-horizon-tasks.md) owns the checklist and terminal
-  condition. A5 supplies the self-paced loop and commit cadence it lists as unbuilt.
+  condition. U4 supplies the self-paced loop and commit cadence it lists as unbuilt.
 - [`background-supervisor.md`](background-supervisor.md) owns durable task identity, wakes,
   and cancellation. This plan is a consumer; it adds no timers.
 - [`auto-approval-classifier.md`](auto-approval-classifier.md) and
   [`command-sandboxing-routing.md`](command-sandboxing-routing.md) own the shipped
-  prompt-reduction levers on the host tier. A3 adds a tier above them and must not weaken
+  prompt-reduction levers on the host tier. U2 adds a tier above them and must not weaken
   either.
-- [`industry-benchmarks.md`](industry-benchmarks.md) owns the harness A6 measures with.
+- [`deferred-approvals.md`](deferred-approvals.md) owns the `defer` outcome, the review
+  queue, and the shared prompt-cause instrumentation U0 also needs. It is a hard dependency
+  of U2 and ships first; it needs nothing from this plan.
+- [`industry-benchmarks.md`](industry-benchmarks.md) owns the harness U5 measures with.
 - [`thread-worktrees.md`](thread-worktrees.md) owns checkout allocation. A worktree is
   complementary to, not a substitute for, runtime isolation.
 - [`../threat-model.md`](../threat-model.md) scenario 6 and principles 3 and 5 are the

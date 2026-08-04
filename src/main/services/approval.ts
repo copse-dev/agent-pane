@@ -10,6 +10,7 @@ import {
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
+import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
@@ -37,6 +38,12 @@ export interface ApprovalRequest {
   subject?: string
   /** Scope the decision applies at, such as `sandbox` or `external`. */
   scope?: string
+  /**
+   * Why this prompt is interrupting the user, recorded to the durable decision
+   * log so interruptions can be counted by cause rather than estimated. Every
+   * interactive gate path should set it; see `@shared/threads/prompt-cause.ts`.
+   */
+  cause?: PromptCause
 }
 
 export interface ApprovalResponse {
@@ -147,6 +154,7 @@ function recordApprovalDecision(
           : 'cancelled',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
+    ...(req.cause ? { cause: req.cause } : {}),
     remembered: response.remember,
     ...(resolution === 'user' ? {} : { source: resolution }),
   })

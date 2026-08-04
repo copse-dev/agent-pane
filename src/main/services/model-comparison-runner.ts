@@ -83,6 +83,7 @@ async function ensureApproved(
   if (signal.aborted) return null
   const { approved, remember, comparisonModels } = await requestApproval({
     type: 'model-compare',
+    cause: 'review-spend',
     title: 'Compare models on this diff?',
     body: comparisonApprovalPickerIntro(),
     comparisonModels: models,

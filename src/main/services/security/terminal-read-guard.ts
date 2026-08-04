@@ -102,6 +102,7 @@ async function gateImpl(
   const decision = await requestApproval({
     type: 'shell',
     title: 'Share terminal output with the agent?',
+    cause: 'terminal-output-share',
     body:
       `The agent wants to read recent output from your "${label}" shell. ${why} ` +
       'Approve to share this snapshot with the agent (and, on the next step, the model provider).',
