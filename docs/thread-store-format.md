@@ -33,6 +33,7 @@ describes it to the agent, so changing the layout means updating that preamble.
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
+    acp-session.json                 # private external ACP session binding (optional)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     blobs/<toolCallId>.result.txt    # verbatim tool result
@@ -83,6 +84,13 @@ describes it to the agent, so changing the layout means updating that preamble.
   log history values. Legacy electron-store keys `llm-history:<threadId>` are
   migrated once at startup (after legacy thread import, before the first window)
   when ownership resolves to exactly one `(projectId, threadId)`.
+- **`acp-session.json`** is a private, versioned binding to one exact external
+  ACP agent session. It stores the opaque session id plus agent, protocol,
+  workspace, execution-target, and configuration-generation identity needed to
+  resume safely after a restart. The file is atomically replaced with owner-only
+  permissions and is not part of `meta.json`, `events.jsonl`, logs, telemetry,
+  or transcript exports. Corrupt, incomplete, and future-version bindings fail
+  closed instead of guessing a replacement session.
 
 ## Spine line schema
 
