@@ -78,6 +78,7 @@ export class DarkFactorySensorController {
             schedule()
           }, delay)
         }
+        emit(DARK_FACTORY_POLL_EVENT)
         schedule()
         return () => {
           stopped = true

@@ -61,6 +61,19 @@ describe('dark-factory fleet sensor', () => {
       runs++
       return Promise.resolve({})
     })
+    sensor.sync()
+    assert.equal(clock.scheduled.length, 0)
+
+    registry.enable(DARK_FACTORY_PACK_ID)
+    sensor.sync()
+    sensor.sync()
+    assert.deepEqual(
+      clock.scheduled.map(({ delayMs }) => delayMs),
+      [15 * 60_000],
+    )
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve)
+    })
     await supervisor.enqueue({
       projectId: 'project-1',
       threadId: 'fleet-observer',
@@ -76,17 +89,6 @@ describe('dark-factory fleet sensor', () => {
       concurrencyClass: 'network',
       maxAttempts: 1,
     })
-
-    sensor.sync()
-    assert.equal(clock.scheduled.length, 0)
-
-    registry.enable(DARK_FACTORY_PACK_ID)
-    sensor.sync()
-    sensor.sync()
-    assert.deepEqual(
-      clock.scheduled.map(({ delayMs }) => delayMs),
-      [15 * 60_000],
-    )
 
     urgency = 'pending'
     clock.scheduled[0]?.callback()
