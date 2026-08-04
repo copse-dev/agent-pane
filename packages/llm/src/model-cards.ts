@@ -1,5 +1,8 @@
-// Public API for model cards / system cards: "where did this model's own vendor
-// document it?". The documentation axis alongside `model-catalog.ts` (price),
+// The certain half of model cards / system cards: the reviewed link table and
+// the id resolution around it. `model-card-candidates.ts` builds on this to
+// offer the less-certain derived URLs, and the main process probes them — so
+// nothing here needs to guess. The documentation axis alongside
+// `model-catalog.ts` (price),
 // `model-intellect.ts` (capability) and `data-policies.ts` (where prompts go) —
 // so a user weighing a model on the value map can read the vendor's own
 // evaluation instead of taking a number on trust.
@@ -13,8 +16,9 @@
 //   2. Run `npm run sync:model-cards` (add `--discover` to fetch a `wanted`
 //      model's card from its vendor, `--verify` to check every link resolves).
 //
-// SOURCING RULE — a card link is a fact, never a guessed slug. An unsourced
-// model has no card and the UI shows no link; a 404 would be worse than that.
+// SOURCING RULE — an entry here is a fact, never a guessed slug. A model with
+// no reviewed entry and no derivable Hugging Face path has no candidate at all,
+// and the UI shows no link; a 404 would be worse than that.
 
 import { resolveModelIdForm } from './model-id-forms.ts'
 import { resolveIntellectModelId } from './model-intellect.ts'
@@ -39,11 +43,12 @@ const HF_REPO_PATH = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/
  *
  * On Hugging Face the repo README *is* the model card, so the URL is derivable
  * rather than data — but only for ids that came from the HF router, whose
- * `org/model` casing is what the HF API itself returned. Deliberately NOT
- * applied to bare `vendor/model` ids: the local catalog stores lower-cased
- * approximations (`qwen/qwen3.6-35b-a3b`) and OpenRouter has its own namespace,
- * and huggingface.co paths are case-sensitive, so deriving from those would
- * manufacture 404s.
+ * `org/model` is the string the HF API itself returned. Deliberately NOT
+ * applied to bare `vendor/model` ids: the local catalog stores lower-cased and
+ * sometimes forward-looking ids (`qwen/qwen3.6-35b-a3b`) that need not name a
+ * real repo, and OpenRouter has its own namespace, so deriving a *certain* URL
+ * from either would manufacture 404s. `model-card-candidates.ts` may still
+ * offer those forms as candidates — a probe, not this function, decides them.
  */
 export function huggingFaceCardUrl(id: string): string | null {
   if (!id.startsWith(HF_ROUTER_PREFIX)) return null
@@ -69,25 +74,4 @@ export function resolveModelCardId(id: string): string | null {
   if (direct !== null) return direct
   const viaIntellect = resolveIntellectModelId(id)
   return viaIntellect !== null && viaIntellect in MODEL_CARDS ? viaIntellect : null
-}
-
-/**
- * The vendor-published card for a model id in any form the app uses, or null
- * when none is sourced. Null is the normal case for most of the open-weight
- * catalog and must render as "no link", never as a placeholder.
- */
-export function getModelCard(id: string): ModelCard | null {
-  const resolved = resolveModelCardId(id)
-  if (resolved !== null) {
-    const card = MODEL_CARDS[resolved]
-    if (card) return card
-  }
-  const hf = huggingFaceCardUrl(id)
-  if (hf === null) return null
-  return {
-    url: hf,
-    title: 'Hugging Face model card',
-    publisher: 'Hugging Face',
-    kind: 'model-card',
-  }
 }

@@ -25,15 +25,18 @@ describe('settings usage value map model card link', () => {
     const fieldset = $('.frontier-fieldset')
     await expect(fieldset).toBeDisplayed()
 
-    // Claude models carry a curated card entry; hover the point for one.
+    // Claude models carry a curated card entry; hover the point for one. Under
+    // COPSE_MODEL_CARD_PROBE_MOCK the resolver answers without a vendor request.
     const point = fieldset.$('circle.frontier-hit[data-model-id="claude-opus-4-8"]')
     await expect(point).toExist()
     await point.moveTo()
 
     const tooltip = fieldset.$('.frontier-tooltip')
     await expect(tooltip).toBeDisplayed()
+    // The card section arrives with the resolver's answer, one round-trip after
+    // the hover card itself opens.
     const link = tooltip.$('a.tt-card-link')
-    await expect(link).toBeDisplayed()
+    await link.waitForDisplayed({ timeout: 5000, timeoutMsg: 'model-card link never resolved' })
     assert.match(await link.getAttribute('href'), /^https:\/\//)
     // Opened by the shell, not navigated in-renderer.
     assert.equal(await link.getAttribute('target'), '_blank')

@@ -27,6 +27,7 @@ import {
   assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
+  modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
@@ -255,6 +256,10 @@ import {
   fetchLiveIntellectModels,
   invalidateLiveIntellectCache,
 } from '../services/providers/aa-live-intellect.ts'
+import {
+  resolveModelCard,
+  type ResolvedModelCard,
+} from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -983,6 +988,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('intellect:live-models', (event) => {
     assertMainFrameSender(event, win)
     return fetchLiveIntellectModels()
+  })
+  // Model-card links for the value map. Batched because the panel warms every
+  // plotted model at once; the resolver's URL cache makes repeat calls free.
+  ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
+    assertMainFrameSender(event, win)
+    const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
+    const out: Record<string, ResolvedModelCard | null> = {}
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          out[id] = await resolveModelCard(id)
+        } catch {
+          // A probe failure is "no link", never a broken settings panel.
+          out[id] = null
+        }
+      }),
+    )
+    return out
   })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the

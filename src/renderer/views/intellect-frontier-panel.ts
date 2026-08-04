@@ -34,7 +34,7 @@ import {
   type OpenRouterPricedModel,
 } from '@copse/llm/frontier-candidates.ts'
 import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
-import { getModelCard } from '@copse/llm/model-cards.ts'
+import { requestModelCards, resolvedModelCard } from './model-card-cache.ts'
 import {
   getIntellectScore,
   explainIntellectScore,
@@ -62,6 +62,9 @@ const MARGIN = { top: 14, right: 20, bottom: 34, left: 40 }
 
 /** Clearance kept between a lifted frontier label and the frontier line. */
 const LABEL_LINE_GAP = 3
+
+/** Card links warmed per render. Matches the `modelCards:resolve` batch cap. */
+const MAX_CARD_PREFETCH = 128
 
 /**
  * Compact display form of a model id for chart labels: provider prefixes and
@@ -225,8 +228,9 @@ function asFrontierCandidate(p: FrontierPoint): FrontierCandidate {
 
 /**
  * Append the "Card" section: a link to the vendor's own model card / system
- * card for this model. Nothing is appended when no card is sourced — an absent
- * card must read as absent, never as a placeholder link that 404s.
+ * card for this model. Nothing is appended unless a card has RESOLVED — an
+ * absent or still-resolving card reads as absent, never as a placeholder link
+ * that 404s. `wireTooltip` repaints the hover card when an answer lands.
  *
  * The anchor opens externally: an `http(s)` `target="_blank"` inside the
  * renderer is denied by the web-contents lockdown and handed to
@@ -234,7 +238,7 @@ function asFrontierCandidate(p: FrontierPoint): FrontierCandidate {
  * panel needing an IPC client.
  */
 function appendCardSection(root: HTMLElement, id: string): void {
-  const card = getModelCard(id)
+  const card = resolvedModelCard(id)
   if (!card) return
   root.append(
     ttRow('tt-section', 'Card'),
@@ -506,19 +510,52 @@ export function createTooltipLayer(container: HTMLElement): FrontierTooltip {
   }
 }
 
+/**
+ * The API used to resolve card links, set once by the panel. A module-level
+ * handle because `wireTooltip` is called from the pure SVG renderer, which has
+ * no business taking an IPC client as a parameter. Undefined in unit tests and
+ * in the demo build, where nothing is resolved and no card section renders.
+ */
+let modelCardApi: ModelCardResolveApi | undefined
+
+export type ModelCardResolveApi = Parameters<typeof requestModelCards>[1]
+
+/** Point the panel's card lookups at an IPC bridge. */
+export function setModelCardApi(api: ModelCardResolveApi | undefined): void {
+  modelCardApi = api
+}
+
 function wireTooltip(
   target: SVGElement,
   tooltip: FrontierTooltip | undefined,
   build: () => HTMLElement,
+  modelId?: string,
 ): void {
   if (!tooltip) return
+  // Resolving a card is a round-trip, so the first hover can open before the
+  // answer exists. Repaint once it lands — but only while the pointer is still
+  // on this point, or a stale reply would reopen a card the user has left.
+  let hovering = false
+  let lastEvent: MouseEvent | null = null
+  const fillCard = (): void => {
+    if (modelId === undefined) return
+    void requestModelCards([modelId], modelCardApi).then((landed) => {
+      if (!landed || !hovering || !lastEvent) return
+      tooltip.show(build(), lastEvent)
+    })
+  }
   target.addEventListener('mouseenter', (evt) => {
+    hovering = true
+    lastEvent = evt
     tooltip.show(build(), evt)
+    fillCard()
   })
   target.addEventListener('mousemove', (evt) => {
+    lastEvent = evt
     tooltip.show(build(), evt)
   })
   target.addEventListener('mouseleave', () => {
+    hovering = false
     tooltip.hide()
   })
 }
@@ -926,7 +963,7 @@ export function renderFrontierSvg(
       class: 'frontier-hit',
       'data-model-id': p.id,
     })
-    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis))
+    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis), p.id)
     else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
     const text = labelText.get(p.id)
     if (text !== undefined) {
@@ -1004,7 +1041,7 @@ export function renderFrontierSvg(
             class: 'gutter-unpriced',
           })
       if (tooltip) {
-        wireTooltip(dot, tooltip, () => unpricedTooltipContent(u))
+        wireTooltip(dot, tooltip, () => unpricedTooltipContent(u), u.id)
       } else {
         const explanation = explainIntellectScore(u.id)
         dot.append(
@@ -1093,7 +1130,7 @@ export function renderFrontierSvg(
         class: dense ? 'gutter-unscored dense' : 'gutter-unscored',
       })
       if (tooltip) {
-        wireTooltip(dot, tooltip, () => unscoredTooltipContent(u))
+        wireTooltip(dot, tooltip, () => unscoredTooltipContent(u), u.id)
       } else {
         dot.append(
           svgEl(
@@ -1961,6 +1998,14 @@ export function createIntellectFrontierPanel(
       return !noTrainingOnly || isNoTrainingModelPath(u.id, routePolicy)
     })
     lastPoints = points
+    // Warm the card cache for what is plotted, so the first hover on a point
+    // usually has its answer already. Fire-and-forget: nothing repaints on the
+    // result — the hover path reads the cache, and repaints itself if an answer
+    // arrives while a card is open. Capped to the IPC batch limit.
+    void requestModelCards(
+      points.slice(0, MAX_CARD_PREFETCH).map((p) => p.id),
+      modelCardApi,
+    )
     // The unpriced gutter is off by default (it can carry hundreds); the toggle
     // overlays the top few on the left axis, the full set stays in the list.
     const applyUnpriced = (btn: HTMLButtonElement | null): void => {

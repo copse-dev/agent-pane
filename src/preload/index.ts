@@ -528,6 +528,9 @@ contextBridge.exposeInMainWorld('api', {
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
   },
+  modelCards: {
+    resolve: (modelIds: string[]) => ipcRenderer.invoke('modelCards:resolve', modelIds),
+  },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),

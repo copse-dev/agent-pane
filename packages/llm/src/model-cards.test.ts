@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { getModelCard, huggingFaceCardUrl, resolveModelCardId, MODEL_CARDS } from './model-cards.ts'
+import { huggingFaceCardUrl, resolveModelCardId, MODEL_CARDS } from './model-cards.ts'
 import { resolveIntellectModelId } from './model-intellect.ts'
 import { TRACKED_MODELS } from './model-catalog.ts'
 
@@ -28,26 +28,12 @@ describe('model cards', () => {
     }
   })
 
-  it('returns null for a model with no sourced card', () => {
-    assert.equal(getModelCard('some-model-nobody-has-carded'), null)
-  })
-
-  it('resolves a card through provider prefixes and option suffixes', () => {
-    const card = getModelCard('claude-opus-4-8')
-    assert.ok(card, 'expected a seeded card for claude-opus-4-8')
-    assert.equal(getModelCard('claude-opus-4-8[1m]')?.url, card.url)
-    assert.equal(getModelCard('acp:cursor#claude-opus-4-8')?.url, card.url)
-  })
-
   it('resolves a card through the intellect alias table, so aliases live in one place', () => {
     // `anthropic/claude-opus-4-8` is an alias in scripts/data/intellect-scores.json
     // and is deliberately NOT repeated in scripts/data/model-cards.json.
     assert.equal(resolveIntellectModelId('anthropic/claude-opus-4-8'), 'claude-opus-4-8')
     assert.equal(resolveModelCardId('anthropic/claude-opus-4-8'), 'claude-opus-4-8')
-    assert.equal(
-      getModelCard('openrouter:anthropic/claude-opus-4-8')?.url,
-      MODEL_CARDS['claude-opus-4-8']?.url,
-    )
+    assert.equal(resolveModelCardId('openrouter:anthropic/claude-opus-4-8'), 'claude-opus-4-8')
   })
 })
 
@@ -71,8 +57,10 @@ describe('huggingFaceCardUrl', () => {
   })
 
   it('refuses ids that did not come from the HF router', () => {
-    // huggingface.co paths are case-sensitive, and the local catalog stores
-    // lower-cased approximations — deriving from these would manufacture 404s.
+    // The local catalog stores lower-cased, sometimes forward-looking ids
+    // (`qwen/qwen3.6-35b-a3b`) that need not name a real repo, and OpenRouter
+    // has its own namespace. Deriving a *certain* URL from either would
+    // manufacture 404s — the resolver may try them, this must not.
     assert.equal(huggingFaceCardUrl('qwen/qwen3.6-35b-a3b'), null)
     assert.equal(huggingFaceCardUrl('openrouter:qwen/qwen3-32b'), null)
     assert.equal(huggingFaceCardUrl('lmstudio:qwen/qwen3.6-35b-a3b'), null)
@@ -83,22 +71,5 @@ describe('huggingFaceCardUrl', () => {
     assert.equal(huggingFaceCardUrl('huggingface:GLM-5.2'), null)
     assert.equal(huggingFaceCardUrl('huggingface:a/b/c'), null)
     assert.equal(huggingFaceCardUrl('huggingface:'), null)
-  })
-
-  it('surfaces the derived card through getModelCard', () => {
-    const card = getModelCard('huggingface:zai-org/GLM-5.2:novita')
-    assert.ok(card, 'expected a derived Hugging Face card')
-    assert.equal(card.url, 'https://huggingface.co/zai-org/GLM-5.2')
-    assert.equal(card.kind, 'model-card')
-    assert.equal(card.publisher, 'Hugging Face')
-    // Derived at lookup time from the id, so there is no review date to show.
-    assert.equal(card.asOf, undefined)
-  })
-
-  it('prefers a curated card over the derived Hugging Face one', () => {
-    const curatedId = Object.keys(MODEL_CARDS)[0]
-    assert.ok(curatedId, 'expected at least one curated card')
-    const curated = MODEL_CARDS[curatedId]
-    assert.equal(getModelCard(curatedId)?.url, curated?.url)
   })
 })

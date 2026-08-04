@@ -15,7 +15,7 @@ import {
   unpricedTooltipContent,
   unscoredTooltipContent,
 } from './intellect-frontier-panel.ts'
-import { getModelCard } from '@copse/llm/model-cards.ts'
+import { clearResolvedModelCards, setResolvedModelCard } from './model-card-cache.ts'
 import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import type { ExtraProvider, ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
@@ -766,6 +766,15 @@ describe('plan coverage on the map', () => {
   })
 
   it('tooltip links the vendor-published card, opening outside the app', () => {
+    // Only a RESOLVED card renders — the panel probes the URL before showing it.
+    clearResolvedModelCards()
+    setResolvedModelCard('claude-fable-5', {
+      url: 'https://www.anthropic.com/transparency',
+      title: 'Anthropic transparency hub',
+      publisher: 'Anthropic',
+      kind: 'index',
+      origin: 'curated',
+    })
     const p: FrontierPoint = {
       id: 'claude-fable-5',
       intellect: 60,
@@ -774,11 +783,23 @@ describe('plan coverage on the map', () => {
     }
     const link = pointTooltipContent(p).querySelector('a.tt-card-link')
     assert.ok(link, 'expected a model-card link in the hover card')
-    assert.equal(link.getAttribute('href'), getModelCard('claude-fable-5')?.url)
+    assert.equal(link.getAttribute('href'), 'https://www.anthropic.com/transparency')
     // target=_blank is what routes the click through the web-contents lockdown
     // to shell.openExternal instead of navigating the renderer.
     assert.equal(link.getAttribute('target'), '_blank')
     assert.equal(link.getAttribute('rel'), 'noopener noreferrer')
+  })
+
+  it('tooltip shows no card row while a card is still unresolved', () => {
+    clearResolvedModelCards()
+    const p: FrontierPoint = {
+      id: 'claude-fable-5',
+      intellect: 60,
+      costPerMTok: 12,
+      onFrontier: true,
+    }
+    // Nothing resolved yet: no link, rather than one that might 404.
+    assert.equal(pointTooltipContent(p).querySelector('a.tt-card-link'), null)
   })
 
   it('tooltip shows no card row for a model with no sourced card', () => {
@@ -795,6 +816,14 @@ describe('plan coverage on the map', () => {
   })
 
   it('gutter tooltips carry the card link too', () => {
+    clearResolvedModelCards()
+    setResolvedModelCard('claude-opus-4-8', {
+      url: 'https://www.anthropic.com/transparency',
+      title: 'Anthropic transparency hub',
+      publisher: 'Anthropic',
+      kind: 'index',
+      origin: 'curated',
+    })
     const unpriced = unpricedTooltipContent({
       id: 'claude-opus-4-8',
       intellect: 56,
