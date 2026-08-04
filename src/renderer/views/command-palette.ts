@@ -5,6 +5,7 @@ import { el, clear } from '../dom/helpers.ts'
 import { searchIcon } from '../dom/icons.ts'
 import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { projectDisplayName, switchProject, switchProjectThread } from '../controller/projects.ts'
+import { createNewProject } from '../controller/projects.ts'
 import { openRightPanelWithWorkspace } from '../controller/panels.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { openKeyboardShortcutsDialog } from './keyboard-shortcuts-dialog.ts'
@@ -112,6 +113,13 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
   function commandItems(): PaletteEntry[] {
     const hasWorkspace = !!store.getState().workspaceRoot
     const commands: PaletteEntry[] = []
+    commands.push({
+      kind: 'command',
+      label: 'New project',
+      run: () => {
+        void createNewProject(store, api)
+      },
+    })
     if (hasWorkspace) {
       commands.push({ kind: 'command', label: 'New thread', run: () => openNewThread(store) })
       commands.push({

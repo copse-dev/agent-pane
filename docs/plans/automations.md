@@ -1,5 +1,9 @@
 # Project automations
 
+**Status: Experimental prototype shipped.** The default-off `copse.automations` pack,
+schedule editor, local ticker, **Run now**, thread creation, and renderer submission are
+implemented. The durable/headless behavior below remains planned.
+
 This plan defines the first local prototype of Copse automations. It is a thin,
 explicitly limited slice of the durable background supervisor proposed in
 GitHub issue #1081 and the local/cloud split proposed in #875.
@@ -37,6 +41,20 @@ Prototype boundaries:
 Those lifecycle concerns belong to #1081's shared durable supervisor. A later
 implementation should keep the schedule/IPC shape as a consumer and replace the
 in-process ticker rather than grow a second task lifecycle.
+
+This is deliberately an **app-open automation**, not yet a background agent under the
+definitions in [`background-agents-capability-map.md`](background-agents-capability-map.md):
+the desktop and relevant renderer still own execution. Device-independent scheduled
+work requires the shared headless-turn contract, supervisor lease, and detached runtime.
+
+## Beyond cron: trigger adapters
+
+PR/ticket events, CVE advisories, alerts, webhooks, and chat/mobile requests are not extra
+fields on `AutomationSchedule`. They normalize to the supervisor's authenticated,
+immutable trigger envelope and select a registered workflow/profile. Delivery is
+deduplicated and auditable; the trigger authorizes enqueueing that workflow, never
+arbitrary tool access. App-open polling can be an early adapter, while always-available
+ingress waits for the detached worker/control-plane phase.
 
 ## Pack boundary
 

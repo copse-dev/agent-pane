@@ -98,6 +98,27 @@ describe('parseOpenRouterModelsPayload', () => {
     assert.equal(claude.supportsImages, false)
   })
 
+  it('carries prompt-caching rates through when the catalog bills them', () => {
+    const models = parseOpenRouterModelsPayload({
+      data: [
+        {
+          id: 'anthropic/claude-sonnet-4.6',
+          pricing: {
+            prompt: '0.000003',
+            completion: '0.000015',
+            input_cache_read: '0.0000003',
+            input_cache_write: '0.00000375',
+          },
+          supported_parameters: ['tools'],
+        },
+      ],
+    })
+    const model = models[0]
+    assert.ok(model)
+    assert.equal(model.cacheReadPricePerMTok, 0.3)
+    assert.equal(model.cacheCreationPricePerMTok, 3.75)
+  })
+
   it('tolerates null pricing and array-shaped junk rows', () => {
     assert.deepEqual(
       parseOpenRouterModelsPayload({ data: [[], { id: 'example/model', pricing: null }] }),

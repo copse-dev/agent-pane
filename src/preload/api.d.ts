@@ -16,6 +16,7 @@ import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  GitPromptState,
   GitBranchInfo,
   SessionBackup,
   GhCliStatus,
@@ -75,6 +76,9 @@ export interface ApiClient {
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
+    createNewProject: (name: string, parentDir: string) => Promise<string>
+    pickParentDirectory: () => Promise<string | null>
+    getHomeDirectory: () => Promise<string>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
@@ -532,6 +536,12 @@ export interface ApiClient {
     }>
     /** Effective extra-provider list: shipped presets merged with stored overrides/customs. */
     extraProviders: () => Promise<ExtraProvider[]>
+    /**
+     * Every known per-MTok rate outside the static cloud catalog (cached
+     * OpenRouter catalog rates merged with extra-provider rates), keyed by the
+     * model selection string. Feeds the footer cost estimate.
+     */
+    modelPricing: () => Promise<import('@copse/llm/model-pricing.ts').ModelPricingMap>
     /** Insert/replace a preset override or custom provider; returns the resolved list. */
     saveExtraProvider: (
       record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
@@ -750,6 +760,8 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
+    promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
     listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
     getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>

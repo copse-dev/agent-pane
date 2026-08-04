@@ -61,6 +61,9 @@
   --text-primary: #333333;
   --text-secondary: #5f5f5f;
   --text-muted: #767676;
+  /* Same chevron as :root (tokens.css), restated because its stroke is baked
+     into the data URI and the dark grey would smudge out on a light field. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23707070'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
   --border: #d4d4d4;
   --border-subtle: #e4e4e4;
   --border-strong: #ababab;
