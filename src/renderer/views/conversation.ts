@@ -124,9 +124,9 @@ function createToolHeader(
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
 ): HTMLElement {
-  // The slot is out of flow (it renders in the transcript's left gutter), so the
-  // label sits at the same indent running or settled. Kept in every state as the
-  // gutter anchor; the animated icon itself is omitted once done.
+  // Nothing here precedes the label in flow: the slot renders in the transcript
+  // gutter, or trails the row when it is indented (tool-cards.css). So the label
+  // sits at the same indent running or settled. The icon is omitted once done.
   const activityIcon = el('span', {
     class: 'tool-activity-icon-slot',
     'aria-hidden': 'true',

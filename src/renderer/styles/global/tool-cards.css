@@ -47,15 +47,11 @@
    `.msg` clips horizontally (overflow-x: auto), so the gutter is only
    `--spacing-md` wide: the spiral fills it less half an `--spacing-xs` of
    breath before the label (scaled, so it holds at every `--ui-scale`).
-   Rows nested under a rule (rollup body, subagent timeline) step back out to
-   that same column via `--activity-gutter-offset`, which each such container
-   declares as its *total* inset from the message — custom properties inherit,
-   so a group inside a rollup picks up the rollup's value. */
+   Only rows whose label sits on the prose column take the gutter — see the
+   trailing treatment for indented rows below. */
 .tool-activity-icon-slot {
   position: absolute;
-  right: calc(
-    100% - var(--spacing-xs) + var(--spacing-xs) / 2 + var(--activity-gutter-offset, 0px)
-  );
+  right: calc(100% - var(--spacing-xs) + var(--spacing-xs) / 2);
   top: 50%;
   transform: translateY(-50%);
   display: inline-flex;
@@ -68,6 +64,25 @@
 .tool-activity-icon-slot > .reasoning-activity-icon {
   width: 100%;
   height: 100%;
+}
+/* A row indented under a rule (rollup body, subagent timeline) would leave its
+   spiral stranded in the far-left gutter, a column away from the label it
+   belongs to. Those trail their own line instead: in flow, after the label and
+   its stats, ahead of the status glyph it is sized to match. Still nothing
+   ahead of the label, so the indent and the hover pill's left edge hold. */
+.tool-rollup-body .tool-activity-icon-slot,
+.subagent-timeline .tool-activity-icon-slot {
+  position: static;
+  transform: none;
+  order: 1;
+  width: var(--font-size-sm);
+  height: var(--font-size-sm);
+}
+/* Settled rows drop the icon; with the slot trailing there is no label to keep
+   from shifting, so collapse it rather than leave a gap before the glyph. */
+.tool-rollup-body .tool-activity-icon-slot:empty,
+.subagent-timeline .tool-activity-icon-slot:empty {
+  display: none;
 }
 .tool-card[open] .tool-card-header {
   margin-bottom: var(--spacing-xs);
@@ -140,9 +155,6 @@
   margin-top: var(--spacing-xs);
   padding-left: var(--spacing-sm);
   border-left: 1px solid var(--border-subtle);
-  /* Nested rows sit one hairline + padding in; their spirals step back out so
-     the whole turn shares one gutter column (see .tool-activity-icon-slot). */
-  --activity-gutter-offset: calc(var(--spacing-sm) + 1px);
 }
 .tool-card-rollup:not([open]) > .tool-rollup-body {
   display: none;
@@ -225,6 +237,8 @@
   align-items: center;
   color: var(--text-muted);
   margin-left: auto;
+  /* Stays last in the row, behind a trailing activity spiral (order: 1). */
+  order: 2;
 }
 /* Color only this row's icon — never cascade from an ancestor rollup/group
    with mixed status (a green check inside an error rollup was turning red). */
@@ -302,8 +316,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  /* Same gutter escape as .tool-rollup-body, over this rule's 2px. */
-  --activity-gutter-offset: calc(var(--spacing-sm) + 2px);
 }
 .tool-card-subagent .subagent-message-assistant.message-text {
   font-size: var(--font-size-sm);
