@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type { SpineMachineContinuationLine } from '@shared/threads/spine-schema.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import {
@@ -38,6 +39,9 @@ function dependencies(
     saveHistory: async () => undefined,
     loadEpoch: async () => null,
     saveEpoch: async () => undefined,
+    appendMachineContinuation: async () => undefined,
+    now: () => 100,
+    createId: () => 'audit-id',
     prepareExecutionContext: async () => context,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
@@ -219,6 +223,92 @@ describe('AgentDispatcher', () => {
       'stale',
     )
     assert.equal(runCount, 2)
+  })
+
+  it('records compact continuation starts and terminal decisions without prompt content', async () => {
+    const audit: SpineMachineContinuationLine[] = []
+    let nextId = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        appendMachineContinuation: async (_projectId, _threadId, line) => {
+          audit.push(line)
+        },
+        createId: () => `audit-${String(++nextId)}`,
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'root',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-current',
+        },
+      }),
+    )
+    const machine = {
+      ...request(),
+      operationId: 'background-1',
+      turnTreeId: 'tree-current',
+      payload: { userContent: 'private wake prompt', invokedSkills: [], priorTodos: [] },
+    }
+
+    assert.equal(await dispatcher.dispatchMachine(machine), 'completed')
+    assert.equal(await dispatcher.dispatchMachine(machine), 'duplicate')
+    assert.equal(
+      await dispatcher.dispatchMachine({
+        ...machine,
+        operationId: 'background-stale',
+        turnTreeId: 'tree-old',
+      }),
+      'stale',
+    )
+
+    assert.deepEqual(
+      audit.map(({ phase, operationId, turnTreeId, budgetUsed, ...line }) => ({
+        id: line.id,
+        phase,
+        operationId,
+        turnTreeId,
+        ...(budgetUsed !== undefined ? { budgetUsed } : {}),
+        ...('result' in line ? { result: line.result } : {}),
+      })),
+      [
+        {
+          id: 'audit-1',
+          phase: 'started',
+          operationId: 'background-1',
+          turnTreeId: 'tree-current',
+          budgetUsed: 1,
+        },
+        {
+          id: 'audit-2',
+          phase: 'finished',
+          operationId: 'background-1',
+          turnTreeId: 'tree-current',
+          budgetUsed: 1,
+          result: 'completed',
+        },
+        {
+          id: 'audit-3',
+          phase: 'finished',
+          operationId: 'background-1',
+          turnTreeId: 'tree-current',
+          result: 'duplicate',
+        },
+        {
+          id: 'audit-4',
+          phase: 'finished',
+          operationId: 'background-stale',
+          turnTreeId: 'tree-old',
+          budgetUsed: 1,
+          result: 'stale',
+        },
+      ],
+    )
+    assert.equal(JSON.stringify(audit).includes('private wake prompt'), false)
   })
 
   it('restores a durable epoch before dispatching a post-restart machine wake', async () => {

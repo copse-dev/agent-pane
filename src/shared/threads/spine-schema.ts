@@ -270,9 +270,35 @@ export interface SpinePermissionDecisionLine {
   userResponse: 'approved' | 'declined' | 'not-required'
 }
 
+export const MACHINE_CONTINUATION_RESULTS = [
+  'completed',
+  'duplicate',
+  'stale',
+  'budget-exhausted',
+  'failed',
+] as const
+export type MachineContinuationResult = (typeof MACHINE_CONTINUATION_RESULTS)[number]
+
+/** Compact machine-continuation audit record; prompts and outputs stay in their existing stores. */
+export type SpineMachineContinuationLine = {
+  v: number
+  type: 'machine_continuation'
+  id: string
+  operationId: string
+  turnTreeId: string
+  recordedAt: number
+  budgetUsed?: number
+} & (
+  { phase: 'started'; result?: never } | { phase: 'finished'; result: MachineContinuationResult }
+)
+
 /** Discriminated union of every line type this schema version can write. */
 export type SpineLine =
-  SpineMessageLine | SpineHookRunLine | SpinePlanLine | SpinePermissionDecisionLine
+  | SpineMessageLine
+  | SpineHookRunLine
+  | SpinePlanLine
+  | SpinePermissionDecisionLine
+  | SpineMachineContinuationLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -352,6 +378,36 @@ function isSpinePermissionDecisionLine(value: unknown): value is SpinePermission
   )
 }
 
+function isMachineContinuationResult(value: unknown): value is MachineContinuationResult {
+  return (
+    value === 'completed' ||
+    value === 'duplicate' ||
+    value === 'stale' ||
+    value === 'budget-exhausted' ||
+    value === 'failed'
+  )
+}
+
+function isSpineMachineContinuationLine(value: unknown): value is SpineMachineContinuationLine {
+  if (!isRecord(value)) return false
+  const phase = value['phase']
+  const result = value['result']
+  return (
+    value['type'] === 'machine_continuation' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['operationId'] === 'string' &&
+    typeof value['turnTreeId'] === 'string' &&
+    typeof value['recordedAt'] === 'number' &&
+    (value['budgetUsed'] === undefined ||
+      (typeof value['budgetUsed'] === 'number' &&
+        Number.isInteger(value['budgetUsed']) &&
+        value['budgetUsed'] >= 0)) &&
+    ((phase === 'started' && result === undefined) ||
+      (phase === 'finished' && isMachineContinuationResult(result)))
+  )
+}
+
 function isPlanSpineAction(value: unknown): value is PlanSpineAction {
   return (
     value === 'create' ||
@@ -399,6 +455,7 @@ export function parseSpineLine(raw: string): SpineLine | null {
 
   if (type === 'hook_run' && isSpineHookRunLine(parsed)) return parsed
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
+  if (type === 'machine_continuation' && isSpineMachineContinuationLine(parsed)) return parsed
 
   return null
 }
