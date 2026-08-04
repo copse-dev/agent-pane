@@ -393,11 +393,16 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `reasoning` field / provider events.
 - **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
   `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
-  into the live disclosure title so the transcript never shows two reasoning labels. The animated
-  spiral sits immediately beside the live label; settled disclosures return to a static chevron.
-- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
-  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
-  place so the existing past-tense label does not jump horizontally; do not keep animating it.
+  into the live disclosure title so the transcript never shows two reasoning labels. Settled
+  reasoning disclosures return to a static chevron.
+- **The activity spiral lives in the gutter, never in the text column.** Running tool rows and the
+  standalone activity row put it out of flow in the message's own padding column
+  (`.tool-activity-icon-slot`, `.agent-activity > .reasoning-activity-icon`), so a live label sits
+  at exactly the indent its settled label has and a header's hover pill still hugs only the text.
+  Rows nested under a rule (rollup body, subagent timeline) step back out to that same column with
+  `--activity-gutter-offset`, so a turn's spirals stack in one vertical gutter. `.msg` clips
+  horizontally, so the gutter is `--spacing-md` wide — size the spiral to fit it, do not reach
+  further left. When a tool settles, drop the icon and leave the empty slot; do not keep animating.
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on

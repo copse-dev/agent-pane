@@ -21,6 +21,7 @@
   margin-top: var(--spacing-xs);
 }
 .tool-card-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -39,13 +40,34 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+/* The live spiral rides in the transcript's left gutter — the message's own
+   padding column — instead of a slot in the row. A running row therefore reads
+   at exactly the indent its settled label has, and the hover pill still hugs
+   just the text (the slot is out of flow and takes no pointer events).
+   `.msg` clips horizontally (overflow-x: auto), so the gutter is only
+   `--spacing-md` wide: the spiral fills it less half an `--spacing-xs` of
+   breath before the label (scaled, so it holds at every `--ui-scale`).
+   Rows nested under a rule (rollup body, subagent timeline) step back out to
+   that same column via `--activity-gutter-offset`, which each such container
+   declares as its *total* inset from the message — custom properties inherit,
+   so a group inside a rollup picks up the rollup's value. */
 .tool-activity-icon-slot {
+  position: absolute;
+  right: calc(
+    100% - var(--spacing-xs) + var(--spacing-xs) / 2 + var(--activity-gutter-offset, 0px)
+  );
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--font-size-lg);
-  height: var(--font-size-lg);
-  flex: 0 0 var(--font-size-lg);
+  width: calc(var(--spacing-md) - var(--spacing-xs) / 2);
+  height: calc(var(--spacing-md) - var(--spacing-xs) / 2);
+  pointer-events: none;
+}
+.tool-activity-icon-slot > .reasoning-activity-icon {
+  width: 100%;
+  height: 100%;
 }
 .tool-card[open] .tool-card-header {
   margin-bottom: var(--spacing-xs);
@@ -118,6 +140,9 @@
   margin-top: var(--spacing-xs);
   padding-left: var(--spacing-sm);
   border-left: 1px solid var(--border-subtle);
+  /* Nested rows sit one hairline + padding in; their spirals step back out so
+     the whole turn shares one gutter column (see .tool-activity-icon-slot). */
+  --activity-gutter-offset: calc(var(--spacing-sm) + 1px);
 }
 .tool-card-rollup:not([open]) > .tool-rollup-body {
   display: none;
@@ -166,6 +191,7 @@
   background: transparent;
 }
 .tool-group-item-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -276,6 +302,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  /* Same gutter escape as .tool-rollup-body, over this rule's 2px. */
+  --activity-gutter-offset: calc(var(--spacing-sm) + 2px);
 }
 .tool-card-subagent .subagent-message-assistant.message-text {
   font-size: var(--font-size-sm);
