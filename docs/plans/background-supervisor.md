@@ -2,7 +2,7 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P5).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+**Status: Active (P5 complete).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
 P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
 main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
 without registering a production consumer yet. Implementation PRs should link here
@@ -194,9 +194,11 @@ dark-factory poller implementation, and changes to `run_background`.
       the Terminal pane.
 - [x] Expired terminal task directories compact into queryable, permission-free support
       summaries before restart reconciliation (30-day default retention).
-- [ ] Recurring schedules only after P2–P4 retention, permission, and concurrency proofs.
+- [x] Recurring cron tasks rearm durably after successful runs; the Automations pack's
+      minute scheduler now uses this path instead of a feature-owned `setInterval`.
 - [x] Component and Electron e2e proof of list + cancel.
-- [ ] Cron behind an explicit flag.
+- [x] Cron is accepted only while the experimental `copse.automations` pack is enabled;
+      disabling it disarms existing cron timers without deleting schedule state.
 
 ## Non-goals
 

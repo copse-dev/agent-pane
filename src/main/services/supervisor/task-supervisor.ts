@@ -12,6 +12,9 @@ import {
   type TaskTrigger,
 } from '@shared/supervisor/task-schema.ts'
 import { reconcileSupervisedTasks } from '@shared/supervisor/reconcile.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { nextCronOccurrence, validateCronExpression } from '../automations/cron.ts'
 import {
   FileSupervisedTaskStore,
   type SupervisedTaskStore,
@@ -64,11 +67,13 @@ export interface TaskSupervisorDependencies {
   maxConcurrent?: number
   concurrencyClassLimits?: Readonly<Record<string, number>>
   terminalRetentionMs?: number
+  cronEnabled?: () => boolean
 }
 
 export type SupervisedEventSourceStart = (emit: (event: string) => void) => (() => void) | undefined
 export type SupervisedTaskListener = (task: SupervisedTaskMeta) => void
 export const DEFAULT_TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
+const MAX_TIMER_DELAY_MS = 2_147_000_000
 
 const systemClock: TaskSupervisorClock = {
   now: () => Date.now(),
@@ -116,6 +121,7 @@ export class TaskSupervisor {
   private readonly maxConcurrent: number
   private readonly concurrencyClassLimits: Readonly<Record<string, number>>
   private readonly terminalRetentionMs: number
+  private readonly cronEnabled: () => boolean
   private readonly tasks = new Map<string, SupervisedTaskMeta>()
   private readonly handlers = new Map<string, SupervisedTaskHandler>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout> | number>()
@@ -159,6 +165,7 @@ export class TaskSupervisor {
     if (!Number.isFinite(this.terminalRetentionMs) || this.terminalRetentionMs < 0) {
       throw new Error('Task supervisor terminal retention must be a non-negative duration')
     }
+    this.cronEnabled = dependencies.cronEnabled ?? ((): boolean => false)
   }
 
   registerHandler(kind: string, handler: SupervisedTaskHandler): () => void {
@@ -211,11 +218,13 @@ export class TaskSupervisor {
   async enqueue(input: EnqueueSupervisedTaskInput): Promise<SupervisedTaskMeta> {
     await this.start()
     if (input.trigger.kind === 'cron') {
-      throw new Error(`Trigger kind "${input.trigger.kind}" is not supported by the supervisor`)
+      if (!this.cronEnabled()) throw new Error('Recurring supervised tasks are disabled')
+      validateCronExpression(input.trigger.expression)
     }
     const now = this.clock.now()
     const state: TaskState =
       input.trigger.kind === 'event' ||
+      input.trigger.kind === 'cron' ||
       (input.trigger.kind === 'wake_at' && input.trigger.wakeAt > now)
         ? 'waiting'
         : 'queued'
@@ -245,6 +254,15 @@ export class TaskSupervisor {
     this.notify(task)
     this.arm(task)
     return task
+  }
+
+  syncCronTasks(): void {
+    for (const task of this.tasks.values()) {
+      if (task.trigger.kind !== 'cron' || task.state !== 'waiting') continue
+      const key = taskKey(task.projectId, task.taskId)
+      this.clearTimer(key)
+      if (this.cronEnabled()) this.arm(task)
+    }
   }
 
   async emitEvent(event: string): Promise<number> {
@@ -304,7 +322,9 @@ export class TaskSupervisor {
     if (task.state !== 'blocked') return task
     const now = this.clock.now()
     const toState: TaskState =
-      task.trigger.kind === 'wake_at' && task.trigger.wakeAt > now ? 'waiting' : 'queued'
+      task.trigger.kind === 'cron' || (task.trigger.kind === 'wake_at' && task.trigger.wakeAt > now)
+        ? 'waiting'
+        : 'queued'
     const cleared = withoutLastError(task)
     const next = await this.transition(cleared, toState, 'unblock', 'block acknowledged')
     this.arm(next)
@@ -356,6 +376,9 @@ export class TaskSupervisor {
         this.arm(task)
       }
       if (task.state === 'waiting' && task.trigger.kind === 'event') this.arm(task)
+      if (task.state === 'waiting' && task.trigger.kind === 'cron' && this.cronEnabled()) {
+        this.arm(task)
+      }
     }
   }
 
@@ -373,15 +396,21 @@ export class TaskSupervisor {
       waiters.add(key)
       return
     }
-    if (task.trigger.kind === 'wake_at' && task.trigger.wakeAt > this.clock.now()) {
-      const handle = this.clock.setTimeout(() => {
-        this.timers.delete(key)
-        this.enqueueReady(key)
-      }, task.trigger.wakeAt - this.clock.now())
-      this.timers.set(key, handle)
+    if (task.trigger.kind === 'cron') {
+      if (!this.cronEnabled()) return
+      const wakeAt = nextCronOccurrence(task.trigger.expression, this.clock.now())
+      this.scheduleAt(key, wakeAt, () => {
+        if (this.cronEnabled()) this.enqueueReady(key)
+      })
       return
     }
-    if (task.trigger.kind !== 'immediate' && task.trigger.kind !== 'wake_at') return
+    if (task.trigger.kind === 'wake_at' && task.trigger.wakeAt > this.clock.now()) {
+      this.scheduleAt(key, task.trigger.wakeAt, () => {
+        this.enqueueReady(key)
+      })
+      return
+    }
+    if (task.trigger.kind !== 'immediate') return
     queueMicrotask(() => {
       this.enqueueReady(key)
     })
@@ -474,6 +503,20 @@ export class TaskSupervisor {
         await this.transition(current, 'blocked', 'block', result.blockedReason)
         return
       }
+      if (current.trigger.kind === 'cron') {
+        const waiting = await this.transition(
+          {
+            ...current,
+            attempt: 0,
+            ...(result.resultRef ? { resultRef: result.resultRef } : {}),
+          },
+          'waiting',
+          'suspend',
+          'waiting for next cron occurrence',
+        )
+        this.arm(waiting)
+        return
+      }
       await this.transition(
         {
           ...current,
@@ -542,6 +585,23 @@ export class TaskSupervisor {
     this.timers.delete(key)
   }
 
+  private scheduleAt(key: string, wakeAt: number, callback: () => void): void {
+    const remaining = Math.max(0, wakeAt - this.clock.now())
+    const handle = this.clock.setTimeout(
+      () => {
+        this.timers.delete(key)
+        if (this.stopping) return
+        if (this.clock.now() < wakeAt) {
+          this.scheduleAt(key, wakeAt, callback)
+          return
+        }
+        callback()
+      },
+      Math.min(remaining, MAX_TIMER_DELAY_MS),
+    )
+    this.timers.set(key, handle)
+  }
+
   private removeEventWaiter(key: string, task: SupervisedTaskMeta): void {
     if (task.trigger.kind !== 'event') return
     const waiters = this.eventWaiters.get(task.trigger.event)
@@ -564,6 +624,8 @@ export class TaskSupervisor {
 let singleton: TaskSupervisor | null = null
 
 export function getTaskSupervisor(): TaskSupervisor {
-  singleton ??= new TaskSupervisor()
+  singleton ??= new TaskSupervisor({
+    cronEnabled: (): boolean => getDefaultPackRegistry().isEnabled(AUTOMATIONS_PACK_ID),
+  })
   return singleton
 }
