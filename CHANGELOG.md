@@ -8,6 +8,13 @@ every published entry.
 
 ## Unreleased
 
+- The footer token counter explains itself on hover instead of on click. Pointing
+  at it opens a tooltip in the same style as the context wheel beside it: input
+  and output tokens, the prompt-cache read/write split when the provider reports
+  one, and the estimated cost — broken down per model once a thread has used more
+  than one. Estimated counts are labelled as such rather than priced. The click
+  that used to swap the label for an inline `1200 in / 80 out · ~$0.02` string is
+  gone; the counter now always reads as the plain total.
 - Copse now identifies itself to model providers. Every provider request carries
   the de facto attribution pair `HTTP-Referer: https://copse.dev/` and
   `X-Title: Copse`, with OpenRouter also receiving `X-OpenRouter-Title` (the

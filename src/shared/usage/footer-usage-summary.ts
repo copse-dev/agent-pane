@@ -56,32 +56,29 @@ export function resolveFooterUsage(input: FooterUsageInput): FooterUsageDisplay 
   }
 }
 
-function formatTokenThousands(total: number, estimated: boolean): string {
-  const value = `${formatTokenCount(total)} tokens`
-  return estimated ? `~${value}` : value
+/** Footer usage label — total tokens only; the breakdown lives in the hover tooltip. */
+export function formatFooterUsageSummary(display: FooterUsageDisplay): string {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`
+  return display.estimated ? `~${value}` : value
 }
 
-/** Footer usage button label (compact or expanded with optional cost). */
-export function formatFooterUsageSummary(
+/**
+ * One-line in/out/cost summary. Used where a popover cannot follow the counter —
+ * the compact footer tucks usage into the context wheel's native title.
+ */
+export function formatFooterUsageDetail(
   display: FooterUsageDisplay,
   opts: {
-    costVisible: boolean
     model: string
     measuredUsage: ThreadUsage
     pricing?: import('@copse/llm/model-pricing.ts').ModelPricingMap
   },
 ): string {
   const { inputTokens, outputTokens, estimated } = display
-  const total = inputTokens + outputTokens
-
-  if (opts.costVisible) {
-    const inLabel = estimated ? `~${String(inputTokens)}` : String(inputTokens)
-    const outLabel = estimated ? `~${String(outputTokens)}` : String(outputTokens)
-    const cost = estimated
-      ? 'est.'
-      : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing)
-    return cost ? `${inLabel} in / ${outLabel} out · ${cost}` : `${inLabel} in / ${outLabel} out`
-  }
-
-  return formatTokenThousands(total, estimated)
+  const approx = estimated ? '~' : ''
+  const tokens = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`
+  const cost = estimated
+    ? 'est.'
+    : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing)
+  return cost ? `Usage: ${tokens} · ${cost}` : `Usage: ${tokens}`
 }
