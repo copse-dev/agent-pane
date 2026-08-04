@@ -346,6 +346,50 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(!acp.some((o) => o.value === 'acp:cursor'))
   })
 
+  it('shows the version an agent keeps in the model description, and scores it', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'claude-agent-acp',
+            title: 'Claude',
+            command: 'claude-agent-acp',
+            enabled: true,
+            availableModels: [
+              {
+                value: 'default',
+                label: 'Default (recommended)',
+                description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+              },
+              {
+                value: 'opus[1m]',
+                label: 'Opus (1M context)',
+                description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+              },
+              {
+                value: 'sonnet',
+                label: 'Sonnet',
+                description: 'Sonnet 5 · Efficient for routine tasks',
+              },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+    assert.deepEqual(
+      options.filter((o) => o.group === 'Claude on this device').map((o) => o.label),
+      [
+        // Claude Code labels its models bare, so the picker folds the version
+        // from the description back in — and resolves the hint through it (the
+        // agent's own `sonnet` value aliases to nothing).
+        'Default (recommended) — Opus 5',
+        'Opus 5 (1M context)',
+        'Sonnet 5 — intellect 53.4',
+      ],
+    )
+  })
+
   it('keeps a selected-but-unconfigured ACP agent selectable', async () => {
     const options = await fetchModelOptions(mockApi(), 'acp:gemini-cli')
     const current = options.find((o) => o.value === 'acp:gemini-cli')

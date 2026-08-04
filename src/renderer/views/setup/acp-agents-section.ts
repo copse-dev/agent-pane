@@ -1,6 +1,6 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig, AcpModeChoice, AcpModelChoice } from '@shared/types/acp.ts'
-import { parseAcpAgentConfigs } from '@shared/acp.ts'
+import { acpModelChoiceLabel, parseAcpAgentConfigs } from '@shared/acp.ts'
 import {
   KNOWN_ACP_AGENTS,
   type DetectedAcpAgent,
@@ -387,7 +387,11 @@ export function createAcpAgentsSection(
       loadOptions: (current): Promise<ModelOption[]> => {
         const pickerOptions: ModelOption[] = [
           { value: '', label: DEFAULT_MODEL_LABEL },
-          ...detectedModels.map((choice) => ({ ...choice, group: 'Detected models' })),
+          ...detectedModels.map((choice) => ({
+            value: choice.value,
+            label: acpModelChoiceLabel(choice),
+            group: 'Detected models',
+          })),
         ]
         // Preserve a saved value even if it isn't in the (not-yet-detected) list.
         if (current && !detectedModels.some((choice) => choice.value === current)) {

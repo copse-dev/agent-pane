@@ -140,7 +140,11 @@ function flattenSelectChoices(options: unknown): AcpConfigChoice[] {
   const push = (entry: Record<string, unknown>): void => {
     if (typeof entry['value'] !== 'string' || typeof entry['name'] !== 'string') return
     const choice: AcpConfigChoice = { value: entry['value'], label: entry['name'] }
-    if (typeof entry['description'] === 'string') choice.description = entry['description']
+    // Empty descriptions are dropped, not carried: an agent that sends `""` means
+    // "nothing extra to say", and a blank line under a label reads as a bug.
+    if (typeof entry['description'] === 'string' && entry['description'].length > 0) {
+      choice.description = entry['description']
+    }
     choices.push(choice)
   }
   for (const entry of recordArrayOrEmpty(options)) {
@@ -198,9 +202,12 @@ export function modelSelectorFrom(response: {
 }): AcpModelSelector | null {
   const option = configOptionsFrom(response).find((candidate) => candidate.category === 'model')
   if (!option) return null
+  // `description` is carried alongside the name: agents that label their models
+  // by family alone keep the version there (see `acpModelChoiceLabel`).
   const choices: AcpModelChoice[] = option.choices.map((choice) => ({
     value: choice.value,
     label: choice.label,
+    ...(choice.description ? { description: choice.description } : {}),
   }))
   return { configId: option.configId, currentValue: option.currentValue, choices }
 }

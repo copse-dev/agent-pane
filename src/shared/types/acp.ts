@@ -112,6 +112,13 @@ export interface AcpModelChoice {
   value: string
   /** Human-readable label for the picker. */
   label: string
+  /**
+   * Optional agent-provided description of the model. Agents that label their
+   * models by family alone put the version here (Claude Code: label "Sonnet",
+   * description "Sonnet 5 · Efficient for routine tasks"), so the picker folds
+   * it back into the row — see `acpModelChoiceLabel`.
+   */
+  description?: string
 }
 
 /**

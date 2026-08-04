@@ -1,31 +1,31 @@
 import type { ThreadUsage, ModelUsage } from './wire-types.ts'
 import { getModelInfo } from './model-catalog.ts'
-import type { ExtraProviderPricing } from './extra-providers.ts'
+import type { ModelPricing, ModelPricingMap } from './model-pricing.ts'
 
 export function isLocalModel(model: string): boolean {
   return model === 'lm-studio' || model.startsWith('lmstudio:')
 }
 
-/** `model selection → pricing` for extra-provider models absent from the cloud catalog. */
-export type ExtraPricing = Record<string, ExtraProviderPricing>
-
-type PricingInfo = {
-  inputPricePerMTok: number
-  outputPricePerMTok: number
-  cacheReadPricePerMTok?: number
-  cacheCreationPricePerMTok?: number
-}
-
-function pricingForModel(model: string, extra?: ExtraPricing): PricingInfo | null {
+/**
+ * Rates for every model outside the static cloud catalog — extra providers,
+ * OpenRouter, and anything else a route learns — merged into one map by the
+ * caller (see model-pricing.ts). A model absent from both the catalog and this
+ * map is *unpriced*, and costs nothing rather than guessing.
+ */
+function pricingForModel(model: string, pricing?: ModelPricingMap): ModelPricing | null {
   if (isLocalModel(model)) return null
-  const info = getModelInfo(model) ?? extra?.[model]
+  const info = getModelInfo(model) ?? pricing?.[model]
   if (!info) return null
   return info
 }
 
 /** USD estimate for a single model's token usage (cache-aware when breakdown is present). */
-export function costForModelUsage(model: string, usage: ModelUsage, extra?: ExtraPricing): number {
-  const info = pricingForModel(model, extra)
+export function costForModelUsage(
+  model: string,
+  usage: ModelUsage,
+  pricing?: ModelPricingMap,
+): number {
+  const info = pricingForModel(model, pricing)
   if (!info) return 0
 
   const cacheRead = usage.cacheReadTokens ?? 0
@@ -50,7 +50,7 @@ export function costForModelUsage(model: string, usage: ModelUsage, extra?: Extr
 
 export function estimateUsageCost(
   byModel: Record<string, ModelUsage>,
-  extra?: ExtraPricing,
+  pricing?: ModelPricingMap,
 ): string {
   const entries = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0)
   if (entries.length === 0) return ''
@@ -64,7 +64,7 @@ export function estimateUsageCost(
       hasLocal = true
       continue
     }
-    const cost = costForModelUsage(model, usage, extra)
+    const cost = costForModelUsage(model, usage, pricing)
     if (cost > 0) hasBillable = true
     totalCost += cost
   }
@@ -79,16 +79,16 @@ export function estimateUsageCost(
 export function formatThreadUsageCost(
   usage: ThreadUsage,
   fallbackChatModel: string,
-  extra?: ExtraPricing,
+  pricing?: ModelPricingMap,
 ): string {
   if (usage.byModel && Object.keys(usage.byModel).length > 0) {
-    return estimateUsageCost(usage.byModel, extra)
+    return estimateUsageCost(usage.byModel, pricing)
   }
   if (!usage.inputTokens && !usage.outputTokens) return ''
   return estimateUsageCost(
     {
       [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
     },
-    extra,
+    pricing,
   )
 }

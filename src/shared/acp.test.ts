@@ -2,8 +2,10 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   acpConfigCategory,
+  acpModelChoiceLabel,
   acpModelDisplayLabel,
   acpModelValue,
+  acpModelVersionName,
   enabledClaudeAcpAgent,
   isAcpModel,
   isClaudeAcpAgent,
@@ -65,6 +67,56 @@ describe('acp model values', () => {
     assert.equal(acpModelDisplayLabel('acp:cursor#opus[]', agents), 'Cursor — Opus 4.8')
     // Unknown model value falls back to the raw value after the title.
     assert.equal(acpModelDisplayLabel('acp:cursor#gpt-5.5', agents), 'Cursor — gpt-5.5')
+  })
+
+  it('folds a description-only version into the label', () => {
+    const agents: AcpAgentConfig[] = [
+      {
+        id: 'claude-agent-acp',
+        title: 'Claude',
+        command: 'claude-agent-acp',
+        enabled: true,
+        availableModels: [
+          { value: 'sonnet', label: 'Sonnet', description: 'Sonnet 5 · Efficient for routine' },
+        ],
+      },
+    ]
+    assert.equal(acpModelDisplayLabel('acp:claude-agent-acp#sonnet', agents), 'Claude — Sonnet 5')
+  })
+})
+
+describe('acp model choice labels', () => {
+  it('reads the version an agent keeps in the description', () => {
+    assert.equal(acpModelVersionName('Sonnet 5 · Efficient for routine tasks'), 'Sonnet 5')
+    // The variant tail is dropped — the agent's own label already carries it.
+    assert.equal(acpModelVersionName('Opus 5 with 1M context · Best for everyday'), 'Opus 5')
+    assert.equal(acpModelVersionName('Haiku 4.5 · Fastest for quick answers'), 'Haiku 4.5')
+  })
+
+  it('ignores prose descriptions and missing ones', () => {
+    assert.equal(acpModelVersionName(undefined), null)
+    assert.equal(acpModelVersionName('Standard Claude Code agent'), null)
+    assert.equal(
+      acpModelVersionName('A general model tuned for 3 kinds of long-running agentic work'),
+      null,
+    )
+  })
+
+  it('slots the version into a label that names the same family', () => {
+    const label = (l: string, description?: string): string =>
+      acpModelChoiceLabel({ value: 'v', label: l, ...(description ? { description } : {}) })
+    assert.equal(label('Sonnet', 'Sonnet 5 · Efficient'), 'Sonnet 5')
+    assert.equal(label('Opus (1M context)', 'Opus 5 with 1M context · Best'), 'Opus 5 (1M context)')
+    // A label naming something else gets the model it resolves to appended.
+    assert.equal(
+      label('Default (recommended)', 'Opus 5 with 1M context · Best'),
+      'Default (recommended) — Opus 5',
+    )
+    // Already-versioned labels, family prefixes that only look alike, and
+    // choices without a description are left alone.
+    assert.equal(label('Opus 5', 'Opus 5 · Best'), 'Opus 5')
+    assert.equal(label('Opusine', 'Opus 5 · Best'), 'Opusine — Opus 5')
+    assert.equal(label('gpt-5.5'), 'gpt-5.5')
   })
 })
 

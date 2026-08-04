@@ -80,6 +80,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       isTrusted: () => resolved(true),
       setTrusted: emptyArray,
       unsandboxedProjectHooks: emptyArray,
+      // The demo bundle is browser-targeted (no `node:path`), and demo paths are
+      // display-only POSIX strings, so join by hand rather than importing path.
+      createNewProject: (name: string, parentDir: string) =>
+        resolved(`${parentDir.replace(/\/+$/, '')}/${name}`),
+      pickParentDirectory: () => resolved(null),
+      getHomeDirectory: () => resolved(''),
       onOpened: subscribe,
     },
     browser: {
@@ -373,6 +379,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       scanEnvKeys: emptyArray,
       importEnvKeys: () => resolved({ imported: [], skipped: [] }),
       extraProviders: emptyArray,
+      // The demo's scenario models are all in the static cloud catalog, so the
+      // footer prices them without any fetched rates.
+      modelPricing: () => resolved({}),
       saveExtraProvider: emptyArray,
       deleteExtraProvider: emptyArray,
       fetchProviderModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),
@@ -535,6 +544,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           currentBranch: forBranch ?? currentBranch,
           pr: null,
         }),
+      promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId: string, _threadId: string, branch: string) => {
         currentBranch = branch
         return resolvedVoid()

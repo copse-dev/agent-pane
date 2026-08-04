@@ -33,7 +33,14 @@ export const acpAgentConfigSchema = z.object({
   env: z.record(z.string().max(256), z.string().max(8192)).optional(),
   model: z.string().min(1).max(512).optional(),
   availableModels: z
-    .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
+    .array(
+      z.object({
+        value: z.string().min(1).max(512),
+        label: z.string().min(1).max(256),
+        // Agents that label models by family alone put the version here.
+        description: z.string().max(1024).optional(),
+      }),
+    )
     .max(256)
     .optional(),
   // Epoch-ms timestamp of the probe that produced `availableModels`, used by the

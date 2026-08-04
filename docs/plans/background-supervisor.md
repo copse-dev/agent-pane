@@ -11,6 +11,7 @@ service yet). Implementation PRs should link here and keep long-horizon checklis
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related foundations: [`long-horizon-tasks.md`](long-horizon-tasks.md),
 [`dark-factory-pr-orchestrator.md`](dark-factory-pr-orchestrator.md),
+[`background-agents-capability-map.md`](background-agents-capability-map.md),
 [`execution-runtime-security.md`](execution-runtime-security.md),
 [`../thread-store-format.md`](../thread-store-format.md). Headless adapters that later
 wake or resume supervised work must share [#1079](https://github.com/copse-dev/agent-pane/issues/1079)'s
@@ -23,14 +24,15 @@ shared lifecycle Grok Build's background-tasks model implies: durable identity, 
 triggers, cancellation, permission snapshots for delayed execution, and a single place
 to ask "what is still running / waiting / blocked?"
 
-| Surface                              | Role today                                   | Gap versus a general supervisor                                      |
-| ------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------- |
-| `run_background` (#691)              | In-memory child processes for a live session | Dies with the process; no queue, schedule, or cross-restart recovery |
-| Long-horizon checklists (#558)       | Goal/step state machine for grind-until-done | Tracks progress; does not schedule wakes or own concurrency policy   |
-| CI investigator / PR pane            | On-demand or event-driven CI reads           | No durable poller; each feature would otherwise grow its own timer   |
-| Dark-factory orchestrator (proposed) | Fleet nurse + triage for Copse/user PRs      | Explicitly needs a shared scheduler (audit: none in `src/main`)      |
-| A2A / remote delegation (#1015)      | Durable remote tasks and handoff             | Needs ownership, cancel, and resume semantics — not a second queue   |
-| Hooks `asyncRewake`                  | Unsupported in v1 (hooks plan decision 11)   | Must not become a side-channel wake path around the supervisor       |
+| Surface                              | Role today                                   | Gap versus a general supervisor                                       |
+| ------------------------------------ | -------------------------------------------- | --------------------------------------------------------------------- |
+| `run_background` (#691)              | In-memory child processes for a live session | Dies with the process; no queue, schedule, or cross-restart recovery  |
+| Long-horizon checklists (#558)       | Goal/step state machine for grind-until-done | Tracks progress; does not schedule wakes or own concurrency policy    |
+| CI investigator / PR pane            | On-demand or event-driven CI reads           | No durable poller; each feature would otherwise grow its own timer    |
+| `copse.automations`                  | App-open project cron + renderer submission  | No durable wake, catch-up/retry, closed-renderer run, or shared queue |
+| Dark-factory orchestrator (proposed) | Fleet nurse + triage for Copse/user PRs      | Explicitly needs a shared scheduler (audit: none in `src/main`)       |
+| A2A / remote delegation (#1015)      | Durable remote tasks and handoff             | Needs ownership, cancel, and resume semantics — not a second queue    |
+| Hooks `asyncRewake`                  | Unsupported in v1 (hooks plan decision 11)   | Must not become a side-channel wake path around the supervisor        |
 
 #1078's ownership map assigns this shared infrastructure to #1081. This plan defines
 the binding decisions, minimum contract, and the smallest design→implementation
@@ -73,6 +75,28 @@ sequence. Recurring schedules land **after** one-shot and event-driven wakes wor
 9. **#1068 stays binding.** Active-task narrative stays in the thread; supervisor
    records are operational telemetry (queue/state/handles). Do not promote wake logs
    into durable project knowledge unless the user explicitly does.
+10. **External triggers normalize before enqueue.** PR/ticket events, advisories,
+    alerts, webhooks, and chat/mobile commands do not call handlers directly. A trigger
+    adapter verifies its source and emits one immutable envelope with source identity,
+    payload hash/reference, dedupe key, target, handler/profile, budgets, and requested
+    review policy. Receiving an envelope authorizes enqueueing that declared workflow
+    only; it does not grant arbitrary prompt or tool authority.
+11. **Fleet work is a supervised task tree, not a loop of unrelated submissions.** A
+    campaign has stable identity, target-set provenance, parent/child tasks, fan-out and
+    fan-in, aggregate progress, shared caps, cancellation, and an escalation summary.
+    Each child still owns an isolated checkout/runtime and grant. The dark-factory PR
+    orchestrator nurses campaign output; it is not the generic campaign scheduler. A
+    same-outcome swarm also uses a campaign, but fan-in produces a reviewed artifact or
+    explicit integration task rather than letting children merge each other implicitly.
+12. **Duplicate delivery and restart are normal.** Trigger dedupe, actuator
+    idempotency keys or leases, and append-only transition records must make replay
+    converge. "Exactly once" is not assumed from cron, webhooks, queues, provider APIs,
+    or process restart.
+13. **The supervisor records facts; workflows judge outcomes.** Common timestamps,
+    attempts, intervention/block transitions, resource use, external-action counts, and
+    result references belong in supervisor/audit records. Whether a result was accepted,
+    corrected, rolled back, or improved cycle time is declared by the workflow's result
+    schema. A task count alone is never a factory-success metric.
 
 ## Minimum contract
 
@@ -97,6 +121,7 @@ policy checks).
 Names illustrative; schema lands in P1:
 
 - `taskId`, `projectId`, `threadId`, optional `parentTaskId`
+- optional `campaignId`, `triggerEnvelopeRef`, and per-actuator idempotency/lease key
 - `handler`: stable kind string (e.g. `long_horizon_continue`, `pr_fleet_poll`,
   `a2a_followup`, `shell_process`)
 - `state`, `createdAt`, `updatedAt`, `startedAt`, `finishedAt`
@@ -118,6 +143,12 @@ JSON/JSONL preferred so `@`-tools and support dumps can inspect it. Not electron
 | `wake_at`      | One-shot timestamp; survives restart                      |
 | Event-driven   | Named internal events (CI status change, process exit, …) |
 | Recurring cron | **Out of scope for first implementation phases**          |
+
+External sources are adapters above event delivery, not a new lifecycle. They remain
+out of scope until internal events, persistence, dedupe, and permission snapshots are
+proven. A desktop-only adapter may poll while the app is open; an always-available
+webhook/chat ingress requires the detached worker/control-plane phase in
+[`copse-cloud-workspaces.md`](copse-cloud-workspaces.md).
 
 Event subscriptions are registered through the supervisor so dark-factory and similar
 features do not each open GitHub pollers.
@@ -190,12 +221,30 @@ dark-factory poller implementation, and changes to `run_background`.
 - Recurring schedules only after P2–P4 retention, permission, and concurrency proofs.
 - Exit gate: e2e/component proof of list + cancel; cron behind an explicit flag.
 
+### P6 — Campaigns + authenticated trigger adapters
+
+- Add campaign records and bounded fan-out/fan-in over explicit repository/task sets.
+- Persist immutable trigger envelopes; dedupe duplicate delivery across restart.
+- Start with GitHub/system events. Add ticketing, generic webhooks, and chat/mobile
+  adapters only after source verification, payload bounds/redaction, and enqueue-only
+  authority are proven.
+- Surface campaign progress, per-target result/PR, spend/action budgets, cancel, retry,
+  and one aggregate escalation summary.
+- Emit the common timing, intervention, resource, and action facts needed by each
+  workflow's baseline/outcome report; keep workflow-specific quality judgments in the
+  consumer.
+- Exit gate: replaying one signed fixture many times creates one campaign; cancelling
+  its parent stops or terminally fences every child; no child reuses another target's
+  checkout, runtime, or credential grant.
+
 ## Non-goals
 
 - Replacing long-horizon checklists with a generic job queue UI.
 - Letting Plan Mode or hooks `asyncRewake` schedule work around the supervisor.
 - Per-feature `setInterval` pollers in main as a permanent pattern.
 - Broadening shell/MCP auto-run because a task woke while the app was unfocused.
+- Letting a renderer, webhook, or chat adapter invoke handlers or tools without a
+  persisted trigger envelope and supervisor decision.
 - Cross-supervisor locking with external CLIs in v1 (dark-factory decision 14 still
   applies until revisited).
 - Marketplace/plugin distribution (#1082) — orthogonal supply chain.
@@ -225,3 +274,5 @@ dark-factory poller implementation, and changes to `run_background`.
 - [#1080](https://github.com/copse-dev/agent-pane/issues/1080) — Plan Mode / rewind (non-overlapping)
 - [`dark-factory-pr-orchestrator.md`](dark-factory-pr-orchestrator.md) — first major sensor consumer
 - [`execution-runtime-security.md`](execution-runtime-security.md) — capability / audit model
+- [`background-agents-capability-map.md`](background-agents-capability-map.md) — current
+  product coverage, external-trigger/campaign requirements, and workflow consumers
