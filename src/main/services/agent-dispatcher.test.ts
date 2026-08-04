@@ -219,6 +219,63 @@ describe('AgentDispatcher', () => {
     assert.equal(runCount, 2)
   })
 
+  it('serializes completion wakes that arrive behind the same active turn', async () => {
+    let release!: () => void
+    let firstWakeEntered!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const started = new Promise<void>((resolve) => {
+      firstWakeEntered = resolve
+    })
+    const prompts: UserContent[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent, priorMessages) => {
+          prompts.push(userContent)
+          if (userContent === 'wake-1') {
+            firstWakeEntered()
+            await gate
+          }
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'root',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-1',
+        },
+      }),
+    )
+    const first = dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'background-1',
+      turnTreeId: 'tree-1',
+      payload: { userContent: 'wake-1', invokedSkills: [], priorTodos: [] },
+    })
+    await started
+    const second = dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'background-2',
+      turnTreeId: 'tree-1',
+      payload: { userContent: 'wake-2', invokedSkills: [], priorTodos: [] },
+    })
+
+    release()
+
+    assert.deepEqual(await Promise.all([first, second]), ['completed', 'completed'])
+    assert.deepEqual(prompts, ['root', 'wake-1', 'wake-2'])
+  })
+
   it('holds machine dispatch after the continuation budget is exhausted', async () => {
     let runCount = 0
     const dispatcher = new AgentDispatcher(

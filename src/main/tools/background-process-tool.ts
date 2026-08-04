@@ -35,7 +35,7 @@ function tailLogs(logs: string, maxLines = 40): string {
 export const runBackgroundTool = defineTool({
   name: 'run_background',
   description:
-    'Run a long-lived command in the background (dev server, watcher, build) that stays alive across turns. Actions: `start` a command; `list` running tasks; `logs` for a task by id; `stop` a task by id. Set `allow_port_binding: true` for a task that must bind a local port (e.g. a dev server) — it returns the detected http://localhost:<port> URL to open with browser_navigate, and prompts for permission the first time per project. For a bounded task that should wake the agent when it exits, set `wake_on_completion: true` and `timeout_ms`. Without port binding it runs fully sandboxed (workspace-only, no network/binding).',
+    'Run a long-lived command in the background (dev server, watcher, build) that stays alive across turns. Actions: `start` a command; `list` running tasks; `logs` for a task by id; `stop` a task by id. Set `allow_port_binding: true` for a task that must bind a local port (e.g. a dev server) — it returns the detected http://localhost:<port> URL to open with browser_navigate, and prompts for permission the first time per project. For a bounded task that should wake the agent when it exits, set `wake_on_completion: true` and `timeout_ms`; after it starts, end the turn instead of polling because completion will resume the task. Without port binding it runs fully sandboxed (workspace-only, no network/binding).',
   parameters: z.object({
     action: z.enum(['start', 'list', 'logs', 'stop']),
     command: z
@@ -111,6 +111,8 @@ export const runBackgroundTool = defineTool({
     if (!info.running) {
       const logs = getBackgroundProcessLogs(info.id)
       lines.push('', 'The task exited immediately. Recent output:', tailLogs(logs ?? ''))
+    } else if (wake_on_completion === true) {
+      lines.push('', 'Completion wake is armed. End this turn now; do not poll for completion.')
     } else if (info.url) {
       if (info.urlRemote) {
         lines.push(

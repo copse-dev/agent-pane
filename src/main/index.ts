@@ -104,7 +104,10 @@ import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
-import { setBackgroundCompletionWakeHandler } from './services/exec/background-completion-wake.ts'
+import {
+  backgroundCompletionPrompt,
+  setBackgroundCompletionWakeHandler,
+} from './services/exec/background-completion-wake.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
@@ -306,18 +309,13 @@ app
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
     setBackgroundCompletionWakeHandler((completion) => {
-      const status = completion.timedOut
-        ? 'reached its deadline'
-        : completion.exitCode === null
-          ? 'ended without an exit code'
-          : `exited with code ${String(completion.exitCode)}`
       return agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,
         threadId: completion.owner.threadId,
         operationId: completion.operationId,
         turnTreeId: completion.turnTreeId,
         payload: {
-          userContent: `Background task ${completion.operationId} ${status}. Inspect its retained output with run_background logs, then continue the original task and report the result. Do not rerun the completed command.`,
+          userContent: backgroundCompletionPrompt(completion),
           invokedSkills: [],
           priorTodos: [],
         },

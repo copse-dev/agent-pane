@@ -44,6 +44,7 @@ export function autonomyContainerRunArgs(
     'COPSE_EVAL_IDLE_MS',
     'COPSE_EVAL_MODEL',
     'COPSE_EVAL_PROMPT_VARIANT',
+    'COPSE_EVAL_SCENARIO',
     'LM_STUDIO_API_KEY',
     'LM_API_TOKEN',
   ] as const) {
