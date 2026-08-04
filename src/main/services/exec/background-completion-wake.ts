@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { MachineDispatchResult } from '../agent-dispatcher.ts'
 import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
 
@@ -14,6 +15,7 @@ type BackgroundCompletionWakeHandler = (
 ) => Promise<MachineDispatchResult>
 
 let handler: BackgroundCompletionWakeHandler | null = null
+const scopedHandler = new AsyncLocalStorage<BackgroundCompletionWakeHandler>()
 
 export function setBackgroundCompletionWakeHandler(
   next: BackgroundCompletionWakeHandler | null,
@@ -21,9 +23,26 @@ export function setBackgroundCompletionWakeHandler(
   handler = next
 }
 
+export function runWithBackgroundCompletionWakeHandler<T>(
+  next: BackgroundCompletionWakeHandler,
+  fn: () => T,
+): T {
+  return scopedHandler.run(next, fn)
+}
+
 export async function requestBackgroundCompletionWake(
   request: BackgroundCompletionWakeRequest,
 ): Promise<MachineDispatchResult> {
-  if (!handler) return 'stale'
-  return handler(request)
+  const activeHandler = scopedHandler.getStore() ?? handler
+  if (!activeHandler) return 'stale'
+  return activeHandler(request)
+}
+
+export function backgroundCompletionPrompt(request: BackgroundCompletionWakeRequest): string {
+  const status = request.timedOut
+    ? 'reached its deadline'
+    : request.exitCode === null
+      ? 'ended without an exit code'
+      : `exited with code ${String(request.exitCode)}`
+  return `Background task ${request.operationId} ${status}. Inspect its retained output with run_background logs, then continue the original task and report the result. Do not rerun the completed command.`
 }

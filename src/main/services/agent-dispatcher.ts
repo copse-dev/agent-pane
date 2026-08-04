@@ -143,8 +143,9 @@ export class AgentDispatcher {
     request: MachineAgentDispatchRequest,
   ): Promise<MachineDispatchResult> {
     const key = dispatchKey(request.projectId, request.threadId)
-    const active = this.active.get(key)
-    if (active) {
+    for (;;) {
+      const active = this.active.get(key)
+      if (!active) break
       try {
         await active
       } catch {

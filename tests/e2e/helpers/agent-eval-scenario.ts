@@ -30,6 +30,12 @@ export interface EvalScenario {
     tracePath: string
     requireShellApproval?: boolean
   }
+  backgroundWake?: {
+    continuationCount: number
+    reloadRenderer?: boolean
+    finalAssistantContains: string
+    timeoutMs?: number
+  }
   assertWorkspace?: {
     git?: {
       minCommits?: number
@@ -80,6 +86,14 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
     .object({
       tracePath: z.string(),
       requireShellApproval: z.boolean().optional(),
+    })
+    .optional(),
+  backgroundWake: z
+    .object({
+      continuationCount: z.number().int().positive(),
+      reloadRenderer: z.boolean().optional(),
+      finalAssistantContains: z.string().min(1),
+      timeoutMs: z.number().positive().optional(),
     })
     .optional(),
   assertWorkspace: z
