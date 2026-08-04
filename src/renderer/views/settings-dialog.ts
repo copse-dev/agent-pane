@@ -852,8 +852,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Use the switch on each server to turn it off without editing your MCP config files.
                 Off servers are not started on reload.
               </p>
-              <div class="lmstudio-test-row">
-                <button type="button" id="mcp-reload-btn">Reload servers</button>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
+                  Reload servers
+                </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
             </fieldset>
@@ -895,8 +897,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Everything Copse loads for this project. This list is read-only: edit the files
               themselves to change what is loaded.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="sources-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="sources-reload-status"></span>
             </div>
 
@@ -986,9 +990,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
               for authoring and install steps.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="packs-add-btn">Add pack…</button>
-              <button type="button" id="packs-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-add-btn">
+                Add pack…
+              </button>
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
 
