@@ -74,6 +74,12 @@ import {
   webAllowedOriginsWithDefaults,
 } from './web-origin-policy.ts'
 import { formatUnsandboxedPromptParts } from './sandbox-failure.ts'
+import {
+  analyzeReadOutsideProject,
+  formatReadOutsideProjectPromptParts,
+  READ_OUTSIDE_PROJECT_TITLE,
+} from './read-outside-project.ts'
+import { grantReadOutsideProject, hasReadOutsideProjectGrant } from './read-outside-grant.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -177,6 +183,59 @@ async function requestEscalationApproval(
   return approved
 }
 
+/**
+ * Handle a command that only *reads* paths outside the project, when we can
+ * account for every path it touches (see `read-outside-project.ts`).
+ *
+ * Returns null when the command is not that shape, so the caller falls through
+ * to its normal prompt. Otherwise the thread's standing grant answers it, or the
+ * user is asked with the narrower read-access wording — where the primary button
+ * grants the shape for the rest of the thread and the secondary one approves
+ * just this command.
+ */
+async function resolveReadOutsideProject(
+  command: string,
+  workspaceRoot: string | null,
+  signal?: AbortSignal,
+): Promise<boolean | null> {
+  const analysis = analyzeReadOutsideProject(command, workspaceRoot)
+  if (!analysis.eligible) return null
+
+  const threadId = getActiveRunThread()
+  if (hasReadOutsideProjectGrant(threadId)) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      reasons: [`reads outside the project: ${analysis.targets.join(', ')}`],
+      source: 'read-outside-grant',
+    })
+    return true
+  }
+
+  const { approved, remember } = await requestApproval(
+    {
+      title: READ_OUTSIDE_PROJECT_TITLE,
+      type: 'shell',
+      ...shellPromptToApprovalFields(formatReadOutsideProjectPromptParts(command, analysis)),
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      // The command is behind "Show details" so the question the user answers is
+      // the scope one; the third button that approves only this command appears
+      // with the details it refers to.
+      collapseDetails: true,
+      approveOnceLabel: 'Approve this command',
+    },
+    signal,
+  )
+  // A handler with no thread (headless/ACP) can hold no grant, so its approval
+  // covers this command only.
+  if (approved && remember && threadId) grantReadOutsideProject(threadId)
+  return approved
+}
+
 async function promptShell(
   command: string,
   reasons: string[],
@@ -236,6 +295,11 @@ export async function promptUnsandboxedShell(
   signal?: AbortSignal,
 ): Promise<boolean> {
   if (autoApproveShell(command, 'external')) return true
+  // A command that failed inside the sandbox because it reads a file in the
+  // user's home directory is the same read-access question as the up-front gate,
+  // so a thread that already granted that scope should not be asked again.
+  const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
+  if (readOutside !== null) return readOutside
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
@@ -601,6 +665,14 @@ export async function ensureShellCommandPermitted(
   // `deny` (both returned above). Deterministic and fail-closed; see
   // auto-approval.ts for the enumerated shapes and the safety argument.
   if (autoApproveShell(command, outsideSandbox ? 'external' : 'sandbox', workspaceRoot)) return true
+
+  // Reads of accountable paths outside the project ask the narrower read-access
+  // question — and can be answered once for the whole thread — instead of the
+  // worst-case "run outside sandbox" escape hatch. Checked on every platform:
+  // off macOS `outsideSandbox` is false (there is no seatbelt to leave) but the
+  // read is just as external, and the gate is the only boundary.
+  const readOutside = await resolveReadOutsideProject(command, workspaceRoot, opts.signal)
+  if (readOutside !== null) return readOutside
 
   // A plain package install gets a dedicated, readable approval rather than the
   // generic external-command reason list. Only when the install is the *sole*

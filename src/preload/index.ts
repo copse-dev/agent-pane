@@ -173,6 +173,8 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
@@ -189,6 +191,8 @@ contextBridge.exposeInMainWorld('api', {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          collapseDetails?: boolean
+          approveOnceLabel?: string
           comparisonModels?: { a: string; b: string; judge: string }
         },
       ): void => {

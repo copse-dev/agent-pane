@@ -29,6 +29,21 @@ export interface ApprovalRequest {
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
+  /**
+   * Hide the body behind a "Show details" disclosure, so the prompt leads with
+   * the decision rather than the command. Honoured only for a single-request
+   * prompt; a coalesced batch always shows every body.
+   */
+  collapseDetails?: boolean
+  /**
+   * Label for a secondary approve button that approves *only this request*
+   * (`remember: false`), leaving the primary button to carry the broader grant
+   * (`remember: true`) with no checkbox. Like {@link collapseDetails} it is
+   * honoured only for a single-request prompt: in a mixed batch the primary
+   * button falls back to the checkbox, so an unrelated request can never be
+   * swept into a grant the user answered for something else.
+   */
+  approveOnceLabel?: string
   /** Intentional Settings-owned flow that must prompt above the open Settings dialog. */
   showWhileSettingsOpen?: boolean
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
@@ -68,6 +83,8 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    collapseDetails: req.collapseDetails ?? false,
+    approveOnceLabel: req.approveOnceLabel ?? '',
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
     comparisonModels: req.comparisonModels ?? null,
   })
