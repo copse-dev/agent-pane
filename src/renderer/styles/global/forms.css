@@ -25,6 +25,20 @@ input:focus,
 textarea:focus {
   border-color: var(--accent);
 }
+/* The native dropdown arrow is platform chrome: a different glyph, inset further
+   from the edge than the model picker's chevron, so a <select> and a picker
+   sitting in the same form never line up. Draw the picker's own chevron instead
+   — same lucide glyph at the same 12px, the same `--spacing-sm` off the right
+   edge as `.model-picker-field .model-picker-trigger`. */
+select {
+  appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-sm) center;
+  background-size: 12px 12px;
+  /* Keep the longest option clear of the glyph: its box plus that inset twice. */
+  padding-right: calc(2 * var(--spacing-sm) + 12px);
+}
 dialog {
   /* The global `* { margin: 0 }` reset removes the UA `margin: auto` that
      centers a modal <dialog>, jamming it into the top-left. Restore it. */
