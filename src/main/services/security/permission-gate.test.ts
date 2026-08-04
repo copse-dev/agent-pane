@@ -32,7 +32,8 @@ import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { clearReadOutsideProjectGrants } from './read-outside-grant.ts'
-import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
+import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
+import { readDecisionLog } from './decision-log-store.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import { runWithAcpBridgePermissionContext } from '../acp/acp-bridge-permission-context.ts'
 import {
@@ -1270,6 +1271,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     bodyFooter: string
     collapseDetails: boolean
     approveOnceLabel: string
+    reasons: string[]
   }
 
   /**
@@ -1292,6 +1294,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         bodyFooter: request.bodyFooter ?? '',
         collapseDetails: request.collapseDetails ?? false,
         approveOnceLabel: request.approveOnceLabel ?? '',
+        reasons: request.reasons ?? [],
       }
       return answer
     })
@@ -1310,6 +1313,11 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   async function withRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
     const root = mkdtempSync(join(tmpdir(), 'copse-read-outside-'))
     const restore = setWorkspaceRootForTest(root)
+    // Every gate decision here appends to the durable log; point the store at a
+    // throwaway dir so the suite never writes into the developer's own.
+    const store = mkdtempSync(join(tmpdir(), 'copse-read-outside-store-'))
+    const previousStore = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = store
     // These cases are about the gate's own decision; the optional LM Studio
     // classifier only adds a per-command connection timeout here.
     await setSetting('safetyClassifierEnabled', false)
@@ -1319,8 +1327,16 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       await setSetting('safetyClassifierEnabled', true)
       restore()
       clearReadOutsideProjectGrants()
+      if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousStore
+      rmSync(store, { recursive: true, force: true })
       rmSync(root, { recursive: true, force: true })
     }
+  }
+
+  /** Decisions recorded with no active project land in the `_global` bucket. */
+  async function recordedDecisions(): Promise<DecisionEvent[]> {
+    return (await readDecisionLog('_global')).filter((e) => e.scope === 'external-read')
   }
 
   it('asks the read-access question, with the command behind the details toggle', async () => {
@@ -1396,6 +1412,76 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       assert.equal(secret.permitted, false)
       assert.ok(secret.prompt, 'a credential read must still be asked about')
       assert.notEqual(secret.prompt.title, 'Allow read access outside of the project?')
+    })
+  })
+
+  it('records the grant, and everything it later covers, in the decision log', async () => {
+    await withRoot(async (root) => {
+      const granted = await runWithActiveRunIdentity('thread-audit', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse'])
+
+      await runWithActiveRunIdentity('thread-audit', () =>
+        runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
+      )
+
+      const events = await recordedDecisions()
+      assert.deepEqual(
+        events.map(({ actor, verdict, remembered, reasons, threadId, source }) => ({
+          actor,
+          verdict,
+          remembered,
+          reasons,
+          threadId,
+          source,
+        })),
+        [
+          // The grant itself: who made it, over which paths, and that it was
+          // made sticky for the thread.
+          {
+            actor: 'user',
+            verdict: 'approved',
+            remembered: true,
+            reasons: ['reads outside the project: ~/.copse'],
+            threadId: 'thread-audit',
+            source: undefined,
+          },
+          // …and the command that ran under it without asking again.
+          {
+            actor: 'user',
+            verdict: 'allowed',
+            remembered: undefined,
+            reasons: ['reads outside the project: ~/.gitconfig'],
+            threadId: 'thread-audit',
+            source: 'read-outside-grant',
+          },
+        ],
+      )
+    })
+  })
+
+  it('records a one-command approval as a decision that granted nothing', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-audit-once', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: false }, root),
+      )
+      const [event] = await recordedDecisions()
+      assert.ok(event)
+      assert.equal(event.verdict, 'approved')
+      assert.equal(event.remembered, false, 'an approve-once must not read as a standing grant')
+    })
+  })
+
+  it('records a refusal to widen read access', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-audit-denied', () =>
+        runGate('ls -la ~/.copse', { approved: false, remember: false }, root),
+      )
+      const [event] = await recordedDecisions()
+      assert.ok(event)
+      assert.equal(event.verdict, 'denied')
+      assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
     })
   })
 

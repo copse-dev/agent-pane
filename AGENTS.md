@@ -196,6 +196,13 @@ are refused outright, so they always ask even in a granted thread. This path run
 on every platform: off macOS `outsideSandbox` is false (there is no seatbelt to
 leave) but the read is just as external.
 
+The grant lives in memory, but the decision to make it is durable: the answered
+prompt writes a `decisions.jsonl` line at `scope: external-read` naming the paths
+at stake, with `remembered: true` for a thread grant and `false` for a
+one-command approval, and every later command the grant covers writes its own
+`verdict: allowed` line sourced to `read-outside-grant`. A restart drops the
+grant; it never drops the record of it.
+
 Key components:
 
 - `permission-policy.ts` — `decideShellPermission` (pure; the table above),

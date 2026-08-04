@@ -10,6 +10,12 @@
  * by `read-outside-project.ts` and must independently prove it is a plain read
  * of non-credential paths — so the grant removes the *prompt* for that shape,
  * not the checks.
+ *
+ * This set is the mechanism, not the record. The decision to grant is written to
+ * the durable decision log (`decisions.jsonl`) by the gate, along with the paths
+ * that prompted it and every later command the grant covers — so a grant that
+ * has evaporated from memory is still answerable after the fact: `scope:
+ * "external-read"` with `remembered: true` is the moment it was made.
  */
 const grantedThreads = new Set<string>()
 

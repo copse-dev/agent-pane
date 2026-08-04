@@ -164,7 +164,9 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
   `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`) and whole-home/root targets outright
   so they always prompt. The residual risk is stated on the prompt: a granted read
   of a directory can still traverse into a file the analyser would have refused as
-  a direct target.
+  a direct target. The grant is in-memory, but it is not unaccountable: the
+  answered prompt and every command the grant later covers are written to the
+  durable decision log, naming the paths and whether the answer was made sticky.
 - **OS sandbox (macOS).** Sandbox-contained commands auto-run inside a seatbelt
   profile; external commands prompt and run outside only when approved.
 - **Global network-scope guard.** When a sandboxed ACP agent or a loopback

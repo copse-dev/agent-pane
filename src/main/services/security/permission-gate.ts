@@ -192,6 +192,15 @@ async function requestEscalationApproval(
  * user is asked with the narrower read-access wording — where the primary button
  * grants the shape for the rest of the thread and the secondary one approves
  * just this command.
+ *
+ * Every outcome lands in the durable decision log, naming the paths that were at
+ * stake. The grant itself is held in memory (`read-outside-grant.ts`) and dies
+ * with the process, but the *decision* to make it is a permanent record: the
+ * answered prompt writes `scope: external-read` with `remembered: true` for a
+ * thread grant and `false` for a one-command approval, and each later command
+ * the grant covers writes its own `verdict: allowed` line sourced to it. So the
+ * log shows both that the user widened read access and everything that ran under
+ * it — the in-memory ledger is the mechanism, not the record.
  */
 async function resolveReadOutsideProject(
   command: string,
@@ -201,6 +210,11 @@ async function resolveReadOutsideProject(
   const analysis = analyzeReadOutsideProject(command, workspaceRoot)
   if (!analysis.eligible) return null
 
+  // The one fact the durable log can carry about this command: the paths, never
+  // the command line (see SHELL_DECISION_SUBJECT). Shared by the prompt's answer
+  // and by every command a standing grant later covers, so both read alike.
+  const reasons = [`reads outside the project: ${analysis.targets.join(', ')}`]
+
   const threadId = getActiveRunThread()
   if (hasReadOutsideProjectGrant(threadId)) {
     recordDecision({
@@ -209,7 +223,7 @@ async function resolveReadOutsideProject(
       verdict: 'allowed',
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external-read',
-      reasons: [`reads outside the project: ${analysis.targets.join(', ')}`],
+      reasons,
       source: 'read-outside-grant',
     })
     return true
@@ -222,6 +236,9 @@ async function resolveReadOutsideProject(
       ...shellPromptToApprovalFields(formatReadOutsideProjectPromptParts(command, analysis)),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external-read',
+      // Recorded with the answer, so the log line that carries `remembered: true`
+      // also says what the user granted read access *to*.
+      reasons,
       // The command is behind "Show details" so the question the user answers is
       // the scope one; the third button that approves only this command appears
       // with the details it refers to.

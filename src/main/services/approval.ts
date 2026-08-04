@@ -52,6 +52,15 @@ export interface ApprovalRequest {
   subject?: string
   /** Scope the decision applies at, such as `sandbox` or `external`. */
   scope?: string
+  /**
+   * Why the prompt was raised, recorded verbatim on the decision-log line this
+   * answer produces. Durable shell decisions omit the command itself
+   * (`SHELL_DECISION_SUBJECT`), so a gate that can name *what* it is asking
+   * about — the paths a read touches, the origin a fetch reaches — passes it
+   * here to leave the answer legible in the log. Redacted at record time; keep
+   * it secret-free at the call site anyway.
+   */
+  reasons?: string[]
 }
 
 export interface ApprovalResponse {
@@ -85,6 +94,9 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     rememberLabel: req.rememberLabel ?? '',
     collapseDetails: req.collapseDetails ?? false,
     approveOnceLabel: req.approveOnceLabel ?? '',
+    // Part of the key so two prompts that read alike but are *about* different
+    // things can never share one answer — and one recorded line.
+    reasons: req.reasons ?? [],
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
     comparisonModels: req.comparisonModels ?? null,
   })
@@ -164,6 +176,7 @@ function recordApprovalDecision(
           : 'cancelled',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
+    ...(req.reasons?.length ? { reasons: req.reasons } : {}),
     remembered: response.remember,
     ...(resolution === 'user' ? {} : { source: resolution }),
   })
