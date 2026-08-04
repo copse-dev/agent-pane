@@ -378,6 +378,15 @@ export function seedEmptyProject(
     autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
+    /**
+     * Store a Parallel API key. The `copse.parallel-search` pack is
+     * credential-gated in both directions — the host only registers
+     * `parallel_search` when a key resolves, and Settings only lets the toggle
+     * be turned on once one is saved — so a spec exercising the enabled pack
+     * has to seed one. Same base64-plaintext record shape as
+     * {@link seedOpenRouterFixture}.
+     */
+    parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
@@ -476,6 +485,15 @@ export function seedEmptyProject(
   }
   if (options?.windowBounds !== undefined) {
     settings.windowBounds = options.windowBounds
+  }
+  if (options?.parallelApiKey !== undefined) {
+    settings.apiKey = {
+      parallel: {
+        v: 1,
+        enc: Buffer.from(options.parallelApiKey, 'utf8').toString('base64'),
+        plain: true,
+      },
+    }
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
