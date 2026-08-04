@@ -2,7 +2,7 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P4 complete).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+**Status: Active (P5).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
 P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
 main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
 without registering a production consumer yet. Implementation PRs should link here
@@ -190,9 +190,11 @@ dark-factory poller implementation, and changes to `run_background`.
 
 ### P5 — UI surfacing + recurring schedules
 
-- Desktop list of supervised tasks (running/waiting/blocked) with cancel.
-- Recurring schedules only after P2–P4 retention, permission, and concurrency proofs.
-- Exit gate: e2e/component proof of list + cancel; cron behind an explicit flag.
+- [x] Desktop list of supervised tasks (queued/running/waiting/blocked) with cancel in
+      the Terminal pane.
+- [ ] Recurring schedules only after P2–P4 retention, permission, and concurrency proofs.
+- [x] Component and Electron e2e proof of list + cancel.
+- [ ] Cron behind an explicit flag.
 
 ## Non-goals
 

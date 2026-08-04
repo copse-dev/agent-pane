@@ -66,6 +66,7 @@ export interface TaskSupervisorDependencies {
 }
 
 export type SupervisedEventSourceStart = (emit: (event: string) => void) => (() => void) | undefined
+export type SupervisedTaskListener = (task: SupervisedTaskMeta) => void
 
 const systemClock: TaskSupervisorClock = {
   now: () => Date.now(),
@@ -117,6 +118,7 @@ export class TaskSupervisor {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout> | number>()
   private readonly eventWaiters = new Map<string, Set<string>>()
   private readonly eventSources = new Map<string, { references: number; dispose: () => void }>()
+  private readonly listeners = new Set<SupervisedTaskListener>()
   private readonly pending = new Set<string>()
   private readonly active = new Map<string, Promise<void>>()
   private readonly abortControllers = new Map<string, AbortController>()
@@ -158,6 +160,13 @@ export class TaskSupervisor {
     this.handlers.set(kind, handler)
     return () => {
       if (this.handlers.get(kind) === handler) this.handlers.delete(kind)
+    }
+  }
+
+  subscribe(listener: SupervisedTaskListener): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
     }
   }
 
@@ -226,6 +235,7 @@ export class TaskSupervisor {
     })
     await this.store.saveTransition(task, auditEvent(task, 'enqueue', state, now))
     this.tasks.set(taskKey(task.projectId, task.taskId), task)
+    this.notify(task)
     this.arm(task)
     return task
   }
@@ -305,6 +315,7 @@ export class TaskSupervisor {
     this.eventWaiters.clear()
     for (const source of this.eventSources.values()) source.dispose()
     this.eventSources.clear()
+    this.listeners.clear()
     for (const [key] of this.timers) this.clearTimer(key)
     for (const controller of this.abortControllers.values()) controller.abort()
     if (this.startPromise) await this.startPromise
@@ -322,6 +333,7 @@ export class TaskSupervisor {
     for (const patch of reconciled.patches) {
       await this.store.saveTransition(patch.next, patch.audit)
       this.tasks.set(taskKey(patch.next.projectId, patch.taskId), patch.next)
+      this.notify(patch.next)
     }
     const eligibleTaskIds = new Set(reconciled.eligibleWakeTaskIds)
     for (const task of this.tasks.values()) {
@@ -494,6 +506,7 @@ export class TaskSupervisor {
     this.tasks.set(key, next)
     try {
       await this.store.saveTransition(next, auditEvent(task, action, toState, now, reason))
+      this.notify(next)
     } catch (error) {
       if (this.tasks.get(key) === next) {
         if (previous) this.tasks.set(key, previous)
@@ -502,6 +515,16 @@ export class TaskSupervisor {
       throw error
     }
     return next
+  }
+
+  private notify(task: SupervisedTaskMeta): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(task)
+      } catch (error) {
+        this.onError(error)
+      }
+    }
   }
 
   private clearTimer(key: string): void {

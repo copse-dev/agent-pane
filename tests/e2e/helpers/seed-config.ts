@@ -13,6 +13,10 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import {
+  supervisedTaskMetaSchema,
+  type SupervisedTaskMeta,
+} from '../../../src/shared/supervisor/task-schema.ts'
 import type { AcpAgentConfig } from '../../../src/shared/types/acp.ts'
 import { explodeThread } from '../../../src/shared/threads/fold.ts'
 import {
@@ -50,6 +54,7 @@ const DEFAULT_DISABLED_PACK_IDS = [
   'copse.background-tasks',
   'copse.ci-investigator',
   'copse.devtools-shortcut',
+  'copse.dark-factory',
   'copse.long-horizon-tasks',
   'copse.mcp-ui-canvas',
   'copse.model-comparison',
@@ -57,6 +62,13 @@ const DEFAULT_DISABLED_PACK_IDS = [
   'copse.pii-redaction',
   'copse.roadmap-plans',
 ] as const
+
+export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
+  const validated = supervisedTaskMetaSchema.parse(task)
+  const dir = join(e2eWorkspaceDir(), validated.projectId, 'tasks', validated.taskId)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(validated, null, 2)}\n`, 'utf8')
+}
 
 /** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
 function packDisabledSeed(enabled: readonly string[]): string[] {

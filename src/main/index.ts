@@ -314,6 +314,9 @@ app
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
+    disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
+      if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
+    })
     void taskSupervisor.start().catch((error: unknown) => {
       console.error('[task-supervisor] Startup reconciliation failed:', error)
     })
@@ -655,12 +658,15 @@ let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
 let disposeLongTaskWake: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
+let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
   getAutomationService().stop()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined
+  disposeTaskSupervisorEvents?.()
+  disposeTaskSupervisorEvents = undefined
   await taskSupervisor.shutdown()
   disposeLongTaskWake?.()
   disposeLongTaskWake = undefined
