@@ -11,6 +11,7 @@ import type {
   AutomationTriggerEvent,
 } from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
@@ -667,6 +668,11 @@ export interface ApiClient {
       id: string,
       threadId: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+  }
+  supervisor: {
+    list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
+    cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
+    onChanged(callback: (projectId: string) => void): () => void
   }
   skills: {
     list: () => Promise<SkillSummary[]>

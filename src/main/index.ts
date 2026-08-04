@@ -104,7 +104,14 @@ import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
-import { setBackgroundCompletionWakeHandler } from './services/exec/background-completion-wake.ts'
+import {
+  cancelAllSupervisedBackgroundProcesses,
+  installBackgroundProcessSupervisor,
+} from './services/exec/supervised-background-process.ts'
+import {
+  backgroundCompletionPrompt,
+  setBackgroundCompletionWakeHandler,
+} from './services/exec/background-completion-wake.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
@@ -116,6 +123,9 @@ import {
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
+import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
+import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
+import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
@@ -129,6 +139,7 @@ setSecretCipher({
   encryptString: (plainText) => safeStorage.encryptString(plainText),
   decryptString: (encrypted) => safeStorage.decryptString(encrypted),
 })
+const taskSupervisor = getTaskSupervisor()
 
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
@@ -305,19 +316,23 @@ app
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
+    disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
+    disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
+    disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
+      if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
+    })
+    void taskSupervisor.start().catch((error: unknown) => {
+      console.error('[task-supervisor] Startup reconciliation failed:', error)
+    })
     setBackgroundCompletionWakeHandler((completion) => {
-      const status = completion.timedOut
-        ? 'reached its deadline'
-        : completion.exitCode === null
-          ? 'ended without an exit code'
-          : `exited with code ${String(completion.exitCode)}`
       return agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,
         threadId: completion.owner.threadId,
         operationId: completion.operationId,
         turnTreeId: completion.turnTreeId,
         payload: {
-          userContent: `Background task ${completion.operationId} ${status}. Inspect its retained output with run_background logs, then continue the original task and report the result. Do not rerun the completed command.`,
+          userContent: backgroundCompletionPrompt(completion),
           invokedSkills: [],
           priorTodos: [],
         },
@@ -646,10 +661,24 @@ app
 let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
+let disposeLongTaskWake: (() => void) | undefined
+let disposeBackgroundProcessSupervisor: (() => void) | undefined
+let disposeDarkFactorySensor: (() => void) | undefined
+let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
   getAutomationService().stop()
+  disposeDarkFactorySensor?.()
+  disposeDarkFactorySensor = undefined
+  disposeTaskSupervisorEvents?.()
+  disposeTaskSupervisorEvents = undefined
+  await cancelAllSupervisedBackgroundProcesses()
+  await taskSupervisor.shutdown()
+  disposeBackgroundProcessSupervisor?.()
+  disposeBackgroundProcessSupervisor = undefined
+  disposeLongTaskWake?.()
+  disposeLongTaskWake = undefined
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()

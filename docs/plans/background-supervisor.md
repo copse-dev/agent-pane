@@ -2,11 +2,13 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P1).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
-P1 lands the Zod/JSON schema + pure load/reconcile helpers (no timers, no main
-service yet). Implementation PRs should link here and keep long-horizon checklists
-(#558), dark-factory orchestration, A2A/remote delegation (#1015), and
-`run_background` shell tasks as **consumers**, not alternate supervisors.
+**Status: Active (P7 complete).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
+main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
+without registering a production consumer yet. Implementation PRs should link here
+and keep long-horizon checklists (#558), dark-factory orchestration, A2A/remote
+delegation (#1015), and `run_background` shell tasks as **consumers**, not alternate
+supervisors.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related foundations: [`long-horizon-tasks.md`](long-horizon-tasks.md),
@@ -25,7 +27,7 @@ to ask "what is still running / waiting / blocked?"
 
 | Surface                              | Role today                                   | Gap versus a general supervisor                                      |
 | ------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------- |
-| `run_background` (#691)              | In-memory child processes for a live session | Dies with the process; no queue, schedule, or cross-restart recovery |
+| `run_background` (#691)              | Supervised in-session child processes        | Dead handles fail visibly after restart; processes are not respawned |
 | Long-horizon checklists (#558)       | Goal/step state machine for grind-until-done | Tracks progress; does not schedule wakes or own concurrency policy   |
 | CI investigator / PR pane            | On-demand or event-driven CI reads           | No durable poller; each feature would otherwise grow its own timer   |
 | Dark-factory orchestrator (proposed) | Fleet nurse + triage for Copse/user PRs      | Explicitly needs a shared scheduler (audit: none in `src/main`)      |
@@ -165,30 +167,56 @@ dark-factory poller implementation, and changes to `run_background`.
 
 ### P2 — Main-process supervisor service (no consumers)
 
-- Singleton lifecycle: reconcile on startup, inert when empty.
-- APIs: `enqueue`, `cancel`, `list`, `get`, `acknowledgeBlock`.
-- In-process immediate + `wake_at` only; no GitHub/network sensors yet.
-- Exit gate: unit tests advance fake clocks across restart-shaped reload.
+- [x] Singleton lifecycle: reconcile on startup, inert when empty.
+- [x] APIs: `enqueue`, `cancel`, `list`, `get`, `acknowledgeBlock`.
+- [x] In-process immediate + `wake_at` only; no GitHub/network sensors yet.
+- [x] Exit gate: unit tests advance fake clocks across restart-shaped reload.
 
 ### P3 — First consumer: long-horizon continue (#558)
 
-- Optional self-paced wake that asks the agent to continue a checklist without each
-  feature owning `setInterval`.
-- Permission snapshot + re-approve rules pinned with tests.
-- Exit gate: pack-disabled ⇒ no wakes; pack-enabled ⇒ one supervised task drives a mock
-  continue turn.
+- [x] Optional self-paced wake that asks the agent to continue a checklist without each
+      feature owning `setInterval`.
+- [x] Permission snapshot + re-approve rules pinned with tests.
+- [x] Exit gate: pack-disabled ⇒ no wakes; pack-enabled ⇒ one supervised task drives a mock
+      continue turn.
 
 ### P4 — Event wakes + dark-factory sensor registration
 
-- Event bus registration for CI/process events; dark-factory adaptive poller becomes a
-  supervisor-backed job (still feature-flagged inert when off).
-- Exit gate: two consumers cannot register duplicate pollers for the same fleet key.
+- [x] Durable one-shot event waiters and reference-counted event-source registration for
+      CI/process events.
+- [x] Dark-factory adaptive poller becomes a supervisor-backed job (still
+      feature-flagged inert when off).
+- [x] Exit gate: two consumers cannot register duplicate pollers for the same fleet key.
 
 ### P5 — UI surfacing + recurring schedules
 
-- Desktop list of supervised tasks (running/waiting/blocked) with cancel.
-- Recurring schedules only after P2–P4 retention, permission, and concurrency proofs.
-- Exit gate: e2e/component proof of list + cancel; cron behind an explicit flag.
+- [x] Desktop list of supervised tasks (queued/running/waiting/blocked) with cancel in
+      the Terminal pane.
+- [x] Expired terminal task directories compact into queryable, permission-free support
+      summaries before restart reconciliation (30-day default retention).
+- [x] Recurring cron tasks rearm durably after successful runs; the Automations pack's
+      minute scheduler now uses this path instead of a feature-owned `setInterval`.
+- [x] Component and Electron e2e proof of list + cancel.
+- [x] Cron is accepted only while the experimental `copse.automations` pack is enabled;
+      disabling it disarms existing cron timers without deleting schedule state.
+
+### P6 — Supervised `run_background` process handles
+
+- [x] Every `run_background start` adopts its child as a durable `shell_process` task
+      without consuming a handler concurrency slot.
+- [x] Natural exit completes or fails the task; tool, UI, thread-cleanup, and app-shutdown
+      cancellation terminate the child and persist `cancelled`.
+- [x] Permission and execution-target context is captured when the process starts.
+- [x] Restart reconciliation fails a stale running task with a lost process handle rather
+      than attempting to replay a shell command.
+
+### P7 — Execution-target snapshot enforcement
+
+- [x] Delayed long-horizon wakes capture the project-scoped local/SSH target and SSH host
+      identity derived from their execution root, rather than ambient active-project state.
+- [x] Wake dispatch fails closed when the execution root, local/SSH target, sandbox state,
+      or auto-run policy differs from the scheduling snapshot.
+- [x] Supervised process telemetry records the same project-scoped target identity.
 
 ## Non-goals
 
@@ -207,13 +235,21 @@ dark-factory poller implementation, and changes to `run_background`.
    `~/.copse/workspace/<projectId>/tasks/<taskId>/` (override via existing
    `COPSE_WORKSPACE_DIR` only). The literal `tasks` dir is reserved and must not collide
    with UUID thread dirs; `readThread` already skips dirs without thread `meta.json`.
-2. Should `run_background` processes automatically register as supervised tasks in P2,
-   or remain session-scoped until a consumer opts in? _(still open — P2)_
-3. For agent-turn handlers, is the wake payload a synthetic user message, a steering
-   event, or a dedicated #1079 turn kind? _(still open — P2/P3)_
-4. How do SSH / remote execution targets (#942) appear in the permission snapshot when
-   the wake fires after the workspace target changed? _(still open — P2; P1 stores
-   `workspaceTargetKind` / `executionRoot` placeholders only)_
+2. ~~Should `run_background` processes automatically register as supervised tasks in P2,
+   or remain session-scoped until a consumer opts in?~~ **Resolved in P6:** every process
+   is adopted as a durable `shell_process` task. The process remains session-scoped; a
+   stale handle is failed on restart and the command is never replayed automatically.
+3. ~~For agent-turn handlers, is the wake payload a synthetic user message, a steering
+   event, or a dedicated #1079 turn kind?~~ **Resolved in P3:** dispatch through the
+   main-process `AgentDispatcher` machine-turn path, with a bounded synthetic
+   continuation prompt, operation-id deduplication, turn-tree epoch checks, and the
+   shared continuation budget. Stale/budget-exhausted wakes become blocked tasks rather
+   than bypassing #1079.
+4. ~~How do SSH / remote execution targets (#942) appear in the permission snapshot when
+   the wake fires after the workspace target changed?~~ **Resolved in P7:** consumers
+   capture `executionRoot` plus a project-scoped `workspaceTargetKind` and SSH host id. A
+   delayed wake blocks before dispatch when any differ from the freshly resolved context;
+   it does not inherit the currently active project's target.
 
 ## References
 

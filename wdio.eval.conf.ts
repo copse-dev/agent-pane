@@ -113,6 +113,7 @@ export const config: Options.Testrunner = {
     resetUserData()
     seedEmptyProject(project.root, `${scenario.id}-project`, {
       subagentsEnabled,
+      backgroundTasksEnabled: scenario.backgroundWake !== undefined,
       autoRunSandboxCommands: scenario.autonomy?.requireShellApproval !== true,
       ...(useMock
         ? { model: 'claude-sonnet-4-6' }
