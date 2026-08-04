@@ -532,6 +532,12 @@ export interface ApiClient {
     }>
     /** Effective extra-provider list: shipped presets merged with stored overrides/customs. */
     extraProviders: () => Promise<ExtraProvider[]>
+    /**
+     * Every known per-MTok rate outside the static cloud catalog (cached
+     * OpenRouter catalog rates merged with extra-provider rates), keyed by the
+     * model selection string. Feeds the footer cost estimate.
+     */
+    modelPricing: () => Promise<import('@copse/llm/model-pricing.ts').ModelPricingMap>
     /** Insert/replace a preset override or custom provider; returns the resolved list. */
     saveExtraProvider: (
       record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },

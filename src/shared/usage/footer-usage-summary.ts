@@ -68,7 +68,7 @@ export function formatFooterUsageSummary(
     costVisible: boolean
     model: string
     measuredUsage: ThreadUsage
-    extra?: import('@copse/llm/estimate-cost.ts').ExtraPricing
+    pricing?: import('@copse/llm/model-pricing.ts').ModelPricingMap
   },
 ): string {
   const { inputTokens, outputTokens, estimated } = display
@@ -79,7 +79,7 @@ export function formatFooterUsageSummary(
     const outLabel = estimated ? `~${String(outputTokens)}` : String(outputTokens)
     const cost = estimated
       ? 'est.'
-      : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.extra)
+      : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing)
     return cost ? `${inLabel} in / ${outLabel} out · ${cost}` : `${inLabel} in / ${outLabel} out`
   }
 
