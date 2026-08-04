@@ -67,8 +67,7 @@ function longTaskBaseDir(): string {
   return rootOverride ?? join(homedir(), '.copse', 'long-tasks')
 }
 
-function workspaceNamespace(): string {
-  const root = getActiveProjectRoot()
+function workspaceNamespace(root: string | null = getActiveProjectRoot()): string {
   if (!root) return 'shared'
   const name = slugify(basename(root)) || 'workspace'
   const hash = createHash('sha1').update(root).digest('hex').slice(0, 8)
@@ -83,15 +82,20 @@ function slugify(text: string): string {
     .slice(0, 64)
 }
 
-function longTaskFile(): string {
-  return join(longTaskBaseDir(), workspaceNamespace(), 'tasks.json')
+function longTaskFile(root?: string | null): string {
+  return join(longTaskBaseDir(), workspaceNamespace(root), 'tasks.json')
 }
 
 /** Load this project's long tasks, oldest first. Missing/corrupt file → []. */
 export function loadLongTasks(): LongTask[] {
+  return loadLongTasksForRoot(getActiveProjectRoot())
+}
+
+/** Load long tasks for an explicitly trusted project root. */
+export function loadLongTasksForRoot(root: string | null): LongTask[] {
   let raw: string
   try {
-    raw = readFileSync(longTaskFile(), 'utf8')
+    raw = readFileSync(longTaskFile(root), 'utf8')
   } catch {
     return []
   }
@@ -102,8 +106,8 @@ export function loadLongTasks(): LongTask[] {
   }
 }
 
-function writeLongTasks(tasks: LongTask[]): void {
-  const file = longTaskFile()
+function writeLongTasks(tasks: LongTask[], root?: string | null): void {
+  const file = longTaskFile(root)
   mkdirSync(join(file, '..'), { recursive: true })
   writeFileSync(file, `${JSON.stringify({ tasks }, null, 2)}\n`)
 }
@@ -123,8 +127,11 @@ export interface CreateLongTaskInput {
 }
 
 /** Create a long task with a checklist of step labels. */
-export function createLongTask(input: CreateLongTaskInput): LongTask {
-  const tasks = loadLongTasks()
+export function createLongTask(
+  input: CreateLongTaskInput,
+  root: string | null = getActiveProjectRoot(),
+): LongTask {
+  const tasks = loadLongTasksForRoot(root)
   const now = new Date().toISOString()
   const task: LongTask = {
     id: nextId(tasks),
@@ -138,13 +145,18 @@ export function createLongTask(input: CreateLongTaskInput): LongTask {
     createdAt: now,
     updatedAt: now,
   }
-  writeLongTasks([...tasks, task])
+  writeLongTasks([...tasks, task], root)
   return task
 }
 
 /** Mark a step done/undone. Returns the updated task, or null if not found. */
-export function setStepDone(taskId: string, stepId: string, done: boolean): LongTask | null {
-  const tasks = loadLongTasks()
+export function setStepDone(
+  taskId: string,
+  stepId: string,
+  done: boolean,
+  root: string | null = getActiveProjectRoot(),
+): LongTask | null {
+  const tasks = loadLongTasksForRoot(root)
   const taskIndex = tasks.findIndex((task) => task.id === taskId)
   if (taskIndex === -1) return null
   const task = at(tasks, taskIndex)
@@ -153,7 +165,7 @@ export function setStepDone(taskId: string, stepId: string, done: boolean): Long
   const steps = task.steps.map((step) => (step.id === stepId ? { ...step, done } : step))
   const updated: LongTask = { ...task, steps, updatedAt: new Date().toISOString() }
   tasks[taskIndex] = updated
-  writeLongTasks(tasks)
+  writeLongTasks(tasks, root)
   return updated
 }
 

@@ -36,6 +36,8 @@ function dependencies(
   return {
     loadHistory: async () => [],
     saveHistory: async () => undefined,
+    loadEpoch: async () => null,
+    saveEpoch: async () => undefined,
     prepareExecutionContext: async () => context,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
@@ -217,6 +219,40 @@ describe('AgentDispatcher', () => {
       'stale',
     )
     assert.equal(runCount, 2)
+  })
+
+  it('restores a durable epoch before dispatching a post-restart machine wake', async () => {
+    let runCount = 0
+    const savedEpochs: Array<{ turnTreeId: string; continuationUsed: number }> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 1 }),
+        saveEpoch: async (_projectId, _threadId, epoch) => {
+          savedEpochs.push(epoch)
+        },
+        run: async (_threadId, userContent, priorMessages) => {
+          runCount++
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    assert.equal(
+      await dispatcher.dispatchMachine({
+        ...request(),
+        operationId: 'restart-wake',
+        turnTreeId: 'tree-1',
+        payload: { userContent: 'wake', invokedSkills: [], priorTodos: [] },
+      }),
+      'completed',
+    )
+    assert.equal(runCount, 1)
+    assert.deepEqual(savedEpochs, [{ turnTreeId: 'tree-1', continuationUsed: 2 }])
   })
 
   it('serializes completion wakes that arrive behind the same active turn', async () => {
