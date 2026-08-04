@@ -88,6 +88,7 @@ class MemoryTaskStore implements SupervisedTaskStore {
 }
 
 class FakeClock implements TaskSupervisorClock {
+  readonly scheduledDelays: number[] = []
   private value: number
   private nextId = 1
   private readonly timers = new Map<number, { at: number; callback: () => void }>()
@@ -101,6 +102,7 @@ class FakeClock implements TaskSupervisorClock {
   }
 
   setTimeout(callback: () => void, delayMs: number): number {
+    this.scheduledDelays.push(delayMs)
     const id = this.nextId++
     this.timers.set(id, { at: this.value + delayMs, callback })
     return id
@@ -253,6 +255,96 @@ describe('TaskSupervisor', () => {
       store.audit.map((event) => event.action),
       ['wake', 'start', 'complete'],
     )
+  })
+
+  it('runs enabled cron tasks once per occurrence and rearms after success', async () => {
+    const store = new MemoryTaskStore()
+    const clock = new FakeClock(1_000)
+    let cronEnabled = true
+    const supervisor = new TaskSupervisor({
+      store,
+      clock,
+      cronEnabled: (): boolean => cronEnabled,
+    })
+    let runs = 0
+    supervisor.registerHandler('test', (): Promise<SupervisedTaskHandlerResult> => {
+      runs++
+      return Promise.resolve({})
+    })
+
+    const task = await supervisor.enqueue(input({ kind: 'cron', expression: '* * * * *' }))
+    assert.equal(task.state, 'waiting')
+    clock.advanceBy(59_000)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 1)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'waiting')
+
+    cronEnabled = false
+    supervisor.syncCronTasks()
+    clock.advanceBy(60_000)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 1)
+
+    cronEnabled = true
+    supervisor.syncCronTasks()
+    clock.advanceBy(60_000)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 2)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.attempt, 0)
+    assert.deepEqual(
+      store.audit.map((entry) => entry.action),
+      ['enqueue', 'wake', 'suspend', 'wake', 'suspend'],
+    )
+  })
+
+  it('rejects cron tasks while the explicit feature gate is disabled', async () => {
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock: new FakeClock(1_000),
+    })
+    await assert.rejects(
+      supervisor.enqueue(input({ kind: 'cron', expression: '* * * * *' })),
+      /disabled/,
+    )
+  })
+
+  it('rearms a persisted cron task after restart', async () => {
+    const waiting = persistedTask({
+      state: 'waiting',
+      trigger: { kind: 'cron', expression: '* * * * *' },
+    })
+    const clock = new FakeClock(1_000)
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore([waiting]),
+      clock,
+      cronEnabled: (): boolean => true,
+    })
+    let runs = 0
+    supervisor.registerHandler('test', (): Promise<SupervisedTaskHandlerResult> => {
+      runs++
+      return Promise.resolve({})
+    })
+
+    await supervisor.start()
+    clock.advanceBy(59_000)
+    await supervisor.waitForIdle()
+
+    assert.equal(runs, 1)
+    assert.equal(supervisor.get(waiting.projectId, waiting.taskId)?.state, 'waiting')
+  })
+
+  it('chunks cron waits longer than the platform timer limit', async () => {
+    const clock = new FakeClock(new Date(2026, 0, 2, 0, 0, 0).getTime())
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock,
+      cronEnabled: (): boolean => true,
+    })
+
+    await supervisor.enqueue(input({ kind: 'cron', expression: '0 0 1 1 *' }))
+
+    assert.equal(clock.scheduledDelays.length, 1)
+    assert.ok((clock.scheduledDelays[0] ?? Infinity) <= 2_147_000_000)
   })
 
   it('compacts expired terminal tasks before restart reconciliation', async () => {
