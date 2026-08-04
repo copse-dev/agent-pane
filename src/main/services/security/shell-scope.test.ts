@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
+import {
+  analyzeShellCommand,
+  dangerousInSandboxReasons,
+  isReplayableOpaqueLocalExecution,
+} from './shell-scope.ts'
 
 describe('analyzeShellCommand', () => {
   const root = '/Users/me/project'
@@ -462,6 +466,29 @@ describe('analyzeShellCommand', () => {
     // recognised script extension, so nothing here escalates past the ambiguous npx.
     const r = analyzeShellCommand('npx tsx scripts/build-thing.mts', root)
     assert.equal(r.verdict, 'ambiguous')
+  })
+})
+
+describe('isReplayableOpaqueLocalExecution', () => {
+  const root = '/Users/me/project'
+
+  it('accepts opaque local script execution', () => {
+    assert.equal(
+      isReplayableOpaqueLocalExecution(
+        analyzeShellCommand('node synthetic-autonomy-executor.mjs', root),
+      ),
+      true,
+    )
+  })
+
+  it('rejects network, outside-path, and mixed external authority', () => {
+    for (const command of [
+      'curl https://example.com',
+      'cat ~/.ssh/config',
+      'node script.mjs && curl https://example.com',
+    ]) {
+      assert.equal(isReplayableOpaqueLocalExecution(analyzeShellCommand(command, root)), false)
+    }
   })
 })
 
