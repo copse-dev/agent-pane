@@ -1672,33 +1672,6 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
   const projectId = 'e2e-footer-usage-project'
   const threadId = 'e2e-footer-usage-thread'
   const now = Date.now()
-/** Action-first ACP authentication failure rendered as structured Markdown. */
-export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
-  const projectId = 'e2e-acp-auth-error-project'
-  const threadId = 'e2e-acp-auth-error-thread'
-  const now = Date.now()
-  const content = [
-    '> [!WARNING]',
-    '> **Claude sign-in expired**',
-    '>',
-    '> This turn couldn’t run because Claude’s saved credentials are no longer valid.',
-    '',
-    '**To continue**',
-    '',
-    '1. Run `claude /login` in a terminal.',
-    '2. Finish signing in, then re-send your message.',
-    '',
-    'Alternatively, set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
-    '',
-    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
-    '',
-    '**Technical details**',
-    '',
-    '```text',
-    'ACP error -32603 (Internal error): Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
-    'Details: {"errorKind":"authentication_failed"}',
-    '```',
-  ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -1715,13 +1688,6 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
             id: 'msg-user-footer-usage',
             role: 'user',
             content: 'Summarise the repository.',
-        title: 'ACP authentication failure',
-        status: 'idle',
-        messages: [
-          {
-            id: 'msg-user-acp-auth',
-            role: 'user',
-            content: 'Inspect the MDN reference for this API.',
             toolCalls: [],
             createdAt: now,
           },
@@ -1768,6 +1734,59 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
             'claude-haiku-4-5': { inputTokens: 800_000, outputTokens: 15_000 },
           },
         },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
+/** Action-first ACP authentication failure rendered as structured Markdown. */
+export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-auth-error-project'
+  const threadId = 'e2e-acp-auth-error-thread'
+  const now = Date.now()
+  const content = [
+    '> [!WARNING]',
+    '> **Claude sign-in expired**',
+    '>',
+    '> This turn couldn’t run because Claude’s saved credentials are no longer valid.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `claude /login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    'Alternatively, set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
+    'Details: {"errorKind":"authentication_failed"}',
+    '```',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP authentication failure',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-auth',
+            role: 'user',
+            content: 'Inspect the MDN reference for this API.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
             id: 'msg-assistant-acp-auth',
             role: 'assistant',
             content,
