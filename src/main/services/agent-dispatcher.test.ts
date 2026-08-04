@@ -120,4 +120,141 @@ describe('AgentDispatcher', () => {
 
     assert.equal(ran, false)
   })
+
+  it('waits for the foreground turn then dispatches one machine continuation', async () => {
+    let release!: () => void
+    let entered!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const prompts: UserContent[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent, priorMessages) => {
+          prompts.push(userContent)
+          if (userContent === 'continue') {
+            entered()
+            await gate
+          }
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+    const foreground = dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'continue',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-1',
+          continuationBudgetUsed: 0,
+        },
+      }),
+    )
+    const wake = dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'background-1',
+      turnTreeId: 'tree-1',
+      payload: { userContent: 'task completed', invokedSkills: [], priorTodos: [] },
+    })
+
+    await started
+    assert.deepEqual(prompts, ['continue'])
+    release()
+    await foreground
+    assert.equal(await wake, 'completed')
+    assert.deepEqual(prompts, ['continue', 'task completed'])
+  })
+
+  it('deduplicates operation ids and rejects stale epochs', async () => {
+    let runCount = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent, priorMessages) => {
+          runCount += 1
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'root',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-current',
+        },
+      }),
+    )
+    const machine = {
+      ...request(),
+      operationId: 'background-1',
+      turnTreeId: 'tree-current',
+      payload: { userContent: 'wake', invokedSkills: [], priorTodos: [] },
+    }
+
+    assert.equal(await dispatcher.dispatchMachine(machine), 'completed')
+    assert.equal(await dispatcher.dispatchMachine(machine), 'duplicate')
+    assert.equal(
+      await dispatcher.dispatchMachine({
+        ...machine,
+        operationId: 'background-stale',
+        turnTreeId: 'tree-old',
+      }),
+      'stale',
+    )
+    assert.equal(runCount, 2)
+  })
+
+  it('holds machine dispatch after the continuation budget is exhausted', async () => {
+    let runCount = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent, priorMessages) => {
+          runCount += 1
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'root',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-1',
+          continuationBudgetUsed: 5,
+        },
+      }),
+    )
+
+    assert.equal(
+      await dispatcher.dispatchMachine({
+        ...request(),
+        operationId: 'background-1',
+        turnTreeId: 'tree-1',
+        payload: { userContent: 'wake', invokedSkills: [], priorTodos: [] },
+      }),
+      'budget-exhausted',
+    )
+    assert.equal(runCount, 1)
+  })
 })
