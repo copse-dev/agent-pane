@@ -7,6 +7,9 @@ import {
   stopBackgroundProcess,
   type BackgroundProcessInfo,
 } from '../services/exec/background-process.ts'
+import { requestBackgroundCompletionWake } from '../services/exec/background-completion-wake.ts'
+import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
+import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
 
 function formatInfo(info: BackgroundProcessInfo): string {
   const containment = info.unsandboxed ? ' · unsandboxed' : ''
@@ -16,7 +19,9 @@ function formatInfo(info: BackgroundProcessInfo): string {
         ? `running at ${info.url} (remote host)`
         : `running at ${info.url}`
       : 'running'
-    : `exited${info.exitCode !== null ? ` (code ${String(info.exitCode)})` : ''}`
+    : info.timedOut
+      ? 'timed out'
+      : `exited${info.exitCode !== null ? ` (code ${String(info.exitCode)})` : ''}`
   return `[${info.id}] ${info.command} — ${state}${containment}`
 }
 
@@ -30,7 +35,7 @@ function tailLogs(logs: string, maxLines = 40): string {
 export const runBackgroundTool = defineTool({
   name: 'run_background',
   description:
-    'Run a long-lived command in the background (dev server, watcher, build) that stays alive across turns. Actions: `start` a command; `list` running tasks; `logs` for a task by id; `stop` a task by id. Set `allow_port_binding: true` for a task that must bind a local port (e.g. a dev server) — it returns the detected http://localhost:<port> URL to open with browser_navigate, and prompts for permission the first time per project. Without it the task runs fully sandboxed (workspace-only, no network/binding).',
+    'Run a long-lived command in the background (dev server, watcher, build) that stays alive across turns. Actions: `start` a command; `list` running tasks; `logs` for a task by id; `stop` a task by id. Set `allow_port_binding: true` for a task that must bind a local port (e.g. a dev server) — it returns the detected http://localhost:<port> URL to open with browser_navigate, and prompts for permission the first time per project. For a bounded task that should wake the agent when it exits, set `wake_on_completion: true` and `timeout_ms`. Without port binding it runs fully sandboxed (workspace-only, no network/binding).',
   parameters: z.object({
     action: z.enum(['start', 'list', 'logs', 'stop']),
     command: z
@@ -41,9 +46,20 @@ export const runBackgroundTool = defineTool({
       .boolean()
       .optional()
       .describe('For action=start: allow the task to bind a loopback port (dev servers).'),
+    wake_on_completion: z
+      .boolean()
+      .optional()
+      .describe('For action=start: wake this agent task once when the process exits.'),
+    timeout_ms: z
+      .number()
+      .int()
+      .min(1_000)
+      .max(30 * 60 * 1_000)
+      .optional()
+      .describe('Required with wake_on_completion: hard deadline in milliseconds.'),
     id: z.string().optional().describe('For action=logs/stop: the task handle from start/list.'),
   }),
-  async execute({ action, command, allow_port_binding, id }) {
+  async execute({ action, command, allow_port_binding, wake_on_completion, timeout_ms, id }) {
     if (action === 'list') {
       const tasks = listBackgroundProcesses()
       if (tasks.length === 0) return 'No background tasks running.'
@@ -64,9 +80,32 @@ export const runBackgroundTool = defineTool({
 
     // action === 'start'
     if (!command?.trim()) return 'run_background start requires a command.'
+    if (wake_on_completion === true && timeout_ms === undefined) {
+      return 'run_background start with wake_on_completion requires timeout_ms.'
+    }
+    const owner = requireThreadExecutionOwner()
+    const turnTreeId = wake_on_completion === true ? getActiveRunTurnTreeId() : null
+    if (wake_on_completion === true && !turnTreeId) {
+      return 'run_background cannot wake without an active human turn-tree.'
+    }
     const info = await startBackgroundProcess({
       command,
       allowPortBinding: allow_port_binding === true,
+      owner,
+      ...(timeout_ms !== undefined ? { timeoutMs: timeout_ms } : {}),
+      ...(turnTreeId
+        ? {
+            onCompletion: async ({ info: completed }): Promise<void> => {
+              await requestBackgroundCompletionWake({
+                operationId: completed.id,
+                owner,
+                turnTreeId,
+                exitCode: completed.exitCode,
+                timedOut: completed.timedOut,
+              })
+            },
+          }
+        : {}),
     })
     const lines = [formatInfo(info)]
     if (!info.running) {
