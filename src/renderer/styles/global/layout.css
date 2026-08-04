@@ -74,20 +74,21 @@
   font-size: 11px;
   color: var(--accent);
 }
-/* Projects header "+" — same size/spacing as the per-project "+" (new thread) so
-   the two affordances read as one family. */
+/* Projects header "+" — at least as large as the per-project "+" (new thread)
+   so the two affordances read as one family, with extra room around it so the
+   primary create affordance is comfortable to hit. */
 .projects-add-btn {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   color: var(--text-secondary);
-  margin-right: 2px;
+  margin: 0 2px 0 6px;
 }
 .projects-add-btn:hover {
   color: var(--text-primary);
