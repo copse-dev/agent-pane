@@ -2,11 +2,13 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P1).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
-P1 lands the Zod/JSON schema + pure load/reconcile helpers (no timers, no main
-service yet). Implementation PRs should link here and keep long-horizon checklists
-(#558), dark-factory orchestration, A2A/remote delegation (#1015), and
-`run_background` shell tasks as **consumers**, not alternate supervisors.
+**Status: Active (P2).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
+main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
+without registering a production consumer yet. Implementation PRs should link here
+and keep long-horizon checklists (#558), dark-factory orchestration, A2A/remote
+delegation (#1015), and `run_background` shell tasks as **consumers**, not alternate
+supervisors.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related foundations: [`long-horizon-tasks.md`](long-horizon-tasks.md),
@@ -165,10 +167,10 @@ dark-factory poller implementation, and changes to `run_background`.
 
 ### P2 — Main-process supervisor service (no consumers)
 
-- Singleton lifecycle: reconcile on startup, inert when empty.
-- APIs: `enqueue`, `cancel`, `list`, `get`, `acknowledgeBlock`.
-- In-process immediate + `wake_at` only; no GitHub/network sensors yet.
-- Exit gate: unit tests advance fake clocks across restart-shaped reload.
+- [x] Singleton lifecycle: reconcile on startup, inert when empty.
+- [x] APIs: `enqueue`, `cancel`, `list`, `get`, `acknowledgeBlock`.
+- [x] In-process immediate + `wake_at` only; no GitHub/network sensors yet.
+- [x] Exit gate: unit tests advance fake clocks across restart-shaped reload.
 
 ### P3 — First consumer: long-horizon continue (#558)
 
