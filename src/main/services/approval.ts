@@ -32,8 +32,18 @@ export interface ApprovalRequest {
   allowTurnTreeLease?: boolean
   /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
   turnTreeLeaseLabel?: string
-  /** Whether the bounded task lease is selected when the prompt opens. */
-  turnTreeLeaseDefault?: boolean
+  /**
+   * What the offered lease would actually cover — the exact command, not the
+   * display label. Required whenever `allowTurnTreeLease` is true.
+   *
+   * The label is a fixed string shared by every shell prompt, so it cannot tell
+   * two batched requests apart. A batch settles with ONE tick box but issues one
+   * lease per request, so without a per-request identity a single tick would
+   * grant leases for unrelated commands under a label reading "this task". The
+   * renderer hides the box unless every batched request shares this subject —
+   * the same coherence rule `rememberLabel` gets, on a value that discriminates.
+   */
+  turnTreeLeaseSubject?: string
   /** Secret-free operation or tool name stored in the durable decision log. */
   subject?: string
   /** Scope the decision applies at, such as `sandbox` or `external`. */
@@ -73,7 +83,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     comparisonModels: req.comparisonModels ?? null,
     allowTurnTreeLease: req.allowTurnTreeLease ?? false,
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
-    turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
+    turnTreeLeaseSubject: req.turnTreeLeaseSubject ?? '',
   })
 }
 
