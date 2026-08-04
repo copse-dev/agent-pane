@@ -35,7 +35,7 @@ on:
       - 'tests/e2e/screenshots/**'
 
 # A burst of pushes only needs the latest reconcile pass; collapse them. Keyed by
-# branch so a develop push and a main push don't cancel each other — they act on
+# branch so a `main` push and a `release` push don't cancel each other — they act on
 # disjoint sets of PRs.
 concurrency:
   group: reconcile-screenshots-${{ github.ref_name }}
@@ -71,8 +71,8 @@ jobs:
               repo: context.repo.repo,
               state: 'open',
               // Only PRs based on the branch that just moved. Without this, a
-              // `develop` push would try to merge develop into the promotion PR
-              // (base `main`) and into any main-based hotfix.
+              // `main` push would try to merge trunk into the promotion PR
+              // (base `release`) and into any release-based hotfix.
               base,
               per_page: 100,
             });
@@ -179,8 +179,8 @@ jobs:
         id: merge
         env:
           PR_NUMBER: ${{ matrix.pr.number }}
-          # The branch whose push woke this run — `develop` for day-to-day PRs,
-          # `main` for the promotion PR. `list` already filtered the matrix to
+          # The branch whose push woke this run — `main` for day-to-day PRs,
+          # `release` for the promotion PR. `list` already filtered the matrix to
           # PRs based on it, so this is always the right merge source.
           BASE_BRANCH: ${{ github.ref_name }}
         run: |
