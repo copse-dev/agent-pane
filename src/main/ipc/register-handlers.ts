@@ -153,6 +153,7 @@ import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
@@ -1546,6 +1547,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (id === DARK_FACTORY_PACK_ID) {
       syncDarkFactorySensor()
+    }
+    if (id === AUTOMATIONS_PACK_ID) {
+      getTaskSupervisor().syncCronTasks()
+      await getAutomationService().sync()
     }
     return { packs: getPackService().list() }
   })
