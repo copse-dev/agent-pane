@@ -20,6 +20,7 @@ import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountAgentTasks } from './views/agent-tasks.ts'
+import { mountSupervisedTasks } from './views/supervised-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
@@ -482,6 +483,7 @@ function mountFullLayout(): void {
     store,
     api,
   )
+  mountSupervisedTasks(requireElement('terminals-list-host'), store, api)
   mountBrowserPane(
     requireElement('browser-tabs-host'),
     requireElement('browser-viewer-host'),
