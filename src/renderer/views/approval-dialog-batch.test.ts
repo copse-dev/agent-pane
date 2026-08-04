@@ -23,6 +23,7 @@ interface EmitReq {
   rememberLabel?: string
   allowTurnTreeLease?: boolean
   turnTreeLeaseLabel?: string
+  turnTreeLeaseDefault?: boolean
   turnTreeLeaseSubject?: string
 }
 interface Responded {
@@ -75,6 +76,7 @@ function makeApi(): {
         turnTreeLeaseLabel:
           req.turnTreeLeaseLabel ??
           (req.allowTurnTreeLease ? 'Allow exact retries for this task' : undefined),
+        turnTreeLeaseDefault: req.turnTreeLeaseDefault,
         // The real label is one shared constant, so the subject is what tells two
         // batched offers apart. Default it to a single command unless a test
         // deliberately varies it.
@@ -297,17 +299,14 @@ describe('approval dialog coalescing', () => {
     assert.equal(remember.hidden, true)
   })
 
-  it('never pre-ticks bounded retries, and leases only when the user ticks', () => {
+  it('includes bounded sandbox retries in the approval by default', () => {
     const lease = qsRequired(dialog, '.approval-turn-tree')
-    emit({ id: 'a', allowTurnTreeLease: true })
-    emit({ id: 'b', allowTurnTreeLease: true })
+    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseDefault: true })
+    emit({ id: 'b', allowTurnTreeLease: true, turnTreeLeaseDefault: true })
     fireWindow()
     assert.equal(lease.hidden, false)
     const input = qsRequired<HTMLInputElement>(lease, '.approval-turn-tree-input')
-    // A lease is a standing grant to re-run without asking again, so approving
-    // without touching the box must stay a one-shot.
-    assert.equal(input.checked, false)
-    input.checked = true
+    assert.equal(input.checked, true)
     approve().click()
     assert.ok(responses.every((response) => response.grantScope === 'turn-tree'))
   })
@@ -327,7 +326,7 @@ describe('approval dialog coalescing', () => {
 
   it('defaults outside-sandbox retries to one-shot approval', () => {
     const lease = qsRequired(dialog, '.approval-turn-tree')
-    emit({ id: 'a', allowTurnTreeLease: true })
+    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseDefault: false })
     fireWindow()
     const input = qsRequired<HTMLInputElement>(lease, '.approval-turn-tree-input')
     assert.equal(input.checked, false)
