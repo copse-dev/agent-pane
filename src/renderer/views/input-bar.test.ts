@@ -64,6 +64,7 @@ function createApi(options: {
   openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
   lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
   onDescribeImages?: ApiClient['agent']['describeImages']
+  promptState?: { startingCommit: string | null; dirty: boolean }
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -118,6 +119,7 @@ function createApi(options: {
       git: {
         ...base['git'],
         branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+        promptState: async () => options.promptState ?? { startingCommit: null, dirty: false },
         checkoutBranch: async (
           _projectId: string,
           _threadId: string,
@@ -378,6 +380,76 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepared.gitBranch, 'copse/first-message')
     assert.equal(prepared.messages[0]?.content, 'Start in isolation')
     assert.equal(composer.textContent, '')
+  })
+})
+
+describe('input bar prompt git-state capture', () => {
+  it('stamps the sent message with the fetched startingCommit and dirty flag', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'What changed?'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal(message.startingCommit, 'a'.repeat(40))
+    assert.equal(message.dirty, true)
+  })
+
+  it('omits startingCommit and leaves dirty false outside a git repository', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: null, dirty: false },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Hello'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal('startingCommit' in message, false)
+    assert.equal(message.dirty, false)
   })
 })
 

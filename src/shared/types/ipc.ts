@@ -1,6 +1,6 @@
 import type { AutoApprovalLevel } from '../auto-approval.ts'
 import type { StreamChunk } from './stream.ts'
-import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
+import type { GitFileDiff, GitStatusResult, GitBranchStatus, GitPromptState } from './git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from './mcp.ts'
 
 type Provider =
@@ -314,6 +314,10 @@ export interface IpcInvokeMap {
   'git:branchStatus': {
     args: [projectId: string, threadId: string, forBranch?: string]
     result: GitBranchStatus
+  }
+  'git:promptState': {
+    args: [projectId: string, threadId: string]
+    result: GitPromptState
   }
   'git:checkoutBranch': {
     args: [projectId: string, threadId: string, branch: string]

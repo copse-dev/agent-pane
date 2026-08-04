@@ -181,6 +181,7 @@ import {
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
+  getGitPromptState,
   getGitStatus,
   getGitWorkingFileDiff,
   getGithubRepoSlug,
@@ -1627,6 +1628,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     )
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
     return getGitBranchStatus(branch, root)
+  })
+  ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getGitPromptState((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
   ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
