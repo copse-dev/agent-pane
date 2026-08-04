@@ -544,6 +544,54 @@ describe('TaskSupervisor', () => {
     assert.equal(store.audit.at(-1)?.action, 'cancel')
   })
 
+  it('adopts and completes an externally managed running task', async () => {
+    const store = new MemoryTaskStore()
+    const supervisor = new TaskSupervisor({
+      store,
+      clock: new FakeClock(100),
+      createId: (): string => 'external-task',
+    })
+
+    const task = await supervisor.adoptRunning(
+      { ...input(), handler: 'shell_process', maxAttempts: 1 },
+      'process-1',
+    )
+    assert.equal(task.state, 'running')
+    assert.equal(task.processHandleId, 'process-1')
+
+    await supervisor.completeExternal(task.projectId, task.taskId, {
+      kind: 'handler',
+      ref: 'process-1',
+    })
+
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'completed')
+    assert.deepEqual(
+      store.audit.map((event) => event.action),
+      ['enqueue', 'start', 'complete'],
+    )
+  })
+
+  it('invokes the external canceller before cancelling an adopted task', async () => {
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock: new FakeClock(100),
+      createId: (): string => 'external-task',
+    })
+    let cancelledHandle: string | undefined
+    supervisor.registerExternalCanceller('shell_process', (task) => {
+      cancelledHandle = task.processHandleId
+    })
+    const task = await supervisor.adoptRunning(
+      { ...input(), handler: 'shell_process', maxAttempts: 1 },
+      'process-1',
+    )
+
+    await supervisor.cancel(task.projectId, task.taskId)
+
+    assert.equal(cancelledHandle, 'process-1')
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')
+  })
+
   it('fails ready tasks whose attempt budget is exhausted without invoking the handler', async () => {
     const exhausted = persistedTask({ attempt: 2, maxAttempts: 2 })
     const store = new MemoryTaskStore([exhausted])

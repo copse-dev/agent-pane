@@ -26,7 +26,11 @@ import {
   backgroundCompletionPrompt,
   runWithBackgroundCompletionWakeHandler,
 } from './exec/background-completion-wake.ts'
-import { stopBackgroundProcessesForThread } from './exec/background-process.ts'
+import {
+  runWithBackgroundProcessSupervisor,
+  stopSupervisedBackgroundProcessesForThread,
+} from './exec/supervised-background-process.ts'
+import { getTaskSupervisor, type TaskSupervisor } from './supervisor/task-supervisor.ts'
 
 export interface HeadlessInteractionProfile {
   readonly approve?: ApprovalHandler
@@ -80,6 +84,8 @@ export interface HeadlessAgentDependencies {
   readonly provider?: LLMProvider
   /** Context window paired with an injected provider. */
   readonly contextWindow?: number
+  /** Supervisor seam for isolated hosts and tests; desktop/headless production uses the singleton. */
+  readonly taskSupervisor?: TaskSupervisor
 }
 
 export interface HeadlessAgentResult {
@@ -144,177 +150,183 @@ export async function runHeadlessAgent(
     for (const [key, value] of Object.entries(values)) storage.set(key, value)
   }
 
-  return runWithExplicitSettings(
-    { values: profile.settings, ...(profile.apiKeys ? { apiKeys: profile.apiKeys } : {}) },
+  return runWithBackgroundProcessSupervisor(
+    dependencies.taskSupervisor ?? getTaskSupervisor(),
     () =>
-      runWithWorkspaceRoot(workspaceRoot, () =>
-        runWithWorkspaceTrust(workspaceRoot, profile.workspaceTrusted, () =>
-          runWithDefaultPackRegistry(packRegistry, () =>
-            runWithToolAvailability(profile.toolAvailability, () =>
-              runWithHeadlessInteractions(profile.interaction, () =>
-                runWithDiscoveredSkills(async () => {
-                  const registry = createRegistry()
-                  registerSkillTools(registry)
-                  if (profile.loadMcpServers) await loadMcpServers(registry)
+      runWithExplicitSettings(
+        { values: profile.settings, ...(profile.apiKeys ? { apiKeys: profile.apiKeys } : {}) },
+        () =>
+          runWithWorkspaceRoot(workspaceRoot, () =>
+            runWithWorkspaceTrust(workspaceRoot, profile.workspaceTrusted, () =>
+              runWithDefaultPackRegistry(packRegistry, () =>
+                runWithToolAvailability(profile.toolAvailability, () =>
+                  runWithHeadlessInteractions(profile.interaction, () =>
+                    runWithDiscoveredSkills(async () => {
+                      const registry = createRegistry()
+                      registerSkillTools(registry)
+                      if (profile.loadMcpServers) await loadMcpServers(registry)
 
-                  const chunks: StreamChunk[] = []
-                  const host: AgentHost<StreamChunk> = {
-                    emit: (_emittingThreadId, chunk) => {
-                      chunks.push(chunk)
-                      run.onChunk?.(chunk)
-                    },
-                  }
-                  const onAbort = (): void => {
-                    abortAgent(threadId)
-                  }
-                  run.signal?.addEventListener('abort', onAbort, { once: true })
-
-                  try {
-                    const turnTreeId = randomUUID()
-                    const executionContext = {
-                      projectId,
-                      threadId,
-                      projectRoot: workspaceRoot,
-                      root: workspaceRoot,
-                      checkoutMode: 'shared' as const,
-                      branch: null,
-                    }
-                    let messages: LLMMessage[] = [...(run.priorMessages ?? [])]
-                    let inputTokens = 0
-                    let outputTokens = 0
-                    const dispatcher = new AgentDispatcher(host, registry, {
-                      loadHistory: (): Promise<LLMMessage[]> => Promise.resolve(messages),
-                      saveHistory: (_projectId, _threadId, nextMessages): Promise<void> => {
-                        messages = nextMessages
-                        return Promise.resolve()
-                      },
-                      loadEpoch: (): Promise<null> => Promise.resolve(null),
-                      saveEpoch: (): Promise<void> => Promise.resolve(),
-                      prepareExecutionContext: (): Promise<typeof executionContext> =>
-                        Promise.resolve(executionContext),
-                      run: async (
-                        dispatchThreadId,
-                        userContent,
-                        priorMessages,
-                        dispatchHost,
-                        dispatchRegistry,
-                        options,
-                      ): Promise<Awaited<ReturnType<typeof runAgent>>> => {
-                        const result = await runAgent(
-                          dispatchThreadId,
-                          userContent,
-                          priorMessages,
-                          dispatchHost,
-                          dispatchRegistry,
-                          {
-                            ...options,
-                            model: profile.model,
-                            resolvePackSetting: (packId, key) =>
-                              packRegistry.has(packId)
-                                ? packRegistry.storage(packId).get(key)
-                                : undefined,
-                            ...(dependencies.provider ? { provider: dependencies.provider } : {}),
-                            ...(dependencies.contextWindow !== undefined
-                              ? { contextWindow: dependencies.contextWindow }
-                              : {}),
-                            ...(profile.limits?.maxSteps !== undefined
-                              ? { maxSteps: profile.limits.maxSteps }
-                              : {}),
-                            ...(profile.limits?.maxLlmCalls !== undefined
-                              ? { maxLlmCalls: profile.limits.maxLlmCalls }
-                              : {}),
-                          },
-                        )
-                        inputTokens += result.usage.inputTokens
-                        outputTokens += result.usage.outputTokens
-                        return result
-                      },
-                    })
-                    const wait = run.waitForMachineContinuations
-                    let machineContinuations = 0
-                    let resolveMachineWait: (() => void) | null = null
-                    const machineWait = wait
-                      ? new Promise<void>((resolve) => {
-                          resolveMachineWait = resolve
-                        })
-                      : null
-                    const dispatchAndWait = async (): Promise<void> => {
-                      await dispatcher.dispatch({
-                        projectId,
-                        threadId,
-                        payload: {
-                          userContent: run.prompt,
-                          invokedSkills: [...(run.invokedSkills ?? [])],
-                          priorTodos: [],
-                          turnTreeId,
+                      const chunks: StreamChunk[] = []
+                      const host: AgentHost<StreamChunk> = {
+                        emit: (_emittingThreadId, chunk) => {
+                          chunks.push(chunk)
+                          run.onChunk?.(chunk)
                         },
-                      })
-                      if (wait && machineWait) {
-                        let timer: ReturnType<typeof setTimeout> | undefined
-                        try {
-                          await Promise.race([
-                            machineWait,
-                            new Promise<never>((_resolve, reject) => {
-                              timer = setTimeout(() => {
-                                reject(
-                                  new Error(
-                                    `Timed out waiting for ${String(wait.count)} machine continuations`,
-                                  ),
-                                )
-                              }, wait.timeoutMs)
-                            }),
-                          ])
-                        } finally {
-                          if (timer) clearTimeout(timer)
-                        }
                       }
-                    }
-                    if (wait) {
-                      await runWithBackgroundCompletionWakeHandler(async (completion) => {
-                        const result = await dispatcher.dispatchMachine({
-                          projectId: completion.owner.projectId,
-                          threadId: completion.owner.threadId,
-                          operationId: completion.operationId,
-                          turnTreeId: completion.turnTreeId,
-                          payload: {
-                            userContent: backgroundCompletionPrompt(completion),
-                            invokedSkills: [],
-                            priorTodos: [],
+                      const onAbort = (): void => {
+                        abortAgent(threadId)
+                      }
+                      run.signal?.addEventListener('abort', onAbort, { once: true })
+
+                      try {
+                        const turnTreeId = randomUUID()
+                        const executionContext = {
+                          projectId,
+                          threadId,
+                          projectRoot: workspaceRoot,
+                          root: workspaceRoot,
+                          checkoutMode: 'shared' as const,
+                          branch: null,
+                        }
+                        let messages: LLMMessage[] = [...(run.priorMessages ?? [])]
+                        let inputTokens = 0
+                        let outputTokens = 0
+                        const dispatcher = new AgentDispatcher(host, registry, {
+                          loadHistory: (): Promise<LLMMessage[]> => Promise.resolve(messages),
+                          saveHistory: (_projectId, _threadId, nextMessages): Promise<void> => {
+                            messages = nextMessages
+                            return Promise.resolve()
+                          },
+                          loadEpoch: (): Promise<null> => Promise.resolve(null),
+                          saveEpoch: (): Promise<void> => Promise.resolve(),
+                          prepareExecutionContext: (): Promise<typeof executionContext> =>
+                            Promise.resolve(executionContext),
+                          run: async (
+                            dispatchThreadId,
+                            userContent,
+                            priorMessages,
+                            dispatchHost,
+                            dispatchRegistry,
+                            options,
+                          ): Promise<Awaited<ReturnType<typeof runAgent>>> => {
+                            const result = await runAgent(
+                              dispatchThreadId,
+                              userContent,
+                              priorMessages,
+                              dispatchHost,
+                              dispatchRegistry,
+                              {
+                                ...options,
+                                model: profile.model,
+                                resolvePackSetting: (packId, key) =>
+                                  packRegistry.has(packId)
+                                    ? packRegistry.storage(packId).get(key)
+                                    : undefined,
+                                ...(dependencies.provider
+                                  ? { provider: dependencies.provider }
+                                  : {}),
+                                ...(dependencies.contextWindow !== undefined
+                                  ? { contextWindow: dependencies.contextWindow }
+                                  : {}),
+                                ...(profile.limits?.maxSteps !== undefined
+                                  ? { maxSteps: profile.limits.maxSteps }
+                                  : {}),
+                                ...(profile.limits?.maxLlmCalls !== undefined
+                                  ? { maxLlmCalls: profile.limits.maxLlmCalls }
+                                  : {}),
+                              },
+                            )
+                            inputTokens += result.usage.inputTokens
+                            outputTokens += result.usage.outputTokens
+                            return result
                           },
                         })
-                        if (result === 'completed') {
-                          machineContinuations += 1
-                          if (machineContinuations >= wait.count) {
-                            resolveMachineWait?.()
+                        const wait = run.waitForMachineContinuations
+                        let machineContinuations = 0
+                        let resolveMachineWait: (() => void) | null = null
+                        const machineWait = wait
+                          ? new Promise<void>((resolve) => {
+                              resolveMachineWait = resolve
+                            })
+                          : null
+                        const dispatchAndWait = async (): Promise<void> => {
+                          await dispatcher.dispatch({
+                            projectId,
+                            threadId,
+                            payload: {
+                              userContent: run.prompt,
+                              invokedSkills: [...(run.invokedSkills ?? [])],
+                              priorTodos: [],
+                              turnTreeId,
+                            },
+                          })
+                          if (wait && machineWait) {
+                            let timer: ReturnType<typeof setTimeout> | undefined
+                            try {
+                              await Promise.race([
+                                machineWait,
+                                new Promise<never>((_resolve, reject) => {
+                                  timer = setTimeout(() => {
+                                    reject(
+                                      new Error(
+                                        `Timed out waiting for ${String(wait.count)} machine continuations`,
+                                      ),
+                                    )
+                                  }, wait.timeoutMs)
+                                }),
+                              ])
+                            } finally {
+                              if (timer) clearTimeout(timer)
+                            }
                           }
                         }
-                        return result
-                      }, dispatchAndWait)
-                    } else {
-                      await dispatchAndWait()
-                    }
-                    return {
-                      threadId,
-                      chunks,
-                      messages,
-                      usage: { inputTokens, outputTokens },
-                      toolNames: registry.names(),
-                      skillNames: listSkills().map((skill) => skill.name),
-                    }
-                  } finally {
-                    if (run.waitForMachineContinuations) {
-                      await stopBackgroundProcessesForThread({
-                        projectId,
-                        threadId,
-                      })
-                    }
-                    run.signal?.removeEventListener('abort', onAbort)
-                  }
-                }),
+                        if (wait) {
+                          await runWithBackgroundCompletionWakeHandler(async (completion) => {
+                            const result = await dispatcher.dispatchMachine({
+                              projectId: completion.owner.projectId,
+                              threadId: completion.owner.threadId,
+                              operationId: completion.operationId,
+                              turnTreeId: completion.turnTreeId,
+                              payload: {
+                                userContent: backgroundCompletionPrompt(completion),
+                                invokedSkills: [],
+                                priorTodos: [],
+                              },
+                            })
+                            if (result === 'completed') {
+                              machineContinuations += 1
+                              if (machineContinuations >= wait.count) {
+                                resolveMachineWait?.()
+                              }
+                            }
+                            return result
+                          }, dispatchAndWait)
+                        } else {
+                          await dispatchAndWait()
+                        }
+                        return {
+                          threadId,
+                          chunks,
+                          messages,
+                          usage: { inputTokens, outputTokens },
+                          toolNames: registry.names(),
+                          skillNames: listSkills().map((skill) => skill.name),
+                        }
+                      } finally {
+                        if (run.waitForMachineContinuations) {
+                          await stopSupervisedBackgroundProcessesForThread({
+                            projectId,
+                            threadId,
+                          })
+                        }
+                        run.signal?.removeEventListener('abort', onAbort)
+                      }
+                    }),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
       ),
   )
 }

@@ -10,6 +10,8 @@ import type {
   ProviderStreamChunk,
 } from '@copse/llm/wire-types.ts'
 import { runHeadlessAgent, type HeadlessAgentProfile } from './headless-agent-host.ts'
+import { TaskSupervisor } from './supervisor/task-supervisor.ts'
+import { FileSupervisedTaskStore } from './supervisor/task-store.ts'
 
 class TrivialTaskProvider implements LLMProvider {
   readonly seen: Array<{ messages: LLMMessage[]; tools: LLMTool[] }> = []
@@ -221,7 +223,13 @@ describe('runHeadlessAgent', () => {
           threadId: 'headless-background-wake',
           waitForMachineContinuations: { count: 1, timeoutMs: 5_000 },
         },
-        { provider, contextWindow: 32_000 },
+        {
+          provider,
+          contextWindow: 32_000,
+          taskSupervisor: new TaskSupervisor({
+            store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: workspace }),
+          }),
+        },
       )
 
       assert.equal(provider.callCount, 3)
