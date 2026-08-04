@@ -34,6 +34,7 @@ import {
   type OpenRouterPricedModel,
 } from '@copse/llm/frontier-candidates.ts'
 import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
+import { getModelCard } from '@copse/llm/model-cards.ts'
 import {
   getIntellectScore,
   explainIntellectScore,
@@ -222,6 +223,42 @@ function asFrontierCandidate(p: FrontierPoint): FrontierCandidate {
   return candidate
 }
 
+/**
+ * Append the "Card" section: a link to the vendor's own model card / system
+ * card for this model. Nothing is appended when no card is sourced — an absent
+ * card must read as absent, never as a placeholder link that 404s.
+ *
+ * The anchor opens externally: an `http(s)` `target="_blank"` inside the
+ * renderer is denied by the web-contents lockdown and handed to
+ * `shell.openExternal`, so the card opens in the user's browser without this
+ * panel needing an IPC client.
+ */
+function appendCardSection(root: HTMLElement, id: string): void {
+  const card = getModelCard(id)
+  if (!card) return
+  root.append(
+    ttRow('tt-section', 'Card'),
+    ttRow(
+      'tt-line',
+      el(
+        'a',
+        {
+          class: 'tt-card-link',
+          href: card.url,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+        card.title,
+      ),
+    ),
+  )
+  if (card.kind === 'index') {
+    root.append(
+      ttRow('tt-muted', `${card.publisher} publishes this model's card behind their card index.`),
+    )
+  }
+}
+
 /** ", resets Tue" from an ISO reset time, or '' when unknown/unparseable. */
 function formatReset(resetsAt: string | null): string {
   if (!resetsAt) return ''
@@ -352,6 +389,8 @@ export function pointTooltipContent(
     )
   }
 
+  appendCardSection(root, p.id)
+
   root.append(
     ttRow(
       'tt-status',
@@ -378,6 +417,7 @@ export function unpricedTooltipContent(u: CanonicalScoredModel): HTMLElement {
   for (const step of explanation?.steps ?? []) {
     root.append(ttRow('tt-muted', `${step.step}: ${step.detail}`))
   }
+  appendCardSection(root, u.id)
   root.append(ttRow('tt-status', 'No price data yet — position on intellect only.'))
   return root
 }
@@ -389,6 +429,7 @@ export function unscoredTooltipContent(u: { id: string; costPerMTok: number }): 
   if (displayModelLabel(u.id) !== u.id) root.append(ttRow('tt-muted', u.id))
   root.append(ttRow('tt-section', 'Price'))
   root.append(ttRow('tt-line', `${formatPrice(u.costPerMTok)} blended (80% in / 20% out)`))
+  appendCardSection(root, u.id)
   root.append(ttRow('tt-status', 'No sourced intellect measurement yet — position on price only.'))
   return root
 }
@@ -427,18 +468,40 @@ export function positionFrontierTooltip(
   tip.style.top = `${String(top)}px`
 }
 
+/**
+ * How long the hover card survives after the pointer leaves its point. The card
+ * carries a model-card link, so it has to be reachable: the pointer needs to
+ * cross the {@link TOOLTIP_OFFSET_PX} gap between point and card, and during
+ * that crossing it is over neither. Entering the card cancels the pending hide.
+ */
+export const TOOLTIP_HIDE_GRACE_MS = 220
+
 /** A positioned hover layer inside `container` (which must be a positioning context). */
 export function createTooltipLayer(container: HTMLElement): FrontierTooltip {
   const tip = el('div', { class: 'frontier-tooltip', hidden: true })
   container.append(tip)
+  let hideTimer: ReturnType<typeof setTimeout> | undefined
+  const cancelHide = (): void => {
+    if (hideTimer !== undefined) clearTimeout(hideTimer)
+    hideTimer = undefined
+  }
+  const hideNow = (): void => {
+    cancelHide()
+    tip.hidden = true
+  }
+  tip.addEventListener('mouseenter', cancelHide)
+  tip.addEventListener('mouseleave', hideNow)
   return {
     show(content, evt): void {
+      cancelHide()
       tip.replaceChildren(content)
       tip.hidden = false
       positionFrontierTooltip(tip, container, evt)
     },
     hide(): void {
-      tip.hidden = true
+      // Deferred, not immediate: see TOOLTIP_HIDE_GRACE_MS.
+      cancelHide()
+      hideTimer = setTimeout(hideNow, TOOLTIP_HIDE_GRACE_MS)
     },
   }
 }
