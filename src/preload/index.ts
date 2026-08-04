@@ -701,6 +701,7 @@ contextBridge.exposeInMainWorld('api', {
     scanEnvKeys: () => ipcRenderer.invoke('settings:scanEnvKeys'),
     importEnvKeys: () => ipcRenderer.invoke('settings:importEnvKeys'),
     extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
+    modelPricing: () => ipcRenderer.invoke('settings:modelPricing'),
     saveExtraProvider: (record: unknown) =>
       ipcRenderer.invoke('settings:saveExtraProvider', record),
     deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),

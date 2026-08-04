@@ -373,6 +373,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       scanEnvKeys: emptyArray,
       importEnvKeys: () => resolved({ imported: [], skipped: [] }),
       extraProviders: emptyArray,
+      // The demo's scenario models are all in the static cloud catalog, so the
+      // footer prices them without any fetched rates.
+      modelPricing: () => resolved({}),
       saveExtraProvider: emptyArray,
       deleteExtraProvider: emptyArray,
       fetchProviderModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),

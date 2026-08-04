@@ -17,6 +17,7 @@ export * from './responses-provider.ts'
 
 // Model catalog, cost estimation, and usage-adjacent helpers.
 export * from './model-catalog.ts'
+export * from './model-pricing.ts'
 export * from './estimate-cost.ts'
 
 // Provider families and their model-selection namespaces.

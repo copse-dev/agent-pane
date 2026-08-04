@@ -19,6 +19,7 @@ import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
 import { isSafeCredentialBaseUrl } from './credential-url.ts'
 import { LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX } from './reserved-prefixes.ts'
 import { blendedRate } from './pareto-frontier.ts'
+import type { ModelPricing, ModelPricingMap } from './model-pricing.ts'
 
 /** Fallback context window for any provider/model whose size we don't know. */
 export const DEFAULT_EXTRA_PROVIDER_CONTEXT = 128_000
@@ -445,12 +446,6 @@ export function extraProviderContextWindow(
   return known ?? provider.fallbackContextWindow
 }
 
-/** Per-MTok USD pricing for an extra-provider model, when one was stored. */
-export interface ExtraProviderPricing {
-  inputPricePerMTok: number
-  outputPricePerMTok: number
-}
-
 /**
  * Stored pricing for an extra-provider selection, or `null` when the provider
  * didn't report a rate (so the caller treats it as unpriced rather than free).
@@ -458,7 +453,7 @@ export interface ExtraProviderPricing {
 export function extraProviderModelPricing(
   providers: readonly ExtraProvider[],
   model: string,
-): ExtraProviderPricing | null {
+): ModelPricing | null {
   const provider = extraProviderForModel(providers, model)
   if (!provider) return null
   const id = extraProviderModelId(model)
@@ -472,13 +467,11 @@ export function extraProviderModelPricing(
 
 /**
  * A `model selection → pricing` map for every extra-provider model that carries
- * a rate, keyed by the `<slug>:<id>` selection string used in thread usage. The
- * cost estimator consults this for models absent from the static cloud catalog.
+ * a rate, keyed by the `<slug>:<id>` selection string used in thread usage. One
+ * of the sources merged into the estimator's pricing map (see model-pricing.ts).
  */
-export function extraProviderPricingMap(
-  providers: readonly ExtraProvider[],
-): Record<string, ExtraProviderPricing> {
-  const out: Record<string, ExtraProviderPricing> = {}
+export function extraProviderPricingMap(providers: readonly ExtraProvider[]): ModelPricingMap {
+  const out: ModelPricingMap = {}
   for (const provider of providers) {
     for (const m of provider.models) {
       if (typeof m.inputPricePerMTok !== 'number') continue
