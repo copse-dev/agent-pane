@@ -216,6 +216,7 @@ contextBridge.exposeInMainWorld('api', {
           comparisonModels?: { a: string; b: string; judge: string }
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
+          turnTreeLeaseDefault?: boolean
           turnTreeLeaseSubject?: string
         },
       ): void => {

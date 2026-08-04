@@ -122,6 +122,7 @@ export function mountApprovalDialog(
     comparisonModels?: ComparisonModelSelection
     allowTurnTreeLease: boolean | undefined
     turnTreeLeaseLabel: string | undefined
+    turnTreeLeaseDefault: boolean | undefined
     turnTreeLeaseSubject: string | undefined
   }
 
@@ -269,10 +270,9 @@ export function mountApprovalDialog(
     if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false
     else {
       turnTreeLeaseText.textContent = leaseLabel
-      // Always starts unchecked. A lease is a standing grant to re-run without
-      // asking again, so it has to be the user's affirmative act — there is
-      // deliberately no way for a caller to pre-tick it.
-      turnTreeLeaseInput.checked = false
+      // Sandboxed approval includes bounded retries by default. Outside-sandbox
+      // retries remain explicit, and mixed-command batches hide the grant above.
+      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true)
     }
   }
 
@@ -425,6 +425,7 @@ export function mountApprovalDialog(
       comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel,
+      turnTreeLeaseDefault,
       turnTreeLeaseSubject,
     }) => {
       const pending: PendingApproval = {
@@ -438,6 +439,7 @@ export function mountApprovalDialog(
         showWhileSettingsOpen,
         allowTurnTreeLease,
         turnTreeLeaseLabel,
+        turnTreeLeaseDefault,
         turnTreeLeaseSubject,
       }
       if (comparisonModels) pending.comparisonModels = comparisonModels

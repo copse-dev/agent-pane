@@ -48,7 +48,7 @@ describe('turn-tree shell replay approval', () => {
     resetUserData()
   })
 
-  it('offers bounded task retries unticked on a sandboxed command', async function () {
+  it('includes bounded task retries in a sandboxed approval by default', async function () {
     this.timeout(90_000)
     await setComposerValue('Retry the local version command exactly once')
     await $('.submit-btn').click()
@@ -59,9 +59,7 @@ describe('turn-tree shell replay approval', () => {
     const leaseOption = dialog.$('.approval-turn-tree')
     await expect(leaseOption).toBeDisplayed()
     await expect(leaseOption).toHaveText('Allow retries for this task (up to 10, for 15 minutes)')
-    // Offered, never pre-selected: the lease is a standing grant to re-run
-    // without asking again, so it takes the user's affirmative tick.
-    await expect(leaseOption.$('.approval-turn-tree-input')).not.toBeChecked()
+    await expect(leaseOption.$('.approval-turn-tree-input')).toBeChecked()
 
     await saveAppScreenshot('capability-lease-approval.png')
     await dialog.$('.approval-reject').click()
