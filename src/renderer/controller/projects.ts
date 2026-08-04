@@ -1,7 +1,12 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
-import { createThread, normalizeBlankThreads, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  createThread,
+  normalizeBlankThreads,
+  setThreadDraftPrompt,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import { loadThreads, flushProjectThreads, saveProjects } from './persistence.ts'
 import { resumePendingQueues } from './message-queue.ts'
 import {
@@ -558,6 +563,46 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   store.emit('workspace_changed')
   store.emit('threads_changed')
   resumePendingQueues(store, api)
+}
+
+// Starter prompt seeded into the composer when a new project is created, so
+// the user lands on a "welcome to your new project" message rather than an
+// empty box.
+const NEW_PROJECT_STARTER_PROMPT =
+  'Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.'
+
+/**
+ * Scaffold a brand-new project: ask the user for a name and parent directory,
+ * create the folder (AGENT.md + README.md + git init) via the main process,
+ * register + activate it, then open a fresh thread pre-seeded with a starter
+ * prompt. Returns true if a project was created.
+ */
+export async function createNewProject(store: AppStore, api: ApiClient): Promise<boolean> {
+  const { openNewProjectDialog } = await import('../views/new-project-dialog.ts')
+  const inferred = lastProjectDirectory(store)
+  const home = await api.workspace.getHomeDirectory()
+  const parentDir = inferred !== '' ? inferred : home
+  const picked = await openNewProjectDialog(api, parentDir)
+  if (!picked) return false
+  const root = await api.workspace.createNewProject(picked.name.trim(), picked.parentDir.trim())
+  await addProjectFromPath(store, api, root)
+  // Activation creates a blank thread when the project has none; seed that new
+  // thread (or, if one already existed, the active one) with the starter prompt.
+  const state = store.getState()
+  const threadId = state.activeThreadId ?? createThread(store)
+  setThreadDraftPrompt(store, threadId, NEW_PROJECT_STARTER_PROMPT)
+  return true
+}
+
+/** Parent directory of the most recently created/opened local project, else home. */
+function lastProjectDirectory(store: AppStore): string {
+  const projects = store.getState().projects
+  const last = projects[projects.length - 1]
+  if (last && !last.sshHost && last.path) {
+    const slash = last.path.lastIndexOf('/')
+    if (slash > 0) return last.path.slice(0, slash)
+  }
+  return ''
 }
 
 export async function addProject(store: AppStore, api: ApiClient): Promise<boolean> {

@@ -30,6 +30,7 @@ import {
 import {
   addProject,
   addRemoteProject,
+  createNewProject,
   getSidebarThreads,
   isProjectSwitchInFlight,
   listOrphanProjects,
@@ -146,14 +147,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     { class: 'projects-open-remote-btn', 'aria-label': 'Open remote project', hidden: true },
     '+ Remote',
   )
-  const header = el(
-    'div',
-    { class: 'pane-projects-header' },
-    title,
-    searchToggle,
-    openBtn,
-    openRemoteBtn,
+  void openRemoteBtn // retained for the sync listener below; rendered menu uses addBtn
+  // Single "+" entry point: opens a context menu with New / Open / Remote.
+  const addBtn = el(
+    'button',
+    { class: 'projects-add-btn', 'aria-label': 'New project', title: 'New project' },
+    '+',
   )
+  const header = el('div', { class: 'pane-projects-header' }, title, searchToggle, addBtn)
 
   // Filter input for the expanded project's threads. It lives outside `list`
   // (which render() clears on every update) so its focus and value survive
@@ -217,6 +218,43 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   openRemoteBtn.addEventListener('click', () => {
     void addRemoteProject(store, api).catch((err: unknown) => {
       showErrorToast('Could not open remote folder', err)
+    })
+  })
+
+  addBtn.addEventListener('click', () => {
+    const rect = addBtn.getBoundingClientRect()
+    let showRemote = false
+    const openMenu = (): void => {
+      showContextMenu(rect.right - 4, rect.bottom + 4, [
+        {
+          label: 'New project',
+          onSelect: (): void => {
+            void createNewProject(store, api)
+          },
+        },
+        {
+          label: 'Open folder',
+          onSelect: (): void => {
+            void addProject(store, api)
+          },
+        },
+        ...(showRemote
+          ? [
+              {
+                label: 'Open remote folder',
+                onSelect: (): void => {
+                  void addRemoteProject(store, api).catch((err: unknown) => {
+                    showErrorToast('Could not open remote folder', err)
+                  })
+                },
+              },
+            ]
+          : []),
+      ])
+    }
+    void isSshWorkspaceEnabled(api).then((enabled) => {
+      showRemote = enabled
+      openMenu()
     })
   })
 
