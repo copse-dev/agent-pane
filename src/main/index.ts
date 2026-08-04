@@ -119,6 +119,7 @@ import {
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
+import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
@@ -132,6 +133,7 @@ setSecretCipher({
   encryptString: (plainText) => safeStorage.encryptString(plainText),
   decryptString: (encrypted) => safeStorage.decryptString(encrypted),
 })
+const taskSupervisor = getTaskSupervisor()
 
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
@@ -233,6 +235,9 @@ app
 
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
+    void taskSupervisor.start().catch((error: unknown) => {
+      console.error('[task-supervisor] Startup reconciliation failed:', error)
+    })
 
     recordStartupPhase('window-create')
     const win = createMainWindow()
@@ -648,6 +653,7 @@ let disposeTerminal: (() => void) | undefined
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
   getAutomationService().stop()
+  await taskSupervisor.shutdown()
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
