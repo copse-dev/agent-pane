@@ -156,6 +156,10 @@ export async function stopSupervisedBackgroundProcess(
   const installedSupervisor = activeSupervisor()
   if (taskId && installedSupervisor) {
     await installedSupervisor.cancel(owner.projectId, taskId)
+    // Scoped/headless supervisors do not install the desktop singleton's
+    // external canceller. Keep process termination as a fail-safe so their
+    // metadata cannot say "cancelled" while the child continues running.
+    stopBackgroundProcess(processId, owner)
     return true
   }
   return stopBackgroundProcess(processId, owner)
