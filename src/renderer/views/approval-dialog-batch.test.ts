@@ -23,7 +23,7 @@ interface EmitReq {
   rememberLabel?: string
   allowTurnTreeLease?: boolean
   turnTreeLeaseLabel?: string
-  turnTreeLeaseDefault?: boolean
+  turnTreeLeaseSubject?: string
 }
 interface Responded {
   id: string
@@ -75,7 +75,11 @@ function makeApi(): {
         turnTreeLeaseLabel:
           req.turnTreeLeaseLabel ??
           (req.allowTurnTreeLease ? 'Allow exact retries for this task' : undefined),
-        turnTreeLeaseDefault: req.turnTreeLeaseDefault,
+        // The real label is one shared constant, so the subject is what tells two
+        // batched offers apart. Default it to a single command unless a test
+        // deliberately varies it.
+        turnTreeLeaseSubject:
+          req.turnTreeLeaseSubject ?? (req.allowTurnTreeLease ? 'npm test' : undefined),
       })
     },
     responses,
@@ -293,21 +297,37 @@ describe('approval dialog coalescing', () => {
     assert.equal(remember.hidden, true)
   })
 
-  it('defaults bounded sandbox retries on when every request shares that default', () => {
+  it('never pre-ticks bounded retries, and leases only when the user ticks', () => {
     const lease = qsRequired(dialog, '.approval-turn-tree')
-    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseDefault: true })
-    emit({ id: 'b', allowTurnTreeLease: true, turnTreeLeaseDefault: true })
+    emit({ id: 'a', allowTurnTreeLease: true })
+    emit({ id: 'b', allowTurnTreeLease: true })
     fireWindow()
     assert.equal(lease.hidden, false)
     const input = qsRequired<HTMLInputElement>(lease, '.approval-turn-tree-input')
-    assert.equal(input.checked, true)
+    // A lease is a standing grant to re-run without asking again, so approving
+    // without touching the box must stay a one-shot.
+    assert.equal(input.checked, false)
+    input.checked = true
     approve().click()
     assert.ok(responses.every((response) => response.grantScope === 'turn-tree'))
   })
 
+  it('hides task retries when batched offers cover different commands', () => {
+    const lease = qsRequired(dialog, '.approval-turn-tree')
+    // Same label — it is one shared constant in the gate — but different
+    // commands. One tick box issues one lease PER request, so offering it here
+    // would grant retries for a command the tick never named.
+    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseSubject: 'npm test' })
+    emit({ id: 'b', allowTurnTreeLease: true, turnTreeLeaseSubject: 'npm run build' })
+    fireWindow()
+    assert.equal(lease.hidden, true)
+    approve().click()
+    assert.ok(responses.every((response) => response.grantScope === undefined))
+  })
+
   it('defaults outside-sandbox retries to one-shot approval', () => {
     const lease = qsRequired(dialog, '.approval-turn-tree')
-    emit({ id: 'a', allowTurnTreeLease: true, turnTreeLeaseDefault: false })
+    emit({ id: 'a', allowTurnTreeLease: true })
     fireWindow()
     const input = qsRequired<HTMLInputElement>(lease, '.approval-turn-tree-input')
     assert.equal(input.checked, false)

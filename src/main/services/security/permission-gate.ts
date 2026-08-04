@@ -211,7 +211,7 @@ async function requestEscalationApproval(
         ? {
             allowTurnTreeLease: true,
             turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
-            turnTreeLeaseDefault: false,
+            turnTreeLeaseSubject: command,
           }
         : {}),
     },
@@ -250,11 +250,15 @@ async function promptShell(
       type: 'shell',
       subject: SHELL_DECISION_SUBJECT,
       scope: 'sandbox',
+      // Not pre-ticked. A lease is a standing grant to re-run without asking
+      // again, so it is the user's affirmative act — the same posture the
+      // plaintext-key fallback takes (docs/security-review-ga.md L1). Defaulting
+      // it on would make "approve this command" silently mean "and nine more".
       ...(leaseIdentity
         ? {
             allowTurnTreeLease: true,
             turnTreeLeaseLabel: SANDBOX_REPLAY_LABEL,
-            turnTreeLeaseDefault: true,
+            turnTreeLeaseSubject: command,
           }
         : {}),
     },
