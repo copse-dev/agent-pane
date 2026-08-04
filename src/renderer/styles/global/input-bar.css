@@ -1021,7 +1021,8 @@
   padding: 2px 0;
   white-space: nowrap;
 }
-.footer-usage-popover-row.is-model .footer-usage-popover-name {
+.footer-usage-popover-row.is-model .footer-usage-popover-name,
+.footer-usage-popover-row.is-subagents .footer-usage-popover-name {
   color: var(--text-secondary);
 }
 .footer-usage-popover-name {

@@ -40,11 +40,16 @@ export function createFooterUsagePopover(): FooterUsagePopover {
       }
       root.append(el('div', { class: 'footer-usage-popover-header' }, model.header))
       for (const entry of model.rows) root.append(row(entry, 'footer-usage-popover-row'))
-      if (model.modelRows.length > 0) {
+      // Subagent and per-model rows describe the same totals from a different
+      // angle, so they share one section below the divider.
+      if (model.subagentRow || model.modelRows.length > 0) {
         root.append(el('div', { class: 'footer-usage-popover-divider' }))
-        for (const entry of model.modelRows) {
-          root.append(row(entry, 'footer-usage-popover-row is-model'))
-        }
+      }
+      if (model.subagentRow) {
+        root.append(row(model.subagentRow, 'footer-usage-popover-row is-subagents'))
+      }
+      for (const entry of model.modelRows) {
+        root.append(row(entry, 'footer-usage-popover-row is-model'))
       }
       if (model.note) root.append(el('div', { class: 'footer-usage-popover-note' }, model.note))
     },

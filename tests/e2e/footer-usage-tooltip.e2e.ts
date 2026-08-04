@@ -40,6 +40,9 @@ describe('footer token usage tooltip', () => {
     expect(rows).toMatch(/Cache read\s+11\.4M/)
     expect(rows).toMatch(/Cache write\s+480\.0k/)
     expect(rows).toMatch(/Cost\s+(~\$|<\$)/)
+    // The seeded explore run reported its own usage, already counted in the
+    // totals above — the row says how much of them was delegated.
+    expect(rows).toMatch(/Subagents\s+1 run · 800\.0k in \/ 15\.0k out/)
     // Two models in the seeded usage → a per-model section under the divider.
     await expect(popover.$$('.footer-usage-popover-row.is-model')).toBeElementsArrayOfSize(2)
 

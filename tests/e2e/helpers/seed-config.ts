@@ -1679,7 +1679,27 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
             id: 'msg-assistant-footer-usage',
             role: 'assistant',
             content: 'Here is a summary of the repository layout.',
-            toolCalls: [],
+            // Carries its own usage record, which the tooltip aggregates into
+            // the "Subagents" line.
+            toolCalls: [
+              {
+                id: 'tool-explore-footer-usage',
+                name: 'explore',
+                args: { prompt: 'Map the renderer views' },
+                status: 'done',
+                result: 'Mapped the renderer views.',
+                subagent: {
+                  id: 'subagent-footer-usage',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Map the renderer views',
+                  summary: 'Mapped the renderer views.',
+                  messages: [],
+                  model: 'claude-haiku-4-5',
+                  usage: { inputTokens: 800_000, outputTokens: 15_000 },
+                },
+              },
+            ],
             createdAt: now + 1,
           },
         ],

@@ -18,6 +18,7 @@ describe('footer usage popover (component)', () => {
         { inputTokens: 12_900_000, outputTokens: 211_000, estimated: false },
         {
           model: 'claude-sonnet-4-6',
+          messages: [],
           measuredUsage: { inputTokens: 12_900_000, outputTokens: 211_000 },
         },
       ),
@@ -51,7 +52,11 @@ describe('footer usage popover (component)', () => {
     popover.render(
       buildFooterUsageTooltip(
         { inputTokens: 1200, outputTokens: 80, estimated: true },
-        { model: 'claude-sonnet-4-6', measuredUsage: { inputTokens: 0, outputTokens: 0 } },
+        {
+          model: 'claude-sonnet-4-6',
+          messages: [],
+          measuredUsage: { inputTokens: 0, outputTokens: 0 },
+        },
       ),
     )
     popover.show()
@@ -70,6 +75,7 @@ describe('footer usage popover (component)', () => {
         { inputTokens: 3200, outputTokens: 400, estimated: false },
         {
           model: 'claude-sonnet-4-6',
+          messages: [],
           measuredUsage: {
             inputTokens: 3200,
             outputTokens: 400,
@@ -93,7 +99,11 @@ describe('footer usage popover (component)', () => {
     popover.render(
       buildFooterUsageTooltip(
         { inputTokens: 10, outputTokens: 2, estimated: false },
-        { model: 'claude-sonnet-4-6', measuredUsage: { inputTokens: 10, outputTokens: 2 } },
+        {
+          model: 'claude-sonnet-4-6',
+          messages: [],
+          measuredUsage: { inputTokens: 10, outputTokens: 2 },
+        },
       ),
     )
     popover.show()
@@ -104,5 +114,68 @@ describe('footer usage popover (component)', () => {
     // A show() after an empty render must not flash an empty box.
     popover.show()
     assert.equal(popover.root.hidden, true)
+  })
+})
+
+describe('footer usage popover subagent row (component)', () => {
+  it('renders the delegated-work line above the per-model rows', () => {
+    const popover = createFooterUsagePopover()
+    document.body.append(popover.root)
+
+    popover.render(
+      buildFooterUsageTooltip(
+        { inputTokens: 12_900_000, outputTokens: 211_000, estimated: false },
+        {
+          model: 'claude-sonnet-4-6',
+          measuredUsage: {
+            inputTokens: 12_900_000,
+            outputTokens: 211_000,
+            byModel: {
+              'claude-sonnet-4-6': { inputTokens: 12_100_000, outputTokens: 196_000 },
+              'lmstudio:qwen': { inputTokens: 800_000, outputTokens: 15_000 },
+            },
+          },
+          messages: [
+            {
+              id: 'a1',
+              role: 'assistant',
+              content: '',
+              createdAt: 1,
+              toolCalls: [
+                {
+                  id: 't1',
+                  name: 'explore',
+                  args: {},
+                  status: 'done',
+                  result: 'done',
+                  subagent: {
+                    id: 'sub-1',
+                    kind: 'explore',
+                    status: 'done',
+                    prompt: 'q',
+                    summary: null,
+                    messages: [],
+                    usage: { inputTokens: 2_100_000, outputTokens: 84_000 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ),
+    )
+
+    const subagents = popover.root.querySelector('.footer-usage-popover-row.is-subagents')
+    assert.ok(subagents)
+    assert.match(subagents.textContent, /Subagents/)
+    assert.match(subagents.textContent, /1 run · 2\.1M in \/ 84\.0k out/)
+
+    // One divider, shared with the per-model rows, and the subagent line first.
+    assert.equal(popover.root.querySelectorAll('.footer-usage-popover-divider').length, 1)
+    const below = [...popover.root.querySelectorAll('.footer-usage-popover-row')].filter(
+      (row) => row.classList.contains('is-subagents') || row.classList.contains('is-model'),
+    )
+    assert.ok(below[0]?.classList.contains('is-subagents'))
+    assert.equal(below.length, 3)
   })
 })

@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFooterUsageTooltip, type FooterUsageTooltipRow } from './footer-usage-tooltip.ts'
+import type { Message, SubagentSession, ToolCall } from '@shared/types'
+import {
+  buildFooterUsageTooltip,
+  sumSubagentUsage,
+  type FooterUsageTooltipRow,
+} from './footer-usage-tooltip.ts'
 
 function value(rows: FooterUsageTooltipRow[], label: string): string | undefined {
   return rows.find((row) => row.label === label)?.value
@@ -12,6 +17,7 @@ describe('buildFooterUsageTooltip', () => {
       { inputTokens: 12_900_000, outputTokens: 211_000, estimated: false },
       {
         model: 'claude-sonnet-4-6',
+        messages: [],
         measuredUsage: { inputTokens: 12_900_000, outputTokens: 211_000 },
       },
     )
@@ -29,6 +35,7 @@ describe('buildFooterUsageTooltip', () => {
       { inputTokens: 100_000, outputTokens: 4_000, estimated: false },
       {
         model: 'claude-sonnet-4-6',
+        messages: [],
         measuredUsage: {
           inputTokens: 100_000,
           outputTokens: 4_000,
@@ -47,6 +54,7 @@ describe('buildFooterUsageTooltip', () => {
       { inputTokens: 1200, outputTokens: 80, estimated: true },
       {
         model: 'claude-sonnet-4-6',
+        messages: [],
         // A stale measured record must not leak cache/cost into an estimate.
         measuredUsage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 5000 },
       },
@@ -63,7 +71,11 @@ describe('buildFooterUsageTooltip', () => {
   it('notes when the model carries no pricing', () => {
     const tooltip = buildFooterUsageTooltip(
       { inputTokens: 1200, outputTokens: 80, estimated: false },
-      { model: 'mystery-model', measuredUsage: { inputTokens: 1200, outputTokens: 80 } },
+      {
+        model: 'mystery-model',
+        messages: [],
+        measuredUsage: { inputTokens: 1200, outputTokens: 80 },
+      },
     )
 
     assert.equal(value(tooltip.rows, 'Cost'), undefined)
@@ -75,6 +87,7 @@ describe('buildFooterUsageTooltip', () => {
       { inputTokens: 3200, outputTokens: 400, estimated: false },
       {
         model: 'claude-sonnet-4-6',
+        messages: [],
         measuredUsage: {
           inputTokens: 3200,
           outputTokens: 400,
@@ -96,6 +109,7 @@ describe('buildFooterUsageTooltip', () => {
       { inputTokens: 2000, outputTokens: 300, estimated: false },
       {
         model: 'claude-sonnet-4-6',
+        messages: [],
         measuredUsage: {
           inputTokens: 2000,
           outputTokens: 300,
@@ -105,5 +119,144 @@ describe('buildFooterUsageTooltip', () => {
     )
 
     assert.deepEqual(tooltip.modelRows, [])
+  })
+})
+
+describe('sumSubagentUsage', () => {
+  function subagentToolCall(
+    id: string,
+    session: Partial<SubagentSession> & { usage?: SubagentSession['usage'] },
+  ): ToolCall {
+    return {
+      id,
+      name: 'explore',
+      args: {},
+      status: 'done',
+      result: 'done',
+      subagent: {
+        id: `sub-${id}`,
+        kind: 'explore',
+        status: 'done',
+        prompt: 'q',
+        summary: null,
+        messages: [],
+        ...session,
+      },
+    }
+  }
+
+  function assistantWith(toolCalls: ToolCall[]): Message {
+    return { id: 'a1', role: 'assistant', content: '', toolCalls, createdAt: 1 }
+  }
+
+  it('sums every subagent that reported usage', () => {
+    const totals = sumSubagentUsage([
+      assistantWith([
+        subagentToolCall('t1', { usage: { inputTokens: 620_000, outputTokens: 21_000 } }),
+        subagentToolCall('t2', { usage: { inputTokens: 540_000, outputTokens: 18_000 } }),
+      ]),
+    ])
+
+    assert.deepEqual(totals, { runs: 2, inputTokens: 1_160_000, outputTokens: 39_000 })
+  })
+
+  it('recurses into nested subagents without double-counting', () => {
+    // A nested subagent records onto its own session — run-subagent.ts does not
+    // forward `usage` to its parent — so the tree sums additively.
+    const nested = subagentToolCall('inner', {
+      usage: { inputTokens: 100_000, outputTokens: 5_000 },
+    })
+    const outer = subagentToolCall('outer', {
+      usage: { inputTokens: 400_000, outputTokens: 12_000 },
+      messages: [{ id: 'sm1', role: 'assistant', content: '', toolCalls: [nested] }],
+    })
+
+    assert.deepEqual(sumSubagentUsage([assistantWith([outer])]), {
+      runs: 2,
+      inputTokens: 500_000,
+      outputTokens: 17_000,
+    })
+  })
+
+  it('ignores tool calls with no subagent and subagents still running', () => {
+    const running = subagentToolCall('t1', { status: 'running' })
+    const plain: ToolCall = { id: 't2', name: 'read_file', args: {}, status: 'done', result: 'ok' }
+
+    assert.deepEqual(sumSubagentUsage([assistantWith([running, plain])]), {
+      runs: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    })
+  })
+})
+
+describe('buildFooterUsageTooltip subagent row', () => {
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      createdAt: 1,
+      toolCalls: [
+        {
+          id: 't1',
+          name: 'explore',
+          args: {},
+          status: 'done',
+          result: 'done',
+          subagent: {
+            id: 'sub-1',
+            kind: 'explore',
+            status: 'done',
+            prompt: 'q',
+            summary: null,
+            messages: [],
+            usage: { inputTokens: 2_100_000, outputTokens: 84_000 },
+          },
+        },
+      ],
+    },
+  ]
+
+  it('reports how much of the total was delegated work', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 12_900_000, outputTokens: 211_000, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages,
+        measuredUsage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+      },
+    )
+
+    assert.deepEqual(tooltip.subagentRow, {
+      label: 'Subagents',
+      value: '1 run · 2.1M in / 84.0k out',
+    })
+  })
+
+  it('omits the row on an estimate, which has no reported subagent usage', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1200, outputTokens: 80, estimated: true },
+      {
+        model: 'claude-sonnet-4-6',
+        messages,
+        measuredUsage: { inputTokens: 0, outputTokens: 0 },
+      },
+    )
+
+    assert.equal(tooltip.subagentRow, null)
+  })
+
+  it('omits the row for a thread that never ran a subagent', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 2000, outputTokens: 300, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages: [],
+        measuredUsage: { inputTokens: 2000, outputTokens: 300 },
+      },
+    )
+
+    assert.equal(tooltip.subagentRow, null)
   })
 })

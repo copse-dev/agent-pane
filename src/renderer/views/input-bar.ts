@@ -880,10 +880,11 @@ export function mountInputBar(
     // #1483 moved footer pricing onto the persisted catalog snapshot; all three
     // views price from that same map.
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing }
+    const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages })
     return {
       label: formatFooterUsageSummary(display),
       detail: formatFooterUsageDetail(display, priced),
-      tooltip: buildFooterUsageTooltip(display, priced),
+      tooltip,
     }
   }
 
