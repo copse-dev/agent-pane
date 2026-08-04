@@ -8,6 +8,16 @@ every published entry.
 
 ## Unreleased
 
+- Context-window trouble is now reported where the model is chosen. Picking a
+  model for a thread that no longer fits it puts a message above the composer —
+  "This thread no longer fits “GPT-4o mini”: the next prompt needs about 158K
+  tokens and its context window holds 128K" — with the two ways out: pick a model
+  with a larger window, or free up context (local models also get the "raise its
+  Context Length in LM Studio" route). It appears at 90% of the window too, while
+  there is still room to act, and carries a **Choose another model** button that
+  opens the picker beside it. This replaces the startup banner that warned about
+  low-context local models before any thread or model was in play; the same
+  underlying check still feeds the `/checkup` report.
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to
