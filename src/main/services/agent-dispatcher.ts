@@ -1,4 +1,5 @@
 import type { AgentHost } from '@copse/agent/agent-host.ts'
+import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
@@ -26,6 +27,13 @@ export interface AgentDispatchRequest {
   threadId: string
   payload: AgentDispatchPayload
 }
+
+export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
+  operationId: string
+  turnTreeId: string
+}
+
+export type MachineDispatchResult = 'completed' | 'duplicate' | 'stale' | 'budget-exhausted'
 
 export interface AgentDispatcherDependencies {
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
@@ -60,6 +68,8 @@ function dispatchKey(projectId: string, threadId: string): string {
 export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
   private readonly active = new Map<string, Promise<void>>()
+  private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
+  private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
   private readonly host: AgentHost<StreamChunk>
   private readonly registry: ToolRegistry
   private readonly dependencies: AgentDispatcherDependencies
@@ -76,18 +86,24 @@ export class AgentDispatcher {
 
   async dispatch(request: AgentDispatchRequest): Promise<void> {
     const key = dispatchKey(request.projectId, request.threadId)
-    const existing = this.active.get(key)
-    if (existing) {
-      throw new Error(`An agent turn is already running for thread "${request.threadId}"`)
-    }
+    this.observeRendererEpoch(key, request.payload)
+    await this.dispatchInternal(request)
+  }
 
-    const running = this.execute(request, key)
-    this.active.set(key, running)
-    try {
-      await running
-    } finally {
-      if (this.active.get(key) === running) this.active.delete(key)
+  dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {
+    const operationKey = `${dispatchKey(request.projectId, request.threadId)}\0${request.operationId}`
+    const existing = this.machineOperations.get(operationKey)
+    if (existing) return existing.then(() => 'duplicate')
+
+    const running = this.executeMachine(request)
+    this.machineOperations.set(operationKey, running)
+    // Keep dedupe records bounded. Deleting the oldest completed operation does
+    // not widen authority: a replay still has to pass epoch and budget checks.
+    if (this.machineOperations.size > 1_000) {
+      const oldest = this.machineOperations.keys().next().value
+      if (oldest !== undefined && oldest !== operationKey) this.machineOperations.delete(oldest)
     }
+    return running
   }
 
   isActive(projectId: string, threadId: string): boolean {
@@ -105,7 +121,67 @@ export class AgentDispatcher {
   }
 
   forgetHistory(projectId: string, threadId: string): void {
-    this.histories.delete(dispatchKey(projectId, threadId))
+    const key = dispatchKey(projectId, threadId)
+    this.histories.delete(key)
+    this.epochs.delete(key)
+  }
+
+  private observeRendererEpoch(key: string, payload: AgentDispatchPayload): void {
+    if (payload.turnTreeId === undefined) return
+    const used = Math.max(0, payload.continuationBudgetUsed ?? 0)
+    const current = this.epochs.get(key)
+    this.epochs.set(key, {
+      turnTreeId: payload.turnTreeId,
+      continuationUsed:
+        current?.turnTreeId === payload.turnTreeId
+          ? Math.max(current.continuationUsed, used)
+          : used,
+    })
+  }
+
+  private async executeMachine(
+    request: MachineAgentDispatchRequest,
+  ): Promise<MachineDispatchResult> {
+    const key = dispatchKey(request.projectId, request.threadId)
+    const active = this.active.get(key)
+    if (active) {
+      try {
+        await active
+      } catch {
+        // A failed foreground turn still releases the per-thread dispatch slot.
+      }
+    }
+
+    const epoch = this.epochs.get(key)
+    if (epoch?.turnTreeId !== request.turnTreeId) return 'stale'
+    if (!canContinue(epoch.continuationUsed)) return 'budget-exhausted'
+
+    epoch.continuationUsed += 1
+    await this.dispatchInternal({
+      ...request,
+      payload: {
+        ...request.payload,
+        turnTreeId: request.turnTreeId,
+        continuationBudgetUsed: epoch.continuationUsed,
+      },
+    })
+    return 'completed'
+  }
+
+  private async dispatchInternal(request: AgentDispatchRequest): Promise<void> {
+    const key = dispatchKey(request.projectId, request.threadId)
+    const existing = this.active.get(key)
+    if (existing) {
+      throw new Error(`An agent turn is already running for thread "${request.threadId}"`)
+    }
+
+    const running = this.execute(request, key)
+    this.active.set(key, running)
+    try {
+      await running
+    } finally {
+      if (this.active.get(key) === running) this.active.delete(key)
+    }
   }
 
   private async execute(request: AgentDispatchRequest, key: string): Promise<void> {
