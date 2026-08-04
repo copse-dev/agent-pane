@@ -145,6 +145,44 @@ describe('ci.yml workflow invariants', () => {
       'push must cover main (where merges land) and release (where promotions land)',
     )
   })
+
+  it('reconciles screenshots against the PR base branch, never a hardcoded one', () => {
+    // This job merges the base branch into the PR head to clear binary conflicts
+    // in reference PNGs. Hardcoding a branch name here fails SILENTLY: if the
+    // named branch is already an ancestor of the PR base, `git merge` reports
+    // "Already up to date" and the reconciliation never happens. That is exactly
+    // what the pre-rename `origin/main` literal did on `develop`-based PRs, and
+    // no run ever went red over it. Drive it from `github.base_ref` so both
+    // tiers reconcile against the branch they will actually merge into.
+    const job = workflow.match(/^ {2}commit-screenshots:\n(?: {4}.*\n| *\n)+/m)?.[0]
+    assert.ok(job, 'expected a `commit-screenshots:` job in ci.yml')
+    assert.match(
+      job,
+      /BASE_REF: \$\{\{ github\.base_ref \}\}/,
+      'commit-screenshots must derive the reconciliation target from github.base_ref',
+    )
+    // Comments legitimately name `origin/main` when describing a script default;
+    // only executable lines are the contract here.
+    const executable = job
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n')
+    assert.doesNotMatch(
+      executable,
+      /origin\/main(?![.\w])/,
+      'commit-screenshots must not hardcode origin/main — use "origin/$BASE_REF"',
+    )
+    assert.match(
+      job,
+      /git merge --no-commit --no-ff "origin\/\$BASE_REF"/,
+      'the reconcile merge must target the base branch',
+    )
+    assert.match(
+      job,
+      /SCREENSHOT_MAIN_REF: origin\/\$\{\{ github\.base_ref \}\}/,
+      'filter-screenshots.mts defaults to origin/main; it must be pointed at the PR base',
+    )
+  })
 })
 
 describe('promote-develop.yml workflow invariants', () => {

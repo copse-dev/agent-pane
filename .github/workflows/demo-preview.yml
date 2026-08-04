@@ -2,12 +2,16 @@ name: Demo preview
 
 # Publishes browser demos and self-contained site+demo bundles under the Pages
 # /demo/ namespace:
-#   /demo/main/ and /demo/develop/ are persistent branch builds.
-#   /demo/develop/preview/ is the develop marketing site, with its matching
-#   browser demo nested at /demo/develop/preview/demo/main/.
+#   /demo/main/ and /demo/release/ are persistent branch builds.
+#   /demo/main/preview/ is the trunk marketing site, with its matching
+#   browser demo nested at /demo/main/preview/demo/main/.
 #   /demo/pr-<n>/ remains the direct ephemeral demo URL.
 #   /demo/pr-<n>-preview/ is the PR's marketing site, with its matching browser
 #   demo nested at /demo/pr-<n>-preview/demo/main/.
+#
+# NOTE: the trailing `demo/main/` in the nested URLs is a FIXED bundle directory
+# baked into the built site, not a branch name — it does not move with a branch
+# rename. Only the leading slot segment tracks the branch.
 #
 # Triggered on push (not workflow_run) so the workflow runs from the pushed
 # branch's own definition — which makes the whole flow testable on the PR that
@@ -52,7 +56,7 @@ jobs:
       scenarios: ${{ steps.scenarios.outputs.json }}
     steps:
       - uses: actions/checkout@v7.0.1
-      # main/develop always publish to their persistent slots. Other branches
+      # main/release always publish to their persistent slots. Other branches
       # belong to an open PR; no PR means nothing to preview or comment on.
       - id: target
         uses: actions/github-script@v9
@@ -126,7 +130,7 @@ jobs:
           # they clone the same tip and the loser's push is rejected non-fast-
           # forward ("Updates were rejected because the remote contains work that
           # you do not have locally"), failing the job on a change that was
-          # perfectly valid. Targets never share a directory (main/, develop/,
+          # perfectly valid. Targets never share a directory (main/, release/,
           # pr-<n>/, pr-<n>-preview/), so the loser just needs to re-stack onto
           # the winner's tip: re-fetch, hard-reset onto the new tip, re-apply
           # this target's build, re-commit, push again.
