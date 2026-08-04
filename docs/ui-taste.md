@@ -242,6 +242,27 @@ copied. The contract test
 the policy: body defaults to non-selectable, the content regions opt back in, and the permission
 prompt stays non-selectable.
 
+### Every highlight declares both halves
+
+A highlight that sets only a background inherits whatever colour the text already had — which is how
+selected prose went invisible: with no author `::selection`, Chromium paints an **unfocused** window's
+selection as a flat light grey and leaves `--text-primary` on top of it. The rule holds for the
+native selection, the CSS Custom Highlight API (`::highlight(chat-search-current)`), and the
+terminal's xterm theme (`selectionInactiveBackground` — its default is a dark grey that swallows
+light-theme text). So:
+
+- Declare `background` **and** `color` together, from `--selection-bg` / `--selection-text` or
+  `--highlight-current-bg` / `--highlight-current-text`. The one exception is a deliberately
+  translucent wash (`::highlight(chat-search)`), where `color: inherit` keeps the underlying text's
+  own contrast.
+- Don't build a highlight from `var(--accent)` + `var(--text-on-accent)`. `--text-on-accent` is
+  computed from the raw accent the user picked, while the light theme darkens `--accent` by 30% — the
+  pair collapses to dark-on-dark. It was an accent-derived selection that made this unreadable the
+  first time (#1423).
+- Keep every pair at 4.5:1 or better. `text-selection.test.ts` computes the WCAG ratio from the
+  token hexes in both themes and fails below AA, and `tests/e2e/selection-highlight.e2e.ts` captures
+  a live selection in each theme.
+
 ## Responsive titlebar chrome
 
 Titlebar compactness follows the space its rendered contents actually need, not the window's aspect

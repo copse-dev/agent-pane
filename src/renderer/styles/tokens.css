@@ -33,6 +33,22 @@
      gentle accent wash rather than the heavy VS Code blue, so a selected row
      reads as highlighted without shouting — and stays consistent everywhere. */
   --bg-selected: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
+  /* Dragged text selection. Chromium's built-in highlight is only readable
+     while the window is focused: the moment focus leaves (clicking a terminal,
+     another window, the devtools) it repaints the selection in a flat light
+     grey and leaves the text colour alone, so --text-primary vanishes into it.
+     An author ::selection wins in both the active and inactive state, so
+     declare an explicit pair. Deliberately neutral rather than accent-derived —
+     the accent is user-configurable and mixing it into the highlight is what
+     made selected text unreadable before (#1423). */
+  --selection-bg: #2f6fd0;
+  --selection-text: #ffffff;
+  /* Search matches (conversation find). The base match is a translucent amber
+     wash so the underlying text keeps its own colour; the current match is a
+     solid fill and therefore needs its own foreground. */
+  --highlight-bg: color-mix(in srgb, var(--warning) 45%, transparent);
+  --highlight-current-bg: #cca700;
+  --highlight-current-text: #1e1e1e;
   --text-primary: #d4d4d4;
   --text-secondary: #a6a6a6;
   --text-muted: #808080;
