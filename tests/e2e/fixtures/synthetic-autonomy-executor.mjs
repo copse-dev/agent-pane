@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const scenarioId = 'synthetic-ab-autonomy'
@@ -10,6 +10,7 @@ const outputDir = join(process.cwd(), '.autonomy')
 const evidenceDir = join(outputDir, 'evidence')
 const statePath = join(outputDir, 'state.json')
 const tracePath = join(outputDir, 'trace.json')
+const backgroundWakeMode = existsSync(join(outputDir, 'background-wake-mode'))
 
 mkdirSync(evidenceDir, { recursive: true })
 
@@ -25,6 +26,11 @@ function writeJson(path, value) {
   const temporaryPath = `${path}.tmp`
   writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   renameSync(temporaryPath, path)
+}
+
+async function delayForBackgroundWake() {
+  if (!backgroundWakeMode) return
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
 }
 
 const coordinates = []
@@ -87,6 +93,7 @@ for (let index = state.nextIndex; index < coordinates.length; index++) {
     process.stderr.write(
       'Synthetic transient interruption after a committed result. Run this command again to resume.\n',
     )
+    await delayForBackgroundWake()
     process.exit(75)
   }
 }
@@ -94,4 +101,5 @@ for (let index = state.nextIndex; index < coordinates.length; index++) {
 state.completed = true
 writeJson(tracePath, trace)
 writeJson(statePath, state)
+await delayForBackgroundWake()
 process.stdout.write(`${tracePath}\n`)

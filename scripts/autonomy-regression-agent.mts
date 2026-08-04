@@ -40,6 +40,12 @@ const runnableScenarioSchema = autonomyScenarioSchema.extend({
     tracePath: z.string().min(1),
     requireShellApproval: z.boolean().optional(),
   }),
+  backgroundWake: z
+    .object({
+      continuationCount: z.number().int().positive(),
+      timeoutMs: z.number().positive().optional(),
+    })
+    .optional(),
 })
 
 function readJson(path: string): unknown {
@@ -149,7 +155,7 @@ async function main(): Promise<void> {
           skillsEnabled: false,
           subagentsEnabled: false,
         },
-        enabledPackIds: [],
+        enabledPackIds: scenario.backgroundWake ? ['copse.background-tasks'] : [],
         toolAvailability: { rg: false, git: false, gh: false },
         loadMcpServers: false,
         workspaceTrusted: true,
@@ -175,6 +181,14 @@ async function main(): Promise<void> {
         threadId: `${scenario.id}-variant-${String(selected.index)}`,
         projectId: `${scenario.id}-project`,
         signal: controller.signal,
+        ...(scenario.backgroundWake
+          ? {
+              waitForMachineContinuations: {
+                count: scenario.backgroundWake.continuationCount,
+                timeoutMs: scenario.backgroundWake.timeoutMs ?? timeoutMs,
+              },
+            }
+          : {}),
         onChunk: (chunk) => {
           if (chunk.type === 'text') process.stdout.write(chunk.text)
         },
