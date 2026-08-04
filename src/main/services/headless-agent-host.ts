@@ -6,6 +6,7 @@ import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { runAgent, abortAgent } from './agent-service.ts'
 import { AgentDispatcher } from './agent-dispatcher.ts'
+import { appendMachineContinuation } from './thread-store.ts'
 import { createRegistry, registerSkillTools } from './registry-bootstrap.ts'
 import { runWithExplicitSettings } from './storage/settings-context.ts'
 import { runWithWorkspaceRoot, canonicalWorkspaceRoot } from './workspace.ts'
@@ -199,6 +200,9 @@ export async function runHeadlessAgent(
                           },
                           loadEpoch: (): Promise<null> => Promise.resolve(null),
                           saveEpoch: (): Promise<void> => Promise.resolve(),
+                          appendMachineContinuation,
+                          now: Date.now,
+                          createId: randomUUID,
                           prepareExecutionContext: (): Promise<typeof executionContext> =>
                             Promise.resolve(executionContext),
                           run: async (
