@@ -14,6 +14,9 @@
 //   3. Run `npm run sync:models`.
 
 import { MODEL_CATALOG } from './model-catalog.generated.ts'
+// Leaf modules with no imports of their own — safe here, where importing
+// `extra-providers.ts` (→ pareto-frontier.ts → this module) would cycle.
+import { LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX } from './reserved-prefixes.ts'
 
 export interface ModelInfo {
   /** USD per million input tokens. */
@@ -132,7 +135,40 @@ export function supportsMidConversationSystem(model: string): boolean {
 }
 
 /**
- * Whether `model` is in the Claude Opus 5 family.
+ * Routing namespaces that never front an upstream Anthropic model, so their
+ * ids must not be unwrapped and matched: LM Studio serves local weights, and a
+ * GGUF can be named anything (`lmstudio:claude-opus-5-distill-q4` is not Opus
+ * 5). `remote-agent:` speaks to a cloud agent that owns its own prompt.
+ */
+const NON_UPSTREAM_MODEL_PREFIXES = [LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX] as const
+
+/** A `<slug>:` routing namespace, matching the slug grammar in extra-providers.ts. */
+const ROUTING_SLUG_RE = /^[a-z0-9-]+:/
+
+/**
+ * The upstream model id behind a Copse model selection, or `''` when the
+ * selection cannot be one.
+ *
+ * The picker stores routed selections as `<slug>:<modelId>` — `openrouter:`,
+ * `lmstudio:`, and every OpenAI-compatible extra provider — and aggregators
+ * address models by vendor, so a single Opus 5 can arrive as `claude-opus-5`
+ * or as `openrouter:anthropic/claude-opus-5`. Strip the routing slug, then the
+ * vendor segment, so both land on the same id.
+ *
+ * `acp:` / `pack-model:` selections branch to their own turn runners before any
+ * of this is consulted; they are left to fall through the generic strip, which
+ * cannot produce a false match because what follows their prefix is an agent or
+ * pack id, not a model id.
+ */
+function upstreamModelId(model: string): string {
+  if (NON_UPSTREAM_MODEL_PREFIXES.some((prefix) => model.startsWith(prefix))) return ''
+  const routed = ROUTING_SLUG_RE.test(model) ? model.slice(model.indexOf(':') + 1) : model
+  const vendor = routed.indexOf('/')
+  return vendor === -1 ? routed : routed.slice(vendor + 1)
+}
+
+/**
+ * Whether `model` resolves to the Claude Opus 5 family.
  *
  * Opus 5's default user-facing responses run longer than other models', and
  * effort tunes how much it thinks rather than how much it says — so the fix is
@@ -140,8 +176,9 @@ export function supportsMidConversationSystem(model: string): boolean {
  * gate that instruction to the one family that needs it; everything else keeps
  * the model-agnostic prompt unchanged.
  *
- * Prefix match so dated snapshots and suffixed routing ids resolve too.
+ * Prefix match on the unwrapped id, so dated snapshots (`claude-opus-5-…`) and
+ * an aggregator's variant suffixes (`…claude-opus-5:beta`) resolve too.
  */
 export function isOpus5Model(model: string): boolean {
-  return model.startsWith('claude-opus-5')
+  return upstreamModelId(model).startsWith('claude-opus-5')
 }

@@ -108,12 +108,34 @@ describe('model catalog', () => {
 
   it('identifies the Opus 5 family without catching neighbouring Opus ids', () => {
     assert.equal(isOpus5Model('claude-opus-5'), true)
-    // Prefix match so dated snapshots and suffixed routing ids resolve too.
+    // Prefix match so dated snapshots resolve too.
     assert.equal(isOpus5Model('claude-opus-5-20260101'), true)
 
     assert.equal(isOpus5Model('claude-opus-4-8'), false)
     assert.equal(isOpus5Model('claude-sonnet-5'), false)
     assert.equal(isOpus5Model('claude-fable-5'), false)
     assert.equal(isOpus5Model('gpt-5'), false)
+  })
+
+  it('unwraps routed selections so the same model resolves through any provider', () => {
+    // The picker stores `<slug>:<modelId>`, and an aggregator addresses models
+    // by vendor — one Opus 5 arrives under several ids.
+    assert.equal(isOpus5Model('openrouter:anthropic/claude-opus-5'), true)
+    assert.equal(isOpus5Model('openrouter:anthropic/claude-opus-5:beta'), true)
+    // Any OpenAI-compatible extra provider fronting Anthropic resolves too.
+    assert.equal(isOpus5Model('my-proxy:claude-opus-5'), true)
+
+    assert.equal(isOpus5Model('openrouter:anthropic/claude-opus-4-8'), false)
+    assert.equal(isOpus5Model('openrouter:openai/gpt-5'), false)
+  })
+
+  it('never matches a namespace that cannot be upstream Opus 5', () => {
+    // Local weights: a GGUF can be named anything, including after a model it
+    // is merely distilled from.
+    assert.equal(isOpus5Model('lmstudio:claude-opus-5-distill-q4'), false)
+    // These reach their own turn runners, which own their prompts.
+    assert.equal(isOpus5Model('remote-agent:anthropic#claude-opus-5'), false)
+    assert.equal(isOpus5Model('acp:claude-code#claude-opus-5'), false)
+    assert.equal(isOpus5Model('pack-model:some-pack:claude-opus-5'), false)
   })
 })

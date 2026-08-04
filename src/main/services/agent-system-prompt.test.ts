@@ -42,9 +42,18 @@ describe('buildSystemPrompt Opus 5 conciseness steering', () => {
     assert.ok(prompt.indexOf(CONCISENESS) < prompt.indexOf('<tone_preference>'))
   })
 
-  it('matches dated Opus 5 snapshots and suffixed routing ids', async () => {
+  it('matches dated Opus 5 snapshots', async () => {
     const prompt = await build('claude-opus-5-20260101')
     assert.ok(prompt.includes(CONCISENESS))
+  })
+
+  it('steers Opus 5 the same way whichever provider routes to it', async () => {
+    // The picker hands `buildSystemPrompt` its own routed id, not a bare model
+    // id — the same value `resolveContextWindow` unwraps.
+    for (const model of ['openrouter:anthropic/claude-opus-5', 'my-proxy:claude-opus-5']) {
+      const prompt = await build(model)
+      assert.ok(prompt.includes(CONCISENESS), `missing length steering for ${model}`)
+    }
   })
 
   it('leaves every other model — and an unpinned model — untouched', async () => {
@@ -54,6 +63,8 @@ describe('buildSystemPrompt Opus 5 conciseness steering', () => {
       'claude-sonnet-4-6',
       'claude-haiku-4-5',
       'gpt-5.6-sol',
+      'openrouter:anthropic/claude-opus-4-8',
+      'lmstudio:claude-opus-5-distill-q4',
       undefined,
     ]) {
       const label = model ?? '(no model pinned)'
