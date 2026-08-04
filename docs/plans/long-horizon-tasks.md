@@ -30,14 +30,19 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
   (its terminal condition), an ordered `steps` checklist, and a `taskProgress()` helper that
   reports done/total, completeness, and the next step.
 - **Tool** `track_long_task` (`src/main/tools/long-task-tool.ts`) — `create` / `check` /
-  `status` / `list`, registered via `syncLongHorizonTasksTools` in `registry-bootstrap.ts`
-  (boot + live `packs:setEnabled`).
+  `status` / `list` plus an explicit one-shot `continue`, registered via
+  `syncLongHorizonTasksTools` in `registry-bootstrap.ts` (boot + live
+  `packs:setEnabled`). `continue` schedules a durable supervisor wake bound to the
+  current project, thread, turn-tree epoch, and permission snapshot. The wake dispatches
+  one bounded machine turn and asks that turn to schedule another only if checklist work
+  remains.
 - **Tests** `long-task-tracker.test.ts`, `long-horizon-tasks-pack.test.ts` (registration +
   atomic disable), `pack-service.test.ts` (default-OFF migration),
   `settings-packs.e2e.ts` (pack row defaults off), and `settings-experimental.e2e.ts`
   (retired `longHorizonTasksEnabled` fieldset gone). Pack toggles emit `settings_changed`.
 
-While the pack is disabled the tool is not registered and nothing reads or writes the store.
+While the pack is disabled the tool is not registered. Any already-persisted wake
+completes without dispatching an agent turn.
 
 ## Relationship to existing state
 
@@ -47,8 +52,6 @@ While the pack is disabled the tool is not registered and nothing reads or write
 
 ## Not yet built (follow-ups on the issue)
 
-- **Self-paced loop** — drive the agent to keep going until the task's terminal condition
-  (lint count zero / `npm run check` green / research answered) instead of stopping early.
 - **Chunked commit cadence** — batch the grind (per-file / per-rule) with commits as it
   goes, so a long run stays resumable and reviewable.
 - **Status surfacing** — show progress in the UI without spamming the user.

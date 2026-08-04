@@ -39,6 +39,7 @@ import {
   serializeSpineEntries,
   serializeSpineLine,
   type SpineHookRunLine,
+  type SpineMachineContinuationLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
 } from '@shared/threads/spine-schema.ts'
@@ -82,6 +83,7 @@ const META_FILE = 'meta.json'
 const AGENT_HISTORY_FILE = 'agent-history.json'
 const AGENT_HISTORY_VERSION = 1
 const ACP_SESSION_FILE = 'acp-session.json'
+const AGENT_EPOCH_FILE = 'agent-epoch.json'
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
@@ -97,6 +99,11 @@ const workspaceRoot = chatStoreDir
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
 export const chatStoreRoot = workspaceRoot
+
+export interface AgentTurnEpoch {
+  turnTreeId: string
+  continuationUsed: number
+}
 
 function threadDir(projectId: string, threadId: string): string {
   return join(projectDir(projectId), threadId)
@@ -975,6 +982,22 @@ export function appendPermissionDecision(
   })
 }
 
+/** Append one compact machine-continuation audit record. */
+export function appendMachineContinuation(
+  projectId: string,
+  threadId: string,
+  line: SpineMachineContinuationLine,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+  })
+}
+
 /** Append one stream-cut observability record (project-level eval source). */
 export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
@@ -1057,6 +1080,10 @@ export function deleteProjectThread(projectId: string, threadId: string): Promis
 
 function agentHistoryPath(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), AGENT_HISTORY_FILE)
+}
+
+function agentEpochPath(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), AGENT_EPOCH_FILE)
 }
 
 /**
@@ -1144,15 +1171,61 @@ export function saveAgentHistory(
   })
 }
 
+/** Load the latest durable machine-continuation epoch for a thread. */
+export function loadAgentTurnEpoch(
+  projectId: string,
+  threadId: string,
+): Promise<AgentTurnEpoch | null> {
+  return runSerialized(queueKey(projectId), () => {
+    const raw = safeRead(agentEpochPath(projectId, threadId))
+    if (raw === null) return null
+    try {
+      const value = parseJsonUnknown(raw)
+      if (!isRecord(value)) return null
+      const turnTreeId = value['turnTreeId']
+      const continuationUsed = value['continuationUsed']
+      if (
+        typeof turnTreeId !== 'string' ||
+        turnTreeId.length === 0 ||
+        typeof continuationUsed !== 'number' ||
+        !Number.isInteger(continuationUsed) ||
+        continuationUsed < 0
+      ) {
+        return null
+      }
+      return { turnTreeId, continuationUsed }
+    } catch {
+      return null
+    }
+  })
+}
+
+/** Persist the current turn-tree epoch before machine work can rely on it. */
+export function saveAgentTurnEpoch(
+  projectId: string,
+  threadId: string,
+  epoch: AgentTurnEpoch,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    if (readMeta(dir) === null) return
+    atomicWriteFile(join(dir, AGENT_EPOCH_FILE), `${JSON.stringify(epoch)}\n`)
+  })
+}
+
 /** Remove the provider-history sidecar (clear-history / fresh resume). */
 export function clearAgentHistory(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
-    const path = agentHistoryPath(projectId, threadId)
-    if (!existsSync(path)) return
-    try {
-      unlinkSync(path)
-    } catch {
-      // Best-effort: a missing file is the desired end state.
+    for (const path of [
+      agentHistoryPath(projectId, threadId),
+      agentEpochPath(projectId, threadId),
+    ]) {
+      if (!existsSync(path)) continue
+      try {
+        unlinkSync(path)
+      } catch {
+        // Best-effort: a missing file is the desired end state.
+      }
     }
   })
 }

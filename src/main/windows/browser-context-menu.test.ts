@@ -11,6 +11,7 @@ function baseParams(overrides: Partial<BrowserContextMenuParams> = {}): BrowserC
   const params: BrowserContextMenuParams = {
     x: 10,
     y: 20,
+    pageURL: 'https://example.com/current',
     linkURL: '',
     srcURL: '',
     mediaType: 'none',
@@ -54,6 +55,9 @@ function recordingActions(): BrowserContextMenuActions & {
     },
     openTab: (url: string): void => {
       calls.push(`openTab:${url}`)
+    },
+    shareSelection: (text: string, pageUrl: string): void => {
+      calls.push(`shareSelection:${pageUrl}:${text}`)
     },
     saveImageAs: (srcURL: string): void => {
       calls.push(`saveImageAs:${srcURL}`)
@@ -160,6 +164,7 @@ describe('buildBrowserContextMenuTemplate', () => {
   })
 
   it('shows Copy for a non-editable text selection', () => {
+    const actions = recordingActions()
     const template = buildBrowserContextMenuTemplate(
       baseParams({
         selectionText: 'hello',
@@ -170,9 +175,17 @@ describe('buildBrowserContextMenuTemplate', () => {
           canSelectAll: true,
         },
       }),
-      recordingActions(),
+      actions,
     )
-    assert.deepEqual(labels(template), ['Copy', 'Select All', 'Inspect Element'])
+    assert.deepEqual(labels(template), [
+      'Copy',
+      'Share Selection with Thread',
+      'Select All',
+      'Inspect Element',
+    ])
+
+    invokeItemClick(template, 'Share Selection with Thread')
+    assert.deepEqual(actions.calls, ['shareSelection:https://example.com/current:hello'])
   })
 })
 
