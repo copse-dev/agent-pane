@@ -64,6 +64,12 @@ export function mountApprovalDialog(
     el('input', { type: 'checkbox', class: 'approval-remember-input' }),
     'Always allow this tool',
   )
+  const turnTreeLeaseLabel = el(
+    'label',
+    { class: 'approval-remember approval-turn-tree' },
+    el('input', { type: 'checkbox', class: 'approval-turn-tree-input' }),
+    'Allow retries for this task (up to 10, for 15 minutes)',
+  )
   // One heading for the whole prompt (fixed); the items scroll under it so a big
   // batch doesn't push the buttons off screen.
   const heading = el('h3', { class: 'approval-heading' })
@@ -74,6 +80,7 @@ export function mountApprovalDialog(
     heading,
     items,
     rememberLabel,
+    turnTreeLeaseLabel,
     el(
       'div',
       { class: 'approval-buttons' },
@@ -89,6 +96,13 @@ export function mountApprovalDialog(
   chatPane.append(chatScrim, dialog)
 
   const rememberInput = qsRequired<HTMLInputElement>(rememberLabel, '.approval-remember-input')
+  const turnTreeLeaseInput = qsRequired<HTMLInputElement>(
+    turnTreeLeaseLabel,
+    '.approval-turn-tree-input',
+  )
+  const turnTreeLeaseTextNode = turnTreeLeaseLabel.childNodes[1]
+  if (!turnTreeLeaseTextNode) throw new Error('approval dialog missing lease label text node')
+  const turnTreeLeaseText: ChildNode = turnTreeLeaseTextNode
   const approveButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve')
   const rejectButton = qsRequired<HTMLButtonElement>(dialog, '.approval-reject')
   const rememberLabelTextNode = rememberLabel.childNodes[1]
@@ -106,6 +120,10 @@ export function mountApprovalDialog(
     rememberLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
     comparisonModels?: ComparisonModelSelection
+    allowTurnTreeLease: boolean | undefined
+    turnTreeLeaseLabel: string | undefined
+    turnTreeLeaseDefault: boolean | undefined
+    turnTreeLeaseSubject: string | undefined
   }
 
   // Requests waiting for their turn (background threads, or arrived before the
@@ -229,6 +247,33 @@ export function mountApprovalDialog(
     rememberLabel.hidden = grant === null
     if (grant === null) rememberInput.checked = false
     else rememberLabelText.textContent = grant
+
+    // One tick box settles the whole batch, but the main process issues a lease
+    // per request — so the offer is only coherent when every batched request
+    // would lease the SAME command. The label alone can't establish that: it's a
+    // fixed string shared by every shell prompt, so unrelated commands compare
+    // equal on it. Match on the subject too, and hide the box otherwise, exactly
+    // as rememberGrant() does rather than applying one grant to unrelated calls.
+    const leaseLabel = batch[0]?.turnTreeLeaseLabel
+    const leaseSubject = batch[0]?.turnTreeLeaseSubject
+    const offersTurnTreeLease =
+      batch.length > 0 &&
+      leaseLabel !== undefined &&
+      leaseSubject !== undefined &&
+      batch.every(
+        (request) =>
+          request.allowTurnTreeLease === true &&
+          request.turnTreeLeaseLabel === leaseLabel &&
+          request.turnTreeLeaseSubject === leaseSubject,
+      )
+    turnTreeLeaseLabel.hidden = !offersTurnTreeLease
+    if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false
+    else {
+      turnTreeLeaseText.textContent = leaseLabel
+      // Sandboxed approval includes bounded retries by default. Outside-sandbox
+      // retries remain explicit, and mixed-command batches hide the grant above.
+      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true)
+    }
   }
 
   /** Cancel any pending settle window and re-enable Approve. */
@@ -345,10 +390,13 @@ export function mountApprovalDialog(
     if (!active || batch.length === 0) return
     const answered = batch
     const comparisonModels = approved && readComparisonModels ? readComparisonModels() : undefined
+    const grantScope =
+      approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? 'turn-tree' : 'once'
     closeDialog()
     batch = []
     active = false
     readComparisonModels = null
+    turnTreeLeaseInput.checked = false
     clearSettle()
     for (const req of answered) {
       void api.approval.respond(
@@ -356,6 +404,7 @@ export function mountApprovalDialog(
         approved,
         remember,
         req.type === 'model-compare' ? comparisonModels : undefined,
+        grantScope,
       )
     }
     // Surface anything that was waiting behind this batch immediately — it has
@@ -374,6 +423,10 @@ export function mountApprovalDialog(
       rememberLabel,
       showWhileSettingsOpen,
       comparisonModels,
+      allowTurnTreeLease,
+      turnTreeLeaseLabel,
+      turnTreeLeaseDefault,
+      turnTreeLeaseSubject,
     }) => {
       const pending: PendingApproval = {
         id,
@@ -384,6 +437,10 @@ export function mountApprovalDialog(
         allowRemember,
         rememberLabel,
         showWhileSettingsOpen,
+        allowTurnTreeLease,
+        turnTreeLeaseLabel,
+        turnTreeLeaseDefault,
+        turnTreeLeaseSubject,
       }
       if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)

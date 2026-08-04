@@ -28,6 +28,24 @@ export interface ApprovalRequest {
   showWhileSettingsOpen?: boolean
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
   comparisonModels?: ComparisonModelSelection
+  /** Offer a bounded main-process lease for exact retries in this turn tree. */
+  allowTurnTreeLease?: boolean
+  /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
+  turnTreeLeaseLabel?: string
+  /** Whether approving also grants the bounded task lease without another user action. */
+  turnTreeLeaseDefault?: boolean
+  /**
+   * What the offered lease would actually cover — the exact command, not the
+   * display label. Required whenever `allowTurnTreeLease` is true.
+   *
+   * The label is a fixed string shared by every shell prompt, so it cannot tell
+   * two batched requests apart. A batch settles with ONE tick box but issues one
+   * lease per request, so without a per-request identity a single tick would
+   * grant leases for unrelated commands under a label reading "this task". The
+   * renderer hides the box unless every batched request shares this subject —
+   * the same coherence rule `rememberLabel` gets, on a value that discriminates.
+   */
+  turnTreeLeaseSubject?: string
   /** Secret-free operation or tool name stored in the durable decision log. */
   subject?: string
   /** Scope the decision applies at, such as `sandbox` or `external`. */
@@ -37,6 +55,8 @@ export interface ApprovalRequest {
 export interface ApprovalResponse {
   approved: boolean
   remember: boolean
+  /** Scope selected for this approval; absent is the backwards-compatible one-shot grant. */
+  grantScope?: 'once' | 'turn-tree'
   /**
    * How the prompt settled; omitted by external handlers means a user decision.
    * There is no wall-clock timeout — `timeout` remains in the union for older
@@ -63,6 +83,10 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     rememberLabel: req.rememberLabel ?? '',
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
     comparisonModels: req.comparisonModels ?? null,
+    allowTurnTreeLease: req.allowTurnTreeLease ?? false,
+    turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
+    turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
+    turnTreeLeaseSubject: req.turnTreeLeaseSubject ?? '',
   })
 }
 
@@ -402,7 +426,7 @@ export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAt
       // assertMainFrameSender rejects any frame other than the window's main
       // frame, so a compromised/embedded frame can't answer an approval.
       assertMainFrameSender(event, win)
-      const [id, approved, remember, comparisonModels] = parseIpcArgs(
+      const [id, approved, remember, comparisonModels, grantScope] = parseIpcArgs(
         approvalRespondSchema,
         rawArgs,
       )
@@ -411,6 +435,7 @@ export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAt
         remember: remember === true,
         resolution: 'user',
         ...(comparisonModels ? { comparisonModels } : {}),
+        ...(grantScope ? { grantScope } : {}),
       })
     } catch (err) {
       if (err instanceof IpcValidationError) return

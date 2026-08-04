@@ -152,6 +152,10 @@ export interface ApiClient {
         rememberLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
+        allowTurnTreeLease?: boolean
+        turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
+        turnTreeLeaseSubject?: string
       }) => void,
     ) => () => void
     onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -206,6 +210,7 @@ export interface ApiClient {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
+      grantScope?: 'once' | 'turn-tree',
     ) => Promise<void>
   }
   ask: {
