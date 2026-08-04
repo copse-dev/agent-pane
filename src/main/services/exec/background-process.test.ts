@@ -132,6 +132,65 @@ describe('background process manager', () => {
     assert.match(getBackgroundProcessLogs(info.id, OWNER) ?? '', /background-complete/)
   })
 
+  it('notifies once after a bounded task completes', async () => {
+    const completions: string[] = []
+    const info = await startBackgroundProcess({
+      command: `node -e "setTimeout(() => console.log('bounded-complete'), 100)"`,
+      cwd: process.cwd(),
+      waitMs: 10,
+      timeoutMs: 5_000,
+      owner: OWNER,
+      onCompletion: ({ info: completed, logs }) => {
+        completions.push(`${completed.id}:${logs.trim()}`)
+      },
+    })
+
+    await waitForBackgroundExit(info.id)
+
+    assert.deepEqual(completions, [`${info.id}:bounded-complete`])
+    assert.equal(
+      listBackgroundProcesses(OWNER).find((entry) => entry.id === info.id)?.timedOut,
+      false,
+    )
+  })
+
+  it('terminates at the deadline and reports a timed-out completion', async () => {
+    let timedOut = false
+    const info = await startBackgroundProcess({
+      command: 'sleep 30',
+      cwd: process.cwd(),
+      waitMs: 10,
+      timeoutMs: 100,
+      owner: OWNER,
+      onCompletion: ({ info: completed }) => {
+        timedOut = completed.timedOut
+      },
+    })
+
+    await waitForBackgroundExit(info.id)
+
+    assert.equal(timedOut, true)
+  })
+
+  it('does not notify completion after explicit cancellation', async () => {
+    let notified = false
+    const info = await startBackgroundProcess({
+      command: 'sleep 30',
+      cwd: process.cwd(),
+      waitMs: 10,
+      timeoutMs: 5_000,
+      owner: OWNER,
+      onCompletion: () => {
+        notified = true
+      },
+    })
+
+    assert.equal(stopBackgroundProcess(info.id, OWNER), true)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    assert.equal(notified, false)
+  })
+
   it('does not surface a URL for a plain task that did not opt into port binding', async () => {
     const info = await startBackgroundProcess({
       command: "printf 'Local:   http://localhost:4321/\\n'; sleep 30",
