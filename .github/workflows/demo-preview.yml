@@ -59,7 +59,7 @@ jobs:
         with:
           script: |
             const branch = context.ref.replace('refs/heads/', '');
-            if (branch === 'main' || branch === 'develop') {
+            if (branch === 'release' || branch === 'main') {
               core.setOutput('found', 'true');
               core.setOutput('path', branch);
               core.setOutput('label', branch);
@@ -105,7 +105,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [[ "$TARGET" != "main" && "$TARGET" != "develop" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+          if [[ "$TARGET" != "release" && "$TARGET" != "main" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
             echo "Invalid demo target: $TARGET" >&2
             exit 1
           fi
@@ -149,7 +149,7 @@ jobs:
             rm -rf "previews-branch/${TARGET}"
             mkdir -p "previews-branch/${TARGET}"
             cp -R dist/demo/. "previews-branch/${TARGET}/"
-            if [[ "$TARGET" == "develop" ]]; then
+            if [[ "$TARGET" == "main" ]]; then
               mkdir -p "previews-branch/${TARGET}/preview/demo/main"
               cp -R site/. "previews-branch/${TARGET}/preview/"
               cp -R dist/demo/. "previews-branch/${TARGET}/preview/demo/main/"

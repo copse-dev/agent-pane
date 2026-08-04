@@ -23,12 +23,12 @@ name: Reconcile PR screenshots after a base push
 # without this workflow ever running the suite itself.
 on:
   push:
-    # Both integration branches. Day-to-day PRs are based on `develop`, so that
-    # is where a moving base creates their conflicts; `main` still matters for
+    # Both integration branches. Day-to-day PRs are based on `main`, so that
+    # is where a moving base creates their conflicts; `release` still matters for
     # the promotion PR. Every step below reconciles against the branch that was
     # actually pushed (`github.ref_name`), and only PRs based on THAT branch are
-    # considered — a develop push must not merge develop into a main-based PR.
-    branches: [main, develop]
+    # considered — a trunk push must not merge trunk into a release-based PR.
+    branches: [release, main]
     # Only screenshot churn can create a screenshot conflict, so don't wake on
     # unrelated commits.
     paths:

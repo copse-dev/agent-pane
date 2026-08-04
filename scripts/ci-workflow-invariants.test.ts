@@ -55,24 +55,24 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('keeps the heavy tier off `develop` so day-to-day PRs stay cheap', () => {
-    // The develop model only pays for itself if e2e/bench run once per PROMOTION
+  it('keeps the heavy tier off trunk so day-to-day PRs stay cheap', () => {
+    // The trunk model only pays for itself if e2e/bench run once per PROMOTION
     // rather than once per PR. Both guards are easy to lose when someone edits an
     // unrelated clause in the same `if:`, and losing them is silent — CI simply
-    // gets expensive again. Pin both halves: no heavy tier on a `develop` push,
-    // and on a PR only when it targets `main` (or is force-labelled).
+    // gets expensive again. Pin both halves: no heavy tier on a trunk (`main`)
+    // push, and on a PR only when it targets `release` (or is force-labelled).
     for (const name of ['bench', 'e2e']) {
       const job = workflow.match(new RegExp(`^ {2}${name}:\\n(?: {4}.*\\n)+`, 'm'))?.[0]
       assert.ok(job, `expected a \`${name}:\` job in ci.yml`)
       assert.match(
         job,
-        /github\.event_name != 'push' \|\| github\.ref != 'refs\/heads\/develop'/,
-        `${name} must not run on pushes to develop`,
+        /github\.event_name != 'push' \|\| github\.ref != 'refs\/heads\/main'/,
+        `${name} must not run on pushes to trunk`,
       )
       assert.match(
         job,
-        /github\.base_ref == 'main'/,
-        `${name} must only run on PRs that target main (promotion PRs)`,
+        /github\.base_ref == 'release'/,
+        `${name} must only run on PRs that target release (promotion PRs)`,
       )
     }
   })
@@ -83,7 +83,7 @@ describe('ci.yml workflow invariants', () => {
     assert.match(planStep, /BASE_REF: \$\{\{ github\.base_ref \}\}/)
 
     const promotionGate = planStep.indexOf(
-      'if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then',
+      'if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then',
     )
     const oracle = planStep.indexOf('node scripts/test-oracle.mts --plan')
     assert.ok(promotionGate >= 0, 'promotion PRs must explicitly select mode=full')
@@ -91,17 +91,17 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
   })
 
-  it('does not let a cheap develop push satisfy the promotion aggregate gate', () => {
+  it('does not let a cheap trunk push satisfy the promotion aggregate gate', () => {
     const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
     assert.match(
       aggregate,
-      /name: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/develop' && 'Develop CI Passed' \|\| 'CI Passed' \}\}/,
-      'develop pushes need a distinct aggregate check context',
+      /name: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && 'Develop CI Passed' \|\| 'CI Passed' \}\}/,
+      'trunk pushes need a distinct aggregate check context',
     )
     assert.match(
       aggregate,
-      /PROMOTION_PR=\$\{\{ github\.event_name == 'pull_request' && github\.base_ref == 'main'/,
+      /PROMOTION_PR=\$\{\{ github\.event_name == 'pull_request' && github\.base_ref == 'release'/,
       'the aggregate must identify same-repository promotion PRs',
     )
     assert.match(
@@ -141,8 +141,8 @@ describe('ci.yml workflow invariants', () => {
   it('runs CI on pushes to both integration branches', () => {
     assert.match(
       workflow,
-      /^ {4}branches: \[main, develop\]$/m,
-      'push must cover develop (where merges land) and main (where promotions land)',
+      /^ {4}branches: \[release, main\]$/m,
+      'push must cover main (where merges land) and release (where promotions land)',
     )
   })
 })
@@ -150,10 +150,10 @@ describe('ci.yml workflow invariants', () => {
 describe('promote-develop.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
 
-  it('runs daily and only opens a PR when develop has commits to promote', () => {
+  it('runs daily and only opens a PR when trunk has commits to promote', () => {
     assert.match(workflow, /- cron: '[^']+ \* \* \*'/)
-    assert.match(workflow, /const base = 'main'/)
-    assert.match(workflow, /const head = 'develop'/)
+    assert.match(workflow, /const base = 'release'/)
+    assert.match(workflow, /const head = 'main'/)
 
     const noChangesExit = workflow.indexOf('comparison.data.ahead_by === 0')
     const pullRequestLookup = workflow.indexOf('github.paginate')

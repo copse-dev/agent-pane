@@ -2,12 +2,12 @@ name: Secret scan
 
 on:
   push:
-    branches: [main, develop]
+    branches: [release, main]
   pull_request:
-    # `develop` is the default branch and where day-to-day PRs land, so it must
+    # `main` is the default branch and where day-to-day PRs land, so it must
     # be listed or fork PRs — the ones this standalone job exists for — would go
-    # unscanned entirely once PRs stopped targeting `main`.
-    branches: [main, develop]
+    # unscanned entirely once PRs stopped targeting `release`.
+    branches: [release, main]
   schedule:
     - cron: '41 6 * * 1'
 
