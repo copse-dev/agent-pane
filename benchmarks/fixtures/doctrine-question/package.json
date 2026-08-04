@@ -1,0 +1,7 @@
+{
+  "name": "doctrine-question-fixture",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  }
+}
