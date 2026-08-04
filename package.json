@@ -153,7 +153,7 @@
     "@agentclientprotocol/sdk": "^1.2.1",
     "@anthropic-ai/sandbox-runtime": "^0.0.66",
     "@anthropic-ai/sdk": "^0.112.3",
-    "@copse/streaming-markdown": "^1.0.2",
+    "@copse/streaming-markdown": "^1.0.3",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@mozilla/readability": "^0.6.0",
     "@xterm/addon-fit": "^0.11.0",
