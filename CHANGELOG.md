@@ -8,6 +8,14 @@ every published entry.
 
 ## Unreleased
 
+- Closing Copse while a thread is still working now asks first. Quitting tears
+  down every live agent session with no way to resume, so a close that would land
+  mid-turn opens a confirmation naming the threads still running ("Fix login is
+  mid-turn…") with **Close anyway** / **Keep working**. Backing out leaves the
+  run untouched. This covers both routes out of the app — the window's close
+  button and Cmd+Q / the Quit menu item — and the prompt lands before any
+  teardown starts, not after. Closing with nothing running is unchanged: no
+  dialog, no extra click.
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to

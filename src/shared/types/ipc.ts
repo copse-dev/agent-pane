@@ -478,6 +478,8 @@ export interface IpcEventMap {
     },
   ]
   'update:dev_notice': []
+  /** Main asks the renderer whether the app may close while threads are working. */
+  'app:close_confirm_request': [{ id: string }]
   'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]

@@ -116,6 +116,7 @@ import {
   runAcpAutoSetup,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
+import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -2093,6 +2094,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [prompt, kind],
       )
       return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
+    })
+    // Drives the real main→renderer close question without actually quitting —
+    // an e2e that closed the app would take its own session down with it.
+    ipcMain.handle('test:requestCloseConfirm', (event) => {
+      assertMainFrameSender(event, win)
+      return requestCloseConfirmation()
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)
