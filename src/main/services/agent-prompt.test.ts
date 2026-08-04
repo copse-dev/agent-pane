@@ -45,6 +45,7 @@ describe('agent-prompt', () => {
       assert.match(prompt, /Report outcomes faithfully/)
       assert.match(prompt, /verified the behavior itself, not just that it compiles/)
       assert.match(prompt, /mention it instead of fixing it silently/)
+      assert.match(prompt, /do not add speculative inspection, cleanup, command wrappers/)
       assert.match(prompt, /never to narrate what you changed/)
       // The doctrine reads as house rules, not a model identity costume.
       assert.doesNotMatch(prompt, /Claude|Fable|GPT|Gemini/i)
