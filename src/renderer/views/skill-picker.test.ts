@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { mountComposerEditor } from './composer-editor.ts'
-import { initSkillPicker } from './skill-picker.ts'
+import { findSkillTriggerIndex, initSkillPicker } from './skill-picker.ts'
 
 async function settle(): Promise<void> {
   await Promise.resolve()
@@ -101,5 +101,55 @@ describe('skill picker', () => {
 
     input.el.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     assert.equal(input.value, '/checkup ')
+  })
+
+  it('only triggers on a slash that starts a word', () => {
+    // Start of input, and after whitespace or a newline — the boundaries
+    // `resolveSkillInvocation` accepts.
+    assert.equal(findSkillTriggerIndex('/demo', 5), 0)
+    assert.equal(findSkillTriggerIndex('run /demo', 9), 4)
+    assert.equal(findSkillTriggerIndex('run\n/demo', 9), 4)
+
+    // Mid-word slashes are path separators, not slash commands.
+    assert.equal(findSkillTriggerIndex('do a grep ~/.blah', 17), -1)
+    assert.equal(findSkillTriggerIndex('src/index.ts', 12), -1)
+    assert.equal(findSkillTriggerIndex('do a grep ~/', 12), -1)
+
+    // `/x/y/z` anchors on its first slash rather than restarting at each
+    // segment, so the query stays `x/y/z` and matches nothing.
+    assert.equal(findSkillTriggerIndex('/x/y/z', 6), 0)
+
+    // A bare `/` still opens the full list; a completed token does not.
+    assert.equal(findSkillTriggerIndex('/', 1), 0)
+    assert.equal(findSkillTriggerIndex('/demo ', 6), -1)
+  })
+
+  it('leaves the picker closed for a path like ~/.blah', async () => {
+    const inputBar = document.createElement('div')
+    const input = mountComposerEditor()
+    inputBar.append(input.el)
+    document.body.append(inputBar)
+    initSkillPicker({
+      input,
+      inputBar,
+      listSkills: async () => [
+        {
+          name: 'blah-skill',
+          description: 'Would have matched the path tail',
+          source: 'project',
+          skillPath: '/repo/.agents/skills/blah-skill/SKILL.md',
+          externalLinks: [],
+        },
+      ],
+    })
+
+    input.value = 'do a grep ~/.blah'
+    input.setSelectionRange(input.value.length, input.value.length)
+    input.el.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    const picker = inputBar.querySelector<HTMLElement>('.skill-picker')
+    assert.ok(picker)
+    assert.equal(picker.hidden, true)
   })
 })

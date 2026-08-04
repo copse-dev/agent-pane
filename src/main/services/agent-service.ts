@@ -36,6 +36,7 @@ import {
   recordThreadModel,
   setActiveRunModel,
   setActiveRunThread,
+  setActiveRunTurnTreeId,
 } from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
@@ -621,9 +622,12 @@ export async function runAgent(
   // the continuation ledger and the `stop` hook's epoch line up with the
   // renderer's drain-time budget check. Falls back to the thread id when absent
   // (older client / ACP / standalone retry).
-  const turnTreeId: TurnTreeId = asTurnTreeId(
-    options?.turnTreeId && options.turnTreeId.length > 0 ? options.turnTreeId : threadId,
-  )
+  const explicitTurnTreeId =
+    options?.turnTreeId && options.turnTreeId.length > 0 ? asTurnTreeId(options.turnTreeId) : null
+  const turnTreeId: TurnTreeId = explicitTurnTreeId ?? asTurnTreeId(threadId)
+  // The thread-id fallback keeps legacy continuation accounting stable, but it
+  // is not a human-turn epoch and therefore must never own a capability lease.
+  if (explicitTurnTreeId) setActiveRunTurnTreeId(explicitTurnTreeId)
 
   // B1: fire `beforeSubmitPrompt` on the compose path, before any agent turn
   // starts (ACP / remote / local). A blocking decision hook may halt the submit
@@ -1078,6 +1082,7 @@ export async function runAgent(
       invokedSkills,
       threadId,
       userPrompt: outboundPrompt,
+      model,
     })
 
     const messages: LLMMessage[] = [

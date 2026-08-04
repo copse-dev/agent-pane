@@ -1,4 +1,4 @@
-import type { AcpAgentConfig } from './types/acp.ts'
+import type { AcpAgentConfig, AcpModelChoice } from './types/acp.ts'
 import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 import { isRecord, recordArrayOrEmpty, stringRecordOrEmpty } from './unknown-value.mts'
 
@@ -17,8 +17,12 @@ import { isRecord, recordArrayOrEmpty, stringRecordOrEmpty } from './unknown-val
  * The ids match {@link AcpAgentConfig.id}; see `acp-agent-registry.ts` for the
  * settings-backed lookup that turns an id into a spawn config.
  */
-export const ACP_MODEL_PREFIX = 'acp:'
-const ACP_MODEL_SEP = '#'
+// Canonical definitions live in the LLM module, which owns the model-id
+// namespacing vocabulary; re-exported here so ACP consumers keep their existing
+// import path and the literal never drifts between the two.
+export { ACP_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
+import { ACP_MODEL_PREFIX, AGENT_MODEL_SEP } from '@copse/llm/reserved-prefixes.ts'
+import { parseModelSelection } from '@copse/llm/model-selection.ts'
 
 /**
  * ACP agents are local stdio processes. SSH workspaces do not remount them on
@@ -66,7 +70,7 @@ export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
     if (isRecord(entry['env'])) agent.env = stringRecordOrEmpty(entry['env'])
     if (typeof entry['model'] === 'string') agent.model = entry['model']
     if (Array.isArray(entry['availableModels'])) {
-      agent.availableModels = parseChoices(entry['availableModels'], false)
+      agent.availableModels = parseChoices(entry['availableModels'], true)
     }
     if (typeof entry['modelsProbedAt'] === 'number') agent.modelsProbedAt = entry['modelsProbedAt']
     if (typeof entry['permissionMode'] === 'string') agent.permissionMode = entry['permissionMode']
@@ -108,7 +112,7 @@ export interface AcpModelSelection {
 
 /** Build the model value the picker stores for an ACP agent id (+ optional model). */
 export function acpModelValue(id: string, model?: string): string {
-  return model ? `${ACP_MODEL_PREFIX}${id}${ACP_MODEL_SEP}${model}` : `${ACP_MODEL_PREFIX}${id}`
+  return model ? `${ACP_MODEL_PREFIX}${id}${AGENT_MODEL_SEP}${model}` : `${ACP_MODEL_PREFIX}${id}`
 }
 
 /** The agent id encoded in an `acp:<id>` model value, or `null` for other models. */
@@ -121,13 +125,9 @@ export function parseAcpModel(model: string): string | null {
  * `null` for a non-ACP model or the empty-id edge case (`acp:` / `acp:#…`).
  */
 export function parseAcpModelSelection(model: string): AcpModelSelection | null {
-  if (!model.startsWith(ACP_MODEL_PREFIX)) return null
-  const rest = model.slice(ACP_MODEL_PREFIX.length)
-  const sep = rest.indexOf(ACP_MODEL_SEP)
-  const id = sep === -1 ? rest : rest.slice(0, sep)
-  if (id.length === 0) return null
-  const chosen = sep === -1 ? '' : rest.slice(sep + 1)
-  return chosen ? { id, model: chosen } : { id }
+  const selection = parseModelSelection(model)
+  if (selection.namespace !== 'acp' || selection.agent.length === 0) return null
+  return selection.id ? { id: selection.agent, model: selection.id } : { id: selection.agent }
 }
 
 export function isAcpModel(model: string): boolean {
@@ -176,6 +176,47 @@ export function enabledClaudeAcpAgent(
 }
 
 /**
+ * The versioned model name an ACP agent keeps in a choice's `description`
+ * rather than its label. Claude Code labels its models by family alone ("Opus",
+ * "Sonnet") and describes them as "Opus 5 with 1M context · Best for everyday,
+ * complex tasks" — so the leading phrase, minus any variant tail the label
+ * already carries, is the name the user expects to see.
+ *
+ * Null when there is no description, or when it reads as prose rather than a
+ * name: only a short phrase carrying a version number qualifies, so agents that
+ * describe models in a sentence keep their label untouched.
+ */
+export function acpModelVersionName(description: string | undefined): string | null {
+  if (description === undefined) return null
+  const [lead = ''] = description.split('·')
+  const [name = ''] = lead.split(/\s+with\s+/i)
+  const trimmed = name.trim()
+  if (trimmed.length === 0 || trimmed.length > 40) return null
+  const words = trimmed.split(/\s+/)
+  if (words.length > 3 || !/\d/.test(trimmed)) return null
+  return trimmed
+}
+
+/**
+ * Picker label for one of an agent's model choices, with the version folded in
+ * when the agent hides it in the description: "Sonnet" → "Sonnet 5", "Opus
+ * (1M context)" → "Opus 5 (1M context)". A label that names something other
+ * than the model family ("Default (recommended)") gets the resolved model
+ * appended instead, and a choice whose label is already versioned is untouched.
+ */
+export function acpModelChoiceLabel(choice: AcpModelChoice): string {
+  const name = acpModelVersionName(choice.description)
+  if (name === null || choice.label.includes(name)) return choice.label
+  const [family = ''] = name.split(/\s+/)
+  const sharesFamily =
+    choice.label.toLowerCase().startsWith(family.toLowerCase()) &&
+    !/[a-z0-9]/i.test(choice.label.charAt(family.length))
+  if (!sharesFamily) return `${choice.label} — ${name}`
+  const rest = choice.label.slice(family.length).trim()
+  return rest ? `${name} ${rest}` : name
+}
+
+/**
  * Picker label for an `acp:<id>` model, given the configured agents. Includes
  * the model name (`Title — Model`) when a specific model is selected, resolving
  * the label from the agent's cached `availableModels` when known.
@@ -186,6 +227,6 @@ export function acpModelDisplayLabel(model: string, agents: readonly AcpAgentCon
   const agent = agents.find((candidate) => candidate.id === selection.id)
   const title = agent?.title ?? selection.id
   if (!selection.model) return title
-  const label = agent?.availableModels?.find((m) => m.value === selection.model)?.label
-  return `${title} — ${label ?? selection.model}`
+  const choice = agent?.availableModels?.find((m) => m.value === selection.model)
+  return `${title} — ${choice ? acpModelChoiceLabel(choice) : selection.model}`
 }

@@ -4,8 +4,7 @@ import type { ToolRegistry } from './tool-registry.ts'
 import { buildProvider, isBillableModel } from './providers/provider-selection.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
-import { getResolvedExtraProviders } from './providers/extra-providers-store.ts'
-import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
+import { resolveModelPricing } from './providers/model-pricing-store.ts'
 import { estimateUsageCost } from '@copse/llm/estimate-cost.ts'
 import { getSetting } from './storage/settings.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
@@ -135,7 +134,7 @@ function reviewOrNote(
 }
 
 function costFor(byModel: Record<string, ModelUsage>): string {
-  return estimateUsageCost(byModel, extraProviderPricingMap(getResolvedExtraProviders()))
+  return estimateUsageCost(byModel, resolveModelPricing())
 }
 
 /** A terminal (errored/declined/skipped) comparison with no review content. */

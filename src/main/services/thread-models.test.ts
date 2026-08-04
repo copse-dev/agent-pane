@@ -1,15 +1,18 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
   clearActiveRunThread,
   clearThreadModels,
   getActiveRunModel,
   getActiveRunThread,
+  getActiveRunTurnTreeId,
   getThreadModels,
   recordThreadModel,
   runWithActiveRunIdentity,
   setActiveRunModel,
   setActiveRunThread,
+  setActiveRunTurnTreeId,
 } from './thread-models.ts'
 
 afterEach(() => {
@@ -38,9 +41,20 @@ describe('active run identity', () => {
   it('is absent outside a run and rejects an unbound setter', () => {
     assert.equal(getActiveRunThread(), null)
     assert.equal(getActiveRunModel(), null)
+    assert.equal(getActiveRunTurnTreeId(), null)
     assert.throws(() => {
       setActiveRunThread('t1')
     }, /No active run identity context/)
+  })
+
+  it('carries and clears the human-originated turn-tree epoch', () => {
+    runWithActiveRunIdentity('t1', () => {
+      const turnTreeId = asTurnTreeId('tree-1')
+      setActiveRunTurnTreeId(turnTreeId)
+      assert.equal(getActiveRunTurnTreeId(), turnTreeId)
+      clearActiveRunThread('t1')
+      assert.equal(getActiveRunTurnTreeId(), null)
+    })
   })
 
   it('keeps thread and model attribution isolated across interleaved runs', async () => {

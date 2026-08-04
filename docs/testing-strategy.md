@@ -204,6 +204,12 @@ loops driven by an actual local model rather than the mock:
   / `LM_API_TOKEN` and talking to a local OpenAI-compatible endpoint
   (`createLMStudioProvider`, default `http://localhost:1234/v1`).
 - `npm run validate:local-agent` exercises the agent loop headlessly.
+- `npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools`
+  holds a fixed task/model/tool set constant and compares the full system prompt
+  with one named section omitted. It writes solve-rate, doctrine-pass-rate,
+  per-rule, and token deltas under `bench-results/doctrine/`. CI runs its mock
+  smoke arm in the normal bench job; the real model matrix runs nightly or with
+  the `bench-doctrine` label when `LM_EVAL_RUNNER` is configured.
 
 These are deliberately **out of the per-PR critical path** (they need a model
 host and are slow/non-deterministic), but they remain a supported avenue: a

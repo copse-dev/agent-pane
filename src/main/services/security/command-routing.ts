@@ -126,18 +126,34 @@ function hasGroupingOrSubstitution(command: string): boolean {
  * NOT treated as a control operator. Callers must have already rejected command
  * substitution / grouping via {@link hasGroupingOrSubstitution}.
  */
-export function splitSegments(command: string): string[] {
+export type ShellControlOperator = '&&' | '||' | ';' | '|' | '&'
+
+export interface ShellComposition {
+  segments: string[]
+  operators: ShellControlOperator[]
+}
+
+function scanShellComposition(command: string): ShellComposition | null {
   const segments: string[] = []
+  const operators: ShellControlOperator[] = []
   let current = ''
-  let quote: '"' | "'" | null = null
+  const state: { quote: '"' | "'" | null } = { quote: null }
+  const split = (operator: ShellControlOperator): boolean => {
+    const segment = current.trim()
+    if (!segment) return false
+    segments.push(segment)
+    operators.push(operator)
+    current = ''
+    return true
+  }
   for (let i = 0; i < command.length; i++) {
     const ch = command.charAt(i)
-    if (quote) {
+    if (state.quote) {
       current += ch
-      if (quote === '"' && ch === '\\' && i + 1 < command.length) {
+      if (state.quote === '"' && ch === '\\' && i + 1 < command.length) {
         current += command.charAt(++i) // escaped char stays literal, cannot close the quote
-      } else if (ch === quote) {
-        quote = null
+      } else if (ch === state.quote) {
+        state.quote = null
       }
       continue
     }
@@ -147,20 +163,18 @@ export function splitSegments(command: string): string[] {
       continue
     }
     if (ch === '"' || ch === "'") {
-      quote = ch
+      state.quote = ch
       current += ch
       continue
     }
     const two = command.slice(i, i + 2)
     if (two === '&&' || two === '||') {
-      segments.push(current)
-      current = ''
+      if (!split(two)) return null
       i++
       continue
     }
     if (ch === ';' || ch === '\n' || ch === '|') {
-      segments.push(current)
-      current = ''
+      if (!split(ch === '\n' ? ';' : ch)) return null
       continue
     }
     if (ch === '&') {
@@ -169,14 +183,35 @@ export function splitSegments(command: string): string[] {
         current += ch
         continue
       }
-      segments.push(current)
-      current = ''
+      if (!split('&')) return null
       continue
     }
     current += ch
   }
-  segments.push(current)
-  return segments.map((s) => s.trim()).filter(Boolean)
+  if (state.quote !== null) return null
+  const finalSegment = current.trim()
+  if (finalSegment) segments.push(finalSegment)
+  if (segments.length === 0 || operators.length !== segments.length - 1) return null
+  return { segments, operators }
+}
+
+export function splitSegments(command: string): string[] {
+  return scanShellComposition(command)?.segments ?? []
+}
+
+/**
+ * Parse only the top-level composition needed by security policy. This is not a
+ * general shell AST: substitutions and grouping fail closed, while words remain
+ * byte-for-byte source segments for exact authorization checks.
+ */
+export function parseShellComposition(command: string): ShellComposition | null {
+  if (hasGroupingOrSubstitution(command)) return null
+  try {
+    parseShell(command)
+  } catch {
+    return null
+  }
+  return scanShellComposition(command)
 }
 
 /**

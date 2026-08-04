@@ -11,11 +11,13 @@ import type {
   AutomationTriggerEvent,
 } from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  GitPromptState,
   GitBranchInfo,
   SessionBackup,
   GhCliStatus,
@@ -44,6 +46,7 @@ import type {
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 export type { DetectedAcpAgent }
 
@@ -75,10 +78,17 @@ export interface ApiClient {
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
+    createNewProject: (name: string, parentDir: string) => Promise<string>
+    pickParentDirectory: () => Promise<string | null>
+    getHomeDirectory: () => Promise<string>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    sharePageText: (webContentsId: number) => Promise<void>
+    shareScreenshot: (webContentsId: number) => Promise<void>
+    onShareText: (handler: (share: BrowserTextShare) => void) => () => void
+    onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPackTabRequest: (
       handler: (
         request: PackBrowserTabRequest,
@@ -156,6 +166,10 @@ export interface ApiClient {
         rememberLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
+        allowTurnTreeLease?: boolean
+        turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
+        turnTreeLeaseSubject?: string
       }) => void,
     ) => () => void
     onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -210,6 +224,7 @@ export interface ApiClient {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
+      grantScope?: 'once' | 'turn-tree',
     ) => Promise<void>
   }
   ask: {
@@ -532,6 +547,12 @@ export interface ApiClient {
     }>
     /** Effective extra-provider list: shipped presets merged with stored overrides/customs. */
     extraProviders: () => Promise<ExtraProvider[]>
+    /**
+     * Every known per-MTok rate outside the static cloud catalog (cached
+     * OpenRouter catalog rates merged with extra-provider rates), keyed by the
+     * model selection string. Feeds the footer cost estimate.
+     */
+    modelPricing: () => Promise<import('@copse/llm/model-pricing.ts').ModelPricingMap>
     /** Insert/replace a preset override or custom provider; returns the resolved list. */
     saveExtraProvider: (
       record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
@@ -672,6 +693,11 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
   }
+  supervisor: {
+    list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
+    cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
+    onChanged(callback: (projectId: string) => void): () => void
+  }
   skills: {
     list: () => Promise<SkillSummary[]>
   }
@@ -750,6 +776,8 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
+    promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
     listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
     getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>
