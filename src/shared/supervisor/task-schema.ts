@@ -78,6 +78,7 @@ export const permissionSnapshotSchema = z.object({
   projectSandboxEnabled: z.boolean(),
   executionRoot: z.string().min(1).optional(),
   workspaceTargetKind: z.enum(['local', 'ssh']).optional(),
+  workspaceTargetId: z.string().min(1).optional(),
   capabilityProfileId: z.string().min(1).optional(),
   extra: z.record(z.string(), z.unknown()).optional(),
 })
