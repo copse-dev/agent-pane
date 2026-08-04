@@ -63,8 +63,10 @@ export function formatFooterUsageSummary(display: FooterUsageDisplay): string {
 }
 
 /**
- * One-line in/out/cost summary. Used where a popover cannot follow the counter —
- * the compact footer tucks usage into the context wheel's native title.
+ * One-line total + in/out/cost summary. Used where a popover cannot follow the
+ * counter — the compact footer hides the counter and tucks usage into the
+ * context wheel's native title. It leads with the same total the counter shows,
+ * because in that layout the wheel is all that is left of it.
  */
 export function formatFooterUsageDetail(
   display: FooterUsageDisplay,
@@ -76,9 +78,10 @@ export function formatFooterUsageDetail(
 ): string {
   const { inputTokens, outputTokens, estimated } = display
   const approx = estimated ? '~' : ''
-  const tokens = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`
   const cost = estimated
     ? 'est.'
     : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing)
-  return cost ? `Usage: ${tokens} · ${cost}` : `Usage: ${tokens}`
+  const parts = [formatFooterUsageSummary(display), split, ...(cost ? [cost] : [])]
+  return `Usage: ${parts.join(' · ')}`
 }

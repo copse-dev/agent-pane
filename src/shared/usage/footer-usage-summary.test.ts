@@ -141,7 +141,7 @@ describe('formatFooterUsageDetail', () => {
         { inputTokens: 1200, outputTokens: 80, estimated: true },
         { model: 'lmstudio:qwen', measuredUsage: { inputTokens: 0, outputTokens: 0 } },
       ),
-      'Usage: ~1.2k in / ~80 out · est.',
+      'Usage: ~1.3k tokens · ~1.2k in / ~80 out · est.',
     )
   })
 
@@ -151,7 +151,7 @@ describe('formatFooterUsageDetail', () => {
         { inputTokens: 1200, outputTokens: 80, estimated: false },
         { model: 'lmstudio:qwen', measuredUsage: { inputTokens: 1200, outputTokens: 80 } },
       ),
-      'Usage: 1.2k in / 80 out · free (local)',
+      'Usage: 1.3k tokens · 1.2k in / 80 out · free (local)',
     )
   })
 
@@ -161,7 +161,26 @@ describe('formatFooterUsageDetail', () => {
         { inputTokens: 1200, outputTokens: 80, estimated: false },
         { model: 'mystery-model', measuredUsage: { inputTokens: 1200, outputTokens: 80 } },
       ),
-      'Usage: 1.2k in / 80 out',
+      'Usage: 1.3k tokens · 1.2k in / 80 out',
     )
+  })
+})
+
+describe('formatFooterUsageDetail leads with the counter total', () => {
+  // The compact footer hides the token counter and shows only this line, in the
+  // context wheel's title — so it must still answer "how many tokens?".
+  // tests/demo/footer-compact.demo.ts pins that against the demo scenario.
+  it('starts with the same label the counter would show', () => {
+    const display = { inputTokens: 12_900_000, outputTokens: 211_000, estimated: false }
+    const detail = formatFooterUsageDetail(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+    })
+
+    assert.ok(
+      detail.includes(formatFooterUsageSummary(display)),
+      `expected "${detail}" to contain "${formatFooterUsageSummary(display)}"`,
+    )
+    assert.match(detail, /^Usage: 13\.1M tokens · 12\.9M in \/ 211\.0k out · /)
   })
 })
