@@ -3,24 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Copse — an AI editor that stays on your machine</title>
+    <title>Copse — AI coding that stays on your machine</title>
     <link rel="icon" href="brand-mark.svg" />
     <meta
       name="description"
-      content="Copse is a free, open-source desktop AI coding assistant with transparent tools, approval gates, local or cloud models, Monaco, git, terminal, and browser support."
+      content="Download Copse, the free and open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support."
     />
-    <meta property="og:title" content="Copse — an AI editor that stays on your machine" />
+    <meta property="og:title" content="Copse — AI coding that stays on your machine" />
     <meta
       property="og:description"
-      content="A desktop-native agentic editor that talks directly to your model provider and keeps you in control."
+      content="A desktop-native coding agent that talks directly to the model or coding agent you choose and keeps you in control."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://copse.dev/" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="Copse — an AI editor that stays on your machine" />
+    <meta name="twitter:title" content="Copse — AI coding that stays on your machine" />
     <meta
       name="twitter:description"
-      content="A desktop-native agentic editor that talks directly to your model provider and keeps you in control."
+      content="A desktop-native coding agent that talks directly to the model or coding agent you choose and keeps you in control."
     />
     <script type="application/ld+json">
       {
@@ -29,7 +29,7 @@
         "name": "Copse",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS",
-        "description": "Copse is a free, open-source desktop AI coding assistant with transparent tools, approval gates, local or cloud models, Monaco, git, terminal, and browser support.",
+        "description": "Copse is a free, open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support.",
         "url": "https://copse.dev/",
         "offers": {
           "@type": "Offer",
@@ -51,325 +51,473 @@
         <div class="nav-links">
           <a href="#tour">Tour</a>
           <a href="#capabilities">Capabilities</a>
-          <a href="#download">Download</a>
-          <a href="architecture.html">Architecture</a>
+          <a href="#providers">Models &amp; agents</a>
         </div>
-        <a class="nav-release" href="https://github.com/copse-dev/agent-pane/releases">Releases</a>
+        <a class="nav-cta" href="#download">Download</a>
       </nav>
     </header>
 
-    <main id="main-content">
-      <section class="hero" id="top">
-        <div class="line-field line-field-top" aria-hidden="true"></div>
-        <div class="hero-copy" id="tour">
-          <div class="hero-badges" aria-label="Copse highlights">
-            <span>
-              <svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="m3 8.5 3 3 7-7" />
-              </svg>
-              Free &amp; open source
-            </span>
-            <span>
-              <svg class="badge-icon badge-desktop" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="2.5" y="3" width="11" height="8" rx="1" />
-                <path d="M1.5 13h13" />
-              </svg>
-              Desktop native
-            </span>
+    <div class="page-content-stage">
+      <main id="main-content">
+        <section class="hero" id="top">
+          <div class="line-field line-field-top" aria-hidden="true"></div>
+          <div class="hero-copy" id="tour">
+            <div class="hero-badges" aria-label="Copse highlights">
+              <span>
+                <svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="m3 8.5 3 3 7-7" />
+                </svg>
+                Free &amp; open source
+              </span>
+              <span>
+                <svg class="badge-icon badge-desktop" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="2.5" y="3" width="11" height="8" rx="1" />
+                  <path d="M1.5 13h13" />
+                </svg>
+                Desktop native
+              </span>
+            </div>
+            <h1>
+              <span class="hero-wordmark-slot">
+                <img
+                  class="hero-wordmark"
+                  src="brand-wordmark.svg"
+                  alt="Copse"
+                  width="190"
+                  height="61"
+                />
+              </span>
+              is an AI coding workspace that stays on your machine
+            </h1>
+            <p class="hero-lede">An agentic workspace, not a chat tab bolted onto an editor.</p>
+            <p>
+              Bring the cloud model, local model, or coding agent you already trust. Follow its
+              work, shape how much autonomy it has, and keep the whole project on your machine.
+            </p>
+            <div class="button-row">
+              <a class="pill pill-primary" href="#download">Download for macOS</a>
+              <a class="pill pill-outline" href="https://github.com/copse-dev/agent-pane"
+                >View repo</a
+              >
+            </div>
           </div>
-          <h1>
-            <span class="hero-wordmark-slot">
-              <img
-                class="hero-wordmark"
-                src="brand-wordmark.svg"
-                alt="Copse"
-                width="190"
-                height="61"
-              />
-            </span>
-            is an AI editor that stays on your machine
-          </h1>
-          <p class="hero-lede">An agentic platform, not a chat tab bolted onto an editor.</p>
-          <p>
-            Your agent plans, edits, and runs commands, but nothing happens without your say-so.
-          </p>
-          <div class="button-row">
-            <a class="pill pill-primary" href="#download">Build for macOS</a>
-            <a class="pill pill-outline" href="https://github.com/copse-dev/agent-pane"
-              >View repo</a
+          <figure class="hero-visual">
+            <a
+              class="hero-demo-popout"
+              href="demo/main/?scenario=landing"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open the Copse demo in a new window"
+              title="Open demo in a new window"
+              >⧉</a
             >
-          </div>
-        </div>
-        <figure class="hero-visual">
-          <img
-            src="screenshots/chat-layout-three-pane.png"
-            alt="Copse with a projects sidebar, agent conversation, and editor panel"
-            width="1280"
-            height="800"
-          />
-        </figure>
-      </section>
-
-      <section class="manifesto" aria-label="Copse principles">
-        <div class="section-rule" aria-hidden="true"></div>
-        <p>
-          Unlike Cursor, Copilot, or hosted Claude Code, Copse talks straight to your model provider
-          from your machine — there’s no Copse server in between, every write or shell command needs
-          a click first, and the whole thing is open source.
-        </p>
-        <div class="mark-tile" aria-hidden="true">
-          <img src="brand-mark.svg" alt="" width="34" height="34" />
-        </div>
-      </section>
-
-      <section class="capabilities-section" id="capabilities">
-        <div class="line-field line-field-tools" aria-hidden="true"></div>
-        <h2>Powerful tools, all at your control</h2>
-
-        <div class="feature-stage">
-          <figure class="feature-stage-image">
-            <img
-              src="screenshots/chat-layout-three-pane.png"
-              alt="The Copse workspace with agent output and a message composer"
-              width="1280"
-              height="800"
-              loading="lazy"
-            />
+            <div class="hero-demo">
+              <iframe
+                id="hero-demo-frame"
+                class="hero-demo-frame"
+                src="demo/main/?scenario=landing&amp;embedded=1"
+                title="Live demo of Copse answering a question about its own codebase"
+                width="1280"
+                height="800"
+                loading="eager"
+                sandbox="allow-scripts allow-same-origin"
+                allow="clipboard-write"
+                tabindex="-1"
+                aria-hidden="true"
+              ></iframe>
+              <button
+                class="hero-demo-activate"
+                type="button"
+                aria-controls="hero-demo-frame"
+                aria-label="Interact with the Copse demo"
+                aria-pressed="false"
+              >
+                <span>Click to interact</span>
+              </button>
+            </div>
           </figure>
-          <div class="feature-list">
-            <article class="feature-list-item is-expanded">
-              <h3>Transparent tool use</h3>
+        </section>
+
+        <section class="manifesto" aria-label="Copse principles">
+          <div class="section-rule" aria-hidden="true"></div>
+          <p>
+            Copse talks straight to the model or coding agent you choose — there’s no Copse server
+            in between. Work stays inside the project sandbox, and Copse asks before crossing the
+            boundaries you set. Recognised low-risk commands can run automatically, with every
+            decision recorded.
+          </p>
+          <div class="mark-tile" aria-hidden="true">
+            <img src="brand-mark.svg" alt="" width="34" height="34" />
+          </div>
+        </section>
+
+        <section class="capabilities-section" id="capabilities">
+          <div class="line-field line-field-tools" aria-hidden="true"></div>
+          <h2>Powerful tools, all at your control</h2>
+
+          <div class="feature-stage">
+            <figure class="feature-stage-image">
+              <img
+                id="feature-tour-image"
+                src="screenshots/thread-fork-resend-actions.png"
+                alt="A Copse conversation offering Fork from here and Resend actions"
+                width="1280"
+                height="800"
+                loading="lazy"
+              />
+              <figcaption id="feature-tour-caption">
+                Branch from any prompt without changing the original thread.
+              </figcaption>
+            </figure>
+            <div class="feature-list">
+              <article class="feature-list-item is-expanded">
+                <h3>
+                  <button
+                    class="feature-trigger"
+                    type="button"
+                    aria-expanded="true"
+                    data-image="screenshots/thread-fork-resend-actions.png"
+                    data-alt="A Copse conversation offering Fork from here and Resend actions"
+                    data-caption="Branch from any prompt without changing the original thread."
+                  >
+                    Branch any investigation
+                  </button>
+                </h3>
+                <p>
+                  Fork a whole thread or restart from an earlier prompt with the same model context.
+                  Resend the last request, queue the next one, and keep the original untouched.
+                </p>
+              </article>
+              <article class="feature-list-item">
+                <h3>
+                  <button
+                    class="feature-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    data-image="screenshots/subagent-display-expanded.png"
+                    data-alt="A completed Copse subagent exploration expanded in the conversation"
+                    data-caption="Delegate a focused search and inspect every step of the result."
+                  >
+                    Explore in parallel
+                  </button>
+                </h3>
+                <p>
+                  Hand focused research to subagents while the main conversation keeps moving. Their
+                  reasoning, tools, failures, and conclusions remain inspectable in the transcript.
+                </p>
+              </article>
+              <article class="feature-list-item">
+                <h3>
+                  <button
+                    class="feature-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    data-image="screenshots/archive-attachment-chip.png"
+                    data-alt="A zip archive attached to a Copse prompt"
+                    data-caption="Ask with code, selections, images, recordings, or a whole archive."
+                    data-detail="true"
+                  >
+                    Bring the evidence
+                  </button>
+                </h3>
+                <p>
+                  Attach files, editor selections, images, screen recordings, video, and zip
+                  archives. Copse safely unpacks bundles and keeps their contents with the thread.
+                </p>
+              </article>
+              <article class="feature-list-item">
+                <h3>
+                  <button
+                    class="feature-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    data-image="screenshots/provider-settings.png"
+                    data-alt="Copse provider settings showing cloud and local model options"
+                    data-caption="Choose a provider, local model server, or installed coding agent."
+                  >
+                    Use the agent you want
+                  </button>
+                </h3>
+                <p>
+                  Connect directly to cloud providers, run local models, or use compatible coding
+                  agents installed on your machine. Switch without leaving the workspace.
+                </p>
+              </article>
+            </div>
+          </div>
+
+          <a class="pill pill-outline pill-centered" href="#download">Download for macOS</a>
+
+          <div class="spotlight-grid" aria-label="Control and privacy">
+            <article
+              class="spotlight-card spotlight-card-zoomed spotlight-card-zoomed-bottom-right"
+            >
+              <figure>
+                <img
+                  src="screenshots/tool-display-group-expanded.png"
+                  alt="Expanded tool activity in a Copse conversation"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+              <h3>See every action</h3>
               <p>
-                Every agent action appears as a human-readable tool card. Related calls group
-                together so a burst of file reads stays compact; expand any group to inspect
-                individual steps, arguments, and errors.
+                Tool calls, commands, diffs, subagents, hooks, and failures stay visible. Related
+                activity groups together without hiding the underlying steps.
               </p>
             </article>
-            <article class="feature-list-item"><h3>Isolated worktrees per thread</h3></article>
-            <article class="feature-list-item"><h3>Monaco ↔ chat bridge</h3></article>
-            <article class="feature-list-item"><h3>Hooks visible in chat</h3></article>
-            <article class="feature-list-item"><h3>Subagents for deep exploration</h3></article>
+            <article class="spotlight-card">
+              <figure>
+                <img
+                  src="screenshots/mcp-settings-connected.png"
+                  alt="Tool permissions for a connected MCP server in Copse settings"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+              <h3>Set the boundary</h3>
+              <p>
+                Keep work inside the project sandbox, approve access beyond it, or allow recognised
+                low-risk command shapes. Permission decisions have a durable audit trail.
+              </p>
+            </article>
+            <article class="spotlight-card spotlight-card-zoomed spotlight-card-zoomed-top-left">
+              <figure>
+                <img
+                  src="screenshots/subagent-display-expanded.png"
+                  alt="A nested Copse agent expanded inside the conversation record"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                />
+              </figure>
+              <h3>Keep the whole record</h3>
+              <p>
+                Conversations live as ordinary files. Export a portable transcript or the complete
+                thread folder, including plans, attachments, tool data, and nested agents.
+              </p>
+            </article>
           </div>
+        </section>
+
+        <div class="providers-features-stage">
+          <section class="providers" id="providers" aria-labelledby="providers-title">
+            <div class="providers-heading">
+              <div>
+                <p class="section-kicker">One model picker</p>
+                <h2 id="providers-title">Choose how Copse thinks</h2>
+              </div>
+              <p>
+                Pick a provider, then choose its API, cloud agent, installed agent, or model server.
+                Copse sends requests straight from your machine to the route you select.
+              </p>
+            </div>
+            <div class="provider-modes">
+              <article>
+                <p class="mode-label">Direct cloud</p>
+                <h3>Use your own provider account</h3>
+                <p>
+                  OpenAI, Anthropic, Gemini, OpenRouter, Groq, Together AI, Fireworks, and more.
+                </p>
+              </article>
+              <article>
+                <p class="mode-label">Local models</p>
+                <h3>Keep inference on your hardware</h3>
+                <p>
+                  Connect LM Studio, Ollama, llama.cpp, Jan, vLLM, or another compatible endpoint.
+                </p>
+              </article>
+              <article>
+                <p class="mode-label">Coding agents</p>
+                <h3>Use the tools already on your machine</h3>
+                <p>Connect compatible installed agents and keep their work visible inside Copse.</p>
+              </article>
+            </div>
+            <div class="provider-strip" role="list">
+              <div role="listitem" aria-label="OpenAI">
+                <img
+                  class="provider-logo provider-logo-openai"
+                  src="provider-logos/openai.png"
+                  alt=""
+                  width="36"
+                  height="36"
+                  loading="lazy"
+                />
+              </div>
+              <div role="listitem" aria-label="Anthropic">
+                <img
+                  class="provider-logo provider-logo-anthropic"
+                  src="provider-logos/anthropic.png"
+                  alt=""
+                  width="106"
+                  height="14"
+                  loading="lazy"
+                />
+              </div>
+              <div role="listitem" aria-label="Grok">
+                <img
+                  class="provider-logo provider-logo-grok"
+                  src="provider-logos/grok.png"
+                  alt=""
+                  width="68"
+                  height="26"
+                  loading="lazy"
+                />
+              </div>
+              <div role="listitem" aria-label="Together AI">
+                <img
+                  class="provider-logo provider-logo-together"
+                  src="provider-logos/together.png"
+                  alt=""
+                  width="90"
+                  height="22"
+                  loading="lazy"
+                />
+              </div>
+              <div role="listitem" aria-label="Fireworks AI">
+                <img
+                  class="provider-logo provider-logo-fireworks"
+                  src="provider-logos/fireworks.png"
+                  alt=""
+                  width="107"
+                  height="16"
+                  loading="lazy"
+                />
+              </div>
+              <div role="listitem" aria-label="Gemini">
+                <img
+                  class="provider-logo provider-logo-gemini"
+                  src="provider-logos/gemini.png"
+                  alt=""
+                  width="79"
+                  height="23"
+                  loading="lazy"
+                />
+              </div>
+              <div role="listitem" aria-label="Mistral">
+                <img
+                  class="provider-logo provider-logo-mistral"
+                  src="provider-logos/mistral.png"
+                  alt=""
+                  width="38"
+                  height="38"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+            <div class="privacy-callout">
+              <div>
+                <p class="section-kicker">Privacy you can inspect</p>
+                <h3>Know where your data goes</h3>
+              </div>
+              <p>
+                Copse has no hosted backend and sends no product telemetry. Provider policy badges
+                show retention and training defaults; OpenRouter uses zero-data-retention,
+                non-training routes by default, and direct OpenAI requests opt out of storage.
+              </p>
+              <a href="privacy.html">Read the privacy details →</a>
+            </div>
+          </section>
+
+          <section class="other-features" aria-labelledby="other-features-title">
+            <svg
+              class="other-features-spiral"
+              viewBox="-540 -540 1080 1080"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                class="other-features-spiral-path"
+                pathLength="1"
+                d="M416.134 -141.959 C384 -475 -72 -488 -286.485 -266.216 C-474.71 -71.585 -423.084 227.135 -226.856 360.464 C5 518 328 385 297.052 111.165 C273.531 -96.947 -15 -98 -62.629 47.319 C-128.956 249.689 154 322 180.928 153.093"
+              ></path>
+            </svg>
+            <div class="section-rule section-rule-left" aria-hidden="true"></div>
+            <h2 id="other-features-title">Other features</h2>
+            <div class="other-grid">
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Worktrees per thread</h3>
+                <p>
+                  Give concurrent tasks isolated branches without losing the state of the main
+                  checkout.
+                </p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Search by meaning</h3>
+                <p>
+                  Find relevant code with bundled semantic indexing and explore results in chat.
+                </p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Git, shells, and browser</h3>
+                <p>
+                  Run tests, review changes and pull requests, or exercise a local site beside the
+                  chat.
+                </p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Plans that survive the turn</h3>
+                <p>Keep durable project knowledge and multi-step plans beside the conversation.</p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Skills and feature packs</h3>
+                <p>
+                  Add reusable instructions, tools, hooks, panels, and focused agent behaviours.
+                </p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Extend what the agent can do</h3>
+                <p>
+                  Connect MCP servers, JavaScript tools, compatible hooks, and existing Cursor
+                  sources.
+                </p>
+              </article>
+            </div>
+          </section>
         </div>
 
-        <a class="pill pill-outline pill-centered" href="#download">Build for macOS</a>
+        <section class="download-panel" id="download">
+          <div class="download-lines" aria-hidden="true"></div>
+          <div>
+            <p class="download-kicker">Free, open source, and built in public</p>
+            <h2>Download Copse</h2>
+            <p>
+              Get the latest macOS release for Apple Silicon or Intel. Prefer to inspect every line
+              or contribute a change? The complete source and build instructions are on GitHub.
+            </p>
+            <div class="download-secondary">
+              <a href="https://github.com/copse-dev/agent-pane">View source</a>
+              <a href="https://github.com/copse-dev/agent-pane/releases">Release notes</a>
+            </div>
+          </div>
+          <a class="pill pill-pink" href="https://github.com/copse-dev/agent-pane/releases"
+            >Download for macOS</a
+          >
+        </section>
+      </main>
 
-        <div class="spotlight-grid">
-          <article class="spotlight-card">
-            <figure>
-              <img
-                src="screenshots/staged-diff-single.png"
-                alt="A pending edit waiting for approval"
-                width="1280"
-                height="800"
-                loading="lazy"
-              />
-            </figure>
-            <h3>Approve edits before they land</h3>
-            <p>
-              Agent-proposed file changes enter a staged-diff queue you review in Monaco, hunk by
-              hunk, before anything touches disk.
-            </p>
-          </article>
-          <article class="spotlight-card">
-            <figure>
-              <img
-                src="screenshots/mcp-settings-connected.png"
-                alt="An MCP server connected in Copse settings"
-                width="1280"
-                height="800"
-                loading="lazy"
-              />
-            </figure>
-            <h3>MCP servers on your terms</h3>
-            <p>
-              Connect project or global servers, see their status, and decide exactly which tool
-              calls are allowed to run.
-            </p>
-          </article>
-          <article class="spotlight-card">
-            <figure>
-              <img
-                src="screenshots/semantic-search-explore-expanded.png"
-                alt="Semantic search results inside Copse"
-                width="1280"
-                height="800"
-                loading="lazy"
-              />
-            </figure>
-            <h3>Everything else in one panel</h3>
-            <p>
-              Regex search, semantic indexing, terminal output, git, pull requests, and an embedded
-              browser — all reachable beside your file tree.
-            </p>
-          </article>
-        </div>
-      </section>
-
-      <section class="providers" aria-labelledby="providers-title">
-        <h2 id="providers-title">Choose providers</h2>
-        <div class="provider-strip" role="list">
-          <div role="listitem" aria-label="OpenAI">
-            <img
-              class="provider-logo provider-logo-openai"
-              src="provider-logos/openai.png"
-              alt=""
-              width="36"
-              height="36"
-              loading="lazy"
-            />
-          </div>
-          <div role="listitem" aria-label="Anthropic">
-            <img
-              class="provider-logo provider-logo-anthropic"
-              src="provider-logos/anthropic.png"
-              alt=""
-              width="106"
-              height="14"
-              loading="lazy"
-            />
-          </div>
-          <div role="listitem" aria-label="Grok">
-            <img
-              class="provider-logo provider-logo-grok"
-              src="provider-logos/grok.png"
-              alt=""
-              width="68"
-              height="26"
-              loading="lazy"
-            />
-          </div>
-          <div role="listitem" aria-label="Together AI">
-            <img
-              class="provider-logo provider-logo-together"
-              src="provider-logos/together.png"
-              alt=""
-              width="90"
-              height="22"
-              loading="lazy"
-            />
-          </div>
-          <div role="listitem" aria-label="Fireworks AI">
-            <img
-              class="provider-logo provider-logo-fireworks"
-              src="provider-logos/fireworks.png"
-              alt=""
-              width="107"
-              height="16"
-              loading="lazy"
-            />
-          </div>
-          <div role="listitem" aria-label="Gemini">
-            <img
-              class="provider-logo provider-logo-gemini"
-              src="provider-logos/gemini.png"
-              alt=""
-              width="79"
-              height="23"
-              loading="lazy"
-            />
-          </div>
-          <div role="listitem" aria-label="Mistral">
-            <img
-              class="provider-logo provider-logo-mistral"
-              src="provider-logos/mistral.png"
-              alt=""
-              width="38"
-              height="38"
-              loading="lazy"
-            />
-          </div>
-        </div>
-      </section>
-
-      <section class="other-features" aria-labelledby="other-features-title">
-        <div class="section-rule section-rule-left" aria-hidden="true"></div>
-        <h2 id="other-features-title">Other features</h2>
-        <div class="other-grid">
-          <article>
-            <span aria-hidden="true">✓</span>
-            <h3>Plan and remember</h3>
-            <p>Keep durable project knowledge and multi-step plans beside the conversation.</p>
-          </article>
-          <article>
-            <span aria-hidden="true">✓</span>
-            <h3>Search by meaning</h3>
-            <p>Find relevant code with bundled semantic indexing and explore results in chat.</p>
-          </article>
-          <article>
-            <span aria-hidden="true">✓</span>
-            <h3>Shell with guardrails</h3>
-            <p>Run commands through explicit approvals and a project sandbox where supported.</p>
-          </article>
-          <article>
-            <span aria-hidden="true">✓</span>
-            <h3>Bring your own models</h3>
-            <p>
-              Use direct provider keys, OpenRouter, LM Studio, or an OpenAI-compatible endpoint.
-            </p>
-          </article>
-          <article>
-            <span aria-hidden="true">✓</span>
-            <h3>Browser automation</h3>
-            <p>Test local web interfaces in a real, origin-gated browser without leaving Copse.</p>
-          </article>
-          <article>
-            <span aria-hidden="true">✓</span>
-            <h3>Cursor-compatible</h3>
-            <p>
-              Reuse project skills, marketplace plugins, MCP configuration, and permission hooks.
-            </p>
-          </article>
-        </div>
-      </section>
-
-      <section class="download-panel" id="download">
-        <div class="download-lines" aria-hidden="true"></div>
+      <footer class="site-footer">
+        <a class="wordmark footer-wordmark" href="#top" aria-label="Copse home">
+          <img class="wordmark-image" src="brand-wordmark.svg" alt="" width="78" height="25" />
+        </a>
+        <p>Free &amp; open source · Made for developers who pair with agents every day</p>
         <div>
-          <p class="download-kicker">Free, open source, and built in public</p>
-          <h2>Ready to start?</h2>
-          <p>
-            Copse currently ships from source. You’ll need Node.js 22.18 or newer; the supported
-            packaged app target is macOS 26 or newer on Apple Silicon or Intel.
-          </p>
-          <div class="command-row" aria-label="Install command">
-            <code>git clone https://github.com/copse-dev/agent-pane.git</code>
-            <button type="button" onclick="copyCommand(this)">Copy</button>
-          </div>
+          <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="privacy.html">Privacy</a>
         </div>
-        <a class="pill pill-pink" href="https://github.com/copse-dev/agent-pane#readme"
-          >Build for macOS</a
-        >
-      </section>
-    </main>
+      </footer>
+    </div>
 
-    <footer class="site-footer">
-      <a class="wordmark footer-wordmark" href="#top" aria-label="Copse home">
-        <img class="wordmark-image" src="brand-wordmark.svg" alt="" width="78" height="25" />
-      </a>
-      <div>
-        <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
-        <a href="architecture.html">Architecture</a>
-        <a href="privacy.html">Privacy</a>
-      </div>
-      <p>Free &amp; open source · Made for developers who pair with agents every day</p>
-    </footer>
-
-    <script>
-      function copyCommand(button) {
-        const command = 'git clone https://github.com/copse-dev/agent-pane.git'
-        navigator.clipboard
-          .writeText(command)
-          .then(() => {
-            button.textContent = 'Copied'
-            window.setTimeout(() => {
-              button.textContent = 'Copy'
-            }, 1600)
-          })
-          .catch(() => {
-            button.textContent = 'Select command'
-          })
-      }
-    </script>
+    <script src="hero-demo.js" defer></script>
+    <script src="site.js" defer></script>
   </body>
 </html>

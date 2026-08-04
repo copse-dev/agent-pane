@@ -214,7 +214,7 @@ jobs:
           done
           shasum -a 256 release/*.dmg release/*.zip release/*.blockmap "${update_metadata[@]}" > release/SHA256SUMS
       - name: Attest tested release artifacts
-        uses: actions/attest@v4
+        uses: actions/attest@v4.2.0
         with:
           subject-path: |
             release/*.dmg

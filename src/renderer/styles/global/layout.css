@@ -70,9 +70,25 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.projects-open-btn {
-  font-size: 11px;
-  color: var(--accent);
+/* Projects header "+" — at least as large as the per-project "+" (new thread)
+   so the two affordances read as one family, with extra room around it so the
+   primary create affordance is comfortable to hit. */
+.projects-add-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-secondary);
+  margin: 0 2px 0 6px;
+}
+.projects-add-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 /* Thread-filter toggle in the projects header; `.active` while its row is open. */
 .projects-search-btn {

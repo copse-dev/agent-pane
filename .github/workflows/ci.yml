@@ -1,12 +1,12 @@
 name: CI
 on:
   push:
-    # `develop` is the default branch and the integration target: day-to-day PRs
-    # land there under the LIGHT tier. `main` only ever receives promotion PRs
-    # from `develop`, and those run the FULL tier — so `main` is always in a
+    # `main` is the default branch and the integration target: day-to-day PRs
+    # land there under the LIGHT tier. `release` only ever receives promotion
+    # PRs from `main`, and those run the FULL tier — so `release` is always in a
     # state a release can be cut from. See the heavy-tier guards on `bench` /
     # `e2e` below, and docs/testing-strategy.md.
-    branches: [main, develop]
+    branches: [release, main]
     # A release tag must receive this exact same aggregate gate before the
     # publishing workflow will package it. See release-mac.yml's preflight.
     tags: ['v*']
@@ -22,9 +22,9 @@ on:
     # never dispatch those jobs and `CI Passed` would sit on the draft's
     # heavy-jobs-skipped result forever.
     types: [opened, synchronize, reopened, labeled, ready_for_review]
-    # No `branches:` filter — PRs into `develop` and the promotion PRs into
-    # `main` both run this workflow. Which TIER they get is decided per job by
-    # `github.base_ref`, not here, so a PR retargeted from `develop` to `main`
+    # No `branches:` filter — PRs into `main` and the promotion PRs into
+    # `release` both run this workflow. Which TIER they get is decided per job by
+    # `github.base_ref`, not here, so a PR retargeted from `main` to `release`
     # picks up the full tier on its next sync without touching this file.
   # Nightly full e2e on GitHub-hosted runners — the comprehensive safety net.
   # PR/push runs are oracle-thinned on self-hosted (see the e2e job), so the
@@ -240,8 +240,8 @@ jobs:
           # to thin or skip it. Keep this after the screenshot-only escape above:
           # the bot's reference-only follow-up has already inherited a successful
           # e2e run from its parent and must not start a render/commit loop.
-          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then
-            echo "PR targets main -> full e2e suite (promotion gate)"
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then
+            echo "PR targets release -> full e2e suite (promotion gate)"
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -455,11 +455,11 @@ jobs:
   bench:
     needs: precheck
     if: >-
-      (github.event_name != 'push' || github.ref != 'refs/heads/develop') &&
+      (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
-       github.base_ref == 'main' ||
+       github.base_ref == 'release' ||
        contains(github.event.pull_request.labels.*.name, 'ci-full')) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
@@ -513,6 +513,12 @@ jobs:
       # write → grading) and the --gate ratchet compares solve rate and
       # tokens-per-solve against benchmarks/bench-baseline.json. No model, ~30s.
       - run: npm run bench:agent -- --mock --gate
+      # Doctrine ablation harness self-test (#744): runs the full and omit-tools
+      # arms through the real agent loop with a deterministic mock task. The
+      # real-model matrix stays in doctrine-eval-model below.
+      - run: >-
+          npm run eval:doctrine -- --provider mock --repeats 1 --sections tools
+          --out bench-results/doctrine-mock --require-solved --require-doctrine
       - uses: actions/upload-artifact@v7
         if: always()
         continue-on-error: true
@@ -555,6 +561,36 @@ jobs:
           if-no-files-found: ignore
           # Small trend data; keep two weeks for regression triage, then expire.
           retention-days: 14
+
+  # Working-style doctrine prompt-section A/B (#744): same fixed task subset,
+  # model, and sampling posture for full vs omitted prompt sections. Runs only
+  # nightly or when a PR is explicitly labelled `bench-doctrine`, and only on a
+  # configured LM Studio eval runner. Trend report only; never a merge gate.
+  doctrine-eval-model:
+    needs: precheck
+    if: >-
+      vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name == 'schedule' ||
+       contains(github.event.pull_request.labels.*.name, 'bench-doctrine'))
+    runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+      - env:
+          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
+          LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
+          LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
+        run: >-
+          npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools
+          --out bench-results/doctrine
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: doctrine-eval-model
+          path: bench-results/doctrine/
+          if-no-files-found: ignore
+          retention-days: 30
 
   build:
     needs: precheck
@@ -636,11 +672,11 @@ jobs:
     needs: [build, precheck]
     if: >-
       needs.precheck.outputs.e2e_shard_total != '0' &&
-      (github.event_name != 'push' || github.ref != 'refs/heads/develop') &&
+      (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
-       github.base_ref == 'main' ||
+       github.base_ref == 'release' ||
        contains(github.event.pull_request.labels.*.name, 'ci-full') ||
        contains(github.event.pull_request.labels.*.name, 'update-screenshots')) &&
       (github.event_name != 'pull_request' ||
@@ -1502,10 +1538,16 @@ jobs:
   # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
   # after a real shard failure still fail because `ANY_FAILURE` is true first.
   ci-passed:
-    # A push to develop intentionally skips the expensive tier. Give that run a
-    # distinct check context so its green result on the same head SHA cannot
-    # satisfy main's required `CI Passed` check before promotion e2e has run.
-    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'Develop CI Passed' || 'CI Passed' }}
+    # A push to trunk (`main`) intentionally skips the expensive tier. Give that
+    # run a distinct check context so its green result on the same head SHA
+    # cannot satisfy `release`'s required `CI Passed` check before promotion e2e
+    # has run.
+    #
+    # The literal name stays `Develop CI Passed` even though trunk is no longer
+    # called `develop`: it is a check-context string that branch protection may
+    # match on by name, so renaming it is a separate change that has to land
+    # together with the protection rule.
+    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' || 'CI Passed' }}
     if: always()
     needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
@@ -1595,7 +1637,7 @@ jobs:
           # skipped because it was a draft, and this gate failed because e2e had
           # not succeeded, so `CI Passed` could never go green — and since a base
           # retarget does not re-run CI, the red outlived the move to `develop`.
-          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
           if $PROMOTION_PR && [ "${{ needs.precheck.outputs.e2e_shard_total }}" != "0" ] && [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "Promotion PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
             echo '${{ toJSON(needs) }}'

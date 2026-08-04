@@ -1,6 +1,18 @@
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { ToolRegistry, setPermissionGateForTests } from './tool-registry.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from './thread-execution-context.ts'
+import { clearAllToolResultCachesForTest } from './search/tool-result-cache.ts'
+import {
+  setExecutionRootWatchForTest,
+  stopAllExecutionRootWatchers,
+} from './search/execution-root-watcher.ts'
 import { z } from 'zod'
 
 describe('ToolRegistry', () => {
@@ -70,6 +82,120 @@ describe('ToolRegistry', () => {
     const result = await reg.execute('echo', { msg: 'plain' }, new AbortController().signal)
     assert.equal(result, 'plain')
     setPermissionGateForTests(null)
+  })
+
+  describe('tool result caching', () => {
+    let root = ''
+    let searchCalls = 0
+
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), 'copse-tool-cache-'))
+      searchCalls = 0
+      clearAllToolResultCachesForTest()
+      setPermissionGateForTests(async () => true)
+      // Caching is gated on being able to watch the root. A container that
+      // refuses an inotify watch would disable caching outright and make every
+      // assertion below pass for the wrong reason, so decide it here.
+      setExecutionRootWatchForTest(() => true)
+    })
+
+    afterEach(async () => {
+      setExecutionRootWatchForTest(null)
+      stopAllExecutionRootWatchers()
+      clearAllToolResultCachesForTest()
+      setPermissionGateForTests(null)
+      if (root) await rm(root, { recursive: true, force: true })
+    })
+
+    function inThread<T>(threadId: string, fn: () => T, branch: string | null = null): T {
+      const context: ThreadExecutionContext = {
+        projectId: 'p1',
+        threadId,
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch,
+      }
+      return runWithThreadExecutionContext(context, fn)
+    }
+
+    function registryWithSearchAndWrite(): ToolRegistry {
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'search_code',
+        description: 'search',
+        parameters: z.object({ pattern: z.string(), path: z.string().optional() }),
+        execute: async ({ pattern }) => {
+          searchCalls++
+          return `match for ${pattern} (call ${String(searchCalls)})`
+        },
+      })
+      reg.register({
+        name: 'write_file',
+        description: 'write',
+        parameters: z.object({ path: z.string() }),
+        execute: async () => 'written',
+      })
+      return reg
+    }
+
+    it('reuses a cached result for a repeated search_code call instead of re-executing', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      const { first, second } = await inThread('t1', async () => ({
+        first: await reg.execute('search_code', { pattern: 'foo' }, signal),
+        second: await reg.execute('search_code', { pattern: 'foo' }, signal),
+      }))
+      assert.equal(searchCalls, 1)
+      assert.equal(first, second)
+    })
+
+    it('drops the cache once a non-read-only tool runs', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await inThread('t1', async () => {
+        await reg.execute('search_code', { pattern: 'foo' }, signal)
+        await reg.execute('write_file', { path: 'a.ts' }, signal)
+        await reg.execute('search_code', { pattern: 'foo' }, signal)
+      })
+      assert.equal(searchCalls, 2)
+    })
+
+    it('does not share cached results across threads', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal))
+      await inThread('t2', () => reg.execute('search_code', { pattern: 'foo' }, signal))
+      assert.equal(searchCalls, 2)
+    })
+
+    it('does not cache outside an agent turn', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await reg.execute('search_code', { pattern: 'foo' }, signal)
+      await reg.execute('search_code', { pattern: 'foo' }, signal)
+      assert.equal(searchCalls, 2)
+    })
+
+    it('does not reuse a result across a branch change', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal), 'main')
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal), 'feature')
+      assert.equal(searchCalls, 2)
+    })
+
+    it('keeps a directory-scoped result across a write the agent makes elsewhere', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      // The mutating-tool path clears the whole thread, so scope only spares a
+      // result when the change arrives via the watcher instead.
+      await inThread('t1', async () => {
+        await reg.execute('search_code', { pattern: 'foo', path: 'docs' }, signal)
+        await reg.execute('search_code', { pattern: 'foo', path: 'docs' }, signal)
+      })
+      assert.equal(searchCalls, 1)
+    })
   })
 
   it('throws on unknown tool', async () => {

@@ -41,6 +41,7 @@ import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { createAutomationPackSettings } from './automation-pack-settings.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
@@ -91,17 +92,41 @@ function isSettingsSection(value: unknown): value is SettingsSection {
 }
 
 /**
+ * Friendly display name for a pack row. First-party packs ship with a
+ * `copse.<kebab>` id; rather than showing that machine id verbatim, strip the
+ * `copse.` prefix and present the rest dash-separated and sentence-cased
+ * (e.g. `copse.post-turn-review` → "Post turn review"). User packs with their
+ * own human name keep it as-is.
+ */
+function packDisplayName(pack: import('@shared/types/packs.ts').PackSummary): string {
+  const raw = pack.name || pack.id
+  if (pack.trust === 'first-party') {
+    const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
+    const words = stripped
+      .replace(/[-_.]+/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+    if (words.length === 0) return raw
+    const sentence = words
+      .map((word) => (word.length ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+      .join(' ')
+    return sentence
+  }
+  return raw
+}
+
+/**
  * Whole-app tint (Appearance ▸ Interface tint). The hue is mixed into every
  * neutral surface at a strength that maps to a percentage; `off` disables it.
  * Applied by writing --tint-hue / --tint-amount on the document root, which
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_ACCENT_COLOR = '#20FD85'
-// Keep the neon interaction accent independent from the deeper surface tint.
-// New users get a restrained green wash; Strong unlocks the exact site palette.
-export const DEFAULT_TINT_COLOR = '#002E2B'
+export const DEFAULT_ACCENT_COLOR = '#FF93D0'
+export const DEFAULT_TINT_COLOR = '#244C25'
 export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
+const COPSE_SITE_TINT_COLOR = '#002E2B'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
   subtle: '4%',
@@ -109,6 +134,28 @@ const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   strong: '16%',
 }
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+// The tint-strength slider snaps to these ordered levels (index = 0..3).
+const UI_TINT_STRENGTHS: readonly UiTintStrength[] = ['off', 'subtle', 'medium', 'strong']
+const TINT_STRENGTH_LABELS: Record<UiTintStrength, string> = {
+  off: 'Off',
+  subtle: 'Subtle',
+  medium: 'Medium',
+  strong: 'Strong',
+}
+
+/** Map a slider value (or an already-internal strength string) to a strength. */
+function tintStrengthFromValue(value: unknown): UiTintStrength {
+  if (isUiTintStrength(value)) return value
+  const index = typeof value === 'number' ? value : Number.parseInt(String(value), 10)
+  return UI_TINT_STRENGTHS[index] ?? DEFAULT_TINT_STRENGTH
+}
+
+/** Map a strength back to the slider's current numeric value. */
+function tintSliderIndex(strength: UiTintStrength): number {
+  const index = UI_TINT_STRENGTHS.indexOf(strength)
+  return index >= 0 ? index : UI_TINT_STRENGTHS.indexOf(DEFAULT_TINT_STRENGTH)
+}
 
 function accentTextColor(color: string): '#444444' | '#ffffff' {
   const linearChannel = (offset: number): number => {
@@ -140,7 +187,7 @@ export function applyUiTint(color: string, strength: UiTintStrength): void {
   if (HEX_COLOR.test(color)) {
     root.style.setProperty('--tint-hue', color)
     root.dataset['tintPalette'] =
-      color.toLowerCase() === DEFAULT_TINT_COLOR.toLowerCase() ? 'copse' : 'custom'
+      color.toLowerCase() === COPSE_SITE_TINT_COLOR.toLowerCase() ? 'copse' : 'custom'
   }
   root.dataset['tintStrength'] = strength
   root.style.setProperty('--tint-amount', TINT_STRENGTH_AMOUNTS[strength])
@@ -199,6 +246,11 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // On by default: clicked links open in the in-app browser pane. Off routes
   // external links to the system browser and marks them with an external icon.
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
+  { name: 'alertOnInteraction', kind: 'checkbox', default: true, save: true },
+  { name: 'alertOnThreadFinished', kind: 'checkbox', default: true, save: true },
+  { name: 'alertSystemNotification', kind: 'checkbox', default: true, save: true },
+  { name: 'alertSound', kind: 'checkbox', default: true, save: true },
+  { name: 'alertBounce', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
@@ -273,20 +325,27 @@ function wireSafetySliders(form: HTMLFormElement): void {
   bind(externalDeny)
 }
 
-async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
-  for (const field of SIMPLE_FIELDS) {
-    if (!field.save) continue
-    if (field.kind === 'checkbox') {
-      await api.settings.set(field.name, data.get(field.name) === 'on')
-    } else if (field.kind === 'number') {
-      const value = formDataString(data, field.name)
-      await api.settings.set(field.name, parseNonNegativeInt(value, field.default))
-    } else {
-      const value = formDataString(data, field.name)
-      const trimmed = field.name === 'customInstructions'
-      await api.settings.set(field.name, trimmed ? value.trim() : value)
-    }
-  }
+async function saveSimpleFields(
+  data: FormData,
+  api: ApiClient,
+  dirtyFieldNames: ReadonlySet<string>,
+): Promise<void> {
+  await Promise.all(
+    SIMPLE_FIELDS.filter((field) => field.save && dirtyFieldNames.has(field.name)).map(
+      async (field) => {
+        if (field.kind === 'checkbox') {
+          await api.settings.set(field.name, data.get(field.name) === 'on')
+        } else if (field.kind === 'number') {
+          const value = formDataString(data, field.name)
+          await api.settings.set(field.name, parseNonNegativeInt(value, field.default))
+        } else {
+          const value = formDataString(data, field.name)
+          const trimmed = field.name === 'customInstructions'
+          await api.settings.set(field.name, trimmed ? value.trim() : value)
+        }
+      },
+    ),
+  )
 }
 
 /** Read a text field from FormData, narrowing to string without a cast. */
@@ -799,8 +858,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Use the switch on each server to turn it off without editing your MCP config files.
                 Off servers are not started on reload.
               </p>
-              <div class="lmstudio-test-row">
-                <button type="button" id="mcp-reload-btn">Reload servers</button>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
+                  Reload servers
+                </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
             </fieldset>
@@ -842,8 +903,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Everything Copse loads for this project. This list is read-only: edit the files
               themselves to change what is loaded.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="sources-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="sources-reload-status"></span>
             </div>
 
@@ -933,9 +996,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
               for authoring and install steps.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="packs-add-btn">Add pack…</button>
-              <button type="button" id="packs-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-add-btn">
+                Add pack…
+              </button>
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
 
@@ -950,19 +1017,41 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="appearance">
             <h3>Appearance</h3>
             <p class="settings-section-desc">
-              Theme, app icon, interface scale, editor font size, and window layout.
+              Theme, app icon, interface scale, window layout, and alerts.
             </p>
+
+            <fieldset data-testid="settings-alerts">
+              <legend>Alerts</legend>
+              <p class="settings-fieldset-desc">
+                Choose when Copse should get your attention and how it should alert you. Each
+                delivery method is independent.
+              </p>
+              <span class="settings-field-label">Notify me when</span>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertOnInteraction" />
+                Thread needs interaction
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertOnThreadFinished" />
+                Thread finishes
+              </label>
+              <span class="settings-field-label">Alert me with</span>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertSystemNotification" />
+                System notification
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertSound" />
+                Sound
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="alertBounce" />
+                Dock or taskbar animation
+              </label>
+            </fieldset>
 
             <fieldset>
               <legend>Display</legend>
-              <label>
-                Theme
-                <select name="theme">
-                  <option value="system">System</option>
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                </select>
-              </label>
               <label>
                 Interface scale
                 <input type="number" name="uiScale" min="0.75" max="1.5" step="0.05" />
@@ -1013,10 +1102,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Interface colours</legend>
               <p class="settings-fieldset-desc">
-                Accent colour is used for links, primary buttons, selected items, focus indicators,
-                and your chat messages. Interface tint adds a separate, subtle wash through neutral
-                surfaces. Both work in light and dark themes.
+                Theme, accent colour, and interface tint. Accent colour is used for links, primary
+                buttons, selected items, focus indicators, and your chat messages. Interface tint
+                adds a separate, subtle wash through neutral surfaces. Both work in light and dark
+                themes.
               </p>
+              <label>
+                Theme
+                <select name="theme">
+                  <option value="system">System</option>
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </label>
               <label>
                 Accent colour
                 <input type="color" name="uiAccentColor" />
@@ -1027,12 +1125,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <label>
                 Interface tint strength
-                <select name="uiTintStrength">
-                  <option value="off">Off</option>
-                  <option value="subtle">Subtle</option>
-                  <option value="medium">Medium</option>
-                  <option value="strong">Strong</option>
-                </select>
+                <span class="slider-row">
+                  <input
+                    type="range"
+                    name="uiTintStrength"
+                    min="0"
+                    max="3"
+                    step="1"
+                    list="tint-strength-levels"
+                  />
+                  <output class="slider-value" for="uiTintStrength">Subtle</output>
+                </span>
+                <datalist id="tint-strength-levels">
+                  <option value="0" label="Off"></option>
+                  <option value="1" label="Subtle"></option>
+                  <option value="2" label="Medium"></option>
+                  <option value="3" label="Strong"></option>
+                </datalist>
               </label>
             </fieldset>
 
@@ -1095,15 +1204,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Lets the agent judge how hard a task is and name a model that suits it, so simple
                 work goes to a cheap, fast model and the hard problems get a top one. Advice only:
                 it never switches the model you are using.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Advisor model</legend>
-              <p class="field-hint">
-                The advisor lets the agent hand your whole conversation to a stronger model and ask
-                for a second opinion. Turn it on under <strong>Packs</strong>, where you also choose
-                which model it consults.
               </p>
             </fieldset>
 
@@ -1289,6 +1389,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
   const contentEl = qsRequired(overlay, '.settings-content')
+  const settingsForm = qsRequired<HTMLFormElement>(overlay, 'form')
   const searchInput = qsRequired<HTMLInputElement>(overlay, '#settings-search-input')
   const searchEmpty = qsRequired(overlay, '#settings-search-empty')
   const searchResults = qsRequired(overlay, '#settings-search-results')
@@ -1300,6 +1401,102 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Async section content (ACP agents, Sources lists) loads only when its tab is
   // opened; search reveals those blocks too, so populate them once per open.
   let searchContentLoaded = false
+
+  interface AppearancePreview {
+    theme: 'light' | 'dark'
+    accentColor: string
+    tintColor: string
+    tintStrength: UiTintStrength
+  }
+
+  const dirtyFieldNames = new Set<string>()
+  let cursorKeysDirty = false
+  let claudeAgentKeysDirty = false
+  let aaKeysDirty = false
+  let providersDirty = false
+  let lmStudioDirty = false
+  let appearanceBaseline: AppearancePreview | null = null
+  let appearanceCommitted = false
+
+  function resetDirtyState(): void {
+    dirtyFieldNames.clear()
+    cursorKeysDirty = false
+    claudeAgentKeysDirty = false
+    aaKeysDirty = false
+    providersDirty = false
+    lmStudioDirty = false
+  }
+
+  function currentAppearance(): AppearancePreview {
+    const root = document.documentElement
+    const accentColor = root.style.getPropertyValue('--accent-color').trim()
+    const tintColor = root.style.getPropertyValue('--tint-hue').trim()
+    const tintStrength = root.dataset['tintStrength']
+    return {
+      theme: store.getState().theme,
+      accentColor: HEX_COLOR.test(accentColor) ? accentColor : DEFAULT_ACCENT_COLOR,
+      tintColor: HEX_COLOR.test(tintColor) ? tintColor : DEFAULT_TINT_COLOR,
+      tintStrength: isUiTintStrength(tintStrength) ? tintStrength : DEFAULT_TINT_STRENGTH,
+    }
+  }
+
+  function applyThemePreview(theme: 'light' | 'dark'): void {
+    document.documentElement.dataset['theme'] = theme
+    if (store.getState().theme === theme) return
+    store.setState({ theme })
+    store.emit('theme_changed', theme)
+  }
+
+  function applyAppearancePreview(preview: AppearancePreview): void {
+    applyThemePreview(preview.theme)
+    applyUiAccent(preview.accentColor)
+    applyUiTint(preview.tintColor, preview.tintStrength)
+  }
+
+  function previewAppearanceFromForm(): void {
+    const themePreference = selectControl(settingsForm, 'theme').value
+    const accentColor = inputControl(settingsForm, 'uiAccentColor').value
+    const tintColor = inputControl(settingsForm, 'uiTintColor').value
+    const tintStrength = tintStrengthFromValue(inputControl(settingsForm, 'uiTintStrength').value)
+    applyAppearancePreview({
+      theme: resolveTheme(isThemePreference(themePreference) ? themePreference : 'dark'),
+      accentColor: HEX_COLOR.test(accentColor) ? accentColor : DEFAULT_ACCENT_COLOR,
+      tintColor: HEX_COLOR.test(tintColor) ? tintColor : DEFAULT_TINT_COLOR,
+      tintStrength,
+    })
+  }
+
+  function markDirtyTarget(target: EventTarget | null): void {
+    if (!(target instanceof HTMLElement)) return
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    ) {
+      if (target.name) dirtyFieldNames.add(target.name)
+    }
+
+    if (cursorKeySection.root.contains(target)) cursorKeysDirty = true
+    else if (claudeAgentKeySection.root.contains(target)) claudeAgentKeysDirty = true
+    else if (aaKeySection.root.contains(target)) aaKeysDirty = true
+    else if (lmStudioSection.root.contains(target)) lmStudioDirty = true
+    else if (providersPanel.root.contains(target)) providersDirty = true
+  }
+
+  for (const name of ['theme', 'uiAccentColor', 'uiTintColor', 'uiTintStrength']) {
+    const control = settingsForm.elements.namedItem(name)
+    if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement)) {
+      throw new Error(
+        `Settings dialog template is missing appearance control ${JSON.stringify(name)}`,
+      )
+    }
+    const preview = (): void => {
+      dirtyFieldNames.add(name)
+      previewAppearanceFromForm()
+    }
+    control.addEventListener('input', preview)
+    control.addEventListener('change', preview)
+  }
 
   // Opening the dialog runs a long serial chain of IPC round-trips to populate
   // every section. Run each stage under its own catch so one failure is named
@@ -1841,7 +2038,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     title.className = 'pack-row-title'
     const nameEl = document.createElement('span')
     nameEl.className = 'pack-name'
-    nameEl.textContent = pack.name
+    nameEl.textContent = packDisplayName(pack)
     title.append(nameEl)
     if (pack.version) {
       const versionEl = document.createElement('span')
@@ -1854,7 +2051,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       pack.trust === 'first-party'
         ? 'pack-badge pack-badge-first-party'
         : 'pack-badge pack-badge-user'
-    trustBadge.textContent = pack.trust
+    trustBadge.textContent = pack.trust === 'first-party' ? 'Copse' : 'User'
     title.append(trustBadge)
     const stabilityBadge = document.createElement('span')
     stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
@@ -1871,7 +2068,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (pack.description) {
       const desc = document.createElement('div')
       desc.className = 'pack-row-desc'
-      desc.textContent = pack.description
+      desc.innerHTML = renderMarkdown(pack.description)
       row.append(desc)
     }
 
@@ -2176,7 +2373,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         empty.textContent = 'No packs registered.'
         listEl.append(empty)
       } else {
-        for (const pack of result.packs) listEl.append(makePackRow(pack))
+        // Enabled packs first, disabled packs after — so a scrapped pack moves
+        // out of the way instead of sitting in the middle of the list.
+        const sorted = [...result.packs].sort(
+          (a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id),
+        )
+        for (const pack of sorted) listEl.append(makePackRow(pack))
       }
       statusEl.textContent = ''
     } catch {
@@ -2497,6 +2699,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
+    appearanceBaseline = currentAppearance()
+    appearanceCommitted = false
+    resetDirtyState()
     developerModeInput.checked = store.getState().developerMode
     syncDeveloperOnlySettings()
     // A fresh open always starts on a section, never in a leftover search.
@@ -2607,10 +2812,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
             ? savedTintColor
             : DEFAULT_TINT_COLOR
-        const savedTintStrength = await api.settings.get('uiTintStrength')
-        selectControl(form, 'uiTintStrength').value = isUiTintStrength(savedTintStrength)
-          ? savedTintStrength
+        const rawTintStrength = await api.settings.get('uiTintStrength')
+        const savedTintStrength = isUiTintStrength(rawTintStrength)
+          ? rawTintStrength
           : DEFAULT_TINT_STRENGTH
+        const strengthInput = form.querySelector<HTMLInputElement>('input[name="uiTintStrength"]')
+        if (strengthInput) {
+          strengthInput.value = String(tintSliderIndex(savedTintStrength))
+          const strengthOutput = form.querySelector<HTMLOutputElement>(
+            'output[for="uiTintStrength"]',
+          )
+          if (strengthOutput) strengthOutput.textContent = TINT_STRENGTH_LABELS[savedTintStrength]
+        }
 
         const savedIconVariant = await api.settings.get('appIconVariant')
         const appIconVariant = isAppIconVariant(savedIconVariant)
@@ -2631,12 +2844,48 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })()
   })
 
-  const settingsForm = overlay.querySelector('form')
-  if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
+  settingsForm.addEventListener('input', (e) => {
+    markDirtyTarget(e.target)
+  })
   settingsForm.addEventListener('change', (e) => {
     const target = e.target
+    markDirtyTarget(target)
     if (target === developerModeInput || target === hooksEnabledInput) {
       syncDeveloperOnlySettings()
+    }
+    // Theme changes should apply instantly, not only after Save.
+    if (target instanceof HTMLSelectElement && target.name === 'theme') {
+      const preference = isThemePreference(target.value) ? target.value : DEFAULT_THEME_PREFERENCE
+      const theme = resolveTheme(preference)
+      document.documentElement.dataset['theme'] = theme
+      store.emit('theme_changed', theme)
+    }
+    // Same for the Appearance accent/tint controls: reflect them live so the
+    // user sees the effect before committing.
+    if (target instanceof HTMLInputElement && target.type === 'color') {
+      if (target.name === 'uiAccentColor' && HEX_COLOR.test(target.value)) {
+        applyUiAccent(target.value)
+      } else if (target.name === 'uiTintColor' && HEX_COLOR.test(target.value)) {
+        const strengthInput = settingsForm.querySelector<HTMLInputElement>(
+          'input[name="uiTintStrength"]',
+        )
+        const strength = tintStrengthFromValue(
+          strengthInput ? Number(strengthInput.value) : DEFAULT_TINT_STRENGTH,
+        )
+        applyUiTint(target.value, strength)
+      }
+    }
+    if (target instanceof HTMLInputElement && target.name === 'uiTintStrength') {
+      const strength = tintStrengthFromValue(Number(target.value))
+      const tintColor = settingsForm.querySelector<HTMLInputElement>('input[name="uiTintColor"]')
+      const colorRaw = tintColor?.value
+      const color =
+        typeof colorRaw === 'string' && HEX_COLOR.test(colorRaw) ? colorRaw : DEFAULT_TINT_COLOR
+      const strengthOutput = settingsForm.querySelector<HTMLOutputElement>(
+        'output[for="uiTintStrength"]',
+      )
+      if (strengthOutput) strengthOutput.textContent = TINT_STRENGTH_LABELS[strength]
+      applyUiTint(color, strength)
     }
     // The executor (chat) model changed — re-grade the advisor pairing hint,
     // which now lives with the advisor pack's model field (Settings → Packs).
@@ -2649,11 +2898,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async (): Promise<void> => {
       const data = new FormData(settingsForm)
 
-      await cursorKeySection.saveKeys()
-      await claudeAgentKeySection.saveKeys()
-      await aaKeySection.saveKeys()
-      await providersPanel.saveKeys()
-      await lmStudioSection.saveConnection()
+      if (cursorKeysDirty) await cursorKeySection.saveKeys()
+      if (claudeAgentKeysDirty) await claudeAgentKeySection.saveKeys()
+      if (aaKeysDirty) await aaKeySection.saveKeys()
+      if (providersDirty) await providersPanel.saveKeys()
+      if (lmStudioDirty) await lmStudioSection.saveApiKey()
       const routingValues = modelRoutingSection.readValues()
 
       const model = formDataString(data, 'model')
@@ -2689,58 +2938,104 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           ? tintColorRaw
           : DEFAULT_TINT_COLOR
       const tintStrengthRaw = data.get('uiTintStrength')
-      const uiTintStrength = isUiTintStrength(tintStrengthRaw)
-        ? tintStrengthRaw
-        : DEFAULT_TINT_STRENGTH
+      const uiTintStrength = tintStrengthFromValue(tintStrengthRaw)
 
-      await api.settings.set('model', model)
-      await api.settings.set('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
+      const writes: Promise<unknown>[] = [saveSimpleFields(data, api, dirtyFieldNames)]
+      const saveIfDirty = (name: string, value: unknown): void => {
+        if (dirtyFieldNames.has(name)) writes.push(api.settings.set(name, value))
+      }
+
+      saveIfDirty('model', model)
+      saveIfDirty('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
       // `advisorModel` and the three `comparisonModel*` values are no longer
       // saved here — they are pack-scoped `model` settings persisted on change
       // via `packs:setSetting` from Settings → Packs.
-      await api.settings.set(
+      saveIfDirty(
         'orchestrationWorkerModel',
         formDataString(data, 'orchestrationWorkerModel').trim(),
       )
-      await saveSimpleFields(data, api)
-      await api.settings.set('theme', themePreference)
-      await api.settings.set('fontSize', fontSize)
-      await api.settings.set('uiScale', uiScale)
-      await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
-      await api.settings.set('rightPanelPosition', rightPanelPosition)
-      await api.settings.set('uiAccentColor', uiAccentColor)
-      await api.settings.set('uiTintColor', uiTintColor)
-      await api.settings.set('uiTintStrength', uiTintStrength)
-      if (isAppIconVariant(appIconVariant)) {
-        await api.settings.set('appIconVariant', appIconVariant)
-        await api.appIcon.apply()
+      saveIfDirty('theme', themePreference)
+      saveIfDirty('fontSize', fontSize)
+      saveIfDirty('uiScale', uiScale)
+      saveIfDirty('autoPortraitRightPanel', autoPortraitRightPanel)
+      saveIfDirty('rightPanelPosition', rightPanelPosition)
+      saveIfDirty('uiAccentColor', uiAccentColor)
+      saveIfDirty('uiTintColor', uiTintColor)
+      saveIfDirty('uiTintStrength', uiTintStrength)
+      saveIfDirty('localDefaultModel', routingValues.localDefaultModel)
+      saveIfDirty('subagentModel', routingValues.subagentModel)
+
+      if (dirtyFieldNames.has('appIconVariant') && isAppIconVariant(appIconVariant)) {
+        writes.push(
+          (async (): Promise<void> => {
+            await api.settings.set('appIconVariant', appIconVariant)
+            await api.appIcon.apply()
+          })(),
+        )
       }
-      await api.settings.set('localDefaultModel', routingValues.localDefaultModel)
-      await api.settings.set('subagentModel', routingValues.subagentModel)
-      const savedRoleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
-      await api.settings.set('roleModels', {
-        ...savedRoleModels,
-        coder: routingValues.localDefaultModel,
-        research: routingValues.subagentModel,
-        'small-tasks': formDataString(data, 'smallTasksModel').trim(),
-      })
-      await api.settings.setSecurity({
-        localServerUrl: lmStudioSection.getUrl(),
-        safetyModel: routingValues.safetyModel,
-        reviewModel: routingValues.reviewModel,
-        safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
-        safetyExternalDenyThreshold: Number.isFinite(externalDeny) ? externalDeny : 1,
-        autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
-        cursorHooksEnabled: data.get('cursorHooksEnabled') === 'on',
-        mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
-        defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
-        webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
-        webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
-        approvedProviderHosts: parseApprovedProviderHosts(data.get('approvedProviderHosts')),
-        providerAllowUserApproval: data.get(PROVIDER_ALLOW_USER_APPROVAL_SETTING) === 'on',
-        trustedShellCommands: parseTrustedCommands(formDataString(data, 'trustedShellCommands')),
-        shellAutoApprovalLevel: sanitizeAutoApprovalLevel(data.get(AUTO_APPROVAL_LEVEL_SETTING)),
-      })
+
+      if (
+        dirtyFieldNames.has('localDefaultModel') ||
+        dirtyFieldNames.has('subagentModel') ||
+        dirtyFieldNames.has('smallTasksModel')
+      ) {
+        writes.push(
+          (async (): Promise<void> => {
+            const savedRoleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
+            await api.settings.set('roleModels', {
+              ...savedRoleModels,
+              coder: routingValues.localDefaultModel,
+              research: routingValues.subagentModel,
+              'small-tasks': formDataString(data, 'smallTasksModel').trim(),
+            })
+          })(),
+        )
+      }
+
+      const securityFieldNames = [
+        'localServerUrl',
+        'safetyModel',
+        'reviewModel',
+        'safetyClassifierEnabled',
+        'safetyExternalDenyThreshold',
+        'autoRunSandboxCommands',
+        'cursorHooksEnabled',
+        'mcpAutoAllowReadOnly',
+        'defaultReadonlyMode',
+        'webAllowedOrigins',
+        WEB_ALLOW_USER_APPROVAL_SETTING,
+        'approvedProviderHosts',
+        PROVIDER_ALLOW_USER_APPROVAL_SETTING,
+        'trustedShellCommands',
+        AUTO_APPROVAL_LEVEL_SETTING,
+      ]
+      if (securityFieldNames.some((name) => dirtyFieldNames.has(name))) {
+        writes.push(
+          api.settings.setSecurity({
+            localServerUrl: lmStudioSection.getUrl(),
+            safetyModel: routingValues.safetyModel,
+            reviewModel: routingValues.reviewModel,
+            safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
+            safetyExternalDenyThreshold: Number.isFinite(externalDeny) ? externalDeny : 1,
+            autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
+            cursorHooksEnabled: data.get('cursorHooksEnabled') === 'on',
+            mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
+            defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
+            webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
+            webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
+            approvedProviderHosts: parseApprovedProviderHosts(data.get('approvedProviderHosts')),
+            providerAllowUserApproval: data.get(PROVIDER_ALLOW_USER_APPROVAL_SETTING) === 'on',
+            trustedShellCommands: parseTrustedCommands(
+              formDataString(data, 'trustedShellCommands'),
+            ),
+            shellAutoApprovalLevel: sanitizeAutoApprovalLevel(
+              data.get(AUTO_APPROVAL_LEVEL_SETTING),
+            ),
+          }),
+        )
+      }
+
+      await Promise.all(writes)
 
       store.setState({
         theme,
@@ -2760,8 +3055,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       applyUiAccent(uiAccentColor)
       applyUiTint(uiTintColor, uiTintStrength)
       applyUiScale(uiScale)
+      appearanceCommitted = true
       closeSettingsDialog()
     })()
+  })
+
+  overlay.addEventListener('close', () => {
+    if (!appearanceCommitted && appearanceBaseline) applyAppearancePreview(appearanceBaseline)
+    appearanceBaseline = null
+    resetDirtyState()
   })
 
   qsRequired(overlay, '#settings-cancel').addEventListener('click', closeSettingsDialog)

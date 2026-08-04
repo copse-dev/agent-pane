@@ -8,6 +8,46 @@ every published entry.
 
 ## Unreleased
 
+- The context wheel no longer goes blank on hover while the agent is working.
+  Mid-run the pre-send estimate is deliberately suppressed — it describes the
+  _next_ prompt, not the one in flight — but that left the wheel with nothing to
+  show for the whole run, and the part-by-part breakdown only came back once the
+  turn ended. It now falls back to the aggregate it is already drawing
+  ("Context · 54.0k / 180.0k (30%)"), which needs no estimate to produce. Chat
+  windows that never report a breakdown at all — subagents and remote agents —
+  gain the same hover summary.
+- The footer token counter explains itself on hover instead of on click. Pointing
+  at it opens a tooltip in the same style as the context wheel beside it: input
+  and output tokens, the prompt-cache read/write split when the provider reports
+  one, and the estimated cost — broken down per model once a thread has used more
+  than one, plus a line for how much of the total was delegated to subagents.
+  Estimated counts are labelled as such rather than priced. The click that used
+  to swap the label for an inline `1200 in / 80 out · ~$0.02` string is gone; the
+  counter now always reads as the plain total.
+- Answers on Claude Opus 5 are shorter. That model's default replies run longer
+  than other models', and the effort setting tunes how much it thinks rather
+  than how much it says, so the system prompt now asks for concision explicitly
+  when a turn runs on Opus 5 — with a short reminder near the end of the prompt,
+  as Anthropic's
+  [Opus 5 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5#response-length-and-verbosity)
+  recommends. It is the only model-conditional text in the prompt; every other
+  model sees exactly what it saw before. The steering sits ahead of your custom
+  and project instructions, so asking for fuller explanations there still wins.
+- Copse now identifies itself to model providers. Every provider request carries
+  the de facto attribution pair `HTTP-Referer: https://copse.dev/` and
+  `X-Title: Copse`, with OpenRouter also receiving `X-OpenRouter-Title` (the
+  renamed form of the same header, sent with the same value so it does not
+  matter which name that router prefers). OpenRouter uses this to attribute
+  traffic to an app page and its public rankings; Vercel AI Gateway and Requesty
+  use it for dashboard attribution; providers that do not recognise the headers
+  ignore them. The headers are fixed constants that name the application only —
+  no key, account, machine, thread, or prompt-derived value is included. See
+  [docs/privacy-data-flow.md](docs/privacy-data-flow.md).
+- The homepage no longer leads with a screenshot. It embeds the browser demo and
+  replays a real recorded session in it: the prompt is typed into the composer,
+  and the answer streams back with its tool cards and token count, in the actual
+  interface. The screenshot stays as the fallback for narrow screens, a
+  reduced-motion preference, or a demo that does not load.
 - Zip archives can be attached to a chat and read. Drop a `.zip` on the composer
   and the agent unpacks it with the new **`read_archive`** tool into the
   conversation's own directory, then reads what is inside with its ordinary file

@@ -1,6 +1,7 @@
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { getSetting } from '../storage/settings.ts'
+import { rememberOpenRouterPricing } from './model-pricing-store.ts'
 import { isRecord, optionalRecord } from '@shared/unknown-value.ts'
 
 export interface OpenRouterModelSummary {
@@ -11,9 +12,18 @@ export interface OpenRouterModelSummary {
   free: boolean
   /** `supported_parameters` advertises `tools` (i.e. can do function calling). */
   supportsTools: boolean
+  /** Whether the catalog explicitly says image is an accepted input modality. */
+  supportsImages?: boolean
   /** Catalog pricing converted from USD/token to USD/million tokens. */
   inputPricePerMTok: number | null
   outputPricePerMTok: number | null
+  /**
+   * Prompt-caching rates, when the route bills them separately. Absent (rather
+   * than null) for the many routes that publish no caching prices, so a row
+   * without caching stays byte-identical to what earlier versions parsed.
+   */
+  cacheReadPricePerMTok?: number | null
+  cacheCreationPricePerMTok?: number | null
 }
 
 /** Picker-facing subset (already filtered to free + tool-capable). */
@@ -22,6 +32,8 @@ export interface OpenRouterModelOption {
   name: string
   inputPricePerMTok: number | null
   outputPricePerMTok: number | null
+  /** Absent when the upstream catalog does not describe input modalities. */
+  supportsImages?: boolean
 }
 
 // The base is overridable via a (hidden) setting so e2e can point it at a local
@@ -69,6 +81,23 @@ function outputsText(architecture: unknown): boolean {
   return output.includes('text')
 }
 
+/**
+ * OpenRouter encodes the request/response shape as e.g. `text+image->text`.
+ * Missing architecture is unknown (not false): older/custom catalog rows may
+ * still accept images even though they do not advertise modalities.
+ */
+function imageInputSupport(architecture: unknown): boolean | undefined {
+  if (!isRecord(architecture)) return undefined
+  const inputModalities = architecture['input_modalities']
+  if (Array.isArray(inputModalities)) {
+    return inputModalities.some((modality) => modality === 'image')
+  }
+  const modality = architecture['modality']
+  if (typeof modality !== 'string' || !modality.trim()) return undefined
+  const input = modality.includes('->') ? (modality.split('->')[0] ?? '') : modality
+  return input.split('+').some((part) => part.trim() === 'image')
+}
+
 function supportsTools(supportedParameters: unknown): boolean {
   return Array.isArray(supportedParameters) && supportedParameters.includes('tools')
 }
@@ -79,14 +108,24 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
   const id = typeof rec['id'] === 'string' ? rec['id'] : null
   if (!id) return null
   if (!outputsText(rec['architecture'])) return null
+  const supportsImages = imageInputSupport(rec['architecture'])
+  const pricing = optionalRecord(rec['pricing'])
+  // Caching rates are optional in the catalog and only meaningful for routes
+  // that actually bill cached input, so an absent field stays absent rather
+  // than becoming a null the estimator would have to special-case.
+  const cacheRead = pricePerMTok(pricing?.['input_cache_read'])
+  const cacheWrite = pricePerMTok(pricing?.['input_cache_write'])
   return {
     id,
     name: typeof rec['name'] === 'string' && rec['name'] ? rec['name'] : id,
     contextLength: parsePositiveInt(rec['context_length']),
     free: isFreePricing(rec['pricing']),
     supportsTools: supportsTools(rec['supported_parameters']),
-    inputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['prompt']),
-    outputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['completion']),
+    ...(supportsImages !== undefined ? { supportsImages } : {}),
+    inputPricePerMTok: pricePerMTok(pricing?.['prompt']),
+    outputPricePerMTok: pricePerMTok(pricing?.['completion']),
+    ...(cacheRead !== null ? { cacheReadPricePerMTok: cacheRead } : {}),
+    ...(cacheWrite !== null ? { cacheCreationPricePerMTok: cacheWrite } : {}),
   }
 }
 
@@ -151,6 +190,11 @@ export async function fetchOpenRouterModelsCached(): Promise<{
   if (cache && cache.key === key && now - cache.at < MODELS_TTL_MS) return cache.result
   const result = await fetchOpenRouterModels()
   cache = { key, at: now, result }
+  // Snapshot the catalog's rates so the usage ledger can price OpenRouter turns
+  // without a network round-trip (and after a model leaves the catalog). Best
+  // effort by design: pricing is a display concern, never a reason to fail a
+  // model list. Fire-and-forget so the picker isn't held up by a settings write.
+  if (result.ok) void rememberOpenRouterPricing(result.models).catch(() => {})
   return result
 }
 
@@ -237,6 +281,7 @@ export async function listFreeOpenRouterModels(): Promise<OpenRouterModelOption[
       name: m.name,
       inputPricePerMTok: m.inputPricePerMTok,
       outputPricePerMTok: m.outputPricePerMTok,
+      ...(m.supportsImages !== undefined ? { supportsImages: m.supportsImages } : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
   if (getSetting<boolean>('openRouterZdrOnly', true)) {

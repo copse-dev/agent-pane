@@ -35,12 +35,12 @@ The core brand palette is forest (`#002e2b`), neon green (`#20fd85`), pink (`#ff
 (`#fffdf7`). Define those once as brand tokens, then bind product components through semantic tokens
 such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
 
-- Neon green is the default interaction accent: primary actions, focus, selected-row rails, and
-  links.
-- Forest may provide an optional strong interface tint, but the default workbench remains neutral
-  and low-fatigue.
-- Pink is expressive emphasis, not a product status colour. Do not use it for errors, warnings,
-  selection, or routine headings.
+- The default interaction accent is pink (`#ff93d0`): primary actions, focus, selected-row rails,
+  and links. Neon green remains part of the expressive brand palette and an optional custom accent.
+- The default interface tint is a subtle wash of green (`#244c25`); stronger tint levels remain
+  optional so the workbench stays low-fatigue.
+- Pink is the default interaction emphasis, not a product status colour. Do not use it for errors,
+  warnings, success, or routine headings; those keep their semantic/text tokens.
 - Error, warning, success, and danger continue to use their semantic tokens.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
@@ -288,6 +288,11 @@ The scroll surface (`.settings-content`) stays **full width** beside the nav —
 `max-width` on the scroller itself. Cap and center the form column (sections, search results,
 Save/Cancel) with `width: min(100%, var(--settings-content-max)); margin-inline: auto`, the same
 split chat uses for `.messages-list` / `.msg`.
+
+At large interface scales or short window heights, the Settings sidebar can also exceed the body.
+Keep the native dialog itself `overflow: hidden` and give `.settings-nav` its own vertical overflow
+with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole sidebar moves upward,
+then ends above the window bottom and exposes a large blank surface beneath it.
 
 ## Markdown prose spacing in chat
 

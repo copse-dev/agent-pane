@@ -211,11 +211,9 @@ export function seedOnboardingFixture(): void {
 
 function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
-  // Pin appearance so reference screenshots are deterministic: the app now
-  // defaults to `system` theme (which resolves to whatever prefers-color-scheme
-  // the CI runner reports). Pin dark mode and disable any custom tint so shots
-  // do not depend on the host or saved appearance state; individual specs can
-  // override via `settings`.
+  // Pin appearance so reference screenshots are deterministic. Most fixtures
+  // keep tint off so existing shots do not inherit first-run appearance changes;
+  // individual specs can override via `settings`.
   writeFileSync(
     SETTINGS_PATH,
     JSON.stringify({
@@ -571,7 +569,7 @@ export function seedProjectSwitchFixture(
  */
 export function seedOpenRouterFixture(
   workspaceRoot: string,
-  options?: { apiBase?: string; freeMode?: boolean },
+  options?: { apiBase?: string; freeMode?: boolean; localServerUrl?: string },
 ): void {
   const projectId = 'e2e-openrouter-project'
   const now = Date.parse('2026-07-28T10:00:00.000Z')
@@ -622,6 +620,7 @@ export function seedOpenRouterFixture(
     openRouterModel: 'anthropic/claude-3.5-sonnet',
     ...(options?.freeMode ? { openRouterFreeMode: true } : {}),
     ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
+    ...(options?.localServerUrl ? { localServerUrl: options.localServerUrl } : {}),
     apiKey: {
       openrouter: {
         v: 1,
@@ -1657,6 +1656,83 @@ export function seedAcpUsageUpdateFixture(workspaceRoot: string): void {
           fillRatio: used / contextWindow,
           source: 'agent-reported',
           updatedAt: now + 1,
+        },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
+/**
+ * Thread with provider-reported usage (cache split + two models) so the footer
+ * token counter has a full in/out/cost hover tooltip to render.
+ */
+export function seedFooterUsageFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-footer-usage-project'
+  const threadId = 'e2e-footer-usage-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Footer usage tooltip',
+        status: 'idle',
+        model: 'claude-sonnet-4-6',
+        messages: [
+          {
+            id: 'msg-user-footer-usage',
+            role: 'user',
+            content: 'Summarise the repository.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-footer-usage',
+            role: 'assistant',
+            content: 'Here is a summary of the repository layout.',
+            // Carries its own usage record, which the tooltip aggregates into
+            // the "Subagents" line.
+            toolCalls: [
+              {
+                id: 'tool-explore-footer-usage',
+                name: 'explore',
+                args: { prompt: 'Map the renderer views' },
+                status: 'done',
+                result: 'Mapped the renderer views.',
+                subagent: {
+                  id: 'subagent-footer-usage',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Map the renderer views',
+                  summary: 'Mapped the renderer views.',
+                  messages: [],
+                  model: 'claude-haiku-4-5',
+                  usage: { inputTokens: 800_000, outputTokens: 15_000 },
+                },
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: {
+          inputTokens: 12_900_000,
+          outputTokens: 211_000,
+          cacheReadTokens: 11_400_000,
+          cacheCreationTokens: 480_000,
+          byModel: {
+            'claude-sonnet-4-6': {
+              inputTokens: 12_100_000,
+              outputTokens: 196_000,
+              cacheReadTokens: 11_400_000,
+              cacheCreationTokens: 480_000,
+            },
+            'claude-haiku-4-5': { inputTokens: 800_000, outputTokens: 15_000 },
+          },
         },
         createdAt: now,
         updatedAt: now + 1,

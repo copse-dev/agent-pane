@@ -136,6 +136,13 @@ describe('classifyAgentError', () => {
     assert.match(classifyAgentError('tokens to keep from the initial prompt'), /LM Studio/)
   })
 
+  it('turns an image-input routing failure into recovery guidance', () => {
+    assert.equal(
+      classifyAgentError(new Error('404 No endpoints found that support image input')),
+      'The selected model has no endpoint that supports image input. Choose an image-capable model in the composer and Resend, or use Resend without image on your prompt.',
+    )
+  })
+
   it('maps jinja / missing user query failures', () => {
     assert.match(classifyAgentError('No user query found in messages'), /jinja|chat template/i)
   })

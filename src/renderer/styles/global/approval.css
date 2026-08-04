@@ -48,6 +48,18 @@
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+.approval-advice {
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+.approval-footer {
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
 .approval-body {
   background: var(--bg-base);
   padding: var(--spacing-md);

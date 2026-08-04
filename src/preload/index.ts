@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('api', {
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
+    createNewProject: (name: string, parentDir: string) =>
+      ipcRenderer.invoke('workspace:createProject', name, parentDir),
+    pickParentDirectory: () => ipcRenderer.invoke('workspace:pickParentDirectory'),
+    getHomeDirectory: () => ipcRenderer.invoke('workspace:getHomeDirectory'),
     unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxedProjectHooks'),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
@@ -148,6 +152,13 @@ contextBridge.exposeInMainWorld('api', {
   agent: {
     run: (projectId: string, threadId: string, prompt: string) =>
       ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    describeImages: (
+      projectId: string,
+      threadId: string,
+      model: string,
+      userPrompt: string,
+      images: string[],
+    ) => ipcRenderer.invoke('agent:describeImages', projectId, threadId, model, userPrompt, images),
     prepareCheckout: (
       projectId: string,
       threadId: string,
@@ -193,6 +204,8 @@ contextBridge.exposeInMainWorld('api', {
         threadId?: string
         title: string
         body: string
+        bodyAdvice?: string
+        bodyFooter?: string
         type: string
         allowRemember?: boolean
         rememberLabel?: string
@@ -210,6 +223,8 @@ contextBridge.exposeInMainWorld('api', {
           threadId?: string
           title: string
           body: string
+          bodyAdvice?: string
+          bodyFooter?: string
           type: string
           allowRemember?: boolean
           rememberLabel?: string
@@ -379,6 +394,10 @@ contextBridge.exposeInMainWorld('api', {
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
+  },
+  alerts: {
+    threadFinished: (threadId: string, title: string) =>
+      ipcRenderer.invoke('alerts:threadFinished', threadId, title),
   },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
@@ -557,6 +576,7 @@ contextBridge.exposeInMainWorld('api', {
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),
+    modelInfo: () => ipcRenderer.invoke('lmstudio:modelInfo'),
     detect: (url?: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:detect', url, apiKey),
     download: (modelId: string, url?: string, apiKey?: string) =>
       ipcRenderer.invoke('lmstudio:download', modelId, url, apiKey),
@@ -726,6 +746,7 @@ contextBridge.exposeInMainWorld('api', {
     scanEnvKeys: () => ipcRenderer.invoke('settings:scanEnvKeys'),
     importEnvKeys: () => ipcRenderer.invoke('settings:importEnvKeys'),
     extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
+    modelPricing: () => ipcRenderer.invoke('settings:modelPricing'),
     saveExtraProvider: (record: unknown) =>
       ipcRenderer.invoke('settings:saveExtraProvider', record),
     deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),
@@ -948,6 +969,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
+    promptState: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:promptState', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>
       ipcRenderer.invoke('git:checkoutBranch', projectId, threadId, branch),
     listBranches: (projectId: string, threadId: string) =>

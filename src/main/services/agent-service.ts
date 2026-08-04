@@ -178,6 +178,7 @@ export {
   isLocalChatModel,
   buildSubagentRoute,
   listLmStudioModels,
+  listLmStudioModelInfo,
   invalidateLmStudioModelsCache,
   testLmStudio,
 } from './providers/provider-selection.ts'
@@ -1080,6 +1081,7 @@ export async function runAgent(
       invokedSkills,
       threadId,
       userPrompt: outboundPrompt,
+      model,
     })
 
     const messages: LLMMessage[] = [

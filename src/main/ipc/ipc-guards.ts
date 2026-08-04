@@ -114,6 +114,19 @@ const STORAGE_KEY = z.union([z.literal('projects'), z.literal('activeProjectId')
 
 export const zProjectId = z.string().regex(/^[\w-]{1,128}$/)
 
+const imageDataUrlSchema = z
+  .string()
+  .max(12 * 1024 * 1024)
+  .regex(/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]*={0,2}$/)
+
+export const describeImagesSchema = z.tuple([
+  zProjectId,
+  zThreadId,
+  z.string().min(1).max(500),
+  z.string().max(1_000_000),
+  z.array(imageDataUrlSchema).min(1).max(5),
+])
+
 export function assertStorageKey(key: string): void {
   const parsed = STORAGE_KEY.safeParse(key)
   if (!parsed.success) {

@@ -11,11 +11,13 @@
 export * from './wire-types.ts'
 
 // Provider construction + the interface every provider implements.
+export * from './app-attribution.ts'
 export * from './create-provider.ts'
 export * from './responses-provider.ts'
 
 // Model catalog, cost estimation, and usage-adjacent helpers.
 export * from './model-catalog.ts'
+export * from './model-pricing.ts'
 export * from './estimate-cost.ts'
 
 // Provider families and their model-selection namespaces.

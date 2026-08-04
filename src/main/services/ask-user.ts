@@ -9,6 +9,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
+import type { UserAlertSender } from './user-alerts.ts'
 
 export interface AskUserRequest {
   questions: AskUserQuestion[]
@@ -49,7 +50,11 @@ export function requestUserAnswers(req: AskUserRequest): Promise<AskUserResult> 
   return activeHandler(req)
 }
 
-export function initAskUser(win: BrowserWindow, ipcMain: IpcMain): void {
+export function initAskUser(
+  win: BrowserWindow,
+  ipcMain: IpcMain,
+  alertUser: UserAlertSender,
+): void {
   const pending = new Map<string, (result: AskUserResult) => void>()
   const settle = (id: string, result: AskUserResult): void => {
     const resolve = pending.get(id)
@@ -89,12 +94,14 @@ export function initAskUser(win: BrowserWindow, ipcMain: IpcMain): void {
         // whichever thread the user is currently focused on.
         const threadId = getActiveRunThread() ?? undefined
         win.webContents.send('agent:ask_user_request', { id, threadId, questions: req.questions })
+        const stopAlert = alertUser('interaction', 'An agent has a question.')
         const timer = setTimeout(() => {
           settle(id, { answers: req.questions.map(() => '') })
         }, ASK_USER_TIMEOUT_MS)
         if (typeof timer.unref === 'function') timer.unref()
         pending.set(id, (result) => {
           clearTimeout(timer)
+          stopAlert()
           resolve(result)
         })
       }),

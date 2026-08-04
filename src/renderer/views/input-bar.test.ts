@@ -58,6 +58,13 @@ function createApi(options: {
   onPrepareCheckout?: () => Promise<PreparedThreadCheckout>
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
   listSkills?: () => Promise<SkillSummary[]>
+  availableProviders?: () => Promise<
+    Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
+  >
+  openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
+  lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
+  onDescribeImages?: ApiClient['agent']['describeImages']
+  promptState?: { startingCommit: string | null; dirty: boolean }
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -67,6 +74,7 @@ function createApi(options: {
         ...base['agent'],
         abort: options.onAbort ?? (async (): Promise<void> => {}),
         run: options.onRun ?? (async (): Promise<void> => {}),
+        describeImages: options.onDescribeImages ?? base['agent'].describeImages,
         clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
         prepareCheckout:
           options.onPrepareCheckout ??
@@ -111,6 +119,7 @@ function createApi(options: {
       git: {
         ...base['git'],
         branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+        promptState: async () => options.promptState ?? { startingCommit: null, dirty: false },
         checkoutBranch: async (
           _projectId: string,
           _threadId: string,
@@ -124,10 +133,22 @@ function createApi(options: {
       lmStudio: {
         ...base['lmStudio'],
         models: async () => [],
+        modelInfo:
+          options.lmStudioModelInfo ??
+          (async (): Promise<Array<{ id: string; supportsImages?: boolean }>> => []),
+      },
+      openRouter: {
+        ...base['openRouter'],
+        models: options.openRouterModels ?? (async (): Promise<[]> => []),
       },
       settings: {
         ...base['settings'],
-        availableProviders: async () => ({ anthropic: true, openai: true }),
+        availableProviders:
+          options.availableProviders ??
+          (async (): Promise<{ anthropic: true; openai: true }> => ({
+            anthropic: true,
+            openai: true,
+          })),
         extraProviders: async () => [],
         get: async () => undefined,
         set: async (): Promise<void> => {},
@@ -359,6 +380,76 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepared.gitBranch, 'copse/first-message')
     assert.equal(prepared.messages[0]?.content, 'Start in isolation')
     assert.equal(composer.textContent, '')
+  })
+})
+
+describe('input bar prompt git-state capture', () => {
+  it('stamps the sent message with the fetched startingCommit and dirty flag', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'What changed?'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal(message.startingCommit, 'a'.repeat(40))
+    assert.equal(message.dirty, true)
+  })
+
+  it('omits startingCommit and leaves dirty false outside a git repository', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: null, dirty: false },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Hello'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal('startingCommit' in message, false)
+    assert.equal(message.dirty, false)
   })
 })
 
@@ -907,6 +998,171 @@ describe('input bar browse button', () => {
   })
 })
 
+describe('input bar image compatibility', () => {
+  function imageModelApi(onRun?: () => Promise<void>): ApiClient {
+    return createApi({
+      currentBranch: 'main',
+      ...(onRun ? { onRun } : {}),
+      availableProviders: async () => ({ openrouter: true }),
+      openRouterModels: async () => [
+        {
+          id: 'deepseek/deepseek-v4-flash',
+          name: 'DeepSeek V4 Flash',
+          inputPricePerMTok: 0,
+          outputPricePerMTok: 0,
+          supportsImages: false,
+        },
+        {
+          id: 'anthropic/claude-sonnet',
+          name: 'Claude Sonnet',
+          inputPricePerMTok: 3,
+          outputPricePerMTok: 15,
+          supportsImages: true,
+        },
+      ],
+      lmStudioModelInfo: async () => [
+        { id: 'qwen/qwen3-vl', supportsImages: true },
+        { id: 'qwen/qwen3-text', supportsImages: false },
+      ],
+    })
+  }
+
+  function imageModelStore(): ReturnType<typeof createStore> {
+    return createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread(), model: 'openrouter:deepseek/deepseek-v4-flash' }],
+    })
+  }
+
+  it('warns before send and keeps the image prompt intact while suggesting a supporting model', async () => {
+    let runs = 0
+    const store = imageModelStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      imageModelApi(async () => {
+        runs++
+      }),
+    )
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'Describe this screenshot'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    getPromptAttachmentHandlers()?.attachImage('data:image/png;base64,abc', 'image/png')
+    await flush()
+
+    const warning = host.querySelector<HTMLElement>('.composer-image-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /DeepSeek V4 Flash can’t read image input/)
+    assert.match(warning.textContent, /Use Claude Sonnet/)
+    assert.match(warning.textContent, /Describe locally with qwen\/qwen3-vl/)
+
+    host.querySelector<HTMLButtonElement>('.submit-btn')?.click()
+    await flush()
+    assert.equal(runs, 0, 'known-incompatible image prompt must not reach the provider')
+    assert.equal(composer.textContent, 'Describe this screenshot')
+    assert.equal(host.querySelectorAll('.image-chip').length, 1)
+
+    host.querySelector<HTMLButtonElement>('.composer-image-model-btn')?.click()
+    await flush()
+    assert.equal(
+      store.getState().threads[0]?.model,
+      'openrouter:anthropic/claude-sonnet',
+      'suggestion switches the thread but leaves sending to the user',
+    )
+    assert.equal(composer.textContent, 'Describe this screenshot')
+    assert.equal(host.querySelectorAll('.image-chip').length, 1)
+    assert.equal(warning.hidden, true)
+  })
+
+  it('can continue immediately by sending the prompt without its image', async () => {
+    let runs = 0
+    const store = imageModelStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      imageModelApi(async () => {
+        runs++
+      }),
+    )
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'Continue from my text'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    getPromptAttachmentHandlers()?.attachImage('data:image/png;base64,abc', 'image/png')
+    await flush()
+
+    host.querySelector<HTMLButtonElement>('.composer-image-without-btn')?.click()
+    await flush()
+    assert.equal(runs, 1)
+    const sent = store.getState().threads[0]?.messages.at(-1)
+    assert.ok(sent)
+    assert.equal(sent.content, 'Continue from my text')
+    assert.equal(sent.images, undefined)
+  })
+
+  it('can describe locally, disclose the handoff, and send text to the selected model', async () => {
+    let runs = 0
+    let descriptorModel = ''
+    let descriptorPrompt = ''
+    const store = imageModelStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const api = imageModelApi(async () => {
+      runs++
+    })
+    api.agent.describeImages = async (
+      _projectId,
+      _threadId,
+      model,
+      prompt,
+      images,
+    ): Promise<{ text: string }> => {
+      descriptorModel = model
+      descriptorPrompt = prompt
+      assert.deepEqual(images, ['data:image/png;base64,abc'])
+      return { text: 'A dark settings panel with a Sources section.' }
+    }
+    mountInputBar(host, store, api)
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'Check the colour section'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    getPromptAttachmentHandlers()?.attachImage('data:image/png;base64,abc', 'image/png')
+    await flush()
+
+    host.querySelector<HTMLButtonElement>('.composer-image-describe-btn')?.click()
+    await flush()
+
+    assert.equal(descriptorModel, 'lmstudio:qwen/qwen3-vl')
+    assert.equal(descriptorPrompt, 'Check the colour section')
+    assert.equal(runs, 1)
+    assert.equal(
+      store.getState().threads[0]?.model,
+      'openrouter:deepseek/deepseek-v4-flash',
+      'the final turn stays on the originally selected text-only model',
+    )
+    const sent = store.getState().threads[0]?.messages.at(-1)
+    assert.ok(sent)
+    assert.equal(sent.images, undefined)
+    assert.match(sent.content, /^Check the colour section/)
+    assert.match(sent.content, /\[Image description generated by qwen\/qwen3-vl\]/)
+    assert.match(sent.content, /A dark settings panel with a Sources section\./)
+    assert.equal(host.querySelectorAll('.image-chip').length, 0)
+  })
+})
+
 describe('input bar two-step stop', () => {
   it('arms on Escape and aborts on Enter without submitting the composer', async () => {
     let aborts = 0
@@ -1054,5 +1310,65 @@ describe('input bar footer overflow menu', () => {
     // Developer diagnostics are disabled for this fixture, so only the ordinary
     // thread action remains visible.
     assert.deepEqual(labels, ['Enable Guarded YOLO'])
+  })
+})
+
+describe('input bar footer usage counter', () => {
+  function usageThread(): Thread {
+    return {
+      ...thread(),
+      model: 'claude-sonnet-4-6',
+      usage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+    }
+  }
+
+  async function mountWithUsage(): Promise<HTMLElement> {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [usageThread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+    return host
+  }
+
+  it('shows the total on the counter and the in/out/cost split on hover', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    assert.equal(counter.textContent, '13.1M tokens')
+
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.ok(popover)
+    assert.equal(popover.hidden, true)
+
+    counter.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Usage · 13\.1M tokens/)
+    assert.match(popover.textContent, /Input\s*12\.9M/)
+    assert.match(popover.textContent, /Output\s*211\.0k/)
+    assert.match(popover.textContent, /Cost/)
+
+    counter.dispatchEvent(new Event('mouseleave'))
+    assert.equal(popover.hidden, true)
+  })
+
+  it('no longer toggles the breakdown on click', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    counter.click()
+    await settle()
+
+    assert.equal(counter.textContent, '13.1M tokens')
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.equal(popover?.hidden, true)
   })
 })

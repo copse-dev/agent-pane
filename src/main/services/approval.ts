@@ -10,6 +10,7 @@ import {
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
+import type { UserAlertSender } from './user-alerts.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
 export interface ComparisonModelSelection {
@@ -21,6 +22,10 @@ export interface ComparisonModelSelection {
 export interface ApprovalRequest {
   title: string
   body: string
+  /** Explanatory copy rendered outside the monospaced command block when set. */
+  bodyAdvice?: string
+  /** Call-to-action or trailing context rendered below the command block when set. */
+  bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
@@ -78,6 +83,8 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
   return JSON.stringify({
     title: req.title,
     body: req.body,
+    bodyAdvice: req.bodyAdvice ?? '',
+    bodyFooter: req.bodyFooter ?? '',
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
@@ -386,33 +393,11 @@ function requestApprovalUnpaused(
   })
 }
 
-/**
- * The slice of Electron's macOS `app.dock` we use to draw attention while an
- * approval is pending. Structural so the real `Dock` satisfies it and tests can
- * pass a fake without pulling in Electron.
- */
-export interface DockAttention {
-  bounce(type?: 'critical' | 'informational'): number
-  cancelBounce(id: number): void
-}
-
-/**
- * Bounce the dock icon ('critical' keeps bouncing until the app is focused) to
- * signal a pending approval, returning a stop function to call once it settles.
- * No-op when there's no dock (non-macOS / headless), so callers need no guards.
- */
-export function startDockAttention(dock: DockAttention | undefined): () => void {
-  if (!dock) return () => {}
-  const id = dock.bounce('critical')
-  let stopped = false
-  return () => {
-    if (stopped) return
-    stopped = true
-    dock.cancelBounce(id)
-  }
-}
-
-export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAttention): void {
+export function initApproval(
+  win: BrowserWindow,
+  ipcMain: IpcMain,
+  alertUser: UserAlertSender,
+): void {
   const pending = new Map<string, (response: ApprovalResponse) => void>()
   const settle = (id: string, response: ApprovalResponse): void => {
     const resolve = pending.get(id)
@@ -461,10 +446,10 @@ export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAt
         // prompt leakage). Null when no run owns it (e.g. headless paths).
         const threadId = getActiveRunThread() ?? undefined
         win.webContents.send('agent:approval_request', { id, threadId, ...req })
-        // Bounce the dock until the user returns to answer (macOS only; app.dock
-        // is undefined elsewhere). macOS auto-stops the bounce on focus, and we
-        // also stop it when the approval settles for any reason.
-        const stopDockAttention = startDockAttention(dock)
+        // Deliver the user's configured native alert channels. A repeating
+        // Dock/taskbar animation stops on focus and also when this approval
+        // settles for any reason.
+        const stopAlert = alertUser('interaction', req.title)
         // No wall-clock timeout: the prompt stays until the user answers, the
         // window closes, or the caller's abort signal fires (Stop / cancel).
         // Auto-deny after 5 minutes previously let the agent keep turning under
@@ -477,7 +462,7 @@ export function initApproval(win: BrowserWindow, ipcMain: IpcMain, dock?: DockAt
         signal?.addEventListener('abort', onAbort, { once: true })
         pending.set(id, (response) => {
           signal?.removeEventListener('abort', onAbort)
-          stopDockAttention()
+          stopAlert()
           resolve(response)
         })
       }),

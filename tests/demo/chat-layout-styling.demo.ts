@@ -66,29 +66,44 @@ describe('browser-hosted chat layout styling', () => {
 
   it('renders a visible chat gradient through transparent conversation layers', async () => {
     await openRightPanel()
-    const gradient = await browser.execute(() => {
+    const appearance = await browser.execute(() => {
       const pane = document.getElementById('pane-chat')
       const scroll = document.querySelector('.conversation-scroll')
       const list = document.querySelector('.messages-list')
-      if (!pane || !scroll || !list) return null
+      const titlebar = document.getElementById('titlebar')
+      if (!pane || !scroll || !list || !titlebar) return null
       const paneStyle = getComputedStyle(pane)
       const rootStyle = getComputedStyle(document.documentElement)
+      const trafficLights = getComputedStyle(titlebar, '::before')
       return {
         backgroundImage: paneStyle.backgroundImage,
         scrollBackground: getComputedStyle(scroll).backgroundColor,
         listBackground: getComputedStyle(list).backgroundColor,
         gradientTop: rootStyle.getPropertyValue('--chat-gradient-top').trim(),
         gradientBottom: rootStyle.getPropertyValue('--chat-gradient-bottom').trim(),
+        trafficLights: {
+          content: trafficLights.content,
+          width: trafficLights.width,
+          height: trafficLights.height,
+          background: trafficLights.backgroundColor,
+          shadows: trafficLights.boxShadow,
+        },
       }
     })
 
-    expect(gradient).not.toBeNull()
-    if (!gradient) throw new Error('Missing chat gradient elements')
-    expect(gradient.backgroundImage).toContain('radial-gradient')
-    expect(gradient.backgroundImage).toContain('linear-gradient')
-    expect(gradient.scrollBackground).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
-    expect(gradient.listBackground).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
-    expect(gradient.gradientTop).not.toBe(gradient.gradientBottom)
+    expect(appearance).not.toBeNull()
+    if (!appearance) throw new Error('Missing chat appearance elements')
+    expect(appearance.backgroundImage).toContain('radial-gradient')
+    expect(appearance.backgroundImage).toContain('linear-gradient')
+    expect(appearance.scrollBackground).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
+    expect(appearance.listBackground).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
+    expect(appearance.gradientTop).not.toBe(appearance.gradientBottom)
+    expect(appearance.trafficLights.content).not.toBe('none')
+    expect(appearance.trafficLights.width).toBe('12px')
+    expect(appearance.trafficLights.height).toBe('12px')
+    expect(appearance.trafficLights.background).toBe('rgb(255, 95, 87)')
+    expect(appearance.trafficLights.shadows).toContain('rgb(254, 188, 46)')
+    expect(appearance.trafficLights.shadows).toContain('rgb(40, 200, 64)')
 
     await saveAppScreenshot('chat-layout-three-pane.png')
     await $('#resizer-projects').moveTo()

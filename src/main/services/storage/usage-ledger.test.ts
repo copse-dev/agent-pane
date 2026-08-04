@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { storageSet } from './storage.ts'
+import { setSetting } from './settings.ts'
+import { OPENROUTER_PRICING_KEY } from '../providers/model-pricing-store.ts'
 import { getUsageSummary, recordUsageEvent } from './usage-ledger.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
 
@@ -27,6 +29,32 @@ describe('usage ledger', () => {
     assert.equal(summary.day.cloudModels[0]?.inputTokens, 500)
     assert.equal(summary.month.cloudModels[0]?.outputTokens, 50)
     assert.equal(summary.allTime.totalInputTokens, 0)
+  })
+
+  it('prices OpenRouter turns from the persisted catalog rates', async () => {
+    // Regression: an `openrouter:` selection matched neither pricing source, so
+    // the ledger reported $0.00 for real, billed OpenRouter usage.
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await setSetting(OPENROUTER_PRICING_KEY, {
+      'openrouter:z-ai/glm-5.2': { inputPricePerMTok: 0.4, outputPricePerMTok: 1.6 },
+    })
+    recordUsageEvent({
+      model: 'openrouter:z-ai/glm-5.2',
+      source: 'agent',
+      inputTokens: 3_600_000,
+      outputTokens: 44_100,
+      threadId: 'thread-or',
+    })
+
+    const summary = await getUsageSummary()
+    const row = at(summary.day.cloudModels, 0)
+    assert.equal(row.model, 'openrouter:z-ai/glm-5.2')
+    assert.equal(row.isLocal, false)
+    assert.ok(
+      row.estimatedCostUsd > 1.5,
+      `expected a real cost, got ${String(row.estimatedCostUsd)}`,
+    )
+    assert.equal(summary.day.totalCostUsd, row.estimatedCostUsd)
   })
 
   it('records local lmstudio models in day summaries', async () => {

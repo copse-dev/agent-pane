@@ -52,6 +52,8 @@ import {
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
 import { storageGet } from './storage/storage.ts'
 import { projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -63,6 +65,7 @@ import { runSerialized } from './storage/write-queue.ts'
  *   meta.json           mutable thread metadata (everything except messages)
  *   events.jsonl        append-only spine, one line per finalized message
  *   agent-history.json  provider-format LLM resume snapshot (issue #993)
+ *   acp-session.json    private external-agent session binding
  *   messages/*.md       OKF prose (message content + reasoning)
  *   blobs/*             verbatim tool results and images
  *   subagents/**        nested subagent sessions, same structure recursively
@@ -80,6 +83,7 @@ const EVENTS_FILE = 'events.jsonl'
 const META_FILE = 'meta.json'
 const AGENT_HISTORY_FILE = 'agent-history.json'
 const AGENT_HISTORY_VERSION = 1
+const ACP_SESSION_FILE = 'acp-session.json'
 const AGENT_EPOCH_FILE = 'agent-epoch.json'
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
@@ -137,11 +141,44 @@ function writeFileEnsuringDir(fullPath: string, contents: string): void {
 }
 
 /** Atomic replace so a crash never leaves a half-written sidecar. */
-function atomicWriteFile(path: string, data: string): void {
+function atomicWriteFile(path: string, data: string, mode?: number): void {
   const tmp = `${path}.copse-${String(process.pid)}.tmp`
-  writeFileSync(tmp, data)
+  if (mode === undefined) writeFileSync(tmp, data)
+  else writeFileSync(tmp, data, { mode })
   renameSync(tmp, path)
 }
+
+const acpSessionExecutionTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local') }).strict(),
+  z
+    .object({
+      kind: z.literal('ssh'),
+      hostId: z.string().min(1),
+      remoteCwd: z.string().min(1),
+    })
+    .strict(),
+])
+
+const acpSessionBindingSchema = z
+  .object({
+    v: z.literal(1),
+    agentId: z.string().min(1),
+    sessionId: z.string().min(1),
+    protocolVersion: z.number().int().positive(),
+    executionTarget: acpSessionExecutionTargetSchema,
+    workspaceIdentity: z.string().min(1),
+    agentConfigGeneration: z.number().int().nonnegative(),
+    createdBy: z.enum(['copse', 'external']),
+    lastAttachedAt: z.number().int().nonnegative(),
+  })
+  .strict()
+
+/**
+ * Private durable link from a Copse thread to one external ACP agent session.
+ * The opaque session id stays out of thread metadata, spine events, exports,
+ * logs, and telemetry; only this owner-readable sidecar persists it.
+ */
+export type AcpSessionBinding = z.infer<typeof acpSessionBindingSchema>
 
 function isAgentHistoryMessage(value: unknown): value is LLMMessage {
   return (
@@ -1201,6 +1238,54 @@ export function clearAgentHistory(projectId: string, threadId: string): Promise<
 /** True when an `agent-history.json` sidecar already exists for the thread. */
 export function agentHistoryExists(projectId: string, threadId: string): Promise<boolean> {
   return runSerialized(queueKey(projectId), () => existsSync(agentHistoryPath(projectId, threadId)))
+}
+
+// --- External ACP session sidecar -------------------------------------------
+
+function acpSessionBindingPath(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), ACP_SESSION_FILE)
+}
+
+/**
+ * Load an exact external-agent binding. Missing, corrupt, unknown-version, or
+ * structurally invalid files fail closed to `null`; callers then require a new
+ * session or explicit recovery rather than guessing from `session/list`.
+ */
+export function loadAcpSessionBinding(
+  projectId: string,
+  threadId: string,
+): Promise<AcpSessionBinding | null> {
+  return runSerialized(queueKey(projectId), () => {
+    const raw = safeRead(acpSessionBindingPath(projectId, threadId))
+    if (raw === null) return null
+    return safeJsonParse(raw, decodeWithSchema(acpSessionBindingSchema))
+  })
+}
+
+/** Atomically persist a private exact-session binding before the first prompt. */
+export function saveAcpSessionBinding(
+  projectId: string,
+  threadId: string,
+  binding: AcpSessionBinding,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    atomicWriteFile(join(dir, ACP_SESSION_FILE), `${JSON.stringify(binding)}\n`, 0o600)
+  })
+}
+
+/** Remove a confirmed-stale or explicitly abandoned external ACP binding. */
+export function clearAcpSessionBinding(projectId: string, threadId: string): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const path = acpSessionBindingPath(projectId, threadId)
+    if (!existsSync(path)) return
+    try {
+      unlinkSync(path)
+    } catch {
+      // Best-effort: a missing file is the desired end state.
+    }
+  })
 }
 
 /**

@@ -2,6 +2,7 @@ import { RequestError } from '@agentclientprotocol/sdk'
 import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
+import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -352,6 +353,13 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
     )
   )
     return 'No provider endpoint satisfies the current OpenRouter privacy routing (zero-data-retention / no-training). Pick another model, or relax the routing toggles in Settings → Providers → OpenRouter.'
+
+  if (
+    /no endpoints? (?:were )?found (?:that )?support(?:ing)? image input|does not support image (?:input|prompts?|attachments?)/i.test(
+      detail,
+    )
+  )
+    return IMAGE_INPUT_UNSUPPORTED_MESSAGE
 
   if (status === 429 || type === 'rate_limit_error' || detail.includes('rate_limit'))
     return 'Rate limit reached. Please wait a moment and try again.'

@@ -49,6 +49,7 @@ import {
   nonEmptyStringOr,
 } from '../src/shared/unknown-value.mts'
 import { z } from 'zod'
+import { CHARS_PER_TOKEN } from '../packages/agent/src/token-estimate.ts'
 
 export interface BenchTask {
   id: string
@@ -485,8 +486,8 @@ async function runTask(
   // ~4 chars/token figure so tokens-per-solve stays comparable run to run.
   const usageEstimated = stats.usageChunks === 0
   if (usageEstimated) {
-    stats.outputTokens = Math.round(traceLines.join('').length / 4)
-    stats.inputTokens = Math.round(JSON.stringify(messages).length / 4)
+    stats.outputTokens = Math.round(traceLines.join('').length / CHARS_PER_TOKEN)
+    stats.inputTokens = Math.round(JSON.stringify(messages).length / CHARS_PER_TOKEN)
   }
 
   const verdict = grade(task, workspace)

@@ -34,6 +34,7 @@ describes it to the agent, so changing the layout means updating that preamble.
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
+    acp-session.json                 # private external ACP session binding (optional)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     blobs/<toolCallId>.result.txt    # verbatim tool result
@@ -87,6 +88,13 @@ describes it to the agent, so changing the layout means updating that preamble.
   log history values. Legacy electron-store keys `llm-history:<threadId>` are
   migrated once at startup (after legacy thread import, before the first window)
   when ownership resolves to exactly one `(projectId, threadId)`.
+- **`acp-session.json`** is a private, versioned binding to one exact external
+  ACP agent session. It stores the opaque session id plus agent, protocol,
+  workspace, execution-target, and configuration-generation identity needed to
+  resume safely after a restart. The file is atomically replaced with owner-only
+  permissions and is not part of `meta.json`, `events.jsonl`, logs, telemetry,
+  or transcript exports. Corrupt, incomplete, and future-version bindings fail
+  closed instead of guessing a replacement session.
 
 ## Spine line schema
 
@@ -105,6 +113,8 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
   "reasoning": { "ref": "messages/<id>.reasoning.md", "sha256": "…" }, // optional
   "images": [{ "ref": "blobs/<imageId>.png", "mimeType": "image/png" }], // optional
   "commandSummary": "…", // optional
+  "startingCommit": "a1b2c3…", // optional: HEAD SHA the prompt started from (user messages)
+  "dirty": true, // optional: working tree had uncommitted changes at send time
   "toolCalls": [
     {
       "id": "…", "name": "read_file",
@@ -123,6 +133,12 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
 message. The transcript surfaces it only when more than one distinct primary
 model appears in the thread; explore/CI subagent models stay on the nested
 `subagent.model` field (already shown on their cards).
+
+`startingCommit`/`dirty` are captured once, at send time, for a human-typed
+prompt (via `git:promptState`) — the HEAD SHA the turn began on and whether the
+working tree already had uncommitted changes. Best-effort: absent outside a
+git repository, and not captured on paths that don't round-trip through main
+before the message is finalized (e.g. resend).
 Reconstruction (`foldThread`) folds `meta.json` + spine, resolves each ref, and
 **verifies its sha256** — a hash mismatch surfaces as a load error on that
 thread (skipped), never silent corruption. `parseSpine` tolerates unknown `v`

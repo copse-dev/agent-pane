@@ -10,6 +10,12 @@ import {
 } from './thread-helpers.ts'
 
 describe('store', () => {
+  it('starts with the dark theme pinned', () => {
+    const store = createStore()
+    assert.equal(store.getState().theme, 'dark')
+    assert.equal(store.getState().themePreference, 'dark')
+  })
+
   it('fires message_added when a message is added', () => {
     const store = createStore()
     const threadId = createThread(store)

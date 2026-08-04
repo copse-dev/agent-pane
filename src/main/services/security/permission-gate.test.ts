@@ -4,8 +4,9 @@ import {
   decideShellPermission,
   decideWebFetchPermission,
   decideWebSearchPermission,
-  formatInstallPromptBody,
-  formatEphemeralRunnerPromptBody,
+  formatInstallPromptParts,
+  formatGuardedYoloHarmPromptAdvice,
+  formatEphemeralRunnerPromptParts,
   shellRequiresOutsideSandbox,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
   backgroundCommandFromArgs,
@@ -174,9 +175,11 @@ describe('ensureToolPermitted', () => {
     })
     let approvalBody = ''
     let approvalSubject = ''
+    let approvalFooter = ''
     setApprovalHandler(async (request) => {
       approvalBody = request.body
       approvalSubject = request.subject ?? ''
+      approvalFooter = request.bodyFooter ?? ''
       return { approved: false, remember: false }
     })
     try {
@@ -184,7 +187,8 @@ describe('ensureToolPermitted', () => {
         await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } }),
         false,
       )
-      assert.match(approvalBody, /network access is temporarily widened/i)
+      assert.equal(approvalBody, 'printf hello')
+      assert.match(approvalFooter, /network access is temporarily widened/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
     } finally {
       setApprovalHandler(null)
@@ -1212,94 +1216,107 @@ describe('decideShellPermission', () => {
   })
 })
 
-describe('formatInstallPromptBody', () => {
-  it('leads with the command and never the nested external reason list', () => {
-    const body = formatInstallPromptBody('npm install', {
+describe('formatInstallPromptParts', () => {
+  it('keeps the command isolated from nested external reason list copy', () => {
+    const parts = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(body.startsWith('npm install\n'))
-    assert.ok(!body.includes('may fetch + run code from network'))
-    assert.ok(!body.includes('((')) // no nested parentheticals
-    assert.ok(body.includes('Allow this install?'))
+    assert.equal(parts.command, 'npm install')
+    assert.ok(parts.bodyAdvice?.includes('This installs packages'))
+    assert.ok(!parts.bodyAdvice?.includes('may fetch + run code from network'))
+    assert.ok(!parts.bodyAdvice?.includes('((')) // no nested parentheticals
+    assert.equal(parts.bodyFooter, 'Allow this install?')
   })
 
   it('mentions Socket Firewall scanning and (for JS) disabled scripts', () => {
-    const body = formatInstallPromptBody('npm install', {
+    const parts = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(body.includes('Socket Firewall (sfw)'))
-    assert.ok(body.includes('install lifecycle scripts are disabled'))
+    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
+    assert.ok(parts.bodyAdvice?.includes('install lifecycle scripts are disabled'))
   })
 
   it('omits the scripts note for non-JS managers', () => {
-    const body = formatInstallPromptBody('pip install requests', {
+    const parts = formatInstallPromptParts('pip install requests', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: false,
     })
-    assert.ok(body.includes('Socket Firewall (sfw)'))
-    assert.ok(!body.includes('install lifecycle scripts'))
+    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
+    assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
   })
 
   it('explains the macOS sandbox exit only when running outside it', () => {
-    const outside = formatInstallPromptBody('npm install', {
+    const outside = formatInstallPromptParts('npm install', {
       outsideSandbox: true,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(outside.includes('outside the macOS sandbox'))
-    const inside = formatInstallPromptBody('npm install', {
+    assert.ok(outside.bodyAdvice?.includes('outside the macOS sandbox'))
+    const inside = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(!inside.includes('macOS sandbox'))
+    assert.ok(!inside.bodyAdvice?.includes('macOS sandbox'))
   })
 
   it('warns when package scanning is disabled in Settings', () => {
-    const body = formatInstallPromptBody('npm install', {
+    const parts = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: false,
       jsManager: true,
     })
-    assert.ok(body.includes('off in Settings'))
-    assert.ok(!body.includes('Socket Firewall (sfw) scans'))
+    assert.ok(parts.bodyAdvice?.includes('off in Settings'))
+    assert.ok(!parts.bodyAdvice?.includes('Socket Firewall (sfw) scans'))
   })
 })
 
-describe('formatEphemeralRunnerPromptBody', () => {
+describe('formatGuardedYoloHarmPromptAdvice', () => {
+  it('lists harm reasons and the non-bypassable confirmation copy', () => {
+    const advice = formatGuardedYoloHarmPromptAdvice([
+      'recursive/forced delete',
+      'script contents could not be inspected safely: foo.sh',
+    ])
+    assert.ok(advice.includes('Potential harm: recursive/forced delete'))
+    assert.ok(advice.includes('script contents could not be inspected safely: foo.sh'))
+    assert.ok(advice.includes('Guarded YOLO cannot skip this confirmation'))
+  })
+})
+
+describe('formatEphemeralRunnerPromptParts', () => {
   it('describes fetch-and-run rather than installing project dependencies', () => {
-    const body = formatEphemeralRunnerPromptBody('npx tsc --noEmit', {
+    const parts = formatEphemeralRunnerPromptParts('npx tsc --noEmit', {
       outsideSandbox: true,
       safeInstall: true,
     })
-    assert.ok(body.startsWith('npx tsc --noEmit\n'))
-    assert.ok(body.includes('download and run code from the network'))
-    assert.ok(body.includes('Allow this command?'))
-    assert.ok(!body.includes('installs packages'))
-    assert.ok(!body.includes('Allow this install?'))
+    assert.equal(parts.command, 'npx tsc --noEmit')
+    assert.ok(parts.bodyAdvice?.includes('download and run code from the network'))
+    assert.equal(parts.bodyFooter, 'Allow this command?')
+    assert.ok(!parts.bodyAdvice?.includes('installs packages'))
+    assert.ok(!parts.bodyFooter.includes('Allow this install?'))
   })
 
   it('mentions Socket Firewall scanning when enabled', () => {
-    const body = formatEphemeralRunnerPromptBody('npx eslint .', {
+    const parts = formatEphemeralRunnerPromptParts('npx eslint .', {
       outsideSandbox: false,
       safeInstall: true,
     })
-    assert.ok(body.includes('Socket Firewall (sfw)'))
-    assert.ok(!body.includes('install lifecycle scripts'))
+    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
+    assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
   })
 
   it('warns when package scanning is disabled in Settings', () => {
-    const body = formatEphemeralRunnerPromptBody('npx tsc --noEmit', {
+    const parts = formatEphemeralRunnerPromptParts('npx tsc --noEmit', {
       outsideSandbox: false,
       safeInstall: false,
     })
-    assert.ok(body.includes('off in Settings'))
-    assert.ok(!body.includes('Socket Firewall (sfw) scans'))
+    assert.ok(parts.bodyAdvice?.includes('off in Settings'))
+    assert.ok(!parts.bodyAdvice?.includes('Socket Firewall (sfw) scans'))
   })
 })
 

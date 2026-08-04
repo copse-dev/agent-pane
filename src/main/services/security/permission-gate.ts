@@ -17,7 +17,7 @@ import { getActiveRunThread, getActiveRunTurnTreeId } from '../thread-models.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
-import type { ShellPermissionDecision } from './permission-policy.ts'
+import type { ShellPermissionDecision, ShellPromptParts } from './permission-policy.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
@@ -38,14 +38,16 @@ import {
   fetchUrlFromArgs,
   formatWebPromptBody,
   shellCommandFromArgs,
-  formatShellPromptBody,
-  formatPortBindingPromptBody,
+  formatShellPromptParts,
+  formatPortBindingPromptParts,
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
-  formatExternalSandboxPromptBody,
-  formatExpectedSandboxBlockPromptBody,
-  formatInstallPromptBody,
-  formatEphemeralRunnerPromptBody,
+  formatExternalSandboxPromptParts,
+  formatExpectedSandboxBlockPromptParts,
+  formatGuardedYoloHarmPromptAdvice,
+  formatInstallPromptParts,
+  formatEphemeralRunnerPromptParts,
+  shellPromptToApprovalFields,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
   GITHUB_READONLY_CI_TOOLS,
@@ -74,7 +76,7 @@ import {
   normalizeWebAllowedOrigins,
   webAllowedOriginsWithDefaults,
 } from './web-origin-policy.ts'
-import { formatUnsandboxedPromptBody } from './sandbox-failure.ts'
+import { formatUnsandboxedPromptParts } from './sandbox-failure.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -190,19 +192,18 @@ function autoApproveShell(
 }
 
 async function requestEscalationApproval(
-  command: string,
   title: string,
-  body: string,
+  parts: ShellPromptParts,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
   if (signal?.aborted) return false
-  const trustable = offerableTrustedCommand(command)
+  const trustable = offerableTrustedCommand(parts.command)
   const { approved, remember, grantScope } = await requestApproval(
     {
       title,
-      body,
       type: 'shell',
+      ...shellPromptToApprovalFields(parts),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       allowRemember: trustable !== null,
@@ -212,7 +213,7 @@ async function requestEscalationApproval(
             allowTurnTreeLease: true,
             turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
             turnTreeLeaseDefault: false,
-            turnTreeLeaseSubject: command,
+            turnTreeLeaseSubject: parts.command,
           }
         : {}),
     },
@@ -220,7 +221,7 @@ async function requestEscalationApproval(
   )
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, command)
+    issueShellReplayLease(leaseIdentity, parts.command)
   }
   return approved
 }
@@ -237,9 +238,8 @@ async function promptShell(
   // sandbox (a trusted command runs unsandboxed); an in-sandbox prompt never offers it.
   if (outsideSandbox) {
     return requestEscalationApproval(
-      command,
       'Run outside sandbox?',
-      formatExternalSandboxPromptBody(command, reasons),
+      formatExternalSandboxPromptParts(command, reasons),
       signal,
       leaseIdentity,
     )
@@ -247,8 +247,8 @@ async function promptShell(
   const { approved, grantScope } = await requestApproval(
     {
       title: 'Run shell command?',
-      body: formatShellPromptBody(command, reasons),
       type: 'shell',
+      ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons)),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'sandbox',
       // A sandboxed approval includes a bounded replay lease by default. The
@@ -274,13 +274,8 @@ async function promptShell(
 async function promptGuardedYoloHarm(command: string, reasons: string[]): Promise<boolean> {
   const { approved } = await requestApproval({
     title: 'Guarded YOLO safety check',
-    body: [
-      command,
-      '',
-      `Potential harm: ${reasons.join('; ')}`,
-      '',
-      'Guarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?',
-    ].join('\n'),
+    body: command,
+    bodyAdvice: formatGuardedYoloHarmPromptAdvice(reasons),
     type: 'shell',
     allowRemember: false,
   })
@@ -307,9 +302,8 @@ export async function promptUnsandboxedShell(
 ): Promise<boolean> {
   if (autoApproveShell(command, 'external')) return true
   return requestEscalationApproval(
-    command,
     'Run outside sandbox?',
-    formatUnsandboxedPromptBody(command, reasons),
+    formatUnsandboxedPromptParts(command, reasons),
     signal,
   )
 }
@@ -328,8 +322,8 @@ export async function promptExpectedSandboxBlock(
   const { approved } = await requestApproval(
     {
       title: 'Run outside sandbox?',
-      body: formatExpectedSandboxBlockPromptBody(command, reasons),
       type: 'shell',
+      ...shellPromptToApprovalFields(formatExpectedSandboxBlockPromptParts(command, reasons)),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
     },
@@ -775,19 +769,23 @@ export async function ensureShellCommandPermitted(
       install.isEphemeralRunner
         ? {
             title: 'Run package command?',
-            body: formatEphemeralRunnerPromptBody(command, { outsideSandbox, safeInstall }),
             type: 'shell',
+            ...shellPromptToApprovalFields(
+              formatEphemeralRunnerPromptParts(command, { outsideSandbox, safeInstall }),
+            ),
             subject: SHELL_DECISION_SUBJECT,
             scope: outsideSandbox ? 'external' : 'sandbox',
           }
         : {
             title: 'Run package install?',
-            body: formatInstallPromptBody(command, {
-              outsideSandbox,
-              safeInstall,
-              jsManager: install.jsManager,
-            }),
             type: 'shell',
+            ...shellPromptToApprovalFields(
+              formatInstallPromptParts(command, {
+                outsideSandbox,
+                safeInstall,
+                jsManager: install.jsManager,
+              }),
+            ),
             subject: SHELL_DECISION_SUBJECT,
             scope: outsideSandbox ? 'external' : 'sandbox',
           },
@@ -888,8 +886,10 @@ async function checkBackgroundProcessPermission(
 
   const { approved, remember } = await requestApproval({
     title: 'Allow this project to bind a local port?',
-    body: formatPortBindingPromptBody(root, backgroundCommandFromArgs(args)),
     type: 'shell',
+    ...shellPromptToApprovalFields(
+      formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
+    ),
     allowRemember: true,
     rememberLabel: 'Always allow local port binding in this project',
   })

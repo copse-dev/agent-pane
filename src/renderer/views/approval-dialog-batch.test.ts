@@ -19,6 +19,8 @@ interface EmitReq {
   threadId?: string
   title?: string
   body?: string
+  bodyAdvice?: string
+  bodyFooter?: string
   allowRemember?: boolean
   rememberLabel?: string
   allowTurnTreeLease?: boolean
@@ -69,6 +71,8 @@ function makeApi(): {
         threadId: req.threadId,
         title: req.title ?? `title-${req.id}`,
         body: req.body ?? `body-${req.id}`,
+        bodyAdvice: req.bodyAdvice,
+        bodyFooter: req.bodyFooter,
         type: 'shell',
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
@@ -194,6 +198,28 @@ describe('approval dialog coalescing', () => {
     assert.equal(heading(), 'Fetch from the web? — Claude')
     assert.deepEqual(rowTitles(), [])
     assert.deepEqual(bodies(), ['fetch one', 'fetch two'])
+  })
+
+  it('renders bodyAdvice and bodyFooter outside the monospaced command block', () => {
+    emit({
+      id: 'gy',
+      title: 'Guarded YOLO safety check',
+      body: 'rm -rf ./tmp',
+      bodyAdvice: 'Potential harm: recursive/forced delete',
+      bodyFooter: 'Allow this bounded destructive action once?',
+    })
+    fireWindow()
+    const advice = dialog.querySelector('.approval-advice')
+    const body = dialog.querySelector('.approval-body')
+    const footer = dialog.querySelector('.approval-footer')
+    assert.ok(advice)
+    assert.ok(body)
+    assert.ok(footer)
+    assert.equal(advice.textContent, 'Potential harm: recursive/forced delete')
+    assert.equal(body.textContent, 'rm -rf ./tmp')
+    assert.equal(footer.textContent, 'Allow this bounded destructive action once?')
+    assert.ok(advice.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING)
+    assert.ok(body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   it('keeps per-row labels and a count heading for a mixed batch', () => {

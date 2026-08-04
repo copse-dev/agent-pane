@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { $, $$, browser } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 
 const OPENROUTER_FIXTURE_PORT = 51235
@@ -34,7 +38,7 @@ const MODELS_PAYLOAD = {
       context_length: 200000,
       pricing: { prompt: '0.000003', completion: '0.000015' },
       supported_parameters: ['tools'],
-      architecture: { modality: 'text->text' },
+      architecture: { modality: 'text+image->text' },
     },
     {
       id: 'google/gemini-2.5-pro',
@@ -49,10 +53,38 @@ const MODELS_PAYLOAD = {
 
 async function startOpenRouterModelServer(): Promise<{
   apiBase: string
+  localServerUrl: string
   close: () => Promise<void>
 }> {
   const server: Server = createServer((req, res) => {
     const url = req.url ?? ''
+    if (url.endsWith('/lm/v1/chat/completions')) {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      })
+      res.write(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'A dark settings panel with a Sources section.' }, finish_reason: null }] })}\n\n`,
+      )
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`)
+      res.end('data: [DONE]\n\n')
+      return
+    }
+    if (url.endsWith('/lm/v1/models')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ data: [{ id: 'qwen/qwen3-vl' }] }))
+      return
+    }
+    if (url.endsWith('/lm/api/v1/models')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          models: [{ key: 'qwen/qwen3-vl', capabilities: { vision: true } }],
+        }),
+      )
+      return
+    }
     if (url.endsWith('/models')) {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(MODELS_PAYLOAD))
@@ -76,6 +108,7 @@ async function startOpenRouterModelServer(): Promise<{
   })
   return {
     apiBase,
+    localServerUrl: `http://127.0.0.1:${String(OPENROUTER_FIXTURE_PORT)}/lm/v1`,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()))
@@ -84,13 +117,16 @@ async function startOpenRouterModelServer(): Promise<{
 }
 
 describe('OpenRouter model picker', () => {
-  let fixture: { apiBase: string; close: () => Promise<void> } | null = null
+  let fixture: { apiBase: string; localServerUrl: string; close: () => Promise<void> } | null = null
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     fixture = await startOpenRouterModelServer()
     resetUserData()
-    seedOpenRouterFixture(process.cwd(), { apiBase: fixture.apiBase })
+    seedOpenRouterFixture(process.cwd(), {
+      apiBase: fixture.apiBase,
+      localServerUrl: fixture.localServerUrl,
+    })
     await browser.reloadSession()
   })
 
@@ -248,14 +284,16 @@ describe('OpenRouter model picker', () => {
 
     await filter.setValue('qwen')
     await browser.waitUntil(
-      async () => (await $$('.model-picker-option').map((option) => option.getText())).length === 1,
+      async () => (await $$('.model-picker-option').map((option) => option.getText())).length === 2,
       { timeout: 2_000, timeoutMsg: 'model picker did not filter after typing' },
     )
     assert.deepEqual(await $$('.model-picker-option').map((option) => option.getText()), [
       'Qwen3 235B A22B (free)',
+      'qwen/qwen3-vl',
     ])
     assert.deepEqual(await $$('.model-picker-group-label').map((label) => label.getText()), [
       'OPENROUTER (ZDR ROUTING)',
+      'LOCAL MODELS',
     ])
 
     await filter.setValue('no-such-model')
@@ -274,6 +312,71 @@ describe('OpenRouter model picker', () => {
       true,
       'composer should be focused after dismissing the picker with Escape',
     )
+  })
+
+  it('warns before sending an image to an incompatible model and offers recovery', async () => {
+    await browser.keys('Escape')
+    await $('.model-picker-trigger').click()
+    await $('.model-picker-browse').click()
+    await $('.model-picker-filter').setValue('qwen')
+    const qwen = await $('.model-picker-option[data-value="openrouter:qwen/qwen3-235b-a22b:free"]')
+    await qwen.waitForDisplayed({ timeout: 5_000 })
+    await qwen.click()
+    await $('.model-picker-menu').waitForDisplayed({ reverse: true, timeout: 5_000 })
+
+    await browser.execute(() => {
+      const composer = document.querySelector<HTMLElement>('.prompt-input')
+      if (!composer) return
+      composer.textContent = 'Can you check whether this screen matches the colour section?'
+      composer.dispatchEvent(new Event('input', { bubbles: true }))
+      const png = Uint8Array.from(
+        atob(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nB8AAAAASUVORK5CYII=',
+        ),
+        (char) => char.charCodeAt(0),
+      )
+      const transfer = new DataTransfer()
+      transfer.items.add(new File([png], 'settings.png', { type: 'image/png' }))
+      document.dispatchEvent(
+        new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer }),
+      )
+    })
+
+    await $('.attachment-chips .image-chip').waitForDisplayed({ timeout: 5_000 })
+    const warning = await $('.composer-image-warning')
+    await warning.waitForDisplayed({ timeout: 10_000 })
+    assert.match(await warning.getText(), /Qwen3 235B A22B \(free\) can’t read image input/)
+    assert.match(await warning.getText(), /Use Claude 3.5 Sonnet \(paid\)/)
+    assert.match(await warning.getText(), /Describe locally with qwen\/qwen3-vl/)
+    await expect(await $('.composer-image-describe-btn').isDisplayed()).toBe(true)
+    await expect(await $('.composer-image-without-btn').isDisplayed()).toBe(true)
+
+    await $('.submit-btn').click()
+    await browser.pause(150)
+    assert.equal(await warning.isDisplayed(), true, 'send should stay blocked at the composer')
+    assert.equal(
+      await $('.prompt-input').getText(),
+      'Can you check whether this screen matches the colour section?',
+    )
+    assert.equal(await $$('.attachment-chips .image-chip').length, 1)
+
+    await saveAppScreenshot('image-model-compatibility-warning.png')
+
+    await $('.composer-image-describe-btn').click()
+    await warning.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 2, {
+      timeout: 10_000,
+      timeoutMsg: 'described image was not handed to the selected text-only model',
+    })
+    assert.equal(
+      (await $('.model-picker-label').getText()).trim(),
+      'Qwen3 235B A22B (free)',
+      'description handoff must preserve the original target model',
+    )
+    assert.equal(await $$('.attachment-chips .image-chip').length, 0)
+    const handedOff = await $$('.messages-list .msg-user .message-text')[1]?.getText()
+    assert.match(handedOff ?? '', /Image description generated by qwen\/qwen3-vl/)
+    assert.match(handedOff ?? '', /Mock response to: \(complex input\)/)
   })
 
   it('exposes an OpenRouter API key field and custom model input in the OpenRouter provider form', async () => {

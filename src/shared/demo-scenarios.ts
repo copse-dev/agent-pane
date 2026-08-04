@@ -1,4 +1,6 @@
 import type { Project, Thread } from './types/index.ts'
+import type { DemoTrace } from './demo-traces.ts'
+import { LANDING_TRACE } from './demo-traces/landing.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
@@ -10,6 +12,13 @@ export interface DemoScenario {
   project: Project
   threads: Thread[]
   settings: Readonly<Record<string, unknown>>
+  /**
+   * A recorded turn the demo can replay when its prompt is submitted. Scenarios
+   * without one are static fixtures for visual tests; a scenario with one is a
+   * walkthrough — the composer types the prompt and the answer streams back
+   * through the ordinary chunk path.
+   */
+  trace?: DemoTrace
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -60,6 +69,34 @@ const semanticSearchSummary = [
 ].join('\n')
 
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
+  {
+    // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
+    // visual-test fixture. It is also what the marketing hero iframe embeds.
+    id: 'landing',
+    label: 'Landing walkthrough (replays a recorded turn)',
+    project: project('demo-landing-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: LANDING_TRACE.source?.model ?? 'claude-opus-5',
+    },
+    threads: [
+      {
+        // Empty on purpose: the walkthrough types the prompt into the composer,
+        // so the transcript builds from nothing while you watch.
+        id: 'demo-landing-thread',
+        title: LANDING_TRACE.source?.title ?? LANDING_TRACE.label,
+        status: 'idle',
+        gitBranch: 'main',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    trace: LANDING_TRACE,
+  },
   {
     id: 'markdown-list-indent',
     label: 'Markdown list indentation',

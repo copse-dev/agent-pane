@@ -18,6 +18,7 @@ dialog.settings-overlay {
   padding: 0;
   border: none;
   color: inherit;
+  overflow: hidden;
 }
 dialog.settings-overlay::backdrop {
   background: var(--bg-base);
@@ -79,6 +80,8 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-md);
   border-right: 1px solid var(--border);
   background: var(--bg-elevated);
+  min-height: 0;
+  overflow-y: auto;
 }
 .settings-nav-btn {
   text-align: left;
@@ -175,9 +178,20 @@ dialog.settings-overlay::backdrop {
   margin-bottom: var(--spacing-lg);
   line-height: 1.5;
 }
-.settings-fieldset-desc {
-  margin-top: calc(-1 * var(--spacing-xs));
-  margin-bottom: var(--spacing-md);
+/* A blurb under a group heading introduces the whole group, so it stays tight to
+   the heading (which now carries that gap itself — hence no negative pull here
+   any more) and keeps a clear gap to the first control. Some groups write theirs
+   as a .field-hint, so give that the same rhythm rather than leaving it jammed
+   against the control below. */
+.settings-content legend + .field-hint {
+  margin-bottom: var(--spacing-lg);
+}
+.settings-field-label {
+  display: block;
+  margin: var(--spacing-lg) 0 var(--spacing-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
 }
 .field-hint {
   font-size: 11px;
@@ -217,6 +231,21 @@ dialog.settings-overlay::backdrop {
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
+/* Actions that act on a whole section (reload, add) rather than on one field.
+   They sit between the section blurb and the first group, so they carry a
+   group-sized gap below and stay clear of the heading that follows. */
+.settings-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: calc(var(--spacing-xl) + var(--spacing-md));
+}
+/* A row that closes out a group has nothing left to separate from — the group's
+   own bottom margin is already the gap to whatever follows. */
+.settings-action-row:last-child {
+  margin-bottom: 0;
+}
 .settings-buttons {
   display: flex;
   gap: var(--spacing-md);
@@ -250,18 +279,24 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-/* Each fieldset is a distinct card: an elevated surface with roomier internal
-   padding so related controls cluster together and unrelated ones don't crowd.
-   Spacing *between* panels is handled separately (below) so it stays uniform
-   whether a panel is inline in the template or mounted by JS. */
+/* A card — elevated surface, roomier internal padding — marks a discrete
+   sub-object inside a group: one provider's credentials, one widget. No border:
+   the surface alone reads as a panel, and a border would force the legend to
+   notch a hole through it.
+
+   Top-level groups opt out of this entirely (below) — see the Usage section for
+   the target: a heading and space do the grouping, so the only boxes on screen
+   are the things that really are boxes. */
 .settings-content fieldset {
+  border: 0;
   background: var(--bg-elevated);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
 }
-/* Uniform gap between a section's top-level panels. Scoped to direct fieldsets
-   AND fieldsets injected into a `.settings-mount` host, so an inline panel and a
-   JS-mounted one share the exact same rhythm.
+/* Uniform gap between a section's top-level panels. Scoped to direct fieldsets,
+   fieldsets injected into a `.settings-mount` host, and the same blocks once
+   search lifts them into the results list — so an inline panel, a JS-mounted one
+   and a search hit share the exact same rhythm.
 
    Deliberately NOT `.settings-content fieldset { margin-bottom } +
    fieldset:last-child { 0 }`: the JS mount points wrap each injected panel in a
@@ -275,14 +310,31 @@ dialog.settings-overlay::backdrop {
    reset is needed: the sticky `.settings-buttons` footer carries its own top
    margin, which collapses with the final panel's bottom margin to the same gap. */
 .settings-section > fieldset,
-.settings-section > .settings-mount > fieldset {
-  margin-bottom: var(--spacing-xl);
+.settings-section > .settings-mount > fieldset,
+.settings-search-results > fieldset {
+  /* Flat, not a card: the group's own heading and the gap to the next group are
+     what separate it, so its controls share the section's left edge instead of
+     sitting inset in a frame. Gap matches .usage-section-root's. */
+  background: none;
+  padding: 0;
+  margin-bottom: calc(var(--spacing-xl) + var(--spacing-md));
 }
-/* The group's title should read as a heading, not a faint caption — it anchors
-   everything below it. */
+/* The group's title is a heading, one step below the section's <h3> and on the
+   same left edge — not a faint caption stamped into a border. Matches the
+   Usage section's headings (.usage-plan-heading and friends). */
 .settings-content legend {
+  padding: 0;
   color: var(--text-primary);
+  font-size: var(--font-size-md);
   font-weight: 600;
+}
+/* Only a flat group needs this: a card's own top padding already sits between
+   its title and its first control (a legend is laid out above the padding box),
+   and adding a margin there too would leave the title floating. */
+.settings-section > fieldset > legend,
+.settings-section > .settings-mount > fieldset > legend,
+.settings-search-results > fieldset > legend {
+  margin-bottom: var(--spacing-sm);
 }
 /* A field and its own controls stay tight; the gap belongs *between* fields. */
 .settings-content fieldset label {
@@ -308,12 +360,34 @@ dialog.settings-overlay::backdrop {
 .model-role-fields > .settings-fieldset-desc {
   margin-bottom: var(--spacing-lg);
 }
-/* A hint explains the control right above it, so pull it in close and, for a
-   checkbox, indent it under the label text it belongs to. */
+/* A hint explains the field *above* it, so it has to sit nearer that field than
+   the next one. The between-fields gap normally lives on the label's bottom
+   margin — which would land between a control and its own hint — so a label
+   that owns a following hint hands that margin over to the hint. Skip this and
+   every hint reads as a preamble to the field below it. */
+.settings-content label:has(+ .field-hint),
+.settings-content label:has(+ .settings-fieldset-desc) {
+  margin-bottom: var(--spacing-xs);
+}
+/* A hint straight off the fieldset (trailing a list or a status row rather than
+   one field) is the same story, so it carries the gap too. `:not(:last-child)`
+   throughout: a hint that ends its group has nothing to separate from, and the
+   group's own bottom margin already handles the next group. */
+.settings-content label + .field-hint:not(:last-child),
+.settings-content label + .settings-fieldset-desc:not(:last-child),
+.settings-content fieldset > .field-hint:not(:last-child) {
+  margin-bottom: var(--spacing-lg);
+}
+/* A hint continued over a second paragraph is still one hint: keep the pair
+   tight, and let the last paragraph carry the gap to the next field. Tightened
+   from above rather than pulled up from below, because some of these hints sit
+   in flex containers where a negative margin would eat the row gap. */
+.settings-content .field-hint:not(:last-child):has(+ .field-hint) {
+  margin-bottom: var(--spacing-xs);
+}
+/* A checkbox hint also indents under the label text it belongs to. */
 .settings-content .checkbox-label + .field-hint,
 .settings-content .checkbox-label + .settings-fieldset-desc {
-  margin-top: calc(-1 * var(--spacing-sm));
-  margin-bottom: var(--spacing-md);
   padding-left: calc(var(--spacing-lg) + var(--spacing-xs));
 }
 /* Consecutive checkboxes are one cluster — keep them snug, not double-spaced. */

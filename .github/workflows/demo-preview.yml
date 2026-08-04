@@ -1,8 +1,13 @@
 name: Demo preview
 
-# Publishes browser demos under the Pages /demo/ namespace:
+# Publishes browser demos and self-contained site+demo bundles under the Pages
+# /demo/ namespace:
 #   /demo/main/ and /demo/develop/ are persistent branch builds.
-#   /demo/pr-<n>/ is an ephemeral build with a sticky PR comment.
+#   /demo/develop/preview/ is the develop marketing site, with its matching
+#   browser demo nested at /demo/develop/preview/demo/main/.
+#   /demo/pr-<n>/ remains the direct ephemeral demo URL.
+#   /demo/pr-<n>-preview/ is the PR's marketing site, with its matching browser
+#   demo nested at /demo/pr-<n>-preview/demo/main/.
 #
 # Triggered on push (not workflow_run) so the workflow runs from the pushed
 # branch's own definition — which makes the whole flow testable on the PR that
@@ -13,8 +18,9 @@ name: Demo preview
 # demo-previews branch, and redeploys Pages. Feature branches without an open PR
 # build nothing.
 #
-# The deploy always republishes site/ from `main` (see pages.yml), so a preview
-# push can only change content below /demo/ — never the marketing site.
+# The deploy always republishes the root site/ from `main` (see pages.yml), so a
+# preview push can only change content below /demo/ — never the production
+# marketing site at the domain root.
 
 on:
   push:
@@ -53,7 +59,7 @@ jobs:
         with:
           script: |
             const branch = context.ref.replace('refs/heads/', '');
-            if (branch === 'main' || branch === 'develop') {
+            if (branch === 'release' || branch === 'main') {
               core.setOutput('found', 'true');
               core.setOutput('path', branch);
               core.setOutput('label', branch);
@@ -99,7 +105,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [[ "$TARGET" != "main" && "$TARGET" != "develop" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+          if [[ "$TARGET" != "release" && "$TARGET" != "main" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
             echo "Invalid demo target: $TARGET" >&2
             exit 1
           fi
@@ -115,22 +121,72 @@ jobs:
           fi
           git -C previews-branch config user.name "github-actions[bot]"
           git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf "previews-branch/${TARGET}"
-          mkdir -p "previews-branch/${TARGET}"
-          cp -R dist/demo/. "previews-branch/${TARGET}/"
-          # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
-          # and high-entropy map contents fail Secret scan on unrelated tips.
-          find "previews-branch/${TARGET}" -type f -name '*.map' -delete
-          printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
-          git -C previews-branch add "$TARGET"
-          if git -C previews-branch diff --cached --quiet; then
-            echo "No preview change for ${LABEL}"
-            echo "published=false" >> "$GITHUB_OUTPUT"
-          else
+          # Every branch publishes into demo-previews, but `concurrency` is keyed
+          # on github.ref, so two branches building at once are NOT serialised —
+          # they clone the same tip and the loser's push is rejected non-fast-
+          # forward ("Updates were rejected because the remote contains work that
+          # you do not have locally"), failing the job on a change that was
+          # perfectly valid. Targets never share a directory (main/, develop/,
+          # pr-<n>/, pr-<n>-preview/), so the loser just needs to re-stack onto
+          # the winner's tip: re-fetch, hard-reset onto the new tip, re-apply
+          # this target's build, re-commit, push again.
+          published=false
+          unchanged=false
+          for attempt in 1 2 3 4 5; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "Push rejected; restacking onto the new demo-previews tip (attempt ${attempt})"
+              sleep $(( attempt * 5 ))
+              # The clone is shallow, so refresh it the same way rather than pulling
+              # full history. An orphan first publish has no remote branch to fetch;
+              # in that case there is nothing to restack onto and the retry is a
+              # plain re-push. `clean -fdx` also drops the previous attempt's
+              # untracked bundle dirs so the rebuild below starts from the tip.
+              if git -C previews-branch fetch --depth=1 origin demo-previews 2>/dev/null; then
+                git -C previews-branch reset --hard FETCH_HEAD
+                git -C previews-branch clean -fdx
+              fi
+            fi
+            rm -rf "previews-branch/${TARGET}"
+            mkdir -p "previews-branch/${TARGET}"
+            cp -R dist/demo/. "previews-branch/${TARGET}/"
+            if [[ "$TARGET" == "main" ]]; then
+              mkdir -p "previews-branch/${TARGET}/preview/demo/main"
+              cp -R site/. "previews-branch/${TARGET}/preview/"
+              cp -R dist/demo/. "previews-branch/${TARGET}/preview/demo/main/"
+            elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+              bundle_target="${TARGET}-preview"
+              rm -rf "previews-branch/${bundle_target}"
+              mkdir -p "previews-branch/${bundle_target}/demo/main"
+              cp -R site/. "previews-branch/${bundle_target}/"
+              cp -R dist/demo/. "previews-branch/${bundle_target}/demo/main/"
+              printf '%s\n' "$SHA" > "previews-branch/${bundle_target}/.head-sha"
+              find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
+              git -C previews-branch add "$bundle_target"
+            fi
+            # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
+            # and high-entropy map contents fail Secret scan on unrelated tips.
+            find "previews-branch/${TARGET}" -type f -name '*.map' -delete
+            printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
+            git -C previews-branch add "$TARGET"
+            if git -C previews-branch diff --cached --quiet; then
+              # Reached on the first pass when the build is byte-identical to what
+              # is already published, and on a retry when the winning push carried
+              # the same content for this target.
+              echo "No preview change for ${LABEL}"
+              unchanged=true
+              break
+            fi
             git -C previews-branch commit -m "demo preview: ${LABEL} (${SHA})"
-            git -C previews-branch push origin demo-previews
-            echo "published=true" >> "$GITHUB_OUTPUT"
+            if git -C previews-branch push origin demo-previews; then
+              published=true
+              break
+            fi
+          done
+          if [ "$published" = false ] && [ "$unchanged" = false ]; then
+            echo "Could not publish ${LABEL} to demo-previews after 5 attempts" >&2
+            exit 1
           fi
+          echo "published=${published}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: publish
@@ -160,7 +216,8 @@ jobs:
             const base = (
               process.env.BASE_URL || 'https://copse-dev.github.io/agent-pane/'
             ).replace(/\/*$/, '/');
-            const previewUrl = `${base}demo/pr-${pr}/`;
+            const previewUrl = `${base}demo/pr-${pr}-preview/`;
+            const demoUrl = `${previewUrl}demo/main/`;
             let scenarios = [];
             try {
               scenarios = JSON.parse(process.env.SCENARIOS || '[]');
@@ -168,13 +225,14 @@ jobs:
               scenarios = [];
             }
             const links = scenarios
-              .map((s) => `- [${s.label}](${previewUrl}?scenario=${encodeURIComponent(s.id)})`)
+              .map((s) => `- [${s.label}](${demoUrl}?scenario=${encodeURIComponent(s.id)})`)
               .join('\n');
             const body = [
               marker,
-              '## 🖥️ Demo preview',
+              '## 🖥️ PR preview',
               '',
-              `A browser build of this PR is live at **[${previewUrl}](${previewUrl})**.`,
+              `- **[Marketing site](${previewUrl})**`,
+              `- **[Browser demo](${demoUrl})**`,
               '',
               links ? 'Interactive, with a mocked backend — jump to a scenario:' : '',
               links,

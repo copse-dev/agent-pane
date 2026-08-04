@@ -78,6 +78,7 @@ import {
 } from '../controller/message-queue.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { lastResendableMessage, resendLastMessage } from '../controller/resend-message.ts'
+import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
 
@@ -359,6 +360,35 @@ function createSubagentMessageEl(content: string, streaming: boolean, api: ApiCl
   return textEl
 }
 
+/**
+ * Does the subagent's own timeline already show this text?
+ *
+ * A subagent's result for the parent is its final assistant message verbatim
+ * (see `runSubagent`: `summary = assistantTexts.at(-1)`), so rendering both the
+ * timeline and the parent result printed the same summary twice — once inside
+ * the indented timeline, once again below it. Compared on collapsed whitespace
+ * so trailing-newline drift between the two copies still counts as a match.
+ */
+function timelineShowsText(session: SubagentSession, text: string): boolean {
+  const target = text.replace(/\s+/g, ' ').trim()
+  if (!target) return false
+  return session.messages.some((m) => m.content.replace(/\s+/g, ' ').trim() === target)
+}
+
+/**
+ * The result text to render below the timeline, or `''` when there is nothing
+ * left to add — the subagent already said it in the timeline above, or it has
+ * not settled yet.
+ */
+function parentResultText(
+  tc: ToolCall,
+  session: SubagentSession,
+  status: ToolCall['status'],
+): string {
+  if (status !== 'done' || !tc.result) return ''
+  return timelineShowsText(session, tc.result) ? '' : tc.result
+}
+
 function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['status'] {
   if (tc.status === 'running' || session.status === 'running') return 'running'
   if (session.status === 'error' || tc.status === 'error') return 'error'
@@ -493,7 +523,10 @@ function subagentChromeSignature(
   status: ToolCall['status'],
 ): string {
   const preview = status !== 'running' ? (session.summary ?? tc.result ?? '') : ''
-  const result = status === 'done' ? (tc.result ?? '') : ''
+  // The dedupe verdict is part of the chrome: a timeline that grows to include
+  // the result must drop the duplicate copy below it, even though `tc.result`
+  // itself never changed.
+  const result = parentResultText(tc, session, status)
   return JSON.stringify({
     label,
     status,
@@ -557,12 +590,13 @@ function populateSubagentCard(
 
   card.append(timeline)
 
-  if (tc.result && status === 'done') {
+  const parentResult = parentResultText(tc, session, status)
+  if (parentResult) {
     const resultEl = el('div', {
       class:
         'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
     })
-    setAssistantMarkdown(resultEl, tc.result, false, api)
+    setAssistantMarkdown(resultEl, parentResult, false, api)
     card.append(resultEl)
   }
 
@@ -1606,7 +1640,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       )
       .forEach((node) => {
         const id = node.dataset['toolId']
-        if (id) userExpandedTools.add(id)
+        // Running tools are auto-expanded so their work is visible as it
+        // streams; that is not a user preference. Without this guard the
+        // auto-expansion was read back as one on the very next tick and
+        // pinned the card open forever — an explore subagent that had just
+        // dumped a wall of file text never contracted once it finished (the
+        // same guard rollups and groups above already apply).
+        if (id && node.dataset['status'] !== 'running') userExpandedTools.add(id)
       })
 
     const nestReasoning = Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
@@ -1708,7 +1748,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // A hook-originated turn (decision 10): the message role stays `user`, but a
     // marker attributes it to the hook follow-up that started it.
     const hookOrigin = msg.origin?.kind === 'hook' ? msg.origin : null
-    const msgClass = `msg msg-${msg.role}${hookOrigin ? ' msg-hook-origin' : ''}`
+    const imageInputUnsupported =
+      msg.role === 'assistant' && isImageInputUnsupportedMessage(msg.content)
+    const msgClass = `msg msg-${msg.role}${hookOrigin ? ' msg-hook-origin' : ''}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
     if (hookOrigin) msgEl.setAttribute('data-hook-id', hookOrigin.hookId)
     const body = el('div', { class: 'message-body' })
@@ -1826,13 +1868,35 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     const resend = el(
       'button',
-      { class: 'msg-action msg-resend', type: 'button', title: 'Send this prompt again' },
+      {
+        class: 'msg-action msg-resend msg-resendable-action',
+        type: 'button',
+        title: 'Send this prompt again',
+      },
       'Resend',
     )
     resend.addEventListener('click', () => {
       runResend(threadId)
     })
-    return el('div', { class: 'msg-actions' }, fork, resend)
+    const actions = el('div', { class: 'msg-actions' }, fork, resend)
+    const message = getThreadById(store, threadId)?.messages.find((item) => item.id === msgId)
+    if ((message?.images?.length ?? 0) > 0) {
+      const imageCount = message?.images?.length ?? 0
+      const resendWithoutImages = el(
+        'button',
+        {
+          class: 'msg-action msg-resend-without-images msg-resendable-action',
+          type: 'button',
+          title: 'Send this prompt again without its images',
+        },
+        imageCount === 1 ? 'Resend without image' : 'Resend without images',
+      )
+      resendWithoutImages.addEventListener('click', () => {
+        runResend(threadId, false)
+      })
+      actions.append(resendWithoutImages)
+    }
+    return actions
   }
 
   /**
@@ -1843,7 +1907,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function syncUserActions(): void {
     const thread = getActiveThread(store)
     const resendableId = thread ? lastResendableMessage(thread)?.id : undefined
-    list.querySelectorAll<HTMLButtonElement>('.msg-resend').forEach((button) => {
+    list.querySelectorAll<HTMLButtonElement>('.msg-resendable-action').forEach((button) => {
       const owner = button.closest<HTMLElement>('[data-message-id]')?.dataset['messageId']
       button.hidden = owner !== resendableId
     })
@@ -1862,10 +1926,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     )
   }
 
-  function runResend(threadId: string): void {
-    const result = resendLastMessage(store, api, threadId)
+  function runResend(threadId: string, includeImages = true): void {
+    const result = resendLastMessage(store, api, threadId, { includeImages })
     if (!result) return
-    if (result.droppedAttachments) {
+    if (result.omittedImages) {
+      showToast('Resent without the original image.')
+    } else if (result.droppedAttachments) {
       showToast('Resent without the original attachments.')
     } else if (result.queued) {
       showToast('Resend queued behind the running turn.')
@@ -2146,6 +2212,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         hydrateRemoteArtifactImages(list, api)
       }
       if (msg?.role === 'assistant' && msgEl) {
+        msgEl.classList.toggle(
+          'msg-image-input-unsupported',
+          isImageInputUnsupportedMessage(msg.content),
+        )
+        syncUserActions()
         // Segment settled — past-tense the disclosure title even for tool-only bubbles.
         msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
           setReasoningDisclosureTitle(details, false)

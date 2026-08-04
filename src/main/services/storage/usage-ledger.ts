@@ -7,8 +7,7 @@ import {
   pruneUsageEvents,
   type UsageSummary,
 } from '@shared/usage/aggregate-usage.ts'
-import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
-import { getResolvedExtraProviders } from '../providers/extra-providers-store.ts'
+import { resolveModelPricing } from '../providers/model-pricing-store.ts'
 import {
   USAGE_EVENTS_STORAGE_KEY,
   type UsageRecordInput,
@@ -85,12 +84,7 @@ export function recordAgentUsageChunk(
 export async function getUsageSummary(): Promise<UsageSummary> {
   const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
   const threads = await loadAllProjectThreads()
-  return buildUsageSummary(
-    events,
-    threads,
-    Date.now(),
-    extraProviderPricingMap(getResolvedExtraProviders()),
-  )
+  return buildUsageSummary(events, threads, Date.now(), resolveModelPricing())
 }
 
 export function getUsageEventCount(): number {

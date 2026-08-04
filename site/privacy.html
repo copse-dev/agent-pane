@@ -1,242 +1,216 @@
 <!doctype html>
-<html lang="en">
+<html class="marketing-root" lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Privacy Policy — Copse</title>
+    <link rel="icon" href="brand-mark.svg" />
+    <meta
+      name="description"
+      content="How Copse keeps project data local and what is shared when you connect external services."
+    />
     <link rel="stylesheet" href="styles.css" />
-    <style>
-      .privacy-container {
-        max-width: 720px;
-        margin: 0 auto;
-        padding: var(--spacing-lg) var(--spacing-md);
-      }
-
-      .privacy-container h1 {
-        font-size: 2.5rem;
-        margin-bottom: var(--spacing-sm);
-        background: linear-gradient(135deg, var(--color-wave-start), var(--color-wave-end));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-
-      .privacy-container .back-link {
-        display: inline-block;
-        margin-bottom: var(--spacing-md);
-        color: var(--color-text-light);
-        text-decoration: none;
-      }
-
-      .privacy-container .back-link:hover {
-        color: var(--color-primary);
-      }
-
-      .privacy-container h2 {
-        font-size: 1.5rem;
-        margin-top: var(--spacing-lg);
-        margin-bottom: var(--spacing-sm);
-        color: var(--color-text);
-      }
-
-      .privacy-container h3 {
-        font-size: 1.125rem;
-        margin-top: var(--spacing-md);
-        margin-bottom: var(--spacing-xs);
-        color: var(--color-text);
-      }
-
-      .privacy-container p {
-        color: var(--color-text-light);
-        margin-bottom: var(--spacing-sm);
-        line-height: 1.7;
-      }
-
-      .privacy-container ul {
-        margin: 0 0 var(--spacing-sm) 1.25rem;
-        color: var(--color-text-light);
-      }
-
-      .privacy-container li {
-        margin-bottom: 6px;
-      }
-
-      .privacy-container .short-version {
-        background: var(--color-white);
-        border-left: 3px solid var(--color-primary);
-        padding: var(--spacing-md);
-        border-radius: var(--border-radius-sm);
-        margin-bottom: var(--spacing-md);
-      }
-
-      .privacy-container .short-version p {
-        margin-bottom: 4px;
-      }
-
-      .privacy-container .date {
-        font-size: 0.875rem;
-        color: var(--color-text-light);
-        opacity: 0.7;
-      }
-    </style>
   </head>
-  <body>
-    <div class="privacy-container">
-      <a class="back-link" href="index.html">← Back to Copse</a>
+  <body class="marketing-site content-site">
+    <a class="skip-link" href="#main-content">Skip to content</a>
 
-      <h1>Privacy Policy</h1>
-      <p class="date">Last updated: July 2026</p>
+    <header class="site-header">
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a class="wordmark" href="index.html" aria-label="Copse home">
+          <img class="wordmark-image" src="brand-wordmark.svg" alt="" width="78" height="25" />
+        </a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="privacy.html" aria-current="page">Privacy</a>
+        </div>
+        <a class="nav-cta" href="index.html#download">Download</a>
+      </nav>
+    </header>
 
-      <div class="short-version">
-        <p>
-          <strong>Copse has no hosted backend and sends no product telemetry.</strong> Data stays on
-          your machine until you configure or use a feature that talks directly to another service,
-          such as a cloud model, remote agent, MCP server, website, or the GitHub update feed.
-        </p>
-      </div>
+    <div class="page-content-stage content-page-stage">
+      <main id="main-content" class="privacy-container content-container">
+        <header class="content-heading">
+          <p class="section-kicker">Privacy by architecture</p>
+          <h1>Privacy Policy</h1>
+          <p class="content-lede">
+            Your workspace stays yours. Here’s exactly where Copse keeps data and when it leaves
+            your machine.
+          </p>
+          <p class="date">Last updated: July 2026</p>
+        </header>
 
-      <h2>The Short Version</h2>
-      <ul>
-        <li>
-          <strong>No Copse account or backend.</strong> The desktop app talks directly to services
-          you configure; Copse does not operate an intermediary service for your prompts or code.
-        </li>
-        <li>
-          <strong>No telemetry.</strong> No analytics, no crash reporting, no usage data collection.
-          Maintainers do not automatically receive diagnostics.
-        </li>
-        <li>
-          <strong>External features send data.</strong> Cloud models, remote agents, MCP/ACP,
-          browser sessions, custom tools, hooks, and updates have the data flows described below.
-        </li>
-        <li>
-          <strong>Local does not mean encrypted.</strong> Conversations are stored as ordinary
-          files. API keys use OS secure storage when available; otherwise plaintext storage requires
-          explicit consent.
-        </li>
-      </ul>
+        <article class="privacy-content content-surface">
+          <div class="short-version">
+            <p>
+              <strong>Copse has no hosted backend and sends no product telemetry.</strong> Data
+              stays on your machine until you configure or use a feature that talks directly to
+              another service, such as a cloud model, remote agent, MCP server, website, or the
+              GitHub update feed.
+            </p>
+          </div>
 
-      <h2>Data Sent to Services You Choose</h2>
+          <h2>The Short Version</h2>
+          <ul>
+            <li>
+              <strong>No Copse account or backend.</strong> The desktop app talks directly to
+              services you configure; Copse does not operate an intermediary service for your
+              prompts or code.
+            </li>
+            <li>
+              <strong>No telemetry.</strong> No analytics, no crash reporting, no usage data
+              collection. Maintainers do not automatically receive diagnostics.
+            </li>
+            <li>
+              <strong>External features send data.</strong> Cloud models, remote agents, MCP/ACP,
+              browser sessions, custom tools, hooks, and updates have the data flows described
+              below.
+            </li>
+            <li>
+              <strong>Local does not mean encrypted.</strong> Conversations are stored as ordinary
+              files. API keys use OS secure storage when available; otherwise plaintext storage
+              requires explicit consent.
+            </li>
+          </ul>
 
-      <h3>Model providers</h3>
-      <p>
-        A cloud model request can include your prompt and images, earlier conversation, system
-        instructions, tool definitions, tool calls and results, and source or file content included
-        in context. Requests go directly from the app's main process to the configured provider.
-        Local providers remain local only when their configured endpoint is local.
-      </p>
-      <p>
-        Provider-key validation and model-list refreshes also contact the provider. The provider's
-        privacy, retention, logging, and training policies apply after it receives the data.
-      </p>
+          <h2>Data Sent to Services You Choose</h2>
 
-      <h3>Remote agents</h3>
-      <p>
-        Selecting a Cursor or Anthropic remote agent sends the current prompt and images. The first
-        handoff can also include prior user/assistant conversation and the current Git branch. A
-        repo-backed session sends the repository URL and branch so the service can clone or mount
-        the project; Claude's repo-backed flow also sends the configured GitHub token to the service
-        for that mount. The remote service may modify a branch or open a pull request according to
-        the selected settings.
-      </p>
+          <h3>Model providers</h3>
+          <p>
+            A cloud model request can include your prompt and images, earlier conversation, system
+            instructions, tool definitions, tool calls and results, and source or file content
+            included in context. Requests go directly from the app's main process to the configured
+            provider. Local providers remain local only when their configured endpoint is local.
+          </p>
+          <p>
+            Provider-key validation and model-list refreshes also contact the provider. The
+            provider's privacy, retention, logging, and training policies apply after it receives
+            the data.
+          </p>
 
-      <h3>MCP and ACP</h3>
-      <p>
-        MCP servers receive tool arguments, which may contain paths, file content, prompt-derived
-        text, or other workspace data. Results return through Copse and are stored in the thread. An
-        MCP server can be a local process or remote HTTP service and controls its own networking,
-        logs, and retention. Project MCP configuration is workspace-trust gated; server and tool
-        approvals apply according to your settings.
-      </p>
-      <p>
-        An ACP agent is an external program running on the same machine. Copse gives it the prompt,
-        workspace path, selected MCP configuration, and any tools exposed through the optional
-        localhost bridge. Copse strips its provider keys from the inherited base environment, but
-        values explicitly configured for the agent are passed to it. The ACP program may have its
-        own credentials, storage, and network behavior.
-      </p>
+          <h3>Remote agents</h3>
+          <p>
+            Selecting a Cursor or Anthropic remote agent sends the current prompt and images. The
+            first handoff can also include prior user/assistant conversation and the current Git
+            branch. A repo-backed session sends the repository URL and branch so the service can
+            clone or mount the project; Claude's repo-backed flow also sends the configured GitHub
+            token to the service for that mount. The remote service may modify a branch or open a
+            pull request according to the selected settings.
+          </p>
 
-      <h3>Browser and web tools</h3>
-      <p>
-        Websites opened in Copse receive normal browser requests and any data entered into them. The
-        interactive browser and agent automation use separate persistent profiles, so the agent does
-        not inherit the user's interactive logins. Agent snapshots, screenshots, and interaction
-        results may be sent to the selected model as tool results and are stored in the thread.
-        Browser cookies and site storage remain in their local profiles.
-      </p>
+          <h3>MCP and ACP</h3>
+          <p>
+            MCP servers receive tool arguments, which may contain paths, file content,
+            prompt-derived text, or other workspace data. Results return through Copse and are
+            stored in the thread. An MCP server can be a local process or remote HTTP service and
+            controls its own networking, logs, and retention. Project MCP configuration is
+            workspace-trust gated; server and tool approvals apply according to your settings.
+          </p>
+          <p>
+            An ACP agent is an external program running on the same machine. Copse gives it the
+            prompt, workspace path, selected MCP configuration, and any tools exposed through the
+            optional localhost bridge. Copse strips its provider keys from the inherited base
+            environment, but values explicitly configured for the agent are passed to it. The ACP
+            program may have its own credentials, storage, and network behavior.
+          </p>
 
-      <h3>Custom tools and hooks</h3>
-      <p>
-        User-installed custom tools and configured hooks run code on the device and can read or
-        transmit whatever their implementation and permissions allow. Review them as code, not as
-        passive configuration.
-      </p>
+          <h3>Browser and web tools</h3>
+          <p>
+            Websites opened in Copse receive normal browser requests and any data entered into them.
+            The interactive browser and agent automation use separate persistent profiles, so the
+            agent does not inherit the user's interactive logins. Agent snapshots, screenshots, and
+            interaction results may be sent to the selected model as tool results and are stored in
+            the thread. Browser cookies and site storage remain in their local profiles.
+          </p>
 
-      <h3>Updates</h3>
-      <p>
-        The packaged macOS app checks its GitHub Releases update feed on launch. Copse asks before
-        downloading an update. Once downloaded, the update installs when you restart or next quit.
-        Development builds do not use the feed.
-      </p>
+          <h3>Custom tools and hooks</h3>
+          <p>
+            User-installed custom tools and configured hooks run code on the device and can read or
+            transmit whatever their implementation and permissions allow. Review them as code, not
+            as passive configuration.
+          </p>
 
-      <h2>Credentials and Environment Scanning</h2>
-      <p>
-        Keys entered in Settings are written to <code>settings.json</code>. Electron secure storage
-        encrypts them with the OS account's key store when available. If it is unavailable, Copse
-        refuses to persist the key until you explicitly approve base64 plaintext storage. Base64 is
-        recoverable by anyone who can read the file.
-      </p>
-      <p>
-        Environment-only keys are not written to <code>settings.json</code>. The environment-key
-        scan runs only when you choose it. It reads <code>process.env</code> and a fixed allow-list
-        of shell startup files in the main process and shows the renderer only masked previews.
-        Importing a detected key turns it into a stored key.
-      </p>
+          <h3>Updates</h3>
+          <p>
+            The packaged macOS app checks its GitHub Releases update feed on launch. Copse asks
+            before downloading an update. Once downloaded, the update installs when you restart or
+            next quit. Development builds do not use the feed.
+          </p>
 
-      <h2>Local Storage</h2>
-      <p>Copse stores data locally, including:</p>
-      <ul>
-        <li>settings, credentials, provider configuration, projects, and UI preferences;</li>
-        <li>conversation messages, reasoning, tool calls/results, images, hooks, and subagents;</li>
-        <li>separate browser profiles and agent-browser screenshots;</li>
-        <li>semantic-search indexes; and</li>
-        <li>short-lived Git worktree backup refs inside opened repositories.</li>
-      </ul>
-      <p>
-        Conversations are integrity-hashed but are not encrypted by Copse. Disk encryption and OS
-        account permissions protect them at rest. Deleting a local record does not delete copies
-        already retained by an external provider, agent, server, or website.
-      </p>
+          <h2>Credentials and Environment Scanning</h2>
+          <p>
+            Keys entered in Settings are written to <code>settings.json</code>. Electron secure
+            storage encrypts them with the OS account's key store when available. If it is
+            unavailable, Copse refuses to persist the key until you explicitly approve base64
+            plaintext storage. Base64 is recoverable by anyone who can read the file.
+          </p>
+          <p>
+            Environment-only keys are not written to <code>settings.json</code>. The environment-key
+            scan runs only when you choose it. It reads <code>process.env</code> and a fixed
+            allow-list of shell startup files in the main process and shows the renderer only masked
+            previews. Importing a detected key turns it into a stored key.
+          </p>
 
-      <h2>Telemetry, Exports, and Diagnostics</h2>
-      <p>
-        Copse includes no product analytics, crash reporter, or automatic diagnostic upload. The
-        built-in thread export is deliberately complete, not secret-redacted: it can include
-        prompts, source code, paths, attachments, tool data, reasoning, and nested agent
-        transcripts. Inspect and redact a copy before sharing it through GitHub or email. Never
-        share settings, environment dumps, shell startup files, or browser profiles.
-      </p>
+          <h2>Local Storage</h2>
+          <p>Copse stores data locally, including:</p>
+          <ul>
+            <li>settings, credentials, provider configuration, projects, and UI preferences;</li>
+            <li>
+              conversation messages, reasoning, tool calls/results, images, hooks, and subagents;
+            </li>
+            <li>separate browser profiles and agent-browser screenshots;</li>
+            <li>semantic-search indexes; and</li>
+            <li>short-lived Git worktree backup refs inside opened repositories.</li>
+          </ul>
+          <p>
+            Conversations are integrity-hashed but are not encrypted by Copse. Disk encryption and
+            OS account permissions protect them at rest. Deleting a local record does not delete
+            copies already retained by an external provider, agent, server, or website.
+          </p>
 
-      <h2>More Detail and Source Code</h2>
-      <p>
-        The complete feature-by-feature data-flow and storage inventory is maintained with the
-        source code:
-      </p>
-      <p>
-        <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/privacy-data-flow.md"
-          >Read the data-flow documentation</a
-        >
-        ·
-        <a href="https://github.com/copse-dev/agent-pane">View source code on GitHub</a>
-      </p>
+          <h2>Telemetry, Exports, and Diagnostics</h2>
+          <p>
+            Copse includes no product analytics, crash reporter, or automatic diagnostic upload. The
+            built-in thread export is deliberately complete, not secret-redacted: it can include
+            prompts, source code, paths, attachments, tool data, reasoning, and nested agent
+            transcripts. Inspect and redact a copy before sharing it through GitHub or email. Never
+            share settings, environment dumps, shell startup files, or browser profiles.
+          </p>
 
-      <h2>Contact</h2>
-      <p>
-        For privacy questions and ordinary bugs, use
-        <a href="https://github.com/copse-dev/agent-pane/issues">GitHub Issues</a> without including
-        sensitive data. Report suspected vulnerabilities privately to
-        <a href="mailto:security@copse.dev">security@copse.dev</a>.
-      </p>
+          <h2>More Detail and Source Code</h2>
+          <p>
+            The complete feature-by-feature data-flow and storage inventory is maintained with the
+            source code:
+          </p>
+          <p>
+            <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/privacy-data-flow.md"
+              >Read the data-flow documentation</a
+            >
+            ·
+            <a href="https://github.com/copse-dev/agent-pane">View source code on GitHub</a>
+          </p>
+
+          <h2>Contact</h2>
+          <p>
+            For privacy questions and ordinary bugs, use
+            <a href="https://github.com/copse-dev/agent-pane/issues">GitHub Issues</a> without
+            including sensitive data. Report suspected vulnerabilities privately to
+            <a href="mailto:security@copse.dev">security@copse.dev</a>.
+          </p>
+        </article>
+      </main>
+
+      <footer class="site-footer">
+        <a class="wordmark footer-wordmark" href="index.html" aria-label="Copse home">
+          <img class="wordmark-image" src="brand-wordmark.svg" alt="" width="78" height="25" />
+        </a>
+        <p>Free &amp; open source · Made for developers who pair with agents every day</p>
+        <div>
+          <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="privacy.html" aria-current="page">Privacy</a>
+        </div>
+      </footer>
     </div>
   </body>
 </html>

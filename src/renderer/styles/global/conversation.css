@@ -91,7 +91,7 @@
   height: var(--font-size-lg);
   flex-shrink: 0;
   overflow: visible;
-  color: var(--success);
+  color: var(--accent);
 }
 .reasoning-activity-path {
   fill: none;
@@ -289,6 +289,11 @@
 }
 .message-body:hover .msg-actions,
 .msg-actions:focus-within {
+  opacity: 1;
+}
+/* A deterministic image-input failure keeps both recovery actions visible on
+   the latest prompt, so switching model/resending does not depend on hover. */
+.msg-user:not(:has(~ .msg-user)):has(~ .msg-image-input-unsupported) .msg-actions {
   opacity: 1;
 }
 .msg-action {

@@ -17,11 +17,10 @@
 :root {
   /* ---- Whole-app tint --------------------------------------------------
      Every neutral surface is mixed from a base grey plus `--tint-amount` of
-     `--tint-hue`. The default is deliberately restrained; the exact Copse
-     marketing-site palette is reserved for the Strong brand-tint override in
-     themes.css. Other hues still wash through these neutral surface steps. */
-  --tint-hue: var(--accent);
-  --tint-amount: 0%;
+     `--tint-hue`. These values match the first-run Appearance defaults so the
+     renderer has the right colour before startup settings finish loading. */
+  --tint-hue: #244c25;
+  --tint-amount: 4%;
 
   --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
   --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #252526);
@@ -49,9 +48,8 @@
   --chat-gradient-bottom: color-mix(in srgb, var(--bg-elevated) 24%, var(--bg-base));
   --chat-gradient-glow: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
   /* One user-configurable interaction hue drives primary actions, selection,
-     message emphasis, and theme-derived links. The default is the exact neon
-     green used by the Copse marketing site. */
-  --accent-color: #20fd85;
+     message emphasis, and theme-derived links. */
+  --accent-color: #ff93d0;
   --accent: var(--accent-color);
   --accent-fill: var(--accent-color);
   --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, white);
@@ -73,6 +71,13 @@
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
   --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.1);
+  /* Dropdown chevron drawn on every <select> (forms.css), replacing the native
+     platform arrow so it matches the model picker's chevron. Same lucide
+     "chevron-down" as chevronDownIcon() in dom/icons.ts; the stroke is baked in
+     because a data URI cannot read currentColor, so the light theme restates it
+     in themes.css. Muted against the field's own text, like the picker's 0.7
+     chevron. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23999999'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
   --font-family: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Averia Serif Libre', Georgia, serif;
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;

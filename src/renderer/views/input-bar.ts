@@ -59,9 +59,17 @@ import {
   threadHasExportableContent,
 } from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
-import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
-import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
-import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
+import {
+  formatFooterUsageDetail,
+  formatFooterUsageSummary,
+  resolveFooterUsage,
+} from '@shared/usage/footer-usage-summary.ts'
+import {
+  buildFooterUsageTooltip,
+  type FooterUsageTooltipModel,
+} from '@shared/usage/footer-usage-tooltip.ts'
+import { createFooterUsagePopover } from './footer-usage-popover.ts'
+import { type ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
   FALLBACK_APP_CHAT_MODEL,
@@ -84,6 +92,7 @@ import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
+import { fetchModelOptions, type ModelOption } from './model-options.ts'
 
 interface MountInputBarOptions {
   /**
@@ -162,6 +171,36 @@ export function mountInputBar(
     checkoutBranchBtn,
     continueBranchBtn,
   )
+  const imageCompatibilityText = el('span', { class: 'composer-image-warning-text' })
+  const useImageModelBtn = el(
+    'button',
+    { type: 'button', class: 'composer-image-model-btn', hidden: '' },
+    'Use image model',
+  )
+  const describeImagesBtn = el(
+    'button',
+    { type: 'button', class: 'composer-image-describe-btn', hidden: '' },
+    'Describe image',
+  )
+  const sendWithoutImagesBtn = el(
+    'button',
+    { type: 'button', class: 'composer-image-without-btn' },
+    'Send without image',
+  )
+  const imageCompatibilityWarning = el(
+    'div',
+    {
+      class: 'composer-image-warning',
+      role: 'status',
+      'aria-live': 'polite',
+      hidden: '',
+    },
+    el('span', { class: 'composer-image-warning-icon', 'aria-hidden': 'true' }, '!'),
+    imageCompatibilityText,
+    useImageModelBtn,
+    describeImagesBtn,
+    sendWithoutImagesBtn,
+  )
   let footerOverflow: ReturnType<typeof mountFooterOverflow> | null = null
   const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
     footerOverflow?.update()
@@ -189,15 +228,21 @@ export function mountInputBar(
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
   checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
-  // Token usage — always shown once a thread has used tokens; click to expand
-  // into the in/out breakdown and cost.
-  const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
+  // Token usage — always shown once a thread has used tokens; hover (or focus)
+  // for the in/out breakdown and cost, like the context wheel next to it.
+  const usageBtn = el('span', {
+    class: 'footer-usage',
+    tabindex: '0',
+    role: 'note',
+    'aria-label': 'Token usage',
+  })
+  const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
   footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -248,8 +293,6 @@ export function mountInputBar(
     alwaysShowLabels: 'all',
     enableOverflow: true,
   })
-  let costVisible = false
-
   /** Concrete model for footer chrome — never the Settings-only best-value sentinel. */
   function footerChatModel(): string {
     const thread = getActiveThread(store)
@@ -267,39 +310,36 @@ export function mountInputBar(
       })
   }
 
-  const modelPicker = mountFooterModelPicker(
-    modelHost,
-    api,
-    footerChatModel,
-    (model) => {
-      const thread = getActiveThread(store)
-      if (!thread) return
-      // Best-value is Settings-only; the footer list never offers it. If a stale
-      // value somehow arrives, ignore it — blank-thread resolution owns that mode.
-      if (isBestValueChatModel(model)) return
-      const threads = store
-        .getState()
-        .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
-      store.setState({ threads })
-      modelPicker.refresh()
-      updateFooter()
-      // The context window depends on the model, so re-estimate the footer wheel
-      // against the newly selected model rather than waiting for the next keystroke.
-      void runContextEstimate()
-      void refreshAutomaticCheckoutPreview()
+  function selectChatModel(model: string): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    // Best-value is Settings-only; the footer list never offers it. If a stale
+    // value somehow arrives, ignore it — blank-thread resolution owns that mode.
+    if (isBestValueChatModel(model)) return
+    const threads = store
+      .getState()
+      .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
+    store.setState({ threads })
+    modelPicker.refresh()
+    updateFooter()
+    // The context window depends on the model, so re-estimate the footer wheel
+    // against the newly selected model rather than waiting for the next keystroke.
+    void runContextEstimate()
+    void refreshAutomaticCheckoutPreview()
+    void refreshImageCompatibilityWarning()
+  }
+
+  const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
+    isSshWorkspace: (): boolean => {
+      const { activeProjectId, projects } = store.getState()
+      if (!activeProjectId) return false
+      return Boolean(projects.find((p) => p.id === activeProjectId)?.sshHost)
     },
-    {
-      isSshWorkspace: (): boolean => {
-        const { activeProjectId, projects } = store.getState()
-        if (!activeProjectId) return false
-        return Boolean(projects.find((p) => p.id === activeProjectId)?.sshHost)
-      },
-      onClose: (): void => {
-        composer.focus()
-      },
-      getRecentModels: footerRecentModels,
+    onClose: (): void => {
+      composer.focus()
     },
-  )
+    getRecentModels: footerRecentModels,
+  })
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer), and when
   // the project changes so ACP options hide/show with SSH workspaces.
@@ -341,15 +381,10 @@ export function mountInputBar(
       showErrorToast('Share trace failed', error)
     })
   }
-  usageBtn.addEventListener('click', () => {
-    costVisible = !costVisible
-    updateFooter()
-  })
-  contextWheel.root.addEventListener('click', () => {
-    if (!footerCompact.isCompact() || contextWheel.root.hidden || !usageSummaryText()) return
-    costVisible = !costVisible
-    updateFooter()
-  })
+  usageBtn.addEventListener('mouseenter', usagePopover.show)
+  usageBtn.addEventListener('mouseleave', usagePopover.hide)
+  usageBtn.addEventListener('focus', usagePopover.show)
+  usageBtn.addEventListener('blur', usagePopover.hide)
 
   const checkoutErrorText = el('span', { class: 'composer-checkout-error-text' })
   const checkoutRetryBtn = el(
@@ -363,7 +398,15 @@ export function mountInputBar(
     checkoutErrorText,
     checkoutRetryBtn,
   )
-  root.append(chips, guardedYolo.element, branchWarning, checkoutError, inputRow, footer)
+  root.append(
+    chips,
+    guardedYolo.element,
+    branchWarning,
+    checkoutError,
+    imageCompatibilityWarning,
+    inputRow,
+    footer,
+  )
   const portraitPanelHost = opts.portraitPanelHost ?? root
   portraitPanelHost.append(portraitPanelControls.element)
 
@@ -387,10 +430,175 @@ export function mountInputBar(
   let attachedThreads: AttachedThreadRef[] = []
   // `@shell` snapshots: scrollback inlined like a paste/file block.
   let attachedShells: AttachedShellRef[] = []
+  let imageCompatibilitySeq = 0
+  let recommendedImageModel: ModelOption | null = null
+  let recommendedDescriptionModel: ModelOption | null = null
+  let imageDescriptionInProgress = false
   const checkoutChoices = new Map<string, ThreadWorktreeChoice>()
   let checkoutPreparationInProgress = false
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
+
+  function shortModelLabel(option: ModelOption): string {
+    return option.label.split(' — ')[0] ?? option.label
+  }
+
+  function appendImageDescription(text: string, modelLabel: string, description: string): string {
+    const prefix = text.trim() ? `${text.trim()}\n\n` : ''
+    return `${prefix}[Image description generated by ${modelLabel}]\n${description}\n[End image description]`
+  }
+
+  function currentWorkspaceIsSsh(): boolean {
+    const { activeProjectId, projects } = store.getState()
+    if (!activeProjectId) return false
+    return Boolean(projects.find((project) => project.id === activeProjectId)?.sshHost)
+  }
+
+  async function incompatibleImageModel(): Promise<{
+    selected: ModelOption
+    recommended: ModelOption | null
+    descriptionModel: ModelOption | null
+  } | null> {
+    if (attachedImages.length === 0) return null
+    const model = footerChatModel()
+    let options: ModelOption[]
+    try {
+      options = await fetchModelOptions(api, model, {
+        sshWorkspace: currentWorkspaceIsSsh(),
+      })
+    } catch {
+      // Custom/local endpoints often cannot advertise modalities. A failed
+      // lookup is unknown, never evidence that the prompt should be blocked.
+      return null
+    }
+    const selected = options.find((option) => option.value === model)
+    if (selected?.supportsImages !== false) return null
+
+    const supported = options.filter(
+      (option) => option.supportsImages === true && !option.disabled && Boolean(option.value),
+    )
+    const recentRecommendation = footerRecentModels()
+      .filter((value) => value !== model)
+      .map((value) => supported.find((option) => option.value === value))
+      .find((option) => option !== undefined)
+    return {
+      selected,
+      recommended:
+        recentRecommendation ?? supported.find((option) => option.value !== model) ?? null,
+      // Prefer a local vision model for the image→text handoff. It keeps the
+      // image on-device even when the final text-only model is remote.
+      descriptionModel:
+        supported.find((option) => option.value.startsWith('lmstudio:')) ??
+        recentRecommendation ??
+        supported.find((option) => option.value !== model) ??
+        null,
+    }
+  }
+
+  function hideImageCompatibilityWarning(): void {
+    imageCompatibilitySeq++
+    recommendedImageModel = null
+    recommendedDescriptionModel = null
+    imageCompatibilityWarning.hidden = true
+  }
+
+  async function refreshImageCompatibilityWarning(): Promise<void> {
+    const seq = ++imageCompatibilitySeq
+    if (attachedImages.length === 0) {
+      imageCompatibilityWarning.hidden = true
+      recommendedImageModel = null
+      recommendedDescriptionModel = null
+      return
+    }
+    const result = await incompatibleImageModel()
+    if (seq !== imageCompatibilitySeq) return
+    if (!result) {
+      imageCompatibilityWarning.hidden = true
+      recommendedImageModel = null
+      recommendedDescriptionModel = null
+      return
+    }
+    const count = attachedImages.length
+    imageCompatibilityText.textContent = `${shortModelLabel(result.selected)} can’t read image input. Choose an image-capable model, or continue without ${count === 1 ? 'the image' : `the ${String(count)} images`}.`
+    recommendedImageModel = result.recommended
+    useImageModelBtn.hidden = result.recommended === null
+    if (result.recommended) {
+      useImageModelBtn.textContent = `Use ${shortModelLabel(result.recommended)}`
+    }
+    recommendedDescriptionModel = result.descriptionModel
+    describeImagesBtn.hidden = result.descriptionModel === null
+    if (result.descriptionModel) {
+      const local = result.descriptionModel.value.startsWith('lmstudio:')
+      describeImagesBtn.textContent = `${local ? 'Describe locally with' : 'Describe with'} ${shortModelLabel(result.descriptionModel)}`
+    }
+    sendWithoutImagesBtn.textContent = count === 1 ? 'Send without image' : 'Send without images'
+    imageCompatibilityWarning.hidden = false
+  }
+
+  useImageModelBtn.addEventListener('click', () => {
+    if (!recommendedImageModel) return
+    selectChatModel(recommendedImageModel.value)
+    composer.focus()
+  })
+
+  function removeAttachedImages(): void {
+    attachedImages = []
+    chips.querySelectorAll('.image-chip').forEach((chip) => {
+      chip.remove()
+    })
+  }
+
+  function setImageDescriptionBusy(busy: boolean, label?: string): void {
+    imageDescriptionInProgress = busy
+    imageCompatibilityWarning.setAttribute('aria-busy', String(busy))
+    describeImagesBtn.disabled = busy
+    useImageModelBtn.disabled = busy
+    sendWithoutImagesBtn.disabled = busy
+    submitBtn.disabled = busy
+    if (busy && label) describeImagesBtn.textContent = `Describing with ${label}…`
+    composer.el.setAttribute('contenteditable', busy ? 'false' : 'plaintext-only')
+  }
+
+  describeImagesBtn.addEventListener('click', () => {
+    if (!recommendedDescriptionModel || imageDescriptionInProgress) return
+    const projectId = store.getState().activeProjectId
+    const threadId = getActiveThreadId()
+    if (!projectId || !threadId) return
+    const descriptor = recommendedDescriptionModel
+    const modelLabel = shortModelLabel(descriptor)
+    const images = attachedImages.map((image) => image.dataUrl)
+    const userPrompt = composer.expandedValue().trim()
+    setImageDescriptionBusy(true, modelLabel)
+    void api.agent
+      .describeImages(projectId, threadId, descriptor.value, userPrompt, images)
+      .then(async ({ text }) => {
+        // A thread switch changes the ownership of the composer. Never carry a
+        // generated description into a different thread or auto-submit there.
+        if (getActiveThreadId() !== threadId) return
+        removeAttachedImages()
+        composer.value = appendImageDescription(composer.value, modelLabel, text)
+        composer.el.dispatchEvent(new Event('input', { bubbles: true }))
+        hideImageCompatibilityWarning()
+        scheduleContextEstimate()
+        await submit()
+      })
+      .catch((error: unknown) => {
+        showErrorToast(`Could not describe the image with ${modelLabel}`, error)
+      })
+      .finally(() => {
+        setImageDescriptionBusy(false)
+        if (getActiveThreadId() === threadId && attachedImages.length > 0) {
+          void refreshImageCompatibilityWarning()
+        }
+      })
+  })
+
+  sendWithoutImagesBtn.addEventListener('click', () => {
+    removeAttachedImages()
+    hideImageCompatibilityWarning()
+    scheduleContextEstimate()
+    void submit()
+  })
 
   function checkoutChoice(threadId: string): ThreadWorktreeChoice {
     return checkoutChoices.get(threadId) ?? 'automatic'
@@ -492,17 +700,19 @@ export function mountInputBar(
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
-  // Pricing for extra-provider models (e.g. HF), keyed by `<slug>:<id>` selection.
-  // The static cloud catalog has no entry for these, so the footer cost reads here.
-  let extraPricing: ExtraPricing = {}
-  function refreshExtraPricing(): void {
-    // Best-effort: a missing/failed provider list just leaves the footer cost
+  // Rates for every model outside the static cloud catalog — OpenRouter routes
+  // and extra providers alike — keyed by model selection. Resolved in the main
+  // process (see model-pricing-store.ts) so the footer and the usage ledger
+  // price an identical thread identically.
+  let modelPricing: ModelPricingMap = {}
+  function refreshModelPricing(): void {
+    // Best-effort: a missing/failed pricing map just leaves the footer cost
     // resting on the static cloud catalog, so never let it throw.
     try {
       void api.settings
-        .extraProviders()
-        .then((providers) => {
-          extraPricing = extraProviderPricingMap(providers)
+        .modelPricing()
+        .then((pricing) => {
+          modelPricing = pricing
           updateFooter()
         })
         .catch(() => {})
@@ -546,6 +756,7 @@ export function mountInputBar(
     attachedThreads = []
     attachedShells = []
     clear(chips)
+    hideImageCompatibilityWarning()
   }
 
   function syncComposerThread(): void {
@@ -648,7 +859,12 @@ export function mountInputBar(
     queueIndicator.textContent = count === 1 ? '1 queued' : `${String(count)} queued`
   }
 
-  function usageSummaryText(): string | null {
+  /** Footer label, the one-line detail (compact fallback) and the hover tooltip. */
+  function usageViews(): {
+    label: string
+    detail: string
+    tooltip: FooterUsageTooltipModel
+  } | null {
     const thread = getActiveThread(store)
     if (!thread) return null
     // Price against the concrete footer model so cost matches what the run uses.
@@ -661,19 +877,22 @@ export function mountInputBar(
       breakdown: lastBreakdown,
     })
     if (!display) return null
-    return formatFooterUsageSummary(display, {
-      costVisible,
-      model,
-      measuredUsage: thread.usage,
-      extra: extraPricing,
-    })
+    // #1483 moved footer pricing onto the persisted catalog snapshot; all three
+    // views price from that same map.
+    const priced = { model, measuredUsage: thread.usage, pricing: modelPricing }
+    const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages })
+    return {
+      label: formatFooterUsageSummary(display),
+      detail: formatFooterUsageDetail(display, priced),
+      tooltip,
+    }
   }
 
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
     const acpContext = isAcpModel(footerChatModel())
-    const usageText = usageSummaryText()
+    const usage = usageViews()
     const compact = footerCompact.isCompact()
     const snapshot = thread?.contextSnapshot
     const snapshotVisible =
@@ -704,18 +923,23 @@ export function mountInputBar(
     // source then, and subagent/remote windows never produce a breakdown here.
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? usageText : null,
+      usageLine: tuckUsageIntoWheel ? (usage?.detail ?? null) : null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:
         acpContext && snapshot?.source === 'agent-reported' ? 'Reported by ACP agent' : null,
     })
     contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
-    if (!usageText) {
+    if (!usage) {
       usageBtn.hidden = true
+      usagePopover.render(null)
     } else {
       usageBtn.hidden = tuckUsageIntoWheel
-      usageBtn.textContent = usageText
+      usageBtn.textContent = usage.label
+      usageBtn.setAttribute('aria-label', usage.detail)
+      // Compact mode hides the counter and tucks usage into the wheel title —
+      // nothing left to hover, so drop the popover with it.
+      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip)
     }
     footerOverflow?.update()
     updateCheckoutControl()
@@ -950,7 +1174,17 @@ export function mountInputBar(
 
     const projectId = store.getState().activeProjectId
     if (!projectId) return
-    const branchStatus = await api.git.branchStatus(projectId, id)
+    if (attachedImages.length > 0) {
+      const incompatibility = await incompatibleImageModel()
+      if (incompatibility) {
+        await refreshImageCompatibilityWarning()
+        return
+      }
+    }
+    const [branchStatus, promptState] = await Promise.all([
+      api.git.branchStatus(projectId, id),
+      api.git.promptState(projectId, id),
+    ])
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
@@ -1123,6 +1357,12 @@ export function mountInputBar(
       visibleText,
       imageUrls.length ? imageUrls : undefined,
       attachments.length ? attachments : undefined,
+      {
+        ...(promptState.startingCommit !== null
+          ? { startingCommit: promptState.startingCommit }
+          : {}),
+        dirty: promptState.dirty,
+      },
     )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
     // Durable record of the attachment: the reference block in this message can
@@ -1317,10 +1557,12 @@ export function mountInputBar(
     remove.addEventListener('click', () => {
       attachedImages = attachedImages.filter((i) => i.dataUrl !== dataUrl)
       chip.remove()
+      void refreshImageCompatibilityWarning()
       scheduleContextEstimate()
     })
     chip.append(thumb, remove)
     chips.append(chip)
+    void refreshImageCompatibilityWarning()
     scheduleContextEstimate()
   }
 
@@ -1511,7 +1753,7 @@ export function mountInputBar(
     store.on('settings_changed', () => {
       modelPicker.refresh()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
-      refreshExtraPricing()
+      refreshModelPricing()
       updateFooter()
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
@@ -1534,7 +1776,7 @@ export function mountInputBar(
 
   updateFooter()
   void refreshAutomaticCheckoutPreview()
-  refreshExtraPricing()
+  refreshModelPricing()
   syncComposerThread()
   scheduleContextEstimate(0)
   window.addEventListener('beforeunload', stopContextEstimates)

@@ -32,6 +32,10 @@ import {
   saveAgentTurnEpoch,
   clearAgentHistory,
   agentHistoryExists,
+  loadAcpSessionBinding,
+  saveAcpSessionBinding,
+  clearAcpSessionBinding,
+  type AcpSessionBinding,
   findThreadOwners,
 } from './thread-store.ts'
 import { storageSet } from './storage/storage.ts'
@@ -932,6 +936,73 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     assert.equal(await agentHistoryExists('proj-1', 't1'), false)
 
     await saveAgentHistory('proj-1', 't1', [{ role: 'user', content: 'y' }])
+    await deleteProjectThread('proj-1', 't1')
+    assert.equal(existsSync(join(root, 'proj-1', 't1')), false)
+  })
+
+  it('round-trips a private ACP session binding beside the thread', async () => {
+    await createThread('proj-1', thread('t1'))
+    const binding: AcpSessionBinding = {
+      v: 1,
+      agentId: 'codex',
+      sessionId: 'opaque-session-id',
+      protocolVersion: 1,
+      executionTarget: { kind: 'local' },
+      workspaceIdentity: '/workspace/project',
+      agentConfigGeneration: 3,
+      createdBy: 'copse',
+      lastAttachedAt: 123,
+    }
+
+    await saveAcpSessionBinding('proj-1', 't1', binding)
+
+    assert.deepEqual(await loadAcpSessionBinding('proj-1', 't1'), binding)
+    const dir = join(root, 'proj-1', 't1')
+    assert.ok(existsSync(join(dir, 'acp-session.json')))
+    assert.doesNotMatch(readFileSync(join(dir, 'meta.json'), 'utf8'), /opaque-session-id/)
+    assert.doesNotMatch(readFileSync(join(dir, 'events.jsonl'), 'utf8'), /opaque-session-id/)
+  })
+
+  it('fails closed on corrupt, future, or incomplete ACP session bindings', async () => {
+    await createThread('proj-1', thread('t1'))
+    const path = join(root, 'proj-1', 't1', 'acp-session.json')
+
+    writeFileSync(path, '{not json')
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+
+    writeFileSync(path, `${JSON.stringify({ v: 99, sessionId: 'stale' })}\n`)
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+
+    writeFileSync(
+      path,
+      `${JSON.stringify({
+        v: 1,
+        agentId: 'codex',
+        sessionId: 'missing-fields',
+      })}\n`,
+    )
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+  })
+
+  it('clears an ACP binding explicitly and with thread deletion', async () => {
+    await createThread('proj-1', thread('t1'))
+    const binding: AcpSessionBinding = {
+      v: 1,
+      agentId: 'codex',
+      sessionId: 'opaque-session-id',
+      protocolVersion: 1,
+      executionTarget: { kind: 'ssh', hostId: 'dev', remoteCwd: '/repo' },
+      workspaceIdentity: '/repo',
+      agentConfigGeneration: 0,
+      createdBy: 'external',
+      lastAttachedAt: 123,
+    }
+
+    await saveAcpSessionBinding('proj-1', 't1', binding)
+    await clearAcpSessionBinding('proj-1', 't1')
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+
+    await saveAcpSessionBinding('proj-1', 't1', binding)
     await deleteProjectThread('proj-1', 't1')
     assert.equal(existsSync(join(root, 'proj-1', 't1')), false)
   })
