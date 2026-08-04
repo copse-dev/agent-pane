@@ -24,6 +24,7 @@ export interface SupervisedTaskHandlerContext {
 
 export interface SupervisedTaskHandlerResult {
   resultRef?: TaskResultRef
+  blockedReason?: string
 }
 
 export type SupervisedTaskHandler = (
@@ -372,6 +373,10 @@ export class TaskSupervisor {
       const result = await handler(started, { signal: controller.signal })
       const current = this.tasks.get(key)
       if (!current || current.state !== 'running' || controller.signal.aborted) return
+      if (result.blockedReason) {
+        await this.transition(current, 'blocked', 'block', result.blockedReason)
+        return
+      }
       await this.transition(
         {
           ...current,

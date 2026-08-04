@@ -120,6 +120,7 @@ import {
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
+import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
@@ -235,9 +236,6 @@ app
 
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
-    void taskSupervisor.start().catch((error: unknown) => {
-      console.error('[task-supervisor] Startup reconciliation failed:', error)
-    })
 
     recordStartupPhase('window-create')
     const win = createMainWindow()
@@ -313,6 +311,10 @@ app
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
+    void taskSupervisor.start().catch((error: unknown) => {
+      console.error('[task-supervisor] Startup reconciliation failed:', error)
+    })
     setBackgroundCompletionWakeHandler((completion) => {
       return agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,
@@ -649,11 +651,14 @@ app
 let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
+let disposeLongTaskWake: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
   getAutomationService().stop()
   await taskSupervisor.shutdown()
+  disposeLongTaskWake?.()
+  disposeLongTaskWake = undefined
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()

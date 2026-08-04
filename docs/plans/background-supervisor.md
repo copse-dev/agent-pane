@@ -2,7 +2,7 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P2).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+**Status: Active (P3).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
 P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
 main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
 without registering a production consumer yet. Implementation PRs should link here
@@ -174,11 +174,11 @@ dark-factory poller implementation, and changes to `run_background`.
 
 ### P3 — First consumer: long-horizon continue (#558)
 
-- Optional self-paced wake that asks the agent to continue a checklist without each
-  feature owning `setInterval`.
-- Permission snapshot + re-approve rules pinned with tests.
-- Exit gate: pack-disabled ⇒ no wakes; pack-enabled ⇒ one supervised task drives a mock
-  continue turn.
+- [x] Optional self-paced wake that asks the agent to continue a checklist without each
+      feature owning `setInterval`.
+- [x] Permission snapshot + re-approve rules pinned with tests.
+- [x] Exit gate: pack-disabled ⇒ no wakes; pack-enabled ⇒ one supervised task drives a mock
+      continue turn.
 
 ### P4 — Event wakes + dark-factory sensor registration
 
@@ -211,8 +211,12 @@ dark-factory poller implementation, and changes to `run_background`.
    with UUID thread dirs; `readThread` already skips dirs without thread `meta.json`.
 2. Should `run_background` processes automatically register as supervised tasks in P2,
    or remain session-scoped until a consumer opts in? _(still open — P2)_
-3. For agent-turn handlers, is the wake payload a synthetic user message, a steering
-   event, or a dedicated #1079 turn kind? _(still open — P2/P3)_
+3. ~~For agent-turn handlers, is the wake payload a synthetic user message, a steering
+   event, or a dedicated #1079 turn kind?~~ **Resolved in P3:** dispatch through the
+   main-process `AgentDispatcher` machine-turn path, with a bounded synthetic
+   continuation prompt, operation-id deduplication, turn-tree epoch checks, and the
+   shared continuation budget. Stale/budget-exhausted wakes become blocked tasks rather
+   than bypassing #1079.
 4. How do SSH / remote execution targets (#942) appear in the permission snapshot when
    the wake fires after the workspace target changed? _(still open — P2; P1 stores
    `workspaceTargetKind` / `executionRoot` placeholders only)_

@@ -188,6 +188,8 @@ export async function runHeadlessAgent(
                         messages = nextMessages
                         return Promise.resolve()
                       },
+                      loadEpoch: (): Promise<null> => Promise.resolve(null),
+                      saveEpoch: (): Promise<void> => Promise.resolve(),
                       prepareExecutionContext: (): Promise<typeof executionContext> =>
                         Promise.resolve(executionContext),
                       run: async (
