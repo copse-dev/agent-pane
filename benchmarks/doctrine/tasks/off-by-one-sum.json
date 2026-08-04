@@ -1,0 +1,12 @@
+{
+  "id": "off-by-one-sum",
+  "description": "Request task that tests minimal editing, validation, scope discipline, comment discipline, and faithful reporting.",
+  "prompt": "The test suite fails. Run `node test.js`, find the bug in sum.js, fix it with a minimal edit, and re-run the test until it passes.",
+  "fixture": "benchmarks/fixtures/off-by-one",
+  "userIntent": "request",
+  "inScopePaths": ["sum.js"],
+  "allowedCommands": ["node test.js"],
+  "grade": { "kind": "shell", "command": "node test.js" },
+  "maxSteps": 12,
+  "timeoutMs": 300000
+}

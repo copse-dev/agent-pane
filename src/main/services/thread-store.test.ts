@@ -16,6 +16,7 @@ import {
   deleteProjectThread,
   loadProjectCatalog,
   createThread,
+  appendMachineContinuation,
   appendMessage,
   updateMeta,
   getThreadMeta,
@@ -26,14 +27,25 @@ import {
   listAgentPrLinks,
   listOrphanProjectStores,
   loadAgentHistory,
+  loadAgentTurnEpoch,
   saveAgentHistory,
+  saveAgentTurnEpoch,
   clearAgentHistory,
   agentHistoryExists,
+  loadAcpSessionBinding,
+  saveAcpSessionBinding,
+  clearAcpSessionBinding,
+  type AcpSessionBinding,
   findThreadOwners,
 } from './thread-store.ts'
 import { storageSet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
+import {
+  SPINE_SCHEMA_VERSION,
+  parseSpineEntries,
+  type SpineMachineContinuationLine,
+} from '@shared/threads/spine-schema.ts'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
 function prRefs(...urls: string[]): GithubPrRef[] {
@@ -480,6 +492,29 @@ describe('thread-store', () => {
       })
     })
 
+    it('appends machine continuation audits and preserves them across a full thread save', async () => {
+      const storedThread = thread('t1', { messages: [userMsg('u1', 'hello')] })
+      await createThread('proj-1', storedThread)
+      const line: SpineMachineContinuationLine = {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'machine_continuation',
+        id: 'audit-1',
+        operationId: 'operation-1',
+        turnTreeId: 'tree-1',
+        recordedAt: 100,
+        budgetUsed: 1,
+        phase: 'started',
+      }
+      await appendMachineContinuation('proj-1', 't1', line)
+      await saveProjectThread('proj-1', storedThread)
+
+      const raw = readFileSync(join(root, 'proj-1', 't1', 'events.jsonl'), 'utf8')
+      const continuation = parseSpineEntries(raw).find(
+        (entry) => entry.line?.type === 'machine_continuation',
+      )
+      assert.deepEqual(continuation?.line, line)
+    })
+
     it('appendMessage replaces the spine line for a re-finalized message id without reordering', async () => {
       await createThread('proj-1', thread('t1'))
       await appendMessage('proj-1', 't1', userMsg('u1', 'first'))
@@ -867,6 +902,17 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     assert.ok(existsSync(join(root, 'proj-1', 't1', 'agent-history.json')))
   })
 
+  it('round-trips and clears the durable machine-turn epoch', async () => {
+    await createThread('proj-1', thread('t1'))
+    const epoch = { turnTreeId: 'tree-1', continuationUsed: 2 }
+    await saveAgentTurnEpoch('proj-1', 't1', epoch)
+    assert.deepEqual(await loadAgentTurnEpoch('proj-1', 't1'), epoch)
+    assert.ok(existsSync(join(root, 'proj-1', 't1', 'agent-epoch.json')))
+
+    await clearAgentHistory('proj-1', 't1')
+    assert.equal(await loadAgentTurnEpoch('proj-1', 't1'), null)
+  })
+
   it('fails closed on corrupt or future-version agent-history sidecars', async () => {
     await createThread('proj-1', thread('t1'))
     const path = join(root, 'proj-1', 't1', 'agent-history.json')
@@ -890,6 +936,73 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     assert.equal(await agentHistoryExists('proj-1', 't1'), false)
 
     await saveAgentHistory('proj-1', 't1', [{ role: 'user', content: 'y' }])
+    await deleteProjectThread('proj-1', 't1')
+    assert.equal(existsSync(join(root, 'proj-1', 't1')), false)
+  })
+
+  it('round-trips a private ACP session binding beside the thread', async () => {
+    await createThread('proj-1', thread('t1'))
+    const binding: AcpSessionBinding = {
+      v: 1,
+      agentId: 'codex',
+      sessionId: 'opaque-session-id',
+      protocolVersion: 1,
+      executionTarget: { kind: 'local' },
+      workspaceIdentity: '/workspace/project',
+      agentConfigGeneration: 3,
+      createdBy: 'copse',
+      lastAttachedAt: 123,
+    }
+
+    await saveAcpSessionBinding('proj-1', 't1', binding)
+
+    assert.deepEqual(await loadAcpSessionBinding('proj-1', 't1'), binding)
+    const dir = join(root, 'proj-1', 't1')
+    assert.ok(existsSync(join(dir, 'acp-session.json')))
+    assert.doesNotMatch(readFileSync(join(dir, 'meta.json'), 'utf8'), /opaque-session-id/)
+    assert.doesNotMatch(readFileSync(join(dir, 'events.jsonl'), 'utf8'), /opaque-session-id/)
+  })
+
+  it('fails closed on corrupt, future, or incomplete ACP session bindings', async () => {
+    await createThread('proj-1', thread('t1'))
+    const path = join(root, 'proj-1', 't1', 'acp-session.json')
+
+    writeFileSync(path, '{not json')
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+
+    writeFileSync(path, `${JSON.stringify({ v: 99, sessionId: 'stale' })}\n`)
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+
+    writeFileSync(
+      path,
+      `${JSON.stringify({
+        v: 1,
+        agentId: 'codex',
+        sessionId: 'missing-fields',
+      })}\n`,
+    )
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+  })
+
+  it('clears an ACP binding explicitly and with thread deletion', async () => {
+    await createThread('proj-1', thread('t1'))
+    const binding: AcpSessionBinding = {
+      v: 1,
+      agentId: 'codex',
+      sessionId: 'opaque-session-id',
+      protocolVersion: 1,
+      executionTarget: { kind: 'ssh', hostId: 'dev', remoteCwd: '/repo' },
+      workspaceIdentity: '/repo',
+      agentConfigGeneration: 0,
+      createdBy: 'external',
+      lastAttachedAt: 123,
+    }
+
+    await saveAcpSessionBinding('proj-1', 't1', binding)
+    await clearAcpSessionBinding('proj-1', 't1')
+    assert.equal(await loadAcpSessionBinding('proj-1', 't1'), null)
+
+    await saveAcpSessionBinding('proj-1', 't1', binding)
     await deleteProjectThread('proj-1', 't1')
     assert.equal(existsSync(join(root, 'proj-1', 't1')), false)
   })

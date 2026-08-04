@@ -30,7 +30,6 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
-import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { clearReadOutsideProjectGrants } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
 import { readDecisionLog } from './decision-log-store.ts'
@@ -50,6 +49,10 @@ import { join } from 'node:path'
 import { AUTO_APPROVAL_LEVEL_SETTING, type AutoApprovalLevel } from '@shared/auto-approval.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { shellReplayLeaseStore } from './capability-lease.ts'
 
 describe('isStructurallyReadOnlyShellCommand', () => {
   it('accepts simple read commands and read-only pipelines', () => {
@@ -749,6 +752,227 @@ describe('ensureTerminalPermitted', () => {
       await assert.rejects(() => ensureTerminalPermitted(), /No workspace open/)
     } finally {
       restore()
+    }
+  })
+})
+
+describe('turn-tree shell replay leases', () => {
+  const root = '/workspace/project'
+  const context = {
+    projectId: 'project-lease',
+    threadId: 'thread-lease',
+    projectRoot: root,
+    root,
+    checkoutMode: 'shared' as const,
+    branch: null,
+  }
+
+  async function runInTree<T>(turnTreeId: string, fn: () => Promise<T>): Promise<T> {
+    return runWithThreadExecutionContext(context, () =>
+      runWithActiveRunIdentity(context.threadId, () => {
+        setActiveRunTurnTreeId(asTurnTreeId(turnTreeId))
+        return fn()
+      }),
+    )
+  }
+
+  it('fails closed when a run has no explicit human turn-tree epoch', async () => {
+    shellReplayLeaseStore.clear()
+    setApprovalHandler(async (request) => {
+      assert.equal(request.allowTurnTreeLease, undefined)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      const approved = await runWithThreadExecutionContext(context, () =>
+        runWithActiveRunIdentity(context.threadId, () =>
+          ensureShellCommandPermitted('npm test', {
+            sandboxEnabled: true,
+            autoRun: false,
+            executionRoot: root,
+          }),
+        ),
+      )
+      assert.equal(approved, true)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('reuses one approval for exact retries and allowed output filters', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowTurnTreeLease, true)
+      assert.equal(request.turnTreeLeaseDefault, true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+        assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+        assert.equal(await ensureShellCommandPermitted('npm test | rg failed', options), true)
+      })
+      assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('does not extend a lease to separate sandbox-safe commands', async () => {
+    shellReplayLeaseStore.clear()
+    const requests: Array<{ lease: boolean; subject?: string }> = []
+    setApprovalHandler(async (request) => {
+      requests.push({
+        lease: request.allowTurnTreeLease === true,
+        ...(request.turnTreeLeaseSubject ? { subject: request.turnTreeLeaseSubject } : {}),
+      })
+      return {
+        approved: true,
+        remember: false,
+        grantScope: requests.length === 1 ? 'turn-tree' : 'once',
+      }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        await ensureShellCommandPermitted('npm test', options)
+        await ensureShellCommandPermitted('ls -la', options)
+      })
+      // The offer names the exact command it would cover, so the renderer can
+      // refuse to batch it with an unrelated one.
+      assert.deepEqual(requests, [{ lease: true, subject: 'npm test' }, { lease: false }])
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('leases one constituent while independently authorizing safe shell composition', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowTurnTreeLease, true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        assert.equal(
+          await ensureShellCommandPermitted(`cd ${root} && npm test; ls artifacts`, options),
+          true,
+        )
+        assert.equal(
+          await ensureShellCommandPermitted(`cd ${root} && npm test | rg failed`, options),
+          true,
+        )
+      })
+      assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('does not cross turn trees or cover external and mutating composition', async () => {
+    shellReplayLeaseStore.clear()
+    const requests: Array<{ allowTurnTreeLease?: boolean }> = []
+    setApprovalHandler(async (request) => {
+      requests.push(
+        request.allowTurnTreeLease === undefined
+          ? {}
+          : { allowTurnTreeLease: request.allowTurnTreeLease },
+      )
+      return {
+        approved: true,
+        remember: false,
+        grantScope: requests.length === 1 ? 'turn-tree' : 'once',
+      }
+    })
+    try {
+      const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+      await runInTree('tree-1', () => ensureShellCommandPermitted('npm test', options))
+      await runInTree('tree-2', () => ensureShellCommandPermitted('npm test', options))
+      await runInTree('tree-1', () =>
+        ensureShellCommandPermitted('npm test | curl https://example.com', options),
+      )
+
+      assert.equal(requests.length, 3)
+      assert.equal(requests[0]?.allowTurnTreeLease, true)
+      assert.equal(requests[1]?.allowTurnTreeLease, true)
+      assert.equal(requests[2]?.allowTurnTreeLease, undefined)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('offers bounded external replay only for opaque local execution', async () => {
+    shellReplayLeaseStore.clear()
+    const requests: Array<{ lease: boolean; defaultLease: boolean; scope?: string }> = []
+    setApprovalHandler(async (request) => {
+      requests.push({
+        lease: request.allowTurnTreeLease === true,
+        defaultLease: request.turnTreeLeaseDefault === true,
+        ...(request.scope ? { scope: request.scope } : {}),
+      })
+      return {
+        approved: true,
+        remember: false,
+        grantScope: request.allowTurnTreeLease === true ? 'turn-tree' : 'once',
+      }
+    })
+    try {
+      const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+      await runInTree('tree-1', () =>
+        ensureShellCommandPermitted('node synthetic-executor.mjs', options),
+      )
+      await runInTree('tree-1', () => ensureShellCommandPermitted('ls -la', options))
+      await runInTree('tree-1', () =>
+        ensureShellCommandPermitted('node synthetic-executor.mjs', options),
+      )
+      await runInTree('tree-1', () =>
+        ensureShellCommandPermitted('curl https://example.com', options),
+      )
+
+      assert.deepEqual(requests, [
+        { lease: true, defaultLease: false, scope: 'external' },
+        { lease: false, defaultLease: false, scope: 'sandbox' },
+        { lease: false, defaultLease: false, scope: 'external' },
+      ])
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('extracts an opaque local execution from safe external composition', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowTurnTreeLease, true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+      await runInTree('tree-1', () =>
+        ensureShellCommandPermitted(`cd ${root} && node synthetic-executor.mjs`, options),
+      )
+      await runInTree('tree-1', () =>
+        ensureShellCommandPermitted(
+          `cd ${root} && node synthetic-executor.mjs | rg completed`,
+          options,
+        ),
+      )
+      assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
     }
   })
 })

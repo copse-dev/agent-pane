@@ -47,6 +47,42 @@ describe('estimateUsageCost', () => {
     assert.equal(cacheHeavy, 0.3)
   })
 
+  it('prices OpenRouter selections from the supplied rate map', () => {
+    // Regression: `openrouter:` ids match neither the static cloud catalog nor
+    // the extra-provider slug namespace, so before the pricing map was unified
+    // every OpenRouter turn silently estimated at $0.
+    const cost = estimateUsageCost(
+      { 'openrouter:z-ai/glm-5.2': { inputTokens: 2_000_000, outputTokens: 100_000 } },
+      { 'openrouter:z-ai/glm-5.2': { inputPricePerMTok: 0.4, outputPricePerMTok: 1.6 } },
+    )
+    assert.equal(cost, '~$0.96')
+  })
+
+  it('leaves a model with no known rate unpriced rather than guessing', () => {
+    assert.equal(
+      costForModelUsage('openrouter:vendor/unknown', {
+        inputTokens: 5_000_000,
+        outputTokens: 1_000_000,
+      }),
+      0,
+    )
+  })
+
+  it('applies supplied cache rates to a non-catalog model', () => {
+    const cost = costForModelUsage(
+      'openrouter:anthropic/claude-sonnet-4.6',
+      { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 1_000_000 },
+      {
+        'openrouter:anthropic/claude-sonnet-4.6': {
+          inputPricePerMTok: 3,
+          outputPricePerMTok: 15,
+          cacheReadPricePerMTok: 0.3,
+        },
+      },
+    )
+    assert.equal(cost, 0.3)
+  })
+
   it('prices extra-provider models from the supplied rate map (e.g. HF)', () => {
     const cost = estimateUsageCost(
       {

@@ -1,13 +1,14 @@
 import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { addProject, addRemoteProject } from '../controller/projects.ts'
+import { addProject, addRemoteProject, createNewProject } from '../controller/projects.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { showErrorToast } from './toast.ts'
 
 export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const heading = el('h1', { class: 'welcome-heading' }, 'Copse')
   const sub = el('p', { class: 'welcome-sub' }, 'No project open.')
+  const newBtn = el('button', { class: 'welcome-new-btn' }, 'New Project')
   const openBtn = el('button', { class: 'welcome-open-btn' }, 'Open Folder')
   const openRemoteBtn = el(
     'button',
@@ -30,6 +31,7 @@ export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient)
     { class: 'welcome-card' },
     heading,
     sub,
+    newBtn,
     openBtn,
     openRemoteBtn,
     keyHint,
@@ -37,6 +39,10 @@ export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient)
   )
   root.append(card)
   root.classList.add('visible')
+
+  newBtn.addEventListener('click', () => {
+    void createNewProject(store, api)
+  })
 
   openBtn.addEventListener('click', () => {
     void addProject(store, api)

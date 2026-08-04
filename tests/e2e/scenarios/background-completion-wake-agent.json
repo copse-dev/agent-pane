@@ -1,0 +1,51 @@
+{
+  "id": "synthetic-ab-autonomy",
+  "description": "A real agent completes the privacy-safe matrix through two bounded background-task wakes after renderer reload.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "copse-background-wake-eval-",
+    "seedFiles": [
+      {
+        "path": "synthetic-autonomy-executor.mjs",
+        "fixture": "tests/e2e/fixtures/synthetic-autonomy-executor.mjs"
+      },
+      {
+        "path": "README.md",
+        "content": "# Bounded completion-wake evaluation\n\nThe synthetic executor intentionally exits with code 75 after committing its first result. Run it again to resume. Evidence is written under `.autonomy/`.\n"
+      },
+      {
+        "path": ".autonomy/background-wake-mode",
+        "content": "Delay process exits so continuation is driven by machine wake.\n"
+      }
+    ]
+  },
+  "autonomy": {
+    "tracePath": ".autonomy/trace.json"
+  },
+  "backgroundWake": {
+    "continuationCount": 2,
+    "reloadRenderer": true,
+    "finalAssistantContains": "BACKGROUND_WAKE_COMPLETE",
+    "timeoutMs": 300000
+  },
+  "promptVariants": [
+    "Complete the synthetic A/B matrix without asking me to continue. Start `node synthetic-autonomy-executor.mjs` using run_background with wake_on_completion enabled and a 60000ms timeout. Do not wrap, inspect, modify, or clean up the executor. Immediately end the turn after each start; never poll or inspect logs until the machine completion wake. Its first bounded run intentionally exits with code 75 after committing evidence. When completion wakes you, inspect that task's retained logs, then start the byte-identical command again with the same bounded wake settings and end the turn. When the second completion wakes you, inspect `.autonomy/trace.json` and evidence using read/list tools, return one evidence-backed report, and end with the exact marker BACKGROUND_WAKE_COMPLETE. Never rerun a completed operation.",
+    "Run the synthetic comparison autonomously. Launch exactly `node synthetic-autonomy-executor.mjs` as a bounded background task with wake_on_completion and timeout_ms 60000; do not alter or pre-inspect it. End each start turn immediately and do not poll logs before completion wakes you. Exit 75 after the first batch is an intentional checkpoint. On the first machine wake, read the retained task logs, launch the identical bounded command once more, and end that turn. On the second machine wake, read `.autonomy/trace.json` plus its evidence, give the supported conclusion, and finish with BACKGROUND_WAKE_COMPLETE. Do not ask for a manual continuation or repeat a committed operation.",
+    "Use the background-task completion contract to finish this matrix in one human turn. The command is `node synthetic-autonomy-executor.mjs`; start it with wake_on_completion=true and timeout_ms=60000 without wrappers or edits. After each start, end the turn without polling; only a completion wake may trigger the next action. Treat its first exit code 75 as resumable, inspect the retained logs when woken, invoke that exact command one final time with the same settings, and end the turn again. After the next wake, validate `.autonomy/trace.json` and evidence with read/list tools, report only evidence-backed causality, and end with BACKGROUND_WAKE_COMPLETE. No duplicate operation or human follow-up."
+  ],
+  "matrix": {
+    "revisions": ["baseline", "candidate"],
+    "environments": ["alpha", "beta"],
+    "modes": ["direct", "staged"],
+    "iterations": 3
+  },
+  "expect": {
+    "maxApprovals": 1,
+    "maxHumanContinuations": 0,
+    "maxDuplicateOperations": 0,
+    "maxDuplicateSideEffects": 0,
+    "requireArtifacts": true,
+    "requireRecoveryAfterInterruptions": true,
+    "requireSupportedCausalClaims": true
+  }
+}

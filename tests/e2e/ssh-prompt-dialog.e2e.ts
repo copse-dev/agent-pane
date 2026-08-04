@@ -51,6 +51,12 @@ describe('SSH prompt dialog', () => {
       expect.stringContaining('id_ed25519'),
     )
     await expect(await dialog.$('.ssh-prompt-input')).toHaveAttribute('type', 'password')
+    const secretInput = await dialog.$('.ssh-prompt-input')
+    await secretInput.setValue('hunter2')
+    const mask = await secretInput.getCSSProperty('-webkit-text-security')
+    expect(mask.value).toBe('disc')
+    const fontSize = Number.parseFloat((await secretInput.getCSSProperty('font-size')).value)
+    expect(fontSize).toBeGreaterThanOrEqual(16)
     // Session caching is opt-out, so the box is offered and pre-selected.
     await expect(await dialog.$('.ssh-prompt-remember')).toBeDisplayed()
     await expect(await dialog.$('.ssh-prompt-remember-input')).toBeSelected()

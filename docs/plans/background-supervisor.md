@@ -2,15 +2,18 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P1).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
-P1 lands the Zod/JSON schema + pure load/reconcile helpers (no timers, no main
-service yet). Implementation PRs should link here and keep long-horizon checklists
-(#558), dark-factory orchestration, A2A/remote delegation (#1015), and
-`run_background` shell tasks as **consumers**, not alternate supervisors.
+**Status: Active (P7 complete).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
+main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
+without registering a production consumer yet. Implementation PRs should link here
+and keep long-horizon checklists (#558), dark-factory orchestration, A2A/remote
+delegation (#1015), and `run_background` shell tasks as **consumers**, not alternate
+supervisors.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related foundations: [`long-horizon-tasks.md`](long-horizon-tasks.md),
 [`dark-factory-pr-orchestrator.md`](dark-factory-pr-orchestrator.md),
+[`background-agents-capability-map.md`](background-agents-capability-map.md),
 [`execution-runtime-security.md`](execution-runtime-security.md),
 [`../thread-store-format.md`](../thread-store-format.md). Headless adapters that later
 wake or resume supervised work must share [#1079](https://github.com/copse-dev/agent-pane/issues/1079)'s
@@ -25,7 +28,7 @@ to ask "what is still running / waiting / blocked?"
 
 | Surface                              | Role today                                   | Gap versus a general supervisor                                      |
 | ------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------- |
-| `run_background` (#691)              | In-memory child processes for a live session | Dies with the process; no queue, schedule, or cross-restart recovery |
+| `run_background` (#691)              | Supervised in-session child processes        | Dead handles fail visibly after restart; processes are not respawned |
 | Long-horizon checklists (#558)       | Goal/step state machine for grind-until-done | Tracks progress; does not schedule wakes or own concurrency policy   |
 | CI investigator / PR pane            | On-demand or event-driven CI reads           | No durable poller; each feature would otherwise grow its own timer   |
 | Dark-factory orchestrator (proposed) | Fleet nurse + triage for Copse/user PRs      | Explicitly needs a shared scheduler (audit: none in `src/main`)      |
@@ -73,6 +76,28 @@ sequence. Recurring schedules land **after** one-shot and event-driven wakes wor
 9. **#1068 stays binding.** Active-task narrative stays in the thread; supervisor
    records are operational telemetry (queue/state/handles). Do not promote wake logs
    into durable project knowledge unless the user explicitly does.
+10. **External triggers normalize before enqueue.** PR/ticket events, advisories,
+    alerts, webhooks, and chat/mobile commands do not call handlers directly. A trigger
+    adapter verifies its source and emits one immutable envelope with source identity,
+    payload hash/reference, dedupe key, target, handler/profile, budgets, and requested
+    review policy. Receiving an envelope authorizes enqueueing that declared workflow
+    only; it does not grant arbitrary prompt or tool authority.
+11. **Fleet work is a supervised task tree, not a loop of unrelated submissions.** A
+    campaign has stable identity, target-set provenance, parent/child tasks, fan-out and
+    fan-in, aggregate progress, shared caps, cancellation, and an escalation summary.
+    Each child still owns an isolated checkout/runtime and grant. The dark-factory PR
+    orchestrator nurses campaign output; it is not the generic campaign scheduler. A
+    same-outcome swarm also uses a campaign, but fan-in produces a reviewed artifact or
+    explicit integration task rather than letting children merge each other implicitly.
+12. **Duplicate delivery and restart are normal.** Trigger dedupe, actuator
+    idempotency keys or leases, and append-only transition records must make replay
+    converge. "Exactly once" is not assumed from cron, webhooks, queues, provider APIs,
+    or process restart.
+13. **The supervisor records facts; workflows judge outcomes.** Common timestamps,
+    attempts, intervention/block transitions, resource use, external-action counts, and
+    result references belong in supervisor/audit records. Whether a result was accepted,
+    corrected, rolled back, or improved cycle time is declared by the workflow's result
+    schema. A task count alone is never a factory-success metric.
 
 ## Minimum contract
 
@@ -97,6 +122,7 @@ policy checks).
 Names illustrative; schema lands in P1:
 
 - `taskId`, `projectId`, `threadId`, optional `parentTaskId`
+- optional `campaignId`, `triggerEnvelopeRef`, and per-actuator idempotency/lease key
 - `handler`: stable kind string (e.g. `long_horizon_continue`, `pr_fleet_poll`,
   `a2a_followup`, `shell_process`)
 - `state`, `createdAt`, `updatedAt`, `startedAt`, `finishedAt`
@@ -118,6 +144,12 @@ JSON/JSONL preferred so `@`-tools and support dumps can inspect it. Not electron
 | `wake_at`      | One-shot timestamp; survives restart                      |
 | Event-driven   | Named internal events (CI status change, process exit, …) |
 | Recurring cron | **Out of scope for first implementation phases**          |
+
+External sources are adapters above event delivery, not a new lifecycle. They remain
+out of scope until internal events, persistence, dedupe, and permission snapshots are
+proven. A desktop-only adapter may poll while the app is open; an always-available
+webhook/chat ingress requires the detached worker/control-plane phase in
+[`copse-cloud-workspaces.md`](copse-cloud-workspaces.md).
 
 Event subscriptions are registered through the supervisor so dark-factory and similar
 features do not each open GitHub pollers.
@@ -165,30 +197,72 @@ dark-factory poller implementation, and changes to `run_background`.
 
 ### P2 — Main-process supervisor service (no consumers)
 
-- Singleton lifecycle: reconcile on startup, inert when empty.
-- APIs: `enqueue`, `cancel`, `list`, `get`, `acknowledgeBlock`.
-- In-process immediate + `wake_at` only; no GitHub/network sensors yet.
-- Exit gate: unit tests advance fake clocks across restart-shaped reload.
+- [x] Singleton lifecycle: reconcile on startup, inert when empty.
+- [x] APIs: `enqueue`, `cancel`, `list`, `get`, `acknowledgeBlock`.
+- [x] In-process immediate + `wake_at` only; no GitHub/network sensors yet.
+- [x] Exit gate: unit tests advance fake clocks across restart-shaped reload.
 
 ### P3 — First consumer: long-horizon continue (#558)
 
-- Optional self-paced wake that asks the agent to continue a checklist without each
-  feature owning `setInterval`.
-- Permission snapshot + re-approve rules pinned with tests.
-- Exit gate: pack-disabled ⇒ no wakes; pack-enabled ⇒ one supervised task drives a mock
-  continue turn.
+- [x] Optional self-paced wake that asks the agent to continue a checklist without each
+      feature owning `setInterval`.
+- [x] Permission snapshot + re-approve rules pinned with tests.
+- [x] Exit gate: pack-disabled ⇒ no wakes; pack-enabled ⇒ one supervised task drives a mock
+      continue turn.
 
 ### P4 — Event wakes + dark-factory sensor registration
 
-- Event bus registration for CI/process events; dark-factory adaptive poller becomes a
-  supervisor-backed job (still feature-flagged inert when off).
-- Exit gate: two consumers cannot register duplicate pollers for the same fleet key.
+- [x] Durable one-shot event waiters and reference-counted event-source registration for
+      CI/process events.
+- [x] Dark-factory adaptive poller becomes a supervisor-backed job (still
+      feature-flagged inert when off).
+- [x] Exit gate: two consumers cannot register duplicate pollers for the same fleet key.
 
 ### P5 — UI surfacing + recurring schedules
 
-- Desktop list of supervised tasks (running/waiting/blocked) with cancel.
-- Recurring schedules only after P2–P4 retention, permission, and concurrency proofs.
-- Exit gate: e2e/component proof of list + cancel; cron behind an explicit flag.
+- [x] Desktop list of supervised tasks (queued/running/waiting/blocked) with cancel in
+      the Terminal pane.
+- [x] Expired terminal task directories compact into queryable, permission-free support
+      summaries before restart reconciliation (30-day default retention).
+- [x] Recurring cron tasks rearm durably after successful runs; the Automations pack's
+      minute scheduler now uses this path instead of a feature-owned `setInterval`.
+- [x] Component and Electron e2e proof of list + cancel.
+- [x] Cron is accepted only while the experimental `copse.automations` pack is enabled;
+      disabling it disarms existing cron timers without deleting schedule state.
+
+### P6 — Supervised `run_background` process handles
+
+- [x] Every `run_background start` adopts its child as a durable `shell_process` task
+      without consuming a handler concurrency slot.
+- [x] Natural exit completes or fails the task; tool, UI, thread-cleanup, and app-shutdown
+      cancellation terminate the child and persist `cancelled`.
+- [x] Permission and execution-target context is captured when the process starts.
+- [x] Restart reconciliation fails a stale running task with a lost process handle rather
+      than attempting to replay a shell command.
+
+### P7 — Execution-target snapshot enforcement
+
+- [x] Delayed long-horizon wakes capture the project-scoped local/SSH target and SSH host
+      identity derived from their execution root, rather than ambient active-project state.
+- [x] Wake dispatch fails closed when the execution root, local/SSH target, sandbox state,
+      or auto-run policy differs from the scheduling snapshot.
+- [x] Supervised process telemetry records the same project-scoped target identity.
+
+### P6 — Campaigns + authenticated trigger adapters
+
+- Add campaign records and bounded fan-out/fan-in over explicit repository/task sets.
+- Persist immutable trigger envelopes; dedupe duplicate delivery across restart.
+- Start with GitHub/system events. Add ticketing, generic webhooks, and chat/mobile
+  adapters only after source verification, payload bounds/redaction, and enqueue-only
+  authority are proven.
+- Surface campaign progress, per-target result/PR, spend/action budgets, cancel, retry,
+  and one aggregate escalation summary.
+- Emit the common timing, intervention, resource, and action facts needed by each
+  workflow's baseline/outcome report; keep workflow-specific quality judgments in the
+  consumer.
+- Exit gate: replaying one signed fixture many times creates one campaign; cancelling
+  its parent stops or terminally fences every child; no child reuses another target's
+  checkout, runtime, or credential grant.
 
 ## Non-goals
 
@@ -196,6 +270,8 @@ dark-factory poller implementation, and changes to `run_background`.
 - Letting Plan Mode or hooks `asyncRewake` schedule work around the supervisor.
 - Per-feature `setInterval` pollers in main as a permanent pattern.
 - Broadening shell/MCP auto-run because a task woke while the app was unfocused.
+- Letting a renderer, webhook, or chat adapter invoke handlers or tools without a
+  persisted trigger envelope and supervisor decision.
 - Cross-supervisor locking with external CLIs in v1 (dark-factory decision 14 still
   applies until revisited).
 - Marketplace/plugin distribution (#1082) — orthogonal supply chain.
@@ -207,13 +283,21 @@ dark-factory poller implementation, and changes to `run_background`.
    `~/.copse/workspace/<projectId>/tasks/<taskId>/` (override via existing
    `COPSE_WORKSPACE_DIR` only). The literal `tasks` dir is reserved and must not collide
    with UUID thread dirs; `readThread` already skips dirs without thread `meta.json`.
-2. Should `run_background` processes automatically register as supervised tasks in P2,
-   or remain session-scoped until a consumer opts in? _(still open — P2)_
-3. For agent-turn handlers, is the wake payload a synthetic user message, a steering
-   event, or a dedicated #1079 turn kind? _(still open — P2/P3)_
-4. How do SSH / remote execution targets (#942) appear in the permission snapshot when
-   the wake fires after the workspace target changed? _(still open — P2; P1 stores
-   `workspaceTargetKind` / `executionRoot` placeholders only)_
+2. ~~Should `run_background` processes automatically register as supervised tasks in P2,
+   or remain session-scoped until a consumer opts in?~~ **Resolved in P6:** every process
+   is adopted as a durable `shell_process` task. The process remains session-scoped; a
+   stale handle is failed on restart and the command is never replayed automatically.
+3. ~~For agent-turn handlers, is the wake payload a synthetic user message, a steering
+   event, or a dedicated #1079 turn kind?~~ **Resolved in P3:** dispatch through the
+   main-process `AgentDispatcher` machine-turn path, with a bounded synthetic
+   continuation prompt, operation-id deduplication, turn-tree epoch checks, and the
+   shared continuation budget. Stale/budget-exhausted wakes become blocked tasks rather
+   than bypassing #1079.
+4. ~~How do SSH / remote execution targets (#942) appear in the permission snapshot when
+   the wake fires after the workspace target changed?~~ **Resolved in P7:** consumers
+   capture `executionRoot` plus a project-scoped `workspaceTargetKind` and SSH host id. A
+   delayed wake blocks before dispatch when any differ from the freshly resolved context;
+   it does not inherit the currently active project's target.
 
 ## References
 
@@ -225,3 +309,5 @@ dark-factory poller implementation, and changes to `run_background`.
 - [#1080](https://github.com/copse-dev/agent-pane/issues/1080) — Plan Mode / rewind (non-overlapping)
 - [`dark-factory-pr-orchestrator.md`](dark-factory-pr-orchestrator.md) — first major sensor consumer
 - [`execution-runtime-security.md`](execution-runtime-security.md) — capability / audit model
+- [`background-agents-capability-map.md`](background-agents-capability-map.md) — current
+  product coverage, external-trigger/campaign requirements, and workflow consumers

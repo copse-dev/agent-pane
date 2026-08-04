@@ -48,7 +48,6 @@ import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
-  runAgent,
   abortAgent,
   retryPostTurnReview,
   retryModelComparison,
@@ -73,7 +72,8 @@ import {
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
-import { clearAgentHistory, loadAgentHistory, saveAgentHistory } from './services/thread-store.ts'
+import { clearAgentHistory } from './services/thread-store.ts'
+import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -108,6 +108,14 @@ import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import {
+  cancelAllSupervisedBackgroundProcesses,
+  installBackgroundProcessSupervisor,
+} from './services/exec/supervised-background-process.ts'
+import {
+  backgroundCompletionPrompt,
+  setBackgroundCompletionWakeHandler,
+} from './services/exec/background-completion-wake.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
@@ -119,6 +127,9 @@ import {
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
+import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
+import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
+import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
@@ -132,6 +143,7 @@ setSecretCipher({
   encryptString: (plainText) => safeStorage.encryptString(plainText),
   decryptString: (encrypted) => safeStorage.decryptString(encrypted),
 })
+const taskSupervisor = getTaskSupervisor()
 
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
@@ -308,6 +320,30 @@ app
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
+    const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
+    disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
+    disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
+    disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
+      if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
+    })
+    void taskSupervisor.start().catch((error: unknown) => {
+      console.error('[task-supervisor] Startup reconciliation failed:', error)
+    })
+    setBackgroundCompletionWakeHandler((completion) => {
+      return agentDispatcher.dispatchMachine({
+        projectId: completion.owner.projectId,
+        threadId: completion.owner.threadId,
+        operationId: completion.operationId,
+        turnTreeId: completion.turnTreeId,
+        payload: {
+          userContent: backgroundCompletionPrompt(completion),
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      })
+    })
+
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -362,11 +398,6 @@ app
     // Register before async bootstrap (skills/MCP) so the renderer, which loads
     // concurrently and fires a context estimate on first paint, never races a
     // missing handler. The registry these close over is populated lazily below.
-    // In-memory provider history, keyed by projectId + threadId so a thread id
-    // is never treated as globally unique (issue #993).
-    const messageHistory = new Map<string, LLMMessage[]>()
-    const historyKey = (projectId: string, threadId: string): string => `${projectId}\0${threadId}`
-
     ipcMain.handle(
       'agent:previewCheckout',
       async (event, projectIdArg: unknown, choiceArg: unknown, modelArg?: unknown) => {
@@ -424,39 +455,11 @@ app
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        const {
-          userContent,
-          invokedSkills,
-          priorTodos,
-          workingBrief,
-          model,
-          turnTreeId,
-          continuationBudgetUsed,
-        } = parseAgentRunPayload(rawPrompt)
-
-        // Hydrate from the per-thread sidecar on first use after a restart
-        const cacheKey = historyKey(projectId, threadId)
-        if (!messageHistory.has(cacheKey)) {
-          messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
-        }
-
-        const priorMessages = messageHistory.get(cacheKey) ?? []
-        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
-        if (!executionContext) return
-        const result = await runWithThreadExecutionContext(executionContext, () =>
-          runWithActiveRunIdentity(threadId, () =>
-            runAgent(threadId, userContent, priorMessages, agentHost, registry, {
-              invokedSkills,
-              priorTodos,
-              ...(workingBrief !== undefined ? { workingBrief } : {}),
-              ...(model !== undefined ? { model } : {}),
-              ...(turnTreeId !== undefined ? { turnTreeId } : {}),
-              ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
-            }),
-          ),
-        )
-        messageHistory.set(cacheKey, result.messages)
-        await saveAgentHistory(projectId, threadId, result.messages)
+        await agentDispatcher.dispatch({
+          projectId,
+          threadId,
+          payload: parseAgentRunPayload(rawPrompt),
+        })
       },
     )
 
@@ -486,11 +489,7 @@ app
           throw new Error('agent:estimateContext: payload failed validation')
         }
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
-        const cacheKey = historyKey(projectId, threadId)
-        if (!messageHistory.has(cacheKey)) {
-          messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
-        }
-        const priorMessages = messageHistory.get(cacheKey) ?? []
+        const priorMessages = await agentDispatcher.history(projectId, threadId)
         return estimateContextBreakdown(registry, {
           draftText,
           invokedSkills,
@@ -507,7 +506,7 @@ app
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        messageHistory.delete(historyKey(projectId, threadId))
+        agentDispatcher.forgetHistory(projectId, threadId)
         await clearAgentHistory(projectId, threadId)
         clearRemoteAgentSession(threadId)
       },
@@ -552,13 +551,8 @@ app
         ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
       }
     }
-    const hydrateHistory = async (projectId: string, threadId: string): Promise<LLMMessage[]> => {
-      const cacheKey = historyKey(projectId, threadId)
-      if (!messageHistory.has(cacheKey)) {
-        messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
-      }
-      return messageHistory.get(cacheKey) ?? []
-    }
+    const hydrateHistory = (projectId: string, threadId: string): Promise<LLMMessage[]> =>
+      agentDispatcher.history(projectId, threadId)
 
     ipcMain.handle(
       'agent:retryReview',
@@ -683,10 +677,24 @@ app
 let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
+let disposeLongTaskWake: (() => void) | undefined
+let disposeBackgroundProcessSupervisor: (() => void) | undefined
+let disposeDarkFactorySensor: (() => void) | undefined
+let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
   getAutomationService().stop()
+  disposeDarkFactorySensor?.()
+  disposeDarkFactorySensor = undefined
+  disposeTaskSupervisorEvents?.()
+  disposeTaskSupervisorEvents = undefined
+  await cancelAllSupervisedBackgroundProcesses()
+  await taskSupervisor.shutdown()
+  disposeBackgroundProcessSupervisor?.()
+  disposeBackgroundProcessSupervisor = undefined
+  disposeLongTaskWake?.()
+  disposeLongTaskWake = undefined
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()

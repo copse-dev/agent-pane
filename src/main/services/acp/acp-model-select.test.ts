@@ -65,6 +65,31 @@ describe('modelSelectorFrom', () => {
     ])
   })
 
+  it('keeps the option description, where an agent may hide the model version', () => {
+    const response = {
+      sessionId: 's1',
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'sonnet',
+          options: [
+            { value: 'sonnet', name: 'Sonnet', description: 'Sonnet 5 · Efficient for routine' },
+            // An empty description is dropped rather than stored blank.
+            { value: 'opus', name: 'Opus', description: '' },
+          ],
+        },
+      ],
+    }
+
+    assert.deepEqual(modelSelectorFrom(response)?.choices, [
+      { value: 'sonnet', label: 'Sonnet', description: 'Sonnet 5 · Efficient for routine' },
+      { value: 'opus', label: 'Opus' },
+    ])
+  })
+
   it('returns null when there is no model-category select', () => {
     const modeOnly = {
       sessionId: 's1',

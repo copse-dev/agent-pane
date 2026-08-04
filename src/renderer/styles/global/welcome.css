@@ -35,12 +35,23 @@
 .welcome-sub {
   color: var(--text-secondary);
 }
-.welcome-open-btn {
+.welcome-new-btn {
   background: var(--accent);
   color: var(--text-on-accent);
   padding: var(--spacing-sm) var(--spacing-xl);
   border-radius: var(--radius);
   font-size: var(--font-size-lg);
+}
+.welcome-open-btn {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: var(--spacing-sm) var(--spacing-xl);
+  border-radius: var(--radius);
+  font-size: var(--font-size-lg);
+}
+.welcome-open-btn:hover {
+  border-color: var(--accent);
 }
 .welcome-hint {
   font-size: var(--font-size-sm);
@@ -48,7 +59,8 @@
   max-width: 360px;
 }
 .titlebar-drag {
-  flex: 1;
+  flex: 1 0 var(--spacing-lg);
+  min-width: var(--spacing-lg);
   height: 100%;
   -webkit-app-region: drag;
 }
