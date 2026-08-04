@@ -76,6 +76,9 @@ export interface ApiClient {
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
+    createNewProject: (name: string, parentDir: string) => Promise<string>
+    pickParentDirectory: () => Promise<string | null>
+    getHomeDirectory: () => Promise<string>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {

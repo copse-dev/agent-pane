@@ -1,5 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
+import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -306,6 +310,25 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
   })
 }
 
+// Starter guidance written to a newly-created project's AGENT.md. Kept in the
+// main process (not the renderer) so the file is written at the trust boundary
+// alongside the folder itself; the text steers the agent to plan and ask before
+// acting in a codebase it has never seen.
+const STARTER_AGENT_MD = `# Project guide
+
+This is a new project scaffolded in Copse. Add project-specific context here that
+you want the coding agent to follow on every turn.
+
+## Working style
+
+- This project is new and may have no existing conventions yet. Before making
+  changes, explore the codebase, then propose a plan and ask clarifying questions.
+- Prefer plan mode: lay out what you intend to do and confirm the approach before
+  writing code or running destructive commands.
+- Keep changes small and reviewable; prefer to ask rather than assume when an
+  intent is ambiguous.
+`
+
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const alertUser = createElectronUserAlertSender(win, app.dock)
   const packService = getPackService()
@@ -349,6 +372,64 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     startWorkspaceIndexing(root)
     await initSkillsRegistry()
     registerSkillTools(registry)
+    return root
+  })
+
+  // Create a brand-new project folder under a user-chosen parent directory:
+  // mkdir the folder, write starter AGENT.md + README.md, `git init` it, and
+  // register it through the same allowed-root trust boundary as Open Folder.
+  // Returns the canonical new path, or null if the parent was cancelled.
+  // The user's home directory, used to default the New project dialog's parent
+  // when no prior local project gives a better guess. Treated as a data value
+  // (not a workspace root), so it is never registered as allowed.
+  ipcMain.handle('workspace:getHomeDirectory', (event) => {
+    assertMainFrameSender(event, win)
+    return homedir()
+  })
+
+  // Parent-directory picker for the "New project" dialog's Browse button. This
+  // is a bare pick — it does NOT register the chosen folder as a workspace root
+  // (the project folder created under it is registered by `workspace:createProject`).
+  ipcMain.handle('workspace:pickParentDirectory', async (event) => {
+    assertMainFrameSender(event, win)
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose a parent directory for the new project',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
+  })
+
+  // Create a brand-new project folder under a caller-chosen parent directory:
+  // mkdir the folder, write starter AGENT.md + README.md, `git init` it, and
+  // register it through the same allowed-root trust boundary as Open Folder.
+  ipcMain.handle('workspace:createProject', async (event, rawName: unknown, rawParent: unknown) => {
+    assertMainFrameSender(event, win)
+    const name = parseIpcArgs(z.string().trim().min(1).max(200), [rawName])
+    const parentDir = parseIpcArgs(zPathString, [rawParent])
+    const projectPath = join(parentDir, name)
+    // Never escape the chosen parent (a crafted name like `..` must not climb).
+    if (resolve(parentDir, name) !== projectPath || basename(projectPath) !== name) {
+      throw new IpcValidationError('Invalid project name')
+    }
+    let projectMissing = false
+    try {
+      const existing = await stat(projectPath)
+      if (!existing.isDirectory()) throw new IpcValidationError('Target exists and is not a folder')
+      const entries = await readdir(projectPath)
+      if (entries.length > 0) throw new IpcValidationError('Folder already exists and is not empty')
+    } catch (err) {
+      // ENOENT means the folder does not exist yet — scaffolding proceeds below.
+      if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      projectMissing = true
+    }
+    if (projectMissing) await mkdir(projectPath, { recursive: true })
+    await writeFile(join(projectPath, 'AGENT.md'), STARTER_AGENT_MD, 'utf8')
+    await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
+    // git init -b main keeps the initial branch name stable regardless of the
+    // user's global init.defaultBranch / git template config.
+    await runCommand('git', ['init', '-b', 'main'], { cwd: projectPath, timeout_ms: 0 })
+    const root = await registerAllowedWorkspaceRoot(projectPath)
     return root
   })
 
