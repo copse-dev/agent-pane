@@ -1,6 +1,11 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { fetchModelOptions } from './model-options.ts'
 import { mountModelPicker } from './model-picker.ts'
+import {
+  loadAcpOptionGroups,
+  saveAcpOptionSelection,
+  type AcpOptionGroup,
+} from './acp-config-options.ts'
 
 export interface FooterModelPickerOptions {
   /** When true, ACP agents are omitted (SSH workspaces). */
@@ -20,6 +25,21 @@ export function mountFooterModelPicker(
   onSelect: (model: string) => void,
   pickerOpts: FooterModelPickerOptions = {},
 ): { refresh: () => void; destroy: () => void } {
+  // The agent whose selectors are currently listed. Captured on load so a pick
+  // persists against the right agent even if the model value moves on after.
+  let optionAgentId: string | null = null
+  let optionGroups: AcpOptionGroup[] = []
+
+  function persistGroupValue(groupId: string, value: string): void {
+    const agentId = optionAgentId
+    const group = optionGroups.find((candidate) => candidate.id === groupId)
+    if (!agentId || !group) return
+    group.currentValue = value
+    void saveAcpOptionSelection(api, agentId, group, value).catch((err: unknown) => {
+      console.error('[acp] failed to save option selection:', err)
+    })
+  }
+
   const picker = mountModelPicker(
     root,
     getCurrent,
@@ -35,6 +55,15 @@ export function mountFooterModelPicker(
       variant: 'compact',
       enableShortcut: true,
       ariaLabel: 'Chat model',
+      // An ACP agent's own knobs — reasoning level, mode — hang off whichever
+      // agent is selected, so they reload with the model list.
+      loadValueGroups: async (current) => {
+        const loaded = await loadAcpOptionGroups(api, current)
+        optionAgentId = loaded?.agentId ?? null
+        optionGroups = loaded?.groups ?? []
+        return optionGroups
+      },
+      onSelectGroupValue: persistGroupValue,
       ...(pickerOpts.onClose ? { onClose: pickerOpts.onClose } : {}),
       ...(pickerOpts.getRecentModels ? { getRecentValues: pickerOpts.getRecentModels } : {}),
     },

@@ -1,4 +1,4 @@
-import type { AcpAgentConfig } from './types/acp.ts'
+import type { AcpAgentConfig, AcpConfigCategory, AcpConfigOption } from './types/acp.ts'
 import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 import { isRecord, recordArrayOrEmpty, stringRecordOrEmpty } from './unknown-value.mts'
 
@@ -44,6 +44,74 @@ function parseChoices(
   })
 }
 
+/**
+ * Categories the ACP spec reserves. Anything else — absent, `_vendor`-prefixed,
+ * or a name added to a later spec revision — normalizes to `'other'`, which the
+ * UI still renders (just without a category-specific label or shortcut).
+ */
+const KNOWN_CONFIG_CATEGORIES: ReadonlySet<string> = new Set([
+  'mode',
+  'model',
+  'model_config',
+  'thought_level',
+])
+
+/** Normalize an ACP `category` value; unknown/absent becomes `'other'`. */
+export function acpConfigCategory(value: unknown): AcpConfigCategory {
+  if (typeof value !== 'string' || !KNOWN_CONFIG_CATEGORIES.has(value)) return 'other'
+  // The set membership above is the guard; re-narrowing keeps this total without
+  // a cast (`no-unsafe-type-assertion` is enforced repo-wide).
+  switch (value) {
+    case 'mode':
+      return 'mode'
+    case 'model':
+      return 'model'
+    case 'model_config':
+      return 'model_config'
+    default:
+      return 'thought_level'
+  }
+}
+
+/**
+ * Fallback display label for a config option, used when the agent's own `name`
+ * is missing. Agents supply a `name` in practice, so this is belt-and-braces.
+ */
+export function acpConfigCategoryLabel(category: AcpConfigCategory): string {
+  switch (category) {
+    case 'mode':
+      return 'Mode'
+    case 'model':
+      return 'Model'
+    case 'model_config':
+      return 'Model setting'
+    case 'thought_level':
+      return 'Thinking effort'
+    default:
+      return 'Option'
+  }
+}
+
+/** Validate a cached config-option list read across the IPC/storage boundary. */
+export function parseAcpConfigOptions(value: unknown): AcpConfigOption[] {
+  return recordArrayOrEmpty(value).flatMap((entry) => {
+    const configId = entry['configId']
+    const currentValue = entry['currentValue']
+    if (typeof configId !== 'string' || typeof currentValue !== 'string') return []
+    const name = entry['name']
+    const category = acpConfigCategory(entry['category'])
+    const option: AcpConfigOption = {
+      configId,
+      name: typeof name === 'string' && name ? name : acpConfigCategoryLabel(category),
+      category,
+      currentValue,
+      choices: parseChoices(entry['choices'], true),
+    }
+    if (typeof entry['description'] === 'string') option.description = entry['description']
+    return [option]
+  })
+}
+
 /** Validate ACP agent settings read across the IPC/storage boundary. */
 export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
   return recordArrayOrEmpty(value).flatMap((entry) => {
@@ -72,6 +140,12 @@ export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
     if (typeof entry['permissionMode'] === 'string') agent.permissionMode = entry['permissionMode']
     if (Array.isArray(entry['availablePermissionModes'])) {
       agent.availablePermissionModes = parseChoices(entry['availablePermissionModes'], true)
+    }
+    if (isRecord(entry['configOptions'])) {
+      agent.configOptions = stringRecordOrEmpty(entry['configOptions'])
+    }
+    if (Array.isArray(entry['availableConfigOptions'])) {
+      agent.availableConfigOptions = parseAcpConfigOptions(entry['availableConfigOptions'])
     }
     const sandbox = entry['sandbox']
     if (sandbox === false) {

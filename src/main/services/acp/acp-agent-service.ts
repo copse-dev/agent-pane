@@ -360,6 +360,13 @@ export async function runAcpAgentFromSettings(
   // No `model` and no `nativeBridge` here: the session pool owns the bridge
   // (it must exist before spawn for the seatbelt's loopback), and the model
   // switches live via session/set_config_option so it never forces a respawn.
+  // Reasoning level and any other selector the agent advertises, as chosen in
+  // the composer's model picker. Like `model` (and unlike `permissionMode`)
+  // these switch live, so they stay out of the pool fingerprint.
+  const configOptions =
+    agent.configOptions && Object.keys(agent.configOptions).length > 0
+      ? agent.configOptions
+      : undefined
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
@@ -368,6 +375,7 @@ export async function runAcpAgentFromSettings(
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
     ...(permissionMode ? { permissionMode } : {}),
+    ...(configOptions ? { configOptions } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history

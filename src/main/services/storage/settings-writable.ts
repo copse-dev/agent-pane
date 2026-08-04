@@ -52,6 +52,31 @@ export const acpAgentConfigSchema = z.object({
     )
     .max(64)
     .optional(),
+  // Chosen values for the agent's other ACP session config options (reasoning
+  // level, …) keyed by `configId`, plus the set it advertised when last probed.
+  // Applied live via `session/set_config_option`; see docs/acp-agents.md.
+  configOptions: z.record(z.string().min(1).max(256), z.string().min(1).max(512)).optional(),
+  availableConfigOptions: z
+    .array(
+      z.object({
+        configId: z.string().min(1).max(256),
+        name: z.string().min(1).max(256),
+        category: z.enum(['mode', 'model', 'model_config', 'thought_level', 'other']),
+        description: z.string().max(1024).optional(),
+        currentValue: z.string().min(1).max(512),
+        choices: z
+          .array(
+            z.object({
+              value: z.string().min(1).max(512),
+              label: z.string().min(1).max(256),
+              description: z.string().max(1024).optional(),
+            }),
+          )
+          .max(256),
+      }),
+    )
+    .max(32)
+    .optional(),
   // Seatbelt override (issue #590): object = custom confines, false = opt out,
   // absent = the KNOWN_ACP_AGENTS catalog preset for this id. homeDirs are
   // home-relative and may not escape upward.

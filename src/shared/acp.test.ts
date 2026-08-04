@@ -1,11 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  acpConfigCategory,
   acpModelDisplayLabel,
   acpModelValue,
   enabledClaudeAcpAgent,
   isAcpModel,
   isClaudeAcpAgent,
+  parseAcpAgentConfigs,
   parseAcpModel,
   parseAcpModelSelection,
 } from './acp.ts'
@@ -101,5 +103,73 @@ describe('Claude ACP agent preference', () => {
     assert.equal(enabledClaudeAcpAgent([disabled, gemini]), undefined)
     // An enabled Claude agent is returned.
     assert.equal(enabledClaudeAcpAgent([gemini, enabled]), enabled)
+  })
+})
+
+describe('ACP session config options', () => {
+  it('keeps only the categories the spec reserves', () => {
+    assert.equal(acpConfigCategory('thought_level'), 'thought_level')
+    assert.equal(acpConfigCategory('model_config'), 'model_config')
+    // ACP: clients "MUST handle missing or unknown categories gracefully" —
+    // an unknown one is still a usable option, just an uncategorized one.
+    assert.equal(acpConfigCategory('_acme.com/thing'), 'other')
+    assert.equal(acpConfigCategory('from_a_later_spec'), 'other')
+    assert.equal(acpConfigCategory(undefined), 'other')
+    assert.equal(acpConfigCategory(7), 'other')
+  })
+
+  it('round-trips stored selections and the cached option list', () => {
+    const [agent] = parseAcpAgentConfigs([
+      {
+        id: 'claude',
+        title: 'Claude Code',
+        command: 'claude-code-acp',
+        enabled: true,
+        configOptions: { thinking: 'high', dropped: 3 },
+        availableConfigOptions: [
+          {
+            configId: 'thinking',
+            name: 'Thinking effort',
+            category: 'thought_level',
+            currentValue: 'medium',
+            choices: [
+              { value: 'low', label: 'Low', description: 'Answer fast' },
+              { value: 'high', label: 'High' },
+            ],
+          },
+          { configId: 'broken' },
+        ],
+      },
+    ])
+
+    assert.ok(agent)
+    // Non-string values are dropped rather than failing the whole agent.
+    assert.deepEqual(agent.configOptions, { thinking: 'high' })
+    assert.deepEqual(agent.availableConfigOptions, [
+      {
+        configId: 'thinking',
+        name: 'Thinking effort',
+        category: 'thought_level',
+        currentValue: 'medium',
+        choices: [
+          { value: 'low', label: 'Low', description: 'Answer fast' },
+          { value: 'high', label: 'High' },
+        ],
+      },
+    ])
+  })
+
+  it('names an option the agent left unnamed after its category', () => {
+    const [agent] = parseAcpAgentConfigs([
+      {
+        id: 'x',
+        title: 'X',
+        command: 'x',
+        enabled: true,
+        availableConfigOptions: [{ configId: 't', category: 'thought_level', currentValue: 'a' }],
+      },
+    ])
+
+    assert.equal(agent?.availableConfigOptions?.[0]?.name, 'Thinking effort')
   })
 })

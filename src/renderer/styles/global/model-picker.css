@@ -133,6 +133,43 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+/* Selectors belonging to the chosen model (an ACP agent's reasoning level,
+   mode), listed under the models and drilling into their own choices. */
+.model-picker-groups {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--border-subtle);
+}
+.model-picker-group-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+  font: inherit;
+}
+.model-picker-group-row-label {
+  flex: 1 1 auto;
+}
+.model-picker-group-row-value {
+  color: var(--text-muted);
+}
+.model-picker-group-row:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.model-picker-group-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 .model-picker-filter:focus-visible,
 .model-picker-back:focus-visible,
 .model-picker-browse:focus-visible {
