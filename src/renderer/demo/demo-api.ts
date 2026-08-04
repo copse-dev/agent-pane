@@ -423,6 +423,11 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       onChanged: subscribe,
       setThread: () => resolved(null),
     },
+    supervisor: {
+      list: () => resolved({ tasks: [] }),
+      cancel: () => resolved({ task: null }),
+      onChanged: subscribe,
+    },
     skills: { list: emptyArray },
     plugins: { list: emptyArray },
     hooks: {
