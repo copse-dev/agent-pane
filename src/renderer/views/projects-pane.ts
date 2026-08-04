@@ -30,6 +30,7 @@ import {
 import {
   addProject,
   addRemoteProject,
+  createNewProject,
   getSidebarThreads,
   isProjectSwitchInFlight,
   listOrphanProjects,
@@ -136,22 +137,25 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     { class: 'projects-search-btn', 'aria-label': 'Search threads', title: 'Search threads' },
     searchIcon('ui-icon ui-icon-sm'),
   )
-  const openBtn = el(
-    'button',
-    { class: 'projects-open-btn', 'aria-label': 'Open project' },
-    '+ Open',
-  )
   const openRemoteBtn = el(
     'button',
     { class: 'projects-open-remote-btn', 'aria-label': 'Open remote project', hidden: true },
     '+ Remote',
+  )
+  // Single "+" entry point for local projects: opens a context menu with
+  // New project / Open folder. Remote keeps its own header button because it is
+  // an opt-in affordance that only appears once SSH workspaces are enabled.
+  const addBtn = el(
+    'button',
+    { class: 'projects-add-btn', 'aria-label': 'New project', title: 'New project' },
+    '+',
   )
   const header = el(
     'div',
     { class: 'pane-projects-header' },
     title,
     searchToggle,
-    openBtn,
+    addBtn,
     openRemoteBtn,
   )
 
@@ -210,14 +214,28 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   root.append(header, searchRow, list, settingsBtn)
 
-  openBtn.addEventListener('click', () => {
-    void addProject(store, api)
-  })
-
   openRemoteBtn.addEventListener('click', () => {
     void addRemoteProject(store, api).catch((err: unknown) => {
       showErrorToast('Could not open remote folder', err)
     })
+  })
+
+  addBtn.addEventListener('click', () => {
+    const rect = addBtn.getBoundingClientRect()
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      {
+        label: 'New project',
+        onSelect: (): void => {
+          void createNewProject(store, api)
+        },
+      },
+      {
+        label: 'Open folder',
+        onSelect: (): void => {
+          void addProject(store, api)
+        },
+      },
+    ])
   })
 
   const syncRemoteOpenVisibility = (): void => {

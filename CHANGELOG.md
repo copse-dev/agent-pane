@@ -8,6 +8,22 @@ every published entry.
 
 ## Unreleased
 
+- The context wheel no longer goes blank on hover while the agent is working.
+  Mid-run the pre-send estimate is deliberately suppressed — it describes the
+  _next_ prompt, not the one in flight — but that left the wheel with nothing to
+  show for the whole run, and the part-by-part breakdown only came back once the
+  turn ended. It now falls back to the aggregate it is already drawing
+  ("Context · 54.0k / 180.0k (30%)"), which needs no estimate to produce. Chat
+  windows that never report a breakdown at all — subagents and remote agents —
+  gain the same hover summary.
+- The footer token counter explains itself on hover instead of on click. Pointing
+  at it opens a tooltip in the same style as the context wheel beside it: input
+  and output tokens, the prompt-cache read/write split when the provider reports
+  one, and the estimated cost — broken down per model once a thread has used more
+  than one, plus a line for how much of the total was delegated to subagents.
+  Estimated counts are labelled as such rather than priced. The click that used
+  to swap the label for an inline `1200 in / 80 out · ~$0.02` string is gone; the
+  counter now always reads as the plain total.
 - Answers on Claude Opus 5 are shorter. That model's default replies run longer
   than other models', and the effort setting tunes how much it thinks rather
   than how much it says, so the system prompt now asks for concision explicitly

@@ -9,7 +9,10 @@ function copyButtonText(code: HTMLElement): string {
 }
 
 export function attachCodeBlockCopyButtons(root: ParentNode): void {
-  const blocks = root.querySelectorAll('pre:has(> code):not(.mermaid):not([data-copy-attached])')
+  // Keep the selector compatible with engines that do not yet implement
+  // relational `:has()` in the Selectors API (notably Servo). The `code`
+  // lookup below already provides the same filtering behavior.
+  const blocks = root.querySelectorAll('pre:not(.mermaid):not([data-copy-attached])')
   for (const node of blocks) {
     if (!(node instanceof HTMLElement)) continue
     const pre = node

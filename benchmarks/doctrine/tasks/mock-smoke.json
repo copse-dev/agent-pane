@@ -1,0 +1,15 @@
+{
+  "id": "mock-smoke",
+  "description": "Deterministic harness smoke task used by CI; excluded from real-model matrices.",
+  "prompt": "Create solution.txt containing doctrine harness smoke. [[mcp:write_file {\"path\":\"solution.txt\",\"content\":\"doctrine harness smoke\"}]]",
+  "userIntent": "request",
+  "inScopePaths": ["solution.txt"],
+  "mockOnly": true,
+  "grade": {
+    "kind": "file-contains",
+    "path": "solution.txt",
+    "needle": "doctrine harness smoke"
+  },
+  "maxSteps": 4,
+  "timeoutMs": 60000
+}

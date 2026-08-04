@@ -316,6 +316,35 @@ test('round-trips a hook-originated turn origin + editedByUser', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+// The prompt's starting repository state (HEAD commit + dirty flag) is
+// captured at send time and must survive the spine round-trip untouched.
+test('round-trips a prompt startingCommit + dirty flag', () => {
+  const messages: Message[] = [
+    {
+      id: 'u1',
+      role: 'user',
+      content: 'fix the flaky test',
+      toolCalls: [],
+      startingCommit: 'a1b2c3d4e5f6',
+      dirty: true,
+      createdAt: 1,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
+test('a message with no captured git state round-trips without the fields', () => {
+  const messages: Message[] = [
+    { id: 'u1', role: 'user', content: 'no git repo here', toolCalls: [], createdAt: 1 },
+  ]
+  const { spine } = explodeThread(messages, hash)
+  const [line] = spine
+  ok(line)
+  strictEqual('startingCommit' in line, false)
+  strictEqual('dirty' in line, false)
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 // `hookCards` is display-only (decision 17): derived from the spine `hook_run`
 // lines at read time, never persisted via explode. A pure fold round-trip that
 // starts without hookCards must not invent any.

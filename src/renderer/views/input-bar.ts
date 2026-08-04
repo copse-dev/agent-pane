@@ -59,7 +59,16 @@ import {
   threadHasExportableContent,
 } from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
-import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
+import {
+  formatFooterUsageDetail,
+  formatFooterUsageSummary,
+  resolveFooterUsage,
+} from '@shared/usage/footer-usage-summary.ts'
+import {
+  buildFooterUsageTooltip,
+  type FooterUsageTooltipModel,
+} from '@shared/usage/footer-usage-tooltip.ts'
+import { createFooterUsagePopover } from './footer-usage-popover.ts'
 import { type ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
@@ -219,15 +228,21 @@ export function mountInputBar(
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
   checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
-  // Token usage — always shown once a thread has used tokens; click to expand
-  // into the in/out breakdown and cost.
-  const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
+  // Token usage — always shown once a thread has used tokens; hover (or focus)
+  // for the in/out breakdown and cost, like the context wheel next to it.
+  const usageBtn = el('span', {
+    class: 'footer-usage',
+    tabindex: '0',
+    role: 'note',
+    'aria-label': 'Token usage',
+  })
+  const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
   footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -278,8 +293,6 @@ export function mountInputBar(
     alwaysShowLabels: 'all',
     enableOverflow: true,
   })
-  let costVisible = false
-
   /** Concrete model for footer chrome — never the Settings-only best-value sentinel. */
   function footerChatModel(): string {
     const thread = getActiveThread(store)
@@ -368,15 +381,10 @@ export function mountInputBar(
       showErrorToast('Share trace failed', error)
     })
   }
-  usageBtn.addEventListener('click', () => {
-    costVisible = !costVisible
-    updateFooter()
-  })
-  contextWheel.root.addEventListener('click', () => {
-    if (!footerCompact.isCompact() || contextWheel.root.hidden || !usageSummaryText()) return
-    costVisible = !costVisible
-    updateFooter()
-  })
+  usageBtn.addEventListener('mouseenter', usagePopover.show)
+  usageBtn.addEventListener('mouseleave', usagePopover.hide)
+  usageBtn.addEventListener('focus', usagePopover.show)
+  usageBtn.addEventListener('blur', usagePopover.hide)
 
   const checkoutErrorText = el('span', { class: 'composer-checkout-error-text' })
   const checkoutRetryBtn = el(
@@ -851,7 +859,12 @@ export function mountInputBar(
     queueIndicator.textContent = count === 1 ? '1 queued' : `${String(count)} queued`
   }
 
-  function usageSummaryText(): string | null {
+  /** Footer label, the one-line detail (compact fallback) and the hover tooltip. */
+  function usageViews(): {
+    label: string
+    detail: string
+    tooltip: FooterUsageTooltipModel
+  } | null {
     const thread = getActiveThread(store)
     if (!thread) return null
     // Price against the concrete footer model so cost matches what the run uses.
@@ -864,19 +877,22 @@ export function mountInputBar(
       breakdown: lastBreakdown,
     })
     if (!display) return null
-    return formatFooterUsageSummary(display, {
-      costVisible,
-      model,
-      measuredUsage: thread.usage,
-      pricing: modelPricing,
-    })
+    // #1483 moved footer pricing onto the persisted catalog snapshot; all three
+    // views price from that same map.
+    const priced = { model, measuredUsage: thread.usage, pricing: modelPricing }
+    const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages })
+    return {
+      label: formatFooterUsageSummary(display),
+      detail: formatFooterUsageDetail(display, priced),
+      tooltip,
+    }
   }
 
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
     const acpContext = isAcpModel(footerChatModel())
-    const usageText = usageSummaryText()
+    const usage = usageViews()
     const compact = footerCompact.isCompact()
     const snapshot = thread?.contextSnapshot
     const snapshotVisible =
@@ -907,18 +923,23 @@ export function mountInputBar(
     // source then, and subagent/remote windows never produce a breakdown here.
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? usageText : null,
+      usageLine: tuckUsageIntoWheel ? (usage?.detail ?? null) : null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:
         acpContext && snapshot?.source === 'agent-reported' ? 'Reported by ACP agent' : null,
     })
     contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
-    if (!usageText) {
+    if (!usage) {
       usageBtn.hidden = true
+      usagePopover.render(null)
     } else {
       usageBtn.hidden = tuckUsageIntoWheel
-      usageBtn.textContent = usageText
+      usageBtn.textContent = usage.label
+      usageBtn.setAttribute('aria-label', usage.detail)
+      // Compact mode hides the counter and tucks usage into the wheel title —
+      // nothing left to hover, so drop the popover with it.
+      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip)
     }
     footerOverflow?.update()
     updateCheckoutControl()
@@ -1160,7 +1181,10 @@ export function mountInputBar(
         return
       }
     }
-    const branchStatus = await api.git.branchStatus(projectId, id)
+    const [branchStatus, promptState] = await Promise.all([
+      api.git.branchStatus(projectId, id),
+      api.git.promptState(projectId, id),
+    ])
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
@@ -1333,6 +1357,12 @@ export function mountInputBar(
       visibleText,
       imageUrls.length ? imageUrls : undefined,
       attachments.length ? attachments : undefined,
+      {
+        ...(promptState.startingCommit !== null
+          ? { startingCommit: promptState.startingCommit }
+          : {}),
+        dirty: promptState.dirty,
+      },
     )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
     // Durable record of the attachment: the reference block in this message can

@@ -47,6 +47,14 @@ export interface GitBranchStatus {
   pr: GitOpenPr | null
 }
 
+/** Repository snapshot captured at a prompt boundary (issue: spine prompt hash / dirty state). */
+export interface GitPromptState {
+  /** Full HEAD commit SHA the prompt was sent against, or null outside a repo / no commits yet. */
+  startingCommit: string | null
+  /** Whether the working tree had staged or unstaged changes at send time. */
+  dirty: boolean
+}
+
 /** Fallback when the repository has no configured default branch name. */
 export const DEFAULT_GIT_BRANCH = 'main'
 

@@ -24,6 +24,35 @@ import {
 import type { AppStore } from './store.ts'
 import type { Thread } from '@shared/types'
 
+describe('addMessage prompt provenance', () => {
+  it('stamps startingCommit and dirty onto the message when captured', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+
+    const messageId = addMessage(store, threadId, 'user', 'fix the bug', undefined, undefined, {
+      startingCommit: 'deadbeef',
+      dirty: true,
+    })
+
+    const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
+    assert.ok(message)
+    assert.equal(message.startingCommit, 'deadbeef')
+    assert.equal(message.dirty, true)
+  })
+
+  it('omits startingCommit and dirty when not passed', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+
+    const messageId = addMessage(store, threadId, 'user', 'no git info')
+
+    const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
+    assert.ok(message)
+    assert.equal('startingCommit' in message, false)
+    assert.equal('dirty' in message, false)
+  })
+})
+
 describe('panel persistence on new thread', () => {
   it('createThread keeps the side/bottom panel open and resets viewer content', () => {
     const store = createStore()

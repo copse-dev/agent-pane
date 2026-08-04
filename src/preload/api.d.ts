@@ -16,6 +16,7 @@ import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  GitPromptState,
   GitBranchInfo,
   SessionBackup,
   GhCliStatus,
@@ -75,6 +76,9 @@ export interface ApiClient {
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
+    createNewProject: (name: string, parentDir: string) => Promise<string>
+    pickParentDirectory: () => Promise<string | null>
+    getHomeDirectory: () => Promise<string>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
@@ -756,6 +760,8 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
+    promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
     listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
     getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>
