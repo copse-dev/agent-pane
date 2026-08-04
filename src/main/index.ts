@@ -105,6 +105,10 @@ import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import {
+  cancelAllSupervisedBackgroundProcesses,
+  installBackgroundProcessSupervisor,
+} from './services/exec/supervised-background-process.ts'
+import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
 } from './services/exec/background-completion-wake.ts'
@@ -313,6 +317,7 @@ app
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
+    disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
@@ -657,6 +662,7 @@ let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
 let disposeLongTaskWake: (() => void) | undefined
+let disposeBackgroundProcessSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 
@@ -667,7 +673,10 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()
   disposeTaskSupervisorEvents = undefined
+  await cancelAllSupervisedBackgroundProcesses()
   await taskSupervisor.shutdown()
+  disposeBackgroundProcessSupervisor?.()
+  disposeBackgroundProcessSupervisor = undefined
   disposeLongTaskWake?.()
   disposeLongTaskWake = undefined
   await disposeAllAcpSessions()

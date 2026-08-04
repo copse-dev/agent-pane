@@ -3,10 +3,12 @@ import { defineTool } from '@shared/types'
 import {
   getBackgroundProcessLogs,
   listBackgroundProcesses,
-  startBackgroundProcess,
-  stopBackgroundProcess,
   type BackgroundProcessInfo,
 } from '../services/exec/background-process.ts'
+import {
+  startSupervisedBackgroundProcess,
+  stopSupervisedBackgroundProcess,
+} from '../services/exec/supervised-background-process.ts'
 import { requestBackgroundCompletionWake } from '../services/exec/background-completion-wake.ts'
 import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
 import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
@@ -75,7 +77,10 @@ export const runBackgroundTool = defineTool({
 
     if (action === 'stop') {
       if (!id) return 'run_background stop requires an id.'
-      return stopBackgroundProcess(id) ? `Stopped ${id}.` : `No background task with id "${id}".`
+      const owner = requireThreadExecutionOwner()
+      return (await stopSupervisedBackgroundProcess(id, owner))
+        ? `Stopped ${id}.`
+        : `No background task with id "${id}".`
     }
 
     // action === 'start'
@@ -88,7 +93,7 @@ export const runBackgroundTool = defineTool({
     if (wake_on_completion === true && !turnTreeId) {
       return 'run_background cannot wake without an active human turn-tree.'
     }
-    const info = await startBackgroundProcess({
+    const info = await startSupervisedBackgroundProcess({
       command,
       allowPortBinding: allow_port_binding === true,
       owner,

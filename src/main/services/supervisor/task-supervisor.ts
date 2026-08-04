@@ -72,6 +72,7 @@ export interface TaskSupervisorDependencies {
 
 export type SupervisedEventSourceStart = (emit: (event: string) => void) => (() => void) | undefined
 export type SupervisedTaskListener = (task: SupervisedTaskMeta) => void
+export type SupervisedExternalTaskCanceller = (task: SupervisedTaskMeta) => void | Promise<void>
 export const DEFAULT_TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
 const MAX_TIMER_DELAY_MS = 2_147_000_000
 
@@ -124,6 +125,7 @@ export class TaskSupervisor {
   private readonly cronEnabled: () => boolean
   private readonly tasks = new Map<string, SupervisedTaskMeta>()
   private readonly handlers = new Map<string, SupervisedTaskHandler>()
+  private readonly externalCancellers = new Map<string, SupervisedExternalTaskCanceller>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout> | number>()
   private readonly eventWaiters = new Map<string, Set<string>>()
   private readonly eventSources = new Map<string, { references: number; dispose: () => void }>()
@@ -174,6 +176,19 @@ export class TaskSupervisor {
     this.handlers.set(kind, handler)
     return () => {
       if (this.handlers.get(kind) === handler) this.handlers.delete(kind)
+    }
+  }
+
+  registerExternalCanceller(kind: string, canceller: SupervisedExternalTaskCanceller): () => void {
+    if (kind.trim() === '') throw new Error('Supervised external task kind is required')
+    if (this.externalCancellers.has(kind)) {
+      throw new Error(`Supervised external task canceller "${kind}" is registered`)
+    }
+    this.externalCancellers.set(kind, canceller)
+    return () => {
+      if (this.externalCancellers.get(kind) === canceller) {
+        this.externalCancellers.delete(kind)
+      }
     }
   }
 
@@ -294,6 +309,79 @@ export class TaskSupervisor {
     return woken
   }
 
+  async adoptRunning(
+    input: EnqueueSupervisedTaskInput,
+    processHandle: string,
+  ): Promise<SupervisedTaskMeta> {
+    await this.start()
+    if (input.trigger.kind !== 'immediate') {
+      throw new Error('An adopted external task must use an immediate trigger')
+    }
+    if (processHandle.trim() === '') throw new Error('An adopted process handle is required')
+    const now = this.clock.now()
+    const queued = supervisedTaskMetaSchema.parse({
+      taskId: this.createId(),
+      projectId: input.projectId,
+      threadId: input.threadId,
+      ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
+      handler: input.handler,
+      provenance: input.provenance,
+      state: 'queued',
+      createdAt: now,
+      updatedAt: now,
+      trigger: input.trigger,
+      permissionSnapshot: input.permissionSnapshot,
+      reapproveOnWake: input.reapproveOnWake,
+      concurrencyClass: input.concurrencyClass,
+      ...(input.resourceBudget ? { resourceBudget: input.resourceBudget } : {}),
+      attempt: 0,
+      maxAttempts: input.maxAttempts,
+      ...(input.contentHash ? { contentHash: input.contentHash } : {}),
+      ...(input.turnId ? { turnId: input.turnId } : {}),
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+    })
+    await this.store.saveTransition(queued, auditEvent(queued, 'enqueue', 'queued', now))
+    this.tasks.set(taskKey(queued.projectId, queued.taskId), queued)
+    this.notify(queued)
+    return this.transition(
+      {
+        ...queued,
+        processHandleId: processHandle,
+        attempt: 1,
+        startedAt: now,
+      },
+      'running',
+      'start',
+    )
+  }
+
+  async completeExternal(
+    projectId: string,
+    taskId: string,
+    resultRef?: TaskResultRef,
+  ): Promise<SupervisedTaskMeta | null> {
+    const task = this.tasks.get(taskKey(projectId, taskId))
+    if (!task || task.state !== 'running') return task ?? null
+    return this.transition(
+      {
+        ...task,
+        ...(resultRef ? { resultRef } : {}),
+      },
+      'completed',
+      'complete',
+    )
+  }
+
+  async failExternal(
+    projectId: string,
+    taskId: string,
+    reason: string,
+  ): Promise<SupervisedTaskMeta | null> {
+    const task = this.tasks.get(taskKey(projectId, taskId))
+    if (!task || task.state !== 'running') return task ?? null
+    return this.transition(task, 'failed', 'fail', reason)
+  }
+
   get(projectId: string, taskId: string): SupervisedTaskMeta | null {
     return this.tasks.get(taskKey(projectId, taskId)) ?? null
   }
@@ -313,7 +401,17 @@ export class TaskSupervisor {
     this.removeEventWaiter(key, task)
     this.pending.delete(key)
     this.abortControllers.get(key)?.abort()
-    return this.transition(task, 'cancelled', 'cancel', 'cancel requested')
+    const externalCanceller = this.externalCancellers.get(task.handler)
+    if (externalCanceller) {
+      try {
+        await externalCanceller(task)
+      } catch (error) {
+        this.onError(error)
+      }
+    }
+    const current = this.tasks.get(key)
+    if (!current || isTerminalTaskState(current.state)) return current ?? null
+    return this.transition(current, 'cancelled', 'cancel', 'cancel requested')
   }
 
   async acknowledgeBlock(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null> {
