@@ -47,7 +47,6 @@ import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
-  runAgent,
   abortAgent,
   retryPostTurnReview,
   retryModelComparison,
@@ -71,7 +70,8 @@ import {
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
-import { clearAgentHistory, loadAgentHistory, saveAgentHistory } from './services/thread-store.ts'
+import { clearAgentHistory } from './services/thread-store.ts'
+import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -303,6 +303,8 @@ app
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
+    const agentDispatcher = new AgentDispatcher(agentHost, registry)
+
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -355,11 +357,6 @@ app
     // Register before async bootstrap (skills/MCP) so the renderer, which loads
     // concurrently and fires a context estimate on first paint, never races a
     // missing handler. The registry these close over is populated lazily below.
-    // In-memory provider history, keyed by projectId + threadId so a thread id
-    // is never treated as globally unique (issue #993).
-    const messageHistory = new Map<string, LLMMessage[]>()
-    const historyKey = (projectId: string, threadId: string): string => `${projectId}\0${threadId}`
-
     ipcMain.handle(
       'agent:previewCheckout',
       async (event, projectIdArg: unknown, choiceArg: unknown, modelArg?: unknown) => {
@@ -417,39 +414,11 @@ app
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        const {
-          userContent,
-          invokedSkills,
-          priorTodos,
-          workingBrief,
-          model,
-          turnTreeId,
-          continuationBudgetUsed,
-        } = parseAgentRunPayload(rawPrompt)
-
-        // Hydrate from the per-thread sidecar on first use after a restart
-        const cacheKey = historyKey(projectId, threadId)
-        if (!messageHistory.has(cacheKey)) {
-          messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
-        }
-
-        const priorMessages = messageHistory.get(cacheKey) ?? []
-        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
-        if (!executionContext) return
-        const result = await runWithThreadExecutionContext(executionContext, () =>
-          runWithActiveRunIdentity(threadId, () =>
-            runAgent(threadId, userContent, priorMessages, agentHost, registry, {
-              invokedSkills,
-              priorTodos,
-              ...(workingBrief !== undefined ? { workingBrief } : {}),
-              ...(model !== undefined ? { model } : {}),
-              ...(turnTreeId !== undefined ? { turnTreeId } : {}),
-              ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
-            }),
-          ),
-        )
-        messageHistory.set(cacheKey, result.messages)
-        await saveAgentHistory(projectId, threadId, result.messages)
+        await agentDispatcher.dispatch({
+          projectId,
+          threadId,
+          payload: parseAgentRunPayload(rawPrompt),
+        })
       },
     )
 
@@ -470,11 +439,7 @@ app
           throw new Error('agent:estimateContext: payload failed validation')
         }
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
-        const cacheKey = historyKey(projectId, threadId)
-        if (!messageHistory.has(cacheKey)) {
-          messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
-        }
-        const priorMessages = messageHistory.get(cacheKey) ?? []
+        const priorMessages = await agentDispatcher.history(projectId, threadId)
         return estimateContextBreakdown(registry, {
           draftText,
           invokedSkills,
@@ -491,7 +456,7 @@ app
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        messageHistory.delete(historyKey(projectId, threadId))
+        agentDispatcher.forgetHistory(projectId, threadId)
         await clearAgentHistory(projectId, threadId)
         clearRemoteAgentSession(threadId)
       },
@@ -536,13 +501,8 @@ app
         ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
       }
     }
-    const hydrateHistory = async (projectId: string, threadId: string): Promise<LLMMessage[]> => {
-      const cacheKey = historyKey(projectId, threadId)
-      if (!messageHistory.has(cacheKey)) {
-        messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
-      }
-      return messageHistory.get(cacheKey) ?? []
-    }
+    const hydrateHistory = (projectId: string, threadId: string): Promise<LLMMessage[]> =>
+      agentDispatcher.history(projectId, threadId)
 
     ipcMain.handle(
       'agent:retryReview',
