@@ -2,7 +2,7 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P4).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+**Status: Active (P4 complete).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
 P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
 main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
 without registering a production consumer yet. Implementation PRs should link here
@@ -184,7 +184,7 @@ dark-factory poller implementation, and changes to `run_background`.
 
 - [x] Durable one-shot event waiters and reference-counted event-source registration for
       CI/process events.
-- [ ] Dark-factory adaptive poller becomes a supervisor-backed job (still
+- [x] Dark-factory adaptive poller becomes a supervisor-backed job (still
       feature-flagged inert when off).
 - [x] Exit gate: two consumers cannot register duplicate pollers for the same fleet key.
 
