@@ -1,6 +1,12 @@
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import {
+  SPINE_SCHEMA_VERSION,
+  type MachineContinuationResult,
+  type SpineMachineContinuationLine,
+} from '@shared/threads/spine-schema.ts'
+import { randomUUID } from 'node:crypto'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
 import {
@@ -10,6 +16,7 @@ import {
 } from './thread-execution-context.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import {
+  appendMachineContinuation,
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
@@ -46,6 +53,13 @@ export interface AgentDispatcherDependencies {
   saveHistory: (projectId: string, threadId: string, messages: LLMMessage[]) => Promise<void>
   loadEpoch: (projectId: string, threadId: string) => Promise<AgentTurnEpoch | null>
   saveEpoch: (projectId: string, threadId: string, epoch: AgentTurnEpoch) => Promise<void>
+  appendMachineContinuation: (
+    projectId: string,
+    threadId: string,
+    line: SpineMachineContinuationLine,
+  ) => Promise<void>
+  now: () => number
+  createId: () => string
   prepareExecutionContext: (
     projectId: string,
     threadId: string,
@@ -66,6 +80,9 @@ const defaultDependencies: AgentDispatcherDependencies = {
   saveHistory: saveAgentHistory,
   loadEpoch: loadAgentTurnEpoch,
   saveEpoch: saveAgentTurnEpoch,
+  appendMachineContinuation,
+  now: Date.now,
+  createId: randomUUID,
   prepareExecutionContext: prepareThreadExecutionContext,
   run: runAgent,
 }
@@ -110,7 +127,12 @@ export class AgentDispatcher {
   dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {
     const operationKey = `${dispatchKey(request.projectId, request.threadId)}\0${request.operationId}`
     const existing = this.machineOperations.get(operationKey)
-    if (existing) return existing.then(() => 'duplicate')
+    if (existing) {
+      return existing.then(async (): Promise<MachineDispatchResult> => {
+        await this.recordMachineFinish(request, 'duplicate')
+        return 'duplicate'
+      })
+    }
 
     const running = this.executeMachine(request)
     this.machineOperations.set(operationKey, running)
@@ -182,21 +204,68 @@ export class AgentDispatcher {
         this.epochs.set(key, persisted)
       }
     }
-    if (epoch?.turnTreeId !== request.turnTreeId) return 'stale'
-    if (!canContinue(epoch.continuationUsed)) return 'budget-exhausted'
+    if (epoch?.turnTreeId !== request.turnTreeId) {
+      await this.recordMachineFinish(request, 'stale', epoch?.continuationUsed)
+      return 'stale'
+    }
+    if (!canContinue(epoch.continuationUsed)) {
+      await this.recordMachineFinish(request, 'budget-exhausted', epoch.continuationUsed)
+      return 'budget-exhausted'
+    }
 
     const nextEpoch = { ...epoch, continuationUsed: epoch.continuationUsed + 1 }
-    await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
-    this.epochs.set(key, nextEpoch)
-    await this.dispatchInternal({
-      ...request,
-      payload: {
-        ...request.payload,
-        turnTreeId: request.turnTreeId,
-        continuationBudgetUsed: nextEpoch.continuationUsed,
-      },
-    })
+    await this.recordMachineStart(request, nextEpoch.continuationUsed)
+    try {
+      await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
+      this.epochs.set(key, nextEpoch)
+      await this.dispatchInternal({
+        ...request,
+        payload: {
+          ...request.payload,
+          turnTreeId: request.turnTreeId,
+          continuationBudgetUsed: nextEpoch.continuationUsed,
+        },
+      })
+    } catch (error) {
+      await this.recordMachineFinish(request, 'failed', nextEpoch.continuationUsed)
+      throw error
+    }
+    await this.recordMachineFinish(request, 'completed', nextEpoch.continuationUsed)
     return 'completed'
+  }
+
+  private recordMachineStart(
+    request: MachineAgentDispatchRequest,
+    budgetUsed: number,
+  ): Promise<void> {
+    return this.dependencies.appendMachineContinuation(request.projectId, request.threadId, {
+      v: SPINE_SCHEMA_VERSION,
+      type: 'machine_continuation',
+      id: this.dependencies.createId(),
+      operationId: request.operationId,
+      turnTreeId: request.turnTreeId,
+      recordedAt: this.dependencies.now(),
+      budgetUsed,
+      phase: 'started',
+    })
+  }
+
+  private recordMachineFinish(
+    request: MachineAgentDispatchRequest,
+    result: MachineContinuationResult,
+    budgetUsed?: number,
+  ): Promise<void> {
+    return this.dependencies.appendMachineContinuation(request.projectId, request.threadId, {
+      v: SPINE_SCHEMA_VERSION,
+      type: 'machine_continuation',
+      id: this.dependencies.createId(),
+      operationId: request.operationId,
+      turnTreeId: request.turnTreeId,
+      recordedAt: this.dependencies.now(),
+      ...(budgetUsed !== undefined ? { budgetUsed } : {}),
+      phase: 'finished',
+      result,
+    })
   }
 
   private async dispatchInternal(request: AgentDispatchRequest): Promise<void> {
