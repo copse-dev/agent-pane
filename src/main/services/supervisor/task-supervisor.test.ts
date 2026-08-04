@@ -193,6 +193,60 @@ describe('TaskSupervisor', () => {
     )
   })
 
+  it('persists event waiters and delivers each matching task exactly once', async () => {
+    const waiting = persistedTask({
+      state: 'waiting',
+      trigger: { kind: 'event', event: 'ci:completed' },
+    })
+    const store = new MemoryTaskStore([waiting])
+    const supervisor = new TaskSupervisor({ store, clock: new FakeClock(500) })
+    let runs = 0
+    supervisor.registerHandler('test', (): Promise<SupervisedTaskHandlerResult> => {
+      runs++
+      return Promise.resolve({})
+    })
+
+    await supervisor.start()
+    assert.equal(await supervisor.emitEvent('ci:unrelated'), 0)
+    assert.equal(runs, 0)
+
+    assert.equal(await supervisor.emitEvent('ci:completed'), 1)
+    await supervisor.waitForIdle()
+    assert.equal(await supervisor.emitEvent('ci:completed'), 0)
+
+    assert.equal(runs, 1)
+    assert.equal(supervisor.get(waiting.projectId, waiting.taskId)?.state, 'completed')
+    assert.deepEqual(
+      store.audit.map((event) => event.action),
+      ['wake', 'start', 'complete'],
+    )
+  })
+
+  it('reference-counts event sources so a fleet key starts one poller', async () => {
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock: new FakeClock(500),
+    })
+    let starts = 0
+    let stops = 0
+    const start = (): (() => void) => {
+      starts++
+      return () => {
+        stops++
+      }
+    }
+
+    const releaseFirst = supervisor.registerEventSource('fleet:primary', start)
+    const releaseSecond = supervisor.registerEventSource('fleet:primary', start)
+    assert.equal(starts, 1)
+
+    releaseFirst()
+    releaseFirst()
+    assert.equal(stops, 0)
+    releaseSecond()
+    assert.equal(stops, 1)
+  })
+
   it('keeps identical task ids isolated by project ownership', async () => {
     const store = new MemoryTaskStore()
     const supervisor = new TaskSupervisor({

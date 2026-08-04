@@ -65,6 +65,8 @@ export interface TaskSupervisorDependencies {
   concurrencyClassLimits?: Readonly<Record<string, number>>
 }
 
+export type SupervisedEventSourceStart = (emit: (event: string) => void) => (() => void) | undefined
+
 const systemClock: TaskSupervisorClock = {
   now: () => Date.now(),
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
@@ -113,6 +115,8 @@ export class TaskSupervisor {
   private readonly tasks = new Map<string, SupervisedTaskMeta>()
   private readonly handlers = new Map<string, SupervisedTaskHandler>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout> | number>()
+  private readonly eventWaiters = new Map<string, Set<string>>()
+  private readonly eventSources = new Map<string, { references: number; dispose: () => void }>()
   private readonly pending = new Set<string>()
   private readonly active = new Map<string, Promise<void>>()
   private readonly abortControllers = new Map<string, AbortController>()
@@ -157,6 +161,32 @@ export class TaskSupervisor {
     }
   }
 
+  registerEventSource(sourceKey: string, start: SupervisedEventSourceStart): () => void {
+    if (sourceKey.trim() === '') throw new Error('Supervised event source key is required')
+    const existing = this.eventSources.get(sourceKey)
+    if (existing) {
+      existing.references++
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        this.releaseEventSource(sourceKey, existing)
+      }
+    }
+    const stop =
+      start((event) => {
+        void this.emitEvent(event).catch(this.onError)
+      }) ?? ((): void => {})
+    const registration = { references: 1, dispose: stop }
+    this.eventSources.set(sourceKey, registration)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.releaseEventSource(sourceKey, registration)
+    }
+  }
+
   start(): Promise<void> {
     this.startPromise ??= this.startInternal()
     return this.startPromise
@@ -164,12 +194,15 @@ export class TaskSupervisor {
 
   async enqueue(input: EnqueueSupervisedTaskInput): Promise<SupervisedTaskMeta> {
     await this.start()
-    if (input.trigger.kind === 'event' || input.trigger.kind === 'cron') {
-      throw new Error(`Trigger kind "${input.trigger.kind}" is not supported by the P2 supervisor`)
+    if (input.trigger.kind === 'cron') {
+      throw new Error(`Trigger kind "${input.trigger.kind}" is not supported by the supervisor`)
     }
     const now = this.clock.now()
     const state: TaskState =
-      input.trigger.kind === 'wake_at' && input.trigger.wakeAt > now ? 'waiting' : 'queued'
+      input.trigger.kind === 'event' ||
+      (input.trigger.kind === 'wake_at' && input.trigger.wakeAt > now)
+        ? 'waiting'
+        : 'queued'
     const task = supervisedTaskMetaSchema.parse({
       taskId: this.createId(),
       projectId: input.projectId,
@@ -197,6 +230,35 @@ export class TaskSupervisor {
     return task
   }
 
+  async emitEvent(event: string): Promise<number> {
+    await this.start()
+    if (event.trim() === '') throw new Error('Supervised task event name is required')
+    const waiters = this.eventWaiters.get(event)
+    if (!waiters || waiters.size === 0) return 0
+    this.eventWaiters.delete(event)
+    let woken = 0
+    for (const key of waiters) {
+      const task = this.tasks.get(key)
+      if (
+        !task ||
+        task.state !== 'waiting' ||
+        task.trigger.kind !== 'event' ||
+        task.trigger.event !== event
+      ) {
+        continue
+      }
+      try {
+        const queued = await this.transition(task, 'queued', 'wake', `event:${event}`)
+        this.enqueueReady(taskKey(queued.projectId, queued.taskId))
+        woken++
+      } catch (error) {
+        this.arm(task)
+        throw error
+      }
+    }
+    return woken
+  }
+
   get(projectId: string, taskId: string): SupervisedTaskMeta | null {
     return this.tasks.get(taskKey(projectId, taskId)) ?? null
   }
@@ -213,6 +275,7 @@ export class TaskSupervisor {
     if (!task) return null
     if (isTerminalTaskState(task.state)) return task
     this.clearTimer(key)
+    this.removeEventWaiter(key, task)
     this.pending.delete(key)
     this.abortControllers.get(key)?.abort()
     return this.transition(task, 'cancelled', 'cancel', 'cancel requested')
@@ -239,6 +302,9 @@ export class TaskSupervisor {
   async shutdown(): Promise<void> {
     this.stopping = true
     this.pending.clear()
+    this.eventWaiters.clear()
+    for (const source of this.eventSources.values()) source.dispose()
+    this.eventSources.clear()
     for (const [key] of this.timers) this.clearTimer(key)
     for (const controller of this.abortControllers.values()) controller.abort()
     if (this.startPromise) await this.startPromise
@@ -269,6 +335,7 @@ export class TaskSupervisor {
       ) {
         this.arm(task)
       }
+      if (task.state === 'waiting' && task.trigger.kind === 'event') this.arm(task)
     }
   }
 
@@ -276,6 +343,16 @@ export class TaskSupervisor {
     if (this.stopping || isTerminalTaskState(task.state) || task.state === 'blocked') return
     const key = taskKey(task.projectId, task.taskId)
     this.clearTimer(key)
+    this.removeEventWaiter(key, task)
+    if (task.trigger.kind === 'event') {
+      let waiters = this.eventWaiters.get(task.trigger.event)
+      if (!waiters) {
+        waiters = new Set()
+        this.eventWaiters.set(task.trigger.event, waiters)
+      }
+      waiters.add(key)
+      return
+    }
     if (task.trigger.kind === 'wake_at' && task.trigger.wakeAt > this.clock.now()) {
       const handle = this.clock.setTimeout(() => {
         this.timers.delete(key)
@@ -432,6 +509,24 @@ export class TaskSupervisor {
     if (timer === undefined) return
     this.clock.clearTimeout(timer)
     this.timers.delete(key)
+  }
+
+  private removeEventWaiter(key: string, task: SupervisedTaskMeta): void {
+    if (task.trigger.kind !== 'event') return
+    const waiters = this.eventWaiters.get(task.trigger.event)
+    waiters?.delete(key)
+    if (waiters?.size === 0) this.eventWaiters.delete(task.trigger.event)
+  }
+
+  private releaseEventSource(
+    sourceKey: string,
+    registration: { references: number; dispose: () => void },
+  ): void {
+    if (this.eventSources.get(sourceKey) !== registration) return
+    registration.references--
+    if (registration.references > 0) return
+    this.eventSources.delete(sourceKey)
+    registration.dispose()
   }
 }
 
