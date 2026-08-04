@@ -240,6 +240,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Choices inside a value group are agent-authored prose ("High", "Accept
+   edits"), so they read in the UI font rather than the model-id monospace. */
+.model-picker-option.is-group-choice {
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+}
 .model-picker-option-check {
   flex-shrink: 0;
 }

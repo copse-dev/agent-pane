@@ -269,7 +269,9 @@ export function mountModelPicker(
         'button',
         {
           type: 'button',
-          class: 'model-picker-option',
+          // `is-group-choice` drops the model list's monospace treatment: these
+          // are prose labels the agent wrote ("High"), not model identifiers.
+          class: 'model-picker-option is-group-choice',
           role: 'option',
           'data-value': choice.value,
           'aria-selected': choice.value === activeValue ? 'true' : 'false',
