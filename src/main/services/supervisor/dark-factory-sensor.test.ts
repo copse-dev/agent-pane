@@ -5,6 +5,7 @@ import { DARK_FACTORY_PACK_ID, darkFactoryPack } from '@copse/agent/packs/dark-f
 import type { LoadedSupervisedTasks, SupervisedTaskStore } from './task-store.ts'
 import type {
   SupervisedTaskAuditEvent,
+  SupervisedTaskArchive,
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
 import { TaskSupervisor, type SupervisedTaskHandlerResult } from './task-supervisor.ts'
@@ -27,6 +28,12 @@ class EmptyTaskStore implements SupervisedTaskStore {
   }
   saveTransition(_meta: SupervisedTaskMeta, _audit: SupervisedTaskAuditEvent): Promise<void> {
     return Promise.resolve()
+  }
+  compactTerminalTasks(): Promise<number> {
+    return Promise.resolve(0)
+  }
+  loadTaskArchive(): Promise<SupervisedTaskArchive[]> {
+    return Promise.resolve([])
   }
 }
 

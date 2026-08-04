@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type {
   SupervisedTaskAuditEvent,
+  SupervisedTaskArchive,
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
 import type { LongTask } from '../storage/long-task-tracker.ts'
@@ -37,6 +38,14 @@ class MemoryStore implements SupervisedTaskStore {
   saveTransition(meta: SupervisedTaskMeta, _audit: SupervisedTaskAuditEvent): Promise<void> {
     this.tasks.set(meta.taskId, meta)
     return Promise.resolve()
+  }
+
+  compactTerminalTasks(): Promise<number> {
+    return Promise.resolve(0)
+  }
+
+  loadTaskArchive(): Promise<SupervisedTaskArchive[]> {
+    return Promise.resolve([])
   }
 }
 
