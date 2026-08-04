@@ -30,6 +30,7 @@
 // Electron-free (execution-guidance rule 4): pure declarations. Host wiring (the
 // tool registration + live sync, and the pack-setting read) reads through the
 // shared `getDefaultPackRegistry()` / pack-service seams.
+import { BEST_INTELLECT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { definePack, type RegisteredPack } from './pack-manifest.ts'
 
 /** Stable pack id — the manifest name + the grouping key across contributions. */
@@ -46,12 +47,15 @@ export const ADVISOR_STRATEGY_TOOL_NAME = 'advisor'
 export const ADVISOR_MODEL_SETTING_ID = 'advisorModel'
 
 /**
- * Default advisor model when nothing is configured (a frontier Claude). Inlined
- * here rather than imported from the host `advisor-strategy.ts`
+ * Default advisor selection: the most capable model the user can reach. Stored
+ * as a *rule* rather than a pinned id (see `@copse/llm/dynamic-model.ts`) — an
+ * advisor exists to be stronger than the executor, and which model that is
+ * changes with the user's keys, plan window, and the models that ship next.
+ * Inlined here rather than imported from the host `advisor-strategy.ts`
  * (`DEFAULT_ADVISOR_MODEL`) because this module is Electron-free and must not
  * depend on `src/main`; the two are pinned equal by the pack contract test.
  */
-export const DEFAULT_ADVISOR_MODEL_ID = 'claude-opus-4-8'
+export const DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR
 
 /**
  * The `copse.advisor-strategy` pack: manifest declares the native tool
@@ -74,7 +78,7 @@ export const advisorStrategyPack: RegisteredPack = definePack(
         kind: 'model',
         title: 'Advisor model',
         description:
-          'Model the advisor consults, and the advisor side of the executor/advisor pairing hint. Any configured provider works; defaults to claude-opus-4-8. A model assigned to the “advisor” role still takes precedence.',
+          'How to choose the model the advisor consults — re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the “advisor” role still takes precedence.',
         default: DEFAULT_ADVISOR_MODEL_ID,
       },
     },
