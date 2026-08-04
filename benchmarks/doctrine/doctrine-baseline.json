@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "entries": {
+    "mock:mock": {
+      "recordedAt": "2026-07-30T00:05:06.975Z",
+      "repeats": 1,
+      "taskIds": ["mock-smoke"],
+      "arms": {
+        "full": {
+          "solveRate": 1,
+          "doctrinePassRate": 1,
+          "tokensPerSolve": 1050,
+          "tokensEstimated": true,
+          "perRulePassRate": {
+            "leadWithOutcome": 1,
+            "readableOverTerse": 1,
+            "questionVsRequest": 1,
+            "faithfulReporting": 1,
+            "scopeDiscipline": 1,
+            "noNarratingComments": 1
+          }
+        },
+        "omit-tools": {
+          "solveRate": 1,
+          "doctrinePassRate": 1,
+          "tokensPerSolve": 940,
+          "tokensEstimated": true,
+          "perRulePassRate": {
+            "leadWithOutcome": 1,
+            "readableOverTerse": 1,
+            "questionVsRequest": 1,
+            "faithfulReporting": 1,
+            "scopeDiscipline": 1,
+            "noNarratingComments": 1
+          }
+        }
+      }
+    },
+    "lmstudio:qwen/qwen3.6-35b-a3b": {
+      "recordedAt": "2026-07-30T00:13:57.661Z",
+      "repeats": 3,
+      "taskIds": ["off-by-one-sum", "question-node-version", "report-failing-test"],
+      "arms": {
+        "full": {
+          "solveRate": 1,
+          "doctrinePassRate": 1,
+          "tokensPerSolve": 1143,
+          "tokensEstimated": true,
+          "perRulePassRate": {
+            "leadWithOutcome": 1,
+            "readableOverTerse": 1,
+            "questionVsRequest": 1,
+            "faithfulReporting": 1,
+            "scopeDiscipline": 1,
+            "noNarratingComments": 1
+          }
+        },
+        "omit-tools": {
+          "solveRate": 1,
+          "doctrinePassRate": 1,
+          "tokensPerSolve": 1024,
+          "tokensEstimated": true,
+          "perRulePassRate": {
+            "leadWithOutcome": 1,
+            "readableOverTerse": 1,
+            "questionVsRequest": 1,
+            "faithfulReporting": 1,
+            "scopeDiscipline": 1,
+            "noNarratingComments": 1
+          }
+        }
+      }
+    }
+  }
+}
