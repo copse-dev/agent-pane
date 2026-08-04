@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
-import { stopAllBackgroundProcesses } from './background-process.ts'
+import { listBackgroundProcesses, stopAllBackgroundProcesses } from './background-process.ts'
 import {
   installBackgroundProcessSupervisor,
   runWithBackgroundProcessSupervisor,
@@ -137,6 +137,43 @@ describe('supervised background processes', () => {
       )
 
       await waitForState(scoped, task.taskId, 'completed')
+    } finally {
+      await scoped.shutdown()
+    }
+  })
+
+  it('terminates a child cancelled through a scoped supervisor', async () => {
+    const scopedRoot = join(root, 'scoped-cancel')
+    const scoped = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: scopedRoot }),
+    })
+    await scoped.start()
+    try {
+      const info = await runWithBackgroundProcessSupervisor(scoped, () =>
+        startSupervisedBackgroundProcess({
+          command: 'sleep 30',
+          cwd: process.cwd(),
+          waitMs: 10,
+          owner: OWNER,
+        }),
+      )
+      const task = scoped
+        .list(OWNER.projectId)
+        .find((candidate) => candidate.processHandleId === info.id)
+      assert.ok(task)
+
+      assert.equal(
+        await runWithBackgroundProcessSupervisor(scoped, () =>
+          stopSupervisedBackgroundProcess(info.id, OWNER),
+        ),
+        true,
+      )
+
+      assert.equal(scoped.get(OWNER.projectId, task.taskId)?.state, 'cancelled')
+      assert.equal(
+        listBackgroundProcesses(OWNER).some((process) => process.id === info.id),
+        false,
+      )
     } finally {
       await scoped.shutdown()
     }
