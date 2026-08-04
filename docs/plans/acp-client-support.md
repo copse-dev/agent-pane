@@ -2,13 +2,12 @@
 
 Tracking: [#264](https://github.com/copse-dev/agent-pane/issues/264)
 
-Status: **In progress.** The protocol core and the first app-wiring slice (model
-routing `acp:<id>`, settings-backed agent registry, picker entries, text
-streaming, `session/request_permission` → approval, `fs/read_text_file` and
-`fs/write_text_file` → workspace + diff-approval queue, `session/cancel` →
-abort) have landed. See [`docs/acp-agents.md`](../acp-agents.md) for setup and
-the remaining work (terminals, session resume, MCP forwarding, Settings UI) in
-issue #264, Track 1 (C2/C3).
+Status: **In progress.** The protocol core and app wiring have landed, including
+model routing, Settings, MCP/native-tool forwarding, streaming, permissions,
+filesystem handling, cancellation, and an in-memory resumable session pool.
+See [`docs/acp-agents.md`](../acp-agents.md) for current setup. Durable restart
+continuity, replay, and cross-client hand-off are now specified separately in
+[`acp-session-continuity.md`](acp-session-continuity.md).
 
 ## Goal
 
