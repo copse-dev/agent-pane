@@ -38,9 +38,10 @@ Prototype boundaries:
 - no webhook/event triggers;
 - no headless execution for an inactive project or closed renderer.
 
-Those lifecycle concerns belong to #1081's shared durable supervisor. A later
-implementation should keep the schedule/IPC shape as a consumer and replace the
-in-process ticker rather than grow a second task lifecycle.
+The minute clock is now a durable recurring task owned by #1081's shared supervisor;
+the schedule/IPC shape remains an Automations consumer. Pack disablement cancels the
+operational scheduler task while preserving schedule configuration; re-enabling creates
+one replacement owned by an enabled schedule's project.
 
 This is deliberately an **app-open automation**, not yet a background agent under the
 definitions in [`background-agents-capability-map.md`](background-agents-capability-map.md):

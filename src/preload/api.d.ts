@@ -11,6 +11,7 @@ import type {
   AutomationTriggerEvent,
 } from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
@@ -45,6 +46,7 @@ import type {
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 export type { DetectedAcpAgent }
 
@@ -83,6 +85,10 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    sharePageText: (webContentsId: number) => Promise<void>
+    shareScreenshot: (webContentsId: number) => Promise<void>
+    onShareText: (handler: (share: BrowserTextShare) => void) => () => void
+    onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPackTabRequest: (
       handler: (
         request: PackBrowserTabRequest,
@@ -160,6 +166,10 @@ export interface ApiClient {
         rememberLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
+        allowTurnTreeLease?: boolean
+        turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
+        turnTreeLeaseSubject?: string
       }) => void,
     ) => () => void
     onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -214,6 +224,7 @@ export interface ApiClient {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
+      grantScope?: 'once' | 'turn-tree',
     ) => Promise<void>
   }
   ask: {
@@ -681,6 +692,11 @@ export interface ApiClient {
       id: string,
       threadId: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+  }
+  supervisor: {
+    list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
+    cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
+    onChanged(callback: (projectId: string) => void): () => void
   }
   skills: {
     list: () => Promise<SkillSummary[]>

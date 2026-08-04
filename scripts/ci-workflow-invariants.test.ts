@@ -33,6 +33,28 @@ describe('ci.yml workflow invariants', () => {
     assert.match(e2eJob, /fromJSON\('\["self-hosted", "copse-e2e"\]'\)/)
   })
 
+  it('retains runner diagnostics when an e2e attempt loses its browser session', () => {
+    assert.match(workflow, /capture_e2e_runner_diagnostics\(\)/)
+    for (const cgroupFile of [
+      '/sys/fs/cgroup/memory.current',
+      '/sys/fs/cgroup/memory.peak',
+      '/sys/fs/cgroup/memory.events',
+      '/sys/fs/cgroup/pids.current',
+    ]) {
+      assert.match(workflow, new RegExp(cgroupFile.replaceAll('.', '\\.')))
+    }
+    assert.match(
+      workflow,
+      /capture_e2e_runner_diagnostics "\$attempt" "\$attempt_status" \|\| true/,
+      'each failed outer retry must capture diagnostics without masking the test failure',
+    )
+    assert.match(
+      workflow,
+      /if: failure\(\)[\s\S]{0,400}?path: e2e-failure-artifacts\//,
+      'failed shards must upload the runner diagnostics alongside browser artifacts',
+    )
+  })
+
   it('keeps the heavy tier off `develop` so day-to-day PRs stay cheap', () => {
     // The develop model only pays for itself if e2e/bench run once per PROMOTION
     // rather than once per PR. Both guards are easy to lose when someone edits an
