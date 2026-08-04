@@ -1,0 +1,30 @@
+{
+  "scenarioId": "synthetic-ab-autonomy",
+  "metrics": {
+    "approvals": 3,
+    "humanContinuations": 2,
+    "duplicateOperations": 1,
+    "duplicateSideEffects": 1,
+    "expectedCases": 24,
+    "completedCases": 1,
+    "behaviorFailures": 1,
+    "automationFailures": 0,
+    "blockedCases": 0,
+    "timedOutCases": 0,
+    "transportInterruptions": 1,
+    "recoveredInterruptions": 0,
+    "casesMissingArtifacts": 0
+  },
+  "causalClaimSupported": false,
+  "violations": [
+    "approval count 3 exceeds 1",
+    "human continuation count 2 exceeds 0",
+    "duplicate operations 1 exceeds 0",
+    "duplicate side effects 1 exceeds 0",
+    "completed 1 of 24 required matrix cases",
+    "recovered 0 of 1 transport interruptions",
+    "terminal report status is incomplete",
+    "causal claim is not supported by complete A/B evidence"
+  ],
+  "pass": false
+}
