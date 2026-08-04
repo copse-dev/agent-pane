@@ -354,6 +354,8 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    /** Opt into the session-scoped `run_background` tool. */
+    backgroundTasksEnabled?: boolean
     developerMode?: boolean
     /**
      * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
@@ -402,6 +404,7 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
+  if (options?.backgroundTasksEnabled) enabledPacks.push('copse.background-tasks')
   seedConfig.packDisabled =
     options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
   if (options?.packSources) {
