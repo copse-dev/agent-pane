@@ -2,6 +2,9 @@ name: CodeQL
 
 on:
   push:
+    # Deliberately still `main`, which is now TRUNK rather than the release
+    # branch — scanning every merge to trunk surfaces findings earlier than
+    # scanning `release` would. This is a behaviour change, not an oversight.
     branches: [main]
   schedule:
     - cron: '23 6 * * 1'
