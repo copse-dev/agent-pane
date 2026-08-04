@@ -154,6 +154,7 @@ export interface ApiClient {
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
         turnTreeLeaseSubject?: string
       }) => void,
     ) => () => void

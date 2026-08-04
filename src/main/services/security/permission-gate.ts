@@ -211,6 +211,7 @@ async function requestEscalationApproval(
         ? {
             allowTurnTreeLease: true,
             turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseDefault: false,
             turnTreeLeaseSubject: command,
           }
         : {}),
@@ -250,14 +251,14 @@ async function promptShell(
       type: 'shell',
       subject: SHELL_DECISION_SUBJECT,
       scope: 'sandbox',
-      // Not pre-ticked. A lease is a standing grant to re-run without asking
-      // again, so it is the user's affirmative act — the same posture the
-      // plaintext-key fallback takes (docs/security-review-ga.md L1). Defaulting
-      // it on would make "approve this command" silently mean "and nine more".
+      // A sandboxed approval includes a bounded replay lease by default. The
+      // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
+      // explicit because they weaken containment.
       ...(leaseIdentity
         ? {
             allowTurnTreeLease: true,
             turnTreeLeaseLabel: SANDBOX_REPLAY_LABEL,
+            turnTreeLeaseDefault: true,
             turnTreeLeaseSubject: command,
           }
         : {}),

@@ -32,6 +32,8 @@ export interface ApprovalRequest {
   allowTurnTreeLease?: boolean
   /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
   turnTreeLeaseLabel?: string
+  /** Whether approving also grants the bounded task lease without another user action. */
+  turnTreeLeaseDefault?: boolean
   /**
    * What the offered lease would actually cover — the exact command, not the
    * display label. Required whenever `allowTurnTreeLease` is true.
@@ -83,6 +85,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     comparisonModels: req.comparisonModels ?? null,
     allowTurnTreeLease: req.allowTurnTreeLease ?? false,
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
+    turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
     turnTreeLeaseSubject: req.turnTreeLeaseSubject ?? '',
   })
 }
