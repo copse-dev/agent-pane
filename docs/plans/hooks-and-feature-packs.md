@@ -70,8 +70,9 @@ revisiting this document, not silently diverging in an implementation PR.
 5. **One auto-continuation budget.** A single counter per **turn tree** (everything
    descending from one human-originated submission). The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
-   follow-ups, post-turn remediation cycles, pre-review todo attempts, and todo-closeout
-   turns. **In-loop nudges do not count** (truncation-continue, finalize, loop, and
+   follow-ups, bounded background-task completion wakes, post-turn remediation cycles,
+   pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
+   (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
    invocation, already bounded by `maxSteps` / `DEFAULT_MAX_LLM_CALLS` and the run
    deadline). Hard cap default 5; existing per-mechanism caps (todo closeout 3,
@@ -88,6 +89,13 @@ revisiting this document, not silently diverging in an implementation PR.
    entirely; only an explicit human action (send-now / release) submits it, and that
    human action starts a fresh turn tree with a reset budget. Plus a visible thread
    note. `COPSE_HOOK_DEPTH` env guard prevents hook→Copse recursion.
+   A host-native background completion wake has no editable hook message to queue:
+   the main-process dispatcher waits for the owning foreground run to release the
+   thread, then grants at dispatch time against the latest epoch and spent count it
+   observed from renderer dispatches. A stale or exhausted wake never runs; its
+   completed process state and logs remain available for explicit human inspection.
+   The background operation id deduplicates delivery, so recovery cannot execute the
+   same machine turn twice.
 6. **Spine recording is always-on.** Every hook execution writes a `hook_run` event to
    the thread spine (event name, hook id, emitting step, wall-clock duration, exit code,
    `parse_ok`, normalized decision) with raw stdout **and stderr** as blobs (stderr is
@@ -198,6 +206,9 @@ revisiting this document, not silently diverging in an implementation PR.
     back door), and a **stale `haltRun` is a no-op**, recorded in the spine as
     suppressed. Only outputs from the _current_ turn tree may abort or auto-submit;
     everything stale waits for a human.
+    Host-native background completion wakes obey the same epoch floor in the
+    main-process dispatcher: completion from an older turn tree is suppressed and
+    cannot dispatch into the current conversation.
 17. **Disabling a pack never breaks history.** Transcript rendering resolves from
     shipped renderer code + spine data, **never from live registration state**. Opening
     an old conversation shows a disabled pack's tool calls, cards, and panels exactly as

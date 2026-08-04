@@ -145,6 +145,31 @@ describe('ask_user dialog (component)', () => {
     assert.deepEqual(harness.responses, [{ id: 'q2', answers: ['SQLite'] }])
   })
 
+  it('renders commands as sanitized Markdown in questions and quick picks', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-markdown',
+      questions: [
+        {
+          question: 'Run `claude /login`, then try again.',
+          options: ['Run `claude /login`'],
+        },
+      ],
+    })
+
+    const question = document.querySelector<HTMLElement>('.ask-user-question')
+    const option = document.querySelector<HTMLButtonElement>('.ask-user-option')
+    assert.ok(question)
+    assert.ok(option)
+    assert.equal(question.querySelector('code')?.textContent, 'claude /login')
+    assert.equal(question.textContent.includes('`'), false)
+    assert.equal(option.querySelector('code')?.textContent, 'claude /login')
+    assert.equal(option.textContent.includes('`'), false)
+    option.click()
+    assert.equal(at(inputs(), 0).value, 'Run claude /login')
+  })
+
   it('collects one answer per question for a multi-question ask', () => {
     const { api, harness } = stubApi()
     mount(api)
