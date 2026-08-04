@@ -1,4 +1,4 @@
-name: Promote develop to main
+name: Promote main to release
 
 # `develop` is the integration branch; `main` is the release-ready branch.
 # Open one daily promotion PR and let the main ruleset's required `CI Passed`
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: promote-develop-to-main
+  group: promote-main-to-release
   cancel-in-progress: false
 
 permissions:
@@ -41,8 +41,8 @@ jobs:
           github-token: ${{ secrets.SYNC_PR_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const base = 'main';
-            const head = 'develop';
+            const base = 'release';
+            const head = 'main';
 
             // A promotion is complete only when every develop commit is an
             // ancestor of main. Comparing trees would mistake a squash merge
@@ -76,13 +76,13 @@ jobs:
                 repo,
                 base,
                 head,
-                title: 'Promote develop to main',
+                title: 'Promote main to release',
                 body: [
-                  'Daily automated promotion of `develop` to the release-ready `main` branch.',
+                  'Daily automated promotion of `main` to the release-ready `release` branch.',
                   '',
                   'The repository ruleset requires the full `CI Passed` gate. This PR will',
                   'merge automatically when that gate is green; failures leave it open',
-                  'until the underlying issue is fixed on `develop`.',
+                  'until the underlying issue is fixed on `main`.',
                 ].join('\n'),
               });
               pull = created.data;
