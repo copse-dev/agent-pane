@@ -910,6 +910,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
+    promptState: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:promptState', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>
       ipcRenderer.invoke('git:checkoutBranch', projectId, threadId, branch),
     listBranches: (projectId: string, threadId: string) =>
