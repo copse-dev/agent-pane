@@ -33,11 +33,6 @@ export interface AcpOptionGroup {
  */
 export const ACP_MODE_GROUP_ID = '__acp_session_mode__'
 
-/** Label for the current value of a group, falling back to the raw value id. */
-export function acpOptionValueLabel(group: AcpOptionGroup): string {
-  return group.choices.find((choice) => choice.value === group.currentValue)?.label ?? ''
-}
-
 /**
  * The selectors a configured agent offers, from its probe cache. Options with
  * fewer than two choices are dropped (nothing to pick), as is the `model`
