@@ -291,13 +291,36 @@ export function movePendingUserMessagesToEnd(
   return alreadyInOrder ? messages : nextMessages
 }
 
-export function resumePendingQueues(store: AppStore, api: ApiClient): void {
+async function runningThreadIdsOrNone(api: ApiClient): Promise<string[]> {
+  try {
+    return await api.agent.runningThreadIds()
+  } catch {
+    return []
+  }
+}
+
+export async function resumePendingQueues(store: AppStore, api: ApiClient): Promise<void> {
+  // A crash mid-run can leave status stuck at running with no live main-process
+  // run — but the main process is long-lived and may genuinely still be
+  // streaming a thread the renderer is only now (re)loading (e.g. a window
+  // reload, or switching back to a project while its run kept going). Ask
+  // which threads actually have a live run before trusting the persisted flag,
+  // so a real run's status isn't flipped to idle out from under it, hiding its
+  // stop control while it keeps producing output (#1406).
+  //
+  // Asking is best-effort: this runs behind `void` at both call sites, so an IPC
+  // rejection here would otherwise strand the whole resume — no queue drained and
+  // no stale `queuePaused` cleared — on an unhandled rejection nothing observes.
+  // Treating an unavailable answer as "nothing is running" degrades to the
+  // pre-#1406 behaviour (trust the persisted flag), which is the safe direction:
+  // a thread wrongly reset to idle still shows its queue, where one wrongly left
+  // running would be stuck with no way back.
+  const reallyRunning = new Set(await runningThreadIdsOrNone(api))
   for (const thread of store.getState().threads) {
     // A fresh session has no open inline editors, so a persisted pause is stale.
     if (thread.queuePaused) setQueuePaused(store, thread.id, false)
-    // A crash mid-run can leave status stuck at running with no live main-process run.
     let status = thread.status
-    if (status === 'running') {
+    if (status === 'running' && !reallyRunning.has(thread.id)) {
       setThreadStatus(store, thread.id, 'idle')
       status = 'idle'
     }
