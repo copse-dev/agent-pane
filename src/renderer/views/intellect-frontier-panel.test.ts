@@ -11,7 +11,11 @@ import {
   positionFrontierTooltip,
   renderCompositeStrip,
   renderFrontierSvg,
+  TOOLTIP_HIDE_GRACE_MS,
+  unpricedTooltipContent,
+  unscoredTooltipContent,
 } from './intellect-frontier-panel.ts'
+import { clearResolvedModelCards, setResolvedModelCard } from './model-card-cache.ts'
 import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import type { ExtraProvider, ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
@@ -760,6 +764,75 @@ describe('plan coverage on the map', () => {
     assert.match(card.textContent, /Weekly Fable plan limit reached/)
     assert.match(card.textContent, /plotted at its off-plan price/)
   })
+
+  it('tooltip links the vendor-published card, opening outside the app', () => {
+    // Only a RESOLVED card renders — the panel probes the URL before showing it.
+    clearResolvedModelCards()
+    setResolvedModelCard('claude-fable-5', {
+      url: 'https://www.anthropic.com/transparency',
+      title: 'Anthropic transparency hub',
+      publisher: 'Anthropic',
+      kind: 'index',
+      origin: 'curated',
+    })
+    const p: FrontierPoint = {
+      id: 'claude-fable-5',
+      intellect: 60,
+      costPerMTok: 12,
+      onFrontier: true,
+    }
+    const link = pointTooltipContent(p).querySelector('a.tt-card-link')
+    assert.ok(link, 'expected a model-card link in the hover card')
+    assert.equal(link.getAttribute('href'), 'https://www.anthropic.com/transparency')
+    // target=_blank is what routes the click through the web-contents lockdown
+    // to shell.openExternal instead of navigating the renderer.
+    assert.equal(link.getAttribute('target'), '_blank')
+    assert.equal(link.getAttribute('rel'), 'noopener noreferrer')
+  })
+
+  it('tooltip shows no card row while a card is still unresolved', () => {
+    clearResolvedModelCards()
+    const p: FrontierPoint = {
+      id: 'claude-fable-5',
+      intellect: 60,
+      costPerMTok: 12,
+      onFrontier: true,
+    }
+    // Nothing resolved yet: no link, rather than one that might 404.
+    assert.equal(pointTooltipContent(p).querySelector('a.tt-card-link'), null)
+  })
+
+  it('tooltip shows no card row for a model with no sourced card', () => {
+    const p: FrontierPoint = {
+      id: 'lmstudio:some-unsourced-local-model',
+      intellect: 30,
+      costPerMTok: 0,
+      onFrontier: true,
+      local: true,
+    }
+    const content = pointTooltipContent(p)
+    assert.equal(content.querySelector('a.tt-card-link'), null)
+    assert.doesNotMatch(content.textContent, /Card/)
+  })
+
+  it('gutter tooltips carry the card link too', () => {
+    clearResolvedModelCards()
+    setResolvedModelCard('claude-opus-4-8', {
+      url: 'https://www.anthropic.com/transparency',
+      title: 'Anthropic transparency hub',
+      publisher: 'Anthropic',
+      kind: 'index',
+      origin: 'curated',
+    })
+    const unpriced = unpricedTooltipContent({
+      id: 'claude-opus-4-8',
+      intellect: 56,
+      estimated: false,
+    })
+    assert.ok(unpriced.querySelector('a.tt-card-link'))
+    const unscored = unscoredTooltipContent({ id: 'claude-opus-4-8', costPerMTok: 9 })
+    assert.ok(unscored.querySelector('a.tt-card-link'))
+  })
 })
 
 describe('positionFrontierTooltip', () => {
@@ -800,6 +873,52 @@ describe('positionFrontierTooltip', () => {
     tooltip.show(content, new MouseEvent('mouseenter', { clientX: 390, clientY: 120 }))
     assert.equal(tipEl.hidden, false)
     assert.equal(tipEl.style.left, '98px')
+
+    container.remove()
+  })
+
+  it('keeps the hover card up long enough to reach its model-card link', async () => {
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: (): DOMRect => new DOMRect(0, 0, 400, 300),
+    })
+    document.body.append(container)
+    const tooltip = createTooltipLayer(container)
+    const tipEl = container.querySelector('.frontier-tooltip')
+    assert.ok(tipEl instanceof HTMLElement)
+
+    tooltip.show(document.createElement('div'), new MouseEvent('mouseenter'))
+    // Leaving the point starts the grace period rather than hiding outright —
+    // otherwise the pointer could never cross the gap to click the link.
+    tooltip.hide()
+    assert.equal(tipEl.hidden, false)
+
+    // Pointer lands on the card within the grace period: it stays open.
+    tipEl.dispatchEvent(new MouseEvent('mouseenter'))
+    await new Promise((r) => setTimeout(r, TOOLTIP_HIDE_GRACE_MS + 30))
+    assert.equal(tipEl.hidden, false)
+
+    // Leaving the card itself closes immediately — no lingering overlay.
+    tipEl.dispatchEvent(new MouseEvent('mouseleave'))
+    assert.equal(tipEl.hidden, true)
+
+    container.remove()
+  })
+
+  it('hides the hover card when the grace period lapses untouched', async () => {
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: (): DOMRect => new DOMRect(0, 0, 400, 300),
+    })
+    document.body.append(container)
+    const tooltip = createTooltipLayer(container)
+    const tipEl = container.querySelector('.frontier-tooltip')
+    assert.ok(tipEl instanceof HTMLElement)
+
+    tooltip.show(document.createElement('div'), new MouseEvent('mouseenter'))
+    tooltip.hide()
+    await new Promise((r) => setTimeout(r, TOOLTIP_HIDE_GRACE_MS + 30))
+    assert.equal(tipEl.hidden, true)
 
     container.remove()
   })
