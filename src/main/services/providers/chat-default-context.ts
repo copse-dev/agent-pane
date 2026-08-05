@@ -1,8 +1,9 @@
 // Decides whether the user has *any* available chat model with a usable context
-// window. Powers the startup warning: local servers (LM Studio et al.) reload
-// models at a tiny default context after a reboot, and if that's the only thing
-// configured, every chat/agent run over-trims history. We surface a one-time
-// advisory pointing at the fix rather than silently degrading.
+// window. Reported by the `/checkup` diagnostics tool: local servers (LM Studio
+// et al.) reload models at a tiny default context after a reboot, and if that's
+// the only thing configured, every chat/agent run over-trims history. (The
+// user-facing nudge for it lives on the composer, where a model choice meets a
+// thread of known size — see context-window-advice.ts `contextFitAdvice`.)
 //
 // "Available" mirrors the model picker's own gating (see model-options.ts):
 //   - cloud catalog models, only when their provider key is configured;

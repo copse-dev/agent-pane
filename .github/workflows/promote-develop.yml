@@ -1,9 +1,9 @@
-name: Promote develop to main
+name: Promote main to release
 
-# `develop` is the integration branch; `main` is the release-ready branch.
+# `main` is the integration branch (trunk); `release` is the release-ready branch.
 # Open one daily promotion PR and let the main ruleset's required `CI Passed`
 # check decide when it is safe to merge. A red run leaves the PR open for a
-# human to diagnose; a later fix on develop re-runs the promotion CI.
+# human to diagnose; a later fix on `main` re-runs the promotion CI.
 on:
   schedule:
     # After the 06:17 UTC nightly full run, and off the top of the hour to avoid
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: promote-develop-to-main
+  group: promote-main-to-release
   cancel-in-progress: false
 
 permissions:
@@ -41,11 +41,11 @@ jobs:
           github-token: ${{ secrets.SYNC_PR_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const base = 'main';
-            const head = 'develop';
+            const base = 'release';
+            const head = 'main';
 
-            // A promotion is complete only when every develop commit is an
-            // ancestor of main. Comparing trees would mistake a squash merge
+            // A promotion is complete only when every `main` commit is an
+            // ancestor of `release`. Comparing trees would mistake a squash merge
             // for a complete promotion even though it discards that ancestry.
             const comparison = await github.request(
               'GET /repos/{owner}/{repo}/compare/{basehead}',
@@ -76,13 +76,13 @@ jobs:
                 repo,
                 base,
                 head,
-                title: 'Promote develop to main',
+                title: 'Promote main to release',
                 body: [
-                  'Daily automated promotion of `develop` to the release-ready `main` branch.',
+                  'Daily automated promotion of `main` to the release-ready `release` branch.',
                   '',
                   'The repository ruleset requires the full `CI Passed` gate. This PR will',
                   'merge automatically when that gate is green; failures leave it open',
-                  'until the underlying issue is fixed on `develop`.',
+                  'until the underlying issue is fixed on `main`.',
                 ].join('\n'),
               });
               pull = created.data;

@@ -56,6 +56,13 @@
   --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f7f7f7);
   --bg-active: #0060c0;
   --bg-selected: color-mix(in srgb, var(--accent) 13%, var(--bg-elevated));
+  /* The dark highlight fills invert on white: a light wash carrying near-black
+     text. --highlight-current-bg cannot follow --warning here (light's warning
+     is a dark brown, which would bury the match text). */
+  --selection-bg: #b0d3ff;
+  --selection-text: #10243b;
+  --highlight-current-bg: #ffcc33;
+  --highlight-current-text: #241a00;
   /* The dark-theme greys read as low-contrast smudges on white — every text
      tier and the status colours need their own light values. */
   --text-primary: #333333;

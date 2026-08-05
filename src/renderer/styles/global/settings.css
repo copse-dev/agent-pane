@@ -1028,7 +1028,13 @@ dialog.settings-overlay::backdrop {
 .frontier-tooltip {
   position: absolute;
   z-index: 30;
-  pointer-events: none;
+  /*
+   * Reachable, not just readable: the card carries a link to the model's
+   * vendor-published system card, so the pointer has to be able to land on it.
+   * createTooltipLayer() holds the card open for a grace period after the
+   * pointer leaves its point so the gap between the two can be crossed.
+   */
+  pointer-events: auto;
   width: max-content;
   max-width: 360px;
   padding: 8px 10px;
@@ -1061,6 +1067,12 @@ dialog.settings-overlay::backdrop {
   margin-top: 6px;
   color: var(--text-secondary);
   font-style: italic;
+}
+.frontier-tooltip .tt-card-link {
+  color: var(--link);
+}
+.frontier-tooltip .tt-card-link:hover {
+  color: var(--link-hover);
 }
 .frontier-btn {
   padding: 2px 10px;
@@ -1641,6 +1653,14 @@ dialog.settings-overlay::backdrop {
   font-size: 11px;
   color: var(--text-muted);
 }
+/* What the selected rule names right now — the one thing a rule hides that a
+   pinned model id showed. Hidden when the stored value is already concrete. */
+.pack-setting-resolved {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
 .pack-setting-input {
   justify-self: end;
 }
@@ -1686,6 +1706,17 @@ dialog.settings-overlay::backdrop {
 .parallel-search-clear-btn:disabled {
   cursor: default;
   opacity: 0.55;
+}
+/* Why a credential-gated pack's toggle is inert (or on-but-inactive). Warning
+   tinted: the pack cannot contribute its tool in this state. */
+.pack-credential-gate {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warning, #d29922);
+}
+.pack-toggle-input:disabled + .toggle-switch-track {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* First-party level-3 detail for copse.automations. It lives inside the pack

@@ -1,12 +1,12 @@
 name: CI
 on:
   push:
-    # `develop` is the default branch and the integration target: day-to-day PRs
-    # land there under the LIGHT tier. `main` only ever receives promotion PRs
-    # from `develop`, and those run the FULL tier — so `main` is always in a
+    # `main` is the default branch and the integration target: day-to-day PRs
+    # land there under the LIGHT tier. `release` only ever receives promotion
+    # PRs from `main`, and those run the FULL tier — so `release` is always in a
     # state a release can be cut from. See the heavy-tier guards on `bench` /
     # `e2e` below, and docs/testing-strategy.md.
-    branches: [main, develop]
+    branches: [release, main]
     # A release tag must receive this exact same aggregate gate before the
     # publishing workflow will package it. See release-mac.yml's preflight.
     tags: ['v*']
@@ -22,9 +22,9 @@ on:
     # never dispatch those jobs and `CI Passed` would sit on the draft's
     # heavy-jobs-skipped result forever.
     types: [opened, synchronize, reopened, labeled, ready_for_review]
-    # No `branches:` filter — PRs into `develop` and the promotion PRs into
-    # `main` both run this workflow. Which TIER they get is decided per job by
-    # `github.base_ref`, not here, so a PR retargeted from `develop` to `main`
+    # No `branches:` filter — PRs into `main` and the promotion PRs into
+    # `release` both run this workflow. Which TIER they get is decided per job by
+    # `github.base_ref`, not here, so a PR retargeted from `main` to `release`
     # picks up the full tier on its next sync without touching this file.
   # Nightly full e2e on GitHub-hosted runners — the comprehensive safety net.
   # PR/push runs are oracle-thinned on self-hosted (see the e2e job), so the
@@ -34,8 +34,8 @@ on:
     - cron: '17 6 * * *'
   # NOTE: there is deliberately no `merge_group` trigger. GitHub's merge queue
   # requires Enterprise Cloud for private repositories and this org is on Team,
-  # so the trigger could never fire. The `develop` -> `main` promotion flow is
-  # the stand-in: `develop` absorbs the day's merges under the light tier, and
+  # so the trigger could never fire. The `main` -> `release` promotion flow is
+  # the stand-in: `main` absorbs the day's merges under the light tier, and
   # the promotion PR runs the full tier once for the whole batch. What we give
   # up versus a real queue is automatic bisection — a red promotion names a
   # batch, not a commit — which is why promotions should be frequent enough to
@@ -235,13 +235,13 @@ jobs:
               exit 0
             fi
           fi
-          # A promotion is the release gate for the whole develop batch. Always
+          # A promotion is the release gate for the whole trunk batch. Always
           # exercise the complete e2e suite here rather than allowing the oracle
           # to thin or skip it. Keep this after the screenshot-only escape above:
           # the bot's reference-only follow-up has already inherited a successful
           # e2e run from its parent and must not start a render/commit loop.
-          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then
-            echo "PR targets main -> full e2e suite (promotion gate)"
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then
+            echo "PR targets release -> full e2e suite (promotion gate)"
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -455,21 +455,21 @@ jobs:
   bench:
     needs: precheck
     if: >-
-      (github.event_name != 'push' || github.ref != 'refs/heads/develop') &&
+      (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
-       github.base_ref == 'main' ||
+       github.base_ref == 'release' ||
        contains(github.event.pull_request.labels.*.name, 'ci-full')) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
-    # HEAVY TIER. Runs on promotion PRs (base `main`), on pushes to `main`, on
-    # the nightly schedule and on release tags — not on the day-to-day PRs into
-    # `develop`, and not on pushes to `develop`. bench fetches gortex and runs
+    # HEAVY TIER. Runs on promotion PRs (base `release`), on pushes to `release`,
+    # on the nightly schedule and on release tags — not on the day-to-day PRs into
+    # `main`, and not on pushes to `main`. bench fetches gortex and runs
     # the semantic-search + agent gates; paying that per PR when ~20 land a day
-    # is the cost the develop model exists to amortise. The `ci-full` label
-    # forces it on a develop-targeted PR that genuinely wants the signal.
+    # is the cost the trunk/promotion model exists to amortise. The `ci-full`
+    # label forces it on a trunk-targeted PR that genuinely wants the signal.
     # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
     # signal has no consumer until the PR is promoted — and `ready_for_review`
     # (see the trigger block) dispatches the full tier the moment it is. The
@@ -672,11 +672,11 @@ jobs:
     needs: [build, precheck]
     if: >-
       needs.precheck.outputs.e2e_shard_total != '0' &&
-      (github.event_name != 'push' || github.ref != 'refs/heads/develop') &&
+      (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
-       github.base_ref == 'main' ||
+       github.base_ref == 'release' ||
        contains(github.event.pull_request.labels.*.name, 'ci-full') ||
        contains(github.event.pull_request.labels.*.name, 'update-screenshots')) &&
       (github.event_name != 'pull_request' ||
@@ -685,12 +685,12 @@ jobs:
     # Zero-shard plans (oracle mode=skip / empty subset) skip this job via
     # `e2e_shard_total != 0` — an empty matrix is a GHA **failure**, not a skip
     # (see the precheck shards step).
-    # HEAVY TIER, same rule as `bench` above: promotion PRs (base `main`),
-    # pushes to `main`, the nightly schedule and release tags. PRs into
-    # `develop` skip 8 Electron shards apiece, which is where most of the
-    # runner starvation came from. Two escape hatches on a develop-targeted PR:
+    # HEAVY TIER, same rule as `bench` above: promotion PRs (base `release`),
+    # pushes to `release`, the nightly schedule and release tags. PRs into
+    # `main` skip 8 Electron shards apiece, which is where most of the
+    # runner starvation came from. Two escape hatches on a trunk-targeted PR:
     # `ci-full` for the whole heavy tier, and `update-screenshots` for this job
-    # specifically — without the latter that label would be inert on develop
+    # specifically — without the latter that label would be inert on trunk
     # PRs, since the screenshot commit is produced by the e2e run.
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
@@ -742,7 +742,7 @@ jobs:
       # failing shard, in one run.
       #
       # `ci-full` is the exception, because there the tradeoff inverts. That label
-      # already means "run the whole heavy tier on a develop PR" — it is opt-in and
+      # already means "run the whole heavy tier on a trunk PR" — it is opt-in and
       # rare, and it is used precisely when the e2e signal is what's wanted. With
       # independent reds (not a whole-run problem) fail-fast surfaces exactly one
       # per run: #1425 spent five runs learning about six specs, cancelling six
@@ -1031,6 +1031,14 @@ jobs:
       # True when this job pushed a new commit, i.e. the SHA the rest of CI
       # gated is no longer the branch tip. Consumed by `ci-passed`.
       superseded: ${{ steps.push.outputs.superseded }}
+    env:
+      # The branch this PR is actually based on — `main` for day-to-day PRs,
+      # `release` for a promotion PR. Every reconciliation below targets it, so
+      # both tiers reconcile against the branch they will merge into and a future
+      # branch rename cannot silently point this job at the wrong one. This job
+      # only runs on `pull_request` (see the `if:` above), so `base_ref` is
+      # always populated.
+      BASE_REF: ${{ github.base_ref }}
     steps:
       # The PR can merge while this trailing job is still queued (auto-merge fires
       # the moment the e2e gate goes green), and GitHub then deletes the head
@@ -1091,8 +1099,8 @@ jobs:
       # filter-screenshots.mts pixel-compares each changed PNG against its committed
       # baseline and reverts the ones whose difference is below the noise threshold
       # (clearly-different shots stay). It also reverts CONTESTED shots — a baseline
-      # deliberately committed on this branch by a non-bot author, or moved on main
-      # since the merge-base — so CI never overrides deliberate work (see the job
+      # deliberately committed on this branch by a non-bot author, or moved on the
+      # base branch since the merge-base — so CI never overrides deliberate work (see the job
       # comment above). The reverted shots are reported back so the comment step can
       # offer them for manual review. Needs Node + pixelmatch/pngjs only — install
       # just those two into node_modules (an isolated, scripts-off install, ~0.3s)
@@ -1106,13 +1114,16 @@ jobs:
         id: filter
         env:
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+          # filter-screenshots.mts defaults this to `origin/main`; point it at the
+          # PR's real base so a promotion PR contests against `release`.
+          SCREENSHOT_MAIN_REF: origin/${{ github.base_ref }}
         run: |
-          # The contested check compares against origin/main (merge-base, branch
-          # authorship, main-side changes). fetch-depth: 0 above usually brings it
-          # in already; fetch explicitly so a partial mirror can't silently
-          # disable the check. Best-effort: on failure the filter degrades to
-          # noise/flap-only (merge-base comes back empty), it doesn't clobber.
-          git fetch --no-tags origin main || true
+          # The contested check compares against the base branch (merge-base,
+          # branch authorship, base-side changes). fetch-depth: 0 above usually
+          # brings it in already; fetch explicitly so a partial mirror can't
+          # silently disable the check. Best-effort: on failure the filter degrades
+          # to noise/flap-only (merge-base comes back empty), it doesn't clobber.
+          git fetch --no-tags origin "$BASE_REF" || true
           npm install --no-save --no-audit --no-fund --ignore-scripts \
             --prefix /tmp/ssfilter pixelmatch pngjs
           # `node_modules` is committed as a symlink, so a bare `mkdir -p` errors
@@ -1128,12 +1139,12 @@ jobs:
         id: diff
         run: |
           # Match Collect / filter-screenshots: e2e checks out the pull_request
-          # merge commit (PR + main), so shots main added since the PR branched
-          # are present there and get re-rendered into the artifact. This job
-          # checks out github.head_ref, where those paths are absent — Apply
+          # merge commit (PR + base), so shots the base branch added since the PR
+          # branched are present there and get re-rendered into the artifact. This
+          # job checks out github.head_ref, where those paths are absent — Apply
           # therefore lands them as untracked. `git diff --name-only` alone
           # would miss them, skip the commit, and leave untracked PNGs that
-          # make `git merge origin/main` refuse to start
+          # make `git merge origin/$BASE_REF` refuse to start
           # ("untracked working tree files would be overwritten") — which the
           # reconcile step used to misread as a screenshot conflict and then
           # die on `git commit --no-edit` with no MERGE_HEAD.
@@ -1165,14 +1176,14 @@ jobs:
           # skip the e2e tier, so CI re-runs only lint/check/build, renders nothing,
           # and this job finds no further screenshots to commit.
           git commit -m "chore(e2e): update reference screenshots from CI"
-      # Clear screenshot conflicts against main. A reference PNG re-rendered on BOTH
-      # main and this PR is a binary file git can't merge, so the PR goes `dirty`
-      # and STAYS that way: the render commit above only updates the head branch, it
-      # never incorporates main, so head's PNG keeps conflicting with main's PNG.
-      # Bring main in here so the conflict actually resolves. Generated PNGs have no
+      # Clear screenshot conflicts against the base branch. A reference PNG re-rendered
+      # on BOTH the base and this PR is a binary file git can't merge, so the PR goes
+      # `dirty` and STAYS that way: the render commit above only updates the head
+      # branch, it never incorporates the base, so head's PNG keeps conflicting with
+      # the base's PNG. Bring the base in here so the conflict actually resolves. Generated PNGs have no
       # meaningful 3-way merge, so each conflicting shot is resolved by OWNERSHIP:
       # the branch keeps (--ours) a shot the oracle maps to this diff or that
-      # someone hand-committed here, and takes main's (--theirs) for anything else.
+      # someone hand-committed here, and takes the base's (--theirs) for anything else.
       # Because the filter step above already reverted contested and out-of-scope
       # renders, --ours here means: the fresh render for uncontested owned shots,
       # and the branch's deliberately COMMITTED shot for contested ones — the
@@ -1187,18 +1198,18 @@ jobs:
       # genuinely conflicting. Runs regardless of the render diff above: a conflict
       # can exist even when this run re-rendered nothing new (the noise filter may
       # have reverted the wobble), so gating on `changed` would miss it.
-      - name: Reconcile reference screenshots with main
+      - name: Reconcile reference screenshots with the base branch
         if: steps.head.outputs.exists == 'true'
         id: reconcile
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch --no-tags origin main
+          git fetch --no-tags origin "$BASE_REF"
 
           # Resolve ownership BEFORE any merge attempt: --own-paths reads the
           # branch's diff from the working tree, and a conflicted merge in progress
-          # would fold main's incoming changes into it and over-grant ownership.
-          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base origin/main)
+          # would fold the base's incoming changes into it and over-grant ownership.
+          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base "origin/$BASE_REF")
           echo "Branch owns ${#owned[@]} reference shot(s)"
 
           # `git merge` returns non-zero for real conflicts AND for "untracked
@@ -1206,7 +1217,7 @@ jobs:
           # former is a conflict we can --ours; the latter must be cleared and
           # retried or failed loudly — never fall through to `git commit --no-edit`.
           try_merge() {
-            git merge --no-commit --no-ff origin/main
+            git merge --no-commit --no-ff "origin/$BASE_REF"
           }
           clear_untracked_screenshots_blocking_merge() {
             mapfile -t blockers < <(
@@ -1215,7 +1226,7 @@ jobs:
             if [ ${#blockers[@]} -eq 0 ]; then
               return 1
             fi
-            echo "Untracked screenshots blocked the merge — removing so main can bring them in:"
+            echo "Untracked screenshots blocked the merge — removing so the base branch can bring them in:"
             printf '%s\n' "${blockers[@]}"
             rm -f -- "${blockers[@]}"
             return 0
@@ -1225,17 +1236,17 @@ jobs:
             # Clean (or already up to date) — don't bake a merge commit onto an
             # otherwise-tidy PR. --abort is a no-op / harmless when no merge started.
             git merge --abort 2>/dev/null || true
-            echo "main merges cleanly; nothing to reconcile"
+            echo "$BASE_REF merges cleanly; nothing to reconcile"
             exit 0
           fi
           if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             if clear_untracked_screenshots_blocking_merge && try_merge; then
               git merge --abort 2>/dev/null || true
-              echo "main merges cleanly after clearing untracked screenshots"
+              echo "$BASE_REF merges cleanly after clearing untracked screenshots"
               exit 0
             fi
             if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
-              echo "::error::git merge origin/main failed without starting a merge (no MERGE_HEAD)"
+              echo "::error::git merge origin/$BASE_REF failed without starting a merge (no MERGE_HEAD)"
               exit 1
             fi
           fi
@@ -1538,10 +1549,16 @@ jobs:
   # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
   # after a real shard failure still fail because `ANY_FAILURE` is true first.
   ci-passed:
-    # A push to develop intentionally skips the expensive tier. Give that run a
-    # distinct check context so its green result on the same head SHA cannot
-    # satisfy main's required `CI Passed` check before promotion e2e has run.
-    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'Develop CI Passed' || 'CI Passed' }}
+    # A push to trunk (`main`) intentionally skips the expensive tier. Give that
+    # run a distinct check context so its green result on the same head SHA
+    # cannot satisfy `release`'s required `CI Passed` check before promotion e2e
+    # has run.
+    #
+    # The literal name stays `Develop CI Passed` even though trunk is no longer
+    # called `develop`: it is a check-context string that branch protection may
+    # match on by name, so renaming it is a separate change that has to land
+    # together with the protection rule.
+    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' || 'CI Passed' }}
     if: always()
     needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
@@ -1631,7 +1648,7 @@ jobs:
           # skipped because it was a draft, and this gate failed because e2e had
           # not succeeded, so `CI Passed` could never go green — and since a base
           # retarget does not re-run CI, the red outlived the move to `develop`.
-          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
           if $PROMOTION_PR && [ "${{ needs.precheck.outputs.e2e_shard_total }}" != "0" ] && [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "Promotion PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
             echo '${{ toJSON(needs) }}'

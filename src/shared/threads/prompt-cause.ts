@@ -44,6 +44,8 @@ export const PROMPT_CAUSES = [
   'shell-guarded-yolo-harm',
   /** A background command wants to bind a local port. */
   'shell-port-binding',
+  /** A command reads paths outside the project, with every path accounted for. */
+  'shell-read-outside-project',
 
   // ── Terminal ─────────────────────────────────────────────────────────────
   /** Opening a terminal while the sandbox network scope is widened. */
@@ -125,6 +127,10 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // irreversible outward effects (not contained), so it cannot be settled here.
   'shell-guarded-yolo-harm': 'mixed',
   'shell-port-binding': 'removed',
+  // The prompt exists because the read reaches the user's own filesystem past
+  // the project. A container guest holds only the workspace, so there is no
+  // host filesystem there to reach and the question does not arise.
+  'shell-read-outside-project': 'removed',
   'terminal-network-widened': 'removed',
   // A remote terminal is a user-selected host, not something a local container
   // replaces.
@@ -163,6 +169,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'shell-package-install': 'Shell: package install',
   'shell-guarded-yolo-harm': 'Shell: Guarded YOLO harm gate',
   'shell-port-binding': 'Shell: binding a local port',
+  'shell-read-outside-project': 'Shell: reads outside the project',
   'terminal-network-widened': 'Terminal: opened with widened network access',
   'terminal-remote': 'Terminal: remote workspace',
   'terminal-unsandboxed': 'Terminal: not contained',

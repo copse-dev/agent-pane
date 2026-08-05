@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import {
   DEFAULT_COMPARISON_JUDGE_MODEL,
+  DEFAULT_COMPARISON_MODEL_A,
   DEFAULT_COMPARISON_MODEL_B,
   billableComparisonModels,
   buildComparisonJudgePrompt,
@@ -13,12 +15,29 @@ import {
 } from './model-comparison.ts'
 
 describe('resolveComparisonModels', () => {
-  it('falls back A to the chat model and B/judge to the frontier defaults', () => {
+  it('falls back A to the chat model and B/judge to the default rules', () => {
     assert.deepEqual(resolveComparisonModels({ chatModel: 'gpt-5' }), {
       a: 'gpt-5',
       b: DEFAULT_COMPARISON_MODEL_B,
       judge: DEFAULT_COMPARISON_JUDGE_MODEL,
     })
+  })
+
+  it('defaults A to a rule when there is no chat model to inherit', () => {
+    const models = resolveComparisonModels({ chatModel: '' })
+    assert.equal(models.a, DEFAULT_COMPARISON_MODEL_A)
+  })
+
+  it('ships rules, not pinned ids, as its defaults', () => {
+    // The whole point: a comparison configured today must still pick sensible
+    // models a year from now, without the user reopening Settings.
+    for (const value of [
+      DEFAULT_COMPARISON_MODEL_A,
+      DEFAULT_COMPARISON_MODEL_B,
+      DEFAULT_COMPARISON_JUDGE_MODEL,
+    ]) {
+      assert.equal(isDynamicModel(value), true, `${value} should be a dynamic selection`)
+    }
   })
 
   it('uses configured ids and trims whitespace', () => {
@@ -39,10 +58,12 @@ describe('resolveComparisonModels', () => {
     assert.equal(models.b, DEFAULT_COMPARISON_MODEL_B)
   })
 
-  it('avoids a defaulted B colliding with A (Opus chat model)', () => {
-    const models = resolveComparisonModels({ chatModel: DEFAULT_COMPARISON_MODEL_B })
-    assert.equal(models.a, DEFAULT_COMPARISON_MODEL_B)
-    assert.notEqual(models.b, models.a, 'defaulted B must differ from A')
+  it('leaves collision-avoidance to resolution, not to the defaults', () => {
+    // B and the judge share a rule on purpose. Keeping them apart is
+    // `resolveDistinctDynamicModelIds`' job, against the live candidate pool —
+    // this function only fills in which rule applies.
+    const models = resolveComparisonModels({ chatModel: 'gpt-5' })
+    assert.equal(models.b, models.judge)
   })
 
   it('respects an explicit B even when it equals A (user misconfig, surfaced later)', () => {

@@ -92,7 +92,9 @@ import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
-import { fetchModelOptions, type ModelOption } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { contextFitAdvice } from '@shared/context-window-advice.ts'
+import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 
 interface MountInputBarOptions {
   /**
@@ -200,6 +202,27 @@ export function mountInputBar(
     useImageModelBtn,
     describeImagesBtn,
     sendWithoutImagesBtn,
+  )
+  // Sits beside the model picker it talks about: the thread no longer fits (or
+  // barely fits) the model selected for it. Recomputed from the same pre-send
+  // estimate that drives the context wheel, so picking a model updates it at once.
+  const contextFitText = el('span', { class: 'composer-context-warning-text' })
+  const contextFitModelBtn = el(
+    'button',
+    { type: 'button', class: 'composer-context-model-btn' },
+    'Choose another model',
+  )
+  const contextFitWarning = el(
+    'div',
+    {
+      class: 'composer-context-warning',
+      role: 'status',
+      'aria-live': 'polite',
+      hidden: '',
+    },
+    el('span', { class: 'composer-context-warning-icon', 'aria-hidden': 'true' }, '!'),
+    contextFitText,
+    contextFitModelBtn,
   )
   let footerOverflow: ReturnType<typeof mountFooterOverflow> | null = null
   const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
@@ -404,6 +427,7 @@ export function mountInputBar(
     branchWarning,
     checkoutError,
     imageCompatibilityWarning,
+    contextFitWarning,
     inputRow,
     footer,
   )
@@ -539,6 +563,14 @@ export function mountInputBar(
     if (!recommendedImageModel) return
     selectChatModel(recommendedImageModel.value)
     composer.focus()
+  })
+
+  contextFitModelBtn.addEventListener('click', (event) => {
+    // The picker closes on any document click outside its own subtree, and this
+    // button is outside it — without stopping propagation the menu would shut in
+    // the same dispatch that opened it.
+    event.stopPropagation()
+    modelPicker.openMenu()
   })
 
   function removeAttachedImages(): void {
@@ -700,6 +732,10 @@ export function mountInputBar(
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
+  // Model the last estimate was computed for. The context-fit warning quotes a
+  // window and a model name together, so it must not pair a fresh selection with
+  // the previous model's window while the new estimate is still in flight.
+  let breakdownModel: string | null = null
   // Rates for every model outside the static cloud catalog — OpenRouter routes
   // and extra providers alike — keyed by model selection. Resolved in the main
   // process (see model-pricing-store.ts) so the footer and the usage ledger
@@ -774,6 +810,7 @@ export function mountInputBar(
     hideCheckoutError()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
+    breakdownModel = null
     scheduleContextEstimate(0)
   }
 
@@ -888,6 +925,29 @@ export function mountInputBar(
     }
   }
 
+  /**
+   * Warn when the thread has outgrown (or nearly outgrown) the model chosen for
+   * it. Silent until an estimate for the *current* model lands, so a model the
+   * user just picked is never described with the previous model's window.
+   */
+  function updateContextFitWarning(): void {
+    const model = footerChatModel()
+    const advice =
+      breakdownModel === model
+        ? contextFitAdvice(lastBreakdown, {
+            modelLabel: modelDisplayLabel(model),
+            lmStudioModel: isLocalModel(model),
+          })
+        : null
+    if (!advice) {
+      contextFitWarning.hidden = true
+      return
+    }
+    contextFitText.textContent = advice.message
+    contextFitWarning.classList.toggle('is-over', advice.level === 'over')
+    contextFitWarning.hidden = false
+  }
+
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
@@ -942,6 +1002,7 @@ export function mountInputBar(
       usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip)
     }
     footerOverflow?.update()
+    updateContextFitWarning()
     updateCheckoutControl()
     updateState()
     updateQueueIndicator()
@@ -991,6 +1052,7 @@ export function mountInputBar(
     if (isAcpModel(footerChatModel())) {
       if (lastBreakdown !== null) {
         lastBreakdown = null
+        breakdownModel = null
         updateFooter()
       }
       return
@@ -999,6 +1061,7 @@ export function mountInputBar(
     if (!id) {
       if (lastBreakdown !== null) {
         lastBreakdown = null
+        breakdownModel = null
         updateFooter()
       }
       return
@@ -1006,6 +1069,7 @@ export function mountInputBar(
     const projectId = store.getState().activeProjectId
     if (!projectId) return
     const seq = ++estimateSeq
+    const estimatedModel = footerChatModel()
     const payload = composeEstimatePayload()
     let breakdown: ContextBreakdown
     try {
@@ -1016,6 +1080,7 @@ export function mountInputBar(
     // Drop results that arrived after a newer request or a thread switch.
     if (seq !== estimateSeq || getActiveThreadId() !== id) return
     lastBreakdown = breakdown
+    breakdownModel = estimatedModel
     updateFooter()
   }
 

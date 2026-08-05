@@ -16,8 +16,11 @@
  * model-comparison-runner.ts and the tool gating in registry-bootstrap.ts.
  */
 
-import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
-import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import {
+  BEST_INTELLECT_MODEL_SELECTOR,
+  BEST_VALUE_MODEL_SELECTOR,
+} from '@copse/llm/dynamic-model.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // The former `MODEL_COMPARISON_ENABLED_SETTING` (top-level
 // `modelComparisonEnabled`) was retired in P5: the pack toggle
@@ -31,9 +34,19 @@ import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 // keys are retired. The `modelComparisonAutoOnReview` opt-in stays top-level.
 export const MODEL_COMPARISON_AUTO_ON_REVIEW_SETTING = 'modelComparisonAutoOnReview'
 
-/** Default second reviewer and judge when the settings are left blank (a frontier Claude). */
-export const DEFAULT_COMPARISON_MODEL_B = 'claude-opus-4-8'
-export const DEFAULT_COMPARISON_JUDGE_MODEL = 'claude-opus-4-8'
+/**
+ * Defaults when a setting is left blank — dynamic selections, not pinned ids,
+ * kept equal to the constants on the Electron-free pack side. Reviewer B and the
+ * judge both reach for the most capable model available; they are expanded
+ * against a single candidate pool (`resolveDistinctDynamicModelIds`), which is
+ * what stops one rule used twice from naming one model twice.
+ *
+ * Reviewer A has no rule of its own: blank means the model this chat is running
+ * on. `DEFAULT_COMPARISON_MODEL_A` covers only the case where there isn't one.
+ */
+export const DEFAULT_COMPARISON_MODEL_A = BEST_VALUE_MODEL_SELECTOR
+export const DEFAULT_COMPARISON_MODEL_B = BEST_INTELLECT_MODEL_SELECTOR
+export const DEFAULT_COMPARISON_JUDGE_MODEL = BEST_INTELLECT_MODEL_SELECTOR
 
 export interface ComparisonModels {
   /** First reviewer (defaults to the current chat model). */
@@ -45,9 +58,13 @@ export interface ComparisonModels {
 }
 
 /**
- * Resolve the three model ids from the (possibly blank) settings, falling back
- * so a run always has a sensible pair + judge: A → the current chat model, B and
- * the judge → a frontier default.
+ * Fill in the three *selections* from the (possibly blank) settings. The result
+ * may hold dynamic selectors; expanding them into concrete, distinct model ids
+ * is `resolveModelsFromSettings`' job in the runner, which is also where any
+ * collision between them is resolved.
+ *
+ * A blank reviewer A still means "the current chat model" — that is the one
+ * choice where the user's live context is a better answer than any rule.
  */
 export function resolveComparisonModels(opts: {
   modelA?: string | null
@@ -55,17 +72,11 @@ export function resolveComparisonModels(opts: {
   judge?: string | null
   chatModel: string
 }): ComparisonModels {
-  const a = nonEmptyStringOr(opts.modelA?.trim(), opts.chatModel)
-  const configuredB = opts.modelB?.trim()
-  let b = nonEmptyStringOr(configuredB, DEFAULT_COMPARISON_MODEL_B)
-  // When B falls back to its default and would collide with A, pick a different
-  // frontier so the default-on experience isn't a silent no-op — e.g. an Opus
-  // chat model (A) against the Opus default (B) would otherwise make A === B.
-  // An *explicit* B === A is left alone: that is the user's own misconfiguration
-  // and the distinct-reviewer check surfaces it.
-  if (!configuredB && b === a) b = DEFAULT_CLOUD_MODEL
-  const judge = firstNonEmptyString(opts.judge?.trim()) ?? DEFAULT_COMPARISON_JUDGE_MODEL
-  return { a, b, judge }
+  return {
+    a: nonEmptyStringOr(opts.modelA?.trim(), opts.chatModel || DEFAULT_COMPARISON_MODEL_A),
+    b: nonEmptyStringOr(opts.modelB?.trim(), DEFAULT_COMPARISON_MODEL_B),
+    judge: nonEmptyStringOr(opts.judge?.trim(), DEFAULT_COMPARISON_JUDGE_MODEL),
+  }
 }
 
 /**

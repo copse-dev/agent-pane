@@ -209,6 +209,8 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
@@ -228,6 +230,8 @@ contextBridge.exposeInMainWorld('api', {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          collapseDetails?: boolean
+          approveOnceLabel?: string
           comparisonModels?: { a: string; b: string; judge: string }
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
@@ -458,6 +462,19 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) =>
+      ipcRenderer.invoke('close-confirm:respond', id, confirmed),
+    onRequest: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('app:close_confirm_request', listener)
+      return (): void => {
+        ipcRenderer.off('app:close_confirm_request', listener)
+      }
+    },
+  },
   sshWorkspace: {
     listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
     listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
@@ -573,6 +590,9 @@ contextBridge.exposeInMainWorld('api', {
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
   },
+  modelCards: {
+    resolve: (modelIds: string[]) => ipcRenderer.invoke('modelCards:resolve', modelIds),
+  },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),
@@ -587,8 +607,8 @@ contextBridge.exposeInMainWorld('api', {
     models: () => ipcRenderer.invoke('openrouter:models'),
   },
   models: {
-    chatDefaultContextHealth: () => ipcRenderer.invoke('models:chatDefaultContextHealth'),
     bestValueDefault: () => ipcRenderer.invoke('models:bestValueDefault'),
+    resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolveDynamic', value),
   },
   menu: {
     onSettings: (handler: () => void) => {
@@ -1043,6 +1063,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
+    },
+    requestCloseConfirm() {
+      return ipcRenderer.invoke('test:requestCloseConfirm')
     },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')

@@ -78,6 +78,12 @@ import {
   webAllowedOriginsWithDefaults,
 } from './web-origin-policy.ts'
 import { formatUnsandboxedPromptParts } from './sandbox-failure.ts'
+import {
+  analyzeReadOutsideProject,
+  formatReadOutsideProjectPromptParts,
+  READ_OUTSIDE_PROJECT_TITLE,
+} from './read-outside-project.ts'
+import { grantReadOutsideProject, hasReadOutsideProjectGrant } from './read-outside-grant.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -230,6 +236,77 @@ async function requestEscalationApproval(
 }
 
 /**
+ * Handle a command that only *reads* paths outside the project, when we can
+ * account for every path it touches (see `read-outside-project.ts`).
+ *
+ * Returns null when the command is not that shape, so the caller falls through
+ * to its normal prompt. Otherwise the thread's standing grant answers it, or the
+ * user is asked with the narrower read-access wording — where the primary button
+ * grants the shape for the rest of the thread and the secondary one approves
+ * just this command.
+ *
+ * Every outcome lands in the durable decision log, naming the paths that were at
+ * stake. The grant itself is held in memory (`read-outside-grant.ts`) and dies
+ * with the process, but the *decision* to make it is a permanent record: the
+ * answered prompt writes `scope: external-read` with `remembered: true` for a
+ * thread grant and `false` for a one-command approval, and each later command
+ * the grant covers writes its own `verdict: allowed` line sourced to it. So the
+ * log shows both that the user widened read access and everything that ran under
+ * it — the in-memory ledger is the mechanism, not the record.
+ */
+async function resolveReadOutsideProject(
+  command: string,
+  workspaceRoot: string | null,
+  signal?: AbortSignal,
+): Promise<boolean | null> {
+  const analysis = analyzeReadOutsideProject(command, workspaceRoot)
+  if (!analysis.eligible) return null
+
+  // The one fact the durable log can carry about this command: the paths, never
+  // the command line (see SHELL_DECISION_SUBJECT). Shared by the prompt's answer
+  // and by every command a standing grant later covers, so both read alike.
+  const reasons = [`reads outside the project: ${analysis.targets.join(', ')}`]
+
+  const threadId = getActiveRunThread()
+  if (hasReadOutsideProjectGrant(threadId)) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      reasons,
+      source: 'read-outside-grant',
+    })
+    return true
+  }
+
+  const { approved, remember } = await requestApproval(
+    {
+      title: READ_OUTSIDE_PROJECT_TITLE,
+      type: 'shell',
+      ...shellPromptToApprovalFields(formatReadOutsideProjectPromptParts(command, analysis)),
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      cause: 'shell-read-outside-project',
+      // Recorded with the answer, so the log line that carries `remembered: true`
+      // also says what the user granted read access *to*.
+      reasons,
+      // The command is behind "Show details" so the question the user answers is
+      // the scope one; the third button that approves only this command appears
+      // with the details it refers to.
+      collapseDetails: true,
+      approveOnceLabel: 'Approve this command',
+    },
+    signal,
+  )
+  // A handler with no thread (headless/ACP) can hold no grant, so its approval
+  // covers this command only.
+  if (approved && remember && threadId) grantReadOutsideProject(threadId)
+  return approved
+}
+
+/**
  * @param containedCause why an *in-sandbox* prompt is interrupting. The
  *   escalation branch always records `shell-sandbox-escalation`, because that is
  *   what the user is being asked about regardless of how the command got here.
@@ -313,6 +390,11 @@ export async function promptUnsandboxedShell(
   signal?: AbortSignal,
 ): Promise<boolean> {
   if (autoApproveShell(command, 'external')) return true
+  // A command that failed inside the sandbox because it reads a file in the
+  // user's home directory is the same read-access question as the up-front gate,
+  // so a thread that already granted that scope should not be asked again.
+  const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
+  if (readOutside !== null) return readOutside
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
@@ -779,6 +861,17 @@ export async function ensureShellCommandPermitted(
       return true
     }
   }
+
+  // Reads of accountable paths outside the project ask the narrower read-access
+  // question — and can be answered once for the whole thread — instead of the
+  // worst-case "run outside sandbox" escape hatch. Checked on every platform:
+  // off macOS `outsideSandbox` is false (there is no seatbelt to leave) but the
+  // read is just as external, and the gate is the only boundary.
+  // Ordered after the replay lease so a command the user already authorized for
+  // exact retry in this turn tree is still replayed without a prompt: the lease
+  // is a no-prompt fast path, whereas this gate may ask.
+  const readOutside = await resolveReadOutsideProject(command, workspaceRoot, opts.signal)
+  if (readOutside !== null) return readOutside
 
   // A plain package install gets a dedicated, readable approval rather than the
   // generic external-command reason list. Only when the install is the *sole*

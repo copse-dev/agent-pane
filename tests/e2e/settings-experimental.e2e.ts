@@ -60,15 +60,25 @@ describe('experimental settings section', () => {
     )
     assert.equal(await experimental.$('legend=CI investigator subagent').isExisting(), false)
 
-    // Advisor strategy enablement migrated to the `copse.advisor-strategy` pack;
-    // the retired checkbox must not appear. The orthogonal advisor model select
-    // stays in a slimmed "Advisor model" fieldset.
+    // Advisor strategy enablement migrated to the `copse.advisor-strategy` pack,
+    // and the advisor MODEL select went with it — settings-dialog.ts moves the
+    // picker into the pack row and re-applies the `#advisorModel` id there, so
+    // neither the retired checkbox nor the old fieldset remains here.
     assert.equal(
       await experimental.$('input[name="advisorStrategyEnabled"]').isExisting(),
       false,
       'advisorStrategyEnabled must leave Settings > Experimental after pack migration',
     )
-    await expect(experimental.$('legend=Advisor model')).toBeDisplayed()
+    assert.equal(
+      await experimental.$('legend=Advisor model').isExisting(),
+      false,
+      'the Advisor model fieldset must leave Settings > Experimental — the pack owns it',
+    )
+    assert.equal(
+      await experimental.$('#advisorModel').isExisting(),
+      false,
+      'the advisor model select must not render under Experimental; it lives on the pack row',
+    )
     assert.equal(await experimental.$('legend=Advisor strategy').isExisting(), false)
 
     // OKF memories migrated from an experimental toggle to the
