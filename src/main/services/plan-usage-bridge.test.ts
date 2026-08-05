@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -106,6 +106,51 @@ describe('discoverPlanUsageCredentials', () => {
       'sk-ant-oat01-file',
       'sk-ant-oat01-env',
     ])
+  })
+
+  it('reads the credentials file from CLAUDE_CONFIG_DIR when set', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-configdir-'))
+    const configDir = mkdtempSync(join(tmpdir(), 'copse-claude-config-'))
+    // A decoy at the default location: picking it up would mean the override
+    // was ignored, which is the bug this guards.
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    writeFileSync(
+      join(home, '.claude', '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-default-dir' } }),
+    )
+    // The override replaces `~/.claude` — the file sits directly under it.
+    writeFileSync(
+      join(configDir, '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-config-dir' } }),
+    )
+
+    const creds = await discoverPlanUsageCredentials(
+      home,
+      { CLAUDE_CONFIG_DIR: configDir },
+      noKeychain,
+      noStoredHf,
+      noCursorKeychain,
+      noCursorDb,
+    )
+    assert.deepEqual(creds.claudeOAuthTokens, ['sk-ant-oat01-config-dir'])
+  })
+
+  it('falls back to ~/.claude when CLAUDE_CONFIG_DIR is blank', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-blankdir-'))
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    writeFileSync(
+      join(home, '.claude', '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-default-dir' } }),
+    )
+    const creds = await discoverPlanUsageCredentials(
+      home,
+      { CLAUDE_CONFIG_DIR: '   ' },
+      noKeychain,
+      noStoredHf,
+      noCursorKeychain,
+      noCursorDb,
+    )
+    assert.deepEqual(creds.claudeOAuthTokens, ['sk-ant-oat01-default-dir'])
   })
 
   it('prefers Settings/stored HF token over env and token file', async () => {
@@ -223,6 +268,33 @@ describe('persistRefreshedClaudeToken', () => {
     assert.equal(oauth['refreshToken'], 'new-ref')
     assert.equal(oauth['expiresAt'], 999)
     assert.deepEqual(oauth['scopes'], ['a'])
+  })
+
+  it('writes the rotated token back under CLAUDE_CONFIG_DIR when set', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-persist-configdir-'))
+    const configDir = mkdtempSync(join(tmpdir(), 'copse-claude-config-persist-'))
+    const path = join(configDir, '.credentials.json')
+    writeFileSync(
+      path,
+      JSON.stringify({
+        claudeAiOauth: { accessToken: 'old-acc', refreshToken: 'old-ref', expiresAt: 1 },
+      }),
+    )
+    await persistRefreshedClaudeToken(
+      'credentials.json',
+      { accessToken: 'new-acc', refreshToken: 'new-ref', expiresAt: 999 },
+      home,
+      noKeychain,
+      async () => undefined,
+      { CLAUDE_CONFIG_DIR: configDir },
+    )
+    const oauth = expectRecord(
+      expectRecord(parseJsonUnknown(readFileSync(path, 'utf8')))['claudeAiOauth'],
+    )
+    assert.equal(oauth['refreshToken'], 'new-ref')
+    // The default location must be left untouched — writing there would strand
+    // the rotated token in a file the CLI never reads.
+    assert.equal(existsSync(join(home, '.claude', '.credentials.json')), false)
   })
 
   it('is a no-op for env-sourced tokens and never throws', async () => {
