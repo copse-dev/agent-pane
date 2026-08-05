@@ -338,8 +338,9 @@ describe('fetchModelOptions visibility', () => {
       [
         { value: 'acp:cursor#auto', label: 'Auto' },
         // The agent's "Opus 4.8" label aliases to the sourced measurement, so
-        // the row earns an intellect-only hint (ACP has no token pricing).
-        { value: 'acp:cursor#opus[]', label: 'Opus 4.8 — intellect 55.7' },
+        // the row earns an intellect-only hint (ACP has no token pricing), and
+        // is spelled the way every other group spells the same model.
+        { value: 'acp:cursor#opus[]', label: 'Claude Opus 4.8 — intellect 55.7' },
       ],
     )
     // The bare "acp:cursor" (agent default) entry is intentionally omitted.
@@ -383,9 +384,9 @@ describe('fetchModelOptions visibility', () => {
         // Claude Code labels its models bare, so the picker folds the version
         // from the description back in — and resolves the hint through it (the
         // agent's own `sonnet` value aliases to nothing).
-        'Default (recommended) — Opus 5',
-        'Opus 5 (1M context)',
-        'Sonnet 5 — intellect 53.4',
+        'Default (recommended) — Claude Opus 5',
+        'Claude Opus 5 (1M context)',
+        'Claude Sonnet 5 — intellect 53.4',
       ],
     )
   })
@@ -433,6 +434,27 @@ describe('fetchModelOptions visibility', () => {
     const row = options.find((o) => o.group === 'Cursor Cloud Agent' && /Opus 4\.8/.test(o.label))
     assert.ok(row)
     assert.match(row.label, /Opus 4\.8 — intellect 55\.7/)
+  })
+
+  it("spells Cursor's Claude models the way every other group spells them", async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { cursor: true },
+        cursorCloudModels: [
+          // Cursor names Claude models its own way: no vendor on one, the
+          // version ahead of the family on the next. Its own models keep the
+          // name Cursor gave them.
+          { id: 'claude-opus-5', label: 'Opus 5' },
+          { id: 'claude-4.6-sonnet-thinking', label: 'Claude 4.6 Sonnet (Thinking)' },
+          { id: 'composer-2', label: 'Composer 2' },
+        ],
+      }),
+      '',
+    )
+    assert.deepEqual(
+      options.filter((o) => o.group === 'Cursor Cloud Agent').map((o) => o.label),
+      ['Default', 'Claude Opus 5', 'Claude Sonnet 4.6 (Thinking)', 'Composer 2'],
+    )
   })
 
   it('omits whole-session agents from task-role model options', async () => {
