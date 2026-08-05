@@ -8,6 +8,24 @@ every published entry.
 
 ## Unreleased
 
+- A long session holds on to much less memory. Two things kept transcript text
+  alive that did not need to be. The transcript's render caches — the ones that
+  let an unchanged tool card skip a rebuild — stored the card's whole JSON
+  encoding as its signature, so every tool result, and every base64 image
+  attachment inside one, was held a second time for as long as its card was on
+  screen; a heap snapshot of a long session showed 83% of a 319 MB renderer heap
+  in strings, with the same 500 kB screenshots and 200 kB command outputs
+  appearing two and three times over. Signatures are now a short digest of that
+  JSON rather than the JSON itself. Separately, archived threads were still
+  folded into memory in full on every project load, message bodies and images
+  included, even though the sidebar and the `@`-picker both hide them; the load
+  now skips them. They stay on disk untouched, and all-time usage totals still
+  count them. Third, the sidebar kept a thread list per project visited this
+  session, and those lists were whole threads — so switching between projects
+  added transcripts to memory rather than replacing them. A project you switch
+  away from now keeps only what its rows draw: title, running mark, and the PR
+  refs already scraped out of its messages. Switching back reloads from disk as
+  before.
 - The Parallel Search pack's switch no longer turns on without a key. The tool
   was already credential-gated where it counts — `parallel_search` is registered
   only when the pack is enabled _and_ a Parallel API key resolves — but Settings
