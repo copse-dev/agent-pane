@@ -408,14 +408,15 @@ export interface ModelParameterRecommendation {
   source: string
   params: ModelParameters
   /**
-   * An output ceiling the card publishes for its deeper reasoning levels.
+   * An output ceiling the card publishes for a model that reasons before it
+   * answers.
    *
    * Unlike {@link params} this one *is* applied automatically, because it is not
-   * a preference: a model told to reason at `max` that then runs into a low
-   * default output cap gets truncated mid-answer, and nothing on screen would
-   * explain why. There is also nothing for the user to weigh — a ceiling is
-   * permission to use tokens, not a decision to spend them, so raising it costs
-   * nothing on a turn that ends sooner.
+   * a preference: a model that spends its output budget thinking and then runs
+   * into a low default cap gets truncated mid-answer, and nothing on screen
+   * would explain why. There is also nothing for the user to weigh — a ceiling
+   * is permission to use tokens, not a decision to spend them, so raising it
+   * costs nothing on a turn that ends sooner.
    */
   outputCeiling?: RecommendedOutputCeiling
 }
@@ -423,8 +424,15 @@ export interface ModelParameterRecommendation {
 export interface RecommendedOutputCeiling {
   /** Maximum output tokens to allow, as published. */
   tokens: number
-  /** The shallowest reasoning level the ceiling is published for. */
-  fromReasoning: ReasoningLevel
+  /**
+   * The shallowest reasoning level the ceiling is published for.
+   *
+   * Absent when the card ties it to the model rather than to a depth — a model
+   * that always thinks, and has no effort ladder to condition on, needs the room
+   * on every turn. Those apply unconditionally, which means picking such a model
+   * changes the request body even before the user tunes anything.
+   */
+  fromReasoning?: ReasoningLevel
 }
 
 /**
@@ -476,11 +484,17 @@ const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: str
       presencePenalty: 1.5,
       repetitionPenalty: 1,
     },
-    // Deliberately no `outputCeiling`. The card does recommend an output length
-    // (32,768 for most queries, 81,920 for hard problems), but as adequacy
-    // advice, not tied to a reasoning depth — and a ceiling we send is a cap
-    // that can truncate. Nothing constrains output today; leaving it that way is
-    // the safer reading of "sufficient space".
+    // "We recommend using an output length of 32,768 tokens for most queries.
+    // For benchmarking on highly complex problems … 81,920 tokens." Neither is
+    // conditioned on a depth — the model always thinks — so this applies on
+    // every turn.
+    //
+    // The larger of the two, because the card's own agent harness used it:
+    // Terminal-Bench 2.0 ran `max_tokens=80K`. 32,768 is the figure for "most
+    // queries", and a tool loop editing real files is not the average query;
+    // sending the smaller number would turn advice about *sufficient* space into
+    // a cap that truncates.
+    outputCeiling: { tokens: 81_920 },
   },
 ]
 
@@ -513,7 +527,9 @@ export function recommendedOutputCeiling(
   params: ModelParameters,
 ): number | undefined {
   const ceiling = findRecommendation(model)?.outputCeiling
-  if (!ceiling || params.reasoning === undefined) return undefined
+  if (!ceiling) return undefined
+  if (ceiling.fromReasoning === undefined) return ceiling.tokens
+  if (params.reasoning === undefined) return undefined
   const level = REASONING_LEVELS.indexOf(params.reasoning)
   return level >= REASONING_LEVELS.indexOf(ceiling.fromReasoning) ? ceiling.tokens : undefined
 }

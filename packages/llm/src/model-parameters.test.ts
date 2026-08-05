@@ -444,8 +444,9 @@ describe('recommendedModelParameters', () => {
     // No `reasoning` above: the card ties its recipe to thinking mode, which is
     // the default, and names no effort ladder.
     //
-    // Advice about adequate output length is not a ceiling to send.
-    assert.equal(recommendation.outputCeiling, undefined)
+    // Its output ceiling is tied to the model rather than to a depth, so it
+    // carries no level to condition on.
+    assert.deepEqual(recommendation.outputCeiling, { tokens: 81_920 })
   })
 
   it('matches a model card’s own capitalisation, not just the lowercased route', () => {
@@ -497,5 +498,14 @@ describe('recommendedOutputCeiling', () => {
 
   it('holds none for a selection that owns its own settings', () => {
     assert.equal(recommendedOutputCeiling('acp:deepseek-v4-flash', { reasoning: 'max' }), undefined)
+  })
+
+  it('applies an ungated ceiling at every level, and with none set', () => {
+    // Qwen3.6 always thinks and publishes no ladder, so its ceiling cannot be
+    // conditioned on a depth the user never picks.
+    const model = 'openrouter:qwen/qwen3.6-35b-a3b'
+    assert.equal(recommendedOutputCeiling(model, {}), 81_920)
+    assert.equal(recommendedOutputCeiling(model, { reasoning: 'low' }), 81_920)
+    assert.equal(recommendedOutputCeiling(model, { reasoning: 'max' }), 81_920)
   })
 })

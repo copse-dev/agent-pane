@@ -288,6 +288,16 @@ describe('model parameters section', () => {
     assert.match(section.root.textContent, /At high and deeper, Copse allows up to 384K output/)
   })
 
+  it('states an ungated ceiling in the note, where no field turns it on', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:qwen/qwen3.6-35b-a3b')
+
+    assert.match(section.root.textContent, /Copse allows up to 82K output tokens/)
+    // Not phrased as conditional on a level, because it is not.
+    assert.doesNotMatch(section.root.textContent, /and deeper/)
+  })
+
   it('says nothing about a ceiling for a model that publishes none', async () => {
     const { api } = stubSettings()
     const section = createModelParametersSection(api)

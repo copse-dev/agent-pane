@@ -218,17 +218,22 @@ export function createModelParametersSection(
   }
 
   /**
-   * The one thing here that is applied rather than offered: a model card that
-   * publishes an output ceiling for its deeper reasoning levels gets that
-   * ceiling sent automatically, so the level says whether it is in force.
+   * The one thing here that is applied rather than offered: a card that
+   * publishes an output ceiling gets it sent automatically.
+   *
+   * A ceiling gated on a reasoning depth is stated beside the control that
+   * triggers it; an unconditional one belongs in the section note, since no
+   * field the user can touch turns it on or off. Both are phrased for the whole
+   * ladder rather than for the level currently picked, so neither has to
+   * re-render a field under the user's cursor.
    */
-  function ceilingHint(): string {
+  function ceilingHint(gated: boolean): string {
     const ceiling = recommendedModelParameters(current)?.outputCeiling
-    if (!ceiling) return ''
-    const tokens = `${String(Math.round(ceiling.tokens / 1000))}K`
-    // Phrased for the whole ladder rather than for the level currently picked,
-    // so it stays true without re-rendering the field under the user's cursor.
-    return `At ${ceiling.fromReasoning} and deeper, Copse allows up to ${tokens} output tokens, as this model’s card recommends.`
+    if (!ceiling || (ceiling.fromReasoning !== undefined) !== gated) return ''
+    const tokens = `${String(Math.round(ceiling.tokens / 1000))}K output tokens, as this model’s card recommends.`
+    return ceiling.fromReasoning === undefined
+      ? `Copse allows up to ${tokens}`
+      : `At ${ceiling.fromReasoning} and deeper, Copse allows up to ${tokens}`
   }
 
   function render(): void {
@@ -255,6 +260,7 @@ export function createModelParametersSection(
         ? 'This model does not accept sampling parameters — it reasons instead of sampling.'
         : '',
       support.reasoning.length === 0 ? 'This model exposes no reasoning control.' : '',
+      ceilingHint(false),
     ].filter(Boolean)
     note.textContent = parts.join(' ')
 
@@ -274,7 +280,7 @@ export function createModelParametersSection(
             'How much the model thinks before answering. Higher costs more tokens and time.',
             // The one value applied without being asked for, so it is stated
             // where the level that triggers it is chosen.
-            ceilingHint(),
+            ceilingHint(true),
           ]
             .filter(Boolean)
             .join(' '),
