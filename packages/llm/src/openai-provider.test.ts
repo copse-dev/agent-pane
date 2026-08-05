@@ -83,6 +83,87 @@ async function collect(
   return out
 }
 
+/**
+ * Every `image_url` object anywhere in a chat-completions request, in document
+ * order. Walks structurally so the test needs no assertions about the SDK's
+ * deeply-nested message-part unions.
+ */
+function collectImageUrls(
+  value: unknown,
+  found: Record<string, unknown>[] = [],
+): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    for (const child of value) collectImageUrls(child, found)
+    return found
+  }
+  if (value !== null && typeof value === 'object') {
+    const record: Record<string, unknown> = { ...value }
+    const imageUrl = record['image_url']
+    if (record['type'] === 'image_url' && imageUrl !== null && typeof imageUrl === 'object') {
+      found.push({ ...imageUrl })
+    }
+    for (const child of Object.values(record)) collectImageUrls(child, found)
+  }
+  return found
+}
+
+describe('OpenAIProvider image detail', () => {
+  async function capturedImageUrl(
+    imageDetail?: 'auto' | 'low' | 'high',
+  ): Promise<Record<string, unknown>> {
+    const provider = new OpenAIProvider('gpt-test', {
+      apiKey: 'test-openai-key',
+      ...(imageDetail ? { imageDetail } : {}),
+    })
+    const captured: { request?: { messages?: unknown } } = {}
+    Object.defineProperty(provider, 'client', {
+      value: {
+        chat: {
+          completions: {
+            create: (request: { messages?: unknown }) => {
+              captured.request = request
+              return streamEvents([
+                { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] },
+              ])
+            },
+          },
+        },
+      },
+      configurable: true,
+    })
+    for await (const _ of provider.stream(
+      [{ role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,abc' }] }],
+      [],
+    )) {
+      // drain
+    }
+    const found = collectImageUrls(captured.request?.messages)
+    assert.equal(found.length, 1, 'expected exactly one image part in the request')
+    return at(found, 0)
+  }
+
+  it('omits detail entirely by default, so the request is byte-identical to before', async () => {
+    // Explicitly sending detail:'auto' would be a no-op for OpenAI but a new
+    // unknown field for the OpenAI-compatible servers this adapter also drives.
+    assert.deepEqual(await capturedImageUrl(), { url: 'data:image/png;base64,abc' })
+  })
+
+  it('omits detail when auto is requested explicitly', async () => {
+    assert.deepEqual(await capturedImageUrl('auto'), { url: 'data:image/png;base64,abc' })
+  })
+
+  it('sends detail when a non-auto fidelity is configured', async () => {
+    assert.deepEqual(await capturedImageUrl('low'), {
+      url: 'data:image/png;base64,abc',
+      detail: 'low',
+    })
+    assert.deepEqual(await capturedImageUrl('high'), {
+      url: 'data:image/png;base64,abc',
+      detail: 'high',
+    })
+  })
+})
+
 describe('OpenAIProvider request options', () => {
   it('asks OpenAI cloud streams to include usage', async () => {
     const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })

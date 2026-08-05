@@ -87,6 +87,26 @@ async function collect(
   return chunks
 }
 
+/**
+ * Every `detail` on an `input_image` part anywhere in a Responses input, in
+ * document order. Walks structurally rather than reaching through the SDK's
+ * union types, which don't narrow usefully by `role`.
+ */
+function collectImageDetails(value: unknown, found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const child of value) collectImageDetails(child, found)
+    return found
+  }
+  if (value !== null && typeof value === 'object') {
+    const record: Record<string, unknown> = { ...value }
+    if (record['type'] === 'input_image' && typeof record['detail'] === 'string') {
+      found.push(record['detail'])
+    }
+    for (const child of Object.values(record)) collectImageDetails(child, found)
+  }
+  return found
+}
+
 describe('ResponsesProvider input mapping', () => {
   it('maps messages, function calls, and function outputs to Responses items', () => {
     const input = toResponsesInput([
@@ -124,6 +144,40 @@ describe('ResponsesProvider input mapping', () => {
       },
       { type: 'function_call_output', call_id: 'call_1', output: 'file contents' },
     ])
+  })
+
+  it('defaults image detail to auto, preserving the historical wire shape', () => {
+    const input = toResponsesInput([
+      { role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,abc' }] },
+    ])
+    assert.deepEqual(input, [
+      {
+        role: 'user',
+        content: [{ type: 'input_image', image_url: 'data:image/png;base64,abc', detail: 'auto' }],
+      },
+    ])
+  })
+
+  it('applies the configured image detail to attachments and tool-result images', () => {
+    const input = toResponsesInput(
+      [
+        { role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,abc' }] },
+        {
+          role: 'tool',
+          toolResults: [
+            {
+              toolCallId: 'call_1',
+              result: 'captured',
+              images: [{ dataUrl: 'data:image/png;base64,frame', name: 'frame-1.png' }],
+            },
+          ],
+        },
+      ],
+      'low',
+    )
+    // Both the direct attachment and the tool-result follow-up must carry it —
+    // tool-produced frames are exactly the images worth downsampling.
+    assert.deepEqual(collectImageDetails(input), ['low', 'low'])
   })
 })
 

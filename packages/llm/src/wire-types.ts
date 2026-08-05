@@ -13,6 +13,15 @@
 export type UserContent =
   string | Array<{ type: 'text'; text: string } | { type: 'image'; dataUrl: string }>
 
+/**
+ * How much fidelity a provider should spend on an image attachment.
+ *
+ * `low` downsamples to a fixed small budget — far cheaper, and enough for a
+ * screenshot you only need the gist of. `high` pays for full detail. `auto`
+ * leaves the choice to the provider, which is what Copse has always done.
+ */
+export type ImageDetail = 'auto' | 'low' | 'high'
+
 export type LLMMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: UserContent }

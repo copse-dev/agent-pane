@@ -1,5 +1,11 @@
 import OpenAI from 'openai'
-import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  ImageDetail,
+  LLMProvider,
+  LLMMessage,
+  LLMTool,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
 import {
   isImageUnsupportedError,
@@ -102,6 +108,8 @@ export class OpenAIProvider implements LLMProvider {
       serviceTier?: string
       params?: ModelParameters
       maxOutputTokens?: number
+      /** Image fidelity to request. Defaults to `'auto'` — the historical behaviour. */
+      imageDetail?: ImageDetail
     } = {},
   ) {
     this.model = model
@@ -113,6 +121,7 @@ export class OpenAIProvider implements LLMProvider {
     // Already sanitized for the selected model by the caller; empty unless the
     // user tuned this model, so an untouched request body is unchanged.
     this.tuned = openAiParameterFields(opts.params ?? {})
+    this.imageDetail = opts.imageDetail ?? 'auto'
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -132,6 +141,7 @@ export class OpenAIProvider implements LLMProvider {
    * no `max_tokens` at all, exactly as before.
    */
   private readonly maxOutputTokens: number | undefined
+  private readonly imageDetail: ImageDetail
 
   stream(
     messages: LLMMessage[],
@@ -174,7 +184,7 @@ export class OpenAIProvider implements LLMProvider {
               {
                 model,
                 stream: true,
-                messages: toOpenAIMessages(outbound),
+                messages: toOpenAIMessages(outbound, self.imageDetail),
                 ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
                 ...(mappedTools ? { tools: mappedTools } : {}),
                 ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
@@ -287,7 +297,10 @@ function readReasoningDelta(delta: object): string {
   return typeof raw === 'string' ? raw : ''
 }
 
-function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageParam[] {
+function toOpenAIMessages(
+  messages: LLMMessage[],
+  imageDetail: ImageDetail = 'auto',
+): OpenAI.ChatCompletionMessageParam[] {
   return messages.flatMap((m): OpenAI.ChatCompletionMessageParam[] => {
     if (m.role === 'system') return [{ role: 'system', content: m.content }]
     if (m.role === 'user' && typeof m.content === 'string')
@@ -296,7 +309,7 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
       return [
         {
           role: 'user',
-          content: toOpenAIContent(m.content),
+          content: toOpenAIContent(m.content, imageDetail),
         },
       ]
     }
@@ -325,7 +338,10 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
       // tool produced follow as their own user message rather than being lost.
       const images = toolResultImageFollowUp(m.toolResults)
       if (!images || typeof images === 'string') return toolMessages
-      return [...toolMessages, { role: 'user' as const, content: toOpenAIContent(images) }]
+      return [
+        ...toolMessages,
+        { role: 'user' as const, content: toOpenAIContent(images, imageDetail) },
+      ]
     }
     return []
   })
@@ -333,10 +349,19 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
 
 function toOpenAIContent(
   content: Array<{ type: string; text?: string; dataUrl?: string }>,
+  imageDetail: ImageDetail = 'auto',
 ): OpenAI.ChatCompletionContentPart[] {
   return content.map((c) => {
     if (c.type === 'text') return { type: 'text', text: c.text ?? '' }
-    if (c.type === 'image' && c.dataUrl) return { type: 'image_url', image_url: { url: c.dataUrl } }
+    if (c.type === 'image' && c.dataUrl) {
+      return {
+        type: 'image_url',
+        // `detail` is omitted entirely at 'auto' rather than sent explicitly:
+        // that is already OpenAI's default, and the OpenAI-compatible servers
+        // this adapter also drives can reject fields they don't recognise.
+        image_url: { url: c.dataUrl, ...(imageDetail === 'auto' ? {} : { detail: imageDetail }) },
+      }
+    }
     return { type: 'text', text: '' }
   })
 }

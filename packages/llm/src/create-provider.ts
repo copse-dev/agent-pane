@@ -223,6 +223,7 @@ export function createExtraCloudProvider(
       serverTools,
       params,
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
+      ...(provider.imageDetail ? { imageDetail: provider.imageDetail } : {}),
     })
   }
   const ceiling = recommendedOutputCeiling(model, params)
@@ -235,5 +236,6 @@ export function createExtraCloudProvider(
     params,
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
     ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),
+    ...(provider.imageDetail ? { imageDetail: provider.imageDetail } : {}),
   })
 }

@@ -12,7 +12,13 @@ import { serviceTierBody } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
-import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  ImageDetail,
+  LLMMessage,
+  LLMProvider,
+  LLMTool,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { responsesParameterFields, type ModelParameters } from './model-parameters.ts'
 
 /**
@@ -30,6 +36,7 @@ export class ResponsesProvider implements LLMProvider {
   private readonly serviceTier: string | undefined
   /** User-tuned reasoning / sampling, in this API's request shape. */
   private readonly tuned: ReturnType<typeof responsesParameterFields>
+  private readonly imageDetail: ImageDetail
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   constructor(
@@ -42,6 +49,8 @@ export class ResponsesProvider implements LLMProvider {
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
       serviceTier?: string
       params?: ModelParameters
+      /** Image fidelity to request. Defaults to `'auto'` — the historical behaviour. */
+      imageDetail?: ImageDetail
     },
   ) {
     this.model = model
@@ -49,6 +58,7 @@ export class ResponsesProvider implements LLMProvider {
     this.extraBody = opts.extraBody
     this.serviceTier = opts.serviceTier
     this.tuned = responsesParameterFields(opts.params ?? {})
+    this.imageDetail = opts.imageDetail ?? 'auto'
     this.client = new OpenAI({
       baseURL: opts.baseURL,
       apiKey: opts.apiKey,
@@ -74,7 +84,7 @@ export class ResponsesProvider implements LLMProvider {
         const response = await self.client.responses.create(
           {
             model: self.model,
-            input: toResponsesInput(messages),
+            input: toResponsesInput(messages, self.imageDetail),
             stream: true,
             tools: [...self.serverTools, ...localTools],
             ...serviceTierBody(self.serviceTier),
@@ -169,7 +179,10 @@ function* usageChunks(
   }
 }
 
-export function toResponsesInput(messages: LLMMessage[]): ResponseInput {
+export function toResponsesInput(
+  messages: LLMMessage[],
+  imageDetail: ImageDetail = 'auto',
+): ResponseInput {
   return messages.flatMap((message): ResponseInput => {
     if (message.role === 'system') {
       return [{ role: 'system', content: message.content }]
@@ -183,7 +196,7 @@ export function toResponsesInput(messages: LLMMessage[]): ResponseInput {
           role: 'user',
           content: message.content.map((part) =>
             part.type === 'image'
-              ? { type: 'input_image', image_url: part.dataUrl, detail: 'auto' }
+              ? { type: 'input_image', image_url: part.dataUrl, detail: imageDetail }
               : { type: 'input_text', text: part.text },
           ),
         },
@@ -216,7 +229,7 @@ export function toResponsesInput(messages: LLMMessage[]): ResponseInput {
           role: 'user',
           content: images.map((part) =>
             part.type === 'image'
-              ? { type: 'input_image', image_url: part.dataUrl, detail: 'auto' }
+              ? { type: 'input_image', image_url: part.dataUrl, detail: imageDetail }
               : { type: 'input_text', text: part.text },
           ),
         },
