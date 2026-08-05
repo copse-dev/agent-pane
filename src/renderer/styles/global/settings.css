@@ -1641,6 +1641,14 @@ dialog.settings-overlay::backdrop {
   font-size: 11px;
   color: var(--text-muted);
 }
+/* What the selected rule names right now — the one thing a rule hides that a
+   pinned model id showed. Hidden when the stored value is already concrete. */
+.pack-setting-resolved {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
 .pack-setting-input {
   justify-self: end;
 }

@@ -96,8 +96,21 @@ describe('parseModelSelection', () => {
       ['remote-agent:cursor', 'remote-agent'],
       ['acp:gemini', 'acp'],
       ['pack-model:p:r', 'pack-model'],
+      ['auto:best-value', 'auto'],
     ] as const) {
       assert.equal(parseModelSelection(model).namespace, namespace)
     }
+  })
+
+  it('carries a dynamic rule body through as the id', () => {
+    // `auto:` names no route — the id is the rule `dynamic-model.ts` reads,
+    // and the vendor-stripping that aggregator ids get must not touch it.
+    assert.deepEqual(parseModelSelection('auto:min-intellect:45'), {
+      namespace: 'auto',
+      slug: 'auto',
+      agent: '',
+      id: 'min-intellect:45',
+      modelId: 'min-intellect:45',
+    })
   })
 })
