@@ -74,6 +74,7 @@ import {
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@copse/agent/review-subagent.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
+import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -1298,7 +1299,11 @@ export async function runAgent(
       }
 
       const completed = findNewlyCompleted(before, todos)
-      if (completed && compactAtTodoBoundary(trimmed, todos)) {
+      // Measured at the boundary, not from the turn's opening snapshot: the run
+      // has been appending to `trimmed` ever since, and it is the size right now
+      // that decides whether there is any headroom to buy.
+      const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+      if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
         notifyTrimmed(sendTrimNotice)
       }
 
