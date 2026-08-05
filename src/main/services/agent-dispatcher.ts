@@ -9,6 +9,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
+import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -17,6 +18,7 @@ import {
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import {
   appendMachineContinuation,
+  getProjectThread,
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
@@ -65,6 +67,12 @@ export interface AgentDispatcherDependencies {
     threadId: string,
     host: AgentHost<StreamChunk>,
   ) => Promise<ThreadExecutionContext | null>
+  /**
+   * How many messages the thread's transcript already holds. Compared against
+   * the loaded provider history to catch a turn starting with context the user
+   * can see but the model cannot — see {@link contextWasLost}.
+   */
+  transcriptLength: (projectId: string, threadId: string) => Promise<number>
   run: (
     threadId: string,
     userContent: UserContent,
@@ -73,6 +81,11 @@ export interface AgentDispatcherDependencies {
     registry: ToolRegistry,
     options: RunAgentOptions,
   ) => ReturnType<typeof runAgent>
+}
+
+async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
+  const thread = await getProjectThread(projectId, threadId)
+  return thread?.messages.length ?? 0
 }
 
 const defaultDependencies: AgentDispatcherDependencies = {
@@ -84,6 +97,7 @@ const defaultDependencies: AgentDispatcherDependencies = {
   now: Date.now,
   createId: randomUUID,
   prepareExecutionContext: prepareThreadExecutionContext,
+  transcriptLength: threadTranscriptLength,
   run: runAgent,
 }
 
@@ -284,6 +298,31 @@ export class AgentDispatcher {
     }
   }
 
+  /**
+   * Say so when this turn is starting without history the transcript shows it
+   * should have. Emitted through the same text channel `runAgent` uses for its
+   * own pre-turn notices (the remote-agent fallback, the oversized-turn
+   * message), so it needs no new surface — it just precedes the answer.
+   *
+   * Never blocks the turn: a thread the store cannot read is a diagnostic
+   * problem, not a reason to refuse to run.
+   */
+  private async warnIfContextWasLost(
+    projectId: string,
+    threadId: string,
+    historyLength: number,
+  ): Promise<void> {
+    if (historyLength > 0) return
+    let transcriptMessages: number
+    try {
+      transcriptMessages = await this.dependencies.transcriptLength(projectId, threadId)
+    } catch {
+      return
+    }
+    if (!contextWasLost(historyLength, transcriptMessages)) return
+    this.host.emit(threadId, { type: 'text', text: contextLossNotice(transcriptMessages) })
+  }
+
   private async execute(request: AgentDispatchRequest, key: string): Promise<void> {
     const { projectId, threadId, payload } = request
     const priorMessages = await this.history(projectId, threadId)
@@ -293,6 +332,8 @@ export class AgentDispatcher {
       this.host,
     )
     if (!executionContext) return
+
+    await this.warnIfContextWasLost(projectId, threadId, priorMessages.length)
 
     const options: RunAgentOptions = {
       invokedSkills: payload.invokedSkills,

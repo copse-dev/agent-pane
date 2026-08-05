@@ -43,6 +43,7 @@ function dependencies(
     now: () => 100,
     createId: () => 'audit-id',
     prepareExecutionContext: async () => context,
+    transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
       messages: [...priorMessages, { role: 'user', content: userContent }],
@@ -80,6 +81,84 @@ describe('AgentDispatcher', () => {
       [...loaded, { role: 'user', content: 'continue' }],
       [...loaded, { role: 'user', content: 'continue' }, { role: 'user', content: 'again' }],
     ])
+  })
+
+  it('warns when a turn starts with an empty history but a full transcript', async () => {
+    const emitted: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({ loadHistory: async () => [], transcriptLength: async () => 4 }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    const notice = emitted.find((chunk) => chunk.type === 'text')
+    assert.ok(notice, 'expected a notice before the turn')
+    assert.match(notice.text, /Earlier context is missing/)
+    assert.match(notice.text, /4 messages/)
+  })
+
+  it('stays quiet on a fresh thread whose only message is the prompt', async () => {
+    const emitted: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({ loadHistory: async () => [], transcriptLength: async () => 1 }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(
+      emitted.filter((chunk) => chunk.type === 'text').length,
+      0,
+      'a first turn has lost nothing',
+    )
+  })
+
+  it('stays quiet when the model already has history', async () => {
+    const emitted: StreamChunk[] = []
+    let transcriptReads = 0
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({
+        loadHistory: async () => [{ role: 'assistant', content: 'prior' }],
+        transcriptLength: async () => {
+          transcriptReads += 1
+          return 9
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(emitted.filter((chunk) => chunk.type === 'text').length, 0)
+    // The common path must not pay for a thread read it cannot learn from.
+    assert.equal(transcriptReads, 0)
+  })
+
+  it('runs the turn anyway when the transcript cannot be read', async () => {
+    let ran = false
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        transcriptLength: () => Promise.reject(new Error('store unavailable')),
+        run: async (_threadId, userContent, priorMessages) => {
+          ran = true
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(ran, true)
   })
 
   it('rejects a second active dispatch for the same project thread', async () => {
