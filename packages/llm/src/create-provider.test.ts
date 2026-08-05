@@ -87,6 +87,7 @@ describe('createProvider routing', () => {
 
 interface CapturedRequestBody {
   prompt_cache_key?: string
+  service_tier?: string
   store?: boolean
   provider?: { require_parameters?: boolean; zdr?: boolean; data_collection?: string }
   stream_options?: { include_usage?: boolean }
@@ -202,6 +203,63 @@ describe('createProvider prompt cache key', () => {
     const provider = expectOpenAIProvider(createProvider('gpt-4o', { openAiApiKey: 'test-openai' }))
     const request = await captureRequest(provider)
     assert.equal(request.prompt_cache_key, undefined)
+  })
+})
+
+describe('createProvider service tier', () => {
+  it('sends service_tier to OpenAI when configured', async () => {
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }, undefined, {
+        serviceTier: 'flex',
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, 'flex')
+  })
+
+  it('omits service_tier entirely by default, keeping standard processing', async () => {
+    const provider = expectOpenAIProvider(createProvider('gpt-4o', { openAiApiKey: 'test-openai' }))
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, undefined)
+  })
+
+  it('passes an unrecognised tier through for the provider to judge', async () => {
+    // Not an enum on purpose: OpenAI's tier names are model-specific and keep
+    // changing, so validating here would reject a valid new tier until we
+    // shipped an update. A wrong value fails visibly with a 400.
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }, undefined, {
+        serviceTier: 'some-future-tier',
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, 'some-future-tier')
+  })
+
+  it('keeps the store opt-out alongside the tier', async () => {
+    // service_tier must not displace the privacy default.
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-4o', { openAiApiKey: 'test-openai' }, 'thread-1', {
+        serviceTier: 'priority',
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, 'priority')
+    assert.equal(request.store, false)
+    assert.equal(request.prompt_cache_key, 'thread-1')
+  })
+
+  it('never sends service_tier to Anthropic, which rejects unknown fields', () => {
+    const provider = createProvider(
+      'claude-sonnet-4-6',
+      { anthropicApiKey: 'sk-ant-test' },
+      undefined,
+      {
+        serviceTier: 'flex',
+      },
+    )
+    // Routed to the Anthropic adapter, which has no service-tier concept at all.
+    assert.ok(!(provider instanceof OpenAIProvider))
   })
 })
 

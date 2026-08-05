@@ -97,8 +97,10 @@ describe('remote agent model picker', () => {
       picker.optionLabels.includes('Composer 2'),
       `expected Composer 2 from live catalog, saw ${JSON.stringify(picker.optionLabels)}`,
     )
+    // Cursor names it "Claude 4.6 Sonnet (Thinking)"; the picker spells Claude
+    // models one way in every group.
     assert.ok(
-      picker.optionLabels.includes('Claude 4.6 Sonnet (Thinking)'),
+      picker.optionLabels.includes('Claude Sonnet 4.6 (Thinking)'),
       `expected Claude thinking model from live catalog, saw ${JSON.stringify(picker.optionLabels)}`,
     )
 
