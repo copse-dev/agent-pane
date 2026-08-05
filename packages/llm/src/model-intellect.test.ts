@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import {
   BAND_REPRESENTATIVE_MODEL,
   CANONICAL_INTELLECT_VERSION,
-  MODEL_INTELLECT,
   explainIntellectScore,
   getIntellectScore,
   intellectBand,
@@ -122,30 +121,25 @@ describe('catalog merge', () => {
 })
 
 describe('model intellect scale', () => {
-  it('annotates every tracked model, and nothing else', () => {
-    assert.deepEqual(Object.keys(MODEL_INTELLECT).sort(), [...TRACKED_MODELS].sort())
+  it('ranks every tracked model, so none is unrankable', () => {
+    // Coverage is what the classifier and advisor need; the old editorial map
+    // guaranteed it by forcing a hand-written entry per model. It now comes
+    // from the measurements, which cover the whole tracked catalog.
+    for (const model of TRACKED_MODELS) {
+      assert.ok(modelIntellect(model) !== null, `${model} has no rankable intellect`)
+    }
   })
 
-  it('resolves a value for tracked ids and null for unknown/local ids', () => {
-    assert.equal(modelIntellect('claude-opus-4-8'), 9)
-    assert.equal(modelIntellect('claude-haiku-4-5'), 4)
-    assert.equal(modelIntellect('lmstudio:qwen/qwen2.5-coder-32b'), null)
+  it('reads the measured axis rather than a separate scale', () => {
+    for (const model of TRACKED_MODELS) {
+      const measured = getIntellectScore(model)
+      if (measured) assert.equal(modelIntellect(model), measured.value, model)
+    }
+  })
+
+  it('returns null for ids nothing has measured or curated', () => {
+    assert.equal(modelIntellect('lmstudio:not-a-real-local-model'), null)
     assert.equal(modelIntellect(''), null)
-  })
-
-  it('keeps the scale ordinal: a strictly stronger model has a strictly higher number', () => {
-    const haiku = modelIntellect('claude-haiku-4-5') ?? NaN
-    const sonnet = modelIntellect('claude-sonnet-4-6') ?? NaN
-    const opus = modelIntellect('claude-opus-4-8') ?? NaN
-    assert.ok(haiku < sonnet && sonnet < opus)
-  })
-
-  it('bands values relative to the annotated distribution', () => {
-    const scale = [3, 4, 5, 6, 6, 8, 9]
-    assert.equal(intellectBand(9, scale), 'top')
-    assert.equal(intellectBand(8, scale), 'top')
-    assert.equal(intellectBand(6, scale), 'mid')
-    assert.equal(intellectBand(4, scale), 'low')
   })
 
   it('keeps each band representative inside its band as the scale evolves', () => {
