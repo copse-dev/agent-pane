@@ -58,6 +58,7 @@ import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { registerUiKit } from './ui/index.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
+import { mountCloseConfirm } from './views/close-confirm.ts'
 
 registerUiKit()
 import {
@@ -212,6 +213,9 @@ async function boot(): Promise<void> {
   mountSshPromptDialog(api)
   mountUpdatePromptDialog(api)
   mountConfirmDialog()
+  // Mounted after the confirm dialog it prompts through, so a close arriving
+  // during boot has somewhere to render.
+  mountCloseConfirm(api, store)
   mountFileSearchDialog(store, api)
   mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
