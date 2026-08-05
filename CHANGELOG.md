@@ -16,6 +16,14 @@ every published entry.
   hint saying so. Turning it off is never blocked, so clearing the key on an
   enabled pack shows the hint (and unregisters the tool) rather than trapping the
   switch on.
+- Closing Copse while a thread is still working now asks first. Quitting tears
+  down every live agent session with no way to resume, so a close that would land
+  mid-turn opens a confirmation naming the threads still running ("Fix login is
+  mid-turn…") with **Close anyway** / **Keep working**. Backing out leaves the
+  run untouched. This covers both routes out of the app — the window's close
+  button and Cmd+Q / the Quit menu item — and the prompt lands before any
+  teardown starts, not after. Closing with nothing running is unchanged: no
+  dialog, no extra click.
 - The model value map keeps working past Artificial Analysis' API retirement.
   AA retires its legacy `/api/v2/data/*` endpoints on 4 November 2026, after
   which they answer `410 Gone`. The live panel already read the supported free

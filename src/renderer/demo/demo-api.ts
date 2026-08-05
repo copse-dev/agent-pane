@@ -222,6 +222,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onRequest: subscribe,
       onDevNotice: subscribe,
     },
+    closeConfirm: {
+      respond: resolvedVoid,
+      onRequest: subscribe,
+    },
     sshWorkspace: {
       listHosts: emptyArray,
       listConfigAliases: emptyArray,
