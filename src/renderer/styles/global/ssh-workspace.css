@@ -1,4 +1,4 @@
-/* SSH connection / capability banner — sits below the titlebar like context-warning. */
+/* SSH connection / capability banner — sits in normal flow below the titlebar. */
 .ssh-status-banner {
   flex-shrink: 0;
   display: flex;

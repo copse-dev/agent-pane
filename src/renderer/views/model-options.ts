@@ -49,7 +49,9 @@ import {
 import {
   ACP_MODEL_PREFIX,
   acpGroupLabel,
+  acpModelChoiceLabel,
   acpModelValue,
+  acpModelVersionName,
   enabledClaudeAcpAgent,
   parseAcpAgentConfigs,
   parseAcpModel,
@@ -61,6 +63,7 @@ import {
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
+import { dynamicModelChoices, dynamicModelLabel } from '@copse/llm/dynamic-model.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -85,6 +88,8 @@ export interface ModelOption {
 
 export function modelDisplayLabel(model: string): string {
   if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
+  const dynamic = dynamicModelLabel(model)
+  if (dynamic) return dynamic
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
   const packModel = parsePackModelSelection(model)
   if (packModel) return packModel.routeId
@@ -139,7 +144,7 @@ async function packModelOptions(
 function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
   const options: ModelOption[] = []
   for (const agent of agents.filter((agent) => agent.enabled)) {
-    // Each agent gets its own heading ("<Title> Client (ACP)"), so models list
+    // Each agent gets its own heading ("<Title> on this device"), so models list
     // bare underneath without a redundant "<Title> —" prefix.
     const group = acpGroupLabel(agent.title)
     const models = agent.availableModels ?? []
@@ -148,11 +153,18 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       // "agent default" entry is dropped — it's redundant and confusing).
       // ACP agents expose no token pricing, so the hint is intellect-only —
       // resolved via the measurement alias map (agent labels like "Opus 4.8").
+      // Agents that label models by family alone keep the version in the
+      // description, which is both what the row shows and what resolves.
       for (const model of models) {
-        const hint = modelIntellectHint(model.value) ?? modelIntellectHint(model.label)
+        const label = acpModelChoiceLabel(model)
+        const versioned = acpModelVersionName(model.description)
+        const hint =
+          modelIntellectHint(model.value) ??
+          (versioned === null ? null : modelIntellectHint(versioned)) ??
+          modelIntellectHint(model.label)
         options.push({
           value: acpModelValue(agent.id, model.value),
-          label: hint ? `${model.label} — ${hint}` : model.label,
+          label: hint ? `${label} — ${hint}` : label,
           group,
         })
       }
@@ -596,4 +608,49 @@ export function localModelOptions(
   autoLabel = '(auto — first loaded model)',
 ): ModelOption[] {
   return [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))]
+}
+
+/** Group heading for a pinned model kept selectable in a dynamic-only picker. */
+const PINNED_GROUP = 'Currently pinned'
+
+/**
+ * The option list for a picker that selects *how* to choose a model rather than
+ * which one — every pack-owned model setting and the Experimental worker model.
+ *
+ * These features run unattended, often long after the picker was last opened: a
+ * pinned id there quietly rots as keys, plans, and local models change, and the
+ * user has no reason to revisit it. A rule keeps meaning what it said.
+ *
+ * A `current` value that is *not* a selector (a choice made before this, or a
+ * hand-edited settings file) is kept as its own row rather than dropped. Silently
+ * showing a different selection than the one that will actually run is worse than
+ * one extra row, and choosing any dynamic option retires it.
+ */
+export function dynamicModelOptions(current: string, autoLabel?: string): ModelOption[] {
+  const options: ModelOption[] = dynamicModelChoices().map((choice) => ({
+    value: choice.value,
+    label: `${choice.label} — ${choice.description}`,
+    group: choice.group,
+  }))
+  // A field whose blank value means something ("reviewer A follows the chat
+  // model") needs that state selectable, or the picker would show a rule the
+  // feature is not using. Same `''` convention as the role/small-task pickers.
+  if (autoLabel !== undefined) options.unshift(autoModelOption(autoLabel))
+  const pinned = current.trim()
+  if (pinned && !options.some((option) => option.value === pinned)) {
+    options.unshift({
+      value: pinned,
+      label: `${modelDisplayLabel(pinned)} (pinned)`,
+      group: PINNED_GROUP,
+    })
+  }
+  return options
+}
+
+/** {@link dynamicModelOptions} in the async shape every picker's `loadOptions` wants. */
+export function fetchDynamicModelOptions(
+  current: string,
+  autoLabel?: string,
+): Promise<ModelOption[]> {
+  return Promise.resolve(dynamicModelOptions(current, autoLabel))
 }

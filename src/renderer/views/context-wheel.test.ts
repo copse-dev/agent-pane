@@ -89,12 +89,13 @@ describe('context wheel breakdown (component)', () => {
     assert.match(popover.textContent, /Conversation/)
   })
 
-  it('shows no hover breakdown when none is provided (subagent/remote window)', () => {
+  it('falls back to the snapshot aggregate when no breakdown is provided', () => {
     const wheel = createContextWheel()
     document.body.append(wheel.root)
 
     // Subagent and remote-agent windows report only a live snapshot and no
-    // breakdown, so the wheel must not become interactive on hover.
+    // breakdown. The wheel used to be inert on hover in that state; it now
+    // shows the aggregate it is already drawing, with no source note.
     const snapshot = {
       contextWindow: 200_000,
       conversationBudget: 200_000,
@@ -108,7 +109,60 @@ describe('context wheel breakdown (component)', () => {
     assert.ok(popover)
     assert.equal(popover.hidden, true)
     wheel.root.dispatchEvent(new Event('mouseenter'))
-    // Still hidden: breakdownActive was never set, so the hover does nothing.
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Context · 6\.8k \/ 200\.0k \(3%\)/)
+    assert.equal(popover.querySelectorAll('.context-wheel-popover-note').length, 0)
+  })
+
+  it('keeps a hover aggregate while the agent is running', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+
+    // Mid-run the caller passes `breakdown: null` on purpose — the pre-send
+    // estimate describes the *next* prompt, so the live snapshot is the
+    // authoritative source. That used to leave the wheel with nothing on hover
+    // for the whole run; the aggregate needs no estimate to show.
+    const snapshot = {
+      contextWindow: 200_000,
+      conversationBudget: 180_000,
+      conversationTokens: 54_000,
+      fillRatio: 0.3,
+      updatedAt: Date.now(),
+    }
+    wheel.update(snapshot, true, { breakdown: null, breakdownRing: false })
+
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Context · 54\.0k \/ 180\.0k \(30%\)/)
+  })
+
+  it('drops the popover again when the snapshot goes away', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+
+    wheel.update(
+      {
+        contextWindow: 200_000,
+        conversationBudget: 180_000,
+        conversationTokens: 54_000,
+        fillRatio: 0.3,
+        updatedAt: Date.now(),
+      },
+      true,
+      { breakdown: null, breakdownRing: false },
+    )
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    assert.equal(popover.hidden, false)
+
+    // A thread with no usable snapshot hides the wheel outright; hovering the
+    // stale node must not resurrect the previous thread's numbers.
+    wheel.update(null, false, { breakdown: null, breakdownRing: false })
+    assert.equal(wheel.root.hidden, true)
+    wheel.root.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, true)
   })
 

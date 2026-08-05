@@ -29,19 +29,63 @@ export interface ApprovalRequest {
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
+  /**
+   * Hide the body behind a "Show details" disclosure, so the prompt leads with
+   * the decision rather than the command. Honoured only for a single-request
+   * prompt; a coalesced batch always shows every body.
+   */
+  collapseDetails?: boolean
+  /**
+   * Label for a secondary approve button that approves *only this request*
+   * (`remember: false`), leaving the primary button to carry the broader grant
+   * (`remember: true`) with no checkbox. Like {@link collapseDetails} it is
+   * honoured only for a single-request prompt: in a mixed batch the primary
+   * button falls back to the checkbox, so an unrelated request can never be
+   * swept into a grant the user answered for something else.
+   */
+  approveOnceLabel?: string
   /** Intentional Settings-owned flow that must prompt above the open Settings dialog. */
   showWhileSettingsOpen?: boolean
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
   comparisonModels?: ComparisonModelSelection
+  /** Offer a bounded main-process lease for exact retries in this turn tree. */
+  allowTurnTreeLease?: boolean
+  /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
+  turnTreeLeaseLabel?: string
+  /** Whether approving also grants the bounded task lease without another user action. */
+  turnTreeLeaseDefault?: boolean
+  /**
+   * What the offered lease would actually cover — the exact command, not the
+   * display label. Required whenever `allowTurnTreeLease` is true.
+   *
+   * The label is a fixed string shared by every shell prompt, so it cannot tell
+   * two batched requests apart. A batch settles with ONE tick box but issues one
+   * lease per request, so without a per-request identity a single tick would
+   * grant leases for unrelated commands under a label reading "this task". The
+   * renderer hides the box unless every batched request shares this subject —
+   * the same coherence rule `rememberLabel` gets, on a value that discriminates.
+   */
+  turnTreeLeaseSubject?: string
   /** Secret-free operation or tool name stored in the durable decision log. */
   subject?: string
   /** Scope the decision applies at, such as `sandbox` or `external`. */
   scope?: string
+  /**
+   * Why the prompt was raised, recorded verbatim on the decision-log line this
+   * answer produces. Durable shell decisions omit the command itself
+   * (`SHELL_DECISION_SUBJECT`), so a gate that can name *what* it is asking
+   * about — the paths a read touches, the origin a fetch reaches — passes it
+   * here to leave the answer legible in the log. Redacted at record time; keep
+   * it secret-free at the call site anyway.
+   */
+  reasons?: string[]
 }
 
 export interface ApprovalResponse {
   approved: boolean
   remember: boolean
+  /** Scope selected for this approval; absent is the backwards-compatible one-shot grant. */
+  grantScope?: 'once' | 'turn-tree'
   /**
    * How the prompt settled; omitted by external handlers means a user decision.
    * There is no wall-clock timeout — `timeout` remains in the union for older
@@ -68,8 +112,17 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    collapseDetails: req.collapseDetails ?? false,
+    approveOnceLabel: req.approveOnceLabel ?? '',
+    // Part of the key so two prompts that read alike but are *about* different
+    // things can never share one answer — and one recorded line.
+    reasons: req.reasons ?? [],
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
     comparisonModels: req.comparisonModels ?? null,
+    allowTurnTreeLease: req.allowTurnTreeLease ?? false,
+    turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
+    turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
+    turnTreeLeaseSubject: req.turnTreeLeaseSubject ?? '',
   })
 }
 
@@ -147,6 +200,7 @@ function recordApprovalDecision(
           : 'cancelled',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
+    ...(req.reasons?.length ? { reasons: req.reasons } : {}),
     remembered: response.remember,
     ...(resolution === 'user' ? {} : { source: resolution }),
   })
@@ -387,7 +441,7 @@ export function initApproval(
       // assertMainFrameSender rejects any frame other than the window's main
       // frame, so a compromised/embedded frame can't answer an approval.
       assertMainFrameSender(event, win)
-      const [id, approved, remember, comparisonModels] = parseIpcArgs(
+      const [id, approved, remember, comparisonModels, grantScope] = parseIpcArgs(
         approvalRespondSchema,
         rawArgs,
       )
@@ -396,6 +450,7 @@ export function initApproval(
         remember: remember === true,
         resolution: 'user',
         ...(comparisonModels ? { comparisonModels } : {}),
+        ...(grantScope ? { grantScope } : {}),
       })
     } catch (err) {
       if (err instanceof IpcValidationError) return

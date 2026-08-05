@@ -1,8 +1,8 @@
 # Dark-factory PR orchestrator
 
-Status: **proposed** — design/decision doc only; nothing is implemented. Feature flag
-will be `prOrchestratorEnabled` (experimental, default off), following the
-`ciInvestigatorEnabled` template.
+Status: **active (sensor foundation)** — the experimental `copse.dark-factory` pack
+gates one supervisor-registered adaptive fleet-poll event source and is default-off.
+Fleet discovery, GitHub observations, history, incidents, and actuators remain proposed.
 
 Related design lineage: [#690](https://github.com/copse-dev/agent-pane/issues/690)
 (copse-CLI fleet-manager parity — the _actions_ layer this consumes),
@@ -10,6 +10,9 @@ Related design lineage: [#690](https://github.com/copse-dev/agent-pane/issues/69
 the _station_ this supervises), [#558](https://github.com/copse-dev/agent-pane/issues/558)
 / [`docs/plans/long-horizon-tasks.md`](./long-horizon-tasks.md) (grind-until-done within
 a PR), [`docs/plans/knowledge-store.md`](./knowledge-store.md) (durable findings).
+The broader product audit and non-PR workflows live in
+[`background-agents-capability-map.md`](background-agents-capability-map.md); this plan
+is the PR/CI nurse, not the generic background-agent or campaign control plane.
 
 ## What this is
 
@@ -51,12 +54,28 @@ What exists to build on, and what is net-new:
 | Follow-up suggestions on PR signals  | `pr-context-service.ts` → `follow-up-service.ts` ("Debug CI" chip)                                                   | ✅ turn-triggered, passive                                                                             |
 | PR pane                              | `src/renderer/views/pr-pane.ts`                                                                                      | ✅ event-driven refresh, **no polling**; per-row CI dot from an in-memory session cache                |
 | Knowledge store (typed OKF notes)    | `src/main/services/storage/knowledge-store.ts`                                                                       | ✅ new note types need no store change                                                                 |
-| Scheduler / background poller        | —                                                                                                                    | ❌ none anywhere in `src/main` (only fs watchers + user-started background shell processes)            |
+| Scheduler / background poller        | `src/main/services/supervisor/dark-factory-sensor.ts`                                                                | ⚠️ adaptive, feature-gated event source exists; no fleet/GitHub observation consumer yet               |
 | Headless agent invocation            | —                                                                                                                    | ❌ `runAgent` requires an IPC-driven chat turn; subagent runners only work inside one                  |
 | Check-run history / cross-PR memory  | —                                                                                                                    | ❌ all CI reads are stateless                                                                          |
 | Flake/outage detection               | —                                                                                                                    | ❌ nothing correlates failures across PRs or over time                                                 |
 | GitHub rate-limit / backoff handling | —                                                                                                                    | ❌ neither backend inspects rate-limit headers or uses conditional requests                            |
 | OS/toast notifications               | —                                                                                                                    | ❌ nearest analogue is the projects-pane attention indicator                                           |
+| Durable background task schema       | `src/shared/supervisor/`, `schemas/copse-supervisor-task.schema.json`                                                | 🟡 P1 schema/reconcile foundation only; no main-process supervisor service or timers                   |
+| Project cron automations             | `src/main/services/automations/`, `copse.automations` pack                                                           | ✅ app-open prototype; not headless and not the orchestrator scheduler                                 |
+
+## Background-agents.com comparison
+
+Ona's [Background Agents guide](https://background-agents.com/) adds a useful test for
+this proposal: isolated execution, runtime governance, internal connectivity, triggers,
+and fleet coordination are all required before "self-driving codebase" is an honest
+claim. This plan covers only PR/CI sensing and nursing. It consumes the supervisor,
+runtime-security, cloud/detached-worker, and campaign foundations mapped in the
+[capability audit](background-agents-capability-map.md).
+
+Of the guide's seven starter workflows, CI failure triage is directly owned here and
+stale/merge-conflicted PR nursing is adjacent O6 scope. Code review, CVE remediation,
+coverage expansion, standards enforcement, and release-note drafting are separate
+workflow consumers. They must not turn this service into a generic prompt scheduler.
 
 ## Architecture
 
@@ -250,12 +269,29 @@ Settled here; changing one means updating this doc, not silently diverging.
     owner-thread routing, and headless diagnosis run unattended; repair dispatch
     (rung 5) always requires per-incident approval in v1 — no trust-period
     hands-free mode.
+16. **Measure the system outcome and graduate autonomy progressively.** O0 records a
+    baseline before O1 changes behavior. Every incident/action links trigger time,
+    classification, first result, accepted resolution, human correction/rejection,
+    tokens/compute, and external actions. Rollout is `observe → nurse → dispatch` per
+    workflow/policy, with an explicit rollback to observe. PR count is not a success
+    metric; trigger-to-accepted-resolution, queue age/lead time, correction/regression,
+    and human interventions per completed incident are.
+17. **Campaigns are upstream, PR nursing is downstream.** Cross-repo remediation (for
+    example one CVE over 100 repos) is a supervisor campaign with one isolated child per
+    target. Its resulting PRs join this fleet and use this incident/nursing policy. The
+    orchestrator does not discover an organization and manufacture arbitrary campaigns.
 
 ## Phases
 
 Each phase is independently shippable and useful; later phases are inert without the
 earlier ones.
 
+- **O0 — baseline + observe policy.** Define the selected fleet, current CI-failure and
+  stale-PR turnaround, human interventions/corrections, rate-limit budget, and the
+  event schema linking sensor observation → incident → action → accepted resolution.
+  Ship deterministic replay fixtures before actuators. Acceptance: a fixture/report can
+  reproduce baseline and observe-only classification without a GitHub write or model
+  call.
 - **O1 — sensors + fleet view (observe-only).** Flag + settings schema; fleet registry;
   backend `listCheckRuns` + rate-limit/backoff/ETag work; adaptive poller; ci-history
   store; IPC push; PR-pane fleet strip (fleet counts, per-PR freshness, "while you were
@@ -276,8 +312,10 @@ earlier ones.
 - **O5 — repair dispatch.** Pre-filled fix threads from an incident; per-incident
   approval flow; flake-promotion ("fix the flaky test") path; optionally managed-agent
   dispatch behind the same approval.
-- **O6 — widen.** Cross-repo fleet (pending #690 Q2), stale-PR nursing actions
-  (update-branch), richer notification routing.
+- **O6 — widen.** Cross-repo fleet (pending #690 Q2), stale/merge-conflicted PR nursing
+  actions (update-branch; mechanical conflict handling only), richer notification
+  routing, and campaign-result ingestion from the supervisor. Campaign creation/fan-out
+  remains owned by `background-supervisor.md` P6.
 
 ## Known implementation traps
 
@@ -332,5 +370,8 @@ autonomy (→ decision 15).
   `CiFlakePattern` note types.
 - [`docs/plans/long-horizon-tasks.md`](./long-horizon-tasks.md) — "CI integration /
   grind until green" follow-up that rungs 3–5 realize.
+- [`background-agents-capability-map.md`](background-agents-capability-map.md) — honest
+  current-capability matrix, other starter workflows, detached execution, campaigns,
+  and production feedback requirements.
 - `src/main/services/remote/remote-agent-link-store.ts` — agent-PR provenance.
 - PR #954 — the ad-hoc CI-failure-investigation automation this systematizes.

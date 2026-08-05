@@ -12,6 +12,10 @@
 .model-picker-field {
   width: 100%;
   max-width: 480px;
+  /* Out of the positioning chain on purpose: the field menu is anchor-
+     positioned (see below), so its containing block should be the surface, not
+     the narrow field it sits in. */
+  position: static;
 }
 .model-picker-trigger {
   display: flex;
@@ -43,6 +47,10 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   text-align: left;
+  /* Anchor for the menu below. `--model-picker-anchor` is stamped per instance
+     by mountModelPicker: Chromium resolves a duplicated anchor-name to another
+     element carrying it, which would throw a menu at a different picker. */
+  anchor-name: var(--model-picker-anchor);
 }
 .model-picker-field .model-picker-trigger:hover {
   border-color: var(--border-strong);
@@ -80,9 +88,37 @@
   padding: var(--spacing-xs);
   box-shadow: var(--shadow-md);
 }
+/* Field pickers sit inside scrolling settings panes, often in a right-aligned
+   column narrower than the menu: a plain `left: 0` then runs the menu off the
+   surface, and the pane's own overflow clips whatever is left. Same treatment
+   as the footer popups in input-bar.css — anchor the menu to its own trigger,
+   keep the host out of the positioning chain so the containing block is the
+   surface rather than the narrow field, and let position-try flip the menu
+   when the preferred edge would overflow. */
+@position-try --model-picker-clamp-right {
+  left: auto;
+  right: anchor(right);
+}
+@position-try --model-picker-flip-up {
+  top: auto;
+  bottom: calc(anchor(top) + var(--spacing-xs));
+}
+@position-try --model-picker-flip-up-clamp-right {
+  top: auto;
+  bottom: calc(anchor(top) + var(--spacing-xs));
+  left: auto;
+  right: anchor(right);
+}
 .model-picker-field .model-picker-menu {
-  top: calc(100% + var(--spacing-xs));
+  position-anchor: var(--model-picker-anchor);
+  top: calc(anchor(bottom) + var(--spacing-xs));
   bottom: auto;
+  left: anchor(left);
+  right: auto;
+  /* The base `100%` would now measure the surface, not the field it sits in. */
+  min-width: anchor-size(width);
+  position-try-fallbacks:
+    --model-picker-clamp-right, --model-picker-flip-up, --model-picker-flip-up-clamp-right;
 }
 .model-picker-view-title {
   min-width: 0;

@@ -29,10 +29,12 @@ describes it to the agent, so changing the layout means updating that preamble.
   tasks/<taskId>/                    # supervised background tasks (#1081); not a thread
     meta.json                        # mutable task record (state, trigger, permissions)
     audit.jsonl                      # append-only lifecycle transitions
+  task-history/<taskId>.json         # compact terminal-task support summary; no permissions
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
+    acp-session.json                 # private external ACP session binding (optional)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     blobs/<toolCallId>.result.txt    # verbatim tool result
@@ -55,12 +57,15 @@ describes it to the agent, so changing the layout means updating that preamble.
   supervisor store is queue/state/handle telemetry. Schema:
   [`task-schema.ts`](../src/shared/supervisor/task-schema.ts) /
   [`copse-supervisor-task.schema.json`](../schemas/copse-supervisor-task.schema.json).
+  Terminal tasks older than the retention window move to `task-history/` before startup
+  reconciliation; these summaries retain ownership/outcome/timestamps but omit permission
+  snapshots and detailed audit transitions.
   The reserved directory name `tasks` must not be used as a thread id (thread ids are
   UUIDs). Writers and the main-process singleton land in later phases; P1 is schema +
   pure reconcile only.
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
-  (plus interleaved `hook_run`, `permission_decision` and Plan Mode `plan` lifecycle lines, below), oldest first. It is
+  (plus interleaved `hook_run`, `permission_decision`, `machine_continuation`, and Plan Mode `plan` lifecycle lines, below), oldest first. It is
   the source of ordering and structure; prose and large/opaque content live in
   referenced files (`messages/*.md`, `blobs/*`) so a draft keystroke rewrites
   one tiny file, not the whole thread.
@@ -83,6 +88,13 @@ describes it to the agent, so changing the layout means updating that preamble.
   log history values. Legacy electron-store keys `llm-history:<threadId>` are
   migrated once at startup (after legacy thread import, before the first window)
   when ownership resolves to exactly one `(projectId, threadId)`.
+- **`acp-session.json`** is a private, versioned binding to one exact external
+  ACP agent session. It stores the opaque session id plus agent, protocol,
+  workspace, execution-target, and configuration-generation identity needed to
+  resume safely after a restart. The file is atomically replaced with owner-only
+  permissions and is not part of `meta.json`, `events.jsonl`, logs, telemetry,
+  or transcript exports. Corrupt, incomplete, and future-version bindings fail
+  closed instead of guessing a replacement session.
 
 ## Spine line schema
 
@@ -101,6 +113,8 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
   "reasoning": { "ref": "messages/<id>.reasoning.md", "sha256": "…" }, // optional
   "images": [{ "ref": "blobs/<imageId>.png", "mimeType": "image/png" }], // optional
   "commandSummary": "…", // optional
+  "startingCommit": "a1b2c3…", // optional: HEAD SHA the prompt started from (user messages)
+  "dirty": true, // optional: working tree had uncommitted changes at send time
   "toolCalls": [
     {
       "id": "…", "name": "read_file",
@@ -119,6 +133,12 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
 message. The transcript surfaces it only when more than one distinct primary
 model appears in the thread; explore/CI subagent models stay on the nested
 `subagent.model` field (already shown on their cards).
+
+`startingCommit`/`dirty` are captured once, at send time, for a human-typed
+prompt (via `git:promptState`) — the HEAD SHA the turn began on and whether the
+working tree already had uncommitted changes. Best-effort: absent outside a
+git repository, and not captured on paths that don't round-trip through main
+before the message is finalized (e.g. resend).
 Reconstruction (`foldThread`) folds `meta.json` + spine, resolves each ref, and
 **verifies its sha256** — a hash mismatch surfaces as a load error on that
 thread (skipped), never silent corruption. `parseSpine` tolerates unknown `v`
@@ -132,6 +152,29 @@ that arrives between turns). The writer replaces that message's spine line in
 place without reordering history, and rewrites its referenced result blob before
 the spine commit. In-progress tools are not re-finalized because v1 deliberately
 persists only terminal `done` / `error` tool states.
+
+## Machine-continuation line schema (`type: "machine_continuation"`)
+
+Machine-triggered agent turns append a compact `started` record before dispatch and a
+`finished` record afterward. Suppressed requests (`duplicate`, `stale`, or
+`budget-exhausted`) append only the terminal record. The line stores operation and
+turn-tree identity, timestamp, consumed continuation count when known, and the
+normalized result. It never copies prompts, commands, model output, paths, or provider
+history.
+
+```jsonc
+{
+  "v": 1,
+  "type": "machine_continuation",
+  "id": "<auditEventId>",
+  "operationId": "<stableOperationId>",
+  "turnTreeId": "<humanTurnTreeId>",
+  "recordedAt": 1712345678901,
+  "budgetUsed": 2, // optional when not yet known
+  "phase": "started" | "finished",
+  "result": "completed" | "duplicate" | "stale" | "budget-exhausted" | "failed" // finished only
+}
+```
 
 ## Hook-run line schema (`type: "hook_run"`)
 

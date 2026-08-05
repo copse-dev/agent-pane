@@ -141,15 +141,24 @@ export function modelSelectorFrom(response: {
   const currentValue = option['currentValue']
   if (typeof configId !== 'string' || typeof currentValue !== 'string') return null
   const choices: AcpModelChoice[] = []
+  // `description` is carried alongside the name: agents that label their models
+  // by family alone keep the version there (see `acpModelChoiceLabel`).
+  const toChoice = (entry: Record<string, unknown>): AcpModelChoice[] => {
+    const value = entry['value']
+    const name = entry['name']
+    if (typeof value !== 'string' || typeof name !== 'string') return []
+    const description = entry['description']
+    return [
+      typeof description === 'string' && description.length > 0
+        ? { value, label: name, description }
+        : { value, label: name },
+    ]
+  }
   for (const entry of recordArrayOrEmpty(option['options'])) {
     if (typeof entry['group'] === 'string') {
-      for (const sub of recordArrayOrEmpty(entry['options'])) {
-        if (typeof sub['value'] === 'string' && typeof sub['name'] === 'string') {
-          choices.push({ value: sub['value'], label: sub['name'] })
-        }
-      }
-    } else if (typeof entry['value'] === 'string' && typeof entry['name'] === 'string') {
-      choices.push({ value: entry['value'], label: entry['name'] })
+      for (const sub of recordArrayOrEmpty(entry['options'])) choices.push(...toChoice(sub))
+    } else {
+      choices.push(...toChoice(entry))
     }
   }
   return { configId, currentValue, choices }

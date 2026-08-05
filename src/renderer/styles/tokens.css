@@ -33,6 +33,22 @@
      gentle accent wash rather than the heavy VS Code blue, so a selected row
      reads as highlighted without shouting — and stays consistent everywhere. */
   --bg-selected: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
+  /* Dragged text selection. Chromium's built-in highlight is only readable
+     while the window is focused: the moment focus leaves (clicking a terminal,
+     another window, the devtools) it repaints the selection in a flat light
+     grey and leaves the text colour alone, so --text-primary vanishes into it.
+     An author ::selection wins in both the active and inactive state, so
+     declare an explicit pair. Deliberately neutral rather than accent-derived —
+     the accent is user-configurable and mixing it into the highlight is what
+     made selected text unreadable before (#1423). */
+  --selection-bg: #2f6fd0;
+  --selection-text: #ffffff;
+  /* Search matches (conversation find). The base match is a translucent amber
+     wash so the underlying text keeps its own colour; the current match is a
+     solid fill and therefore needs its own foreground. */
+  --highlight-bg: color-mix(in srgb, var(--warning) 45%, transparent);
+  --highlight-current-bg: #cca700;
+  --highlight-current-text: #1e1e1e;
   --text-primary: #d4d4d4;
   --text-secondary: #a6a6a6;
   --text-muted: #808080;
@@ -71,6 +87,13 @@
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
   --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.1);
+  /* Dropdown chevron drawn on every <select> (forms.css), replacing the native
+     platform arrow so it matches the model picker's chevron. Same lucide
+     "chevron-down" as chevronDownIcon() in dom/icons.ts; the stroke is baked in
+     because a data URI cannot read currentColor, so the light theme restates it
+     in themes.css. Muted against the field's own text, like the picker's 0.7
+     chevron. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23999999'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
   --font-family: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Averia Serif Libre', Georgia, serif;
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;

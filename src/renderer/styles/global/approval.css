@@ -86,6 +86,35 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* Secondary approve ("just this command"): deliberately quieter than the primary
+ * grant so the two are never confused at a glance. */
+.approval-approve-once {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 16px;
+  margin-right: auto;
+}
+.approval-approve-once:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Inline disclosure for a collapsed command body; reads as a link, not a button. */
+.approval-details-toggle {
+  display: inline-block;
+  margin-bottom: var(--spacing-sm);
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.approval-details-toggle:hover {
+  color: var(--text-primary);
+}
 .approval-reject {
   background: var(--error);
   color: white;
@@ -94,10 +123,14 @@
 }
 .approval-remember {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+}
+.approval-turn-tree {
+  margin-bottom: var(--spacing-md);
 }
 .approval-comparison-models {
   display: flex;

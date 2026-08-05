@@ -1,7 +1,12 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
-import { createThread, normalizeBlankThreads, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  createThread,
+  normalizeBlankThreads,
+  setThreadDraftPrompt,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import { loadThreads, flushProjectThreads, saveProjects } from './persistence.ts'
 import { resumePendingQueues } from './message-queue.ts'
 import {
@@ -11,6 +16,8 @@ import {
   resolveProjectViewState,
   type ProjectViewStateRegistry,
 } from './project-view-state.ts'
+import { showErrorToast } from '../views/toast.ts'
+import { compactSidebarThread, type SidebarThread } from './sidebar-thread.ts'
 
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
@@ -56,14 +63,14 @@ async function ensureSshConnected(api: ApiClient, hostId: string): Promise<void>
 export const SIDEBAR_THREADS_PAGE_SIZE = 10
 
 export interface SidebarThreadPagination {
-  visibleThreads: Thread[]
+  visibleThreads: SidebarThread[]
   visibleCount: number
   hasMore: boolean
 }
 
 /** Limit sidebar thread rows; expand the window when the active thread falls outside it. */
 export function paginateSidebarThreads(
-  threads: Thread[],
+  threads: SidebarThread[],
   visibleLimit: number,
   activeThreadId: string | null | undefined,
 ): SidebarThreadPagination {
@@ -87,8 +94,19 @@ export function paginateSidebarThreads(
   }
 }
 
-/** In-memory thread lists for sidebar display before a workspace switch finishes. */
-const threadCache = new Map<string, Thread[]>()
+/**
+ * In-memory thread lists for sidebar display before a workspace switch finishes.
+ *
+ * The active project's entry aliases the store's own array, so it costs nothing.
+ * Every other entry is compacted (see {@link compactSidebarThread}): a project
+ * you have switched away from keeps its sidebar rows but not its transcripts,
+ * which is all the sidebar ever read. Nothing else can want them — a non-active
+ * project has no threads in the store for a run to stream into, automations bail
+ * unless their project is active, and switching back reloads from disk.
+ */
+const threadCache = new Map<string, SidebarThread[]>()
+/** Which project's cache entry is the live alias, and so the one still to compact. */
+let liveCacheProjectId: string | null = null
 /** Per-project right-panel view state, so switching projects restores panel visibility. */
 const projectViewState: ProjectViewStateRegistry = new Map()
 let switchGeneration = 0
@@ -105,7 +123,7 @@ function settleActivationWaiter(projectId: string, error?: Error): void {
   else waiter.resolve()
 }
 
-export function getSidebarThreads(store: AppStore, projectId: string): Thread[] {
+export function getSidebarThreads(store: AppStore, projectId: string): SidebarThread[] {
   const { activeProjectId, threads } = store.getState()
   const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
   // Archived threads stay in the project store / on disk but leave the sidebar.
@@ -124,6 +142,13 @@ export function isProjectSwitchInFlight(store: AppStore, projectId: string): boo
 }
 
 function cacheThreads(projectId: string, threads: Thread[]): void {
+  // A different project is taking over the live entry — compact the outgoing one
+  // so its transcripts stop being reachable from here.
+  if (liveCacheProjectId !== null && liveCacheProjectId !== projectId) {
+    const outgoing = threadCache.get(liveCacheProjectId)
+    if (outgoing) threadCache.set(liveCacheProjectId, outgoing.map(compactSidebarThread))
+  }
+  liveCacheProjectId = projectId
   threadCache.set(projectId, threads)
 }
 
@@ -200,6 +225,7 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
 
   forgetProjectViewState(projectViewState, id)
   threadCache.delete(id)
+  if (liveCacheProjectId === id) liveCacheProjectId = null
 
   const projects = state.projects.filter((p) => p.id !== id)
   const wasActive = state.activeProjectId === id
@@ -560,6 +586,55 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   void resumePendingQueues(store, api)
 }
 
+// Starter prompt seeded into the composer when a new project is created, so
+// the user lands on a "welcome to your new project" message rather than an
+// empty box.
+const NEW_PROJECT_STARTER_PROMPT =
+  'Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.'
+
+/**
+ * Scaffold a brand-new project: ask the user for a name and parent directory,
+ * create the folder (AGENT.md + README.md + git init) via the main process,
+ * register + activate it, then open a fresh thread pre-seeded with a starter
+ * prompt. Returns true if a project was created.
+ */
+export async function createNewProject(store: AppStore, api: ApiClient): Promise<boolean> {
+  const { openNewProjectDialog } = await import('../views/new-project-dialog.ts')
+  const inferred = lastProjectDirectory(store)
+  const home = await api.workspace.getHomeDirectory()
+  const parentDir = inferred !== '' ? inferred : home
+  const picked = await openNewProjectDialog(api, parentDir)
+  if (!picked) return false
+  // Scaffolding rejects on ordinary user mistakes ("Folder already exists and is
+  // not empty", an unwritable parent), and every call site fires this as a
+  // floating promise — without this the dialog just closes and nothing happens.
+  let root: string
+  try {
+    root = await api.workspace.createNewProject(picked.name, picked.parentDir)
+  } catch (err: unknown) {
+    showErrorToast('Could not create project', err)
+    return false
+  }
+  await addProjectFromPath(store, api, root)
+  // Activation creates a blank thread when the project has none; seed that new
+  // thread (or, if one already existed, the active one) with the starter prompt.
+  const state = store.getState()
+  const threadId = state.activeThreadId ?? createThread(store)
+  setThreadDraftPrompt(store, threadId, NEW_PROJECT_STARTER_PROMPT)
+  return true
+}
+
+/** Parent directory of the most recently created/opened local project, else home. */
+function lastProjectDirectory(store: AppStore): string {
+  const projects = store.getState().projects
+  const last = projects[projects.length - 1]
+  if (last && !last.sshHost && last.path) {
+    const slash = last.path.lastIndexOf('/')
+    if (slash > 0) return last.path.slice(0, slash)
+  }
+  return ''
+}
+
 export async function addProject(store: AppStore, api: ApiClient): Promise<boolean> {
   const path = await api.workspace.open()
   if (!path) return false
@@ -633,6 +708,7 @@ export function resetProjectSwitchStateForTest(): void {
   switchGeneration = 0
   pendingThreadAfterSwitch = null
   threadCache.clear()
+  liveCacheProjectId = null
   projectViewState.clear()
   activationWaiters.clear()
 }

@@ -43,22 +43,28 @@ The fourth is worth quoting, because it describes Copse's current prompt almost 
 
 ## Where the prompt text lives
 
-`buildSystemPrompt()` (`src/main/services/agent-system-prompt.ts:37-88`) concatenates, in order:
+`buildSystemPrompt()` (`src/main/services/agent-system-prompt.ts`) concatenates, in order:
 
 | #   | Source                                                       | Gate                                      |
 | --- | ------------------------------------------------------------ | ----------------------------------------- |
 | 1   | `BASE_SYSTEM_PROMPT` / `BASE_SYSTEM_PROMPT_DIRECT_READS`     | `subagentsEnabled`                        |
-| 2   | `EXTERNAL_API_SAFETY_BLOCK`                                  | `externalApiSafety` setting (default off) |
-| 3   | `BROWSER_TOOLS_BLOCK`                                        | `browserToolsEnabled` (default on)        |
-| 4   | `READ_TERMINAL_BLOCK`                                        | setting on **and** thread has open shells |
-| 5   | `MEMORY_TOOLS_BLOCK`                                         | `copse.okf-memories` pack (default off)   |
-| 6   | `PII_REDACTION_BLOCK`                                        | `copse.pii-redaction` pack (default off)  |
-| 7   | `buildSkillsCatalogBlock()`                                  | any model-invocable skills discovered     |
-| 8   | `buildInvokedSkillsBlock()`                                  | `/skill` invoked this turn                |
-| 9   | `loadAgentRequestedRulesCatalog()`                           | `.cursor/rules/**` present                |
-| 10  | `buildSemanticSearchPromptBlock()`                           | always                                    |
-| 11  | Custom instructions                                          | user setting                              |
-| 12  | Project instructions (`AGENTS.md` / `CLAUDE.md` / `.cursor`) | workspace                                 |
+| 2   | `OPUS_5_RESPONSE_LENGTH_BLOCK`                               | `isOpus5Model(model)`                     |
+| 3   | `EXTERNAL_API_SAFETY_BLOCK`                                  | `externalApiSafety` setting (default off) |
+| 4   | `BROWSER_TOOLS_BLOCK`                                        | `browserToolsEnabled` (default on)        |
+| 5   | `READ_TERMINAL_BLOCK`                                        | setting on **and** thread has open shells |
+| 6   | `MEMORY_TOOLS_BLOCK`                                         | `copse.okf-memories` pack (default off)   |
+| 7   | `PII_REDACTION_BLOCK`                                        | `copse.pii-redaction` pack (default off)  |
+| 8   | `buildSkillsCatalogBlock()`                                  | any model-invocable skills discovered     |
+| 9   | `buildInvokedSkillsBlock()`                                  | `/skill` invoked this turn                |
+| 10  | `loadAgentRequestedRulesCatalog()`                           | `.cursor/rules/**` present                |
+| 11  | `buildSemanticSearchPromptBlock()`                           | always                                    |
+| 12  | `OPUS_5_TONE_REMINDER`                                       | `isOpus5Model(model)`                     |
+| 13  | Custom instructions                                          | user setting                              |
+| 14  | Project instructions (`AGENTS.md` / `CLAUDE.md` / `.cursor`) | workspace                                 |
+
+Rows 2 and 12 are the one model-conditional pair: everything else in the list is
+model-agnostic by design, and the Opus 5 length steering is the documented
+exception (see the comment above `OPUS_5_RESPONSE_LENGTH_BLOCK`).
 
 Beyond this there are roughly 45 other prompt sites: subagent prompts (`run-subagent.ts`,
 `review-subagent.ts`, `orchestration-strategy.ts`, `advisor-runner.ts`, `model-comparison.ts`),

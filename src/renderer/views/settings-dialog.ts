@@ -31,7 +31,12 @@ import {
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
-import { fetchModelOptions, fetchSmallTasksModelOptions } from './model-options.ts'
+import {
+  fetchDynamicModelOptions,
+  fetchModelOptions,
+  fetchSmallTasksModelOptions,
+  modelDisplayLabel,
+} from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createProvidersPanel } from './setup/providers-section.ts'
@@ -92,11 +97,19 @@ function isSettingsSection(value: unknown): value is SettingsSection {
 }
 
 /**
+ * Segments of a pack id that are acronyms, and must stay uppercase rather than
+ * being sentence-cased. Without this `copse.pii-redaction` reads "Pii
+ * redaction" — a machine transformation showing through as user-facing copy.
+ */
+const PACK_NAME_ACRONYMS = new Set(['acp', 'api', 'ci', 'llm', 'mcp', 'okf', 'pii', 'ui'])
+
+/**
  * Friendly display name for a pack row. First-party packs ship with a
  * `copse.<kebab>` id; rather than showing that machine id verbatim, strip the
- * `copse.` prefix and present the rest dash-separated and sentence-cased
- * (e.g. `copse.post-turn-review` → "Post turn review"). User packs with their
- * own human name keep it as-is.
+ * `copse.` prefix and present the rest space-separated and sentence-cased —
+ * only the first word capitalised (e.g. `copse.post-turn-review` → "Post turn
+ * review"), with known acronyms left uppercase (`copse.pii-redaction` → "PII
+ * redaction"). User packs with their own human name keep it as-is.
  */
 function packDisplayName(pack: import('@shared/types/packs.ts').PackSummary): string {
   const raw = pack.name || pack.id
@@ -109,7 +122,15 @@ function packDisplayName(pack: import('@shared/types/packs.ts').PackSummary): st
       .filter(Boolean)
     if (words.length === 0) return raw
     const sentence = words
-      .map((word) => (word.length ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+      .map((word, index) => {
+        const lower = word.toLowerCase()
+        if (PACK_NAME_ACRONYMS.has(lower)) return lower.toUpperCase()
+        // Sentence case: lead word capitalised, the rest lowercase. Pack ids are
+        // kebab-lowercase already, so the lowercasing only matters for ids that
+        // arrive mixed-case.
+        if (index === 0) return lower.charAt(0).toUpperCase() + lower.slice(1)
+        return lower
+      })
       .join(' ')
     return sentence
   }
@@ -858,8 +879,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Use the switch on each server to turn it off without editing your MCP config files.
                 Off servers are not started on reload.
               </p>
-              <div class="lmstudio-test-row">
-                <button type="button" id="mcp-reload-btn">Reload servers</button>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
+                  Reload servers
+                </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
             </fieldset>
@@ -901,8 +924,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Everything Copse loads for this project. This list is read-only: edit the files
               themselves to change what is loaded.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="sources-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="sources-reload-status"></span>
             </div>
 
@@ -992,9 +1017,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
               for authoring and install steps.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="packs-add-btn">Add pack…</button>
-              <button type="button" id="packs-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-add-btn">
+                Add pack…
+              </button>
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
 
@@ -1216,8 +1245,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                The model that carries out the delegated steps. Pick something cheaper and faster
-                than your chat model.
+                How to choose the model that carries out the delegated steps — resolved against
+                your configured providers each time a step is handed off. Prefer a rule that lands
+                cheaper and faster than your chat model.
               </p>
             </fieldset>
 
@@ -1226,8 +1256,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 Reviews your current changes through two models independently, then has a third
                 compare their verdicts. Turn it on under <strong>Packs</strong>, where you also
-                choose the three models. A run makes up to three model calls, so it asks before
-                spending on a paid model.
+                choose how the three models are picked — they always resolve to different models,
+                so there is something to compare. A run makes up to three model calls, so it asks
+                before spending on a paid model.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelComparisonAutoOnReview" />
@@ -1365,10 +1396,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         loadOnMount: false,
       },
     ),
+    // Like the pack model fields, the delegated-step worker selects a rule
+    // rather than a model — the delegation happens mid-task, not now.
     orchestrationWorkerModel: mountModelSelectPicker(
       qsRequired(overlay, '#orchestrationWorkerModel'),
       {
-        loadOptions: (current) => fetchModelOptions(api, current),
+        loadOptions: (current) => fetchDynamicModelOptions(current),
         ariaLabel: 'Worker model',
         loadOnMount: false,
       },
@@ -2004,6 +2037,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const track = document.createElement('span')
     track.className = 'toggle-switch-track'
     track.setAttribute('aria-hidden', 'true')
+    // Set by a credential-gated pack (below) once it knows no key is stored, so
+    // the change handler's `finally` re-arms the lock instead of clearing it.
+    let credentialLocked = false
     toggle.addEventListener('change', () => {
       toggle.disabled = true
       void api.packs
@@ -2021,7 +2057,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           toggle.checked = !toggle.checked
         })
         .finally(() => {
-          toggle.disabled = false
+          toggle.disabled = credentialLocked && !toggle.checked
         })
     })
     toggleLabel.append(toggle, track)
@@ -2250,7 +2286,29 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
       )
     ) {
-      row.append(createParallelSearchPackSettings(api))
+      // Parallel Search is credential-gated end to end: `syncParallelSearchTools`
+      // registers `parallel_search` only when the pack is on AND a key resolves.
+      // Without this the switch flips on with no key and nothing happens — an
+      // on-looking pack contributing no tool. Block the on-direction until a key
+      // is stored (never the off-direction, or a user who clears their key would
+      // be stuck with the pack showing enabled), and say why in a hint.
+      const gate = document.createElement('p')
+      gate.className = 'field-hint pack-credential-gate'
+      gate.hidden = true
+      row.append(
+        createParallelSearchPackSettings(api, {
+          onKeyPresence: (hasKey) => {
+            credentialLocked = !hasKey
+            toggle.disabled = credentialLocked && !toggle.checked
+            gate.hidden = hasKey
+            gate.textContent = toggle.checked
+              ? 'No Parallel API key saved — parallel_search stays unavailable to the model until you add one.'
+              : 'Add a Parallel API key to turn this pack on.'
+            if (toggle.disabled) toggleLabel.title = 'Add a Parallel API key to turn this pack on'
+          },
+        }),
+        gate,
+      )
     }
 
     // Disabling greys the whole row so the effect of the toggle is immediately
@@ -2336,8 +2394,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
     label.append(input)
     if (modelSelectInput) {
+      // A pack's model field selects a *rule*, not a model: packs run
+      // unattended long after this dialog was last open, so the picker offers
+      // dynamic selections only (see `dynamicModelOptions`). A field the
+      // manifest gave no default has a meaningful blank state — the owning
+      // feature's own fallback — so that stays selectable.
+      const autoLabel =
+        field.default === undefined ? '(unset — use this feature’s own fallback)' : undefined
       const picker = mountModelSelectPicker(modelSelectInput, {
-        loadOptions: (current) => fetchModelOptions(api, current),
+        loadOptions: (current) => fetchDynamicModelOptions(current, autoLabel),
         ariaLabel: field.title,
         loadOnMount: false,
       })
@@ -2349,7 +2414,42 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       hint.textContent = field.description
       label.append(hint)
     }
+    if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput))
     return label
+  }
+
+  /**
+   * Live "→ currently <model>" line under a dynamic model picker. The rule is
+   * what gets stored, but the user still deserves to see which model it names
+   * today — that is the one thing a selector hides that a pinned id showed.
+   */
+  function mountResolvedModelHint(select: HTMLSelectElement): HTMLElement {
+    const hint = document.createElement('span')
+    hint.className = 'pack-setting-resolved'
+    hint.hidden = true
+    let generation = 0
+    const update = (): void => {
+      const value = select.value
+      const mine = ++generation
+      if (!value) {
+        hint.hidden = true
+        return
+      }
+      void api.models
+        .resolveDynamic(value)
+        .then((resolved) => {
+          // Ignore a slow answer for a selection the user has already changed.
+          if (mine !== generation) return
+          hint.hidden = !resolved || resolved === value
+          hint.textContent = `Currently resolves to ${modelDisplayLabel(resolved)}`
+        })
+        .catch(() => {
+          if (mine === generation) hint.hidden = true
+        })
+    }
+    select.addEventListener('change', update)
+    update()
+    return hint
   }
 
   async function refreshPacks(): Promise<void> {
@@ -2672,7 +2772,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
   // learns up front whether the advisor is actually stronger than the executor.
-  //
+  // Either side may be a dynamic selection, so both are resolved first — this
+  // counter drops a slow answer for a pairing the user has already changed.
+  let advisorPairGeneration = 0
+
   function updateAdvisorPairHint(): void {
     const hint = advisorPairHintEl
     const advisorSelect = advisorModelSelectEl
@@ -2680,14 +2783,35 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const form = qsRequired<HTMLFormElement>(overlay, 'form')
     const executor = selectControl(form, 'model').value
     const advisor = advisorSelect.value
+    const mine = ++advisorPairGeneration
     if (!executor || !advisor) {
       hint.hidden = true
       return
     }
-    const assessment = validateAdvisorPair(executor, advisor)
-    hint.textContent = assessment.reason
-    hint.setAttribute('data-level', assessment.level)
-    hint.hidden = false
+    // Both sides may be rules rather than model ids. Grade the models they name
+    // right now — a hint about `auto:best-intellect` would say nothing useful,
+    // and the whole point of the pairing hint is a concrete capability
+    // comparison. `resolveDynamic` returns a pinned id unchanged.
+    void Promise.all([api.models.resolveDynamic(executor), api.models.resolveDynamic(advisor)])
+      .then(([resolvedExecutor, resolvedAdvisor]) => {
+        if (mine !== advisorPairGeneration) return
+        const assessment = validateAdvisorPair(resolvedExecutor, resolvedAdvisor)
+        const dynamic = resolvedAdvisor !== advisor || resolvedExecutor !== executor
+        hint.textContent = dynamic
+          ? `${assessment.reason} (currently ${modelDisplayLabel(resolvedExecutor)} → ${modelDisplayLabel(resolvedAdvisor)})`
+          : assessment.reason
+        hint.setAttribute('data-level', assessment.level)
+        hint.hidden = false
+      })
+      .catch(() => {
+        if (mine !== advisorPairGeneration) return
+        // Resolution unavailable: grade what is stored. A selector lands on the
+        // dynamic branch of `validateAdvisorPair`, which says exactly that.
+        const assessment = validateAdvisorPair(executor, advisor)
+        hint.textContent = assessment.reason
+        hint.setAttribute('data-level', assessment.level)
+        hint.hidden = false
+      })
   }
 
   overlay.addEventListener('settings-open', () => {

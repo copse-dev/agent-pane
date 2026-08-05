@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import {
@@ -12,7 +13,8 @@ import { runPermissionDecisionHooks } from '../hooks/permission-decision.ts'
 import { snapshotHookRunContext } from '../hook-run-recorder.ts'
 import { haltRunFromBlockingHook } from '../hooks/halt-run.ts'
 import { currentAgentSessionInfo } from '../hooks/agent-session.ts'
-import { getActiveRunThread } from '../thread-models.ts'
+import { getActiveRunThread, getActiveRunTurnTreeId } from '../thread-models.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { ShellPermissionDecision, ShellPromptParts } from './permission-policy.ts'
@@ -50,6 +52,7 @@ import {
   mcpToolLabel,
   GITHUB_READONLY_CI_TOOLS,
   GITHUB_WRITE_TOOLS,
+  isReadOnlySimpleCommand,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
 import {
@@ -74,6 +77,12 @@ import {
   webAllowedOriginsWithDefaults,
 } from './web-origin-policy.ts'
 import { formatUnsandboxedPromptParts } from './sandbox-failure.ts'
+import {
+  analyzeReadOutsideProject,
+  formatReadOutsideProjectPromptParts,
+  READ_OUTSIDE_PROJECT_TITLE,
+} from './read-outside-project.ts'
+import { grantReadOutsideProject, hasReadOutsideProjectGrant } from './read-outside-grant.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -90,6 +99,40 @@ import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/packs/background-tasks-pa
 import { assessShellHarm } from './shell-harm.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
+import {
+  replayLeaseCore,
+  shellReplayLeaseStore,
+  type ShellReplayLeaseIdentity,
+} from './capability-lease.ts'
+import { commandName, shellSegments } from './shell-argv.ts'
+import {
+  analyzeShellCommand,
+  dangerousInSandboxReasons,
+  isReplayableOpaqueLocalExecution,
+} from './shell-scope.ts'
+
+const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
+const EXTERNAL_REPLAY_LABEL = 'Allow retries outside the sandbox (up to 2, for 15 minutes)'
+
+function issueShellReplayLease(identity: ShellReplayLeaseIdentity, command: string): void {
+  const core = replayLeaseCore(command, (segment) =>
+    leaseCompanionAllowed(segment, identity.executionRoot),
+  )
+  if (!core) return
+  const lease = shellReplayLeaseStore.issue(identity, core)
+  recordDecision({
+    kind: 'shell',
+    actor: 'user',
+    verdict: 'approved',
+    subject: SHELL_DECISION_SUBJECT,
+    scope: identity.containment === 'external' ? 'external' : 'sandbox',
+    remembered: false,
+    reasons: ['bounded exact replay lease issued'],
+    source: `turn-tree-capability-lease:${lease.id}`,
+    projectId: identity.projectId,
+    threadId: identity.threadId,
+  })
+}
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -158,10 +201,11 @@ async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
   signal?: AbortSignal,
+  leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
   if (signal?.aborted) return false
   const trustable = offerableTrustedCommand(parts.command)
-  const { approved, remember } = await requestApproval(
+  const { approved, remember, grantScope } = await requestApproval(
     {
       title,
       type: 'shell',
@@ -170,10 +214,91 @@ async function requestEscalationApproval(
       scope: 'external',
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
+      ...(leaseIdentity
+        ? {
+            allowTurnTreeLease: true,
+            turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseDefault: false,
+            turnTreeLeaseSubject: parts.command,
+          }
+        : {}),
     },
     signal,
   )
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
+  if (approved && grantScope === 'turn-tree' && leaseIdentity) {
+    issueShellReplayLease(leaseIdentity, parts.command)
+  }
+  return approved
+}
+
+/**
+ * Handle a command that only *reads* paths outside the project, when we can
+ * account for every path it touches (see `read-outside-project.ts`).
+ *
+ * Returns null when the command is not that shape, so the caller falls through
+ * to its normal prompt. Otherwise the thread's standing grant answers it, or the
+ * user is asked with the narrower read-access wording — where the primary button
+ * grants the shape for the rest of the thread and the secondary one approves
+ * just this command.
+ *
+ * Every outcome lands in the durable decision log, naming the paths that were at
+ * stake. The grant itself is held in memory (`read-outside-grant.ts`) and dies
+ * with the process, but the *decision* to make it is a permanent record: the
+ * answered prompt writes `scope: external-read` with `remembered: true` for a
+ * thread grant and `false` for a one-command approval, and each later command
+ * the grant covers writes its own `verdict: allowed` line sourced to it. So the
+ * log shows both that the user widened read access and everything that ran under
+ * it — the in-memory ledger is the mechanism, not the record.
+ */
+async function resolveReadOutsideProject(
+  command: string,
+  workspaceRoot: string | null,
+  signal?: AbortSignal,
+): Promise<boolean | null> {
+  const analysis = analyzeReadOutsideProject(command, workspaceRoot)
+  if (!analysis.eligible) return null
+
+  // The one fact the durable log can carry about this command: the paths, never
+  // the command line (see SHELL_DECISION_SUBJECT). Shared by the prompt's answer
+  // and by every command a standing grant later covers, so both read alike.
+  const reasons = [`reads outside the project: ${analysis.targets.join(', ')}`]
+
+  const threadId = getActiveRunThread()
+  if (hasReadOutsideProjectGrant(threadId)) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      reasons,
+      source: 'read-outside-grant',
+    })
+    return true
+  }
+
+  const { approved, remember } = await requestApproval(
+    {
+      title: READ_OUTSIDE_PROJECT_TITLE,
+      type: 'shell',
+      ...shellPromptToApprovalFields(formatReadOutsideProjectPromptParts(command, analysis)),
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      // Recorded with the answer, so the log line that carries `remembered: true`
+      // also says what the user granted read access *to*.
+      reasons,
+      // The command is behind "Show details" so the question the user answers is
+      // the scope one; the third button that approves only this command appears
+      // with the details it refers to.
+      collapseDetails: true,
+      approveOnceLabel: 'Approve this command',
+    },
+    signal,
+  )
+  // A handler with no thread (headless/ACP) can hold no grant, so its approval
+  // covers this command only.
+  if (approved && remember && threadId) grantReadOutsideProject(threadId)
   return approved
 }
 
@@ -182,6 +307,7 @@ async function promptShell(
   reasons: string[],
   outsideSandbox: boolean,
   signal?: AbortSignal,
+  leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
   if (signal?.aborted) return false
   // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
@@ -191,18 +317,33 @@ async function promptShell(
       'Run outside sandbox?',
       formatExternalSandboxPromptParts(command, reasons),
       signal,
+      leaseIdentity,
     )
   }
-  const { approved } = await requestApproval(
+  const { approved, grantScope } = await requestApproval(
     {
       title: 'Run shell command?',
       type: 'shell',
       ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons)),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'sandbox',
+      // A sandboxed approval includes a bounded replay lease by default. The
+      // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
+      // explicit because they weaken containment.
+      ...(leaseIdentity
+        ? {
+            allowTurnTreeLease: true,
+            turnTreeLeaseLabel: SANDBOX_REPLAY_LABEL,
+            turnTreeLeaseDefault: true,
+            turnTreeLeaseSubject: command,
+          }
+        : {}),
     },
     signal,
   )
+  if (approved && grantScope === 'turn-tree' && leaseIdentity) {
+    issueShellReplayLease(leaseIdentity, command)
+  }
   return approved
 }
 
@@ -236,6 +377,11 @@ export async function promptUnsandboxedShell(
   signal?: AbortSignal,
 ): Promise<boolean> {
   if (autoApproveShell(command, 'external')) return true
+  // A command that failed inside the sandbox because it reads a file in the
+  // user's home directory is the same read-access question as the up-front gate,
+  // so a thread that already granted that scope should not be asked again.
+  const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
+  if (readOutside !== null) return readOutside
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
@@ -479,6 +625,51 @@ async function checkShellPermission(args: unknown, originalCommand?: string): Pr
   )
 }
 
+function activeShellReplayLeaseIdentity(
+  executionRoot: string,
+  containment: ShellReplayLeaseIdentity['containment'],
+): ShellReplayLeaseIdentity | null {
+  const context = getThreadExecutionContext()
+  const turnTreeId = getActiveRunTurnTreeId()
+  if (!context || !turnTreeId || context.root !== executionRoot) return null
+  return {
+    projectId: context.projectId,
+    threadId: context.threadId,
+    turnTreeId,
+    executionRoot,
+    containment,
+  }
+}
+
+function outputTransformAllowed(segment: string, workspaceRoot: string): boolean {
+  if (!isReadOnlySimpleCommand(segment)) return false
+  return sandboxCommandNormallyAllowed(segment, workspaceRoot)
+}
+
+function leaseCompanionAllowed(segment: string, workspaceRoot: string): boolean {
+  if (outputTransformAllowed(segment, workspaceRoot)) return true
+  const variants = shellSegments(segment)
+  if (variants.length === 0) return false
+  return variants.every((argv) => {
+    if (argv.length !== 2 || commandName(argv[0]) !== 'cd') return false
+    const target = argv[1]
+    if (!target || target.startsWith('-')) return false
+    const resolvedTarget = resolve(workspaceRoot, target)
+    return resolvedTarget === workspaceRoot
+  })
+}
+
+function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): boolean {
+  return (
+    decideShellPermission(command, {
+      workspaceRoot,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+    }).action === 'allow'
+  )
+}
+
 /** Gate a raw shell command string through the same approval flow as run_shell. */
 export async function ensureShellCommandPermitted(
   command: string,
@@ -602,6 +793,63 @@ export async function ensureShellCommandPermitted(
   // auto-approval.ts for the enumerated shapes and the safety argument.
   if (autoApproveShell(command, outsideSandbox ? 'external' : 'sandbox', workspaceRoot)) return true
 
+  // A user may explicitly authorize one constituent for bounded exact retries in
+  // this human turn tree. Conservative top-level composition is allowed only
+  // when every other constituent independently passes ordinary policy.
+  const baseLeaseEligible =
+    sandboxEnabled &&
+    workspaceRoot !== null &&
+    dangerousInSandboxReasons(command).length === 0 &&
+    !detectPackageInstall(command).isInstall
+  const externalReplayEligible =
+    outsideSandbox && isReplayableOpaqueLocalExecution(analyzeShellCommand(command, workspaceRoot))
+  const leaseCore =
+    workspaceRoot === null
+      ? null
+      : replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, workspaceRoot))
+  const leaseMatchEligible = baseLeaseEligible && (!outsideSandbox || externalReplayEligible)
+  const leaseRoot = leaseMatchEligible ? workspaceRoot : null
+  const leaseIdentity =
+    leaseRoot !== null
+      ? activeShellReplayLeaseIdentity(leaseRoot, outsideSandbox ? 'external' : 'project-sandbox')
+      : null
+  const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
+  if (leaseIdentity) {
+    const match = shellReplayLeaseStore.consume(leaseIdentity, command, (segment) =>
+      leaseCompanionAllowed(segment, leaseIdentity.executionRoot),
+    )
+    if (match.matched) {
+      recordDecision({
+        kind: 'shell',
+        actor: 'system',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: leaseIdentity.containment === 'external' ? 'external' : 'sandbox',
+        reasons: [
+          'bounded exact replay lease used',
+          ...(match.companionSegments.length > 0
+            ? ['composed shell constituents independently allowed']
+            : []),
+        ],
+        source: `turn-tree-capability-lease:${match.leaseId}`,
+        projectId: leaseIdentity.projectId,
+        threadId: leaseIdentity.threadId,
+      })
+      return true
+    }
+  }
+
+  // Reads of accountable paths outside the project ask the narrower read-access
+  // question — and can be answered once for the whole thread — instead of the
+  // worst-case "run outside sandbox" escape hatch. Checked on every platform:
+  // off macOS `outsideSandbox` is false (there is no seatbelt to leave) but the
+  // read is just as external, and the gate is the only boundary.
+  // Ordered after the replay lease so a command the user already authorized for
+  // exact retry in this turn tree is still replayed without a prompt: the lease
+  // is a no-prompt fast path, whereas this gate may ask.
+  const readOutside = await resolveReadOutsideProject(command, workspaceRoot, opts.signal)
+  if (readOutside !== null) return readOutside
+
   // A plain package install gets a dedicated, readable approval rather than the
   // generic external-command reason list. Only when the install is the *sole*
   // flagged signal (one reason) — compound or registry-redirected commands keep
@@ -638,7 +886,13 @@ export async function ensureShellCommandPermitted(
     return approved
   }
 
-  return promptShell(command, decision.reasons, outsideSandbox, opts.signal)
+  return promptShell(
+    command,
+    decision.reasons,
+    outsideSandbox,
+    opts.signal,
+    leaseOfferIdentity ?? undefined,
+  )
 }
 
 function browserUrlFromArgs(args: unknown): string | null {

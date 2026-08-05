@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { Message, SubagentMessage } from '@shared/types'
 import {
   estimateAssistantOutputTokens,
+  formatFooterUsageDetail,
   formatFooterUsageSummary,
   resolveFooterUsage,
 } from './footer-usage-summary.ts'
@@ -111,45 +112,75 @@ describe('resolveFooterUsage', () => {
 })
 
 describe('formatFooterUsageSummary', () => {
-  it('prefixes estimated totals with ~ and uses est. for cost', () => {
+  it('prefixes estimated totals with ~', () => {
     assert.equal(
-      formatFooterUsageSummary(
-        { inputTokens: 1200, outputTokens: 80, estimated: true },
-        {
-          costVisible: true,
-          model: 'lmstudio:qwen',
-          measuredUsage: { inputTokens: 0, outputTokens: 0 },
-        },
-      ),
-      '~1200 in / ~80 out · est.',
+      formatFooterUsageSummary({ inputTokens: 1200, outputTokens: 80, estimated: true }),
+      '~1.3k tokens',
     )
   })
 
   it('keeps measured formatting without ~ prefix', () => {
     assert.equal(
-      formatFooterUsageSummary(
-        { inputTokens: 1200, outputTokens: 80, estimated: false },
-        {
-          costVisible: false,
-          model: 'claude-sonnet-4-6',
-          measuredUsage: { inputTokens: 1200, outputTokens: 80 },
-        },
-      ),
+      formatFooterUsageSummary({ inputTokens: 1200, outputTokens: 80, estimated: false }),
       '1.3k tokens',
     )
   })
 
   it('rolls over to M for millions of tokens', () => {
     assert.equal(
-      formatFooterUsageSummary(
-        { inputTokens: 4_200_000, outputTokens: 53_600, estimated: false },
-        {
-          costVisible: false,
-          model: 'claude-sonnet-4-6',
-          measuredUsage: { inputTokens: 4_200_000, outputTokens: 53_600 },
-        },
-      ),
+      formatFooterUsageSummary({ inputTokens: 4_200_000, outputTokens: 53_600, estimated: false }),
       '4.3M tokens',
     )
+  })
+})
+
+describe('formatFooterUsageDetail', () => {
+  it('marks estimated counts and cost as approximate', () => {
+    assert.equal(
+      formatFooterUsageDetail(
+        { inputTokens: 1200, outputTokens: 80, estimated: true },
+        { model: 'lmstudio:qwen', measuredUsage: { inputTokens: 0, outputTokens: 0 } },
+      ),
+      'Usage: ~1.3k tokens · ~1.2k in / ~80 out · est.',
+    )
+  })
+
+  it('reports local models as free rather than a dollar figure', () => {
+    assert.equal(
+      formatFooterUsageDetail(
+        { inputTokens: 1200, outputTokens: 80, estimated: false },
+        { model: 'lmstudio:qwen', measuredUsage: { inputTokens: 1200, outputTokens: 80 } },
+      ),
+      'Usage: 1.3k tokens · 1.2k in / 80 out · free (local)',
+    )
+  })
+
+  it('drops the cost segment when the model has no pricing', () => {
+    assert.equal(
+      formatFooterUsageDetail(
+        { inputTokens: 1200, outputTokens: 80, estimated: false },
+        { model: 'mystery-model', measuredUsage: { inputTokens: 1200, outputTokens: 80 } },
+      ),
+      'Usage: 1.3k tokens · 1.2k in / 80 out',
+    )
+  })
+})
+
+describe('formatFooterUsageDetail leads with the counter total', () => {
+  // The compact footer hides the token counter and shows only this line, in the
+  // context wheel's title — so it must still answer "how many tokens?".
+  // tests/demo/footer-compact.demo.ts pins that against the demo scenario.
+  it('starts with the same label the counter would show', () => {
+    const display = { inputTokens: 12_900_000, outputTokens: 211_000, estimated: false }
+    const detail = formatFooterUsageDetail(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+    })
+
+    assert.ok(
+      detail.includes(formatFooterUsageSummary(display)),
+      `expected "${detail}" to contain "${formatFooterUsageSummary(display)}"`,
+    )
+    assert.match(detail, /^Usage: 13\.1M tokens · 12\.9M in \/ 211\.0k out · /)
   })
 })

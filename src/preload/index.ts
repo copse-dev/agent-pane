@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('api', {
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
+    createNewProject: (name: string, parentDir: string) =>
+      ipcRenderer.invoke('workspace:createProject', name, parentDir),
+    pickParentDirectory: () => ipcRenderer.invoke('workspace:pickParentDirectory'),
+    getHomeDirectory: () => ipcRenderer.invoke('workspace:getHomeDirectory'),
     unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxedProjectHooks'),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
@@ -20,6 +24,10 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   browser: {
+    sharePageText: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:share-page-text', webContentsId),
+    shareScreenshot: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:share-screenshot', webContentsId),
     onOpenTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
@@ -27,6 +35,34 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('browser:open-tab', listener)
       return (): void => {
         ipcRenderer.off('browser:open-tab', listener)
+      }
+    },
+    onShareText: (
+      handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        share: import('@shared/types/browser-share.ts').BrowserTextShare,
+      ): void => {
+        handler(share)
+      }
+      ipcRenderer.on('browser:share-text', listener)
+      return (): void => {
+        ipcRenderer.off('browser:share-text', listener)
+      }
+    },
+    onShareImage: (
+      handler: (share: import('@shared/types/browser-share.ts').BrowserImageShare) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        share: import('@shared/types/browser-share.ts').BrowserImageShare,
+      ): void => {
+        handler(share)
+      }
+      ipcRenderer.on('browser:share-image', listener)
+      return (): void => {
+        ipcRenderer.off('browser:share-image', listener)
       }
     },
     onPackTabRequest: (
@@ -174,8 +210,13 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
+        allowTurnTreeLease?: boolean
+        turnTreeLeaseLabel?: string
+        turnTreeLeaseSubject?: string
       }) => void,
     ) => {
       const listener = (
@@ -190,7 +231,13 @@ contextBridge.exposeInMainWorld('api', {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          collapseDetails?: boolean
+          approveOnceLabel?: string
           comparisonModels?: { a: string; b: string; judge: string }
+          allowTurnTreeLease?: boolean
+          turnTreeLeaseLabel?: string
+          turnTreeLeaseDefault?: boolean
+          turnTreeLeaseSubject?: string
         },
       ): void => {
         handler(req)
@@ -346,7 +393,9 @@ contextBridge.exposeInMainWorld('api', {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
-    ) => ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels),
+      grantScope?: 'once' | 'turn-tree',
+    ) =>
+      ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels, grantScope),
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
@@ -411,6 +460,19 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('update:dev_notice', listener)
       return (): void => {
         ipcRenderer.off('update:dev_notice', listener)
+      }
+    },
+  },
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) =>
+      ipcRenderer.invoke('close-confirm:respond', id, confirmed),
+    onRequest: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('app:close_confirm_request', listener)
+      return (): void => {
+        ipcRenderer.off('app:close_confirm_request', listener)
       }
     },
   },
@@ -529,6 +591,9 @@ contextBridge.exposeInMainWorld('api', {
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
   },
+  modelCards: {
+    resolve: (modelIds: string[]) => ipcRenderer.invoke('modelCards:resolve', modelIds),
+  },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),
@@ -543,8 +608,8 @@ contextBridge.exposeInMainWorld('api', {
     models: () => ipcRenderer.invoke('openrouter:models'),
   },
   models: {
-    chatDefaultContextHealth: () => ipcRenderer.invoke('models:chatDefaultContextHealth'),
     bestValueDefault: () => ipcRenderer.invoke('models:bestValueDefault'),
+    resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolveDynamic', value),
   },
   menu: {
     onSettings: (handler: () => void) => {
@@ -702,6 +767,7 @@ contextBridge.exposeInMainWorld('api', {
     scanEnvKeys: () => ipcRenderer.invoke('settings:scanEnvKeys'),
     importEnvKeys: () => ipcRenderer.invoke('settings:importEnvKeys'),
     extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
+    modelPricing: () => ipcRenderer.invoke('settings:modelPricing'),
     saveExtraProvider: (record: unknown) =>
       ipcRenderer.invoke('settings:saveExtraProvider', record),
     deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),
@@ -810,6 +876,20 @@ contextBridge.exposeInMainWorld('api', {
     setThread: (id: string, threadId: string) =>
       ipcRenderer.invoke('roadmap:setThread', id, threadId),
   },
+  supervisor: {
+    list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),
+    cancel: (projectId: string, taskId: string) =>
+      ipcRenderer.invoke('supervisor:cancel', projectId, taskId),
+    onChanged: (callback: (projectId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, projectId: string): void => {
+        callback(projectId)
+      }
+      ipcRenderer.on('supervisor:changed', listener)
+      return (): void => {
+        ipcRenderer.off('supervisor:changed', listener)
+      }
+    },
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },
@@ -910,6 +990,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
+    promptState: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:promptState', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>
       ipcRenderer.invoke('git:checkoutBranch', projectId, threadId, branch),
     listBranches: (projectId: string, threadId: string) =>
@@ -982,6 +1064,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
+    },
+    requestCloseConfirm() {
+      return ipcRenderer.invoke('test:requestCloseConfirm')
     },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')

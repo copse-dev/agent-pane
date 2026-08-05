@@ -1,0 +1,72 @@
+{
+  "scenarioId": "synthetic-ab-autonomy",
+  "events": [
+    {
+      "type": "approval_requested",
+      "capability": "synthetic-executor"
+    },
+    {
+      "type": "approval_requested",
+      "capability": "synthetic-executor"
+    },
+    {
+      "type": "approval_requested",
+      "capability": "artifact-storage"
+    },
+    {
+      "type": "operation_committed",
+      "operationId": "operation-001",
+      "coordinate": {
+        "revision": "baseline",
+        "environment": "alpha",
+        "mode": "direct",
+        "iteration": 1
+      }
+    },
+    {
+      "type": "side_effect_recorded",
+      "operationId": "operation-001"
+    },
+    {
+      "type": "transport_interrupted",
+      "afterOperationId": "operation-001"
+    },
+    {
+      "type": "human_continuation"
+    },
+    {
+      "type": "operation_committed",
+      "operationId": "operation-001",
+      "coordinate": {
+        "revision": "baseline",
+        "environment": "alpha",
+        "mode": "direct",
+        "iteration": 1
+      }
+    },
+    {
+      "type": "side_effect_recorded",
+      "operationId": "operation-001"
+    },
+    {
+      "type": "human_continuation"
+    },
+    {
+      "type": "case_completed",
+      "operationId": "operation-001",
+      "coordinate": {
+        "revision": "baseline",
+        "environment": "alpha",
+        "mode": "direct",
+        "iteration": 1
+      },
+      "outcome": "behavior_failure",
+      "artifacts": ["evidence/operation-001.log"]
+    },
+    {
+      "type": "report",
+      "status": "incomplete",
+      "causalClaim": "The candidate revision fixes the behavior."
+    }
+  ]
+}

@@ -66,6 +66,7 @@ import {
   retryReview,
 } from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
+import { renderSignature } from './render-signature.ts'
 import {
   drainMessageQueue,
   isHeldMessage,
@@ -124,8 +125,9 @@ function createToolHeader(
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
 ): HTMLElement {
-  // Keep a fixed-width leading slot in every state so the label never shifts
-  // when a running tool settles. The animated icon itself is omitted once done.
+  // Nothing here precedes the label in flow: the slot renders in the transcript
+  // gutter, or trails the row when it is indented (tool-cards.css). So the label
+  // sits at the same indent running or settled. The icon is omitted once done.
   const activityIcon = el('span', {
     class: 'tool-activity-icon-slot',
     'aria-hidden': 'true',
@@ -470,7 +472,7 @@ function syncSubagentTimeline(
     const innerToolCalls = msg.toolCalls ?? []
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`
-      const sig = JSON.stringify(innerToolCalls)
+      const sig = renderSignature(innerToolCalls)
       let wrap = existing.get(key)
       if (!wrap || subagentInnerToolsSig.get(wrap) !== sig) {
         // Rebuilding recreates every inner tool collapsed; carry over the ids
@@ -527,7 +529,7 @@ function subagentChromeSignature(
   // the result must drop the duplicate copy below it, even though `tc.result`
   // itself never changed.
   const result = parentResultText(tc, session, status)
-  return JSON.stringify({
+  return renderSignature({
     label,
     status,
     model: session.model ?? null,
@@ -687,9 +689,11 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // Everything that determines a card's rendered output. When it is unchanged
 // since the last tick the existing card is reused verbatim, so its markdown is
 // not re-rendered and its copy buttons are not re-attached (#728). Wire tool
-// calls are plain JSON, so a stringify captures args/result/status/subagent.
+// calls are plain JSON, so a stringify captures args/result/status/subagent —
+// digested rather than kept, or the cache would pin a second copy of every tool
+// result for as long as its card is on screen (see {@link renderSignature}).
 function toolCardSignature(item: ToolCallDisplayItem): string {
-  return JSON.stringify(item)
+  return renderSignature(item)
 }
 
 function createMessageImages(images: string[]): HTMLElement {

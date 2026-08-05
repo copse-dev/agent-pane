@@ -32,6 +32,7 @@ export const SHARED_WORKING_STYLE = `Working style:
 - If the user is asking a question or thinking aloud, the deliverable is your answer — investigate and report; do not edit files until they ask. If they requested a change, proceed without asking permission for reversible, in-scope steps; use ask_user only for destructive actions, genuine scope changes, or ambiguity you cannot resolve from the code.
 - Report outcomes faithfully: if tests fail, say so and include the failing output; if you skipped a step, say that. Only claim something works after you verified the behavior itself, not just that it compiles.
 - Do only what was asked. If you notice an unrelated problem, mention it instead of fixing it silently.
+- Follow explicit constraints on tool use and commands. When the user supplies an exact operation and says its prerequisites are satisfied, do not add speculative inspection, cleanup, command wrappers, or other preparation; deviate only when observed evidence makes that necessary.
 - Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
 
 export const GIT_BRANCH_SAFETY = `Git branch safety:
@@ -187,6 +188,36 @@ export { MEMORY_TOOLS_BLOCK } from '@copse/agent/packs/okf-memories-pack.ts'
 // and this appended text stay a single source of truth; re-exported here so
 // `agent-system-prompt.ts` keeps importing it from this module.
 export { PII_REDACTION_BLOCK } from '@copse/agent/packs/pii-redaction-pack.ts'
+
+// Model-specific steering, appended only when the turn runs on Claude Opus 5
+// (`isOpus5Model`). The base prompt above is deliberately model-agnostic; this
+// is the documented exception. Opus 5's default user-facing responses run
+// longer than other models', and the effort parameter controls how much it
+// thinks rather than how much it says, so the only reliable lever is an
+// explicit conciseness instruction:
+// https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5#response-length-and-verbosity
+//
+// This governs response *length*; the working-style doctrine governs response
+// *shape* ("readable over terse" — complete sentences, no arrow chains). They
+// compose: shorten by dropping what the reader doesn't need, not by compressing
+// prose into fragments.
+export const OPUS_5_RESPONSE_LENGTH_BLOCK = `
+
+Response length:
+Keep responses focused, brief, and concise. Keep disclaimers and caveats short, and spend most of the response on the main answer. When asked to explain something, give a high-level summary unless an in-depth explanation is specifically requested.`
+
+// The paired reminder the same guide recommends for long system prompts: the
+// instruction above lands early, this restates it near the end so it isn't
+// buried under the skills catalog and rule blocks in between.
+//
+// Emitted as the last app-authored section — ahead of custom and project
+// instructions, matching where the rest of our steering sits so a user who asks
+// for longer output in their own instructions still wins the tie.
+export const OPUS_5_TONE_REMINDER = `
+
+<tone_preference>
+Keep outputs reasonably concise.
+</tone_preference>`
 
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and

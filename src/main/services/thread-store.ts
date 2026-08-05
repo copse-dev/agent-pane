@@ -40,6 +40,7 @@ import {
   serializeSpineEntries,
   serializeSpineLine,
   type SpineHookRunLine,
+  type SpineMachineContinuationLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
 } from '@shared/threads/spine-schema.ts'
@@ -51,6 +52,8 @@ import {
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
 import { storageGet } from './storage/storage.ts'
 import { projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -62,6 +65,7 @@ import { runSerialized } from './storage/write-queue.ts'
  *   meta.json           mutable thread metadata (everything except messages)
  *   events.jsonl        append-only spine, one line per finalized message
  *   agent-history.json  provider-format LLM resume snapshot (issue #993)
+ *   acp-session.json    private external-agent session binding
  *   messages/*.md       OKF prose (message content + reasoning)
  *   blobs/*             verbatim tool results and images
  *   subagents/**        nested subagent sessions, same structure recursively
@@ -79,6 +83,8 @@ const EVENTS_FILE = 'events.jsonl'
 const META_FILE = 'meta.json'
 const AGENT_HISTORY_FILE = 'agent-history.json'
 const AGENT_HISTORY_VERSION = 1
+const ACP_SESSION_FILE = 'acp-session.json'
+const AGENT_EPOCH_FILE = 'agent-epoch.json'
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
@@ -98,6 +104,11 @@ function workspaceRoot(): string {
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
 export const chatStoreRoot = workspaceRoot
+
+export interface AgentTurnEpoch {
+  turnTreeId: string
+  continuationUsed: number
+}
 
 function threadDir(projectId: string, threadId: string): string {
   return join(projectDir(projectId), threadId)
@@ -130,11 +141,44 @@ function writeFileEnsuringDir(fullPath: string, contents: string): void {
 }
 
 /** Atomic replace so a crash never leaves a half-written sidecar. */
-function atomicWriteFile(path: string, data: string): void {
+function atomicWriteFile(path: string, data: string, mode?: number): void {
   const tmp = `${path}.copse-${String(process.pid)}.tmp`
-  writeFileSync(tmp, data)
+  if (mode === undefined) writeFileSync(tmp, data)
+  else writeFileSync(tmp, data, { mode })
   renameSync(tmp, path)
 }
+
+const acpSessionExecutionTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local') }).strict(),
+  z
+    .object({
+      kind: z.literal('ssh'),
+      hostId: z.string().min(1),
+      remoteCwd: z.string().min(1),
+    })
+    .strict(),
+])
+
+const acpSessionBindingSchema = z
+  .object({
+    v: z.literal(1),
+    agentId: z.string().min(1),
+    sessionId: z.string().min(1),
+    protocolVersion: z.number().int().positive(),
+    executionTarget: acpSessionExecutionTargetSchema,
+    workspaceIdentity: z.string().min(1),
+    agentConfigGeneration: z.number().int().nonnegative(),
+    createdBy: z.enum(['copse', 'external']),
+    lastAttachedAt: z.number().int().nonnegative(),
+  })
+  .strict()
+
+/**
+ * Private durable link from a Copse thread to one external ACP agent session.
+ * The opaque session id stays out of thread metadata, spine events, exports,
+ * logs, and telemetry; only this owner-readable sidecar persists it.
+ */
+export type AcpSessionBinding = z.infer<typeof acpSessionBindingSchema>
 
 function isAgentHistoryMessage(value: unknown): value is LLMMessage {
   return (
@@ -361,7 +405,26 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
   return contents
 }
 
-async function readThread(projectId: string, threadId: string): Promise<Thread | null> {
+/**
+ * How much of a project's history a load pulls into memory.
+ *
+ * Archived threads are soft-hidden: the sidebar and the `@`-catalog both drop
+ * them, but their directories stay on disk and every message, tool result and
+ * base64 image in them used to be folded back into the renderer's store on each
+ * project load — a heap that only ever grew, holding history no surface could
+ * show. `includeArchived` defaults to true so the whole-history readers (the
+ * usage ledger's all-time totals, agent discovery) are unchanged; the renderer's
+ * `threads:loadProject` opts out.
+ */
+export interface ThreadLoadOptions {
+  includeArchived?: boolean
+}
+
+async function readThread(
+  projectId: string,
+  threadId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread | null> {
   const dir = threadDir(projectId, threadId)
   const [metaRaw, eventsRaw] = await Promise.all([
     readOrNull(join(dir, META_FILE)),
@@ -369,6 +432,9 @@ async function readThread(projectId: string, threadId: string): Promise<Thread |
   ])
   const meta = parseMeta(metaRaw)
   if (meta === null) return null
+  // Bail before the prefetch: skipping an archived thread is only worth doing if
+  // its message bodies are never read, and that is where the bytes are.
+  if (options.includeArchived === false && meta.archivedAt != null) return null
 
   const raw = eventsRaw ?? ''
   const entries = parseSpineEntries(raw)
@@ -407,9 +473,12 @@ function listThreadIds(projectId: string): string[] {
     .map((entry) => entry.name)
 }
 
-async function readProjectThreads(projectId: string): Promise<Thread[]> {
+async function readProjectThreads(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
   const loaded = await mapConcurrent(listThreadIds(projectId), (threadId) =>
-    readThread(projectId, threadId),
+    readThread(projectId, threadId, options),
   )
   return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
 }
@@ -814,8 +883,11 @@ export function listAgentPrLinks(projectId: string): Promise<RemoteAgentPrIndexE
   ])
 }
 
-export function loadProjectThreads(projectId: string): Promise<Thread[]> {
-  return runSerialized(queueKey(projectId), () => readProjectThreads(projectId))
+export function loadProjectThreads(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
+  return runSerialized(queueKey(projectId), () => readProjectThreads(projectId, options))
 }
 
 export function saveProjectThread(projectId: string, thread: Thread): Promise<void> {
@@ -943,6 +1015,22 @@ export function appendPermissionDecision(
   })
 }
 
+/** Append one compact machine-continuation audit record. */
+export function appendMachineContinuation(
+  projectId: string,
+  threadId: string,
+  line: SpineMachineContinuationLine,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+  })
+}
+
 /** Append one stream-cut observability record (project-level eval source). */
 export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
@@ -1025,6 +1113,10 @@ export function deleteProjectThread(projectId: string, threadId: string): Promis
 
 function agentHistoryPath(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), AGENT_HISTORY_FILE)
+}
+
+function agentEpochPath(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), AGENT_EPOCH_FILE)
 }
 
 /**
@@ -1112,15 +1204,61 @@ export function saveAgentHistory(
   })
 }
 
+/** Load the latest durable machine-continuation epoch for a thread. */
+export function loadAgentTurnEpoch(
+  projectId: string,
+  threadId: string,
+): Promise<AgentTurnEpoch | null> {
+  return runSerialized(queueKey(projectId), () => {
+    const raw = safeRead(agentEpochPath(projectId, threadId))
+    if (raw === null) return null
+    try {
+      const value = parseJsonUnknown(raw)
+      if (!isRecord(value)) return null
+      const turnTreeId = value['turnTreeId']
+      const continuationUsed = value['continuationUsed']
+      if (
+        typeof turnTreeId !== 'string' ||
+        turnTreeId.length === 0 ||
+        typeof continuationUsed !== 'number' ||
+        !Number.isInteger(continuationUsed) ||
+        continuationUsed < 0
+      ) {
+        return null
+      }
+      return { turnTreeId, continuationUsed }
+    } catch {
+      return null
+    }
+  })
+}
+
+/** Persist the current turn-tree epoch before machine work can rely on it. */
+export function saveAgentTurnEpoch(
+  projectId: string,
+  threadId: string,
+  epoch: AgentTurnEpoch,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    if (readMeta(dir) === null) return
+    atomicWriteFile(join(dir, AGENT_EPOCH_FILE), `${JSON.stringify(epoch)}\n`)
+  })
+}
+
 /** Remove the provider-history sidecar (clear-history / fresh resume). */
 export function clearAgentHistory(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
-    const path = agentHistoryPath(projectId, threadId)
-    if (!existsSync(path)) return
-    try {
-      unlinkSync(path)
-    } catch {
-      // Best-effort: a missing file is the desired end state.
+    for (const path of [
+      agentHistoryPath(projectId, threadId),
+      agentEpochPath(projectId, threadId),
+    ]) {
+      if (!existsSync(path)) continue
+      try {
+        unlinkSync(path)
+      } catch {
+        // Best-effort: a missing file is the desired end state.
+      }
     }
   })
 }
@@ -1128,6 +1266,54 @@ export function clearAgentHistory(projectId: string, threadId: string): Promise<
 /** True when an `agent-history.json` sidecar already exists for the thread. */
 export function agentHistoryExists(projectId: string, threadId: string): Promise<boolean> {
   return runSerialized(queueKey(projectId), () => existsSync(agentHistoryPath(projectId, threadId)))
+}
+
+// --- External ACP session sidecar -------------------------------------------
+
+function acpSessionBindingPath(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), ACP_SESSION_FILE)
+}
+
+/**
+ * Load an exact external-agent binding. Missing, corrupt, unknown-version, or
+ * structurally invalid files fail closed to `null`; callers then require a new
+ * session or explicit recovery rather than guessing from `session/list`.
+ */
+export function loadAcpSessionBinding(
+  projectId: string,
+  threadId: string,
+): Promise<AcpSessionBinding | null> {
+  return runSerialized(queueKey(projectId), () => {
+    const raw = safeRead(acpSessionBindingPath(projectId, threadId))
+    if (raw === null) return null
+    return safeJsonParse(raw, decodeWithSchema(acpSessionBindingSchema))
+  })
+}
+
+/** Atomically persist a private exact-session binding before the first prompt. */
+export function saveAcpSessionBinding(
+  projectId: string,
+  threadId: string,
+  binding: AcpSessionBinding,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    atomicWriteFile(join(dir, ACP_SESSION_FILE), `${JSON.stringify(binding)}\n`, 0o600)
+  })
+}
+
+/** Remove a confirmed-stale or explicitly abandoned external ACP binding. */
+export function clearAcpSessionBinding(projectId: string, threadId: string): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const path = acpSessionBindingPath(projectId, threadId)
+    if (!existsSync(path)) return
+    try {
+      unlinkSync(path)
+    } catch {
+      // Best-effort: a missing file is the desired end state.
+    }
+  })
 }
 
 /**

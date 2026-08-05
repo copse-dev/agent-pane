@@ -10,5 +10,6 @@ docs
 node_modules
 release
 site
-tests
+tests/e2e/artifacts
+tests/e2e/screenshots
 vendor

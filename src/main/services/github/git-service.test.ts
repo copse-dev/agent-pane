@@ -7,9 +7,11 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import {
   classifyGitBlob,
   countDiffChangedLines,
+  getCurrentCommitHash,
   getDefaultBranch,
   getGitDiffText,
   getGitFileDiff,
+  getGitPromptState,
   getGitShowText,
   getGitWorkingFileDiff,
   parseAheadBehind,
@@ -667,5 +669,64 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
 
     assert.equal(await getDefaultBranch(), null)
+  })
+})
+
+describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: repo })
+
+  afterEach(() => {
+    setGitAvailableForTest(null)
+    restore?.()
+    restore = undefined
+  })
+
+  after(async () => {
+    if (repo) await rm(repo, { recursive: true, force: true })
+    repo = ''
+  })
+
+  it('reports HEAD and a clean tree right after a commit', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-prompt-state-clean-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+
+    const headResult = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' })
+    const head = headResult.stdout.trim()
+    assert.equal(await getCurrentCommitHash(), head)
+    assert.deepEqual(await getGitPromptState(), { startingCommit: head, dirty: false })
+  })
+
+  it('reports dirty when the working tree has unstaged changes', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-prompt-state-dirty-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'tracked.txt'), 'one\n')
+    git('add', 'tracked.txt')
+    git('commit', '-qm', 'init')
+    await writeFile(join(repo, 'tracked.txt'), 'two\n')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+
+    const state = await getGitPromptState()
+    assert.equal(state.dirty, true)
+    assert.notEqual(state.startingCommit, null)
+  })
+
+  it('returns a null commit and clean state outside a git repository', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-prompt-state-none-'))
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+
+    assert.equal(await getCurrentCommitHash(), null)
+    assert.deepEqual(await getGitPromptState(), { startingCommit: null, dirty: false })
   })
 })

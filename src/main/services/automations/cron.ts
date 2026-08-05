@@ -98,13 +98,7 @@ export function parseCronExpression(expression: string): CronSpec {
   }
 }
 
-/** Match standard cron day semantics: restricted day-of-month/day-of-week are ORed. */
-export function cronMatches(expression: string, date: Date): boolean {
-  const spec = parseCronExpression(expression)
-  if (!spec.minutes.has(date.getMinutes())) return false
-  if (!spec.hours.has(date.getHours())) return false
-  if (!spec.months.has(date.getMonth() + 1)) return false
-
+function cronDayMatches(spec: CronSpec, date: Date): boolean {
   const dayOfMonthMatches = spec.daysOfMonth.has(date.getDate())
   const dayOfWeekMatches = spec.daysOfWeek.has(date.getDay())
   if (spec.anyDayOfMonth) return dayOfWeekMatches
@@ -112,6 +106,54 @@ export function cronMatches(expression: string, date: Date): boolean {
   return dayOfMonthMatches || dayOfWeekMatches
 }
 
+function cronSpecMatches(spec: CronSpec, date: Date): boolean {
+  return (
+    spec.minutes.has(date.getMinutes()) &&
+    spec.hours.has(date.getHours()) &&
+    spec.months.has(date.getMonth() + 1) &&
+    cronDayMatches(spec, date)
+  )
+}
+
+/** Match standard cron day semantics: restricted day-of-month/day-of-week are ORed. */
+export function cronMatches(expression: string, date: Date): boolean {
+  return cronSpecMatches(parseCronExpression(expression), date)
+}
+
 export function validateCronExpression(expression: string): void {
   parseCronExpression(expression)
+}
+
+/** Return the first matching minute strictly after `after`, evaluated in local time. */
+export function nextCronOccurrence(expression: string, after: number): number {
+  const spec = parseCronExpression(expression)
+  const firstMinute = Math.floor(after / 60_000) * 60_000 + 60_000
+  const searchLimit = firstMinute + 5 * 366 * 24 * 60 * 60_000
+  let candidate = firstMinute
+  while (candidate <= searchLimit) {
+    const date = new Date(candidate)
+    if (!spec.months.has(date.getMonth() + 1)) {
+      date.setMonth(date.getMonth() + 1, 1)
+      date.setHours(0, 0, 0, 0)
+      candidate = date.getTime()
+      continue
+    }
+    if (!cronDayMatches(spec, date)) {
+      date.setDate(date.getDate() + 1)
+      date.setHours(0, 0, 0, 0)
+      candidate = date.getTime()
+      continue
+    }
+    if (!spec.hours.has(date.getHours())) {
+      date.setHours(date.getHours() + 1, 0, 0, 0)
+      candidate = date.getTime()
+      continue
+    }
+    if (!spec.minutes.has(date.getMinutes())) {
+      candidate += 60_000
+      continue
+    }
+    if (cronSpecMatches(spec, date)) return candidate
+  }
+  throw new Error('Cron expression has no occurrence within five years')
 }
