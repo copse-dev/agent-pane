@@ -1219,6 +1219,13 @@ export async function runAgent(
       },
     })
 
+    // Briefs later local todo workers with what earlier ones already found (#i2jsed):
+    // each `runTodoWorker` call starts a fresh, isolated context, so without this a
+    // plan like "mirror complexity" (todo 2) has no way to know todo 1 just built it.
+    // Keyed by todo id; deliberately just completed-item outcomes, not the rest of
+    // the plan, so a worker sees background to reuse rather than other work to drift into.
+    const localWorkerSummaries = new Map<string, { content: string; summary: string }>()
+
     setTodoToolPostProcess(async (before, after) => {
       let todos = after
       let extraMessage: string | undefined
@@ -1242,6 +1249,12 @@ export async function runAgent(
             toolSchemaReserve: subagentRoute.toolSchemaReserve,
             signal: controller.signal,
             onChunk: sendChunk,
+            parentGoal,
+            priorSummaries: localWorkerSummaries,
+          })
+          localWorkerSummaries.set(localItem.id, {
+            content: localItem.content,
+            summary: worker.summary,
           })
           inputTokens += worker.usage.inputTokens
           outputTokens += worker.usage.outputTokens
@@ -1724,6 +1737,17 @@ export async function runAgent(
 
 export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
+}
+
+/**
+ * Thread ids with a live in-process run right now. Lets a renderer that's just
+ * (re)loaded a project's threads tell a genuinely still-running turn apart from
+ * one whose `status: 'running'` was merely the last thing persisted before a
+ * crash (#1406) — trusting the persisted flag alone flips a real run's status
+ * to idle and hides its stop control while it keeps streaming.
+ */
+export function listRunningThreadIds(): string[] {
+  return [...abortMap.keys()]
 }
 
 export interface RetryOptions {

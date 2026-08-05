@@ -55,6 +55,7 @@ import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   abortAgent,
+  listRunningThreadIds,
   retryPostTurnReview,
   retryModelComparison,
   suggestThreadTitle,
@@ -534,6 +535,14 @@ app
       assertMainFrameSender(event, win)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       abortAgent(threadId)
+    })
+
+    // Thread ids with a live in-process run, so a renderer that's just loaded a
+    // project's threads can tell a genuinely still-running turn apart from a
+    // persisted `status: 'running'` left over from a crash (#1406).
+    ipcMain.handle('agent:runningThreadIds', (event) => {
+      assertMainFrameSender(event, win)
+      return listRunningThreadIds()
     })
 
     // Re-run just the post-turn review / model comparison for a thread — the
