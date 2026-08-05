@@ -171,7 +171,7 @@ export function createModelParametersSection(
         uiField({
           label: 'Temperature',
           control: temperatureInput,
-          hint: `0–${String(support.temperatureMax)}. Lower is more repeatable, higher more varied. Blank uses the model's own default.`,
+          hint: `0–${String(support.temperatureMax)}. Lower is more repeatable, higher more varied. Blank uses the model’s own default.`,
         }),
         uiField({
           label: 'Top-p',
