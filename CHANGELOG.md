@@ -20,7 +20,12 @@ every published entry.
   folded into memory in full on every project load, message bodies and images
   included, even though the sidebar and the `@`-picker both hide them; the load
   now skips them. They stay on disk untouched, and all-time usage totals still
-  count them.
+  count them. Third, the sidebar kept a thread list per project visited this
+  session, and those lists were whole threads — so switching between projects
+  added transcripts to memory rather than replacing them. A project you switch
+  away from now keeps only what its rows draw: title, running mark, and the PR
+  refs already scraped out of its messages. Switching back reloads from disk as
+  before.
 - The Parallel Search pack's switch no longer turns on without a key. The tool
   was already credential-gated where it counts — `parallel_search` is registered
   only when the pack is enabled _and_ a Parallel API key resolves — but Settings

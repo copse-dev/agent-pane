@@ -180,6 +180,58 @@ test('switchProject uses cached threads in sidebar while activation is in flight
   await new Promise((r) => setTimeout(r, 0))
 })
 
+test('switching away compacts the outgoing project, keeping its rows but not its transcripts', async () => {
+  resetProjectSwitchStateForTest()
+  const withPr = thread('t-a')
+  withPr.messages = [
+    {
+      id: 't-a-msg',
+      role: 'assistant',
+      content: 'Opened https://github.com/copse-dev/agent-pane/pull/7 for review',
+      toolCalls: [],
+      createdAt: 1,
+    },
+  ]
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [withPr],
+  })
+  attachProjectThreadCache(store)
+  store.emit('threads_changed')
+
+  // While A is active its cache entry is the live list, transcript included.
+  const live = getSidebarThreads(store, 'a')
+  assert.equal(live[0]?.messages?.length, 1)
+
+  const api = makeApi({
+    loadProjectThreads: async (projectId) => (projectId === 'b' ? [thread('t-b')] : []),
+  })
+  switchProject(store, api, 'b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+
+  const compacted = getSidebarThreads(store, 'a')
+  assert.equal(compacted.length, 1)
+  const [row] = compacted
+  assert.ok(row)
+  // The row still renders: id, title and running mark survive...
+  assert.equal(row.id, 't-a')
+  assert.equal(row.title, 't-a')
+  assert.equal(row.status, 'idle')
+  // ...as does the PR chip, because the scrape's result is carried over...
+  assert.deepEqual(
+    row.prRefs?.map((ref) => ref.number),
+    [7],
+  )
+  // ...but the transcript the scrape read is gone.
+  assert.equal(row.messages, undefined)
+})
+
 test('switchProject starts outgoing persistence and workspace activation concurrently', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({

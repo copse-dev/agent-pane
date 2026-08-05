@@ -11,7 +11,7 @@ import {
 } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { OrphanProjectStore, Project, Thread } from '@shared/types'
+import type { OrphanProjectStore, Project } from '@shared/types'
 import {
   archiveThread,
   deleteThread,
@@ -20,7 +20,6 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
-  collectThreadPrRefs,
   describeThreadPrStatus,
   normalizePrLifecycleState,
   summarizeThreadPrStatus,
@@ -46,6 +45,7 @@ import {
 import { openSettingsDialog } from './settings-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
+import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 
@@ -334,10 +334,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function rollupForThread(
-    thread: Pick<Thread, 'messages' | 'remoteAgentLink'>,
-  ): ThreadPrRollup | null {
-    const refs = collectThreadPrRefs(thread)
+  function rollupForThread(thread: SidebarThread): ThreadPrRollup | null {
+    const refs = sidebarPrRefs(thread)
     if (refs.length === 0) return null
     ensurePrLifecycles(refs)
     const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown')
@@ -534,7 +532,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         : sidebarThreads
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null
-      let visibleThreads: Thread[]
+      let visibleThreads: SidebarThread[]
       let visibleCount: number
       let hasMore: boolean
       if (isFiltering) {
