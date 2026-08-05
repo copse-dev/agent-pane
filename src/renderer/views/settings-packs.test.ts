@@ -277,6 +277,40 @@ describe('settings → packs list', () => {
     assert.equal(second.querySelector<HTMLInputElement>('input.pack-toggle-input')?.checked, false)
   })
 
+  it('sentence-cases first-party pack names and keeps acronyms uppercase', async () => {
+    // Capitalising every word turned `copse.pii-redaction` into "Pii redaction"
+    // and `copse.ci-investigator` into "Ci investigator" — the id transformation
+    // showing through as user-facing copy. Only the lead word is capitalised,
+    // and known acronyms stay whole.
+    const cases: readonly (readonly [string, string])[] = [
+      ['copse.todos', 'Todos'],
+      ['copse.long-horizon-tasks', 'Long horizon tasks'],
+      ['copse.post-turn-review', 'Post turn review'],
+      ['copse.pii-redaction', 'PII redaction'],
+      ['copse.ci-investigator', 'CI investigator'],
+      ['copse.okf-memories', 'OKF memories'],
+      ['copse.mcp-ui-canvas', 'MCP UI canvas'],
+    ]
+    for (const [id, expected] of cases) {
+      const list = await openPacks({ packs: [{ ...demoPack, id, name: id }] }, spy)
+      const row = list.querySelector(`[data-pack-id="${id}"]`)
+      assert.ok(row, `expected a row for ${id}`)
+      assert.equal(row.querySelector('.pack-name')?.textContent, expected)
+    }
+  })
+
+  it('leaves a user pack name exactly as authored', async () => {
+    // The sentence-casing is a first-party affordance for `copse.<kebab>` ids.
+    // A user pack ships its own human name and must survive verbatim.
+    const list = await openPacks(
+      { packs: [{ ...demoPack, trust: 'user', id: 'acme.PII Tools', name: 'acme.PII Tools' }] },
+      spy,
+    )
+    const row = list.querySelector('[data-pack-id="acme.PII Tools"]')
+    assert.ok(row)
+    assert.equal(row.querySelector('.pack-name')?.textContent, 'acme.PII Tools')
+  })
+
   it('shows selected-directory provenance and ordinary pack controls', async () => {
     const list = await openPacks({ packs: [selectedToolPack] }, spy)
     const row = list.querySelector<HTMLElement>('[data-pack-id="personal.local-model"]')

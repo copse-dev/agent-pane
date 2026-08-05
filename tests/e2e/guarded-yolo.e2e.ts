@@ -115,6 +115,20 @@ describe('Guarded YOLO shell mode', function () {
     await expect($('#approval-dialog')).not.toBeDisplayed()
     const failedTool = await $('.tool-card[data-status="error"]')
     await failedTool.waitForDisplayed({ timeout: 30_000 })
+    // Tool cards are collapsed <details> whose body is built lazily
+    // (`lazyToolCardBodies` in conversation.ts). Until the card opens, the
+    // denial reason is not in the DOM at all and `getText()` returns only the
+    // summary — i.e. the `rm -rf /` label, never the harm-gate reason. Open it
+    // first, then wait for the deferred body to build.
+    await failedTool.$('summary.tool-card-header').click()
+    await browser.waitUntil(
+      async () => (await failedTool.getText()).includes('Guarded YOLO harm gate'),
+      {
+        timeout: 10_000,
+        interval: 250,
+        timeoutMsg: 'Opened error tool card never rendered the Guarded YOLO harm gate reason',
+      },
+    )
     expect(await failedTool.getText()).toContain('Guarded YOLO harm gate')
     await saveElementScreenshot('.tool-card[data-status="error"]', 'guarded-yolo-hard-deny.png')
   })

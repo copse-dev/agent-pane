@@ -70,7 +70,10 @@ describe('new project flow', () => {
 
     // The workspace activates and the composer appears with the starter prompt.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.prompt-input')).toHaveValue(expect.stringContaining('Introduce this project'))
+    // `.prompt-input` is the composer's contenteditable root (see
+    // composer-editor.ts), not an <input>/<textarea> — it has no `value`
+    // property, so `toHaveValue` reads undefined and can never match.
+    await expect($('.prompt-input')).toHaveText(expect.stringContaining('Introduce this project'))
     await saveAppScreenshot('new-project-active.png')
 
     // The folder was scaffolded under `<parent>/<name>` with AGENT.md + README.md
