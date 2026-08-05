@@ -153,6 +153,20 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
   approval; custom tools prompt or use their documented remembered-grant path. File
   mutations flow through workspace guards, the diff queue, hooks, and recoverability
   checks.
+- **Thread-scoped read-outside-the-project grant.** A command that only reads
+  out-of-project paths, and whose every path the analyser can resolve, is asked
+  as a read-access question whose approval covers that shape for the rest of the
+  thread; the prompt also offers a one-command answer. The grant lives in memory
+  only, never crosses threads, and authorises nothing on its own — each later
+  command is re-analysed and must prove it is a plain read. The shape fails closed
+  on any unrecognised command head, write flag, redirect, variable expansion, or
+  privilege wrapper, and refuses credential targets (`.env*`, private keys,
+  `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`) and whole-home/root targets outright
+  so they always prompt. The residual risk is stated on the prompt: a granted read
+  of a directory can still traverse into a file the analyser would have refused as
+  a direct target. The grant is in-memory, but it is not unaccountable: the
+  answered prompt and every command the grant later covers are written to the
+  durable decision log, naming the paths and whether the answer was made sticky.
 - **OS sandbox (macOS).** Sandbox-contained commands auto-run inside a seatbelt
   profile; external commands prompt and run outside only when approved.
 - **Global network-scope guard.** When a sandboxed ACP agent or a loopback
