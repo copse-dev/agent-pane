@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { serviceTierBody } from './service-tier.ts'
+import { SERVICE_TIERS, isServiceTier, serviceTierBody } from './service-tier.ts'
 
 describe('serviceTierBody', () => {
   it('adds nothing when no tier is configured', () => {
@@ -9,20 +9,35 @@ describe('serviceTierBody', () => {
     assert.deepEqual({ model: 'gpt-5', ...serviceTierBody(undefined) }, { model: 'gpt-5' })
   })
 
-  it('treats an empty string as unset rather than sending service_tier: ""', () => {
-    // OpenAI rejects a blank tier, so a cleared setting must omit the field.
-    assert.deepEqual(serviceTierBody(''), {})
+  it('emits every documented tier verbatim', () => {
+    for (const tier of SERVICE_TIERS) {
+      assert.deepEqual(serviceTierBody(tier), { service_tier: tier })
+    }
+  })
+})
+
+describe('isServiceTier', () => {
+  it('accepts exactly the tiers OpenAI documents', () => {
+    assert.deepEqual([...SERVICE_TIERS], ['auto', 'default', 'flex', 'priority', 'scale'])
+    for (const tier of SERVICE_TIERS) {
+      assert.equal(isServiceTier(tier), true)
+    }
   })
 
-  it('emits the tier verbatim', () => {
-    assert.deepEqual(serviceTierBody('flex'), { service_tier: 'flex' })
-    assert.deepEqual(serviceTierBody('priority'), { service_tier: 'priority' })
+  it('rejects `fast`, a product name rather than a request value', () => {
+    // OpenAI markets Priority processing as "Fast mode", and `llm` exposes it as
+    // `-o service_tier fast` — but `fast` is not an API value and produces a 400.
+    // An earlier revision passed it through, on the theory that the SDK union
+    // lagged the API. It does not: the union matches OpenAI's documented set
+    // exactly, so accepting `fast` only steered users into a guaranteed error.
+    assert.equal(isServiceTier('fast'), false)
   })
 
-  it('passes through a tier the SDK union does not know', () => {
-    // `fast` is what llm 0.32 documents, and it is absent from the installed
-    // SDK's `"scale" | "default" | "auto" | "flex" | "priority"` union. Pinning
-    // to that union would reject tiers the API already accepts.
-    assert.deepEqual(serviceTierBody('fast'), { service_tier: 'fast' })
+  it('rejects anything else rather than guessing', () => {
+    assert.equal(isServiceTier('some-future-tier'), false)
+    // A cleared setting reads as '' and must mean "unset", never `service_tier: ""`.
+    assert.equal(isServiceTier(''), false)
+    // The API is case-sensitive.
+    assert.equal(isServiceTier('FLEX'), false)
   })
 })
