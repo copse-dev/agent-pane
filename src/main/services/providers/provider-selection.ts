@@ -207,7 +207,10 @@ export interface BuildProviderOptions {
  * wherever it runs — chat, a task role, a subagent — the same way an ACP
  * agent's model and permission mode travel with the agent.
  */
-function tunedParameters(model: string, opts: BuildProviderOptions = {}): ModelParameters {
+export function resolveTurnParameters(
+  model: string,
+  opts: BuildProviderOptions = {},
+): ModelParameters {
   const saved = resolveModelParameters(getSetting<unknown>('modelParameters', {}), model)
   const requested = opts.reasoning ?? saved.reasoning
   const reasoning =
@@ -221,7 +224,7 @@ export async function buildProvider(
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
-  const params = tunedParameters(model, opts)
+  const params = resolveTurnParameters(model, opts)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()
     const savedLocalDefault = normalizeRoleModelSelection(

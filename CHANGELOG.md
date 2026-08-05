@@ -75,6 +75,15 @@ every published entry.
   single task wants more thinking than the model is normally set to — no
   permanent re-tuning to get through one turn.
 
+  What a turn actually ran with is now recorded on the assistant message, next
+  to the model that produced it. The saved values are mutable and the resolved
+  ones can differ from them — a stale value is dropped, the dial overrides the
+  level, a cheap role caps it — so without this a transcript would re-read as
+  though every past turn ran at whatever Settings holds today. The transcript
+  labels a turn where the model _or_ its parameters changed, so dialling effort
+  up mid-chat marks the turn it took effect on, and the values travel with the
+  thread through export.
+
   The two roles whose job is to be cheap — thread titles and follow-up
   suggestions, and the shell-command classifier — cap the reasoning depth they
   inherit. A model set to max effort for the work should not spend max effort

@@ -57,6 +57,7 @@ import { recordReasoningCheckpoint } from './reasoning-checkpoint-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
+  resolveTurnParameters,
   buildSubagentRoute,
   buildReviewRoute,
   isBillableModel,
@@ -156,7 +157,7 @@ import { getPackService, inertPackSources, packUnavailableReason } from './packs
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
-import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { isEmptyModelParameters, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
@@ -1056,11 +1057,18 @@ export async function runAgent(
     )
     const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider =
-      options?.provider ??
-      (await buildProvider(model, threadId, {
-        ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
-      }))
+    const providerOptions = {
+      ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+    }
+    const provider = options?.provider ?? (await buildProvider(model, threadId, providerOptions))
+    // Stamp what this turn actually sends, not what the settings hold: the two
+    // diverge once a value is sanitized away, a dial overrides it, or a role
+    // caps it, and the settings can change afterwards. Silent for the common
+    // case of an untuned model, which sends nothing.
+    const turnParameters = resolveTurnParameters(model, providerOptions)
+    if (!isEmptyModelParameters(turnParameters)) {
+      sendChunk({ type: 'turn_parameters', model, parameters: turnParameters })
+    }
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
