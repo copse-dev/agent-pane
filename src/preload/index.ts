@@ -209,6 +209,8 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
@@ -228,6 +230,8 @@ contextBridge.exposeInMainWorld('api', {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          collapseDetails?: boolean
+          approveOnceLabel?: string
           comparisonModels?: { a: string; b: string; judge: string }
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
@@ -603,7 +607,6 @@ contextBridge.exposeInMainWorld('api', {
     models: () => ipcRenderer.invoke('openrouter:models'),
   },
   models: {
-    chatDefaultContextHealth: () => ipcRenderer.invoke('models:chatDefaultContextHealth'),
     bestValueDefault: () => ipcRenderer.invoke('models:bestValueDefault'),
     resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolveDynamic', value),
   },
