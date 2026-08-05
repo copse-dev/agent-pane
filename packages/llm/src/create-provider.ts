@@ -12,6 +12,7 @@ import {
   recommendedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
+import { usesResponsesApi } from './openai-responses-models.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
@@ -33,20 +34,52 @@ function isWebSearchTool(tool: unknown): tool is { type: 'web_search' } {
   return candidate.type === 'web_search'
 }
 
+/**
+ * First-party OpenAI over `/v1/responses`.
+ *
+ * `store: false` is carried across from the Chat Completions path — the privacy
+ * default must not change with the transport — and it is exactly why
+ * `encryptedReasoning` is needed: with no server-side copy retained, the
+ * encrypted blob has to travel on the response or the reasoning is unrecoverable
+ * for the next turn.
+ */
+function openAiResponsesProvider(
+  model: string,
+  apiKey: string,
+  promptCacheKey: string | undefined,
+  serviceTier: string | undefined,
+): LLMProvider {
+  return new ResponsesProvider(model, {
+    apiKey,
+    reasoningSummaries: true,
+    encryptedReasoning: true,
+    ...(promptCacheKey ? { promptCacheKey } : {}),
+    // A billing choice, not a transport detail: moving a model to Responses
+    // must not silently drop the tier the user selected.
+    ...(serviceTier ? { serviceTier } : {}),
+    ...OPENAI_STORE_OPT_OUT,
+  })
+}
+
 // `model` is the user's selected model (from settings). It both picks the
 // provider family (claude* → Anthropic, gpt* → OpenAI) and is passed through as
 // the model id. Falls back to whichever key is present; mock only when
 // COPSE_PANEL_MOCK_LLM=1 (tests / dev). `promptCacheKey` is a stable per-thread
 // hint forwarded to OpenAI's `prompt_cache_key` to raise cache hit rates (#584).
+//
+// Reasoning-capable OpenAI models go over the Responses API (see
+// openai-responses-models.ts); `forceChatCompletions` pins them back to
+// /v1/chat/completions, mirroring llm's `-o chat_completions 1` escape hatch.
 export function createProvider(
   model?: string,
   keys: ProviderKeys = {},
   promptCacheKey?: string,
-  opts: { serviceTier?: string; params?: ModelParameters } = {},
+  opts: { serviceTier?: string; params?: ModelParameters; forceChatCompletions?: boolean } = {},
 ): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
   }
+  const { forceChatCompletions = false } = opts
   const m = model ?? ''
   const cacheKeyOpt = promptCacheKey ? { promptCacheKey } : {}
   // Only ever reaches OpenAI: `service_tier` is an OpenAI request field, and
@@ -69,6 +102,9 @@ export function createProvider(
       throw new Error(
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
+    }
+    if (usesResponsesApi(m) && !forceChatCompletions) {
+      return openAiResponsesProvider(m, openAiApiKey, promptCacheKey, opts.serviceTier)
     }
     return new OpenAIProvider(m, {
       apiKey: openAiApiKey,
@@ -94,6 +130,9 @@ export function createProvider(
   }
   if (openAiApiKey) {
     const id = model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o'
+    if (usesResponsesApi(id) && !forceChatCompletions) {
+      return openAiResponsesProvider(id, openAiApiKey, promptCacheKey, opts.serviceTier)
+    }
     return new OpenAIProvider(id, {
       apiKey: openAiApiKey,
       ...cacheKeyOpt,

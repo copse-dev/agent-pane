@@ -196,6 +196,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // understates). Tier-aware pricing is a follow-up — LiteLLM already publishes
   // `input_cost_per_token_flex` / `_priority` for these models.
   openAiServiceTier: z.string().max(32),
+  // Pin reasoning-capable OpenAI models (gpt-5*, o-series) back to
+  // /v1/chat/completions instead of /v1/responses. Default OFF.
+  //
+  // The Responses path is what makes their thinking visible and lets reasoning
+  // carry across a tool-calling chain, so this is an escape hatch, not a
+  // preference: it exists for the case where a Responses-specific problem needs
+  // a way out without downgrading. Mirrors llm's `-o chat_completions 1`.
+  openAiForceChatCompletions: z.boolean(),
   // Restrict OpenRouter routing to zero-data-retention endpoints
   // (provider.zdr). Default ON; the read side (provider-selection.ts) treats
   // a missing value as true.
