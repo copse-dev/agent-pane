@@ -149,7 +149,12 @@ export const TRUST_TRANSPARENT_WRAPPERS: ReadonlySet<string> = new Set([
   'builtin',
 ])
 
-const READ_ONLY_SHELL_BASENAMES = new Set([
+/**
+ * Command basenames that only read. Exported so `read-outside-project.ts` can
+ * build its own (slightly wider) read shape on top of this one instead of
+ * restating it — two lists of "which commands only read" would drift.
+ */
+export const READ_ONLY_SHELL_BASENAMES: ReadonlySet<string> = new Set([
   'pwd',
   'ls',
   'cat',
