@@ -136,4 +136,28 @@ describe('modern CSS adoptions', () => {
       '.prompt-input must render newline text nodes with white-space: pre-wrap',
     )
   })
+
+  it('anchors settings model menus so they cannot run off the surface', () => {
+    const css = read('model-picker.css')
+    // happy-dom has no layout, so the clamp itself is covered by
+    // tests/e2e/settings-model-picker-bounds.e2e.ts. Pin the declarations that
+    // make it possible: the field host has to stay out of the positioning
+    // chain, or the menu's containing block is the narrow field again.
+    assert.ok(
+      declares(css, '.model-picker-field', /position:\s*static/),
+      'the field picker host must be position: static so the surface is the containing block',
+    )
+    assert.ok(
+      declares(css, '.model-picker-field .model-picker-trigger', /anchor-name:/),
+      'the field trigger must publish an anchor-name for its menu',
+    )
+    assert.ok(
+      declares(css, '.model-picker-field .model-picker-menu', /position-try-fallbacks:/),
+      'the field menu must declare position-try fallbacks so it flips instead of overflowing',
+    )
+    assert.ok(
+      declares(css, '.model-picker-field .model-picker-menu', /min-width:\s*anchor-size\(width\)/),
+      'the field menu must size its floor from the trigger, not from the surface',
+    )
+  })
 })
