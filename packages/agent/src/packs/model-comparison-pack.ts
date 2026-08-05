@@ -23,6 +23,7 @@
 // Electron-free (execution-guidance rule 4): pure declarations. Host wiring
 // (the tool registration + live sync + the auto-trigger gate) reads the pack
 // registry via the shared `getDefaultPackRegistry()` seam.
+import { BEST_INTELLECT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { definePack, type RegisteredPack } from './pack-manifest.ts'
 
 /** Stable pack id — the manifest name + the grouping key across contributions. */
@@ -43,13 +44,25 @@ export const COMPARISON_MODEL_B_SETTING_ID = 'comparisonModelB'
 export const COMPARISON_JUDGE_MODEL_SETTING_ID = 'comparisonJudgeModel'
 
 /**
- * Default reviewer B / judge (a frontier Claude). Inlined here rather than
- * imported from the host `model-comparison.ts` (`DEFAULT_COMPARISON_MODEL_B` /
- * `DEFAULT_COMPARISON_JUDGE_MODEL`) because this module is Electron-free and must
- * not depend on `src/main`; the two are pinned equal by the pack contract test.
- * Reviewer A has no default — blank means "use the current chat model".
+ * Default selection for reviewer B and the judge: a *rule* rather than a pinned
+ * id (see `@copse/llm/dynamic-model.ts`) — reach for the most capable model the
+ * user can actually reach, whatever that is on the day the comparison runs.
+ *
+ * Both sharing one rule is deliberate and safe: the runner expands all three
+ * selections against one candidate pool, each dynamic pick avoiding the models
+ * the earlier ones took (`resolveDistinctDynamicModelIds`), so they cannot
+ * collapse onto the same model.
+ *
+ * Reviewer A keeps NO default — blank still means "the model this chat is
+ * running on", which is live context no rule can express, and is why its picker
+ * is the one place a comparison model is not chosen by rule alone.
+ *
+ * Inlined here rather than imported from the host `model-comparison.ts`
+ * (`DEFAULT_COMPARISON_MODEL_B` / `DEFAULT_COMPARISON_JUDGE_MODEL`) because this
+ * module is Electron-free and must not depend on `src/main`; they are pinned
+ * equal by the pack contract test.
  */
-export const DEFAULT_COMPARISON_MODEL_ID = 'claude-opus-4-8'
+export const DEFAULT_COMPARISON_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR
 
 /**
  * The `copse.model-comparison` pack: manifest declares the native tool
@@ -73,19 +86,21 @@ export const modelComparisonPack: RegisteredPack = definePack(
       [COMPARISON_MODEL_A_SETTING_ID]: {
         kind: 'model',
         title: 'Reviewer A',
-        description: 'First reviewer. Leave blank to use your current chat model.',
+        description:
+          'How to choose the first reviewer, resolved when the comparison runs. Leave unset to review with the model this chat is already on.',
       },
       [COMPARISON_MODEL_B_SETTING_ID]: {
         kind: 'model',
         title: 'Reviewer B',
         description:
-          'Second reviewer — pick a different model than Reviewer A. Defaults to claude-opus-4-8.',
+          'How to choose the second reviewer. Always resolves to a different model than Reviewer A — two identical reviews have nothing to compare.',
         default: DEFAULT_COMPARISON_MODEL_ID,
       },
       [COMPARISON_JUDGE_MODEL_SETTING_ID]: {
         kind: 'model',
         title: 'Judge',
-        description: 'Model that compares the two reviews. Defaults to claude-opus-4-8.',
+        description:
+          'How to choose the model that compares the two reviews. Resolves to a model distinct from both reviewers whenever one is available.',
         default: DEFAULT_COMPARISON_MODEL_ID,
       },
     },

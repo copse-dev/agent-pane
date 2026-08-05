@@ -1,0 +1,198 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  graduateWanted,
+  pickCardUrl,
+  renderFile,
+  titleFromUrl,
+  validateCards,
+  type CardDataFile,
+  type CardEntry,
+} from './sync-model-cards.mts'
+
+const card = (over: Partial<CardEntry> = {}): CardEntry => ({
+  modelId: 'gpt-4o',
+  publisher: 'OpenAI',
+  kind: 'system-card',
+  title: 'GPT-4o system card',
+  url: 'https://openai.com/index/gpt-4o-system-card/',
+  source: 'seed source string',
+  asOf: '2026-08-04',
+  ...over,
+})
+
+describe('pickCardUrl', () => {
+  const CANDIDATES = [
+    'https://openai.com/index/gpt-4o-system-card/',
+    'https://openai.com/index/gpt-4o-mini-system-card/',
+    'https://openai.com/index/gpt-5-system-card/',
+    'https://openai.com/index/gpt-5-mini-system-card/',
+  ]
+
+  it('matches a model to its own card', () => {
+    assert.equal(pickCardUrl(CANDIDATES, ['gpt-5']), 'https://openai.com/index/gpt-5-system-card/')
+  })
+
+  it('never lets a shorter id claim a longer sibling model card', () => {
+    // The whole point of token-boundary matching: `gpt-5` must not win
+    // `gpt-5-mini`'s card, and `gpt-4o` must not win `gpt-4o-mini`'s.
+    assert.equal(
+      pickCardUrl(CANDIDATES, ['gpt-5-mini']),
+      'https://openai.com/index/gpt-5-mini-system-card/',
+    )
+    assert.equal(
+      pickCardUrl(CANDIDATES, ['gpt-4o']),
+      'https://openai.com/index/gpt-4o-system-card/',
+    )
+  })
+
+  it('does not match a token embedded in a longer word', () => {
+    assert.equal(pickCardUrl(['https://openai.com/index/gpt-55-system-card/'], ['gpt-5']), null)
+  })
+
+  it('returns null when nothing matches', () => {
+    assert.equal(pickCardUrl(CANDIDATES, ['claude-opus-4-8']), null)
+  })
+
+  it('prefers the longest matched token, then the shortest URL', () => {
+    const candidates = [
+      'https://deepmind.google/models/model-cards/gemini/',
+      'https://deepmind.google/models/model-cards/gemini/details/',
+    ]
+    assert.equal(
+      pickCardUrl(candidates, ['gemini']),
+      'https://deepmind.google/models/model-cards/gemini/',
+    )
+  })
+
+  it('ignores unparseable candidates rather than throwing', () => {
+    assert.equal(
+      pickCardUrl(['not a url', 'https://openai.com/x/gpt-5/'], ['gpt-5']),
+      'https://openai.com/x/gpt-5/',
+    )
+  })
+})
+
+describe('titleFromUrl', () => {
+  it('reads a title out of the card slug', () => {
+    assert.equal(
+      titleFromUrl('https://openai.com/index/gpt-5-system-card/', 'OpenAI'),
+      'Gpt-5 system card',
+    )
+  })
+
+  it('drops a file extension', () => {
+    assert.equal(
+      titleFromUrl('https://assets.anthropic.com/claude-opus-4-8-system-card.pdf', 'Anthropic'),
+      'Claude-opus-4-8 system card',
+    )
+  })
+
+  it('names a card-shaped page with no card suffix after its slug', () => {
+    assert.equal(
+      titleFromUrl('https://deepmind.google/models/model-cards/gemini-3/', 'Google DeepMind'),
+      'Gemini-3 model card',
+    )
+  })
+
+  it('falls back to the publisher when the path carries no slug', () => {
+    assert.equal(titleFromUrl('https://openai.com/', 'OpenAI'), 'OpenAI model card')
+  })
+})
+
+describe('validateCards', () => {
+  it('accepts a well-formed file', () => {
+    const data: CardDataFile = {
+      cards: [card()],
+      wanted: [{ modelId: 'gpt-5', publisher: 'openai', match: ['gpt-5'] }],
+    }
+    assert.doesNotThrow(() => {
+      validateCards(data)
+    })
+  })
+
+  it('rejects two cards for one model, because the UI shows exactly one link', () => {
+    const data: CardDataFile = {
+      cards: [card(), card({ url: 'https://openai.com/index/other-system-card/' })],
+    }
+    assert.throws(() => {
+      validateCards(data)
+    }, /more than one card/)
+  })
+
+  it('rejects a non-https card URL', () => {
+    const data: CardDataFile = { cards: [card({ url: 'http://openai.com/x/' })] }
+    assert.throws(() => {
+      validateCards(data)
+    }, /must be https/)
+  })
+
+  it('rejects a wanted entry naming a publisher discovery cannot reach', () => {
+    const data: CardDataFile = {
+      cards: [],
+      wanted: [{ modelId: 'x', publisher: 'nonesuch', match: ['x'] }],
+    }
+    assert.throws(() => {
+      validateCards(data)
+    }, /unknown publisher/)
+  })
+})
+
+describe('graduateWanted', () => {
+  const want = (modelId: string): { modelId: string; publisher: string; match: string[] } => ({
+    modelId,
+    publisher: 'openai',
+    match: [modelId],
+  })
+
+  it('drops a model once it holds a real per-model card', () => {
+    const out = graduateWanted(
+      [want('gpt-4o'), want('gpt-5')],
+      [card({ modelId: 'gpt-4o', kind: 'system-card' })],
+    )
+    assert.deepEqual(
+      out.map((w) => w.modelId),
+      ['gpt-5'],
+    )
+  })
+
+  it('keeps a model whose only card is an index placeholder', () => {
+    // The exact card is still outstanding, so the intent still stands.
+    const out = graduateWanted(
+      [want('claude-opus-4-8')],
+      [card({ modelId: 'claude-opus-4-8', kind: 'index' })],
+    )
+    assert.deepEqual(
+      out.map((w) => w.modelId),
+      ['claude-opus-4-8'],
+    )
+  })
+
+  it('leaves an empty wanted list empty', () => {
+    assert.deepEqual(graduateWanted([], [card()]), [])
+  })
+})
+
+describe('renderFile', () => {
+  it('emits entries sorted by model id so diffs stay reviewable', () => {
+    const out = renderFile(
+      [card({ modelId: 'gpt-5' }), card({ modelId: 'claude-opus-4-8' })],
+      '2026-08-04',
+    )
+    assert.ok(out.indexOf("'claude-opus-4-8'") < out.indexOf("'gpt-5'"))
+    assert.match(out, /AUTO-GENERATED by scripts\/sync-model-cards\.mts/)
+    assert.match(out, /Last synced: 2026-08-04/)
+  })
+
+  it('carries the reviewed fields the UI renders, but not the private ones', () => {
+    const out = renderFile([card()], '2026-08-04')
+    // Prettier's own quote style, so a re-run with no upstream change writes
+    // byte-identical output and the sync workflow sees a clean tree.
+    assert.match(out, /url: 'https:\/\/openai\.com\/index\/gpt-4o-system-card\/'/)
+    assert.match(out, /title: 'GPT-4o system card'/)
+    assert.match(out, /publisher: 'OpenAI'/)
+    assert.match(out, /kind: 'system-card'/)
+    // `source` is the reviewer's justification; it stays in the data file.
+    assert.doesNotMatch(out, /seed source string/)
+  })
+})

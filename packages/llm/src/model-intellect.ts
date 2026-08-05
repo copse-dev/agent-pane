@@ -32,6 +32,7 @@ import {
   type IntellectMeasurement,
 } from './model-intellect.generated.ts'
 import { type TrackedModel } from './model-catalog.ts'
+import { resolveModelIdForm } from './model-id-forms.ts'
 
 export { CANONICAL_INTELLECT_VERSION, INTELLECT_ATTRIBUTION }
 export type { IntellectMeasurement }
@@ -76,28 +77,11 @@ export interface IntellectExplanation {
  * itself is never fuzzy-matched. Null when nothing resolves.
  */
 export function resolveIntellectModelId(id: string): string | null {
-  if (id in MODEL_INTELLECT_RAW) return id
-  const aliased = INTELLECT_ALIASES[id]
-  if (aliased !== undefined) return aliased
-  // Option suffix: `<model>[...]` (e.g. "[1m]", "[fast=true]").
-  const unbracketed = id.replace(/\[[^\]]*\]$/, '')
-  if (unbracketed !== id) return resolveIntellectModelId(unbracketed)
-  // ACP form `<agent>#<model>`: the model is the part after the last '#'.
-  const hash = id.lastIndexOf('#')
-  if (hash >= 0) return resolveIntellectModelId(id.slice(hash + 1))
-  // Provider prefix `<provider>:<rest>`.
-  const sep = id.indexOf(':')
-  if (sep > 0) {
-    const stripped = resolveIntellectModelId(id.slice(sep + 1))
-    if (stripped !== null) return stripped
-  }
-  // Serving-route tag on a vendor path: `vendor/model:tag` (only when a '/'
-  // remains, so a bare word after a colon is never mistaken for a model).
-  const lastColon = id.lastIndexOf(':')
-  if (lastColon > 0 && id.slice(0, lastColon).includes('/')) {
-    return resolveIntellectModelId(id.slice(0, lastColon))
-  }
-  return null
+  // The wrapper-peeling order lives in `model-id-forms.ts` so the model-card
+  // table unwraps ids exactly the way measurements do.
+  return resolveModelIdForm(id, (candidate) =>
+    candidate in MODEL_INTELLECT_RAW ? candidate : (INTELLECT_ALIASES[candidate] ?? null),
+  )
 }
 
 /**

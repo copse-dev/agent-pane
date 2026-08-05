@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { cronMatches, validateCronExpression } from './cron.ts'
+import { cronMatches, nextCronOccurrence, validateCronExpression } from './cron.ts'
 
 describe('automation cron expressions', () => {
   it('matches lists, ranges, and steps in local time', () => {
@@ -31,5 +31,13 @@ describe('automation cron expressions', () => {
     assert.throws(() => {
       validateCronExpression('*/0 9 * * *')
     }, /between 1 and 59/)
+  })
+
+  it('finds the next matching minute strictly after the current instant', () => {
+    const mondayAtNineThirty = new Date(2026, 6, 27, 9, 30, 45).getTime()
+    assert.equal(
+      nextCronOccurrence('*/15 9-17 * * 1-5', mondayAtNineThirty),
+      new Date(2026, 6, 27, 9, 45, 0).getTime(),
+    )
   })
 })

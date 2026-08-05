@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
@@ -8,6 +8,11 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
+import {
+  captureBrowserPageText,
+  captureBrowserScreenshot,
+} from '../services/browser/browser-share.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
@@ -31,6 +36,7 @@ import {
   assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
+  modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
@@ -75,8 +81,8 @@ import {
 } from '../services/providers/extra-providers-store.ts'
 import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
-import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
+import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
@@ -111,6 +117,7 @@ import {
   runAcpAutoSetup,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
+import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -153,7 +160,12 @@ import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
+import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
+import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -261,6 +273,10 @@ import {
   fetchLiveIntellectModels,
   invalidateLiveIntellectCache,
 } from '../services/providers/aa-live-intellect.ts'
+import {
+  resolveModelCard,
+  type ResolvedModelCard,
+} from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -434,6 +450,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
+
+  function interactiveBrowserContents(
+    event: Electron.IpcMainInvokeEvent,
+    rawId: unknown,
+  ): WebContents {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(z.number().int().positive(), [rawId])
+    const contents = webContents.fromId(id)
+    if (!contents || contents.isDestroyed() || contents.session !== getInAppBrowserSession()) {
+      throw new IpcValidationError('Browser sharing rejected: unknown interactive browser tab')
+    }
+    return contents
+  }
+
+  ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
+    const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
+    if (!win.isDestroyed()) win.webContents.send('browser:share-text', share)
+  })
+
+  ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
+    const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
+    if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+  })
 
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
@@ -1067,6 +1106,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return fetchLiveIntellectModels()
   })
+  // Model-card links for the value map. Batched because the panel warms every
+  // plotted model at once; the resolver's URL cache makes repeat calls free.
+  ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
+    assertMainFrameSender(event, win)
+    const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
+    const out: Record<string, ResolvedModelCard | null> = {}
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          out[id] = await resolveModelCard(id)
+        } catch {
+          // A probe failure is "no link", never a broken settings panel.
+          out[id] = null
+        }
+      }),
+    )
+    return out
+  })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
   // plaintext-at-rest condition instead of leaving it to a console.warn.
@@ -1162,8 +1219,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { imported, skipped }
   })
-  ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
+  // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
+  // to show the concrete model behind a rule; a pinned id round-trips unchanged.
+  ipcMain.handle('models:resolveDynamic', (_event, rawValue: unknown) => {
+    const value = parseIpcArgs(z.string().trim().max(256), [rawValue])
+    return resolveDynamicModelId(value)
+  })
   ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
   ipcMain.handle('settings:modelPricing', () => resolveModelPricing())
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
@@ -1305,7 +1367,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
-    return loadProjectThreads(id)
+    // Archived threads are hidden from every renderer surface (sidebar and
+    // `@`-catalog both filter them), so folding their history into the store
+    // only grew the heap. They stay on disk and in the whole-history readers.
+    return loadProjectThreads(id, { includeArchived: false })
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -1503,6 +1568,40 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await getPackService().refreshPackSources()
     return { packs: getPackService().list() }
   })
+  ipcMain.handle('supervisor:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+    const activeStates = new Set(['queued', 'running', 'waiting', 'blocked'])
+    const tasks: SupervisedTaskSummary[] = getTaskSupervisor()
+      .list(projectId)
+      .filter((task) => activeStates.has(task.state))
+      .map((task) => ({
+        taskId: task.taskId,
+        projectId: task.projectId,
+        threadId: task.threadId,
+        handler: task.handler,
+        state: task.state,
+        updatedAt: task.updatedAt,
+      }))
+    return { tasks }
+  })
+  ipcMain.handle('supervisor:cancel', async (event, rawProjectId: unknown, rawTaskId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+    const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
+    const task = await getTaskSupervisor().cancel(projectId, taskId)
+    const summary: SupervisedTaskSummary | null = task
+      ? {
+          taskId: task.taskId,
+          projectId: task.projectId,
+          threadId: task.threadId,
+          handler: task.handler,
+          state: task.state,
+          updatedAt: task.updatedAt,
+        }
+      : null
+    return { task: summary }
+  })
   ipcMain.handle('packs:addSource', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
@@ -1571,6 +1670,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (id === PARALLEL_SEARCH_PACK_ID) {
       syncParallelSearchTools(registry)
+    }
+    if (id === DARK_FACTORY_PACK_ID) {
+      syncDarkFactorySensor()
+    }
+    if (id === AUTOMATIONS_PACK_ID) {
+      getTaskSupervisor().syncCronTasks()
+      await getAutomationService().sync()
     }
     return { packs: getPackService().list() }
   })
@@ -2019,6 +2125,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [prompt, kind],
       )
       return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
+    })
+    // Drives the real main→renderer close question without actually quitting —
+    // an e2e that closed the app would take its own session down with it.
+    ipcMain.handle('test:requestCloseConfirm', (event) => {
+      assertMainFrameSender(event, win)
+      return requestCloseConfirmation()
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)

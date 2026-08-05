@@ -23,7 +23,11 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-sm);
-  font-size: var(--font-size-sm);
+  /* A larger system mask stays visibly circular at normal display scale;
+     inherited display-font masks rasterize like tiny periods here. */
+  font-family: system-ui, sans-serif;
+  font-size: var(--font-size-lg);
+  letter-spacing: 0.15em;
 }
 .ssh-prompt-remember {
   display: flex;

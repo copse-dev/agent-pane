@@ -145,6 +145,7 @@ export const approvalRespondSchema = z.tuple([
   z.boolean(),
   z.boolean().optional(),
   comparisonModelSelectionSchema.optional(),
+  z.enum(['once', 'turn-tree']).optional(),
 ])
 
 // Answer payload for a pending ask_user question: the request id plus one answer
@@ -157,6 +158,10 @@ export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192))
 export const sshPromptRespondSchema = z.tuple([z.uuid(), z.string().max(8192), z.boolean()])
 
 export const updatePromptRespondSchema = z.tuple([z.uuid(), z.number().int().min(-1).max(10)])
+
+// The renderer's verdict on a close/quit it was asked to confirm: `true` lets
+// the app go down, `false` keeps it up.
+export const closeConfirmRespondSchema = z.tuple([z.uuid(), z.boolean()])
 
 export const zSshHostId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 
@@ -186,6 +191,10 @@ export const cloudProviderSchema = z.enum([
 // Any provider key slug: the fixed providers above plus arbitrary user-added
 // custom-provider slugs (URL-safe, derived from a base-URL hostname).
 export const keyProviderSchema = z.string().regex(/^[a-z0-9-]{1,64}$/)
+
+// Model ids to resolve card links for. Bounded because the renderer batches a
+// whole chart's worth, and each unknown id can cost a network probe.
+export const modelCardIdsSchema = z.array(z.string().min(1).max(512)).max(128)
 
 // Per-save consent for storing a key unencrypted when OS secure storage is
 // unavailable. Defaults to no consent so the plaintext write is always opt-in.

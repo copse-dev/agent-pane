@@ -98,6 +98,7 @@ import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
 import { backgroundTasksPack } from './background-tasks-pack.ts'
 import { automationsPack } from './automations-pack.ts'
 import { parallelSearchPack } from './parallel-search-pack.ts'
+import { darkFactoryPack } from './dark-factory-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
@@ -125,6 +126,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   backgroundTasksPack,
   automationsPack,
   parallelSearchPack,
+  darkFactoryPack,
 ]
 
 /**

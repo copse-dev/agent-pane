@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
   createLongTask,
   loadLongTasks,
+  loadLongTasksForRoot,
   setStepDone,
   setLongTaskRootForTest,
   taskProgress,
@@ -62,5 +63,16 @@ describe('long-task-tracker', () => {
     assert.equal(at(loadLongTasks(), 0).title, 'Persisted')
     assert.equal(setStepDone('t999', 's1', true), null)
     assert.equal(setStepDone('t1', 's999', true), null)
+  })
+
+  it('loads by trusted project root when another workspace is active', () => {
+    createLongTask({ title: 'Original project', goal: 'g', steps: ['x'] })
+    const restoreOther = setWorkspaceRootForTest('/home/dev/other-project')
+    try {
+      assert.deepEqual(loadLongTasks(), [])
+      assert.equal(at(loadLongTasksForRoot('/home/dev/my-project'), 0).title, 'Original project')
+    } finally {
+      restoreOther()
+    }
   })
 })

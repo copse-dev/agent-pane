@@ -1,4 +1,5 @@
 import { getModelInfo } from '@copse/llm/model-catalog.ts'
+import { BEST_VALUE_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 
 /**
  * Experimental, opt-in "orchestration strategy" feature — the counterpart of the
@@ -25,8 +26,13 @@ import { getModelInfo } from '@copse/llm/model-catalog.ts'
 export const ORCHESTRATION_STRATEGY_ENABLED_SETTING = 'orchestrationStrategyEnabled'
 export const ORCHESTRATION_WORKER_MODEL_SETTING = 'orchestrationWorkerModel'
 
-/** Default worker model when the strategy is enabled (the cheapest tracked Claude). */
-export const DEFAULT_ORCHESTRATION_WORKER_MODEL = 'claude-haiku-4-5'
+/**
+ * Default worker selection when the strategy is enabled. A rule rather than a
+ * pinned id (see `@copse/llm/dynamic-model.ts`): the worker's job is to be the
+ * cheap half of the pairing, and which model that is depends on what the user
+ * has configured — best value is that judgement, re-derived per delegation.
+ */
+export const DEFAULT_ORCHESTRATION_WORKER_MODEL = BEST_VALUE_MODEL_SELECTOR
 
 /**
  * Per-step loop budget for the worker. One delegated step is read → edit →

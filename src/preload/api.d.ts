@@ -11,6 +11,7 @@ import type {
   AutomationTriggerEvent,
 } from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
@@ -45,6 +46,7 @@ import type {
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 export type { DetectedAcpAgent }
 
@@ -83,6 +85,10 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    sharePageText: (webContentsId: number) => Promise<void>
+    shareScreenshot: (webContentsId: number) => Promise<void>
+    onShareText: (handler: (share: BrowserTextShare) => void) => () => void
+    onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPackTabRequest: (
       handler: (
         request: PackBrowserTabRequest,
@@ -158,8 +164,14 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
+        allowTurnTreeLease?: boolean
+        turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
+        turnTreeLeaseSubject?: string
       }) => void,
     ) => () => void
     onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -214,6 +226,7 @@ export interface ApiClient {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
+      grantScope?: 'once' | 'turn-tree',
     ) => Promise<void>
   }
   ask: {
@@ -241,6 +254,10 @@ export interface ApiClient {
       }) => void,
     ) => () => void
     onDevNotice: (handler: () => void) => () => void
+  }
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) => Promise<void>
+    onRequest: (handler: (req: { id: string }) => void) => () => void
   }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
@@ -361,17 +378,16 @@ export interface ApiClient {
     >
   }
   models: {
-    /** Whether any available chat model reaches the recommended context window. */
-    chatDefaultContextHealth: () => Promise<{
-      hasDecentChatDefault: boolean
-      minimum: number
-      bestAvailableContext: number | null
-    }>
     /**
      * Concrete model id for the plan/price Pareto best-value default
      * (`auto:best-value` setting expands to this on new chats / agent runs).
      */
     bestValueDefault: () => Promise<string>
+    /**
+     * Concrete model id a dynamic selection (`auto:…`) resolves to right now.
+     * A pinned id is returned unchanged, so callers can pass whatever is stored.
+     */
+    resolveDynamic: (value: string) => Promise<string>
   }
   intellect: {
     /** Live Artificial Analysis model feed; empty models when no key stored. */
@@ -386,6 +402,18 @@ export interface ApiClient {
       indexVersion?: string | number
       error?: string
     }>
+  }
+  modelCards: {
+    /**
+     * The first card URL that resolves for each model id, or null where none
+     * does. Probe results are cached in the main process, so calling this for
+     * models already looked up costs no network.
+     */
+    resolve: (
+      modelIds: string[],
+    ) => Promise<
+      Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
+    >
   }
   lmStudio: {
     test: (
@@ -681,6 +709,11 @@ export interface ApiClient {
       id: string,
       threadId: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+  }
+  supervisor: {
+    list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
+    cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
+    onChanged(callback: (projectId: string) => void): () => void
   }
   skills: {
     list: () => Promise<SkillSummary[]>

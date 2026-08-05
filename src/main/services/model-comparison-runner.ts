@@ -15,6 +15,7 @@ import {
   COMPARISON_JUDGE_MODEL_SETTING_ID,
 } from '@copse/agent/packs/model-comparison-pack.ts'
 import { readPackSettingValue } from './packs/pack-service.ts'
+import { resolveDistinctDynamicModelIds } from './providers/dynamic-model.ts'
 import { requestApproval } from './approval.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import {
@@ -58,13 +59,32 @@ function comparisonModelSetting(key: string): string {
   return typeof raw === 'string' ? raw.trim() : ''
 }
 
-function resolveModelsFromSettings(chatModel: string): ComparisonModels {
-  return resolveComparisonModels({
+/**
+ * The three *selections* (settings, then defaults), expanded into concrete model
+ * ids. Expansion happens here — before the spend approval — for two reasons: the
+ * approval prompt has to name the models it is about to bill for, and
+ * `isBillableModel` cannot classify a rule that has not been resolved.
+ *
+ * `resolveDistinctDynamicModelIds` walks the three in order against one
+ * candidate pool, each dynamic pick avoiding what the earlier ones took, so
+ * "Most capable" on both reviewer B and the judge yields the two strongest
+ * *different* models rather than the same one twice. A pinned id is exempt: a
+ * user who named a model on both sides gets what they asked for, and the
+ * distinct-reviewer check below surfaces it.
+ */
+async function resolveModelsFromSettings(chatModel: string): Promise<ComparisonModels> {
+  const selections = resolveComparisonModels({
     modelA: comparisonModelSetting(COMPARISON_MODEL_A_SETTING_ID),
     modelB: comparisonModelSetting(COMPARISON_MODEL_B_SETTING_ID),
     judge: comparisonModelSetting(COMPARISON_JUDGE_MODEL_SETTING_ID),
     chatModel,
   })
+  const [a, b, judge] = await resolveDistinctDynamicModelIds([
+    selections.a,
+    selections.b,
+    selections.judge,
+  ])
+  return { a: a ?? selections.a, b: b ?? selections.b, judge: judge ?? selections.judge }
 }
 
 /**
@@ -151,12 +171,12 @@ export async function runModelComparison(
   ctx: ModelComparisonContext,
   signal: AbortSignal,
 ): Promise<{ summary: string; comparison: ModelComparison | null }> {
-  const models = resolveModelsFromSettings(ctx.chatModel)
+  const models = await resolveModelsFromSettings(ctx.chatModel)
 
   if (!comparisonReviewersDistinct(models)) {
     // Surface a card (not a silent no-op) so an identical-reviewer misconfig is
     // visible on the auto path, which ignores the returned summary.
-    const msg = `Comparison skipped: reviewers A and B are the same model (${models.a}). Pick two different models in Settings → Experimental.`
+    const msg = `Comparison skipped: reviewers A and B are the same model (${models.a}). Pick two different selections in Settings → Packs → Model comparison.`
     const skipped = errorComparison(models, msg)
     ctx.onChunk({ type: 'model_comparison', comparison: skipped })
     return { summary: msg, comparison: skipped }

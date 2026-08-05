@@ -8,6 +8,60 @@ every published entry.
 
 ## Unreleased
 
+- A long session holds on to much less memory. Two things kept transcript text
+  alive that did not need to be. The transcript's render caches — the ones that
+  let an unchanged tool card skip a rebuild — stored the card's whole JSON
+  encoding as its signature, so every tool result, and every base64 image
+  attachment inside one, was held a second time for as long as its card was on
+  screen; a heap snapshot of a long session showed 83% of a 319 MB renderer heap
+  in strings, with the same 500 kB screenshots and 200 kB command outputs
+  appearing two and three times over. Signatures are now a short digest of that
+  JSON rather than the JSON itself. Separately, archived threads were still
+  folded into memory in full on every project load, message bodies and images
+  included, even though the sidebar and the `@`-picker both hide them; the load
+  now skips them. They stay on disk untouched, and all-time usage totals still
+  count them. Third, the sidebar kept a thread list per project visited this
+  session, and those lists were whole threads — so switching between projects
+  added transcripts to memory rather than replacing them. A project you switch
+  away from now keeps only what its rows draw: title, running mark, and the PR
+  refs already scraped out of its messages. Switching back reloads from disk as
+  before.
+- The Parallel Search pack's switch no longer turns on without a key. The tool
+  was already credential-gated where it counts — `parallel_search` is registered
+  only when the pack is enabled _and_ a Parallel API key resolves — but Settings
+  let you flip the toggle with no key saved, leaving a pack that read as on and
+  contributed nothing. The toggle now stays inert until a key is stored, with a
+  hint saying so. Turning it off is never blocked, so clearing the key on an
+  enabled pack shows the hint (and unregisters the tool) rather than trapping the
+  switch on.
+- Context-window trouble is now reported where the model is chosen. Picking a
+  model for a thread that no longer fits it puts a message above the composer —
+  "This thread no longer fits “GPT-4o mini”: the next prompt needs about 158K
+  tokens and its context window holds 128K" — with the two ways out: pick a model
+  with a larger window, or free up context (local models also get the "raise its
+  Context Length in LM Studio" route). It appears at 90% of the window too, while
+  there is still room to act, and carries a **Choose another model** button that
+  opens the picker beside it. This replaces the startup banner that warned about
+  low-context local models before any thread or model was in play; the same
+  underlying check still feeds the `/checkup` report.
+- Closing Copse while a thread is still working now asks first. Quitting tears
+  down every live agent session with no way to resume, so a close that would land
+  mid-turn opens a confirmation naming the threads still running ("Fix login is
+  mid-turn…") with **Close anyway** / **Keep working**. Backing out leaves the
+  run untouched. This covers both routes out of the app — the window's close
+  button and Cmd+Q / the Quit menu item — and the prompt lands before any
+  teardown starts, not after. Closing with nothing running is unchanged: no
+  dialog, no extra click.
+- The model value map keeps working past Artificial Analysis' API retirement.
+  AA retires its legacy `/api/v2/data/*` endpoints on 4 November 2026, after
+  which they answer `410 Gone`. The live panel already read the supported free
+  language feed, but it fell back to the legacy scores endpoint when a response
+  failed validation; since AA's documented replacement for that legacy endpoint
+  is the very feed we call first, the fallback had no successor and is gone —
+  one endpoint, one attempt. The `sync:intellect --from-api` refresh moves onto
+  the same feed, which means it now walks every page rather than reading only
+  the first, so a keyed refresh sees the whole model list instead of the first
+  200 rows. API keys are unchanged.
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to
@@ -24,6 +78,15 @@ every published entry.
   Estimated counts are labelled as such rather than priced. The click that used
   to swap the label for an inline `1200 in / 80 out · ~$0.02` string is gone; the
   counter now always reads as the plain total.
+- Answers on Claude Opus 5 are shorter. That model's default replies run longer
+  than other models', and the effort setting tunes how much it thinks rather
+  than how much it says, so the system prompt now asks for concision explicitly
+  when a turn runs on Opus 5 — with a short reminder near the end of the prompt,
+  as Anthropic's
+  [Opus 5 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5#response-length-and-verbosity)
+  recommends. It is the only model-conditional text in the prompt; every other
+  model sees exactly what it saw before. The steering sits ahead of your custom
+  and project instructions, so asking for fuller explanations there still wins.
 - Copse now identifies itself to model providers. Every provider request carries
   the de facto attribution pair `HTTP-Referer: https://copse.dev/` and
   `X-Title: Copse`, with OpenRouter also receiving `X-OpenRouter-Title` (the

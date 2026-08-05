@@ -1,8 +1,5 @@
-import {
-  FALLBACK_APP_CHAT_MODEL,
-  isBestValueChatModel,
-  LM_STUDIO_MODEL_IDS,
-} from '@shared/lm-studio-defaults.ts'
+import { FALLBACK_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import {
   REMOTE_AGENT_MODELS,
@@ -14,7 +11,7 @@ import {
 import { isProviderKeyUsable } from './provider-key-status.ts'
 import { buildProvider } from './provider-selection.ts'
 import { isProviderAvailable } from '../storage/settings.ts'
-import { resolveBestValueChatModel } from './best-value-model.ts'
+import { resolveDynamicModelId } from './dynamic-model.ts'
 
 export interface ResolvedAgentChatModel {
   /** Model id actually used for the turn. */
@@ -89,11 +86,11 @@ async function pickFallbackChatModel(): Promise<string> {
 }
 
 /**
- * Resolve the chat model for an agent turn. Expands the best-value sentinel to a
- * concrete routable model. A remote-agent selection is honoured whenever its
- * provider key is usable — the Claude Cloud Agent runs the managed Agents API,
- * which is API-key billed and has no subscription equivalent, so a user who
- * picked it gets it.
+ * Resolve the chat model for an agent turn. Expands a dynamic selection
+ * (`auto:…`) to a concrete routable model. A remote-agent selection is honoured
+ * whenever its provider key is usable — the Claude Cloud Agent runs the managed
+ * Agents API, which is API-key billed and has no subscription equivalent, so a
+ * user who picked it gets it.
  *
  * When the key is unusable the turn cannot run as asked: fall back to a runnable
  * local/cloud chat model, return a notice so the transcript states what
@@ -101,11 +98,12 @@ async function pickFallbackChatModel(): Promise<string> {
  * subscription-billed ACP agent instead of accepting the demotion silently.
  */
 export async function resolveAgentChatModel(requested: string): Promise<ResolvedAgentChatModel> {
-  // Sentinel expansion first: the best-value value is never a remote-agent
-  // selection, so the remote-agent handling below only ever sees the user's
-  // literal choice — an unexpanded sentinel would fall through as a bare model id.
-  if (isBestValueChatModel(requested)) {
-    return { model: await resolveBestValueChatModel() }
+  // Selector expansion first: a dynamic selection never resolves to a
+  // remote-agent id, so the remote-agent handling below only ever sees the
+  // user's literal choice — an unexpanded selector would fall through as a bare
+  // model id and be handed to a provider that has never heard of it.
+  if (isDynamicModel(requested)) {
+    return { model: await resolveDynamicModelId(requested) }
   }
 
   const remoteProvider = parseRemoteAgentModel(requested)

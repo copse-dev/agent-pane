@@ -49,10 +49,20 @@ export interface ModelPicker {
   root: HTMLElement
   refresh: () => Promise<void>
   sync: () => void
+  /** Open the menu from outside the trigger (e.g. a "choose another model" action). */
+  openMenu: () => void
   destroy: () => void
 }
 
 const RECENT_MODEL_LIMIT = 5
+
+/**
+ * Feeds `anchor-name` / `position-anchor` in model-picker.css, which lets a
+ * field menu clamp itself to the surface instead of running off the page.
+ * One name per instance: Chromium resolves a duplicated anchor-name to another
+ * element carrying it, which would throw a menu at a different picker.
+ */
+let pickerAnchorId = 0
 
 /**
  * The app-wide searchable model picker. Surfaces own where the current value is
@@ -78,6 +88,7 @@ export function mountModelPicker(
       .filter((part): part is string => Boolean(part))
       .join(' '),
   })
+  wrap.style.setProperty('--model-picker-anchor', `--model-picker-${String(++pickerAnchorId)}`)
   const triggerAttrs: Record<string, string> = {
     type: 'button',
     class: 'model-picker-trigger',
@@ -610,6 +621,9 @@ export function mountModelPicker(
     root: wrap,
     refresh,
     sync,
+    openMenu: (): void => {
+      if (!open) setOpen(true)
+    },
     destroy,
   }
 }

@@ -56,6 +56,7 @@ export async function estimateContextBreakdown(
   const systemPrompt = await buildSystemPrompt({
     subagentsEnabled,
     invokedSkills: input.invokedSkills,
+    model,
   })
   // Skill blocks are part of the system prompt string; measure them separately so
   // they can be attributed to "Skills" instead of inflating "System prompt".

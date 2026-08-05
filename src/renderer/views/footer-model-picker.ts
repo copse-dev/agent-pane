@@ -24,7 +24,7 @@ export function mountFooterModelPicker(
   getCurrent: () => string,
   onSelect: (model: string) => void,
   pickerOpts: FooterModelPickerOptions = {},
-): { refresh: () => void; destroy: () => void } {
+): { refresh: () => void; openMenu: () => void; destroy: () => void } {
   // The agent whose selectors are currently listed. Captured on load so a pick
   // persists against the right agent even if the model value moves on after.
   let optionAgentId: string | null = null
@@ -75,5 +75,14 @@ export function mountFooterModelPicker(
     void picker.refresh()
   })
 
-  return { refresh: () => void picker.refresh(), destroy: picker.destroy }
+  return {
+    refresh: () => void picker.refresh(),
+    // Same pairing as an explicit trigger click: refresh live pack/provider
+    // state, then show the menu.
+    openMenu: (): void => {
+      void picker.refresh()
+      picker.openMenu()
+    },
+    destroy: picker.destroy,
+  }
 }

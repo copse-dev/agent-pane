@@ -4,6 +4,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountOpenInEditor } from './open-in-editor.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { bindTitlebarCompactLayout } from './titlebar-compact.ts'
 
 function basename(p: string): string {
   return p.split('/').pop() ?? p
@@ -39,6 +40,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   root.append(leftCluster, dragRegion, panelControls.element)
+  const destroyCompactLayout = bindTitlebarCompactLayout(root, [leftCluster, panelControls.element])
 
   function syncName(): void {
     const { workspaceRoot, activeProjectId, projects } = store.getState()
@@ -117,6 +119,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     if (branchTimer) clearTimeout(branchTimer)
     openInEditor.destroy()
     panelControls.destroy()
+    destroyCompactLayout()
     unsubs.forEach((u) => {
       u()
     })

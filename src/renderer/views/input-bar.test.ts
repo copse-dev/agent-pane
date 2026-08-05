@@ -64,6 +64,7 @@ function createApi(options: {
   openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
   lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
   onDescribeImages?: ApiClient['agent']['describeImages']
+  estimateContext?: ApiClient['agent']['estimateContext']
   promptState?: { startingCommit: string | null; dirty: boolean }
 }): ApiClient {
   return ((): ApiClient => {
@@ -75,6 +76,7 @@ function createApi(options: {
         abort: options.onAbort ?? (async (): Promise<void> => {}),
         run: options.onRun ?? (async (): Promise<void> => {}),
         describeImages: options.onDescribeImages ?? base['agent'].describeImages,
+        estimateContext: options.estimateContext ?? base['agent'].estimateContext,
         clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
         prepareCheckout:
           options.onPrepareCheckout ??
@@ -1370,5 +1372,91 @@ describe('input bar footer usage counter', () => {
     assert.equal(counter.textContent, '13.1M tokens')
     const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
     assert.equal(popover?.hidden, true)
+  })
+})
+
+describe('input bar context fit warning', () => {
+  function contextFitStore(model: string): ReturnType<typeof createStore> {
+    return createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread(), model }],
+    })
+  }
+
+  function estimate(
+    totalTokens: number,
+    contextWindow: number,
+  ): ApiClient['agent']['estimateContext'] {
+    return async () => ({
+      segments: [{ key: 'history' as const, label: 'Conversation', tokens: totalTokens }],
+      totalTokens,
+      contextWindow,
+    })
+  }
+
+  async function mountWithEstimate(
+    model: string,
+    totalTokens: number,
+    contextWindow: number,
+  ): Promise<HTMLElement> {
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      contextFitStore(model),
+      createApi({ currentBranch: 'main', estimateContext: estimate(totalTokens, contextWindow) }),
+    )
+    await settle()
+    await flush()
+    return host
+  }
+
+  it('explains an overflowing thread and offers the model picker', async () => {
+    const host = await mountWithEstimate('gpt-4o-mini', 240_000, 128_000)
+
+    const warning = host.querySelector<HTMLElement>('.composer-context-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /no longer fits “GPT-4o mini”/)
+    assert.match(warning.textContent, /240K tokens/)
+    assert.match(warning.textContent, /context window holds 128K/)
+    assert.match(warning.textContent, /Pick a model with a larger context window/)
+    assert.ok(warning.classList.contains('is-over'))
+
+    const menu = host.querySelector<HTMLElement>('.model-picker-menu')
+    assert.ok(menu)
+    assert.equal(menu.hidden, true)
+    host.querySelector<HTMLButtonElement>('.composer-context-model-btn')?.click()
+    await flush()
+    assert.equal(menu.hidden, false, 'the action opens the model picker rather than just advising')
+  })
+
+  it('warns before the window is full, without the overflow styling', async () => {
+    const host = await mountWithEstimate('gpt-4o-mini', 121_600, 128_000)
+
+    const warning = host.querySelector<HTMLElement>('.composer-context-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /already fills 95% of the 128K context window/)
+    assert.equal(warning.classList.contains('is-over'), false)
+  })
+
+  it('points local models at their load-time context length', async () => {
+    const host = await mountWithEstimate('lmstudio:qwen3-4b', 12_000, 8000)
+
+    const warning = host.querySelector<HTMLElement>('.composer-context-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /qwen3-4b/)
+    assert.match(warning.textContent, /“Context Length” in LM Studio/)
+  })
+
+  it('stays hidden while the thread fits', async () => {
+    const host = await mountWithEstimate('gpt-4o-mini', 12_000, 128_000)
+
+    assert.equal(host.querySelector<HTMLElement>('.composer-context-warning')?.hidden, true)
   })
 })
