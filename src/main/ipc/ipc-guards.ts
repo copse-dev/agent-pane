@@ -159,6 +159,10 @@ export const sshPromptRespondSchema = z.tuple([z.uuid(), z.string().max(8192), z
 
 export const updatePromptRespondSchema = z.tuple([z.uuid(), z.number().int().min(-1).max(10)])
 
+// The renderer's verdict on a close/quit it was asked to confirm: `true` lets
+// the app go down, `false` keeps it up.
+export const closeConfirmRespondSchema = z.tuple([z.uuid(), z.boolean()])
+
 export const zSshHostId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 
 export const providerSchema = z.enum([
