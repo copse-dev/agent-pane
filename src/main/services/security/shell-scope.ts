@@ -470,6 +470,25 @@ export function analyzeShellCommand(
   return { verdict: hasHard || outsidePath !== null ? 'external' : 'ambiguous', reasons }
 }
 
+/**
+ * True when the ONLY thing pushing this command outside the sandbox is that it
+ * names a path outside the workspace — no network matcher fired, hard or fuzzy,
+ * and no opaque local execution was detected.
+ *
+ * A caller that can make the named paths readable inside the seatbelt can then
+ * contain the command instead of running it unsandboxed. Deliberately stricter
+ * than `verdict === 'external'`: a single fuzzy "may reach the network" reason
+ * is enough to disqualify, because containment would break such a command and a
+ * read relaxation is not the approval it needs.
+ */
+export function externalOnlyForOutsidePath(command: string, workspaceRoot: string | null): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  const { reasons, hasHard } = collectExternalReasons(trimmed)
+  if (hasHard || reasons.length > 0) return false
+  return referencesOutsideWorkspace(trimmed, workspaceRoot) !== null
+}
+
 const REPLAYABLE_OPAQUE_LOCAL_REASONS: ReadonlySet<string> = new Set([
   REASON_LOCAL_EXECUTABLE,
   REASON_INTERPRETER_FILE,

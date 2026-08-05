@@ -8,7 +8,10 @@ import {
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
-import { shellRunsOutsideSandbox } from '../services/security/command-routing-config.ts'
+import {
+  shellReadGrantTargets,
+  shellRunsOutsideSandbox,
+} from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import {
   promptExpectedSandboxBlock,
@@ -41,6 +44,8 @@ import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/
 import { emitShellOutput } from '../services/exec/shell-output-context.ts'
 import { getActiveRunThread } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
+import { recordDecision } from '../services/security/decision-log-store.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -76,6 +81,7 @@ async function runShellOnce(
   signal: AbortSignal,
   unsandboxed: boolean,
   env: NodeJS.ProcessEnv,
+  readGrantTargets: readonly string[] = [],
 ): Promise<ShellRunResult> {
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
@@ -87,6 +93,7 @@ async function runShellOnce(
           stdio: 'pipe',
           signal,
           unsandboxed,
+          readGrantTargets,
         })
       } catch (err) {
         // Wrapping the command in the sandbox failed (runner-side, not command
@@ -187,6 +194,7 @@ async function maybeRetryUnsandboxed(
   result: ShellRunResult,
   env: NodeJS.ProcessEnv,
   guardedYolo: boolean,
+  readGrantApplied: boolean,
 ): Promise<ShellRunResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
   if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd)) {
@@ -200,7 +208,9 @@ async function maybeRetryUnsandboxed(
     spawnFailed: result.spawnFailed ?? false,
   })
   if (!detection.likely) return null
-  const approved = guardedYolo || (await promptUnsandboxedShell(command, detection.reasons, signal))
+  const approved =
+    guardedYolo ||
+    (await promptUnsandboxedShell(command, detection.reasons, signal, { readGrantApplied }))
   if (!approved) return 'declined'
   return runShellOnce(command, cwd, timeout_ms, signal, true, env)
 }
@@ -327,6 +337,31 @@ export const runShellTool = defineTool({
     const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
     let outsideSandbox = shellRunsOutsideSandbox(command)
 
+    // A command that leaves the sandbox ONLY because it reads accountable paths
+    // outside the project is contained instead, with just those paths readable
+    // (issue: the read-access grant answered the prompt but the run still went
+    // fully unsandboxed, handing it the writes and network the prompt said it was
+    // not granting). Same RAW command as the routing decision above and as the
+    // permission gate's read-access question, so the approval the user answered
+    // and the seatbelt the command gets can never describe different paths.
+    const readGrantTargets = outsideSandbox ? shellReadGrantTargets(command, cwd) : null
+    if (readGrantTargets) {
+      outsideSandbox = false
+      // Audit parity with the grant itself: the gate's `external-read` line says
+      // the user widened read access, this one says which paths the seatbelt was
+      // actually opened to for this command — and, by existing at all, that the
+      // command stayed contained rather than escaping.
+      recordDecision({
+        kind: 'shell',
+        actor: 'system',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'external-read',
+        reasons: [`sandbox read access widened to: ${readGrantTargets.join(', ')}`],
+        source: 'read-outside-sandbox-relaxation',
+      })
+    }
+
     // If the agent declared up front that it expects the sandbox to block this
     // command, pull the escalation prompt forward instead of running inside the
     // sandbox and offering an unsandboxed retry only after a real block. Bounded to
@@ -382,6 +417,7 @@ export const runShellTool = defineTool({
         signal,
         outsideSandbox,
         childEnv,
+        readGrantTargets ?? [],
       )
 
       if (result.exitCode === 0)
@@ -396,6 +432,7 @@ export const runShellTool = defineTool({
           result,
           childEnv,
           guardedYolo,
+          readGrantTargets !== null,
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {

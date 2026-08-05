@@ -7,7 +7,7 @@ import {
   TRUST_TRANSPARENT_WRAPPERS,
   unwrapWrappers,
 } from './shell-argv.ts'
-import { dangerousInSandboxReasons } from './shell-scope.ts'
+import { dangerousInSandboxReasons, externalOnlyForOutsidePath } from './shell-scope.ts'
 import {
   READ_ONLY_GIT_SUBCOMMANDS,
   READ_ONLY_SHELL_BASENAMES,
@@ -123,6 +123,11 @@ export interface ReadOutsideProjectAnalysis {
   eligible: boolean
   /** The out-of-project paths it reads, as written by the agent (for prompt copy). */
   targets: string[]
+  /**
+   * The same paths, absolute and resolved — what a seatbelt rule has to name.
+   * Index-aligned with {@link targets}, which stays as-written for prompt copy.
+   */
+  resolvedTargets: string[]
   /** Why it is not eligible; empty when it is. */
   blockers: string[]
 }
@@ -135,6 +140,7 @@ interface AnalyzeOptions {
 const INELIGIBLE = (blockers: string[]): ReadOutsideProjectAnalysis => ({
   eligible: false,
   targets: [],
+  resolvedTargets: [],
   blockers,
 })
 
@@ -269,6 +275,7 @@ export function analyzeReadOutsideProject(
   }
 
   const targets: string[] = []
+  const resolvedTargets: string[] = []
   // `shellSegments` unions two lexers and deliberately over-segments; that can
   // only ever add a blocker or a target here, never remove one.
   for (const rawArgv of shellSegments(trimmed)) {
@@ -284,13 +291,43 @@ export function analyzeReadOutsideProject(
       if (sensitive) addBlocker(`reads a ${sensitive}`)
       const breadth = breadthBlocker(token, resolved, homeDir)
       if (breadth) addBlocker(`reads ${breadth}`)
-      if (!targets.includes(token)) targets.push(token)
+      if (targets.includes(token)) continue
+      targets.push(token)
+      resolvedTargets.push(resolved)
     }
   }
 
   if (targets.length === 0) addBlocker('reads nothing outside the project')
   if (blockers.length > 0) return INELIGIBLE(blockers)
-  return { eligible: true, targets, blockers: [] }
+  return { eligible: true, targets, resolvedTargets, blockers: [] }
+}
+
+/**
+ * The absolute paths a seatbelt may be widened to for this command, or null when
+ * it must keep today's routing.
+ *
+ * This is the *execution* half of the read-access grant: the gate asks the user
+ * the read question, and this answers "so what may the sandbox actually read?".
+ * Both halves derive from {@link analyzeReadOutsideProject} on the SAME raw
+ * command, so the decision and the overlay can never disagree — the discipline
+ * `routeShellCommand`/`shellRunsOutsideSandbox` already use for the sandboxed vs
+ * unsandboxed split. Nothing is threaded from the gate, so there is no gap
+ * between what was approved and what is relaxed.
+ *
+ * Returns null unless the command is an accountable read AND its only reason for
+ * leaving the sandbox is the out-of-project path. A command with any network
+ * signal keeps running unsandboxed under its own approval: containing it would
+ * break it, and a read grant is not the permission it needs.
+ */
+export function readOutsideProjectGrantTargets(
+  command: string,
+  workspaceRoot: string | null,
+  options: AnalyzeOptions = {},
+): string[] | null {
+  const analysis = analyzeReadOutsideProject(command, workspaceRoot, options)
+  if (!analysis.eligible || analysis.resolvedTargets.length === 0) return null
+  if (!externalOnlyForOutsidePath(command, workspaceRoot)) return null
+  return analysis.resolvedTargets
 }
 
 /** At most this many paths are listed before the copy falls back to a count. */

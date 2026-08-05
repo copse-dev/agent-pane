@@ -13,6 +13,7 @@ import {
   ensureWorkspaceTmpDir,
   fsServerSandboxOverlay,
   fsWorkerSandboxOverlay,
+  readAllowedSandboxOverlay,
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
   sandboxNetworkConfig,
@@ -452,6 +453,85 @@ describe('fsServerSandboxOverlay', () => {
     assert.ok(filesystem)
     assert.deepEqual(filesystem.allowWrite, [])
     assert.deepEqual(filesystem.denyWrite, [])
+  })
+})
+
+describe('readAllowedSandboxOverlay', () => {
+  const workspace = '/Users/me/project'
+
+  it('adds a granted file and the ancestors needed to walk to it', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const file = join(dir, 'notes.md')
+      execFileSync('/usr/bin/touch', [file])
+      const allowRead = readAllowedSandboxOverlay(workspace, [file]).filesystem?.allowRead ?? []
+      assert.ok(allowRead.includes(file))
+      // Seatbelt resolves component by component, so every ancestor must be
+      // traversable — but only as a literal path, never as a `/**` subtree.
+      assert.ok(allowRead.includes(dir))
+      assert.ok(!allowRead.includes(`${file}/**`))
+      assert.ok(!allowRead.includes(`${dirname(dir)}/**`))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('adds a recursive glob only for a granted directory', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const allowRead = readAllowedSandboxOverlay(workspace, [dir]).filesystem?.allowRead ?? []
+      assert.ok(allowRead.includes(dir))
+      assert.ok(allowRead.includes(`${dir}/**`))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('spells a symlinked target the way the kernel sees it', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const real = join(dir, 'real')
+      mkdirSync(real)
+      const link = join(dir, 'link')
+      symlinkSync(real, link)
+      const allowRead = readAllowedSandboxOverlay(workspace, [link]).filesystem?.allowRead ?? []
+      assert.ok(allowRead.includes(real))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('canonicalizes through the parent when the target does not exist yet', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const missing = join(dir, 'absent.md')
+      const allowRead = readAllowedSandboxOverlay(workspace, [missing]).filesystem?.allowRead ?? []
+      assert.ok(allowRead.includes(missing))
+      assert.ok(!allowRead.includes(`${missing}/**`))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('widens reads only — never writes, denies, or the network', () => {
+    const base = workspaceSandboxOverlay(workspace)
+    const overlay = readAllowedSandboxOverlay(workspace, [join(homedir(), 'notes.md')])
+    assert.deepEqual(overlay.network, base.network)
+    assert.deepEqual(overlay.filesystem?.allowWrite, base.filesystem?.allowWrite)
+    assert.deepEqual(overlay.filesystem?.denyWrite, base.filesystem?.denyWrite)
+    assert.deepEqual(overlay.filesystem?.denyRead, base.filesystem?.denyRead)
+    // The workspace's own reads survive the relaxation.
+    for (const path of base.filesystem?.allowRead ?? []) {
+      assert.ok(overlay.filesystem?.allowRead?.includes(path))
+    }
+  })
+
+  it('is the plain workspace overlay when no target survives', () => {
+    const base = workspaceSandboxOverlay(workspace)
+    // A relative target means nothing was resolved; guessing a base could widen
+    // a path the analysis never approved, so it is dropped.
+    assert.deepEqual(readAllowedSandboxOverlay(workspace, ['../elsewhere']), base)
+    assert.deepEqual(readAllowedSandboxOverlay(workspace, []), base)
   })
 })
 
