@@ -405,7 +405,26 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
   return contents
 }
 
-async function readThread(projectId: string, threadId: string): Promise<Thread | null> {
+/**
+ * How much of a project's history a load pulls into memory.
+ *
+ * Archived threads are soft-hidden: the sidebar and the `@`-catalog both drop
+ * them, but their directories stay on disk and every message, tool result and
+ * base64 image in them used to be folded back into the renderer's store on each
+ * project load — a heap that only ever grew, holding history no surface could
+ * show. `includeArchived` defaults to true so the whole-history readers (the
+ * usage ledger's all-time totals, agent discovery) are unchanged; the renderer's
+ * `threads:loadProject` opts out.
+ */
+export interface ThreadLoadOptions {
+  includeArchived?: boolean
+}
+
+async function readThread(
+  projectId: string,
+  threadId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread | null> {
   const dir = threadDir(projectId, threadId)
   const [metaRaw, eventsRaw] = await Promise.all([
     readOrNull(join(dir, META_FILE)),
@@ -413,6 +432,9 @@ async function readThread(projectId: string, threadId: string): Promise<Thread |
   ])
   const meta = parseMeta(metaRaw)
   if (meta === null) return null
+  // Bail before the prefetch: skipping an archived thread is only worth doing if
+  // its message bodies are never read, and that is where the bytes are.
+  if (options.includeArchived === false && meta.archivedAt != null) return null
 
   const raw = eventsRaw ?? ''
   const entries = parseSpineEntries(raw)
@@ -451,9 +473,12 @@ function listThreadIds(projectId: string): string[] {
     .map((entry) => entry.name)
 }
 
-async function readProjectThreads(projectId: string): Promise<Thread[]> {
+async function readProjectThreads(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
   const loaded = await mapConcurrent(listThreadIds(projectId), (threadId) =>
-    readThread(projectId, threadId),
+    readThread(projectId, threadId, options),
   )
   return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
 }
@@ -858,8 +883,11 @@ export function listAgentPrLinks(projectId: string): Promise<RemoteAgentPrIndexE
   ])
 }
 
-export function loadProjectThreads(projectId: string): Promise<Thread[]> {
-  return runSerialized(queueKey(projectId), () => readProjectThreads(projectId))
+export function loadProjectThreads(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
+  return runSerialized(queueKey(projectId), () => readProjectThreads(projectId, options))
 }
 
 export function saveProjectThread(projectId: string, thread: Thread): Promise<void> {

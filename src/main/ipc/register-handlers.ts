@@ -1345,7 +1345,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
-    return loadProjectThreads(id)
+    // Archived threads are hidden from every renderer surface (sidebar and
+    // `@`-catalog both filter them), so folding their history into the store
+    // only grew the heap. They stay on disk and in the whole-history readers.
+    return loadProjectThreads(id, { includeArchived: false })
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
