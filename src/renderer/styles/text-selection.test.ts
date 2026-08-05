@@ -9,9 +9,10 @@
 // at the stylesheet level instead of exercising it in the DOM.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+const GLOBAL_CSS_DIR = resolve(process.cwd(), 'src/renderer/styles/global')
 const BASE_CSS = resolve(process.cwd(), 'src/renderer/styles/global/base.css')
 const TOKENS_CSS = resolve(process.cwd(), 'src/renderer/styles/tokens.css')
 const THEMES_CSS = resolve(process.cwd(), 'src/renderer/styles/themes.css')
@@ -104,6 +105,28 @@ describe('text-selection policy', () => {
       /color:\s*var\(--selection-text\)/,
       'the highlight must set a foreground too, or selected text keeps its own (invisible) colour',
     )
+  })
+
+  it('routes every ::selection rule through the selection tokens', () => {
+    // A component that re-declares ::selection with its own colours opts out of
+    // the guarantee the tokens carry. The address bar used to do exactly that
+    // with var(--accent)/var(--text-on-accent), which reads at 1.24:1 in light.
+    for (const file of readdirSync(GLOBAL_CSS_DIR).filter((f) => f.endsWith('.css'))) {
+      const css = readFileSync(resolve(GLOBAL_CSS_DIR, file), 'utf8')
+      for (const rule of css.matchAll(/([^{}]*::selection)\s*\{([^}]*)\}/g)) {
+        const [, selector = '', body = ''] = rule
+        assert.match(
+          body,
+          /background:\s*var\(--selection-bg\)/,
+          `${file}: ${selector.trim()} must take its fill from --selection-bg`,
+        )
+        assert.match(
+          body,
+          /color:\s*var\(--selection-text\)/,
+          `${file}: ${selector.trim()} must take its foreground from --selection-text`,
+        )
+      }
+    }
   })
 
   it('keeps selection and search-match text legible in both themes', () => {
