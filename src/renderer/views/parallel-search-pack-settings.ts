@@ -1,10 +1,30 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 
+export interface ParallelSearchPackSettingsOptions {
+  /**
+   * Called whenever this view learns whether a Parallel key is stored — on
+   * first load, after a save, and after a clear. The pack row uses it to keep
+   * its enable toggle honest: `syncParallelSearchTools` needs both the pack and
+   * a resolvable key before `parallel_search` is registered, so a switch that
+   * can be turned on without a key would advertise a tool the model never sees.
+   */
+  onKeyPresence?: (hasKey: boolean) => void
+}
+
 /** First-party credential surface for the direct Parallel Search integration. */
-export function createParallelSearchPackSettings(api: ApiClient): HTMLElement {
+export function createParallelSearchPackSettings(
+  api: ApiClient,
+  options?: ParallelSearchPackSettingsOptions,
+): HTMLElement {
   const root = document.createElement('div')
   root.className = 'parallel-search-pack-settings'
+
+  const reportKeyPresence = async (): Promise<void> => {
+    const onKeyPresence = options?.onKeyPresence
+    if (!onKeyPresence) return
+    onKeyPresence(await api.settings.getKey('parallel'))
+  }
 
   const heading = document.createElement('div')
   heading.className = 'pack-settings-heading'
@@ -28,9 +48,12 @@ export function createParallelSearchPackSettings(api: ApiClient): HTMLElement {
   saveButton.textContent = 'Save API key'
   saveButton.addEventListener('click', () => {
     saveButton.disabled = true
-    void keys.saveKeys().finally(() => {
-      saveButton.disabled = false
-    })
+    void keys
+      .saveKeys()
+      .then(reportKeyPresence)
+      .finally(() => {
+        saveButton.disabled = false
+      })
   })
 
   const clearButton = document.createElement('button')
@@ -42,6 +65,7 @@ export function createParallelSearchPackSettings(api: ApiClient): HTMLElement {
     void api.settings
       .setKey('parallel', '')
       .then(() => keys.refreshKeyStatus())
+      .then(reportKeyPresence)
       .finally(() => {
         clearButton.disabled = false
       })
@@ -52,6 +76,6 @@ export function createParallelSearchPackSettings(api: ApiClient): HTMLElement {
   actions.append(saveButton, clearButton)
 
   root.append(heading, keys.root, note, actions)
-  void keys.refreshKeyStatus()
+  void keys.refreshKeyStatus().then(reportKeyPresence)
   return root
 }

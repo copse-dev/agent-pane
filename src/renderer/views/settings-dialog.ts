@@ -2012,6 +2012,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const track = document.createElement('span')
     track.className = 'toggle-switch-track'
     track.setAttribute('aria-hidden', 'true')
+    // Set by a credential-gated pack (below) once it knows no key is stored, so
+    // the change handler's `finally` re-arms the lock instead of clearing it.
+    let credentialLocked = false
     toggle.addEventListener('change', () => {
       toggle.disabled = true
       void api.packs
@@ -2029,7 +2032,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           toggle.checked = !toggle.checked
         })
         .finally(() => {
-          toggle.disabled = false
+          toggle.disabled = credentialLocked && !toggle.checked
         })
     })
     toggleLabel.append(toggle, track)
@@ -2258,7 +2261,29 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
       )
     ) {
-      row.append(createParallelSearchPackSettings(api))
+      // Parallel Search is credential-gated end to end: `syncParallelSearchTools`
+      // registers `parallel_search` only when the pack is on AND a key resolves.
+      // Without this the switch flips on with no key and nothing happens — an
+      // on-looking pack contributing no tool. Block the on-direction until a key
+      // is stored (never the off-direction, or a user who clears their key would
+      // be stuck with the pack showing enabled), and say why in a hint.
+      const gate = document.createElement('p')
+      gate.className = 'field-hint pack-credential-gate'
+      gate.hidden = true
+      row.append(
+        createParallelSearchPackSettings(api, {
+          onKeyPresence: (hasKey) => {
+            credentialLocked = !hasKey
+            toggle.disabled = credentialLocked && !toggle.checked
+            gate.hidden = hasKey
+            gate.textContent = toggle.checked
+              ? 'No Parallel API key saved — parallel_search stays unavailable to the model until you add one.'
+              : 'Add a Parallel API key to turn this pack on.'
+            if (toggle.disabled) toggleLabel.title = 'Add a Parallel API key to turn this pack on'
+          },
+        }),
+        gate,
+      )
     }
 
     // Disabling greys the whole row so the effect of the toggle is immediately
