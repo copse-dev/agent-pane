@@ -1407,11 +1407,56 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
     ...overrides,
   })
 
+  // Captured bodies behind the cards (decision 6), so the inspector has real
+  // blobs to read back through `hooks:runDetail` rather than a stub.
+  const capture = (ref: string, contents: string): { ref: string; contents: string } => ({
+    ref,
+    contents,
+  })
+  const denyStdin = JSON.stringify({
+    hook_event_name: 'beforeShellExecution',
+    command: 'kubectl delete deploy api --context prod',
+  })
+  const denyStdout = JSON.stringify({ permission: 'deny', agent_message: 'Not against prod.' })
+  const closeoutOutcome = JSON.stringify(
+    { injectContext: 'You still have open todos — finish them before stopping.' },
+    null,
+    2,
+  )
+  const blobs = [
+    capture('blobs/hr-deny.payload.json', denyStdin),
+    capture('blobs/hr-deny.stdout.txt', denyStdout),
+    capture('blobs/hr-deny.stderr.txt', ''),
+    capture('blobs/hr-context.outcome.json', closeoutOutcome),
+  ]
+
   // hook_run lines anchor to the message that precedes them in the spine.
   const runsByAnchor: Record<string, SpineHookRunLine[]> = {
     'msg-assistant-hook': [
       hookRun({ id: 'hr-allow', decision: { permission: 'allow' } }),
-      hookRun({ id: 'hr-deny', hookId: 'block-prod.sh', decision: { permission: 'deny' } }),
+      hookRun({
+        id: 'hr-deny',
+        hookId: 'block-prod.sh',
+        decision: { permission: 'deny' },
+        payload: { ref: 'blobs/hr-deny.payload.json', sha256: sha256(denyStdin) },
+        stdout: { ref: 'blobs/hr-deny.stdout.txt', sha256: sha256(denyStdout) },
+        stderr: { ref: 'blobs/hr-deny.stderr.txt', sha256: sha256('') },
+      }),
+      // A function hook: no process, so no exit code — its whole story is the
+      // context it injected, which only the inspector can show.
+      {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'hook_run',
+        id: 'hr-context',
+        event: 'beforeFinalize',
+        hookId: 'todo-finalize-closeout',
+        executor: 'function',
+        startedAt: now,
+        durationMs: 2,
+        parseOk: true,
+        decision: { injectContextChars: 57 },
+        outcome: { ref: 'blobs/hr-context.outcome.json', sha256: sha256(closeoutOutcome) },
+      },
     ],
     'msg-assistant-hook-2': [
       hookRun({
@@ -1434,7 +1479,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
   const dir = join(e2eWorkspaceDir(), projectId, threadId)
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
-  for (const file of files) {
+  for (const file of [...files, ...blobs]) {
     const full = join(dir, file.ref)
     mkdirSync(dirname(full), { recursive: true })
     writeFileSync(full, file.contents)

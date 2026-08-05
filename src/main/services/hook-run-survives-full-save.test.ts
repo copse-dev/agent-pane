@@ -222,6 +222,7 @@ describe('hook_run survives full save (decision 6)', () => {
       exitCode: 0,
       parseOk: true,
       decision: {},
+      stdin: '{"hook_event_name":"stop"}',
       stdout: '',
       stderr: '',
     })
@@ -235,6 +236,7 @@ describe('hook_run survives full save (decision 6)', () => {
         exitCode: 0,
         parseOk: true,
         decision: {},
+        stdin: '{"hook_event_name":"stop"}',
         stdout: 'bye',
         stderr: '',
       },
@@ -266,6 +268,7 @@ describe('hook_run survives full save (decision 6)', () => {
       exitCode: 0,
       parseOk: false,
       decision: {},
+      stdin: '{"hook_event_name":"beforeShellExecution"}',
       stdout: 'debug print, not json',
       stderr: 'warning: something',
     })

@@ -130,6 +130,49 @@ export interface HookTestResult {
 }
 
 /**
+ * `hooks:runDetail` result — the raw record behind one hook card, fetched on
+ * demand when the user opens a card's inspector. The transcript holds only the
+ * compact card (decision 10); the bodies live in the thread's blobs, so this is
+ * read straight back off the spine rather than kept in renderer state. Every
+ * field is optional because a run only has the streams its executor produced:
+ * command hooks have stdin/stdout/stderr, function hooks a payload + outcome.
+ */
+export interface HookRunDetail {
+  /** False when no `hook_run` with this id is recorded (yet) in the thread. */
+  found: boolean
+  /** Canonical or dialect event name that fired. */
+  event?: string
+  hookId?: string
+  executor?: 'function' | 'command'
+  /** Agent run (turn) the execution was attributed to. */
+  turnId?: string
+  /** LLM-call index within the run at emission time (0 = before the first call). */
+  step?: number
+  /** Epoch millis the execution started. */
+  startedAt?: number
+  durationMs?: number
+  /** Process exit code (command hooks); null when the process was killed. */
+  exitCode?: number | null
+  parseOk?: boolean
+  /** Content-addressed fingerprint of the toolset offered to the model at the time. */
+  toolset?: string
+  /** What the hook was handed: exact stdin JSON (command) / dispatch payload (function). */
+  payload?: string
+  /** Raw captured stdout — the response channel (command hooks). */
+  stdout?: string
+  /** Raw captured stderr (command hooks). */
+  stderr?: string
+  /** JSON of the full text of every channel a function hook applied. */
+  outcome?: string
+  /**
+   * Refs the record pointed at that are no longer on disk (pruned blobs, or a
+   * run recorded before a capture existed). Named so the inspector can say the
+   * body is gone instead of implying the hook produced nothing.
+   */
+  missing?: string[]
+}
+
+/**
  * Main → renderer bridge payload for an async hook's `queueMessage` output — the
  * only async output channel (decision 4). The host translates an async outcome
  * into this and sends it over `agent:hook_queue_message`; the renderer lands it
