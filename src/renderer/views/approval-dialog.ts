@@ -84,6 +84,9 @@ export function mountApprovalDialog(
     el(
       'div',
       { class: 'approval-buttons' },
+      // Hidden unless the open prompt offers a narrower "just this one" answer
+      // *and* the user has expanded the details that answer refers to.
+      el('button', { class: 'approval-approve-once', hidden: '' }),
       el('button', { class: 'approval-approve' }, 'Approve'),
       el('button', { class: 'approval-reject' }, 'Reject'),
     ),
@@ -104,6 +107,7 @@ export function mountApprovalDialog(
   if (!turnTreeLeaseTextNode) throw new Error('approval dialog missing lease label text node')
   const turnTreeLeaseText: ChildNode = turnTreeLeaseTextNode
   const approveButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve')
+  const approveOnceButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve-once')
   const rejectButton = qsRequired<HTMLButtonElement>(dialog, '.approval-reject')
   const rememberLabelTextNode = rememberLabel.childNodes[1]
   if (!rememberLabelTextNode) throw new Error('approval dialog missing remember label text node')
@@ -120,6 +124,8 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    collapseDetails: boolean | undefined
+    approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
     comparisonModels?: ComparisonModelSelection
     allowTurnTreeLease: boolean | undefined
@@ -143,6 +149,8 @@ export function mountApprovalDialog(
   let cancelSettle: (() => void) | null = null
   /** Live reader for model-compare pickers on the open prompt (single-item batch). */
   let readComparisonModels: (() => ComparisonModelSelection) | null = null
+  /** Whether the user expanded a collapsed body on the open prompt. */
+  let detailsExpanded = false
   function closeDialog(): void {
     dialog.close()
     chatScrim.hidden = true
@@ -211,9 +219,44 @@ export function mountApprovalDialog(
     return label
   }
 
+  /**
+   * The prompt's two-tier approve (primary grants, secondary approves once) and
+   * its collapsed body are only coherent for a lone request: in a mixed batch a
+   * grant answered for one command would be sent for every other one too. So
+   * both features require a batch of exactly one, and anything appended to an
+   * open prompt drops it back to the plain checkbox rendering.
+   */
+  function soloRequest(): PendingApproval | null {
+    return batch.length === 1 ? (batch[0] ?? null) : null
+  }
+
+  /** Label for the secondary approve button, or '' when this prompt has none. */
+  function approveOnceGrant(): string {
+    return soloRequest()?.approveOnceLabel ?? ''
+  }
+
+  /** Disclosure control for a collapsed body; re-renders so the buttons follow it. */
+  function detailsToggle(): HTMLElement {
+    const toggle = el(
+      'button',
+      {
+        class: 'approval-details-toggle',
+        type: 'button',
+        'aria-expanded': detailsExpanded ? 'true' : 'false',
+      },
+      detailsExpanded ? 'Hide details' : 'Show details',
+    )
+    toggle.addEventListener('click', () => {
+      detailsExpanded = !detailsExpanded
+      renderBatch()
+    })
+    return toggle
+  }
+
   function renderBatch(): void {
     readComparisonModels = null
     const count = batch.length
+    const collapseDetails = soloRequest()?.collapseDetails === true
     const singleModelCompare =
       count === 1 && batch[0]?.type === 'model-compare' && batch[0].comparisonModels !== undefined
     // Collapse the per-request title into one heading when the whole batch asks
@@ -239,7 +282,10 @@ export function mountApprovalDialog(
           if (req.bodyAdvice) {
             rowChildren.push(el('div', { class: 'approval-advice' }, req.bodyAdvice))
           }
-          rowChildren.push(el('pre', { class: 'approval-body' }, req.body))
+          if (collapseDetails) rowChildren.push(detailsToggle())
+          const body = el('pre', { class: 'approval-body' }, req.body)
+          if (collapseDetails && !detailsExpanded) body.hidden = true
+          rowChildren.push(body)
           if (req.bodyFooter) {
             rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
           }
@@ -251,7 +297,18 @@ export function mountApprovalDialog(
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
 
-    const grant = rememberGrant()
+    // The narrower answer is offered alongside the details it refers to: with the
+    // command still collapsed there is nothing on screen for "this command" to
+    // point at, so the button waits for the disclosure.
+    const onceLabel = approveOnceGrant()
+    const showOnce = onceLabel !== '' && (!collapseDetails || detailsExpanded)
+    approveOnceButton.hidden = !showOnce
+    if (showOnce) approveOnceButton.textContent = onceLabel
+
+    // A two-tier prompt owns the remember channel through its buttons, so the
+    // checkbox stays out of the way rather than offering a second, conflicting
+    // way to answer the same question.
+    const grant = onceLabel !== '' ? null : rememberGrant()
     rememberLabel.hidden = grant === null
     if (grant === null) rememberInput.checked = false
     else rememberLabelText.textContent = grant
@@ -284,13 +341,14 @@ export function mountApprovalDialog(
     }
   }
 
-  /** Cancel any pending settle window and re-enable Approve. */
+  /** Cancel any pending settle window and re-enable both approve buttons. */
   function clearSettle(): void {
     if (cancelSettle) {
       cancelSettle()
       cancelSettle = null
     }
     approveButton.disabled = false
+    approveOnceButton.disabled = false
   }
 
   /**
@@ -301,12 +359,14 @@ export function mountApprovalDialog(
   function startSettle(): void {
     clearSettle()
     approveButton.disabled = true
+    approveOnceButton.disabled = true
     // A synchronous timer (tests) runs the callback before this assignment,
     // leaving `cancelSettle` holding a spent handle — harmless, since cancelling a
     // fired timer is a no-op and the enabled/disabled state is set by the callback.
     cancelSettle = setTimer(() => {
       cancelSettle = null
       approveButton.disabled = false
+      approveOnceButton.disabled = false
     }, settleMs)
   }
 
@@ -329,6 +389,8 @@ export function mountApprovalDialog(
     // settle guard only applies to appends onto an already-open prompt.
     clearSettle()
     rememberInput.checked = false
+    // Each prompt starts collapsed; expanding is a per-prompt decision.
+    detailsExpanded = false
     renderBatch()
     // A Settings-owned provider-host prompt is the one deliberate modal
     // exception: Settings already makes the document inert, so an inline prompt
@@ -431,6 +493,8 @@ export function mountApprovalDialog(
       type,
       allowRemember,
       rememberLabel,
+      collapseDetails,
+      approveOnceLabel,
       showWhileSettingsOpen,
       comparisonModels,
       allowTurnTreeLease,
@@ -448,6 +512,8 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        collapseDetails,
+        approveOnceLabel,
         showWhileSettingsOpen,
         allowTurnTreeLease,
         turnTreeLeaseLabel,
@@ -507,7 +573,13 @@ export function mountApprovalDialog(
     // The settle guard disables the button, but honour it defensively in case a
     // click is dispatched anyway (e.g. keyboard activation during the window).
     if (approveButton.disabled) return
-    resolve(true, rememberInput.checked)
+    // On a two-tier prompt the primary button IS the grant — the checkbox is
+    // hidden there, and the secondary button carries the once-only answer.
+    resolve(true, approveOnceGrant() !== '' ? true : rememberInput.checked)
+  })
+  approveOnceButton.addEventListener('click', () => {
+    if (approveOnceButton.disabled) return
+    resolve(true, false)
   })
   rejectButton.addEventListener('click', () => {
     resolve(false, false)
