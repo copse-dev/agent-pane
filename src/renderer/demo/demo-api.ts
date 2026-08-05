@@ -296,12 +296,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     openRouter: { models: emptyArray },
     models: {
-      chatDefaultContextHealth: () =>
-        resolved({
-          hasDecentChatDefault: true,
-          minimum: 100_000,
-          bestAvailableContext: 200_000,
-        }),
       bestValueDefault: () => resolved('lmstudio:qwen/qwen3.6-35b-a3b'),
       resolveDynamic: (value: string) =>
         resolved(value.startsWith('auto:') ? 'lmstudio:qwen/qwen3.6-35b-a3b' : value),
