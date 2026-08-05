@@ -7,6 +7,8 @@ import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
+import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
+import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 interface FakeWebview extends HTMLElement {
   src: string
@@ -344,7 +346,7 @@ describe('browser pane requested URLs', () => {
     }
   })
 
-  it('offers "open in default browser" and "open inspector" from the toolbar menu', () => {
+  it('shares page context and offers external-browser tools from the toolbar menu', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
@@ -361,13 +363,46 @@ describe('browser pane requested URLs', () => {
     const { list, viewer } = mountBrowserHosts()
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
     const opened: string[] = []
+    const sharedPageIds: number[] = []
+    const sharedScreenshotIds: number[] = []
+    const attachedText: BrowserTextShare[] = []
+    const attachedImages: BrowserImageShare[] = []
+    let shareTextHandler: ((share: BrowserTextShare) => void) | undefined
+    let shareImageHandler: ((share: BrowserImageShare) => void) | undefined
+    let composerFocused = false
     let devToolsOpens = 0
     // Minimal ApiClient surface the browser pane touches (popout, tab forwarding,
     // and the new shell.openExternal for "open in default browser").
     const api = createPendingApi({
       'browser.onOpenTab': (): (() => void) => (): void => {},
+      'browser.sharePageText': async (id: number): Promise<void> => void sharedPageIds.push(id),
+      'browser.shareScreenshot': async (id: number): Promise<void> =>
+        void sharedScreenshotIds.push(id),
+      'browser.onShareText': (handler: (share: BrowserTextShare) => void): (() => void) => {
+        shareTextHandler = handler
+        return (): void => {}
+      },
+      'browser.onShareImage': (handler: (share: BrowserImageShare) => void): (() => void) => {
+        shareImageHandler = handler
+        return (): void => {}
+      },
       'panes.popout': async (): Promise<void> => {},
       'shell.openExternal': async (url: string): Promise<void> => void opened.push(url),
+    })
+    const unregisterAttachments = registerPromptAttachments({
+      attachFile: () => {},
+      attachTextBlock: (content, label) => {
+        attachedText.push({ content, label: label ?? '' })
+      },
+      attachImage: (dataUrl, mimeType) => {
+        assert.equal(mimeType, 'image/png')
+        attachedImages.push({ dataUrl, mimeType: 'image/png' })
+      },
+      attachVideo: () => Promise.resolve(),
+      attachArchive: () => Promise.resolve(),
+      focusComposer: () => {
+        composerFocused = true
+      },
     })
     const unmount = mountBrowserPane(list, viewer, store, api)
 
@@ -386,20 +421,57 @@ describe('browser pane requested URLs', () => {
       webview.canGoForward = (): boolean => false
       webview.reload = (): void => {}
       webview.openDevTools = (): void => void (devToolsOpens += 1)
+      webview.getWebContentsId = (): number => 42
       webview.dispatchEvent(new Event('dom-ready'))
 
       menuBtn.click()
       assert.ok(!menu.hasAttribute('hidden'), 'clicking the button opens the menu')
 
       const items = menu.querySelectorAll<HTMLButtonElement>('.browser-menu-item')
-      const openExternalItem = items[0]
-      const inspectorItem = items[1]
-      assert.ok(openExternalItem && inspectorItem)
+      const shareTextItem = items[0]
+      const shareScreenshotItem = items[1]
+      const openExternalItem = items[2]
+      const inspectorItem = items[3]
+      assert.ok(shareTextItem && shareScreenshotItem && openExternalItem && inspectorItem)
+      assert.equal(shareTextItem.textContent, 'Share page text')
+      assert.equal(shareScreenshotItem.textContent, 'Share screenshot')
+      assert.equal(shareTextItem.disabled, false)
+      assert.equal(shareScreenshotItem.disabled, false)
       assert.equal(openExternalItem.disabled, false, 'a real page enables open-in-default-browser')
 
+      shareTextItem.click()
+      assert.deepEqual(sharedPageIds, [42])
+      assert.ok(menu.hasAttribute('hidden'), 'sharing page text closes the menu')
+
+      menuBtn.click()
+      shareScreenshotItem.click()
+      assert.deepEqual(sharedScreenshotIds, [42])
+
+      assert.ok(shareTextHandler && shareImageHandler)
+      shareTextHandler({
+        content: 'Source: https://example.com\n\nSelected page copy',
+        label: 'Browser page — Example',
+      })
+      shareImageHandler({ dataUrl: 'data:image/png;base64,QUJD', mimeType: 'image/png' })
+      assert.deepEqual(attachedText, [
+        {
+          content: 'Source: https://example.com\n\nSelected page copy',
+          label: 'Browser page — Example',
+        },
+      ])
+      assert.deepEqual(attachedImages, [
+        { dataUrl: 'data:image/png;base64,QUJD', mimeType: 'image/png' },
+      ])
+      assert.equal(composerFocused, true)
+
+      menuBtn.click()
       openExternalItem.click()
       assert.deepEqual(opened, ['https://example.com/page'])
       assert.ok(menu.hasAttribute('hidden'), 'selecting an item closes the menu')
+
+      menuBtn.click()
+      webview.dispatchEvent(new Event('focus'))
+      assert.ok(menu.hasAttribute('hidden'), 'focusing the guest page dismisses the menu')
 
       menuBtn.click()
       inspectorItem.click()
@@ -409,6 +481,7 @@ describe('browser pane requested URLs', () => {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
       if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
       else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      unregisterAttachments()
       unmount()
     }
   })

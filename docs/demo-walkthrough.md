@@ -84,6 +84,8 @@ control surface. The caption links to the real demo.
 `pages.yml` keeps the production homepage pinned to `site/` from `main`. For a PR,
 the branch's site is available at `/demo/pr-<n>-preview/`, with its matching demo at
 `/demo/pr-<n>-preview/demo/main/`. The original direct demo URL at
-`/demo/pr-<n>/` remains available. The persistent `develop` build follows the same
-pattern within its existing target: its site is at `/demo/develop/preview/` and its
-matching demo is at `/demo/develop/preview/demo/main/`.
+`/demo/pr-<n>/` remains available. The persistent trunk build follows the same
+pattern within its existing target: its site is at `/demo/main/preview/` and its
+matching demo is at `/demo/main/preview/demo/main/`. The trailing `demo/main/` is
+a fixed bundle directory baked into the built site, not a branch name — only the
+leading slot segment tracks the branch.

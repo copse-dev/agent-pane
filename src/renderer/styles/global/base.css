@@ -10,9 +10,17 @@
 [hidden] {
   display: none !important;
 }
-/* No custom ::selection — the browser's default (blue bg, white text)
-   works well in both light and dark themes. Don't add a colour overlay:
-   it reduces contrast and makes selected text harder to read. */
+/* Selected text must stay readable in every theme *and* while the window is
+   unfocused. Leaving ::selection to the UA does not achieve that: Chromium's
+   inactive-selection fallback paints a flat light grey and keeps the text's own
+   colour, so dark-theme --text-primary all but disappears behind the highlight
+   the moment focus moves elsewhere. An author ::selection is used for both the
+   active and inactive state, so declaring one fixes the unfocused case too.
+   The pair is neutral, not accent-derived — see the tokens for why (#1423). */
+::selection {
+  background: var(--selection-bg);
+  color: var(--selection-text);
+}
 html,
 body {
   height: 100%;
@@ -70,6 +78,12 @@ select,
 .monaco-editor .view-lines {
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Keep native password semantics and request Chromium's filled-circle mask
+   instead of exposing the inherited font's literal period glyph. */
+input[type='password'] {
+  -webkit-text-security: disc;
 }
 /* Monaco gutter chrome stays non-selectable even inside editors */
 .monaco-editor .margin,

@@ -14,6 +14,7 @@ import type { PackSummary, PacksListResult } from '@shared/types/packs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
+import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 
 /** Records the last mutation the stub received so click-through assertions can inspect it. */
 interface StubApiSpy {
@@ -277,6 +278,40 @@ describe('settings → packs list', () => {
     assert.equal(second.querySelector<HTMLInputElement>('input.pack-toggle-input')?.checked, false)
   })
 
+  it('sentence-cases first-party pack names and keeps acronyms uppercase', async () => {
+    // Capitalising every word turned `copse.pii-redaction` into "Pii redaction"
+    // and `copse.ci-investigator` into "Ci investigator" — the id transformation
+    // showing through as user-facing copy. Only the lead word is capitalised,
+    // and known acronyms stay whole.
+    const cases: readonly (readonly [string, string])[] = [
+      ['copse.todos', 'Todos'],
+      ['copse.long-horizon-tasks', 'Long horizon tasks'],
+      ['copse.post-turn-review', 'Post turn review'],
+      ['copse.pii-redaction', 'PII redaction'],
+      ['copse.ci-investigator', 'CI investigator'],
+      ['copse.okf-memories', 'OKF memories'],
+      ['copse.mcp-ui-canvas', 'MCP UI canvas'],
+    ]
+    for (const [id, expected] of cases) {
+      const list = await openPacks({ packs: [{ ...demoPack, id, name: id }] }, spy)
+      const row = list.querySelector(`[data-pack-id="${id}"]`)
+      assert.ok(row, `expected a row for ${id}`)
+      assert.equal(row.querySelector('.pack-name')?.textContent, expected)
+    }
+  })
+
+  it('leaves a user pack name exactly as authored', async () => {
+    // The sentence-casing is a first-party affordance for `copse.<kebab>` ids.
+    // A user pack ships its own human name and must survive verbatim.
+    const list = await openPacks(
+      { packs: [{ ...demoPack, trust: 'user', id: 'acme.PII Tools', name: 'acme.PII Tools' }] },
+      spy,
+    )
+    const row = list.querySelector('[data-pack-id="acme.PII Tools"]')
+    assert.ok(row)
+    assert.equal(row.querySelector('.pack-name')?.textContent, 'acme.PII Tools')
+  })
+
   it('shows selected-directory provenance and ordinary pack controls', async () => {
     const list = await openPacks({ packs: [selectedToolPack] }, spy)
     const row = list.querySelector<HTMLElement>('[data-pack-id="personal.local-model"]')
@@ -405,6 +440,40 @@ describe('settings → packs list', () => {
     // It is not misrendered as the plain string/enum inputs.
     assert.equal(list.querySelector('.pack-setting-string'), null)
     assert.equal(list.querySelector('.pack-setting-enum'), null)
+  })
+
+  it('offers dynamic selections only, plus the pinned value already stored', async () => {
+    const list = await openPacks({ packs: [modelFieldPack] }, spy)
+    // The option list is local (no catalogue fetch), so one microtask drain is
+    // enough for the picker to render it.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const labels = [...list.querySelectorAll('.model-picker-option')].map((el) =>
+      el.textContent.trim(),
+    )
+    assert.ok(labels.length > 0, 'the model field must render its options')
+    assert.ok(
+      labels.some((label) => label.startsWith('Best value')),
+      `expected a dynamic rule among ${JSON.stringify(labels)}`,
+    )
+    assert.ok(
+      labels.some((label) => label.includes('Advisor')),
+      'roles must be selectable',
+    )
+    // Values, not labels, are what gets stored: every option is a rule apart
+    // from the id already saved, which stays reachable so nothing silently
+    // changes under the user.
+    const select = list.querySelector<HTMLSelectElement>('.pack-setting-model')
+    assert.ok(select)
+    const values = [...select.options].map((option) => option.value)
+    assert.deepEqual(
+      values.filter((value) => !isDynamicModel(value)),
+      ['claude-opus-4-8'],
+    )
+    assert.equal(
+      labels.filter((label) => label.endsWith('(pinned)')).length,
+      1,
+      `expected exactly one pinned row in ${JSON.stringify(labels)}`,
+    )
   })
 
   it('editing a model field persists the chosen id via packs:setSetting', async () => {

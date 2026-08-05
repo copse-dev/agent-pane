@@ -4,9 +4,11 @@ import {
   detectPayloadVersion,
   graduateWanted,
   mergeApiModels,
+  requestAaModels,
   type AaApiModel,
   type DataFile,
 } from './sync-intellect.mts'
+import { stringRecordOrEmpty } from '../src/shared/unknown-value.mts'
 
 const BASE: DataFile = {
   canonicalVersion: 'v4.1',
@@ -97,6 +99,92 @@ describe('graduateWanted', () => {
     const { scores } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
     const wanted = graduateWanted(BASE.wanted ?? [], scores)
     assert.ok(!wanted.some((w) => w.modelId === 'qwen/qwen3.6-35b-a3b'))
+  })
+})
+
+describe('requestAaModels', () => {
+  /** Fake fetch that serves canned pages and records the URLs it was given. */
+  function pagedFetch(pages: Record<number, unknown>): {
+    fetch: typeof fetch
+    urls: string[]
+    keys: Array<string | undefined>
+  } {
+    const urls: string[] = []
+    const keys: Array<string | undefined> = []
+    const fn = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      urls.push(url)
+      keys.push(stringRecordOrEmpty(init?.headers)['x-api-key'])
+      const page = Number(new URL(url).searchParams.get('page'))
+      return new Response(JSON.stringify(pages[page] ?? {}), {
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+    return { fetch: fn, urls, keys }
+  }
+
+  it('requests the supported free language feed, not a retired /api/v2/data/* path', async () => {
+    const { fetch, urls, keys } = pagedFetch({ 1: { data: [] } })
+    await requestAaModels('secret-key', fetch)
+    assert.equal(urls.length, 1)
+    assert.match(
+      urls[0] ?? '',
+      /^https:\/\/artificialanalysis\.ai\/api\/v2\/language\/models\/free/,
+    )
+    assert.doesNotMatch(urls[0] ?? '', /\/api\/v2\/data\//)
+    assert.equal(keys[0], 'secret-key')
+  })
+
+  it('walks every page and returns page one as the version-bearing payload', async () => {
+    const { fetch, urls } = pagedFetch({
+      1: {
+        intelligence_index_version: 4.1,
+        pagination: { page: 1, total_pages: 2, has_more: true },
+        data: [{ slug: 'page-one', evaluations: { artificial_analysis_intelligence_index: 20 } }],
+      },
+      2: {
+        pagination: { page: 2, total_pages: 2, has_more: false },
+        data: [{ slug: 'page-two', evaluations: { artificial_analysis_intelligence_index: 30 } }],
+      },
+    })
+    const { firstPayload, models } = await requestAaModels('key', fetch)
+    assert.equal(urls.length, 2)
+    assert.deepEqual(
+      models.map((m) => m.slug),
+      ['page-one', 'page-two'],
+    )
+    assert.equal(detectPayloadVersion(firstPayload, models), 'v4.1')
+  })
+
+  it('accepts the nulls the free feed uses for unmeasured fields and rows', async () => {
+    const { fetch } = pagedFetch({
+      1: {
+        data: [
+          {
+            slug: 'nulls',
+            id: null,
+            name: null,
+            evaluations: {
+              artificial_analysis_intelligence_index: 42,
+              artificial_analysis_intelligence_index_version: null,
+            },
+          },
+          { slug: 'unmeasured', evaluations: null },
+          null,
+        ],
+      },
+    })
+    const { models } = await requestAaModels('key', fetch)
+    assert.deepEqual(
+      models.map((m) => m.slug),
+      ['nulls', 'unmeasured'],
+    )
+  })
+
+  it('fails loudly on a 410, naming the retirement rather than the key', async () => {
+    const fetch = (async () =>
+      new Response('', { status: 410, statusText: 'Gone' })) as typeof globalThis.fetch
+    await assert.rejects(requestAaModels('key', fetch), /410.*retired/s)
   })
 })
 

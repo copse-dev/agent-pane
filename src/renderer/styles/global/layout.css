@@ -1251,6 +1251,77 @@
   white-space: nowrap;
   font-family: var(--font-mono);
 }
+.supervised-tasks-section {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.supervised-tasks-list {
+  overflow-y: auto;
+  padding: var(--spacing-xs) 0;
+}
+.supervised-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  padding: 5px var(--spacing-sm);
+}
+.supervised-task-row:hover {
+  background: var(--bg-hover);
+}
+.supervised-task-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.supervised-task-dot[data-state='running'] {
+  background: var(--accent);
+  animation: agent-task-pulse 1.2s ease-in-out infinite;
+}
+.supervised-task-dot[data-state='blocked'] {
+  background: var(--warning);
+}
+.supervised-task-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.supervised-task-label {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.supervised-task-state {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+.supervised-task-cancel {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.supervised-task-cancel:hover {
+  color: var(--text-primary);
+  background: var(--bg-selected);
+}
+.supervised-task-cancel:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 /* Viewer side: hidden until a task is selected, then it takes over the viewer
    from the terminal body (toggled via .showing-agent-task on the host). */
 .agent-tasks-host {
@@ -1431,6 +1502,10 @@
   outline: none;
   border-color: var(--accent);
 }
+/* No ::selection override here: the address bar takes the app-wide highlight
+   from base.css. The accent pair it used to carry read at 1.24:1 in the light
+   theme — --text-on-accent tracks the raw accent while light darkens --accent
+   by 30%, so the URL disappeared into its own selection. */
 .browser-go-btn {
   flex-shrink: 0;
   padding: 4px 10px;
@@ -1486,6 +1561,11 @@
 .browser-menu-item .ui-icon {
   flex-shrink: 0;
   color: var(--text-secondary);
+}
+.browser-menu-separator {
+  height: 1px;
+  margin: var(--spacing-xs);
+  background: var(--border);
 }
 .browser-webview-host {
   flex: 1;

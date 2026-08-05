@@ -145,6 +145,7 @@ export const approvalRespondSchema = z.tuple([
   z.boolean(),
   z.boolean().optional(),
   comparisonModelSelectionSchema.optional(),
+  z.enum(['once', 'turn-tree']).optional(),
 ])
 
 // Answer payload for a pending ask_user question: the request id plus one answer

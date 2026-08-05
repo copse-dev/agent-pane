@@ -108,6 +108,7 @@ export interface IpcInvokeMap {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
+      grantScope?: 'once' | 'turn-tree',
     ]
     result: undefined
   }
@@ -446,6 +447,10 @@ export interface IpcEventMap {
       rememberLabel?: string
       showWhileSettingsOpen?: boolean
       comparisonModels?: { a: string; b: string; judge: string }
+      allowTurnTreeLease?: boolean
+      turnTreeLeaseLabel?: string
+      turnTreeLeaseDefault?: boolean
+      turnTreeLeaseSubject?: string
     },
   ]
   /** Main dismisses an approval the run cancelled (Stop / ACP permission RPC abort). */

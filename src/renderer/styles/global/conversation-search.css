@@ -72,10 +72,14 @@
 /* Match highlights are painted through the CSS Custom Highlight API — see
    conversation-search.ts. Only a limited set of properties apply here. */
 ::highlight(chat-search) {
-  background-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background-color: var(--highlight-bg);
   color: inherit;
 }
+/* The current match is a solid fill, so it carries its own foreground. It must
+   not be var(--accent)/var(--text-on-accent): --text-on-accent is derived from
+   the raw accent the user picked, while light theme darkens --accent by 30% —
+   the pair collapses to dark-grey-on-dark-plum and the match text disappears. */
 ::highlight(chat-search-current) {
-  background-color: var(--accent);
-  color: var(--text-on-accent);
+  background-color: var(--highlight-current-bg);
+  color: var(--highlight-current-text);
 }

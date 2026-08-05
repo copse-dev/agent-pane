@@ -8,6 +8,24 @@ every published entry.
 
 ## Unreleased
 
+- The Parallel Search pack's switch no longer turns on without a key. The tool
+  was already credential-gated where it counts — `parallel_search` is registered
+  only when the pack is enabled _and_ a Parallel API key resolves — but Settings
+  let you flip the toggle with no key saved, leaving a pack that read as on and
+  contributed nothing. The toggle now stays inert until a key is stored, with a
+  hint saying so. Turning it off is never blocked, so clearing the key on an
+  enabled pack shows the hint (and unregisters the tool) rather than trapping the
+  switch on.
+- The model value map keeps working past Artificial Analysis' API retirement.
+  AA retires its legacy `/api/v2/data/*` endpoints on 4 November 2026, after
+  which they answer `410 Gone`. The live panel already read the supported free
+  language feed, but it fell back to the legacy scores endpoint when a response
+  failed validation; since AA's documented replacement for that legacy endpoint
+  is the very feed we call first, the fallback had no successor and is gone —
+  one endpoint, one attempt. The `sync:intellect --from-api` refresh moves onto
+  the same feed, which means it now walks every page rather than reading only
+  the first, so a keyed refresh sees the whole model list instead of the first
+  200 rows. API keys are unchanged.
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to
@@ -24,6 +42,15 @@ every published entry.
   Estimated counts are labelled as such rather than priced. The click that used
   to swap the label for an inline `1200 in / 80 out · ~$0.02` string is gone; the
   counter now always reads as the plain total.
+- Answers on Claude Opus 5 are shorter. That model's default replies run longer
+  than other models', and the effort setting tunes how much it thinks rather
+  than how much it says, so the system prompt now asks for concision explicitly
+  when a turn runs on Opus 5 — with a short reminder near the end of the prompt,
+  as Anthropic's
+  [Opus 5 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5#response-length-and-verbosity)
+  recommends. It is the only model-conditional text in the prompt; every other
+  model sees exactly what it saw before. The steering sits ahead of your custom
+  and project instructions, so asking for fuller explanations there still wins.
 - Copse now identifies itself to model providers. Every provider request carries
   the de facto attribution pair `HTTP-Referer: https://copse.dev/` and
   `X-Title: Copse`, with OpenRouter also receiving `X-OpenRouter-Title` (the

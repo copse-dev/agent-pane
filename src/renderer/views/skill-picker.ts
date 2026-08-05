@@ -2,6 +2,22 @@ import type { SkillSummary } from '@shared/types/skills.ts'
 import type { ComposerTextInput } from './composer-editor.ts'
 import { clear } from '../dom/helpers.ts'
 
+/**
+ * Index of the `/` that opens the slash-command query for `cursor`, or -1.
+ *
+ * The slash must start the whitespace-delimited token the cursor sits in — the
+ * same `(?:^|\s)/name` boundary `resolveSkillInvocation` accepts. A bare
+ * "nearest slash behind the cursor" scan fires mid-word, so `grep ~/.blah`
+ * popped the picker on the path separator, and `/x/y/z` restarted the query at
+ * every segment. Anchoring on the token start leaves `/x/y/z` querying
+ * `x/y/z`, which matches no skill and stays closed.
+ */
+export function findSkillTriggerIndex(value: string, cursor: number): number {
+  let start = cursor
+  while (start > 0 && !/\s/.test(value[start - 1] ?? '')) start--
+  return start < cursor && value[start] === '/' ? start : -1
+}
+
 export interface SkillPickerOptions {
   input: ComposerTextInput
   inputBar: HTMLElement
@@ -127,18 +143,13 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   input.el.addEventListener('input', () => {
     const val = input.value
     const cursor = input.selectionStart
-    const slashIdx = val.lastIndexOf('/', cursor - 1)
+    const slashIdx = findSkillTriggerIndex(val, cursor)
     if (slashIdx === -1) {
       hidePicker()
       return
     }
-    const prefix = val.slice(slashIdx + 1, cursor)
-    if (prefix.includes(' ') || prefix.includes('\n')) {
-      hidePicker()
-      return
-    }
     slashStart = slashIdx
-    void updatePicker(prefix)
+    void updatePicker(val.slice(slashIdx + 1, cursor))
   })
 
   input.el.addEventListener('keydown', (e) => {
