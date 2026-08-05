@@ -21,6 +21,50 @@ export function isServiceTier(value: string): value is ServiceTier {
   return (SERVICE_TIERS as readonly string[]).includes(value)
 }
 
+/** One offerable tier: the stored value, plus how to describe it to a user. */
+export interface ServiceTierChoice {
+  /** Stored value. `''` means "send no `service_tier`" — standard processing. */
+  value: '' | ServiceTier
+  label: string
+  description: string
+}
+
+/**
+ * The tiers worth offering in a picker, in the order they should appear.
+ *
+ * A deliberate subset of {@link SERVICE_TIERS}, because "what the API accepts"
+ * and "what a person should be offered" are different questions:
+ *
+ * - `scale` is omitted — it bills against committed reserved throughput bought
+ *   on a ≥30-day contract, so presenting it as a per-chat toggle would offer a
+ *   capacity most accounts do not have.
+ * - `auto` and `default` are omitted — both mean "standard processing", which
+ *   the empty value already expresses by sending no field at all. Listing three
+ *   spellings of the same outcome invites the question of how they differ.
+ *
+ * Shaped like ACP's `AcpConfigChoice` so one picker can render both, but the
+ * source differs and that matters: ACP options are *advertised* by the agent at
+ * probe time, while OpenAI advertises nothing. This list is Copse's own, and
+ * has to be maintained by hand when OpenAI's tiers change.
+ */
+export const SERVICE_TIER_CHOICES: readonly ServiceTierChoice[] = [
+  {
+    value: '',
+    label: 'Standard',
+    description: 'Default pay-as-you-go processing. Sends no service_tier field.',
+  },
+  {
+    value: 'flex',
+    label: 'Flex',
+    description: 'Cheaper per token, slower, and may queue or fail under load. Suits batch work.',
+  },
+  {
+    value: 'priority',
+    label: 'Priority',
+    description: 'Faster and more consistent, at a higher per-token price. Marketed as Fast mode.',
+  },
+]
+
 /**
  * The `service_tier` body fragment, or an empty object when unset.
  *
