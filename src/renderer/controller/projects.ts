@@ -496,7 +496,7 @@ async function finishActivate(
   store.emit('panel_changed')
   store.emit('files_pane_changed')
   endSwitch(gen, id)
-  resumePendingQueues(store, api)
+  void resumePendingQueues(store, api)
 }
 
 // Core project switch: expand the sidebar immediately, then persist threads,
@@ -719,7 +719,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   store.emit('projects_changed')
   store.emit('workspace_changed')
   store.emit('threads_changed')
-  resumePendingQueues(store, api)
+  void resumePendingQueues(store, api)
 }
 
 // Starter prompt seeded into the composer when a new project is created, so

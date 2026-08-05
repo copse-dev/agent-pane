@@ -40,6 +40,7 @@ import {
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
+  zHookRunId,
   zHookTestRequest,
   zNonEmptyString,
   zPathString,
@@ -81,7 +82,6 @@ import {
 } from '../services/providers/extra-providers-store.ts'
 import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
-import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
@@ -129,6 +129,7 @@ import {
   listUnsandboxedProjectHooks,
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
+import { readHookRunDetail } from '../services/hooks/run-detail.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
 import {
   setPackToolRuntimeController,
@@ -1220,7 +1221,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { imported, skipped }
   })
-  ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
   // to show the concrete model behind a rule; a pinned id round-trips unchanged.
@@ -1561,6 +1561,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
   })
+  // Read one recorded hook execution back out of a thread's spine so the
+  // hook-card inspector can show what the hook was handed and what it returned.
+  // Read-only: it never re-runs anything (that is `hooks:test`), and the ids are
+  // validated so a compromised renderer cannot walk out of the chat store.
+  ipcMain.handle(
+    'hooks:runDetail',
+    (event, rawProjectId: unknown, rawThreadId: unknown, rawRunId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, runId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zHookRunId]),
+        [rawProjectId, rawThreadId, rawRunId],
+      )
+      return readHookRunDetail(projectId, threadId, runId)
+    },
+  )
   // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
   // Settings pack list ("about:addons") calls these to enumerate every
   // registered pack, toggle enablement atomically (P1 contract), and read /

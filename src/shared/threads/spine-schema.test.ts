@@ -144,6 +144,20 @@ describe('spine-schema hook_run union (decision 6)', () => {
     const refs = hookRunBlobRefs(hookRunLine('h1', { toolset: 'cafe01' }))
     assert.deepEqual(refs, ['blobs/h1.stdout.txt', 'blobs/h1.stderr.txt', toolsetBlobRef('cafe01')])
   })
+
+  // The inspector's bodies are only as durable as this list: a ref missing here
+  // is a blob the next full save stops preserving, so the card would degrade to
+  // "no longer stored" after an unrelated edit to the thread.
+  it('hookRunBlobRefs keeps the payload and outcome captures alive', () => {
+    const refs = hookRunBlobRefs(
+      hookRunLine('h2', {
+        payload: { ref: 'blobs/h2.payload.json', sha256: 'in' },
+        outcome: { ref: 'blobs/h2.outcome.json', sha256: 'res' },
+      }),
+    )
+    assert.ok(refs.includes('blobs/h2.payload.json'))
+    assert.ok(refs.includes('blobs/h2.outcome.json'))
+  })
 })
 
 describe('rebuildSpinePreservingNonMessageLines (decision 6 full-save round-trip)', () => {

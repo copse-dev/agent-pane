@@ -269,6 +269,7 @@ export class HookRegistry {
           durationMs: Date.now() - startedAt,
           outcome: null,
           error: errorMessage(cause),
+          payload,
         })
         throw new HookExecutionError(hook.id, event, cause)
       }
@@ -278,6 +279,7 @@ export class HookRegistry {
         startedAt,
         durationMs: Date.now() - startedAt,
         outcome: outcome ?? null,
+        payload,
       })
       if (outcome) {
         outcomes.push({ hookId: hook.id, outcome })

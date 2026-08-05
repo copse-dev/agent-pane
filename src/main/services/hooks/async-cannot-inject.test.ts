@@ -36,6 +36,7 @@ const POST_TOOL_HOOK: CommandHook<'afterToolUse'> = {
 /** A clean (exit-0) spawn result whose stdout is `stdout`. */
 function cleanSpawn(stdout: string): HookSpawnResult {
   return {
+    stdin: '{}',
     stdout,
     stderr: '',
     exitCode: 0,

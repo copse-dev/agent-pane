@@ -20,6 +20,8 @@ type ApprovalHandler = (req: {
   title: string
   body: string
   type: string
+  collapseDetails?: boolean | undefined
+  approveOnceLabel?: string | undefined
 }) => void
 
 interface Responded {
@@ -27,9 +29,17 @@ interface Responded {
   approved: boolean
 }
 
+/** A read-access-style request keeps its body behind a "Show details" toggle. */
+interface EmitReq {
+  id: string
+  threadId?: string
+  collapseDetails?: boolean
+  approveOnceLabel?: string
+}
+
 function makeApi(): {
   api: ApiClient
-  emit: (req: { id: string; threadId?: string }) => void
+  emit: (req: EmitReq) => void
   responses: Responded[]
 } {
   let handler: ApprovalHandler = () => {}
@@ -47,7 +57,15 @@ function makeApi(): {
   return {
     api: createPendingApi(overrides),
     emit: (req): void => {
-      handler({ id: req.id, threadId: req.threadId, title: 't', body: 'b', type: 'shell' })
+      handler({
+        id: req.id,
+        threadId: req.threadId,
+        title: 't',
+        body: 'b',
+        type: 'shell',
+        collapseDetails: req.collapseDetails,
+        approveOnceLabel: req.approveOnceLabel,
+      })
     },
     responses,
   }
@@ -92,7 +110,7 @@ describe('approval dialog thread scoping', () => {
   let store: AppStore
   let dialog: HTMLDialogElement
   let spy: { showCalls: number }
-  let emit: (req: { id: string; threadId?: string }) => void
+  let emit: (req: EmitReq) => void
   let responses: Responded[]
 
   beforeEach(() => {
@@ -208,6 +226,29 @@ describe('approval dialog thread scoping', () => {
     dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
     assert.deepEqual(responses, [{ id: 'untied', approved: true }])
     assert.equal(isThreadAwaitingAttention('focused'), true)
+  })
+
+  it('re-collapses what is left, so a withdrawal cannot expose "approve once"', () => {
+    // Expanding a read-access prompt's details is what reveals the narrower
+    // "approve just this one" answer, and both are offered only on a solo batch.
+    // Expand one, let a second request join (which drops both features), then
+    // switch away so the expanded one is withdrawn and the batch is solo again:
+    // what is left must not inherit an expansion the user never made on it.
+    const once = { collapseDetails: true, approveOnceLabel: 'Approve this command' }
+    emit({ id: 'scoped', threadId: 'focused', ...once })
+    dialog.querySelector<HTMLButtonElement>('.approval-details-toggle')?.click()
+    assert.equal(dialog.querySelector<HTMLButtonElement>('.approval-approve-once')?.hidden, false)
+
+    emit({ id: 'untied', ...once })
+    assert.equal(dialog.querySelector('.approval-details-toggle'), null)
+
+    store.setState({ activeThreadId: 'other' })
+    store.emit('threads_changed')
+
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.querySelector<HTMLElement>('.approval-body')?.hidden, true)
+    assert.equal(dialog.querySelector('.approval-details-toggle')?.textContent, 'Show details')
+    assert.equal(dialog.querySelector<HTMLButtonElement>('.approval-approve-once')?.hidden, true)
   })
 
   describe('minimized (hidden) window', () => {

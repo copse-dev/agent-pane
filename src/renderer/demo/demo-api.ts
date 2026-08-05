@@ -178,6 +178,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         replay?.abort()
         return resolvedVoid()
       },
+      runningThreadIds: emptyArray,
       retryReview: resolvedVoid,
       retryComparison: resolvedVoid,
       clearHistory: resolvedVoid,
@@ -296,12 +297,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     openRouter: { models: emptyArray },
     models: {
-      chatDefaultContextHealth: () =>
-        resolved({
-          hasDecentChatDefault: true,
-          minimum: 100_000,
-          bestAvailableContext: 200_000,
-        }),
       bestValueDefault: () => resolved('lmstudio:qwen/qwen3.6-35b-a3b'),
       resolveDynamic: (value: string) =>
         resolved(value.startsWith('auto:') ? 'lmstudio:qwen/qwen3.6-35b-a3b' : value),
@@ -519,6 +514,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
+      runDetail: () => resolved({ found: false }),
     },
     packs: {
       list: () => resolved({ packs: [] }),

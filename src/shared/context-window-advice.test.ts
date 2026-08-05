@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import {
   RECOMMENDED_MIN_CONTEXT_WINDOW,
   bestKnownContextWindow,
+  contextFitAdvice,
   hasDecentContextWindow,
   isContextWindowLow,
   lowContextAdvice,
-  noDecentChatDefaultAdvice,
 } from './context-window-advice.ts'
 
 describe('isContextWindowLow', () => {
@@ -87,17 +87,61 @@ describe('hasDecentContextWindow', () => {
   })
 })
 
-describe('noDecentChatDefaultAdvice', () => {
-  it('names the largest available window when one is known', () => {
-    const msg = noDecentChatDefaultAdvice(8192)
-    assert.match(msg, /8K/)
-    assert.match(msg, /16K/)
-    assert.match(msg, /LM Studio/)
+describe('contextFitAdvice', () => {
+  it('stays silent while the prompt fits comfortably', () => {
+    assert.equal(contextFitAdvice({ totalTokens: 40_000, contextWindow: 200_000 }), null)
+    // Right below the threshold: still room for a few turns.
+    assert.equal(contextFitAdvice({ totalTokens: 8000, contextWindow: 10_000 }), null)
   })
 
-  it('handles the case where nothing reports a window', () => {
-    const msg = noDecentChatDefaultAdvice(null)
-    assert.match(msg, /no available model/)
-    assert.match(msg, /cloud API key/)
+  it('says nothing when there is no usable estimate', () => {
+    assert.equal(contextFitAdvice(null), null)
+    assert.equal(contextFitAdvice(undefined), null)
+    assert.equal(contextFitAdvice({ totalTokens: 12_000, contextWindow: 0 }), null)
+    assert.equal(contextFitAdvice({ totalTokens: 0, contextWindow: 8192 }), null)
+  })
+
+  it('explains an overflowing thread with both ways out', () => {
+    const advice = contextFitAdvice(
+      { totalTokens: 21_400, contextWindow: 8000 },
+      { modelLabel: 'qwen3-4b' },
+    )
+    assert.ok(advice)
+    assert.equal(advice.level, 'over')
+    assert.match(advice.message, /no longer fits “qwen3-4b”/)
+    assert.match(advice.message, /21\.4K tokens/)
+    assert.match(advice.message, /context window holds 8K/)
+    assert.match(advice.message, /Pick a model with a larger context window/)
+    assert.match(advice.message, /start a new thread/)
+  })
+
+  it('warns before the window is full, naming the share used', () => {
+    const advice = contextFitAdvice(
+      { totalTokens: 7600, contextWindow: 8000 },
+      { modelLabel: 'qwen3-4b' },
+    )
+    assert.ok(advice)
+    assert.equal(advice.level, 'near')
+    assert.match(advice.message, /already fills 95% of the 8K context window/)
+    assert.match(advice.message, /older messages will be trimmed/)
+    assert.match(advice.message, /Pick a model with a larger context window/)
+  })
+
+  it('adds the load-time fix only for local models', () => {
+    const local = contextFitAdvice(
+      { totalTokens: 12_000, contextWindow: 8000 },
+      { modelLabel: 'qwen3-4b', lmStudioModel: true },
+    )
+    assert.match(local?.message ?? '', /“Context Length” in LM Studio/)
+    const cloud = contextFitAdvice({ totalTokens: 300_000, contextWindow: 200_000 })
+    assert.ok(cloud)
+    assert.doesNotMatch(cloud.message, /LM Studio/)
+    assert.match(cloud.message, /the selected model/)
+  })
+
+  it('honours a custom threshold', () => {
+    const fit = { totalTokens: 8000, contextWindow: 10_000 }
+    assert.equal(contextFitAdvice(fit), null)
+    assert.equal(contextFitAdvice(fit, { nearlyFullRatio: 0.75 })?.level, 'near')
   })
 })

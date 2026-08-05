@@ -29,6 +29,17 @@ every published entry.
   superseded always releases whatever was waiting on it — File ▸ Open Folder,
   new project, relocate and orphan recovery all awaited that, and on launch the
   app layout itself was chained off it.
+- Hook cards are debuggable. A card that said “Added context · Injected 307 chars
+  of context” could tell you a hook had done something but never what — the
+  character counts were the whole story. Every card now carries an **Inspect run**
+  disclosure that shows the run itself: what the hook was handed and what it
+  returned, read on demand from the thread's own records. Command hooks show the
+  exact stdin they read alongside their stdout and stderr; in-process hooks, which
+  had no visible output at all, now show their dispatch payload and the full text
+  of everything they applied — the injected context, the message to the agent, a
+  rewritten tool input, a halt reason — with real line breaks, not escaped JSON.
+  Each block copies in one click. Nothing is fetched until you open a card, and
+  captures are bounded so a chatty hook cannot bloat a thread.
 - A long session holds on to much less memory. Two things kept transcript text
   alive that did not need to be. The transcript's render caches — the ones that
   let an unchanged tool card skip a rebuild — stored the card's whole JSON
@@ -55,6 +66,16 @@ every published entry.
   hint saying so. Turning it off is never blocked, so clearing the key on an
   enabled pack shows the hint (and unregisters the tool) rather than trapping the
   switch on.
+- Context-window trouble is now reported where the model is chosen. Picking a
+  model for a thread that no longer fits it puts a message above the composer —
+  "This thread no longer fits “GPT-4o mini”: the next prompt needs about 158K
+  tokens and its context window holds 128K" — with the two ways out: pick a model
+  with a larger window, or free up context (local models also get the "raise its
+  Context Length in LM Studio" route). It appears at 90% of the window too, while
+  there is still room to act, and carries a **Choose another model** button that
+  opens the picker beside it. This replaces the startup banner that warned about
+  low-context local models before any thread or model was in play; the same
+  underlying check still feeds the `/checkup` report.
 - Closing Copse while a thread is still working now asks first. Quitting tears
   down every live agent session with no way to resume, so a close that would land
   mid-turn opens a confirmation naming the threads still running ("Fix login is
