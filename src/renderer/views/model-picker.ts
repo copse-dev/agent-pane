@@ -34,6 +34,14 @@ export interface ModelPicker {
 const RECENT_MODEL_LIMIT = 5
 
 /**
+ * Feeds `anchor-name` / `position-anchor` in model-picker.css, which lets a
+ * field menu clamp itself to the surface instead of running off the page.
+ * One name per instance: Chromium resolves a duplicated anchor-name to another
+ * element carrying it, which would throw a menu at a different picker.
+ */
+let pickerAnchorId = 0
+
+/**
  * The app-wide searchable model picker. Surfaces own where the current value is
  * stored; this component owns filtering, grouping, keyboard navigation, and
  * consistent presentation.
@@ -57,6 +65,7 @@ export function mountModelPicker(
       .filter((part): part is string => Boolean(part))
       .join(' '),
   })
+  wrap.style.setProperty('--model-picker-anchor', `--model-picker-${String(++pickerAnchorId)}`)
   const triggerAttrs: Record<string, string> = {
     type: 'button',
     class: 'model-picker-trigger',
