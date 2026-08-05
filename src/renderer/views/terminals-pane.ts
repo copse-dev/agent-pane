@@ -16,18 +16,24 @@ import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
+/* selectionInactiveBackground is set per theme rather than left to xterm: its
+   default (#3A3D41) is a dark grey, so in the light theme a selection made and
+   then unfocused paints near-black text onto a near-black block. Each theme
+   keeps its own hue, one step quieter than the focused fill. */
 const XTERM_THEME = {
   dark: {
     background: '#1e1e1e',
     foreground: '#d4d4d4',
     cursor: '#d4d4d4',
     selectionBackground: '#264f78',
+    selectionInactiveBackground: '#1e3a57',
   },
   light: {
     background: '#ffffff',
     foreground: '#1e1e1e',
     cursor: '#1e1e1e',
     selectionBackground: '#add6ff',
+    selectionInactiveBackground: '#d3e6fb',
   },
 } as const
 
