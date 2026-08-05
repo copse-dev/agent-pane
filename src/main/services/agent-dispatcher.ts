@@ -9,6 +9,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
+import { recoverAgentHistory } from './history-recovery.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -17,6 +18,7 @@ import {
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import {
   appendMachineContinuation,
+  getProjectThread,
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
@@ -51,6 +53,12 @@ export type MachineDispatchResult = 'completed' | 'duplicate' | 'stale' | 'budge
 export interface AgentDispatcherDependencies {
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
   saveHistory: (projectId: string, threadId: string, messages: LLMMessage[]) => Promise<void>
+  /**
+   * Provider history rebuilt from the visible transcript, for a thread whose
+   * sidecar is empty because an earlier run never committed one. See
+   * {@link recoverAgentHistory}.
+   */
+  recoverHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
   loadEpoch: (projectId: string, threadId: string) => Promise<AgentTurnEpoch | null>
   saveEpoch: (projectId: string, threadId: string, epoch: AgentTurnEpoch) => Promise<void>
   appendMachineContinuation: (
@@ -75,9 +83,24 @@ export interface AgentDispatcherDependencies {
   ) => ReturnType<typeof runAgent>
 }
 
+/**
+ * Rebuild this thread's provider history from its own transcript. Reads the
+ * thread only on the recovery path (an empty sidecar), and the result is cached
+ * by {@link AgentDispatcher.history} like any other load.
+ */
+async function recoverHistoryFromTranscript(
+  projectId: string,
+  threadId: string,
+): Promise<LLMMessage[]> {
+  const thread = await getProjectThread(projectId, threadId)
+  if (!thread) return []
+  return recoverAgentHistory(thread.messages)
+}
+
 const defaultDependencies: AgentDispatcherDependencies = {
   loadHistory: loadAgentHistory,
   saveHistory: saveAgentHistory,
+  recoverHistory: recoverHistoryFromTranscript,
   loadEpoch: loadAgentTurnEpoch,
   saveEpoch: saveAgentTurnEpoch,
   appendMachineContinuation,
@@ -154,6 +177,13 @@ export class AgentDispatcher {
     let messages = this.histories.get(key)
     if (!messages) {
       messages = await this.dependencies.loadHistory(projectId, threadId)
+      // An empty sidecar means either a genuinely fresh thread or a run that
+      // died before it could commit one. Only the transcript can tell the two
+      // apart, and only in the second case does it have anything to give back —
+      // so ask it rather than starting a thread with visible history from zero.
+      if (messages.length === 0) {
+        messages = await this.dependencies.recoverHistory(projectId, threadId)
+      }
       this.histories.set(key, messages)
     }
     return messages
