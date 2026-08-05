@@ -1,9 +1,10 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { composerText } from './helpers/composer.ts'
 
 // Creating a project runs `git init` + writes AGENT.md/README.md, so it needs a
 // writable parent outside the repo working tree. A throwaway temp dir keeps the
@@ -69,8 +70,14 @@ describe('new project flow', () => {
     await $('.new-project-actions .ui-btn.primary').click()
 
     // The workspace activates and the composer appears with the starter prompt.
+    // The composer is a contenteditable, not an input: WDIO's value matchers read
+    // `undefined` off it (see helpers/composer.ts), so read its text the way the
+    // editor itself does, and poll — the prompt is seeded after activation.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.prompt-input')).toHaveValue(expect.stringContaining('Introduce this project'))
+    await browser.waitUntil(async () => (await composerText()).includes('Introduce this project'), {
+      timeout: 15_000,
+      timeoutMsg: 'composer never received the starter prompt',
+    })
     await saveAppScreenshot('new-project-active.png')
 
     // The folder was scaffolded under `<parent>/<name>` with AGENT.md + README.md
@@ -91,8 +98,10 @@ describe('new project flow', () => {
     await addBtn.waitForDisplayed({ timeout: 10_000 })
     await addBtn.click()
 
-    const menuItems = await $$('.context-menu-item')
-    const labels = (await Promise.all(menuItems.map((i) => i.getText()))).join('|')
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    // `.map` on the chainable array resolves the getText() calls itself; awaiting
+    // `$$` first and mapping by hand hands Promise.all a non-iterable.
+    const labels = (await $$('.context-menu-item').map((item) => item.getText())).join('|')
     expect(labels).toContain('New project')
     expect(labels).toContain('Open folder')
   })
