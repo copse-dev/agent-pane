@@ -3,6 +3,7 @@ import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wi
 import { withAppAttribution } from './app-attribution.ts'
 import { isImageUnsupportedError, yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { serviceTierBody } from './service-tier.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
@@ -88,12 +89,15 @@ export class OpenAIProvider implements LLMProvider {
       extraBody?: Record<string, unknown>
       promptCacheKey?: string
       defaultHeaders?: Readonly<Record<string, string>>
+      /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
+      serviceTier?: string
     } = {},
   ) {
     this.model = model
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.extraBody = opts.extraBody
     this.promptCacheKey = opts.promptCacheKey
+    this.serviceTier = opts.serviceTier
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -104,6 +108,7 @@ export class OpenAIProvider implements LLMProvider {
   private readonly includeUsage: boolean
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
+  private readonly serviceTier: string | undefined
 
   stream(
     messages: LLMMessage[],
@@ -142,6 +147,9 @@ export class OpenAIProvider implements LLMProvider {
                 ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
                 ...(mappedTools ? { tools: mappedTools } : {}),
                 ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
+                ...serviceTierBody(self.serviceTier),
+                // Last, so an explicit extraBody entry still wins — that field is
+                // the user's own escape hatch for provider-specific overrides.
                 ...(self.extraBody ?? {}),
               },
               { signal },
