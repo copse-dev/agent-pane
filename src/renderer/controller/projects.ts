@@ -17,6 +17,7 @@ import {
   type ProjectViewStateRegistry,
 } from './project-view-state.ts'
 import { showErrorToast } from '../views/toast.ts'
+import { compactSidebarThread, type SidebarThread } from './sidebar-thread.ts'
 
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
@@ -62,14 +63,14 @@ async function ensureSshConnected(api: ApiClient, hostId: string): Promise<void>
 export const SIDEBAR_THREADS_PAGE_SIZE = 10
 
 export interface SidebarThreadPagination {
-  visibleThreads: Thread[]
+  visibleThreads: SidebarThread[]
   visibleCount: number
   hasMore: boolean
 }
 
 /** Limit sidebar thread rows; expand the window when the active thread falls outside it. */
 export function paginateSidebarThreads(
-  threads: Thread[],
+  threads: SidebarThread[],
   visibleLimit: number,
   activeThreadId: string | null | undefined,
 ): SidebarThreadPagination {
@@ -93,8 +94,19 @@ export function paginateSidebarThreads(
   }
 }
 
-/** In-memory thread lists for sidebar display before a workspace switch finishes. */
-const threadCache = new Map<string, Thread[]>()
+/**
+ * In-memory thread lists for sidebar display before a workspace switch finishes.
+ *
+ * The active project's entry aliases the store's own array, so it costs nothing.
+ * Every other entry is compacted (see {@link compactSidebarThread}): a project
+ * you have switched away from keeps its sidebar rows but not its transcripts,
+ * which is all the sidebar ever read. Nothing else can want them — a non-active
+ * project has no threads in the store for a run to stream into, automations bail
+ * unless their project is active, and switching back reloads from disk.
+ */
+const threadCache = new Map<string, SidebarThread[]>()
+/** Which project's cache entry is the live alias, and so the one still to compact. */
+let liveCacheProjectId: string | null = null
 /** Per-project right-panel view state, so switching projects restores panel visibility. */
 const projectViewState: ProjectViewStateRegistry = new Map()
 let switchGeneration = 0
@@ -111,7 +123,7 @@ function settleActivationWaiter(projectId: string, error?: Error): void {
   else waiter.resolve()
 }
 
-export function getSidebarThreads(store: AppStore, projectId: string): Thread[] {
+export function getSidebarThreads(store: AppStore, projectId: string): SidebarThread[] {
   const { activeProjectId, threads } = store.getState()
   const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
   // Archived threads stay in the project store / on disk but leave the sidebar.
@@ -130,6 +142,13 @@ export function isProjectSwitchInFlight(store: AppStore, projectId: string): boo
 }
 
 function cacheThreads(projectId: string, threads: Thread[]): void {
+  // A different project is taking over the live entry — compact the outgoing one
+  // so its transcripts stop being reachable from here.
+  if (liveCacheProjectId !== null && liveCacheProjectId !== projectId) {
+    const outgoing = threadCache.get(liveCacheProjectId)
+    if (outgoing) threadCache.set(liveCacheProjectId, outgoing.map(compactSidebarThread))
+  }
+  liveCacheProjectId = projectId
   threadCache.set(projectId, threads)
 }
 
@@ -206,6 +225,7 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
 
   forgetProjectViewState(projectViewState, id)
   threadCache.delete(id)
+  if (liveCacheProjectId === id) liveCacheProjectId = null
 
   const projects = state.projects.filter((p) => p.id !== id)
   const wasActive = state.activeProjectId === id
@@ -688,6 +708,7 @@ export function resetProjectSwitchStateForTest(): void {
   switchGeneration = 0
   pendingThreadAfterSwitch = null
   threadCache.clear()
+  liveCacheProjectId = null
   projectViewState.clear()
   activationWaiters.clear()
 }

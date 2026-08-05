@@ -222,6 +222,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onRequest: subscribe,
       onDevNotice: subscribe,
     },
+    closeConfirm: {
+      respond: resolvedVoid,
+      onRequest: subscribe,
+    },
     sshWorkspace: {
       listHosts: emptyArray,
       listConfigAliases: emptyArray,
@@ -304,6 +308,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     intellect: {
       liveModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),
+    },
+    // No network in the demo, so nothing resolves and the value map shows no
+    // card links — the same state as a probe that found nothing.
+    modelCards: {
+      resolve: (modelIds: string[]) =>
+        resolved(Object.fromEntries(modelIds.map((id) => [id, null]))),
     },
     lmStudio: {
       test: () => resolved({ ok: false, error: 'Unavailable in demo' }),

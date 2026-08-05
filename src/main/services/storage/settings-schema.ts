@@ -74,6 +74,14 @@ const modelPricingEntrySchema = z.object({
 
 export const openRouterPricingSchema = z.record(z.string().max(256), modelPricingEntrySchema)
 
+// Model-card probe outcomes keyed by URL: whether it resolved, and when we
+// last checked. The resolver caps the map itself; the max here is the backstop
+// that stops a corrupt store from loading an unbounded object.
+export const modelCardProbeCacheSchema = z.record(
+  z.string().max(2048),
+  z.object({ ok: z.boolean(), at: z.number() }),
+)
+
 const MAIN_ONLY_SETTING_SCHEMAS = {
   windowBounds: windowBoundsSchema,
   // Security / safety toggles read in the main process.
@@ -101,6 +109,9 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   extraProviders: extraProvidersSchema,
   // Written by the OpenRouter catalog fetch; read by the cost estimator.
   openRouterPricing: openRouterPricingSchema,
+  // Model-card URL liveness cache, keyed by URL (see model-card-resolver.ts).
+  // Purely derived — safe to drop; it only costs a re-probe.
+  modelCardProbeCache: modelCardProbeCacheSchema,
 } as const satisfies Record<string, z.ZodType>
 
 const SETTING_SCHEMAS: Record<string, z.ZodType> = {
