@@ -164,6 +164,8 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
@@ -252,6 +254,10 @@ export interface ApiClient {
       }) => void,
     ) => () => void
     onDevNotice: (handler: () => void) => () => void
+  }
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) => Promise<void>
+    onRequest: (handler: (req: { id: string }) => void) => () => void
   }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
@@ -372,12 +378,6 @@ export interface ApiClient {
     >
   }
   models: {
-    /** Whether any available chat model reaches the recommended context window. */
-    chatDefaultContextHealth: () => Promise<{
-      hasDecentChatDefault: boolean
-      minimum: number
-      bestAvailableContext: number | null
-    }>
     /**
      * Concrete model id for the plan/price Pareto best-value default
      * (`auto:best-value` setting expands to this on new chats / agent runs).
@@ -402,6 +402,18 @@ export interface ApiClient {
       indexVersion?: string | number
       error?: string
     }>
+  }
+  modelCards: {
+    /**
+     * The first card URL that resolves for each model id, or null where none
+     * does. Probe results are cached in the main process, so calling this for
+     * models already looked up costs no network.
+     */
+    resolve: (
+      modelIds: string[],
+    ) => Promise<
+      Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
+    >
   }
   lmStudio: {
     test: (

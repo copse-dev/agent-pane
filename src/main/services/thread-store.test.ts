@@ -662,6 +662,31 @@ describe('thread-store', () => {
       const loaded = await loadProjectThreads('proj-1')
       assert.equal(loaded.find((t) => t.id === 't2')?.archivedAt, 99)
     })
+
+    it('includeArchived: false leaves archived threads out of the load', async () => {
+      await createThread('proj-1', thread('t1', { title: 'Keep' }))
+      await createThread(
+        'proj-1',
+        thread('t2', {
+          title: 'Hide',
+          messages: [assistantMsg('m1', 'archived work', 'a big tool result')],
+        }),
+      )
+      await updateMeta('proj-1', 't2', { archivedAt: 99, updatedAt: 99 })
+
+      const visible = await loadProjectThreads('proj-1', { includeArchived: false })
+      assert.deepEqual(
+        visible.map((t) => t.id),
+        ['t1'],
+      )
+      // The archived thread is skipped, not deleted: it comes back in full — its
+      // message bodies included — for the whole-history readers.
+      const all = await loadProjectThreads('proj-1')
+      const archived = all.find((t) => t.id === 't2')
+      assert.ok(archived)
+      assert.equal(archived.archivedAt, 99)
+      assert.equal(archived.messages[0]?.toolCalls[0]?.result, 'a big tool result')
+    })
   })
 })
 

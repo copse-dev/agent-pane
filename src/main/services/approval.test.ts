@@ -123,6 +123,30 @@ describe('requestApproval pluggable transport', () => {
     )
   })
 
+  it("records a request's reasons alongside the answer", async () => {
+    setApprovalHandler(async () => ({ approved: true, remember: true }))
+    await requestApproval({
+      ...req,
+      subject: 'shell command (arguments omitted)',
+      scope: 'external-read',
+      reasons: ['reads outside the project: ~/.copse'],
+    })
+
+    const event = (await readDecisionLog('_global')).at(-1)
+    assert.ok(event)
+    // The durable line omits the command, so its reasons are the only record of
+    // what the user actually widened access to.
+    assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
+    assert.equal(event.scope, 'external-read')
+    assert.equal(event.remembered, true)
+  })
+
+  it('omits reasons from the log when the request carries none', async () => {
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    await requestApproval(req)
+    assert.equal((await readDecisionLog('_global')).at(-1)?.reasons, undefined)
+  })
+
   it('coalesces identical in-flight requests into one handler call', async () => {
     let handlerCalls = 0
     let release!: (response: { approved: boolean; remember: boolean }) => void

@@ -16,6 +16,12 @@ import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
+import {
+  approveClose,
+  deferQuitForCloseConfirmation,
+  guardWindowClose,
+  initCloseConfirm,
+} from './services/close-confirm.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import {
   createRegistry,
@@ -259,6 +265,8 @@ app
     const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
     buildAppMenu(win, developerMode)
     initUpdatePrompt(win)
+    initCloseConfirm(win)
+    guardWindowClose(win)
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
     // spawns (one of them, `gh auth status`, a network round trip), and run
     // before the window they cost the user seconds of blank screen. The window
@@ -711,6 +719,10 @@ async function cleanupBeforeQuit(): Promise<void> {
 
 app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
+  // Ask before anything below runs: the cleanup this handler starts is what
+  // kills the in-flight turns the user is being warned about, so a prompt after
+  // it would come too late to save them. Re-issues the quit once confirmed.
+  if (deferQuitForCloseConfirmation(event)) return
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
   // The hidden video-decoder window is not the main window, so nothing else
@@ -731,6 +743,9 @@ app.on('before-quit', (event) => {
 
 function quitFromSignal(signal: NodeJS.Signals): void {
   console.log(`[shutdown] Received ${signal}; quitting`)
+  // A signal is not a user at the keyboard — there is nobody to answer the
+  // running-thread prompt, and blocking here would hang the shutdown.
+  approveClose()
   app.quit()
 }
 

@@ -36,6 +36,7 @@ import {
   assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
+  modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
@@ -80,7 +81,6 @@ import {
 } from '../services/providers/extra-providers-store.ts'
 import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
-import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
@@ -117,6 +117,7 @@ import {
   runAcpAutoSetup,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
+import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -272,6 +273,10 @@ import {
   fetchLiveIntellectModels,
   invalidateLiveIntellectCache,
 } from '../services/providers/aa-live-intellect.ts'
+import {
+  resolveModelCard,
+  type ResolvedModelCard,
+} from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -1101,6 +1106,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return fetchLiveIntellectModels()
   })
+  // Model-card links for the value map. Batched because the panel warms every
+  // plotted model at once; the resolver's URL cache makes repeat calls free.
+  ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
+    assertMainFrameSender(event, win)
+    const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
+    const out: Record<string, ResolvedModelCard | null> = {}
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          out[id] = await resolveModelCard(id)
+        } catch {
+          // A probe failure is "no link", never a broken settings panel.
+          out[id] = null
+        }
+      }),
+    )
+    return out
+  })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
   // plaintext-at-rest condition instead of leaving it to a console.warn.
@@ -1196,7 +1219,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { imported, skipped }
   })
-  ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
   // to show the concrete model behind a rule; a pinned id round-trips unchanged.
@@ -1345,7 +1367,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
-    return loadProjectThreads(id)
+    // Archived threads are hidden from every renderer surface (sidebar and
+    // `@`-catalog both filter them), so folding their history into the store
+    // only grew the heap. They stay on disk and in the whole-history readers.
+    return loadProjectThreads(id, { includeArchived: false })
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -2100,6 +2125,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [prompt, kind],
       )
       return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
+    })
+    // Drives the real main→renderer close question without actually quitting —
+    // an e2e that closed the app would take its own session down with it.
+    ipcMain.handle('test:requestCloseConfirm', (event) => {
+      assertMainFrameSender(event, win)
+      return requestCloseConfirmation()
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)

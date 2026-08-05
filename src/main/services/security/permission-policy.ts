@@ -209,10 +209,12 @@ export function shellCommandFromArgs(args: unknown): string | null {
  * Read-only command recognition now lives in `shell-argv.ts` — `shell-scope.ts`
  * needs it to tell a chat-store *read* from a chat-store write, and this module
  * already imports `shell-scope.ts`. Re-exported so existing importers are
- * unaffected.
+ * unaffected, including `read-outside-project.ts`, which builds its wider read
+ * shape on top of `READ_ONLY_SHELL_BASENAMES`.
  */
 export {
   READ_ONLY_GIT_SUBCOMMANDS,
+  READ_ONLY_SHELL_BASENAMES,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
 } from './shell-argv.ts'
