@@ -178,10 +178,20 @@ function readJsonFile(path: string): unknown {
   }
 }
 
+/** Mirror of `claudeCredentialsPath` in plan-usage-bridge.ts — `CLAUDE_CONFIG_DIR`
+ * replaces `~/.claude` rather than nesting under it. Kept inline because this
+ * script runs as plain node with no bundler aliases. */
+function claudeCredentialsPath(): string {
+  const configDir = process.env['CLAUDE_CONFIG_DIR']?.trim()
+  return configDir
+    ? join(configDir, '.credentials.json')
+    : join(homedir(), '.claude', '.credentials.json')
+}
+
 function discoverClaudeCandidates(): ReturnType<typeof orderClaudeTokenCandidates> {
   return orderClaudeTokenCandidates({
     keychainJson: readClaudeKeychainCredentialsJson(),
-    credentialsJson: readJsonFile(join(homedir(), '.claude', '.credentials.json')),
+    credentialsJson: readJsonFile(claudeCredentialsPath()),
     envToken: process.env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
   })
 }
