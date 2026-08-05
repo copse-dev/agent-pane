@@ -120,8 +120,11 @@ describe('browser context sharing with a thread', function () {
       const style = getComputedStyle(input, '::selection')
       return { backgroundColor: style.backgroundColor, color: style.color }
     })
-    assert.equal(selectionStyle.backgroundColor, 'rgb(32, 253, 133)')
-    assert.equal(selectionStyle.color, 'rgb(68, 68, 68)')
+    // The address bar inherits the app-wide selection pair (--selection-bg /
+    // --selection-text) instead of carrying an accent-derived one: the accent
+    // is user-configurable and its light-theme derivation buried the URL.
+    assert.equal(selectionStyle.backgroundColor, 'rgb(47, 111, 208)')
+    assert.equal(selectionStyle.color, 'rgb(255, 255, 255)')
 
     await browser.execute(() => {
       document.querySelector<HTMLButtonElement>('.browser-menu-btn')?.click()
