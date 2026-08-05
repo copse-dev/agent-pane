@@ -11,7 +11,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
   LLMMessage,
@@ -56,7 +55,7 @@ import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { z } from 'zod'
 import { storageGet } from './storage/storage.ts'
-import { projectStoreDir } from './storage/copse-paths.ts'
+import { chatStoreDir, projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**
@@ -97,11 +96,7 @@ const sha256 = (input: string): string => createHash('sha256').update(input, 'ut
 const projectDir = projectStoreDir
 
 /** Root of the chat store. COPSE_DIR owns the normal profile layout. */
-function workspaceRoot(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  if (override) return override
-  return join(homedir(), '.copse', 'workspace')
-}
+const workspaceRoot = chatStoreDir
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
 export const chatStoreRoot = workspaceRoot

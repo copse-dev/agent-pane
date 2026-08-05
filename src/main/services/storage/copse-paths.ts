@@ -24,6 +24,21 @@ export function copseWorkspaceDir(env: NodeJS.ProcessEnv = process.env): string 
   return nonEmpty(env['COPSE_WORKSPACE_DIR']) ?? join(copseDataRoot(env), 'workspace')
 }
 
+/**
+ * Chat-store root as the thread store and the workspace path guards resolve it:
+ * `COPSE_WORKSPACE_DIR`, else the literal `~/.copse/workspace`.
+ *
+ * Deliberately NOT {@link copseWorkspaceDir}: that one also honours `COPSE_DIR`,
+ * and the chat store has never moved with it (the unification is the follow-up
+ * noted in `workspace.ts`). Every consumer that must agree on where the chat
+ * store lives — the thread store, the read-path guard, the seatbelt overlay, and
+ * the shell scope classifier — resolves it here so they cannot drift. A
+ * classifier that disagreed with the overlay is exactly the bug this fixes.
+ */
+export function chatStoreDir(env: NodeJS.ProcessEnv = process.env): string {
+  return nonEmpty(env['COPSE_WORKSPACE_DIR']) ?? join(homedir(), '.copse', 'workspace')
+}
+
 /** Root for Copse-managed Git worktrees. */
 export function copseWorktreesDir(env: NodeJS.ProcessEnv = process.env): string {
   return nonEmpty(env['COPSE_WORKTREES_DIR']) ?? join(copseDataRoot(env), 'worktrees')
