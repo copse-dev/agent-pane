@@ -1687,6 +1687,17 @@ dialog.settings-overlay::backdrop {
   cursor: default;
   opacity: 0.55;
 }
+/* Why a credential-gated pack's toggle is inert (or on-but-inactive). Warning
+   tinted: the pack cannot contribute its tool in this state. */
+.pack-credential-gate {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warning, #d29922);
+}
+.pack-toggle-input:disabled + .toggle-switch-track {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 
 /* First-party level-3 detail for copse.automations. It lives inside the pack
    row so scope, enablement, and configuration remain one coherent surface. */
