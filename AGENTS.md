@@ -176,6 +176,33 @@ up-front prompt is worded as the agent's _expectation_ (not a confirmed block) s
 the user can apply the appropriate scrutiny. Declining runs the command inside the
 sandbox without re-prompting on failure.
 
+#### Reads outside the project
+
+A command that only _reads_ paths outside the project, and whose every path we
+can account for, gets a narrower question than the generic escape hatch:
+**"Allow read access outside of the project?"** with the command behind a
+_Show details_ disclosure. Its primary button grants the shape for the rest of
+the **thread** (in-memory, never persisted — `read-outside-grant.ts`); expanding
+the details also offers **"Approve this command"**, which approves that one call
+and grants nothing.
+
+The grant authorises no command by itself: every later command is re-analysed by
+`read-outside-project.ts` and must independently prove it is a plain read. That
+analysis is an allow-list of shapes and fails closed — one unrecognised head,
+write flag, redirect, `$VAR`, or privilege wrapper (`sudo`, `env`) drops the
+command back to the ordinary prompt. Credential targets (`.env*`, `*.pem`,
+`~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, …) and targets as broad as `~` or `/`
+are refused outright, so they always ask even in a granted thread. This path runs
+on every platform: off macOS `outsideSandbox` is false (there is no seatbelt to
+leave) but the read is just as external.
+
+The grant lives in memory, but the decision to make it is durable: the answered
+prompt writes a `decisions.jsonl` line at `scope: external-read` naming the paths
+at stake, with `remembered: true` for a thread grant and `false` for a
+one-command approval, and every later command the grant covers writes its own
+`verdict: allowed` line sourced to `read-outside-grant`. A restart drops the
+grant; it never drops the record of it.
+
 Key components:
 
 - `permission-policy.ts` — `decideShellPermission` (pure; the table above),
@@ -185,6 +212,8 @@ Key components:
   `ambiguous`, or `external`), with human-readable `reasons`. Fuzzy "may reach"
   matchers are tagged `ambiguous: true`; a command is only `external` when a
   definite escape (hard pattern or outside-workspace path) fires.
+- `read-outside-project.ts` / `read-outside-grant.ts` — the read-only-escape
+  shape above, its credential/breadth refusals, and the thread-scoped grant.
 - `safety-classifier.ts` — optional LM Studio classifier (`classifyShellScope`),
   used **only** when the OS sandbox is unavailable; returns `null` when disabled
   or unreachable.

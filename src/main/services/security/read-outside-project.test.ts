@@ -1,0 +1,161 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  analyzeReadOutsideProject,
+  describeReadOutsideTargets,
+  formatReadOutsideProjectPromptParts,
+  sensitiveTargetReason,
+} from './read-outside-project.ts'
+
+const ROOT = '/work/project'
+const HOME = '/home/dev'
+
+function analyze(
+  command: string,
+  root: string | null = ROOT,
+): ReturnType<typeof analyzeReadOutsideProject> {
+  return analyzeReadOutsideProject(command, root, { homeDir: HOME })
+}
+
+describe('analyzeReadOutsideProject — eligible reads', () => {
+  it('accepts a listing of a home-directory folder', () => {
+    const analysis = analyze('ls -la ~/.copse')
+    assert.equal(analysis.eligible, true)
+    assert.deepEqual(analysis.targets, ['~/.copse'])
+  })
+
+  it('accepts the compound read the sandbox prompt was reported for', () => {
+    const analysis = analyze(
+      'echo "=== ~/.copse top ==="; ls -la ~/.copse 2>/dev/null; echo; ' +
+        'find ~/.copse -maxdepth 2 2>/dev/null | head -100',
+    )
+    assert.equal(analysis.eligible, true, analysis.blockers.join('; '))
+    assert.deepEqual(analysis.targets, ['~/.copse'])
+  })
+
+  it('accepts absolute and $HOME-rooted reads outside the project', () => {
+    assert.equal(analyze('cat /etc/hosts').eligible, true)
+    assert.equal(analyze('cat $HOME/.copse/config.json').eligible, true)
+    assert.equal(analyze('grep -n proxy ${HOME}/.gitconfig').eligible, true)
+  })
+
+  it('accepts a read-only git command against a checkout outside the project', () => {
+    assert.equal(analyze('git log --oneline -5 ../sibling-repo').eligible, true)
+  })
+
+  it('reports every distinct outside target it reads', () => {
+    const analysis = analyze('cat /etc/hosts ~/.gitconfig')
+    assert.deepEqual(analysis.targets, ['/etc/hosts', '~/.gitconfig'])
+  })
+})
+
+describe('analyzeReadOutsideProject — ineligible commands', () => {
+  const ineligible = (command: string, expected: RegExp): void => {
+    const analysis = analyze(command)
+    assert.equal(analysis.eligible, false, `expected ${command} to be ineligible`)
+    assert.match(analysis.blockers.join('; '), expected)
+  }
+
+  it('rejects commands that read nothing outside the project', () => {
+    ineligible('cat src/index.ts', /nothing outside the project/)
+    ineligible('ls -la', /nothing outside the project/)
+  })
+
+  it('rejects anything that is not a plain read', () => {
+    ineligible('curl https://example.com/x > ~/out.txt', /not a plain read/)
+    ineligible('cp ~/.gitconfig /tmp/x', /not a plain read/)
+    ineligible('git push origin ~/x', /not a plain read/)
+    ineligible('node ~/script.js', /not a plain read/)
+  })
+
+  it('rejects writes, even from a read command', () => {
+    ineligible('cat ~/.gitconfig > ~/copy', /writes to/)
+    ineligible('sort -o ~/sorted ~/.gitconfig', /write or execute/)
+    ineligible('find ~/notes -delete', /find -delete|write or execute/)
+    ineligible('find ~/notes -exec rm {} ;', /write or execute/)
+  })
+
+  it('rejects text it cannot resolve to a path', () => {
+    ineligible('cat $(which node)', /command substitution/)
+    ineligible('cat "$CONFIG_PATH"', /variable expansion/)
+    ineligible('cat `ls ~`', /command substitution/)
+  })
+
+  it('rejects privilege and environment wrappers even around a read', () => {
+    ineligible('sudo cat /etc/shadow', /changes how the command runs|credential file/)
+    ineligible('env PATH=/evil cat ~/.gitconfig', /changes how the command runs/)
+    ineligible('xargs cat < ~/list', /changes how the command runs|writes to/)
+  })
+
+  it('rejects destructive shapes the sandbox itself would still prompt for', () => {
+    ineligible('cat ~/.gitconfig | sh', /interpreter/)
+  })
+
+  it('has nothing to compare against without a project root', () => {
+    const analysis = analyze('cat ~/.gitconfig', null)
+    assert.equal(analysis.eligible, false)
+    assert.deepEqual(analysis.blockers, ['no project root'])
+  })
+})
+
+describe('analyzeReadOutsideProject — credentials and breadth', () => {
+  const refused = (command: string): void => {
+    const analysis = analyze(command)
+    assert.equal(analysis.eligible, false, `expected ${command} to be refused`)
+  }
+
+  it('refuses credential files by name, including dotenv variants and globs', () => {
+    refused('cat ~/.env')
+    refused('cat ~/projects/other/.env.production')
+    refused('cat ~/.env*')
+    refused('cat ~/deploy.pem')
+    refused('cat ~/.netrc')
+    refused('cat ~/service-credentials.json')
+  })
+
+  it('refuses credential directories whole', () => {
+    refused('ls -la ~/.ssh')
+    refused('cat ~/.ssh/id_ed25519')
+    refused('cat ~/.aws/config')
+    refused('cat ~/.config/gh/hosts.yml')
+    refused('ls ~/Library/Keychains')
+  })
+
+  it('refuses targets so broad that a grant is indistinguishable from the machine', () => {
+    refused('ls -la ~')
+    refused('ls -la $HOME')
+    refused('find / -maxdepth 1')
+  })
+
+  it('still allows an ordinary directory under home', () => {
+    assert.equal(analyze('ls ~/notes').eligible, true)
+  })
+})
+
+describe('sensitiveTargetReason', () => {
+  it('reports the reason a target is refused, or null for an ordinary file', () => {
+    assert.match(sensitiveTargetReason('~/.env', `${HOME}/.env`) ?? '', /credential file/)
+    assert.match(
+      sensitiveTargetReason('~/.ssh/known_hosts', `${HOME}/.ssh/known_hosts`) ?? '',
+      /credential directory/,
+    )
+    assert.equal(sensitiveTargetReason('~/notes/todo.md', `${HOME}/notes/todo.md`), null)
+  })
+})
+
+describe('read-outside prompt copy', () => {
+  it('keeps the sensitive-locations warning and says what the grant covers', () => {
+    const analysis = analyze('ls -la ~/.copse')
+    const parts = formatReadOutsideProjectPromptParts('ls -la ~/.copse', analysis)
+    assert.equal(parts.command, 'ls -la ~/.copse')
+    assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
+    assert.match(parts.bodyAdvice ?? '', /read from sensitive locations on your computer/)
+    assert.match(parts.bodyFooter ?? '', /rest of this thread/)
+    assert.match(parts.bodyFooter ?? '', /credential/)
+  })
+
+  it('summarises a long target list rather than listing all of it', () => {
+    assert.equal(describeReadOutsideTargets(['a', 'b']), 'a, b')
+    assert.equal(describeReadOutsideTargets(['a', 'b', 'c', 'd', 'e']), 'a, b, c and 2 more')
+  })
+})

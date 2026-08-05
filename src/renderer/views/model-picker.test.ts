@@ -314,4 +314,30 @@ describe('shared model picker', () => {
     assert.equal(afterClear.defaultPrevented, false)
     picker.destroy()
   })
+
+  it('gives every picker its own anchor name', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const mount = (): void => {
+      mountModelPicker(
+        host,
+        () => 'claude-sonnet-4-6',
+        () => {},
+        async () => OPTIONS,
+        { variant: 'field', loadOnMount: false },
+      )
+    }
+    mount()
+    mount()
+    await Promise.resolve()
+
+    const names = [...host.querySelectorAll<HTMLElement>('.model-picker')].map((wrap) =>
+      wrap.style.getPropertyValue('--model-picker-anchor'),
+    )
+    assert.equal(names.length, 2)
+    // Chromium resolves a duplicated anchor-name to another element carrying
+    // it, which would anchor one menu to the other picker's trigger.
+    assert.equal(new Set(names).size, 2)
+    for (const name of names) assert.match(name, /^--model-picker-\d+$/)
+  })
 })

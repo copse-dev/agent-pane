@@ -164,6 +164,8 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
@@ -376,12 +378,6 @@ export interface ApiClient {
     >
   }
   models: {
-    /** Whether any available chat model reaches the recommended context window. */
-    chatDefaultContextHealth: () => Promise<{
-      hasDecentChatDefault: boolean
-      minimum: number
-      bestAvailableContext: number | null
-    }>
     /**
      * Concrete model id for the plan/price Pareto best-value default
      * (`auto:best-value` setting expands to this on new chats / agent runs).
