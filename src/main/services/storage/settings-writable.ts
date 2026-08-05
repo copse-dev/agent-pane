@@ -111,6 +111,10 @@ export const modelParametersSchema = z.object({
   reasoning: z.enum(REASONING_LEVELS).optional(),
   temperature: z.number().min(0).max(2).optional(),
   topP: z.number().min(0).max(1).optional(),
+  topK: z.number().int().min(0).max(500).optional(),
+  minP: z.number().min(0).max(1).optional(),
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  repetitionPenalty: z.number().min(0).max(2).optional(),
 })
 
 /** Model selection → its tuned parameters. Keys are picker values, not bare ids. */
@@ -172,7 +176,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // roles (safety, review) are NOT routed here so they stay on the guarded
   // security IPC.
   roleModels: z.record(z.string().max(64), z.string().max(256)),
-  // Per-model generation parameters (reasoning depth, temperature, top-p),
+  // Per-model generation parameters (reasoning depth and the sampling knobs),
   // keyed by the model selection they were tuned for so they travel with the
   // model rather than with a feature. Sanitized per model on read — see
   // `resolveModelParameters` — so an entry saved against one model cannot be

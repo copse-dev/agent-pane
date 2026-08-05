@@ -72,7 +72,7 @@ describe('model parameters section', () => {
     assert.ok([...reasoning.options].some((option) => option.value === 'xhigh'))
     assert.equal(control(section.root, 'model-parameter-temperature'), null)
     assert.equal(control(section.root, 'model-parameter-top-p'), null)
-    assert.match(section.root.textContent, /does not accept temperature or top-p/)
+    assert.match(section.root.textContent, /does not accept sampling parameters/)
   })
 
   it('offers all three controls for an OpenAI-compatible model', async () => {
@@ -212,6 +212,70 @@ describe('model parameters section', () => {
     assert.ok(link)
     assert.match(link.href, /^https:\/\/huggingface\.co\//)
     assert.equal(link.rel, 'noopener noreferrer')
+  })
+
+  it('offers the open-weights knobs on an OpenAI-compatible route', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('lmstudio:qwen3.6-35b-a3b')
+
+    const topK = inputControl(section.root, 'model-parameter-top-k')
+    assert.equal(topK.step, '1')
+    topK.value = '20'
+    fire(topK)
+    const minP = inputControl(section.root, 'model-parameter-min-p')
+    minP.value = '0'
+    fire(minP)
+    const presence = inputControl(section.root, 'model-parameter-presence-penalty')
+    presence.value = '1.5'
+    fire(presence)
+    const repetition = inputControl(section.root, 'model-parameter-repetition-penalty')
+    repetition.value = '1'
+    fire(repetition)
+    await section.save()
+
+    assert.deepEqual(store.saved['modelParameters'], {
+      'lmstudio:qwen3.6-35b-a3b': { topK: 20, minP: 0, presencePenalty: 1.5, repetitionPenalty: 1 },
+    })
+  })
+
+  it('omits the knobs a route would reject', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+
+    // OpenAI has presence_penalty but no top_k or min_p.
+    await section.refresh('gpt-4o')
+    assert.ok(control(section.root, 'model-parameter-presence-penalty'))
+    assert.equal(control(section.root, 'model-parameter-top-k'), null)
+    assert.equal(control(section.root, 'model-parameter-min-p'), null)
+
+    // Anthropic is the mirror image.
+    section.setModel('claude-sonnet-4-6')
+    assert.ok(control(section.root, 'model-parameter-top-k'))
+    assert.equal(control(section.root, 'model-parameter-presence-penalty'), null)
+  })
+
+  it('fills all six from Qwen’s published recipe', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:qwen/qwen3.6-35b-a3b')
+
+    buttonControl(section.root, 'model-parameter-recommend').click()
+    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '1')
+    assert.equal(inputControl(section.root, 'model-parameter-top-k').value, '20')
+    assert.equal(inputControl(section.root, 'model-parameter-presence-penalty').value, '1.5')
+
+    await section.save()
+    assert.deepEqual(store.saved['modelParameters'], {
+      'openrouter:qwen/qwen3.6-35b-a3b': {
+        temperature: 1,
+        topP: 0.95,
+        topK: 20,
+        minP: 0,
+        presencePenalty: 1.5,
+        repetitionPenalty: 1,
+      },
+    })
   })
 
   it('says which levels bring the card’s output ceiling with them', async () => {

@@ -9,8 +9,11 @@ import {
   modelParameterSupport,
   recommendedModelParameters,
   sanitizeModelParameters,
+  SAMPLING_BOUNDS,
+  SAMPLING_FIELDS,
   type ModelParameters,
   type ReasoningLevel,
+  type SamplingField,
 } from '@copse/llm/model-parameters.ts'
 
 export interface ModelParametersSection {
@@ -34,6 +37,55 @@ const REASONING_LABELS: Record<ReasoningLevel, string> = {
 }
 
 const DEFAULT_OPTION_LABEL = "Model default (don't send)"
+
+/**
+ * How each sampling knob is presented.
+ *
+ * Hints say what the knob *does* rather than restating its range, which the
+ * input's own bounds already carry. The two cutoffs and the two penalties are
+ * unfamiliar enough that a user meeting them in a vendor recipe needs to know
+ * which way is "off" — every hint names its neutral value.
+ */
+const SAMPLING_CONTROLS: Readonly<
+  Record<SamplingField, { label: string; name: string; testid: string; hint: string }>
+> = {
+  temperature: {
+    label: 'Temperature',
+    name: 'modelTemperature',
+    testid: 'model-parameter-temperature',
+    hint: 'Lower is more repeatable, higher more varied.',
+  },
+  topP: {
+    label: 'Top-p',
+    name: 'modelTopP',
+    testid: 'model-parameter-top-p',
+    hint: 'Nucleus cutoff: sample from the likeliest tokens whose probabilities sum to this. 1 considers all of them.',
+  },
+  topK: {
+    label: 'Top-k',
+    name: 'modelTopK',
+    testid: 'model-parameter-top-k',
+    hint: 'Consider only this many candidate tokens at each step. 0 considers all of them.',
+  },
+  minP: {
+    label: 'Min-p',
+    name: 'modelMinP',
+    testid: 'model-parameter-min-p',
+    hint: 'Drop tokens below this fraction of the likeliest one’s probability. 0 drops nothing.',
+  },
+  presencePenalty: {
+    label: 'Presence penalty',
+    name: 'modelPresencePenalty',
+    testid: 'model-parameter-presence-penalty',
+    hint: 'Discourage reusing tokens already in the reply. 0 is off; high values can cause language mixing.',
+  },
+  repetitionPenalty: {
+    label: 'Repetition penalty',
+    name: 'modelRepetitionPenalty',
+    testid: 'model-parameter-repetition-penalty',
+    hint: 'Divides the likelihood of tokens already seen. 1 is off — below 1 encourages repetition.',
+  },
+}
 
 /** Empty input means "send nothing"; a typed number is only used when valid. */
 function readNumberInput(input: HTMLInputElement): number | undefined {
@@ -95,23 +147,30 @@ export function createModelParametersSection(
     name: 'modelReasoning',
     'data-testid': 'model-parameter-reasoning',
   })
-  const temperatureInput = el('input', {
-    type: 'number',
-    name: 'modelTemperature',
-    min: '0',
-    step: '0.05',
-    placeholder: 'Model default',
-    'data-testid': 'model-parameter-temperature',
-  })
-  const topPInput = el('input', {
-    type: 'number',
-    name: 'modelTopP',
-    min: '0',
-    max: '1',
-    step: '0.05',
-    placeholder: 'Model default',
-    'data-testid': 'model-parameter-top-p',
-  })
+  const samplingInputs = new Map<SamplingField, HTMLInputElement>(
+    SAMPLING_FIELDS.map((field) => {
+      const spec = SAMPLING_CONTROLS[field]
+      const bounds = SAMPLING_BOUNDS[field]
+      const input = el('input', {
+        type: 'number',
+        name: spec.name,
+        min: String(bounds.min),
+        max: String(bounds.max),
+        step: bounds.integer ? '1' : '0.05',
+        placeholder: 'Model default',
+        'data-testid': spec.testid,
+      })
+      input.addEventListener('change', () => {
+        const { [field]: _dropped, ...rest } = selected()
+        const value = readNumberInput(input)
+        commit(value === undefined ? rest : { ...rest, [field]: value })
+        // Reflect the clamp/round the model's bounds applied, so the field shows
+        // what will actually be sent rather than what was typed.
+        input.value = formatNumber(selected()[field])
+      })
+      return [field, input]
+    }),
+  )
 
   // The saved map for every model, not just the selected one: the user can
   // switch models in the picker above and tune several before saving once.
@@ -192,8 +251,8 @@ export function createModelParametersSection(
       support.upstreamDecides
         ? 'This provider passes them upstream, so which values take effect is up to the model behind it.'
         : '',
-      support.reasoning.length > 0 && !support.sampling
-        ? 'This model does not accept temperature or top-p — it reasons instead of sampling.'
+      support.reasoning.length > 0 && support.sampling.length === 0
+        ? 'This model does not accept sampling parameters — it reasons instead of sampling.'
         : '',
       support.reasoning.length === 0 ? 'This model exposes no reasoning control.' : '',
     ].filter(Boolean)
@@ -223,20 +282,22 @@ export function createModelParametersSection(
       )
     }
 
-    if (support.sampling) {
-      temperatureInput.max = String(support.temperatureMax)
-      temperatureInput.value = formatNumber(params.temperature)
-      topPInput.value = formatNumber(params.topP)
+    // Only the knobs this route accepts. `top_k` and `min_p` are not OpenAI
+    // parameters and `presence_penalty` has no Anthropic equivalent, so a fixed
+    // set of fields would invite a 400 the user could not have predicted.
+    for (const field of support.sampling) {
+      const input = samplingInputs.get(field)
+      if (!input) continue
+      const spec = SAMPLING_CONTROLS[field]
+      // Temperature is the one bound that moves with the family.
+      const max = field === 'temperature' ? support.temperatureMax : SAMPLING_BOUNDS[field].max
+      input.max = String(max)
+      input.value = formatNumber(params[field])
       fields.append(
         uiField({
-          label: 'Temperature',
-          control: temperatureInput,
-          hint: `0–${String(support.temperatureMax)}. Lower is more repeatable, higher more varied. Blank uses the model’s own default.`,
-        }),
-        uiField({
-          label: 'Top-p',
-          control: topPInput,
-          hint: 'Nucleus sampling cutoff (0–1). Blank uses the model’s own default.',
+          label: spec.label,
+          control: input,
+          hint: `${String(SAMPLING_BOUNDS[field].min)}–${String(max)}. ${spec.hint} Blank uses the model’s own default.`,
         }),
       )
     }
@@ -247,21 +308,6 @@ export function createModelParametersSection(
     const { reasoning: _dropped, ...rest } = selected()
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest)
   })
-  temperatureInput.addEventListener('change', () => {
-    const { temperature: _dropped, ...rest } = selected()
-    const temperature = readNumberInput(temperatureInput)
-    commit(temperature === undefined ? rest : { ...rest, temperature })
-    // Reflect the clamp/round the model's bounds applied, so the field shows
-    // what will actually be sent rather than what was typed.
-    temperatureInput.value = formatNumber(selected().temperature)
-  })
-  topPInput.addEventListener('change', () => {
-    const { topP: _dropped, ...rest } = selected()
-    const topP = readNumberInput(topPInput)
-    commit(topP === undefined ? rest : { ...rest, topP })
-    topPInput.value = formatNumber(selected().topP)
-  })
-
   recommendBtn.addEventListener('click', () => {
     const recommendation = recommendedModelParameters(current)
     if (!recommendation) return

@@ -1,5 +1,9 @@
 import type { Message } from '@shared/types'
-import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import {
+  SAMPLING_FIELDS,
+  type ModelParameters,
+  type SamplingField,
+} from '@copse/llm/model-parameters.ts'
 import { cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import { isOpenRouterModel, openRouterDisplayLabel } from '@copse/llm/openrouter.ts'
 import { isExtraProviderModel, extraProviderDisplayLabel } from '@copse/llm/extra-providers.ts'
@@ -26,8 +30,12 @@ export function primaryChatModels(messages: readonly Message[]): string[] {
  * to the model alone, which keeps an untuned thread on the old behaviour.
  */
 function primaryChatSignature(msg: Message): string {
-  const { reasoning, temperature, topP } = msg.parameters ?? {}
-  return [msg.model ?? '', reasoning ?? '', temperature ?? '', topP ?? ''].join('|')
+  const params = msg.parameters ?? {}
+  return [
+    msg.model ?? '',
+    params.reasoning ?? '',
+    ...SAMPLING_FIELDS.map((field) => params[field] ?? ''),
+  ].join('|')
 }
 
 /**
@@ -50,14 +58,26 @@ export function shouldShowPrimaryChatModelLabels(messages: readonly Message[]): 
  * The parameters a turn ran with, in the compact form the label appends —
  * `max effort · temp 1 · top-p 0.95`. Empty when the turn sent none.
  */
+/** Abbreviations for the transcript label, where the line has to stay short. */
+const SAMPLING_LABELS: Readonly<Record<SamplingField, string>> = {
+  temperature: 'temp',
+  topP: 'top-p',
+  topK: 'top-k',
+  minP: 'min-p',
+  presencePenalty: 'presence',
+  repetitionPenalty: 'repetition',
+}
+
 export function formatTurnParameters(parameters: ModelParameters | undefined): string {
   if (!parameters) return ''
   const parts: string[] = []
   if (parameters.reasoning !== undefined) {
     parts.push(parameters.reasoning === 'off' ? 'no thinking' : `${parameters.reasoning} effort`)
   }
-  if (parameters.temperature !== undefined) parts.push(`temp ${String(parameters.temperature)}`)
-  if (parameters.topP !== undefined) parts.push(`top-p ${String(parameters.topP)}`)
+  for (const field of SAMPLING_FIELDS) {
+    const value = parameters[field]
+    if (value !== undefined) parts.push(`${SAMPLING_LABELS[field]} ${String(value)}`)
+  }
   return parts.join(' · ')
 }
 

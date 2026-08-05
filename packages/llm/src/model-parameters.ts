@@ -53,12 +53,36 @@ export interface ModelParameters {
   reasoning?: ReasoningLevel
   temperature?: number
   topP?: number
+  topK?: number
+  minP?: number
+  presencePenalty?: number
+  repetitionPenalty?: number
 }
+
+/**
+ * The sampling knobs, as `ModelParameters` field names.
+ *
+ * Ordered as a user reads them: the two every route understands, then the
+ * truncation cutoffs, then the repetition controls. {@link modelParameterSupport}
+ * returns a subset of this list, because support is per-field rather than
+ * all-or-nothing — `top_k` and `min_p` are not OpenAI parameters at all, while
+ * `presence_penalty` is one but has no Anthropic equivalent.
+ */
+export const SAMPLING_FIELDS = [
+  'temperature',
+  'topP',
+  'topK',
+  'minP',
+  'presencePenalty',
+  'repetitionPenalty',
+] as const
+
+export type SamplingField = (typeof SAMPLING_FIELDS)[number]
 
 /** True when no knob is set, i.e. the request goes out exactly as before. */
 export function isEmptyModelParameters(params: ModelParameters): boolean {
   return (
-    params.reasoning === undefined && params.temperature === undefined && params.topP === undefined
+    params.reasoning === undefined && SAMPLING_FIELDS.every((field) => params[field] === undefined)
   )
 }
 
@@ -83,8 +107,8 @@ export interface ModelParameterSupport {
   reasoning: readonly ReasoningLevel[]
   /** How an accepted level reaches the provider. */
   reasoningWire: ReasoningWire
-  /** Whether `temperature` / `top_p` are accepted. */
-  sampling: boolean
+  /** Sampling knobs this selection accepts; empty when it takes none. */
+  sampling: readonly SamplingField[]
   /** Upper bound for `temperature` (Anthropic caps at 1, OpenAI-shaped at 2). */
   temperatureMax: number
   /**
@@ -103,9 +127,27 @@ export interface ModelParameterSupport {
 const NO_PARAMETERS: ModelParameterSupport = {
   reasoning: [],
   reasoningWire: 'none',
-  sampling: false,
+  sampling: [],
   temperatureMax: 1,
 }
+
+/**
+ * What each transport will actually take.
+ *
+ * `temperature` and `top_p` are the only two that are universal. The rest split
+ * by lineage rather than by vendor quality: `top_k` and `min_p` are truncation
+ * cutoffs from the open-weights world, carried by every OpenAI-*compatible*
+ * server (vLLM, llama.cpp, LM Studio) and by OpenRouter, but not parameters
+ * OpenAI itself defines — sending them to `api.openai.com` is a 400.
+ * `presence_penalty` is the mirror image: an OpenAI parameter with no Anthropic
+ * equivalent. Anthropic's own addition is `top_k`, which its newest models
+ * dropped alongside the other sampling controls.
+ */
+const OPENAI_COMPATIBLE_SAMPLING: readonly SamplingField[] = SAMPLING_FIELDS
+const OPENAI_SAMPLING: readonly SamplingField[] = ['temperature', 'topP', 'presencePenalty']
+const ANTHROPIC_SAMPLING: readonly SamplingField[] = ['temperature', 'topP', 'topK']
+/** All a route we cannot identify is safe to be offered. */
+const UNIVERSAL_SAMPLING: readonly SamplingField[] = ['temperature', 'topP']
 
 /** Namespaces that hand the whole turn to something owning its own settings. */
 const AGENT_NAMESPACES: ReadonlySet<ModelNamespace> = new Set(['acp', 'remote-agent', 'pack-model'])
@@ -179,7 +221,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
     return {
       reasoning: withoutOff(FULL_EFFORT_LADDER),
       reasoningWire: 'anthropic-effort',
-      sampling: false,
+      sampling: [],
       temperatureMax: 1,
     }
   }
@@ -187,7 +229,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
     return {
       reasoning: CAPPED_EFFORT_LADDER,
       reasoningWire: 'anthropic-effort',
-      sampling: true,
+      sampling: ANTHROPIC_SAMPLING,
       temperatureMax: 1,
     }
   }
@@ -196,7 +238,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
   return {
     reasoning: BUDGET_LADDER,
     reasoningWire: 'anthropic-budget',
-    sampling: true,
+    sampling: ANTHROPIC_SAMPLING,
     temperatureMax: 1,
   }
 }
@@ -206,11 +248,11 @@ function openAiSupport(modelId: string): ModelParameterSupport {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: 'openai-effort',
-      sampling: false,
+      sampling: [],
       temperatureMax: 2,
     }
   }
-  return { reasoning: [], reasoningWire: 'none', sampling: true, temperatureMax: 2 }
+  return { reasoning: [], reasoningWire: 'none', sampling: OPENAI_SAMPLING, temperatureMax: 2 }
 }
 
 /**
@@ -241,14 +283,14 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     if (selection.modelId.startsWith('gpt')) return openAiSupport(selection.modelId)
     // An unrecognised bare id is routed by whichever key is configured, so we
     // cannot say what it takes. Offer sampling only — the safe intersection.
-    return { reasoning: [], reasoningWire: 'none', sampling: true, temperatureMax: 2 }
+    return { reasoning: [], reasoningWire: 'none', sampling: UNIVERSAL_SAMPLING, temperatureMax: 2 }
   }
   // OpenAI-compatible transports (OpenRouter, LM Studio, extra providers). The
   // request shape is fixed; which levels the upstream model honours is not.
   return {
     reasoning: OPENAI_COMPATIBLE_LADDER,
     reasoningWire: selection.namespace === 'openrouter' ? 'openrouter' : 'openai-effort',
-    sampling: true,
+    sampling: OPENAI_COMPATIBLE_SAMPLING,
     temperatureMax: 2,
     upstreamDecides: true,
   }
@@ -262,6 +304,49 @@ function roundToStep(value: number): number {
   // Two decimals: enough for the values vendors actually publish (top_p 0.95,
   // temperature 0.7) without carrying float noise onto the wire.
   return Math.round(value * 100) / 100
+}
+
+/**
+ * Accepted range for each knob, and how to round a typed value into it.
+ *
+ * `temperature`'s ceiling is the one that varies by family, so it is read from
+ * {@link ModelParameterSupport.temperatureMax} instead of from here. The others
+ * are properties of the parameter rather than of the model: a `top_k` is a count
+ * of candidate tokens on every server that implements it, and a
+ * `presence_penalty` runs −2…2 wherever it exists.
+ */
+export interface SamplingBounds {
+  min: number
+  max: number
+  /** A whole-number count rather than a probability or a weight. */
+  integer?: boolean
+  /** The value that means "leave this off", where the parameter has one. */
+  neutral?: number
+}
+
+export const SAMPLING_BOUNDS: Readonly<Record<SamplingField, SamplingBounds>> = {
+  temperature: { min: 0, max: 2 },
+  topP: { min: 0, max: 1, neutral: 1 },
+  // Upper bound is generous rather than principled: servers differ, and 0
+  // (llama.cpp) or -1 (vLLM) both mean "consider everything".
+  topK: { min: 0, max: 500, integer: true, neutral: 0 },
+  minP: { min: 0, max: 1, neutral: 0 },
+  presencePenalty: { min: -2, max: 2, neutral: 0 },
+  // 1 is the identity here, not 0 — the value divides the logits of tokens
+  // already seen, so 0 would be a hard ban rather than no penalty.
+  repetitionPenalty: { min: 0, max: 2, neutral: 1 },
+}
+
+function sanitizeSampling(
+  field: SamplingField,
+  value: unknown,
+  temperatureMax: number,
+): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  const bounds = SAMPLING_BOUNDS[field]
+  const max = field === 'temperature' ? temperatureMax : bounds.max
+  const clamped = clamp(value, bounds.min, max)
+  return bounds.integer ? Math.round(clamped) : roundToStep(clamped)
 }
 
 /**
@@ -281,13 +366,9 @@ export function sanitizeModelParameters(
   if (params.reasoning !== undefined && support.reasoning.includes(params.reasoning)) {
     sanitized.reasoning = params.reasoning
   }
-  if (support.sampling) {
-    if (typeof params.temperature === 'number' && Number.isFinite(params.temperature)) {
-      sanitized.temperature = roundToStep(clamp(params.temperature, 0, support.temperatureMax))
-    }
-    if (typeof params.topP === 'number' && Number.isFinite(params.topP)) {
-      sanitized.topP = roundToStep(clamp(params.topP, 0, 1))
-    }
+  for (const field of support.sampling) {
+    const value = sanitizeSampling(field, params[field], support.temperatureMax)
+    if (value !== undefined) sanitized[field] = value
   }
   return sanitized
 }
@@ -369,6 +450,38 @@ const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: str
     // reasoning, so the card's own recipe needs the room it asks for.
     outputCeiling: { tokens: 384_000, fromReasoning: 'high' },
   },
+  {
+    match: 'qwen3.6-35b-a3b',
+    label: 'Qwen’s thinking-mode recipe',
+    source: 'https://huggingface.co/Qwen/Qwen3.6-35B-A3B',
+    // The card publishes three sets, split by mode and task rather than by
+    // "agentic": thinking/general, thinking/precise-coding (temperature 0.6,
+    // presence_penalty 0), and instruct/non-thinking. This is the first.
+    //
+    // Choosing between the coding set and the general one is the only judgement
+    // in this row, and the card settles it: its own agentic evals — SWE-Bench on
+    // a "bash + file-edit tools" scaffold, Terminal-Bench 2.0 under an agent
+    // harness — ran temp=1.0, top_p=0.95, top_k=20, which is the general set.
+    // The coding set is for single-shot generation (its example is WebDev), not
+    // for a tool loop. Copse is the former shape.
+    //
+    // No `reasoning`: the model thinks by default and exposes no effort ladder,
+    // so the recipe is about sampling only. Sending an effort would be us
+    // inventing a control the card never names.
+    params: {
+      temperature: 1,
+      topP: 0.95,
+      topK: 20,
+      minP: 0,
+      presencePenalty: 1.5,
+      repetitionPenalty: 1,
+    },
+    // Deliberately no `outputCeiling`. The card does recommend an output length
+    // (32,768 for most queries, 81,920 for hard problems), but as adequacy
+    // advice, not tied to a reasoning depth — and a ceiling we send is a cap
+    // that can truncate. Nothing constrains output today; leaving it that way is
+    // the safer reading of "sufficient space".
+  },
 ]
 
 function findRecommendation(
@@ -376,7 +489,12 @@ function findRecommendation(
 ): (ModelParameterRecommendation & { match: string }) | undefined {
   const selection = parseModelSelection(model)
   if (AGENT_NAMESPACES.has(selection.namespace) || selection.namespace === 'auto') return undefined
-  return RECOMMENDATIONS.find((entry) => selection.modelId.includes(entry.match))
+  // Case-insensitive because the same weights are addressed differently by each
+  // route: Hugging Face keeps the vendor's capitalisation (`Qwen/Qwen3.6-35B-A3B`)
+  // while OpenRouter and LM Studio lowercase it. A recipe that applied to one
+  // spelling and not the other would look like a bug in the picker.
+  const id = selection.modelId.toLowerCase()
+  return RECOMMENDATIONS.find((entry) => id.includes(entry.match))
 }
 
 /**
@@ -457,6 +575,7 @@ export interface AnthropicParameterFields {
   output_config?: { effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
   temperature?: number
   top_p?: number
+  top_k?: number
 }
 
 const ANTHROPIC_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
@@ -495,6 +614,7 @@ export function anthropicParameterFields(
   }
   if (params.temperature !== undefined) fields.temperature = params.temperature
   if (params.topP !== undefined) fields.top_p = params.topP
+  if (params.topK !== undefined) fields.top_k = params.topK
   return fields
 }
 
@@ -503,6 +623,23 @@ export interface OpenAIParameterFields {
   reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   temperature?: number
   top_p?: number
+  top_k?: number
+  min_p?: number
+  presence_penalty?: number
+  repetition_penalty?: number
+}
+
+/** The numeric subset of the request shape — every key a sampling knob maps to. */
+type OpenAISamplingKey = Exclude<keyof OpenAIParameterFields, 'reasoning_effort'>
+
+/** Each knob's OpenAI-shaped request key. */
+const OPENAI_SAMPLING_KEYS: Readonly<Record<SamplingField, OpenAISamplingKey>> = {
+  temperature: 'temperature',
+  topP: 'top_p',
+  topK: 'top_k',
+  minP: 'min_p',
+  presencePenalty: 'presence_penalty',
+  repetitionPenalty: 'repetition_penalty',
 }
 
 /**
@@ -520,8 +657,10 @@ export function openAiParameterFields(params: ModelParameters): OpenAIParameterF
   if (params.reasoning !== undefined) {
     fields.reasoning_effort = params.reasoning === 'off' ? 'none' : params.reasoning
   }
-  if (params.temperature !== undefined) fields.temperature = params.temperature
-  if (params.topP !== undefined) fields.top_p = params.topP
+  for (const field of SAMPLING_FIELDS) {
+    const value = params[field]
+    if (value !== undefined) fields[OPENAI_SAMPLING_KEYS[field]] = value
+  }
   return fields
 }
 
@@ -532,10 +671,21 @@ export interface ResponsesParameterFields {
   top_p?: number
 }
 
-/** {@link openAiParameterFields} in the Responses API's request shape. */
+/**
+ * {@link openAiParameterFields} in the Responses API's request shape.
+ *
+ * Only the two sampling knobs that API defines: it has no penalties, and the
+ * open-weights cutoffs (`top_k`, `min_p`) were never OpenAI parameters. Picked
+ * field by field rather than spread, so a knob added above cannot silently
+ * reach a request shape with no place for it.
+ */
 export function responsesParameterFields(params: ModelParameters): ResponsesParameterFields {
-  const { reasoning_effort: effort, ...sampling } = openAiParameterFields(params)
-  return { ...sampling, ...(effort === undefined ? {} : { reasoning: { effort } }) }
+  const { reasoning_effort: effort, temperature, top_p: topP } = openAiParameterFields(params)
+  return {
+    ...(temperature === undefined ? {} : { temperature }),
+    ...(topP === undefined ? {} : { top_p: topP }),
+    ...(effort === undefined ? {} : { reasoning: { effort } }),
+  }
 }
 
 /**
@@ -565,10 +715,10 @@ export function decodeModelParameters(value: unknown): ModelParameters {
   const record: Record<string, unknown> = { ...value }
   const params: ModelParameters = {}
   if (isReasoningLevel(record['reasoning'])) params.reasoning = record['reasoning']
-  const temperature = decodeNumber(record['temperature'])
-  if (temperature !== undefined) params.temperature = temperature
-  const topP = decodeNumber(record['topP'])
-  if (topP !== undefined) params.topP = topP
+  for (const field of SAMPLING_FIELDS) {
+    const value = decodeNumber(record[field])
+    if (value !== undefined) params[field] = value
+  }
   return params
 }
 

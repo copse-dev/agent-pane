@@ -11,8 +11,10 @@ import {
   recommendedModelParameters,
   recommendedOutputCeiling,
   openAiParameterFields,
+  SAMPLING_FIELDS,
   openRouterReasoningBody,
   resolveModelParameters,
+  responsesParameterFields,
   sanitizeModelParameters,
 } from './model-parameters.ts'
 
@@ -37,7 +39,7 @@ describe('modelParameterSupport', () => {
   it('offers the full effort ladder and no sampling on the models that removed it', () => {
     for (const model of ['claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5']) {
       const support = modelParameterSupport(model)
-      assert.equal(support.sampling, false, model)
+      assert.deepEqual([...support.sampling], [], model)
       assert.equal(support.reasoningWire, 'anthropic-effort', model)
       assert.ok(support.reasoning.includes('xhigh'), model)
       assert.ok(support.reasoning.includes('max'), model)
@@ -46,7 +48,9 @@ describe('modelParameterSupport', () => {
 
   it('keeps sampling and drops xhigh on the 4.6 generation', () => {
     const support = modelParameterSupport('claude-sonnet-4-6')
-    assert.equal(support.sampling, true)
+    // Anthropic's own sampling set: top_k, but none of the open-weights
+    // cutoffs and no presence penalty.
+    assert.deepEqual([...support.sampling], ['temperature', 'topP', 'topK'])
     assert.equal(support.temperatureMax, 1)
     assert.equal(support.reasoningWire, 'anthropic-effort')
     assert.equal(support.reasoning.includes('xhigh'), false)
@@ -61,30 +65,31 @@ describe('modelParameterSupport', () => {
   it('falls back to a thinking budget on pre-effort Claude models', () => {
     const support = modelParameterSupport('claude-haiku-4-5')
     assert.equal(support.reasoningWire, 'anthropic-budget')
-    assert.equal(support.sampling, true)
+    assert.deepEqual([...support.sampling], ['temperature', 'topP', 'topK'])
     assert.deepEqual([...support.reasoning], ['off', 'low', 'medium', 'high'])
   })
 
   it('resolves a dated snapshot to its family', () => {
-    assert.equal(modelParameterSupport('claude-opus-4-8-20260101').sampling, false)
+    assert.deepEqual([...modelParameterSupport('claude-opus-4-8-20260101').sampling], [])
   })
 
   it('gives OpenAI reasoning models effort without sampling, and gpt-4o the reverse', () => {
     const gpt5 = modelParameterSupport('gpt-5.6-sol')
     assert.equal(gpt5.reasoningWire, 'openai-effort')
-    assert.equal(gpt5.sampling, false)
+    assert.deepEqual([...gpt5.sampling], [])
     assert.ok(gpt5.reasoning.includes('minimal'))
 
     const gpt4o = modelParameterSupport('gpt-4o')
     assert.deepEqual([...gpt4o.reasoning], [])
-    assert.equal(gpt4o.sampling, true)
+    // presence_penalty is OpenAI's; top_k and min_p never were.
+    assert.deepEqual([...gpt4o.sampling], ['temperature', 'topP', 'presencePenalty'])
     assert.equal(gpt4o.temperatureMax, 2)
   })
 
   it('routes OpenRouter through its unified reasoning field', () => {
     const support = modelParameterSupport('openrouter:deepseek/deepseek-v4-flash')
     assert.equal(support.reasoningWire, 'openrouter')
-    assert.equal(support.sampling, true)
+    assert.deepEqual([...support.sampling], [...SAMPLING_FIELDS])
     assert.equal(support.upstreamDecides, true)
     assert.ok(support.reasoning.includes('max'))
   })
@@ -93,7 +98,8 @@ describe('modelParameterSupport', () => {
     for (const model of ['lmstudio:qwen3-coder', 'deepseek:deepseek-chat']) {
       const support = modelParameterSupport(model)
       assert.equal(support.reasoningWire, 'openai-effort', model)
-      assert.equal(support.sampling, true, model)
+      // An OpenAI-compatible server takes the open-weights knobs too.
+      assert.deepEqual([...support.sampling], [...SAMPLING_FIELDS], model)
       assert.equal(support.upstreamDecides, true, model)
     }
   })
@@ -106,7 +112,7 @@ describe('modelParameterSupport', () => {
     ]) {
       const support = modelParameterSupport(model)
       assert.deepEqual([...support.reasoning], [], model)
-      assert.equal(support.sampling, false, model)
+      assert.deepEqual([...support.sampling], [], model)
       assert.ok(support.unavailableReason, model)
     }
   })
@@ -154,6 +160,50 @@ describe('sanitizeModelParameters', () => {
       sanitizeModelParameters({ reasoning: 'high', temperature: 0.5 }, 'acp:claude-code'),
       {},
     )
+  })
+
+  it('keeps the open-weights knobs on a server that implements them', () => {
+    const params = { topK: 20, minP: 0, presencePenalty: 1.5, repetitionPenalty: 1 }
+    assert.deepEqual(sanitizeModelParameters(params, 'lmstudio:qwen3.6-35b-a3b'), params)
+  })
+
+  it('drops top_k and min_p for OpenAI, which has no such parameters', () => {
+    assert.deepEqual(
+      sanitizeModelParameters(
+        { temperature: 0.7, topK: 20, minP: 0.1, presencePenalty: 1, repetitionPenalty: 1.2 },
+        'gpt-4o',
+      ),
+      { temperature: 0.7, presencePenalty: 1 },
+    )
+  })
+
+  it('drops presence_penalty for Anthropic, which has no equivalent', () => {
+    assert.deepEqual(
+      sanitizeModelParameters({ topK: 20, presencePenalty: 1.5 }, 'claude-sonnet-4-6'),
+      { topK: 20 },
+    )
+  })
+
+  it('rounds top-k to a whole number of candidates', () => {
+    assert.deepEqual(sanitizeModelParameters({ topK: 20.6 }, 'lmstudio:qwen'), { topK: 21 })
+  })
+
+  it('clamps each knob to its own range, not to a shared one', () => {
+    assert.deepEqual(
+      sanitizeModelParameters(
+        { topK: 9_000, minP: 2, presencePenalty: -5, repetitionPenalty: 7 },
+        'lmstudio:qwen',
+      ),
+      { topK: 500, minP: 1, presencePenalty: -2, repetitionPenalty: 2 },
+    )
+  })
+
+  it('keeps a negative presence penalty, which is a real setting', () => {
+    // Unlike the others this range straddles zero, so clamping at 0 would
+    // silently turn "encourage repetition" into "off".
+    assert.deepEqual(sanitizeModelParameters({ presencePenalty: -0.5 }, 'gpt-4o'), {
+      presencePenalty: -0.5,
+    })
   })
 })
 
@@ -234,6 +284,53 @@ describe('openAiParameterFields', () => {
 
   it('sends nothing when nothing is set', () => {
     assert.deepEqual(openAiParameterFields({}), {})
+  })
+
+  it('maps every knob onto its snake_case request key', () => {
+    assert.deepEqual(
+      openAiParameterFields({
+        temperature: 1,
+        topP: 0.95,
+        topK: 20,
+        minP: 0,
+        presencePenalty: 1.5,
+        repetitionPenalty: 1,
+      }),
+      {
+        temperature: 1,
+        top_p: 0.95,
+        top_k: 20,
+        min_p: 0,
+        presence_penalty: 1.5,
+        repetition_penalty: 1,
+      },
+    )
+  })
+
+  it('keeps a zero, which is a value rather than an absence', () => {
+    // `min_p: 0` is Qwen's published setting; treating it as unset would send a
+    // different request from the one the card asks for.
+    assert.deepEqual(openAiParameterFields({ minP: 0, presencePenalty: 0 }), {
+      min_p: 0,
+      presence_penalty: 0,
+    })
+  })
+})
+
+describe('responsesParameterFields', () => {
+  it('carries only the knobs that API defines', () => {
+    assert.deepEqual(
+      responsesParameterFields({
+        reasoning: 'high',
+        temperature: 0.6,
+        topP: 0.95,
+        topK: 20,
+        minP: 0,
+        presencePenalty: 1.5,
+        repetitionPenalty: 1,
+      }),
+      { reasoning: { effort: 'high' }, temperature: 0.6, top_p: 0.95 },
+    )
   })
 })
 
@@ -331,6 +428,37 @@ describe('recommendedModelParameters', () => {
   it('never offers a recipe for a selection that takes no parameters', () => {
     assert.equal(recommendedModelParameters('acp:deepseek-v4-flash'), null)
     assert.equal(recommendedModelParameters('auto:best-value'), null)
+  })
+
+  it('returns Qwen’s thinking-mode set, the one its own agent evals ran', () => {
+    const recommendation = recommendedModelParameters('openrouter:qwen/qwen3.6-35b-a3b')
+    assert.ok(recommendation)
+    assert.deepEqual(recommendation.params, {
+      temperature: 1,
+      topP: 0.95,
+      topK: 20,
+      minP: 0,
+      presencePenalty: 1.5,
+      repetitionPenalty: 1,
+    })
+    // No `reasoning` above: the card ties its recipe to thinking mode, which is
+    // the default, and names no effort ladder.
+    //
+    // Advice about adequate output length is not a ceiling to send.
+    assert.equal(recommendation.outputCeiling, undefined)
+  })
+
+  it('matches a model card’s own capitalisation, not just the lowercased route', () => {
+    // Hugging Face addresses it as `Qwen/Qwen3.6-35B-A3B`; OpenRouter lowercases.
+    assert.ok(recommendedModelParameters('huggingface:Qwen/Qwen3.6-35B-A3B'))
+  })
+
+  it('drops the knobs a route cannot take, rather than offering all six', () => {
+    // A bare unrecognised id could be routed to either cloud vendor, so only the
+    // two universal knobs survive.
+    const recommendation = recommendedModelParameters('qwen3.6-35b-a3b')
+    assert.ok(recommendation)
+    assert.deepEqual(recommendation.params, { temperature: 1, topP: 0.95 })
   })
 
   it('carries the published output ceiling alongside the tunable values', () => {
