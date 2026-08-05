@@ -158,6 +158,20 @@ export function createModelParametersSection(
     )
   }
 
+  /**
+   * The one thing here that is applied rather than offered: a model card that
+   * publishes an output ceiling for its deeper reasoning levels gets that
+   * ceiling sent automatically, so the level says whether it is in force.
+   */
+  function ceilingHint(): string {
+    const ceiling = recommendedModelParameters(current)?.outputCeiling
+    if (!ceiling) return ''
+    const tokens = `${String(Math.round(ceiling.tokens / 1000))}K`
+    // Phrased for the whole ladder rather than for the level currently picked,
+    // so it stays true without re-rendering the field under the user's cursor.
+    return `At ${ceiling.fromReasoning} and deeper, Copse allows up to ${tokens} output tokens, as this model’s card recommends.`
+  }
+
   function render(): void {
     const support = modelParameterSupport(current)
     const params = selected()
@@ -197,7 +211,14 @@ export function createModelParametersSection(
         uiField({
           label: 'Reasoning',
           control: reasoningSelect,
-          hint: 'How much the model thinks before answering. Higher costs more tokens and time.',
+          hint: [
+            'How much the model thinks before answering. Higher costs more tokens and time.',
+            // The one value applied without being asked for, so it is stated
+            // where the level that triggers it is chosen.
+            ceilingHint(),
+          ]
+            .filter(Boolean)
+            .join(' '),
         }),
       )
     }

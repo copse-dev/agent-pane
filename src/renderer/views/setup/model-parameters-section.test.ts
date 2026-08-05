@@ -214,6 +214,23 @@ describe('model parameters section', () => {
     assert.equal(link.rel, 'noopener noreferrer')
   })
 
+  it('says which levels bring the card’s output ceiling with them', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:deepseek/deepseek-v4-flash-0731')
+
+    // The one value applied rather than offered, so it is stated beside the
+    // control that triggers it.
+    assert.match(section.root.textContent, /At high and deeper, Copse allows up to 384K output/)
+  })
+
+  it('says nothing about a ceiling for a model that publishes none', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('claude-opus-5')
+    assert.doesNotMatch(section.root.textContent, /output tokens/)
+  })
+
   it('hides the offer for a model with no published recipe', async () => {
     const { api, store } = stubSettings()
     const section = createModelParametersSection(api)

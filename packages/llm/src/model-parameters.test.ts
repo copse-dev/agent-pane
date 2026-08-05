@@ -9,6 +9,7 @@ import {
   isReasoningLevel,
   modelParameterSupport,
   recommendedModelParameters,
+  recommendedOutputCeiling,
   openAiParameterFields,
   openRouterReasoningBody,
   resolveModelParameters,
@@ -330,5 +331,43 @@ describe('recommendedModelParameters', () => {
   it('never offers a recipe for a selection that takes no parameters', () => {
     assert.equal(recommendedModelParameters('acp:deepseek-v4-flash'), null)
     assert.equal(recommendedModelParameters('auto:best-value'), null)
+  })
+
+  it('carries the published output ceiling alongside the tunable values', () => {
+    const recommendation = recommendedModelParameters('openrouter:deepseek/deepseek-v4-flash-0731')
+    assert.ok(recommendation)
+    assert.deepEqual(recommendation.outputCeiling, { tokens: 384_000, fromReasoning: 'high' })
+  })
+})
+
+describe('recommendedOutputCeiling', () => {
+  const MODEL = 'openrouter:deepseek/deepseek-v4-flash-0731'
+
+  it('applies at the level the card names, and deeper', () => {
+    assert.equal(recommendedOutputCeiling(MODEL, { reasoning: 'high' }), 384_000)
+    assert.equal(recommendedOutputCeiling(MODEL, { reasoning: 'xhigh' }), 384_000)
+    assert.equal(recommendedOutputCeiling(MODEL, { reasoning: 'max' }), 384_000)
+  })
+
+  it('does not apply below it', () => {
+    for (const reasoning of ['off', 'minimal', 'low', 'medium'] as const) {
+      assert.equal(recommendedOutputCeiling(MODEL, { reasoning }), undefined)
+    }
+  })
+
+  it('does not apply when the user chose no level at all', () => {
+    // A ceiling is published *for* the deep levels; without one the model runs
+    // at its own default effort, so its own default output cap belongs with it.
+    assert.equal(recommendedOutputCeiling(MODEL, {}), undefined)
+    assert.equal(recommendedOutputCeiling(MODEL, { temperature: 1, topP: 0.95 }), undefined)
+  })
+
+  it('holds none for a model with no published card', () => {
+    assert.equal(recommendedOutputCeiling('claude-opus-5', { reasoning: 'max' }), undefined)
+    assert.equal(recommendedOutputCeiling('lmstudio:qwen3-coder', { reasoning: 'max' }), undefined)
+  })
+
+  it('holds none for a selection that owns its own settings', () => {
+    assert.equal(recommendedOutputCeiling('acp:deepseek-v4-flash', { reasoning: 'max' }), undefined)
   })
 })

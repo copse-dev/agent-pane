@@ -326,6 +326,24 @@ export interface ModelParameterRecommendation {
   /** Where it comes from, so a user can check it rather than trust us. */
   source: string
   params: ModelParameters
+  /**
+   * An output ceiling the card publishes for its deeper reasoning levels.
+   *
+   * Unlike {@link params} this one *is* applied automatically, because it is not
+   * a preference: a model told to reason at `max` that then runs into a low
+   * default output cap gets truncated mid-answer, and nothing on screen would
+   * explain why. There is also nothing for the user to weigh — a ceiling is
+   * permission to use tokens, not a decision to spend them, so raising it costs
+   * nothing on a turn that ends sooner.
+   */
+  outputCeiling?: RecommendedOutputCeiling
+}
+
+export interface RecommendedOutputCeiling {
+  /** Maximum output tokens to allow, as published. */
+  tokens: number
+  /** The shallowest reasoning level the ceiling is published for. */
+  fromReasoning: ReasoningLevel
 }
 
 /**
@@ -346,8 +364,41 @@ const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: str
     // than the 1.0 it recommends otherwise. Copse runs a tool loop, so the
     // agentic column is the applicable one.
     params: { reasoning: 'max', temperature: 1, topP: 0.95 },
+    // "For the `high` and `max` reasoning effort levels, we recommend a maximum
+    // output length of 384K tokens" — the deep levels spend the output budget on
+    // reasoning, so the card's own recipe needs the room it asks for.
+    outputCeiling: { tokens: 384_000, fromReasoning: 'high' },
   },
 ]
+
+function findRecommendation(
+  model: string,
+): (ModelParameterRecommendation & { match: string }) | undefined {
+  const selection = parseModelSelection(model)
+  if (AGENT_NAMESPACES.has(selection.namespace) || selection.namespace === 'auto') return undefined
+  return RECOMMENDATIONS.find((entry) => selection.modelId.includes(entry.match))
+}
+
+/**
+ * The published output ceiling for `model` at the reasoning level in `params`,
+ * or `undefined` when we hold none or the level is shallower than the one it was
+ * published for.
+ *
+ * Sent as `max_tokens`, which is a *permission* rather than a request: a turn
+ * that finishes in 2K tokens still costs 2K. So the only real risk is an
+ * endpoint that will not accept the number — an aggregator may serve the same
+ * model with a lower cap than the vendor's own API — and the OpenAI transport
+ * drops the field and retries once when that happens.
+ */
+export function recommendedOutputCeiling(
+  model: string,
+  params: ModelParameters,
+): number | undefined {
+  const ceiling = findRecommendation(model)?.outputCeiling
+  if (!ceiling || params.reasoning === undefined) return undefined
+  const level = REASONING_LEVELS.indexOf(params.reasoning)
+  return level >= REASONING_LEVELS.indexOf(ceiling.fromReasoning) ? ceiling.tokens : undefined
+}
 
 /**
  * The published recipe for `model`, sanitized against what it accepts, or
@@ -356,13 +407,16 @@ const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: str
  * three simply offers the rest.
  */
 export function recommendedModelParameters(model: string): ModelParameterRecommendation | null {
-  const selection = parseModelSelection(model)
-  if (AGENT_NAMESPACES.has(selection.namespace) || selection.namespace === 'auto') return null
-  const match = RECOMMENDATIONS.find((entry) => selection.modelId.includes(entry.match))
+  const match = findRecommendation(model)
   if (!match) return null
   const params = sanitizeModelParameters(match.params, model)
   if (isEmptyModelParameters(params)) return null
-  return { label: match.label, source: match.source, params }
+  return {
+    label: match.label,
+    source: match.source,
+    params,
+    ...(match.outputCeiling ? { outputCeiling: match.outputCeiling } : {}),
+  }
 }
 
 // ── Wire mapping ─────────────────────────────────────────────────────────────
@@ -455,6 +509,11 @@ export interface OpenAIParameterFields {
  * Map sanitized parameters onto OpenAI Chat Completions fields. `off` sends
  * `reasoning_effort: 'none'` — the value OpenAI-compatible servers use to turn
  * a hybrid model's reasoning off; `minimal` is its own level, not a synonym.
+ *
+ * The output ceiling is deliberately not here: it is resolved once per provider
+ * from the model plus the *whole* parameter set (see
+ * {@link recommendedOutputCeiling}) and carried as its own transport option, so
+ * the one code path that sends it is also the one that can drop it on rejection.
  */
 export function openAiParameterFields(params: ModelParameters): OpenAIParameterFields {
   const fields: OpenAIParameterFields = {}

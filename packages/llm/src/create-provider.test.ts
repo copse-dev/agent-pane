@@ -95,6 +95,7 @@ interface CapturedRequestBody {
   reasoning_effort?: string
   temperature?: number
   top_p?: number
+  max_tokens?: number
 }
 
 function expectOpenAIProvider(provider: LLMProvider): OpenAIProvider {
@@ -434,5 +435,63 @@ describe('tuned model parameters reach the provider', () => {
     assert.equal(request.temperature, undefined)
     assert.equal(request.top_p, undefined)
     assert.equal(request.reasoning, undefined)
+    assert.equal(request.max_tokens, undefined)
+  })
+})
+
+describe('published output ceilings', () => {
+  it('sends the card’s ceiling once reasoning reaches the level it names', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createLocalOpenAIProvider(
+          'http://localhost:1234/v1',
+          'deepseek-v4-flash-0731',
+          'lm-studio',
+          {
+            reasoning: 'max',
+          },
+        ),
+      ),
+    )
+    assert.equal(request.max_tokens, 384_000)
+  })
+
+  it('sends it on OpenRouter too, where the level rides a different field', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createOpenRouterProvider('deepseek/deepseek-v4-flash-0731', 'sk-or-test', undefined, {
+          params: { reasoning: 'high' },
+        }),
+      ),
+    )
+    assert.deepEqual(request.reasoning, { effort: 'high' })
+    assert.equal(request.max_tokens, 384_000)
+  })
+
+  it('stays out of the body at a shallower level', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createLocalOpenAIProvider(
+          'http://localhost:1234/v1',
+          'deepseek-v4-flash-0731',
+          'lm-studio',
+          {
+            reasoning: 'medium',
+          },
+        ),
+      ),
+    )
+    assert.equal(request.max_tokens, undefined)
+  })
+
+  it('stays out of the body for a model we hold no card for', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local', 'lm-studio', {
+          reasoning: 'max',
+        }),
+      ),
+    )
+    assert.equal(request.max_tokens, undefined)
   })
 })
