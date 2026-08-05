@@ -5,6 +5,7 @@ import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import type { LLMMessage, LLMTool, StreamChunk, ToolExecuteResult } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { buildProvider } from './providers/provider-selection.ts'
+import { resolveDynamicModelId } from './providers/dynamic-model.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { getSettingTrimmed } from './storage/settings.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
@@ -21,7 +22,12 @@ import {
   buildWorkerTask,
 } from './orchestration-strategy.ts'
 
-/** Resolve the configured worker model id (empty setting -> cheap default). */
+/**
+ * The configured worker *selection* (empty setting -> the best-value default).
+ * May be a dynamic selector; `resolveDynamicModelId` expands it when a step is
+ * actually delegated, so the worker tracks the user's current providers rather
+ * than whatever was reachable when they opened Settings.
+ */
 export function resolveOrchestrationWorkerModelId(): string {
   return getSettingTrimmed(ORCHESTRATION_WORKER_MODEL_SETTING) || DEFAULT_ORCHESTRATION_WORKER_MODEL
 }
@@ -85,9 +91,12 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
   const ctx = contextStorage.getStore()
   if (!ctx) return null
   return async ({ step, context, expectedOutcome, signal }) => {
-    const provider = await buildProvider(ctx.workerModel)
-    const contextWindow = await resolveContextWindow(ctx.workerModel)
-    const toolSchemaReserve = workerToolSchemaReserve(ctx.workerModel)
+    // Expand a dynamic selection per delegation, not per session: a step handed
+    // off an hour into a task should use whatever is cheapest/reachable now.
+    const workerModel = await resolveDynamicModelId(ctx.workerModel)
+    const provider = await buildProvider(workerModel)
+    const contextWindow = await resolveContextWindow(workerModel)
+    const toolSchemaReserve = workerToolSchemaReserve(workerModel)
     const workspace = getWorkspaceRoot() ?? '(none)'
     const userTask = buildWorkerTask({ step, context, expectedOutcome, workspace })
 
@@ -115,7 +124,7 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
         onSubagentChunk: ctx.onChunk,
         systemPrompt: ORCHESTRATION_WORKER_SYSTEM_PROMPT,
         userTask,
-        usageModel: ctx.workerModel,
+        usageModel: workerModel,
         kind: 'delegate',
       })
 

@@ -226,6 +226,18 @@ per-role axes can't provide. Pieces:
   genuinely clear the old bar to outrank an old model. Translated values are
   always `estimated` with the fit (and any extrapolation beyond the anchor
   range) named in `basis`.
+- **Vendor cards** (`packages/llm/src/model-cards.ts`, synced by
+  `npm run sync:model-cards` from the reviewed `scripts/data/model-cards.json`):
+  the documentation axis beside the number — a link to the model card / system
+  card its own vendor published, so a reader on the value map can check the
+  evaluation rather than take a score on trust. Same sourcing rule as the
+  measurements: a card is a cited URL with `source` + `asOf`, absent means "not
+  sourced" (no link), and a guessed slug is never acceptable because a 404 is
+  worse than nothing. `--discover` fills models listed in `wanted` from each
+  vendor's own card index; `--verify` fails the sync on link rot. Hugging Face
+  weights need no entry — the README _is_ the card, so the URL is derived from
+  the router id (whose casing came from the HF API), never from a lower-cased
+  local-catalog id.
 - **Quant blend**: intellect measurements carry `measuredBitsPerWeight: 16`
   (AA measures served full-precision endpoints), so `localBenchmarkScore()`
   quant-adjusts a local model's intellect exactly like any other axis — the UI
@@ -295,6 +307,29 @@ per-role axes can't provide. Pieces:
   `recommendedLocalSetup()` turns the catalog into a budget-fitting set of core
   roles to download; each `model.id` feeds the existing download IPC.
   _Remaining:_ a "download the recommended set" action in onboarding/settings.
+- **Phase 3.5 — dynamic selection everywhere a feature picks a model: _done._**
+  The pack-owned model settings (advisor; model-comparison reviewer A / reviewer
+  B / judge; automation schedules) and the Experimental delegated-step worker no
+  longer store a model id at all — they store a _rule_
+  (`@copse/llm/dynamic-model.ts`): best value, most capable, best on-device,
+  cheapest, "at least N on the Intelligence Index", or a role from the registry
+  above. A pinned id in those places was a judgement frozen on the day it was
+  written, going stale as keys, plan windows, local models, and the catalogue
+  moved, with nothing prompting the user to revisit it; a rule re-derives at the
+  moment the feature runs (`src/main/services/providers/dynamic-model.ts`).
+  Their Settings descriptions stopped naming a default model in the same change.
+
+  This is the role indirection generalised: `auto:role:<id>` is one selector
+  among several, so a feature can route through the user's assignments _or_
+  through a property of the model, using the same stored-string vocabulary.
+
+  Model comparison additionally resolves its three selections against one
+  candidate pool with each dynamic pick avoiding the models the earlier ones
+  took, so two rules that read the same ("most capable" for both reviewer B and
+  the judge) cannot collapse onto one model — a comparison of a model with
+  itself has nothing to compare. Pinned ids are exempt: an explicit duplicate is
+  the user's own call.
+
 - **Phase 4 — light evals:** per-role rubric tasks, "measured" catalog column,
   feedback into the classifier.
 

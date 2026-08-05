@@ -216,6 +216,12 @@ export interface IpcInvokeMap {
     args: []
     result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
   }
+  // First card URL that resolves for each model id, or null. Probe-cached in
+  // the main process, so repeat calls are usually free.
+  'modelCards:resolve': {
+    args: [modelIds: string[]]
+    result: Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
+  }
   'usage:setClaudePlanMonthlyFee': {
     args: [fee: number | null]
     result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
@@ -478,6 +484,8 @@ export interface IpcEventMap {
     },
   ]
   'update:dev_notice': []
+  /** Main asks the renderer whether the app may close while threads are working. */
+  'app:close_confirm_request': [{ id: string }]
   'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]

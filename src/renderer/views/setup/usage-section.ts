@@ -12,6 +12,7 @@ import { qsRequired } from '../../dom/helpers.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
 import {
   createIntellectFrontierPanel,
+  setModelCardApi,
   type OpenRouterFrontierSource,
 } from '../intellect-frontier-panel.ts'
 import type { PlanCoverageMode } from '@shared/plan-inclusion.ts'
@@ -531,6 +532,9 @@ export function createUsageSection(
     }
     return { models, zdrOnly, allowTraining }
   }
+  // The value map resolves each model's card link through the main process
+  // (probe + cache). Without a bridge nothing resolves and no card links show.
+  setModelCardApi(api.modelCards)
   const frontierPanel = createIntellectFrontierPanel(
     () => api.lmStudio.models(),
     () => api.settings.extraProviders(),

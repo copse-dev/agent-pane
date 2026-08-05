@@ -34,6 +34,7 @@ import {
   type OpenRouterPricedModel,
 } from '@copse/llm/frontier-candidates.ts'
 import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
+import { requestModelCards, resolvedModelCard } from './model-card-cache.ts'
 import {
   getIntellectScore,
   explainIntellectScore,
@@ -61,6 +62,9 @@ const MARGIN = { top: 14, right: 20, bottom: 34, left: 40 }
 
 /** Clearance kept between a lifted frontier label and the frontier line. */
 const LABEL_LINE_GAP = 3
+
+/** Card links warmed per render. Matches the `modelCards:resolve` batch cap. */
+const MAX_CARD_PREFETCH = 128
 
 /**
  * Compact display form of a model id for chart labels: provider prefixes and
@@ -222,6 +226,43 @@ function asFrontierCandidate(p: FrontierPoint): FrontierCandidate {
   return candidate
 }
 
+/**
+ * Append the "Card" section: a link to the vendor's own model card / system
+ * card for this model. Nothing is appended unless a card has RESOLVED — an
+ * absent or still-resolving card reads as absent, never as a placeholder link
+ * that 404s. `wireTooltip` repaints the hover card when an answer lands.
+ *
+ * The anchor opens externally: an `http(s)` `target="_blank"` inside the
+ * renderer is denied by the web-contents lockdown and handed to
+ * `shell.openExternal`, so the card opens in the user's browser without this
+ * panel needing an IPC client.
+ */
+function appendCardSection(root: HTMLElement, id: string): void {
+  const card = resolvedModelCard(id)
+  if (!card) return
+  root.append(
+    ttRow('tt-section', 'Card'),
+    ttRow(
+      'tt-line',
+      el(
+        'a',
+        {
+          class: 'tt-card-link',
+          href: card.url,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+        card.title,
+      ),
+    ),
+  )
+  if (card.kind === 'index') {
+    root.append(
+      ttRow('tt-muted', `${card.publisher} publishes this model's card behind their card index.`),
+    )
+  }
+}
+
 /** ", resets Tue" from an ISO reset time, or '' when unknown/unparseable. */
 function formatReset(resetsAt: string | null): string {
   if (!resetsAt) return ''
@@ -352,6 +393,8 @@ export function pointTooltipContent(
     )
   }
 
+  appendCardSection(root, p.id)
+
   root.append(
     ttRow(
       'tt-status',
@@ -378,6 +421,7 @@ export function unpricedTooltipContent(u: CanonicalScoredModel): HTMLElement {
   for (const step of explanation?.steps ?? []) {
     root.append(ttRow('tt-muted', `${step.step}: ${step.detail}`))
   }
+  appendCardSection(root, u.id)
   root.append(ttRow('tt-status', 'No price data yet — position on intellect only.'))
   return root
 }
@@ -389,6 +433,7 @@ export function unscoredTooltipContent(u: { id: string; costPerMTok: number }): 
   if (displayModelLabel(u.id) !== u.id) root.append(ttRow('tt-muted', u.id))
   root.append(ttRow('tt-section', 'Price'))
   root.append(ttRow('tt-line', `${formatPrice(u.costPerMTok)} blended (80% in / 20% out)`))
+  appendCardSection(root, u.id)
   root.append(ttRow('tt-status', 'No sourced intellect measurement yet — position on price only.'))
   return root
 }
@@ -427,35 +472,90 @@ export function positionFrontierTooltip(
   tip.style.top = `${String(top)}px`
 }
 
+/**
+ * How long the hover card survives after the pointer leaves its point. The card
+ * carries a model-card link, so it has to be reachable: the pointer needs to
+ * cross the {@link TOOLTIP_OFFSET_PX} gap between point and card, and during
+ * that crossing it is over neither. Entering the card cancels the pending hide.
+ */
+export const TOOLTIP_HIDE_GRACE_MS = 220
+
 /** A positioned hover layer inside `container` (which must be a positioning context). */
 export function createTooltipLayer(container: HTMLElement): FrontierTooltip {
   const tip = el('div', { class: 'frontier-tooltip', hidden: true })
   container.append(tip)
+  let hideTimer: ReturnType<typeof setTimeout> | undefined
+  const cancelHide = (): void => {
+    if (hideTimer !== undefined) clearTimeout(hideTimer)
+    hideTimer = undefined
+  }
+  const hideNow = (): void => {
+    cancelHide()
+    tip.hidden = true
+  }
+  tip.addEventListener('mouseenter', cancelHide)
+  tip.addEventListener('mouseleave', hideNow)
   return {
     show(content, evt): void {
+      cancelHide()
       tip.replaceChildren(content)
       tip.hidden = false
       positionFrontierTooltip(tip, container, evt)
     },
     hide(): void {
-      tip.hidden = true
+      // Deferred, not immediate: see TOOLTIP_HIDE_GRACE_MS.
+      cancelHide()
+      hideTimer = setTimeout(hideNow, TOOLTIP_HIDE_GRACE_MS)
     },
   }
+}
+
+/**
+ * The API used to resolve card links, set once by the panel. A module-level
+ * handle because `wireTooltip` is called from the pure SVG renderer, which has
+ * no business taking an IPC client as a parameter. Undefined in unit tests and
+ * in the demo build, where nothing is resolved and no card section renders.
+ */
+let modelCardApi: ModelCardResolveApi | undefined
+
+export type ModelCardResolveApi = Parameters<typeof requestModelCards>[1]
+
+/** Point the panel's card lookups at an IPC bridge. */
+export function setModelCardApi(api: ModelCardResolveApi | undefined): void {
+  modelCardApi = api
 }
 
 function wireTooltip(
   target: SVGElement,
   tooltip: FrontierTooltip | undefined,
   build: () => HTMLElement,
+  modelId?: string,
 ): void {
   if (!tooltip) return
+  // Resolving a card is a round-trip, so the first hover can open before the
+  // answer exists. Repaint once it lands — but only while the pointer is still
+  // on this point, or a stale reply would reopen a card the user has left.
+  let hovering = false
+  let lastEvent: MouseEvent | null = null
+  const fillCard = (): void => {
+    if (modelId === undefined) return
+    void requestModelCards([modelId], modelCardApi).then((landed) => {
+      if (!landed || !hovering || !lastEvent) return
+      tooltip.show(build(), lastEvent)
+    })
+  }
   target.addEventListener('mouseenter', (evt) => {
+    hovering = true
+    lastEvent = evt
     tooltip.show(build(), evt)
+    fillCard()
   })
   target.addEventListener('mousemove', (evt) => {
+    lastEvent = evt
     tooltip.show(build(), evt)
   })
   target.addEventListener('mouseleave', () => {
+    hovering = false
     tooltip.hide()
   })
 }
@@ -863,7 +963,7 @@ export function renderFrontierSvg(
       class: 'frontier-hit',
       'data-model-id': p.id,
     })
-    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis))
+    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis), p.id)
     else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
     const text = labelText.get(p.id)
     if (text !== undefined) {
@@ -941,7 +1041,7 @@ export function renderFrontierSvg(
             class: 'gutter-unpriced',
           })
       if (tooltip) {
-        wireTooltip(dot, tooltip, () => unpricedTooltipContent(u))
+        wireTooltip(dot, tooltip, () => unpricedTooltipContent(u), u.id)
       } else {
         const explanation = explainIntellectScore(u.id)
         dot.append(
@@ -1030,7 +1130,7 @@ export function renderFrontierSvg(
         class: dense ? 'gutter-unscored dense' : 'gutter-unscored',
       })
       if (tooltip) {
-        wireTooltip(dot, tooltip, () => unscoredTooltipContent(u))
+        wireTooltip(dot, tooltip, () => unscoredTooltipContent(u), u.id)
       } else {
         dot.append(
           svgEl(
@@ -1898,6 +1998,14 @@ export function createIntellectFrontierPanel(
       return !noTrainingOnly || isNoTrainingModelPath(u.id, routePolicy)
     })
     lastPoints = points
+    // Warm the card cache for what is plotted, so the first hover on a point
+    // usually has its answer already. Fire-and-forget: nothing repaints on the
+    // result — the hover path reads the cache, and repaints itself if an answer
+    // arrives while a card is open. Capped to the IPC batch limit.
+    void requestModelCards(
+      points.slice(0, MAX_CARD_PREFETCH).map((p) => p.id),
+      modelCardApi,
+    )
     // The unpriced gutter is off by default (it can carry hundreds); the toggle
     // overlays the top few on the left axis, the full set stays in the list.
     const applyUnpriced = (btn: HTMLButtonElement | null): void => {

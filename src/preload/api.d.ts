@@ -253,6 +253,10 @@ export interface ApiClient {
     ) => () => void
     onDevNotice: (handler: () => void) => () => void
   }
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) => Promise<void>
+    onRequest: (handler: (req: { id: string }) => void) => () => void
+  }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
@@ -377,6 +381,11 @@ export interface ApiClient {
      * (`auto:best-value` setting expands to this on new chats / agent runs).
      */
     bestValueDefault: () => Promise<string>
+    /**
+     * Concrete model id a dynamic selection (`auto:…`) resolves to right now.
+     * A pinned id is returned unchanged, so callers can pass whatever is stored.
+     */
+    resolveDynamic: (value: string) => Promise<string>
   }
   intellect: {
     /** Live Artificial Analysis model feed; empty models when no key stored. */
@@ -391,6 +400,18 @@ export interface ApiClient {
       indexVersion?: string | number
       error?: string
     }>
+  }
+  modelCards: {
+    /**
+     * The first card URL that resolves for each model id, or null where none
+     * does. Probe results are cached in the main process, so calling this for
+     * models already looked up costs no network.
+     */
+    resolve: (
+      modelIds: string[],
+    ) => Promise<
+      Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
+    >
   }
   lmStudio: {
     test: (

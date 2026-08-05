@@ -74,10 +74,10 @@ describe('new project flow', () => {
     // `undefined` off it (see helpers/composer.ts), so read its text the way the
     // editor itself does, and poll — the prompt is seeded after activation.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.waitUntil(async () => (await composerText()).includes('Introduce this project'), {
-      timeout: 15_000,
-      timeoutMsg: 'composer never received the starter prompt',
-    })
+    // `.prompt-input` is the composer's contenteditable root (see
+    // composer-editor.ts), not an <input>/<textarea> — it has no `value`
+    // property, so `toHaveValue` reads undefined and can never match.
+    await expect($('.prompt-input')).toHaveText(expect.stringContaining('Introduce this project'))
     await saveAppScreenshot('new-project-active.png')
 
     // The folder was scaffolded under `<parent>/<name>` with AGENT.md + README.md
@@ -98,9 +98,10 @@ describe('new project flow', () => {
     await addBtn.waitForDisplayed({ timeout: 10_000 })
     await addBtn.click()
 
-    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
-    // `.map` on the chainable array resolves the getText() calls itself; awaiting
-    // `$$` first and mapping by hand hands Promise.all a non-iterable.
+    // `$$(…).map` is WebdriverIO's own async map: it awaits each element and
+    // resolves to a plain string[]. Wrapping it in `Promise.all` hands a single
+    // Promise to something expecting an iterable, which throws. This was the only
+    // `Promise.all` in the e2e suite — every other spec uses the idiom below.
     const labels = (await $$('.context-menu-item').map((item) => item.getText())).join('|')
     expect(labels).toContain('New project')
     expect(labels).toContain('Open folder')
