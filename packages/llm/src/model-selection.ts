@@ -22,6 +22,7 @@ import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
 import {
   ACP_MODEL_PREFIX,
   AGENT_MODEL_SEP,
+  AUTO_MODEL_PREFIX,
   LMSTUDIO_MODEL_PREFIX,
   PACK_MODEL_PREFIX,
   REMOTE_AGENT_MODEL_PREFIX,
@@ -34,9 +35,22 @@ import {
  * Anthropic or OpenAI. `extra-provider` is any `<slug>:` that is not one of the
  * reserved namespaces; whether that slug is actually configured is the
  * extra-provider store's question, not this parser's.
+ *
+ * `auto` is the odd one out: it names no route at all but a *rule* for choosing
+ * one (`dynamic-model.ts`), which the host resolves into one of the others
+ * before anything is sent. It is classified here because `auto:` is shaped
+ * exactly like a provider slug, and without this it would be routed to a
+ * provider named "auto".
  */
 export type ModelNamespace =
-  'cloud' | 'openrouter' | 'lmstudio' | 'extra-provider' | 'remote-agent' | 'acp' | 'pack-model'
+  | 'cloud'
+  | 'openrouter'
+  | 'lmstudio'
+  | 'extra-provider'
+  | 'remote-agent'
+  | 'acp'
+  | 'pack-model'
+  | 'auto'
 
 export interface ModelSelection {
   namespace: ModelNamespace
@@ -79,6 +93,8 @@ const AGENT_SHAPED: ReadonlyArray<readonly [ModelNamespace, string, string]> = [
 const SLUG_SHAPED: ReadonlyArray<readonly [ModelNamespace, string]> = [
   ['openrouter', OPENROUTER_MODEL_PREFIX],
   ['lmstudio', LMSTUDIO_MODEL_PREFIX],
+  // `id` here is the rule body (`best-value`, `min-intellect:45`), not a model.
+  ['auto', AUTO_MODEL_PREFIX],
 ]
 
 /** An extra provider's slug. */

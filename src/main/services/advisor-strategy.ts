@@ -3,6 +3,7 @@ import { isAcpModel, parseAcpModelSelection } from '@shared/acp.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm/model-intellect.ts'
+import { BEST_INTELLECT_MODEL_SELECTOR, isDynamicModel } from '@copse/llm/dynamic-model.ts'
 
 /**
  * Experimental, opt-in "advisor strategy" feature (tracked in
@@ -32,9 +33,10 @@ import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm
  * reads it (a `roleModels` `advisor` assignment still wins first).
  */
 
-/** Default advisor model when nothing is configured (a frontier Claude). Kept
- *  equal to `DEFAULT_ADVISOR_MODEL_ID` on the Electron-free pack side. */
-export const DEFAULT_ADVISOR_MODEL = 'claude-opus-4-8'
+/** Default advisor selection when nothing is configured — the most capable
+ *  reachable model, chosen at consult time. Kept equal to
+ *  `DEFAULT_ADVISOR_MODEL_ID` on the Electron-free pack side. */
+export const DEFAULT_ADVISOR_MODEL = BEST_INTELLECT_MODEL_SELECTOR
 
 /**
  * Advisor sub-inference output cap. Mirrors the native tool's recommended
@@ -259,6 +261,19 @@ export function validateAdvisorPair(
       native,
       level: 'good',
       reason: 'Native-compatible pairing: also valid for Claude’s server-side advisor tool.',
+    }
+  }
+  // A dynamic selection names a *rule*, not a model, so there is nothing to
+  // grade until it resolves. Settings expands both sides through
+  // `models:resolveDynamic` before calling this; the branch covers callers that
+  // cannot (and a selector nobody has resolved yet).
+  if (isDynamicModel(advisorModel) || isDynamicModel(executorModel)) {
+    return {
+      ok: true,
+      native,
+      level: 'info',
+      reason:
+        'One side of this pairing is chosen dynamically, so the model is picked when the advisor actually runs — the strength comparison happens then.',
     }
   }
   if (isAcpModel(advisorModel)) {

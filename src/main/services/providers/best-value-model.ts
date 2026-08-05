@@ -7,6 +7,7 @@ import {
   frontierForKnownModels,
   pickBestValueFrontierModel,
   type FrontierCandidate,
+  type FrontierPoint,
 } from '@copse/llm/pareto-frontier.ts'
 import {
   extraProviderFrontierCandidates,
@@ -81,7 +82,11 @@ function availableCloudModelIds(): Set<string> {
   return out
 }
 
-function toRoutableModelId(candidate: FrontierCandidate): string {
+/**
+ * The id a candidate is *selected* as. Local candidates are catalogued by bare
+ * model id but must be routed through the LM Studio namespace.
+ */
+export function toRoutableModelId(candidate: FrontierCandidate): string {
   if (candidate.local && !candidate.id.startsWith(LMSTUDIO_MODEL_PREFIX)) {
     return `${LMSTUDIO_MODEL_PREFIX}${candidate.id}`
   }
@@ -89,16 +94,17 @@ function toRoutableModelId(candidate: FrontierCandidate): string {
 }
 
 /**
- * Compute the best plan/price Pareto model among configured providers.
- * Falls back to {@link FALLBACK_APP_CHAT_MODEL} when the frontier is empty.
+ * Every model the user can actually route to today, scored on the canonical
+ * Intelligence Index and priced with plan coverage applied — the candidate pool
+ * every dynamic selector picks from (`dynamic-model.ts`), and the frontier the
+ * best-value default is chosen off. Grouped by model identity, so the same
+ * weights offered by several providers appear once at their best price.
+ *
+ * Discovery-only models (available via Artificial Analysis but with no
+ * configured route) are excluded by `isRoutableCandidate` — a selector must
+ * always name something that can run.
  */
-export async function resolveBestValueChatModel(): Promise<string> {
-  // Mock LLM accepts any model id — keep the concrete local fallback so e2e /
-  // agent loops don't wait on catalog/plan fetches.
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
-    return FALLBACK_APP_CHAT_MODEL
-  }
-
+export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
   const [localIds, openRouterModels, planUsage] = await Promise.all([
     loadedLocalModelIds(),
     openRouterPricedModels(),
@@ -149,12 +155,24 @@ export async function resolveBestValueChatModel(): Promise<string> {
     return true
   }
 
-  const points = frontierForKnownModels(
+  return frontierForKnownModels(
     extras,
     (candidate) => applyPlanCoverage(candidate, planUsage),
     keepRoute,
   )
-  const best = pickBestValueFrontierModel(points)
+}
+
+/**
+ * Compute the best plan/price Pareto model among configured providers.
+ * Falls back to {@link FALLBACK_APP_CHAT_MODEL} when the frontier is empty.
+ */
+export async function resolveBestValueChatModel(): Promise<string> {
+  // Mock LLM accepts any model id — keep the concrete local fallback so e2e /
+  // agent loops don't wait on catalog/plan fetches.
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
+    return FALLBACK_APP_CHAT_MODEL
+  }
+  const best = pickBestValueFrontierModel(await routableFrontierPoints())
   if (!best) return FALLBACK_APP_CHAT_MODEL
   return toRoutableModelId(best)
 }

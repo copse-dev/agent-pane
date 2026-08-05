@@ -28,6 +28,7 @@ import {
   DEFAULT_ADVISOR_MODEL_ID,
 } from './advisor-strategy-pack.ts'
 import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
+import { BEST_INTELLECT_MODEL_SELECTOR, parseDynamicModel } from '@copse/llm/dynamic-model.ts'
 
 describe('copse.advisor-strategy pack', () => {
   it('is registered in FIRST_PARTY_PACKS with id copse.advisor-strategy', () => {
@@ -54,14 +55,17 @@ describe('copse.advisor-strategy pack', () => {
     assert.deepEqual(advisorStrategyPack.contributions.uiContributions, [])
   })
 
-  it('owns the advisor model as a pack-scoped `model` setting with the frontier default', () => {
+  it('owns the advisor model as a pack-scoped `model` setting defaulting to a rule', () => {
     // The advisor model moved off the top-level `advisorModel` store key onto
     // this pack's own `model` field, so the pack fully owns its model config.
     const field = advisorStrategyPack.manifest.settings?.[ADVISOR_MODEL_SETTING_ID]
     assert.ok(field, 'advisor-strategy pack must declare the advisorModel setting')
     assert.equal(field.kind, 'model')
     assert.equal(field.default, DEFAULT_ADVISOR_MODEL_ID)
-    assert.equal(DEFAULT_ADVISOR_MODEL_ID, 'claude-opus-4-8')
+    // A dynamic selection, not a pinned id: the advisor must be stronger than
+    // whatever the executor happens to be, which no fixed id can promise.
+    assert.equal(DEFAULT_ADVISOR_MODEL_ID, BEST_INTELLECT_MODEL_SELECTOR)
+    assert.deepEqual(parseDynamicModel(DEFAULT_ADVISOR_MODEL_ID), { kind: 'best-intellect' })
     // A model field never bakes a static option list — the catalogue is live.
     assert.equal(field.options, undefined)
     assert.equal(ADVISOR_MODEL_SETTING_ID, 'advisorModel')

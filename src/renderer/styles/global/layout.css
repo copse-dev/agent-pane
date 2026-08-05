@@ -1502,10 +1502,10 @@
   outline: none;
   border-color: var(--accent);
 }
-.browser-url-input::selection {
-  color: var(--text-on-accent);
-  background: var(--accent);
-}
+/* No ::selection override here: the address bar takes the app-wide highlight
+   from base.css. The accent pair it used to carry read at 1.24:1 in the light
+   theme — --text-on-accent tracks the raw accent while light darkens --accent
+   by 30%, so the URL disappeared into its own selection. */
 .browser-go-btn {
   flex-shrink: 0;
   padding: 4px 10px;

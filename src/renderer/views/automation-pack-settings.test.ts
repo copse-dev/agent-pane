@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { AutomationSchedule, AutomationScheduleInput } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createAutomationPackSettings } from './automation-pack-settings.ts'
 import type { ModelOptionsApi } from './model-options.ts'
 
@@ -125,7 +126,7 @@ describe('automation pack settings detail', () => {
     assert.equal(runButton.disabled, true)
   })
 
-  it('submits a project-scoped schedule with the selected model', async () => {
+  it('submits a project-scoped schedule with the selected model rule', async () => {
     const { api, upserts } = stubApi([])
     const store = createStore({
       activeProjectId: 'project-a',
@@ -137,9 +138,12 @@ describe('automation pack settings detail', () => {
     root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
     await tick()
 
+    // A schedule stores a rule, not a model id: it fires unattended, long after
+    // this form was filled in, so it must not inherit "whatever chat model I
+    // happen to be on right now" (gpt-5.4 in this store).
     assert.match(
       root.querySelector('.automation-form .model-picker-label')?.textContent ?? '',
-      /gpt-5\.4/i,
+      /^Best value/,
     )
     assert.ok(root.querySelector('.automation-form .model-picker-filter'))
     const name = root.querySelector<HTMLInputElement>('.automation-name-input')
@@ -160,10 +164,46 @@ describe('automation pack settings detail', () => {
           name: 'Nightly review',
           cron: '0 21 * * *',
           prompt: 'Review the diff.',
-          model: 'gpt-5.4',
+          model: BEST_VALUE_CHAT_MODEL,
           enabled: true,
         },
       },
     ])
+  })
+
+  it('keeps editing a schedule that still pins a concrete model', async () => {
+    // Schedules written before dynamic selection stay exactly as saved — the
+    // picker surfaces the pinned id rather than silently swapping in a rule.
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: 'gpt-5.4',
+      enabled: true,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const { api, upserts } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPackSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    root.querySelector<HTMLButtonElement>('.automation-row-btn')?.click()
+    await tick()
+
+    assert.match(
+      root.querySelector('.automation-form .model-picker-label')?.textContent ?? '',
+      /pinned/i,
+    )
+    root
+      .querySelector<HTMLFormElement>('.automation-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.equal(upserts[0]?.input.model, 'gpt-5.4')
   })
 })
