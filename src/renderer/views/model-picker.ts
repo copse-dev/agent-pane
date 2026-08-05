@@ -28,6 +28,8 @@ export interface ModelPicker {
   root: HTMLElement
   refresh: () => Promise<void>
   sync: () => void
+  /** Open the menu from outside the trigger (e.g. a "choose another model" action). */
+  openMenu: () => void
   destroy: () => void
 }
 
@@ -436,6 +438,9 @@ export function mountModelPicker(
     root: wrap,
     refresh,
     sync,
+    openMenu: (): void => {
+      if (!open) setOpen(true)
+    },
     destroy,
   }
 }
