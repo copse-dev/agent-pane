@@ -879,6 +879,8 @@ contextBridge.exposeInMainWorld('api', {
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
+    runDetail: (projectId: string, threadId: string, runId: string) =>
+      ipcRenderer.invoke('hooks:runDetail', projectId, threadId, runId),
   },
   packs: {
     list: () => ipcRenderer.invoke('packs:list'),

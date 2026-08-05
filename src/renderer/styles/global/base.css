@@ -65,6 +65,7 @@ select,
 .tool-args pre,
 .attachment-preview-text,
 .hook-test-stream pre,
+.hook-card-raw-pre,
 .terminal-container,
 .agent-task-output-panel,
 .monaco-editor .view-lines {

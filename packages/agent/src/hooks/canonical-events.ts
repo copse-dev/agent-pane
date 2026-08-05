@@ -412,6 +412,14 @@ export interface HookRunRecord {
   outcome: BlockingHookOutcome | null
   /** Set when the hook threw. Fail-hard semantics still apply — recording happens first. */
   error?: string
+  /**
+   * The dispatch payload the hook was handed — the function-hook counterpart of a
+   * command hook's stdin bytes, so "what did the hook see?" is answerable for both
+   * executors (decision 6). Passed by reference and left opaque here: the *host*
+   * decides whether to serialize it, and bounds what it stores. `packages/agent`
+   * never reads it back.
+   */
+  payload?: unknown
 }
 
 // ---------------------------------------------------------------------------

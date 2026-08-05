@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { decodeWithSchema, safeJsonParse } from './safe-json.ts'
+import { decodeWithSchema, safeJsonParse, safeJsonStringify } from './safe-json.ts'
 
 describe('safeJsonParse', () => {
   it('parses valid JSON', () => {
@@ -35,5 +35,29 @@ describe('safeJsonParse', () => {
 
     assert.deepEqual(safeJsonParse('{"name":"Copse"}', decodeName), { name: 'Copse' })
     assert.equal(safeJsonParse('{"name":42}', decodeName), null)
+  })
+})
+
+describe('safeJsonStringify', () => {
+  it('serializes like JSON.stringify, honouring the indent', () => {
+    assert.equal(safeJsonStringify({ a: 1 }), '{"a":1}')
+    assert.equal(safeJsonStringify({ a: 1 }, 2), '{\n  "a": 1\n}')
+  })
+
+  // The whole point of the wrapper: the lib types this as `string`, so callers
+  // that handle the undefined cases look like dead code to the type checker.
+  it('reports the values that have no JSON representation', () => {
+    assert.equal(safeJsonStringify(undefined), undefined)
+    assert.equal(
+      safeJsonStringify(() => 1),
+      undefined,
+    )
+    assert.equal(safeJsonStringify(Symbol('s')), undefined)
+  })
+
+  it('still throws on a cycle — that is a call-site bug, not a value', () => {
+    const cycle: Record<string, unknown> = {}
+    cycle['self'] = cycle
+    assert.throws(() => safeJsonStringify(cycle))
   })
 })

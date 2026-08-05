@@ -39,6 +39,7 @@ import {
   rebuildSpinePreservingNonMessageLines,
   serializeSpineEntries,
   serializeSpineLine,
+  type ContentRef,
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpinePermissionDecisionLine,
@@ -968,6 +969,65 @@ export function appendHookRun(
     const prefix =
       existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
     writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+  })
+}
+
+/** One blob a `hook_run` line points at; `text` is null when it is gone from disk. */
+export interface StoredHookRunBlob {
+  ref: string
+  text: string | null
+}
+
+/** A `hook_run` line plus the bodies it references — the raw record behind a hook card. */
+export interface StoredHookRun {
+  line: SpineHookRunLine
+  payload: StoredHookRunBlob | null
+  stdout: StoredHookRunBlob | null
+  stderr: StoredHookRunBlob | null
+  outcome: StoredHookRunBlob | null
+}
+
+/**
+ * Read one hook execution back out of a thread's spine, by its `hook_run` id.
+ * Backs the hook-card inspector: the transcript carries only the compact card,
+ * so the bodies (stdin payload, raw streams, applied outcome) are fetched on
+ * demand — the store stays the single source of truth and history never grows a
+ * second copy of a hook's output.
+ *
+ * Returns null when no such run is recorded — an id from a live card whose spine
+ * append has not landed yet, or a thread whose store was pruned. Each blob is
+ * read independently so a missing file degrades to `text: null` on that one
+ * stream rather than losing the whole record.
+ */
+export function readHookRun(
+  projectId: string,
+  threadId: string,
+  runId: string,
+): Promise<StoredHookRun | null> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    const raw = safeRead(join(dir, EVENTS_FILE))
+    if (raw === null) return null
+    let line: SpineHookRunLine | null = null
+    for (const entry of parseSpineEntries(raw)) {
+      if (entry.line?.type === 'hook_run' && entry.line.id === runId) line = entry.line
+    }
+    if (!line) return null
+    // Refs are app-written, but they are still data read back off disk: keep the
+    // read inside the thread's own blobs dir so a corrupted spine line can never
+    // turn an inspector open into an arbitrary file read.
+    const blob = (ref: ContentRef | undefined): StoredHookRunBlob | null => {
+      if (!ref) return null
+      const isThreadBlob = ref.ref.startsWith('blobs/') && !ref.ref.includes('..')
+      return { ref: ref.ref, text: isThreadBlob ? safeRead(join(dir, ref.ref)) : null }
+    }
+    return {
+      line,
+      payload: blob(line.payload),
+      stdout: blob(line.stdout),
+      stderr: blob(line.stderr),
+      outcome: blob(line.outcome),
+    }
   })
 }
 

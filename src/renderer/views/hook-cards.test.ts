@@ -50,6 +50,18 @@ function card(overrides: Partial<HookCard> = {}): HookCard {
   }
 }
 
+/**
+ * Open an inspector and let its fetch settle. jsdom does not fire `toggle` for a
+ * programmatic `open`, so the event is dispatched explicitly; the load itself is
+ * a promise, hence the flush.
+ */
+async function openInspector(inspector: HTMLDetailsElement): Promise<void> {
+  inspector.open = true
+  inspector.dispatchEvent(new Event('toggle'))
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 afterEach(() => {
   document.body.replaceChildren()
 })
@@ -240,6 +252,99 @@ describe('hook cards (component, decision 10)', () => {
     assert.ok(haltCard, 'a halt card renders')
     assert.equal(haltCard.getAttribute('data-status'), 'halted')
     assert.match(haltCard.textContent, /budget exhausted/)
+  })
+
+  it('reads the injected context on demand instead of only reporting its length', async () => {
+    const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const asked: string[] = []
+    const base = fakeApi()
+    const api: ApiClient = {
+      ...base,
+      hooks: {
+        ...base.hooks,
+        runDetail: (_projectId, _threadId, runId) => {
+          asked.push(runId)
+          return Promise.resolve({
+            found: true,
+            event: 'beforeFinalize',
+            executor: 'function',
+            durationMs: 3,
+            outcome: JSON.stringify({ injectContext: 'You still have open todos.' }),
+          })
+        },
+      },
+    }
+    mountConversation(host, store, api)
+    store.setState({ activeProjectId: 'project-1' })
+
+    seedThread(store, [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'wrapping up',
+        toolCalls: [],
+        createdAt: 1,
+        hookCards: [
+          card({
+            id: 'h-context',
+            event: 'beforeFinalize',
+            hookId: 'todo-finalize-closeout',
+            executor: 'function',
+            injectContextChars: 26,
+          }),
+        ],
+      },
+    ])
+
+    const inspector = document.querySelector<HTMLDetailsElement>('.hook-card-raw')
+    assert.ok(inspector, 'every card offers an inspector')
+    // Lazy: a transcript full of cards must not fetch every blob it renders.
+    assert.deepEqual(asked, [], 'nothing is fetched until the inspector is opened')
+
+    await openInspector(inspector)
+    assert.deepEqual(asked, ['h-context'], 'the spine run id is what gets fetched')
+    const section = inspector.querySelector('[data-section="injected context"]')
+    assert.ok(section, 'the applied channel is labeled, not dumped as JSON')
+    assert.match(section.querySelector('pre')?.textContent ?? '', /You still have open todos\./)
+
+    // Immutable once recorded: reopening must not re-fetch.
+    inspector.open = false
+    await openInspector(inspector)
+    assert.deepEqual(asked, ['h-context'])
+  })
+
+  it('says why an inspector is empty rather than showing a blank box', async () => {
+    const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = fakeApi()
+    const api: ApiClient = {
+      ...base,
+      hooks: { ...base.hooks, runDetail: () => Promise.resolve({ found: false }) },
+    }
+    mountConversation(host, store, api)
+    store.setState({ activeProjectId: 'project-1' })
+
+    seedThread(store, [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'working',
+        toolCalls: [],
+        createdAt: 1,
+        hookCards: [card({ id: 'h-live', status: 'ok' })],
+      },
+    ])
+
+    const inspector = document.querySelector<HTMLDetailsElement>('.hook-card-raw')
+    assert.ok(inspector)
+    await openInspector(inspector)
+    assert.match(
+      inspector.querySelector('.hook-card-raw-status')?.textContent ?? '',
+      /not recorded/,
+    )
   })
 
   it('appends a live hook card to the current turn (hook_run chunk path)', () => {

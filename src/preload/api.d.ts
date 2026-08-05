@@ -3,7 +3,12 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
+import type {
+  HooksListResult,
+  HookRunDetail,
+  HookTestRequest,
+  HookTestResult,
+} from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
 import type {
   AutomationSchedule,
@@ -713,6 +718,8 @@ export interface ApiClient {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
     test: (req: HookTestRequest) => Promise<HookTestResult>
+    /** Read the raw record behind one hook card — payload, streams, applied outcome. */
+    runDetail: (projectId: string, threadId: string, runId: string) => Promise<HookRunDetail>
   }
   packs: {
     /** Enumerate every registered pack with contributions + enablement + settings values (P3). */

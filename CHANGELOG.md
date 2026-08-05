@@ -8,6 +8,17 @@ every published entry.
 
 ## Unreleased
 
+- Hook cards are debuggable. A card that said “Added context · Injected 307 chars
+  of context” could tell you a hook had done something but never what — the
+  character counts were the whole story. Every card now carries an **Inspect run**
+  disclosure that shows the run itself: what the hook was handed and what it
+  returned, read on demand from the thread's own records. Command hooks show the
+  exact stdin they read alongside their stdout and stderr; in-process hooks, which
+  had no visible output at all, now show their dispatch payload and the full text
+  of everything they applied — the injected context, the message to the agent, a
+  rewritten tool input, a halt reason — with real line breaks, not escaped JSON.
+  Each block copies in one click. Nothing is fetched until you open a card, and
+  captures are bounded so a chatty hook cannot bloat a thread.
 - The Parallel Search pack's switch no longer turns on without a key. The tool
   was already credential-gated where it counts — `parallel_search` is registered
   only when the pack is enabled _and_ a Parallel API key resolves — but Settings

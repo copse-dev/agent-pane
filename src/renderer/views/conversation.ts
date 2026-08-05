@@ -17,6 +17,13 @@ import {
   type HookCard,
   type HookCardStatus,
 } from '@shared/hooks/hook-card.ts'
+import {
+  hookRunDetailChips,
+  hookRunDetailEmptyReason,
+  hookRunDetailSections,
+  type HookRunSection,
+} from '@shared/hooks/hook-run-detail.ts'
+import type { HookRunDetail } from '@shared/types/hooks.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -756,12 +763,101 @@ function hookCardDetailLines(card: HookCard): string[] {
   return lines
 }
 
-function createHookCard(card: HookCard): HTMLElement {
+/**
+ * Fetch the raw record behind one card (`hooks:runDetail`). Injected rather than
+ * reached for, so the card family stays a pure rendering concern and component
+ * tests can drive the inspector without an IPC bridge.
+ */
+export type HookRunDetailLoader = (runId: string) => Promise<HookRunDetail>
+
+/** One labeled block of raw text in the inspector, with a copy affordance. */
+function createHookInspectorSection(section: HookRunSection): HTMLElement {
+  const copy = el('button', {
+    class: 'hook-card-raw-copy',
+    type: 'button',
+    'aria-label': `Copy ${section.label}`,
+  })
+  copy.textContent = 'Copy'
+  copy.addEventListener('click', () => {
+    void navigator.clipboard.writeText(section.text).then(
+      () => {
+        copy.textContent = 'Copied'
+        setTimeout(() => {
+          copy.textContent = 'Copy'
+        }, 1200)
+      },
+      () => {
+        copy.textContent = 'Failed'
+      },
+    )
+  })
+  const heading = el('div', { class: 'hook-card-raw-label' }, section.label)
+  heading.append(copy)
+  const pre = el('pre', { class: 'hook-card-raw-pre', 'data-format': section.format })
+  pre.textContent = section.text
+  return el('div', { class: 'hook-card-raw-section', 'data-section': section.label }, heading, pre)
+}
+
+/** Render a loaded {@link HookRunDetail} into the inspector body. */
+function fillHookInspector(body: HTMLElement, detail: HookRunDetail): void {
+  clear(body)
+  const chips = hookRunDetailChips(detail)
+  if (chips.length > 0) {
+    const row = el('div', { class: 'hook-card-raw-chips' })
+    for (const chip of chips) row.append(el('span', { class: 'hook-card-raw-chip' }, chip))
+    body.append(row)
+  }
+  for (const section of hookRunDetailSections(detail)) {
+    body.append(createHookInspectorSection(section))
+  }
+  const empty = hookRunDetailEmptyReason(detail)
+  if (empty !== null) body.append(el('div', { class: 'hook-card-raw-status' }, empty))
+}
+
+/**
+ * The inspector: what the hook was handed and what it returned, in full. The
+ * card header answers "what happened"; this answers "what was in it" — the
+ * question the character counts above can only gesture at.
+ *
+ * Loaded lazily on first open and never re-fetched: a hook run is immutable once
+ * recorded, and an expanded transcript would otherwise fetch every blob of every
+ * card it scrolled past.
+ */
+function createHookCardInspector(card: HookCard, load: HookRunDetailLoader): HTMLElement {
+  const body = el('div', { class: 'hook-card-raw-body' })
+  const inspector = el(
+    'details',
+    { class: 'hook-card-raw' },
+    el('summary', { class: 'hook-card-raw-summary' }, 'Inspect run'),
+    body,
+  )
+  let requested = false
+  inspector.addEventListener('toggle', () => {
+    if (!inspector.open || requested) return
+    requested = true
+    body.append(el('div', { class: 'hook-card-raw-status' }, 'Reading the recorded run…'))
+    void load(card.id).then(
+      (detail) => {
+        fillHookInspector(body, detail)
+      },
+      () => {
+        clear(body)
+        body.append(
+          el('div', { class: 'hook-card-raw-status' }, 'Could not read this run from the thread.'),
+        )
+      },
+    )
+  })
+  return inspector
+}
+
+function createHookCard(card: HookCard, load: HookRunDetailLoader): HTMLElement {
   const cardEl = el('details', {
     class: 'hook-card',
     'data-hook-id': card.hookId,
     'data-hook-event': card.event,
     'data-hook-kind': card.kind,
+    'data-hook-run': card.id,
     'data-status': card.status,
     open: hookCardPerformedAction(card),
   })
@@ -781,7 +877,7 @@ function createHookCard(card: HookCard): HTMLElement {
   for (const line of hookCardDetailLines(card)) {
     detail.append(el('div', { class: 'hook-card-detail-line' }, line))
   }
-  cardEl.append(header, detail)
+  cardEl.append(header, detail, createHookCardInspector(card, load))
   return cardEl
 }
 
@@ -847,7 +943,11 @@ function hookGroupSummaryLabel(cards: HookCard[]): string {
  * in fire order. The summary carries the worst status so a blocking verdict is
  * still visible while collapsed.
  */
-function createHookCardHost(messageId: string, cards: HookCard[]): HTMLElement {
+function createHookCardHost(
+  messageId: string,
+  cards: HookCard[],
+  load: HookRunDetailLoader,
+): HTMLElement {
   const host = el('div', {
     class: 'hook-card-host',
     'data-hook-cards-for': messageId,
@@ -867,7 +967,7 @@ function createHookCardHost(messageId: string, cards: HookCard[]): HTMLElement {
     el('span', { class: 'hook-status-icon', 'aria-label': status }, hookCardStatusIcon(status)),
   )
   const body = el('div', { class: 'hook-card-group-body' })
-  for (const card of cards) body.append(createHookCard(card))
+  for (const card of cards) body.append(createHookCard(card, load))
   group.append(header, body)
   host.append(group)
   return host
@@ -2000,7 +2100,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
     const cards = msg?.hookCards ?? []
     if (!msgEl || cards.length === 0) return
-    msgEl.after(createHookCardHost(messageId, cards))
+    // The inspector resolves its thread at *open* time, not render time: a card
+    // rendered now can be inspected after the user has switched threads and back,
+    // and the ids are re-read from the store rather than captured stale.
+    const load: HookRunDetailLoader = (runId) => {
+      const projectId = store.getState().activeProjectId
+      if (projectId === null) return Promise.resolve({ found: false })
+      return api.hooks.runDetail(projectId, threadId, runId)
+    }
+    msgEl.after(createHookCardHost(messageId, cards, load))
   }
 
   function renderMessageReview(threadId: string, messageId: string): void {

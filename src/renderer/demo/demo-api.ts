@@ -509,6 +509,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
+      runDetail: () => resolved({ found: false }),
     },
     packs: {
       list: () => resolved({ packs: [] }),

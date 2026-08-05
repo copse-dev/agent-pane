@@ -41,6 +41,8 @@ describes it to the agent, so changing the layout means updating that preamble.
     blobs/<messageId>-img-<n>.dataurl  # decoded image data URL
     blobs/<hookRunId>.stdout.txt     # raw hook stdout (command hooks)
     blobs/<hookRunId>.stderr.txt     # raw hook stderr (command hooks)
+    blobs/<hookRunId>.payload.json   # what the hook was handed (stdin / dispatch payload)
+    blobs/<hookRunId>.outcome.json   # full text of a function hook's applied outcome
     blobs/toolset-<hash>.json        # content-addressed toolset fingerprint (deduped)
     plans/<planId>/                  # Plan Mode artifacts (issue #1080); optional
       meta.json                      # plan identity, status, current revision
@@ -201,6 +203,8 @@ spawned `command` hooks such as Cursor permission hooks) appends one line:
   "error": "…",                          // function hook threw (truncated)
   "stdout": { "ref": "blobs/<runId>.stdout.txt", "sha256": "…" }, // command hooks
   "stderr": { "ref": "blobs/<runId>.stderr.txt", "sha256": "…" }, // command hooks
+  "payload": { "ref": "blobs/<runId>.payload.json", "sha256": "…" }, // what the hook was handed
+  "outcome": { "ref": "blobs/<runId>.outcome.json", "sha256": "…" }, // function hooks that acted
   "toolset": "<hash>"                    // → blobs/toolset-<hash>.json
 }
 ```
@@ -211,6 +215,16 @@ spawned `command` hooks such as Cursor permission hooks) appends one line:
   Empty stdout is an intentional no-response (`parseOk: true`). Function hooks
   run in-process with typed outcomes: no exit code, no stream blobs,
   structurally `parseOk: true`.
+- **Both halves of the exchange.** `payload` is what the hook read: the exact
+  stdin bytes for a command hook, the serialized dispatch payload for a function
+  hook. `outcome` is the function-hook counterpart of stdout — the full text of
+  every channel it applied (`injectContext`, `agentMessage`, `userMessage`,
+  `updatedInput`, halt reason), which the `decision` summary only counts
+  characters of. Together they are what the hook-card inspector reads back
+  (`hooks:runDetail`). Both are bounded at capture with a visible truncation
+  marker, and function-hook capture is skipped for a run that abstained — there
+  is no effect to explain. Command hooks need no `outcome` blob: their raw
+  response is already `stdout`.
 - **Toolset fingerprint.** `blobs/toolset-<hash>.json` is a content-addressed
   snapshot of the tools offered to the model (sorted names + per-tool schema
   hash; see `toolset-fingerprint.ts`), written once and referenced by hash —
