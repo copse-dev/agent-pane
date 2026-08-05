@@ -78,13 +78,30 @@ describe('tool activity icon', () => {
       const runningCard = document.querySelector('.tool-card[data-status="running"]')
       const runningName = runningCard?.querySelector('.tool-name')
       const runningSlot = runningCard?.querySelector('.tool-activity-icon-slot')
+      const runningHeader = runningCard?.querySelector('.tool-card-header')
       const runningPath = runningSlot?.querySelector('.reasoning-activity-path')
+      // The prose column the label must line up with, and the message box that
+      // clips horizontally — the gutter spiral has to stay inside it.
+      const body = runningCard?.closest('.message-body')
+      const message = runningCard?.closest('.msg')
+      const nameRect = runningName?.getBoundingClientRect()
+      const slotRect = runningSlot?.getBoundingClientRect()
       return {
         runningStatus: runningCard?.getAttribute('data-status') ?? null,
         runningText: runningName?.textContent ?? null,
         runningHasIcon: Boolean(runningSlot?.querySelector('[data-icon="reasoning-activity"]')),
-        runningNameLeft: runningName?.getBoundingClientRect().left ?? null,
-        runningSlotWidth: runningSlot?.getBoundingClientRect().width ?? null,
+        runningNameLeft: nameRect?.left ?? null,
+        runningSlotWidth: slotRect?.width ?? null,
+        runningHeaderLeft: runningHeader?.getBoundingClientRect().left ?? null,
+        proseLeft: body?.getBoundingClientRect().left ?? null,
+        // Left of the label, and never clipped by the message's own scroll box.
+        slotIsInGutter: Boolean(
+          slotRect &&
+          nameRect &&
+          message &&
+          slotRect.right <= nameRect.left &&
+          slotRect.left >= message.getBoundingClientRect().left,
+        ),
         animationName: runningPath ? getComputedStyle(runningPath).animationName : null,
         reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       }
@@ -95,6 +112,10 @@ describe('tool activity icon', () => {
     expect(runningGeometry.animationName).toBe(
       runningGeometry.reducedMotion ? 'none' : 'reasoning-activity-draw',
     )
+    // The spiral takes no room in the row: a live label starts on the prose
+    // column, exactly where a settled one does.
+    expect(runningGeometry.runningNameLeft).toBe(runningGeometry.proseLeft)
+    expect(runningGeometry.slotIsInGutter).toBe(true)
 
     await browser.pause(900)
     await saveAppScreenshot('tool-activity-icon-alignment.png')
@@ -104,16 +125,20 @@ describe('tool activity icon', () => {
       const settledCard = document.querySelector('.tool-card[data-status="done"]')
       const settledName = settledCard?.querySelector('.tool-name')
       const settledSlot = settledCard?.querySelector('.tool-activity-icon-slot')
+      const settledHeader = settledCard?.querySelector('.tool-card-header')
       return {
         settledText: settledName?.textContent ?? null,
         settledHasIcon: Boolean(settledSlot?.querySelector('[data-icon="reasoning-activity"]')),
         settledNameLeft: settledName?.getBoundingClientRect().left ?? null,
         settledSlotWidth: settledSlot?.getBoundingClientRect().width ?? null,
+        settledHeaderLeft: settledHeader?.getBoundingClientRect().left ?? null,
       }
     })
     expect(settledGeometry.settledText).toBe(runningGeometry.runningText)
     expect(settledGeometry.settledHasIcon).toBe(false)
     expect(settledGeometry.settledNameLeft).toBe(runningGeometry.runningNameLeft)
     expect(settledGeometry.settledSlotWidth).toBe(runningGeometry.runningSlotWidth)
+    // The header is the hover target/pill — it hugs the label in both states.
+    expect(settledGeometry.settledHeaderLeft).toBe(runningGeometry.runningHeaderLeft)
   })
 })

@@ -124,8 +124,9 @@ function createToolHeader(
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
 ): HTMLElement {
-  // Keep a fixed-width leading slot in every state so the label never shifts
-  // when a running tool settles. The animated icon itself is omitted once done.
+  // Nothing here precedes the label in flow: the slot renders in the transcript
+  // gutter, or trails the row when it is indented (tool-cards.css). So the label
+  // sits at the same indent running or settled. The icon is omitted once done.
   const activityIcon = el('span', {
     class: 'tool-activity-icon-slot',
     'aria-hidden': 'true',

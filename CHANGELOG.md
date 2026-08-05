@@ -8,6 +8,14 @@ every published entry.
 
 ## Unreleased
 
+- The Parallel Search pack's switch no longer turns on without a key. The tool
+  was already credential-gated where it counts — `parallel_search` is registered
+  only when the pack is enabled _and_ a Parallel API key resolves — but Settings
+  let you flip the toggle with no key saved, leaving a pack that read as on and
+  contributed nothing. The toggle now stays inert until a key is stored, with a
+  hint saying so. Turning it off is never blocked, so clearing the key on an
+  enabled pack shows the hint (and unregisters the tool) rather than trapping the
+  switch on.
 - Closing Copse while a thread is still working now asks first. Quitting tears
   down every live agent session with no way to resume, so a close that would land
   mid-turn opens a confirmation naming the threads still running ("Fix login is
