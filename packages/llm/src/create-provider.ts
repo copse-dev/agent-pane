@@ -37,12 +37,16 @@ export function createProvider(
   model?: string,
   keys: ProviderKeys = {},
   promptCacheKey?: string,
+  opts: { serviceTier?: string } = {},
 ): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
   }
   const m = model ?? ''
   const cacheKeyOpt = promptCacheKey ? { promptCacheKey } : {}
+  // Only ever reaches OpenAI: `service_tier` is an OpenAI request field, and
+  // Anthropic rejects unknown body fields outright.
+  const tierOpt = opts.serviceTier ? { serviceTier: opts.serviceTier } : {}
   const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
   const openAiApiKey = keys.openAiApiKey ?? process.env['OPENAI_API_KEY']
   if (m.startsWith('gpt')) {
@@ -51,7 +55,12 @@ export function createProvider(
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
     }
-    return new OpenAIProvider(m, { apiKey: openAiApiKey, ...cacheKeyOpt, ...OPENAI_STORE_OPT_OUT })
+    return new OpenAIProvider(m, {
+      apiKey: openAiApiKey,
+      ...cacheKeyOpt,
+      ...tierOpt,
+      ...OPENAI_STORE_OPT_OUT,
+    })
   }
   if (m.startsWith('claude')) {
     if (!anthropicApiKey) {
@@ -70,6 +79,7 @@ export function createProvider(
     return new OpenAIProvider(model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o', {
       apiKey: openAiApiKey,
       ...cacheKeyOpt,
+      ...tierOpt,
       ...OPENAI_STORE_OPT_OUT,
     })
   }

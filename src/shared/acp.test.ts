@@ -62,7 +62,7 @@ describe('acp model values', () => {
         availableModels: [{ value: 'opus[]', label: 'Opus 4.8' }],
       },
     ]
-    assert.equal(acpModelDisplayLabel('acp:cursor#opus[]', agents), 'Cursor — Opus 4.8')
+    assert.equal(acpModelDisplayLabel('acp:cursor#opus[]', agents), 'Cursor — Claude Opus 4.8')
     // Unknown model value falls back to the raw value after the title.
     assert.equal(acpModelDisplayLabel('acp:cursor#gpt-5.5', agents), 'Cursor — gpt-5.5')
   })
@@ -79,7 +79,10 @@ describe('acp model values', () => {
         ],
       },
     ]
-    assert.equal(acpModelDisplayLabel('acp:claude-agent-acp#sonnet', agents), 'Claude — Sonnet 5')
+    assert.equal(
+      acpModelDisplayLabel('acp:claude-agent-acp#sonnet', agents),
+      'Claude — Claude Sonnet 5',
+    )
   })
 })
 
@@ -103,17 +106,22 @@ describe('acp model choice labels', () => {
   it('slots the version into a label that names the same family', () => {
     const label = (l: string, description?: string): string =>
       acpModelChoiceLabel({ value: 'v', label: l, ...(description ? { description } : {}) })
-    assert.equal(label('Sonnet', 'Sonnet 5 · Efficient'), 'Sonnet 5')
-    assert.equal(label('Opus (1M context)', 'Opus 5 with 1M context · Best'), 'Opus 5 (1M context)')
+    // The finished label is spelled the app's way, whichever way the agent
+    // spelled its half of it.
+    assert.equal(label('Sonnet', 'Sonnet 5 · Efficient'), 'Claude Sonnet 5')
+    assert.equal(
+      label('Opus (1M context)', 'Opus 5 with 1M context · Best'),
+      'Claude Opus 5 (1M context)',
+    )
     // A label naming something else gets the model it resolves to appended.
     assert.equal(
       label('Default (recommended)', 'Opus 5 with 1M context · Best'),
-      'Default (recommended) — Opus 5',
+      'Default (recommended) — Claude Opus 5',
     )
     // Already-versioned labels, family prefixes that only look alike, and
-    // choices without a description are left alone.
-    assert.equal(label('Opus 5', 'Opus 5 · Best'), 'Opus 5')
-    assert.equal(label('Opusine', 'Opus 5 · Best'), 'Opusine — Opus 5')
+    // choices without a description keep their own shape.
+    assert.equal(label('Opus 5', 'Opus 5 · Best'), 'Claude Opus 5')
+    assert.equal(label('Opusine', 'Opus 5 · Best'), 'Opusine — Claude Opus 5')
     assert.equal(label('gpt-5.5'), 'gpt-5.5')
   })
 })

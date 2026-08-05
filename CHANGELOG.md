@@ -8,6 +8,31 @@ every published entry.
 
 ## Unreleased
 
+- The model picker names Claude models one way, whoever supplied them. Every
+  provider spells them differently — Cursor's catalog returns a bare “Opus 5”
+  and puts the version first in “Claude 4.6 Sonnet (Thinking)”, device agents
+  label them by family alone, and some rows only had the raw id
+  (`claude-opus-4-7`) — so a list whose own rows read “Claude Opus 4.8” looked
+  like it held four vendors' models, and under a heading that names an agent
+  rather than a vendor (“Cursor Cloud Agent”) a bare “Opus 5” did not say whose
+  Opus it was. Those rows now read “Claude Opus 5”, “Claude Sonnet 4.6
+  (Thinking)”, “Claude Opus 4.7”, with qualifiers kept intact. The rewrite is
+  display-only and only reorders what a name already says: models it does not
+  recognise — Composer 2, GPT-5.6 Sol, local weights — are left exactly as their
+  provider named them. An agent's own spelling still resolves its intellect
+  hint, and a spelling no alias covers now finds the measurement through the
+  model it names, so more agent rows carry the score their cloud twin shows.
+- Hook cards are debuggable. A card that said “Added context · Injected 307 chars
+  of context” could tell you a hook had done something but never what — the
+  character counts were the whole story. Every card now carries an **Inspect run**
+  disclosure that shows the run itself: what the hook was handed and what it
+  returned, read on demand from the thread's own records. Command hooks show the
+  exact stdin they read alongside their stdout and stderr; in-process hooks, which
+  had no visible output at all, now show their dispatch payload and the full text
+  of everything they applied — the injected context, the message to the agent, a
+  rewritten tool input, a halt reason — with real line breaks, not escaped JSON.
+  Each block copies in one click. Nothing is fetched until you open a card, and
+  captures are bounded so a chatty hook cannot bloat a thread.
 - A long session holds on to much less memory. Two things kept transcript text
   alive that did not need to be. The transcript's render caches — the ones that
   let an unchanged tool card skip a rebuild — stored the card's whole JSON

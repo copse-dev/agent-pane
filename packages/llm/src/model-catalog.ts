@@ -14,6 +14,7 @@
 //   3. Run `npm run sync:models`.
 
 import { MODEL_CATALOG } from './model-catalog.generated.ts'
+import { canonicalModelLabel } from './model-label.ts'
 // A leaf module — safe here, where importing `extra-providers.ts` for the same
 // parsing (→ pareto-frontier.ts → this module) would cycle.
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
@@ -95,10 +96,15 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
   'gpt-4o-mini': 'GPT-4o mini',
 }
 
-/** Friendly label for a tracked cloud id; unknown ids fall back to themselves. */
+/**
+ * Friendly label for a tracked cloud id. An untracked id gets the same house
+ * spelling when its name says enough to give it one (`claude-opus-4-7` →
+ * "Claude Opus 4.7" — the picker lists agent-supplied ids we don't track), and
+ * otherwise falls back to itself.
+ */
 export function cloudModelDisplayLabel(model: string): string {
   const tracked = TRACKED_MODELS.find((candidate) => candidate === model)
-  return tracked === undefined ? model : CLOUD_MODEL_LABELS[tracked]
+  return tracked === undefined ? canonicalModelLabel(model) : CLOUD_MODEL_LABELS[tracked]
 }
 
 /** Model picker entries derived from {@link TRACKED_MODELS}. */

@@ -174,6 +174,7 @@ contextBridge.exposeInMainWorld('api', {
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', projectId, threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    runningThreadIds: () => ipcRenderer.invoke('agent:runningThreadIds'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
     retryComparison: (projectId: string, threadId: string, payload: string) =>
@@ -898,6 +899,8 @@ contextBridge.exposeInMainWorld('api', {
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
+    runDetail: (projectId: string, threadId: string, runId: string) =>
+      ipcRenderer.invoke('hooks:runDetail', projectId, threadId, runId),
   },
   packs: {
     list: () => ipcRenderer.invoke('packs:list'),

@@ -96,6 +96,13 @@ export const zHookTestRequest = z.object({
   sandbox: z.boolean().optional(),
 })
 
+/**
+ * A spine `hook_run` id (`hooks:runDetail`). Recorded ids are UUIDs, but seeded
+ * fixtures and older records use plain slugs — pin the character class rather
+ * than the UUID shape, which is enough to keep an id from becoming a path.
+ */
+export const zHookRunId = z.string().regex(/^[\w-]{1,128}$/)
+
 export const INDEX_QUERY_PATTERN = /^[\w.\-/+$@ ]{0,128}$/
 
 export function isIndexQueryPattern(pattern: string): boolean {
