@@ -243,6 +243,7 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
           openAiApiKey: storedOrEnvApiKey('openai'),
         },
         promptCacheKey,
+        openAiServiceTierOption(),
       ),
     )
   }
@@ -254,8 +255,21 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
         openAiApiKey: storedOrEnvApiKey('openai'),
       },
       promptCacheKey,
+      openAiServiceTierOption(),
     ),
   )
+}
+
+/**
+ * The configured OpenAI `service_tier`, or nothing when unset.
+ *
+ * Trimmed and dropped when blank so a cleared Settings field means "standard
+ * processing" (field omitted) rather than sending `service_tier: ""`, which
+ * OpenAI rejects. `createProvider` only forwards it to its OpenAI branches.
+ */
+function openAiServiceTierOption(): { serviceTier?: string } {
+  const tier = getSetting<string>('openAiServiceTier', '').trim()
+  return tier ? { serviceTier: tier } : {}
 }
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
