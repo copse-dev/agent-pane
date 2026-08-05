@@ -188,6 +188,10 @@ export const cloudProviderSchema = z.enum([
 // custom-provider slugs (URL-safe, derived from a base-URL hostname).
 export const keyProviderSchema = z.string().regex(/^[a-z0-9-]{1,64}$/)
 
+// Model ids to resolve card links for. Bounded because the renderer batches a
+// whole chart's worth, and each unknown id can cost a network probe.
+export const modelCardIdsSchema = z.array(z.string().min(1).max(512)).max(128)
+
 // Per-save consent for storing a key unencrypted when OS secure storage is
 // unavailable. Defaults to no consent so the plaintext write is always opt-in.
 export const setKeyOptionsSchema = z
