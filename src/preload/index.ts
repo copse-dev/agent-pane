@@ -593,6 +593,7 @@ contextBridge.exposeInMainWorld('api', {
   models: {
     chatDefaultContextHealth: () => ipcRenderer.invoke('models:chatDefaultContextHealth'),
     bestValueDefault: () => ipcRenderer.invoke('models:bestValueDefault'),
+    resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolveDynamic', value),
   },
   menu: {
     onSettings: (handler: () => void) => {

@@ -385,6 +385,11 @@ export interface ApiClient {
      * (`auto:best-value` setting expands to this on new chats / agent runs).
      */
     bestValueDefault: () => Promise<string>
+    /**
+     * Concrete model id a dynamic selection (`auto:…`) resolves to right now.
+     * A pinned id is returned unchanged, so callers can pass whatever is stored.
+     */
+    resolveDynamic: (value: string) => Promise<string>
   }
   intellect: {
     /** Live Artificial Analysis model feed; empty models when no key stored. */
