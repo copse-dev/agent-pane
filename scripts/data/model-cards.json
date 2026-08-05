@@ -1,0 +1,84 @@
+{
+  "$comment": "Curated model-card / system-card links, the reviewed source of truth for scripts/sync-model-cards.mts. RULES: (1) a card is a cited fact — every entry needs a real, reachable URL published by the model's own vendor, plus `source` and `asOf`; never guess a URL from a slug pattern, because a 404 is worse than no link at all; (2) `modelId` is the canonical model id the rest of the app keys on (a `model-catalog.ts` tracked id or a `scripts/data/intellect-scores.json` modelId) — alias forms (`anthropic/claude-opus-4-8`, `openrouter:...`, ACP labels) are NOT repeated here, because getModelCard() resolves them through the intellect alias table; (3) `kind` is `system-card` or `model-card` for a card about this specific model, and `index` for a vendor hub that lists cards — an `index` entry is a placeholder that discovery upgrades to the exact card as soon as it can reach the vendor's site, so prefer leaving a model in `wanted` over inventing a per-model URL; (4) Hugging Face-hosted weights need no entry at all — the README *is* the model card, and getModelCard() derives https://huggingface.co/<org>/<model> for `huggingface:` router ids, whose org/model casing comes from the HF API itself; (5) `wanted` lists models we want a card for but have not sourced one for yet — `npm run sync:model-cards -- --discover` matches vendor sitemaps and card hubs against `match` tokens and writes the winners into `cards`. Absent means 'no sourced card yet', and the UI simply shows no link.",
+  "cards": [
+    {
+      "modelId": "claude-opus-4-8",
+      "publisher": "Anthropic",
+      "kind": "index",
+      "title": "Anthropic transparency hub",
+      "url": "https://www.anthropic.com/transparency",
+      "source": "Anthropic's transparency hub is the published index of Claude system cards; the per-model PDF lives behind it on a CDN path with an opaque filename, so discovery has to resolve it.",
+      "asOf": "2026-08-04"
+    },
+    {
+      "modelId": "claude-sonnet-5",
+      "publisher": "Anthropic",
+      "kind": "index",
+      "title": "Anthropic transparency hub",
+      "url": "https://www.anthropic.com/transparency",
+      "source": "Anthropic's transparency hub is the published index of Claude system cards; the per-model PDF lives behind it on a CDN path with an opaque filename, so discovery has to resolve it.",
+      "asOf": "2026-08-04"
+    },
+    {
+      "modelId": "claude-sonnet-4-6",
+      "publisher": "Anthropic",
+      "kind": "index",
+      "title": "Anthropic transparency hub",
+      "url": "https://www.anthropic.com/transparency",
+      "source": "Anthropic's transparency hub is the published index of Claude system cards; the per-model PDF lives behind it on a CDN path with an opaque filename, so discovery has to resolve it.",
+      "asOf": "2026-08-04"
+    },
+    {
+      "modelId": "claude-fable-5",
+      "publisher": "Anthropic",
+      "kind": "index",
+      "title": "Anthropic transparency hub",
+      "url": "https://www.anthropic.com/transparency",
+      "source": "Anthropic's transparency hub is the published index of Claude system cards; the per-model PDF lives behind it on a CDN path with an opaque filename, so discovery has to resolve it.",
+      "asOf": "2026-08-04"
+    },
+    {
+      "modelId": "claude-haiku-4-5",
+      "publisher": "Anthropic",
+      "kind": "index",
+      "title": "Anthropic transparency hub",
+      "url": "https://www.anthropic.com/transparency",
+      "source": "Anthropic's transparency hub is the published index of Claude system cards; the per-model PDF lives behind it on a CDN path with an opaque filename, so discovery has to resolve it.",
+      "asOf": "2026-08-04"
+    },
+    {
+      "modelId": "gpt-4o",
+      "publisher": "OpenAI",
+      "kind": "system-card",
+      "title": "GPT-4o system card",
+      "url": "https://openai.com/index/gpt-4o-system-card/",
+      "source": "OpenAI publishes each system card at openai.com/index/<model>-system-card/; this URL is one of the known-card seeds in the model-card collector.",
+      "asOf": "2026-08-04"
+    }
+  ],
+  "wanted": [
+    { "modelId": "gpt-5", "publisher": "openai", "match": ["gpt-5"] },
+    { "modelId": "gpt-5-mini", "publisher": "openai", "match": ["gpt-5-mini"] },
+    { "modelId": "gpt-5.5", "publisher": "openai", "match": ["gpt-5-5", "gpt-55"] },
+    { "modelId": "gpt-5.6-sol", "publisher": "openai", "match": ["gpt-5-6-sol", "gpt-56-sol"] },
+    {
+      "modelId": "gpt-5.6-terra",
+      "publisher": "openai",
+      "match": ["gpt-5-6-terra", "gpt-56-terra"]
+    },
+    { "modelId": "gpt-4o-mini", "publisher": "openai", "match": ["gpt-4o-mini"] },
+    { "modelId": "claude-opus-4-8", "publisher": "anthropic", "match": ["opus-4-8", "opus-4.8"] },
+    { "modelId": "claude-sonnet-5", "publisher": "anthropic", "match": ["sonnet-5", "sonnet5"] },
+    {
+      "modelId": "claude-sonnet-4-6",
+      "publisher": "anthropic",
+      "match": ["sonnet-4-6", "sonnet-4.6"]
+    },
+    { "modelId": "claude-fable-5", "publisher": "anthropic", "match": ["fable-5", "fable5"] },
+    {
+      "modelId": "claude-haiku-4-5",
+      "publisher": "anthropic",
+      "match": ["haiku-4-5", "haiku-4.5"]
+    }
+  ]
+}

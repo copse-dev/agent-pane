@@ -17,4 +17,6 @@ export const FETCH_TIMEOUTS = {
   downloadStatus: 8_000,
   /** LM Studio model-download kickoff (slow). */
   downloadStart: 30_000,
+  /** Liveness check on a vendor model-card URL (status only, body discarded). */
+  modelCardProbe: 6_000,
 } as const
