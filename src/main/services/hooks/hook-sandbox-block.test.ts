@@ -23,6 +23,7 @@ import { runToolGateHooks } from './tool-gate.ts'
 
 function spawnResult(over: Partial<HookSpawnResult>): HookSpawnResult {
   return {
+    stdin: '{}',
     stdout: '',
     stderr: '',
     exitCode: 0,

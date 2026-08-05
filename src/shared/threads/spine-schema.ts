@@ -225,6 +225,21 @@ export interface SpineHookRunLine {
   /** Raw stream captures (command hooks; absent for function hooks). */
   stdout?: ContentRef
   stderr?: ContentRef
+  /**
+   * What the hook was *handed*: the exact stdin bytes for a command hook, the
+   * serialized dispatch payload for a function hook. Bounded at capture time —
+   * an oversized payload is truncated with a visible marker, never dropped
+   * silently. Absent when the payload could not be serialized.
+   */
+  payload?: ContentRef
+  /**
+   * What a function hook *returned*, in full: the injected context, agent /
+   * user messages, rewritten tool input and halt reason the compact
+   * {@link SpineHookRunDecision} only counts characters of. Command hooks have
+   * no such blob — their raw response is already the stdout capture. Absent for
+   * a run that abstained (nothing to show beyond the counts).
+   */
+  outcome?: ContentRef
   /** Content-addressed toolset fingerprint hash (see {@link toolsetBlobRef}). */
   toolset?: string
 }
@@ -319,6 +334,8 @@ export function hookRunBlobRefs(line: SpineHookRunLine): string[] {
   const refs: string[] = []
   if (line.stdout) refs.push(line.stdout.ref)
   if (line.stderr) refs.push(line.stderr.ref)
+  if (line.payload) refs.push(line.payload.ref)
+  if (line.outcome) refs.push(line.outcome.ref)
   if (line.toolset) refs.push(toolsetBlobRef(line.toolset))
   return refs
 }
