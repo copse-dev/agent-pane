@@ -5,6 +5,7 @@ import { isImageUnsupportedError, yieldStreamWithRetry } from './stream-retry.ts
 import { parseToolArgs } from './parse-tool-args.ts'
 import { serviceTierBody } from './service-tier.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
+import { openAiParameterFields, type ModelParameters } from './model-parameters.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
 
@@ -91,6 +92,7 @@ export class OpenAIProvider implements LLMProvider {
       defaultHeaders?: Readonly<Record<string, string>>
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
       serviceTier?: string
+      params?: ModelParameters
     } = {},
   ) {
     this.model = model
@@ -98,6 +100,9 @@ export class OpenAIProvider implements LLMProvider {
     this.extraBody = opts.extraBody
     this.promptCacheKey = opts.promptCacheKey
     this.serviceTier = opts.serviceTier
+    // Already sanitized for the selected model by the caller; empty unless the
+    // user tuned this model, so an untouched request body is unchanged.
+    this.tuned = openAiParameterFields(opts.params ?? {})
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -109,6 +114,7 @@ export class OpenAIProvider implements LLMProvider {
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
   private readonly serviceTier: string | undefined
+  private readonly tuned: ReturnType<typeof openAiParameterFields>
 
   stream(
     messages: LLMMessage[],
@@ -150,6 +156,7 @@ export class OpenAIProvider implements LLMProvider {
                 ...serviceTierBody(self.serviceTier),
                 // Last, so an explicit extraBody entry still wins — that field is
                 // the user's own escape hatch for provider-specific overrides.
+                ...self.tuned,
                 ...(self.extraBody ?? {}),
               },
               { signal },

@@ -51,6 +51,19 @@ every published entry.
   away from now keeps only what its rows draw: title, running mark, and the PR
   refs already scraped out of its messages. Switching back reloads from disk as
   before.
+- Models chosen through an API can now be tuned, the way a device agent's model
+  and permission mode already were. Settings → Models grows a **Model
+  parameters** block under the chat-model picker with reasoning depth,
+  temperature, and top-p. The values belong to the model rather than to the
+  field, so they follow it wherever it runs — chat, task roles, subagents — and
+  each model keeps its own set. Which controls appear is decided by the model:
+  the newest Claude models reject temperature and top-p outright and get the
+  reasoning ladder alone, older Claude models have no reasoning ladder and get a
+  thinking budget instead, and OpenAI-compatible providers get all three with a
+  note that the upstream model has the final say. A value saved against one
+  model is re-checked against whatever it is read for, so a stale setting
+  degrades to the provider default instead of failing the turn. Untouched models
+  send exactly the request body they sent before.
 - The Parallel Search pack's switch no longer turns on without a key. The tool
   was already credential-gated where it counts — `parallel_search` is registered
   only when the pack is enabled _and_ a Parallel API key resolves — but Settings

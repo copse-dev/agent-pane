@@ -1,0 +1,464 @@
+// Per-model generation parameters the user can tune: reasoning depth,
+// temperature, and top-p.
+//
+// A model selection already carries a *route* (`parseModelSelection`); this
+// module adds what that route will *accept*. The three knobs are not universal
+// — the same word means a different wire field on each family, and several
+// families reject the ones they don't implement with a 400 rather than ignoring
+// them:
+//
+//   - Anthropic's newest models (Opus 5 / 4.8 / 4.7, Sonnet 5, Fable 5) removed
+//     `temperature` / `top_p` outright, and control reasoning with
+//     `output_config.effort` — a named ladder, not a token budget.
+//   - Anthropic's 4.6 generation still accepts sampling, and its effort ladder
+//     stops at `high`/`max` (no `xhigh`).
+//   - Older Claude models have no `effort` at all: reasoning there is
+//     `thinking.budget_tokens`, a token count derived from `max_tokens`.
+//   - OpenAI's reasoning models take `reasoning_effort` and reject non-default
+//     sampling; `gpt-4o` is the mirror image.
+//   - Every OpenAI-compatible endpoint (OpenRouter, local servers, extra
+//     providers) speaks `reasoning_effort` but supports a vendor-specific slice
+//     of it, so those get the full ladder and the honest caveat that the
+//     upstream model decides.
+//
+// So the exported surface is: one vocabulary (`ReasoningLevel`), one capability
+// query (`modelParameterSupport`) that says which levels and which sampling a
+// selection accepts, and per-family mappers that turn a sanitized
+// `ModelParameters` into request fields. Callers store the vocabulary; the
+// mappers own the wire.
+
+import { anthropicMaxOutputTokens } from './model-catalog.ts'
+import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
+
+/**
+ * Reasoning depth, ordered cheapest-first. `off` asks the model not to reason
+ * at all; the rest name a depth. Not every level reaches every model — see
+ * {@link modelParameterSupport}, which returns the accepted subset.
+ */
+export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number]
+
+export function isReasoningLevel(value: unknown): value is ReasoningLevel {
+  return REASONING_LEVELS.some((level) => level === value)
+}
+
+/**
+ * User-chosen generation parameters for one model selection. Every field is
+ * optional and an absent field means "send nothing" — the provider default,
+ * not a value of our choosing. That distinction matters: a model's own default
+ * temperature is not necessarily 1, and sending 1 is not the same as omitting.
+ */
+export interface ModelParameters {
+  reasoning?: ReasoningLevel
+  temperature?: number
+  topP?: number
+}
+
+/** True when no knob is set, i.e. the request goes out exactly as before. */
+export function isEmptyModelParameters(params: ModelParameters): boolean {
+  return (
+    params.reasoning === undefined && params.temperature === undefined && params.topP === undefined
+  )
+}
+
+/**
+ * How a family expresses reasoning on the wire. The UI never sees this — it
+ * asks for levels and gets levels — but the mappers dispatch on it.
+ */
+export type ReasoningWire =
+  /** Anthropic `output_config.effort` (+ `thinking: disabled` for `off`). */
+  | 'anthropic-effort'
+  /** Anthropic `thinking.budget_tokens`, derived from the model's max output. */
+  | 'anthropic-budget'
+  /** OpenAI-shaped `reasoning_effort`. */
+  | 'openai-effort'
+  /** OpenRouter's unified `reasoning: { effort }` / `reasoning: { enabled }`. */
+  | 'openrouter'
+  /** No reasoning control at all. */
+  | 'none'
+
+export interface ModelParameterSupport {
+  /** Reasoning levels this selection accepts, cheapest-first; empty when none. */
+  reasoning: readonly ReasoningLevel[]
+  /** How an accepted level reaches the provider. */
+  reasoningWire: ReasoningWire
+  /** Whether `temperature` / `top_p` are accepted. */
+  sampling: boolean
+  /** Upper bound for `temperature` (Anthropic caps at 1, OpenAI-shaped at 2). */
+  temperatureMax: number
+  /**
+   * Set when the provider — not the model — decides which levels actually
+   * work, so the UI can say so rather than implying every level is verified.
+   */
+  upstreamDecides?: boolean
+  /**
+   * Set when the selection takes no parameters at all, explaining why. Agents
+   * (device, cloud, pack routes) run the whole turn themselves and are
+   * configured where they live, not here.
+   */
+  unavailableReason?: string
+}
+
+const NO_PARAMETERS: ModelParameterSupport = {
+  reasoning: [],
+  reasoningWire: 'none',
+  sampling: false,
+  temperatureMax: 1,
+}
+
+/** Namespaces that hand the whole turn to something owning its own settings. */
+const AGENT_NAMESPACES: ReadonlySet<ModelNamespace> = new Set(['acp', 'remote-agent', 'pack-model'])
+
+/**
+ * Claude families that removed `temperature` / `top_p` (a 400, not a no-op) and
+ * accept the full `low`–`max` effort ladder. Prefix-matched so dated snapshots
+ * and aggregator suffixes resolve too.
+ */
+const CLAUDE_EFFORT_NO_SAMPLING = [
+  'claude-opus-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+  'claude-sonnet-5',
+  'claude-fable-5',
+  'claude-mythos-5',
+  'claude-mythos-preview',
+] as const
+
+/** Claude families with `effort` *and* sampling, whose ladder has no `xhigh`. */
+const CLAUDE_EFFORT_WITH_SAMPLING = [
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-opus-4-5',
+] as const
+
+/**
+ * Thinking is always on for these — an explicit `thinking: { type: 'disabled' }`
+ * is rejected — so `off` is not offered.
+ */
+const CLAUDE_THINKING_ALWAYS_ON = [
+  'claude-fable-5',
+  'claude-mythos-5',
+  'claude-mythos-preview',
+] as const
+
+/** OpenAI families that take `reasoning_effort` and reject non-default sampling. */
+const OPENAI_REASONING_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const
+
+const FULL_EFFORT_LADDER: readonly ReasoningLevel[] = [
+  'off',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]
+const CAPPED_EFFORT_LADDER: readonly ReasoningLevel[] = ['off', 'low', 'medium', 'high', 'max']
+const BUDGET_LADDER: readonly ReasoningLevel[] = ['off', 'low', 'medium', 'high']
+const OPENAI_LADDER: readonly ReasoningLevel[] = ['minimal', 'low', 'medium', 'high']
+const OPENAI_COMPATIBLE_LADDER: readonly ReasoningLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]
+
+function matchesFamily(modelId: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => modelId.startsWith(prefix))
+}
+
+function claudeSupport(modelId: string): ModelParameterSupport {
+  const withoutOff = (ladder: readonly ReasoningLevel[]): readonly ReasoningLevel[] =>
+    matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON)
+      ? ladder.filter((level) => level !== 'off')
+      : ladder
+  if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
+    return {
+      reasoning: withoutOff(FULL_EFFORT_LADDER),
+      reasoningWire: 'anthropic-effort',
+      sampling: false,
+      temperatureMax: 1,
+    }
+  }
+  if (matchesFamily(modelId, CLAUDE_EFFORT_WITH_SAMPLING)) {
+    return {
+      reasoning: CAPPED_EFFORT_LADDER,
+      reasoningWire: 'anthropic-effort',
+      sampling: true,
+      temperatureMax: 1,
+    }
+  }
+  // Everything older: no `effort` parameter (it errors), so reasoning is a
+  // thinking budget derived from the model's own max output tokens.
+  return {
+    reasoning: BUDGET_LADDER,
+    reasoningWire: 'anthropic-budget',
+    sampling: true,
+    temperatureMax: 1,
+  }
+}
+
+function openAiSupport(modelId: string): ModelParameterSupport {
+  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+    return {
+      reasoning: OPENAI_LADDER,
+      reasoningWire: 'openai-effort',
+      sampling: false,
+      temperatureMax: 2,
+    }
+  }
+  return { reasoning: [], reasoningWire: 'none', sampling: true, temperatureMax: 2 }
+}
+
+/**
+ * Which parameters `model` accepts, and how they reach it.
+ *
+ * Takes a stored model selection (`claude-opus-5`, `openrouter:deepseek/…`,
+ * `lmstudio:…`), not a bare id — the namespace decides the transport, and the
+ * transport decides the wire field.
+ */
+export function modelParameterSupport(model: string): ModelParameterSupport {
+  const selection = parseModelSelection(model)
+  if (AGENT_NAMESPACES.has(selection.namespace)) {
+    return {
+      ...NO_PARAMETERS,
+      unavailableReason:
+        'This selection runs the whole turn in its own agent, which owns these settings.',
+    }
+  }
+  if (selection.namespace === 'auto') {
+    return {
+      ...NO_PARAMETERS,
+      unavailableReason:
+        'This is a rule that picks a model per chat. Parameters follow the model it picks, so pin one to tune it.',
+    }
+  }
+  if (selection.namespace === 'cloud') {
+    if (selection.modelId.startsWith('claude')) return claudeSupport(selection.modelId)
+    if (selection.modelId.startsWith('gpt')) return openAiSupport(selection.modelId)
+    // An unrecognised bare id is routed by whichever key is configured, so we
+    // cannot say what it takes. Offer sampling only — the safe intersection.
+    return { reasoning: [], reasoningWire: 'none', sampling: true, temperatureMax: 2 }
+  }
+  // OpenAI-compatible transports (OpenRouter, LM Studio, extra providers). The
+  // request shape is fixed; which levels the upstream model honours is not.
+  return {
+    reasoning: OPENAI_COMPATIBLE_LADDER,
+    reasoningWire: selection.namespace === 'openrouter' ? 'openrouter' : 'openai-effort',
+    sampling: true,
+    temperatureMax: 2,
+    upstreamDecides: true,
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function roundToStep(value: number): number {
+  // Two decimals: enough for the values vendors actually publish (top_p 0.95,
+  // temperature 0.7) without carrying float noise onto the wire.
+  return Math.round(value * 100) / 100
+}
+
+/**
+ * Drop anything `model` will not accept and clamp what it will.
+ *
+ * Stored parameters outlive the selection they were saved against: a user tunes
+ * temperature on a 4.6 model, later pins Opus 5, and that same stored value is
+ * now a 400. Sanitizing on read means a stale entry degrades to the provider
+ * default instead of failing the turn.
+ */
+export function sanitizeModelParameters(
+  params: ModelParameters,
+  model: string,
+  support: ModelParameterSupport = modelParameterSupport(model),
+): ModelParameters {
+  const sanitized: ModelParameters = {}
+  if (params.reasoning !== undefined && support.reasoning.includes(params.reasoning)) {
+    sanitized.reasoning = params.reasoning
+  }
+  if (support.sampling) {
+    if (typeof params.temperature === 'number' && Number.isFinite(params.temperature)) {
+      sanitized.temperature = roundToStep(clamp(params.temperature, 0, support.temperatureMax))
+    }
+    if (typeof params.topP === 'number' && Number.isFinite(params.topP)) {
+      sanitized.topP = roundToStep(clamp(params.topP, 0, 1))
+    }
+  }
+  return sanitized
+}
+
+// ── Wire mapping ─────────────────────────────────────────────────────────────
+
+/** Thinking budgets for the pre-`effort` Claude models, in output tokens. */
+const BUDGET_TOKENS: Partial<Record<ReasoningLevel, number>> = {
+  low: 4_096,
+  medium: 16_384,
+  high: 32_768,
+}
+
+/** The API floor for `thinking.budget_tokens`. */
+const MIN_BUDGET_TOKENS = 1_024
+
+/**
+ * Headroom left for the answer itself: the budget must be strictly less than
+ * `max_tokens`, and a budget that consumed all of it would leave the model no
+ * room to reply.
+ */
+const BUDGET_HEADROOM_TOKENS = 1_024
+
+/**
+ * Resolve a thinking budget for the pre-`effort` Claude models, or `null` when
+ * the model's output cap leaves no room to think and answer.
+ */
+export function anthropicThinkingBudget(level: ReasoningLevel, maxTokens: number): number | null {
+  const requested = BUDGET_TOKENS[level]
+  if (requested === undefined) return null
+  const ceiling = maxTokens - BUDGET_HEADROOM_TOKENS
+  if (ceiling < MIN_BUDGET_TOKENS) return null
+  return Math.min(requested, ceiling)
+}
+
+/** Anthropic `thinking` / `output_config` / sampling fields for a request body. */
+export interface AnthropicParameterFields {
+  thinking?:
+    { type: 'adaptive' } | { type: 'disabled' } | { type: 'enabled'; budget_tokens: number }
+  output_config?: { effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
+  temperature?: number
+  top_p?: number
+}
+
+const ANTHROPIC_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+function anthropicEffort(level: ReasoningLevel): (typeof ANTHROPIC_EFFORTS)[number] | null {
+  return ANTHROPIC_EFFORTS.find((effort) => effort === level) ?? null
+}
+
+/**
+ * Map sanitized parameters onto Anthropic request fields.
+ *
+ * `off` disables thinking rather than naming an effort; a named level sets
+ * `output_config.effort` *and* asks for adaptive thinking, because effort tunes
+ * how much the model thinks and is inert when thinking is off. On the older
+ * models the same level becomes a token budget instead.
+ */
+export function anthropicParameterFields(
+  params: ModelParameters,
+  model: string,
+  maxTokens: number = anthropicMaxOutputTokens(model),
+  support: ModelParameterSupport = modelParameterSupport(model),
+): AnthropicParameterFields {
+  const fields: AnthropicParameterFields = {}
+  const { reasoning } = params
+  if (reasoning === 'off') {
+    fields.thinking = { type: 'disabled' }
+  } else if (reasoning !== undefined && support.reasoningWire === 'anthropic-effort') {
+    const effort = anthropicEffort(reasoning)
+    if (effort) {
+      fields.thinking = { type: 'adaptive' }
+      fields.output_config = { effort }
+    }
+  } else if (reasoning !== undefined && support.reasoningWire === 'anthropic-budget') {
+    const budget = anthropicThinkingBudget(reasoning, maxTokens)
+    if (budget !== null) fields.thinking = { type: 'enabled', budget_tokens: budget }
+  }
+  if (params.temperature !== undefined) fields.temperature = params.temperature
+  if (params.topP !== undefined) fields.top_p = params.topP
+  return fields
+}
+
+/** OpenAI-shaped `reasoning_effort` / sampling fields for a request body. */
+export interface OpenAIParameterFields {
+  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  temperature?: number
+  top_p?: number
+}
+
+/**
+ * Map sanitized parameters onto OpenAI Chat Completions fields. `off` sends
+ * `reasoning_effort: 'none'` — the value OpenAI-compatible servers use to turn
+ * a hybrid model's reasoning off; `minimal` is its own level, not a synonym.
+ */
+export function openAiParameterFields(params: ModelParameters): OpenAIParameterFields {
+  const fields: OpenAIParameterFields = {}
+  if (params.reasoning !== undefined) {
+    fields.reasoning_effort = params.reasoning === 'off' ? 'none' : params.reasoning
+  }
+  if (params.temperature !== undefined) fields.temperature = params.temperature
+  if (params.topP !== undefined) fields.top_p = params.topP
+  return fields
+}
+
+/** Responses-API fields: same values, but reasoning is a nested object there. */
+export interface ResponsesParameterFields {
+  reasoning?: { effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
+  temperature?: number
+  top_p?: number
+}
+
+/** {@link openAiParameterFields} in the Responses API's request shape. */
+export function responsesParameterFields(params: ModelParameters): ResponsesParameterFields {
+  const { reasoning_effort: effort, ...sampling } = openAiParameterFields(params)
+  return { ...sampling, ...(effort === undefined ? {} : { reasoning: { effort } }) }
+}
+
+/**
+ * OpenRouter's unified reasoning field. It normalises `reasoning` across
+ * upstream vendors, so it is preferred over the raw `reasoning_effort` alias —
+ * and it is the only one of the two that can express "off"
+ * (`{ enabled: false }`).
+ */
+export function openRouterReasoningBody(
+  params: ModelParameters,
+): { reasoning: { effort: ReasoningLevel } | { enabled: false } } | Record<string, never> {
+  const { reasoning } = params
+  if (reasoning === undefined) return {}
+  if (reasoning === 'off') return { reasoning: { enabled: false } }
+  return { reasoning: { effort: reasoning } }
+}
+
+// ── Persistence ──────────────────────────────────────────────────────────────
+
+function decodeNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/** Decode one persisted entry, ignoring anything unrecognised. */
+export function decodeModelParameters(value: unknown): ModelParameters {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const record: Record<string, unknown> = { ...value }
+  const params: ModelParameters = {}
+  if (isReasoningLevel(record['reasoning'])) params.reasoning = record['reasoning']
+  const temperature = decodeNumber(record['temperature'])
+  if (temperature !== undefined) params.temperature = temperature
+  const topP = decodeNumber(record['topP'])
+  if (topP !== undefined) params.topP = topP
+  return params
+}
+
+/**
+ * Decode the whole `modelParameters` setting: model selection → parameters.
+ * Hand-rolled rather than schema-validated because both the renderer (which has
+ * no zod) and the main process read it, and an unreadable entry should mean
+ * "no parameters for that model", never a thrown turn.
+ */
+export function decodeModelParametersMap(value: unknown): Record<string, ModelParameters> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const out: Record<string, ModelParameters> = {}
+  for (const [model, entry] of Object.entries(value)) {
+    if (!model) continue
+    const params = decodeModelParameters(entry)
+    if (!isEmptyModelParameters(params)) out[model] = params
+  }
+  return out
+}
+
+/** The parameters stored for `model`, sanitized against what it accepts. */
+export function resolveModelParameters(stored: unknown, model: string): ModelParameters {
+  const entry = decodeModelParametersMap(stored)[model]
+  return entry ? sanitizeModelParameters(entry, model) : {}
+}

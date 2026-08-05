@@ -14,6 +14,7 @@ import {
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
+import type { LLMProvider } from '@shared/types'
 import { expectStringRecord } from '@shared/unknown-value.ts'
 import { jsonResponse } from './test-response.ts'
 
@@ -142,6 +143,70 @@ describe('subagent local model routing', () => {
     )
     assert.equal(normalizeRoleModelSelection('claude-haiku-4-5'), 'claude-haiku-4-5')
     assert.equal(normalizeRoleModelSelection('gpt-5-mini'), 'gpt-5-mini')
+  })
+})
+
+/**
+ * Capture the request body a built provider sends, by stubbing the OpenAI
+ * client it holds privately. Used to prove the stored per-model parameters
+ * actually reach the wire rather than stopping at the settings read.
+ */
+async function captureLocalRequest(provider: LLMProvider): Promise<Record<string, unknown>> {
+  const captured: { request?: Record<string, unknown> } = {}
+  const create = (request: Record<string, unknown>): AsyncIterable<unknown> => {
+    captured.request = request
+    return (async function* (): AsyncGenerator {
+      yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }
+    })()
+  }
+  Object.defineProperty(provider, 'client', {
+    value: { chat: { completions: { create } } },
+    configurable: true,
+  })
+  for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
+  return captured.request ?? {}
+}
+
+describe('per-model parameters reach the built provider', () => {
+  const prevMock = process.env['COPSE_PANEL_MOCK_LLM']
+
+  beforeEach(() => {
+    delete process.env['COPSE_PANEL_MOCK_LLM']
+  })
+
+  afterEach(() => {
+    setSetting('modelParameters', {})
+    if (prevMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+    else process.env['COPSE_PANEL_MOCK_LLM'] = prevMock
+  })
+
+  it('sends the parameters saved for the model being built', async () => {
+    setSetting('modelParameters', {
+      'lmstudio:qwen-tuned': { reasoning: 'high', temperature: 0.6, topP: 0.9 },
+    })
+    const request = await captureLocalRequest(await buildProvider('lmstudio:qwen-tuned'))
+    assert.equal(request['reasoning_effort'], 'high')
+    assert.equal(request['temperature'], 0.6)
+    assert.equal(request['top_p'], 0.9)
+  })
+
+  it('does not leak one model’s parameters onto another', async () => {
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { temperature: 0.6 } })
+    const request = await captureLocalRequest(await buildProvider('lmstudio:qwen-other'))
+    assert.equal(request['temperature'], undefined)
+    assert.equal(request['reasoning_effort'], undefined)
+  })
+
+  it('sends nothing when the stored map fails its schema', async () => {
+    // Two layers guard the read: the settings schema rejects a map that is not
+    // shaped like parameters at all (only reachable by hand-editing the file),
+    // and `sanitizeModelParameters` drops values the *selected* model would
+    // reject. This covers the first; the second is unit-tested against every
+    // family in `model-parameters.test.ts`.
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'ludicrous' } })
+    const request = await captureLocalRequest(await buildProvider('lmstudio:qwen-tuned'))
+    assert.equal(request['reasoning_effort'], undefined)
+    assert.equal(request['temperature'], undefined)
   })
 })
 

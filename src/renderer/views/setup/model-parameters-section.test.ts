@@ -1,0 +1,180 @@
+import '../../../../tests/setup-dom.ts'
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { createModelParametersSection } from './model-parameters-section.ts'
+import { qs } from '../../dom/helpers.ts'
+
+interface Store {
+  saved: Record<string, unknown>
+  writes: number
+}
+
+function stubSettings(initial?: unknown): {
+  api: {
+    get: (key: string) => Promise<unknown>
+    set: (key: string, value: unknown) => Promise<void>
+  }
+  store: Store
+} {
+  const store: Store = {
+    saved: initial === undefined ? {} : { modelParameters: initial },
+    writes: 0,
+  }
+  return {
+    store,
+    api: {
+      get: (key: string): Promise<unknown> => Promise.resolve(store.saved[key] ?? null),
+      set: (key: string, value: unknown): Promise<void> => {
+        store.saved[key] = value
+        store.writes += 1
+        return Promise.resolve()
+      },
+    },
+  }
+}
+
+function control(root: HTMLElement, testid: string): HTMLElement | null {
+  return qs(root, `[data-testid="${testid}"]`)
+}
+
+function selectControl(root: HTMLElement, testid: string): HTMLSelectElement {
+  const node = control(root, testid)
+  assert.ok(node instanceof HTMLSelectElement, testid)
+  return node
+}
+
+function inputControl(root: HTMLElement, testid: string): HTMLInputElement {
+  const node = control(root, testid)
+  assert.ok(node instanceof HTMLInputElement, testid)
+  return node
+}
+
+function fire(node: HTMLElement): void {
+  node.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+describe('model parameters section', () => {
+  it('offers reasoning without sampling for a model that rejects temperature', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('claude-opus-5')
+
+    const reasoning = selectControl(section.root, 'model-parameter-reasoning')
+    assert.ok([...reasoning.options].some((option) => option.value === 'xhigh'))
+    assert.equal(control(section.root, 'model-parameter-temperature'), null)
+    assert.equal(control(section.root, 'model-parameter-top-p'), null)
+    assert.match(section.root.textContent, /does not accept temperature or top-p/)
+  })
+
+  it('offers all three controls for an OpenAI-compatible model', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:deepseek/deepseek-v4-flash')
+
+    assert.ok(control(section.root, 'model-parameter-reasoning'))
+    assert.ok(control(section.root, 'model-parameter-temperature'))
+    assert.ok(control(section.root, 'model-parameter-top-p'))
+    assert.match(section.root.textContent, /up to the model behind it/)
+  })
+
+  it('saves what the user tuned, keyed by the model it was tuned for', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:deepseek/deepseek-v4-flash')
+
+    const reasoning = selectControl(section.root, 'model-parameter-reasoning')
+    const temperature = inputControl(section.root, 'model-parameter-temperature')
+    const topP = inputControl(section.root, 'model-parameter-top-p')
+    reasoning.value = 'max'
+    fire(reasoning)
+    temperature.value = '1'
+    fire(temperature)
+    topP.value = '0.95'
+    fire(topP)
+    await section.save()
+
+    assert.deepEqual(store.saved['modelParameters'], {
+      'openrouter:deepseek/deepseek-v4-flash': { reasoning: 'max', temperature: 1, topP: 0.95 },
+    })
+  })
+
+  it('writes nothing when the user only looked', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('claude-opus-5')
+    section.setModel('gpt-4o')
+    await section.save()
+    assert.equal(store.writes, 0)
+  })
+
+  it('clamps a typed value to what the model accepts and shows the clamp', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('claude-sonnet-4-6')
+
+    const temperature = inputControl(section.root, 'model-parameter-temperature')
+    temperature.value = '1.8'
+    fire(temperature)
+    assert.equal(temperature.value, '1')
+    await section.save()
+    assert.deepEqual(store.saved['modelParameters'], { 'claude-sonnet-4-6': { temperature: 1 } })
+  })
+
+  it('drops the entry when every field is cleared again', async () => {
+    const { api, store } = stubSettings({ 'gpt-4o': { temperature: 0.4 } })
+    const section = createModelParametersSection(api)
+    await section.refresh('gpt-4o')
+
+    const temperature = inputControl(section.root, 'model-parameter-temperature')
+    assert.equal(temperature.value, '0.4')
+    temperature.value = ''
+    fire(temperature)
+    await section.save()
+    assert.deepEqual(store.saved['modelParameters'], {})
+  })
+
+  it('keeps each model’s parameters separate as the picker changes', async () => {
+    const { api, store } = stubSettings({ 'gpt-4o': { temperature: 0.4 } })
+    const section = createModelParametersSection(api)
+    await section.refresh('gpt-4o')
+
+    section.setModel('claude-opus-5')
+    const reasoning = selectControl(section.root, 'model-parameter-reasoning')
+    assert.equal(reasoning.value, '')
+    reasoning.value = 'high'
+    fire(reasoning)
+    await section.save()
+
+    assert.deepEqual(store.saved['modelParameters'], {
+      'gpt-4o': { temperature: 0.4 },
+      'claude-opus-5': { reasoning: 'high' },
+    })
+  })
+
+  it('explains rather than offering controls for a selection that owns its own settings', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('acp:claude-code#opus')
+
+    assert.equal(control(section.root, 'model-parameter-reasoning'), null)
+    assert.equal(control(section.root, 'model-parameter-temperature'), null)
+    assert.match(section.root.textContent, /own agent/)
+  })
+
+  it('points at pinning a model when the selection is a rule', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('auto:best-value')
+
+    assert.equal(control(section.root, 'model-parameter-reasoning'), null)
+    assert.match(section.root.textContent, /pin one to tune it/)
+  })
+
+  it('ignores a corrupt saved map instead of failing to render', async () => {
+    const { api } = stubSettings('not-a-map')
+    const section = createModelParametersSection(api)
+    await section.refresh('gpt-4o')
+    const temperature = inputControl(section.root, 'model-parameter-temperature')
+    assert.equal(temperature.value, '')
+  })
+})

@@ -91,6 +91,10 @@ interface CapturedRequestBody {
   store?: boolean
   provider?: { require_parameters?: boolean; zdr?: boolean; data_collection?: string }
   stream_options?: { include_usage?: boolean }
+  reasoning?: { effort?: string; enabled?: boolean }
+  reasoning_effort?: string
+  temperature?: number
+  top_p?: number
 }
 
 function expectOpenAIProvider(provider: LLMProvider): OpenAIProvider {
@@ -382,5 +386,53 @@ describe('createExtraCloudProvider Responses transport', () => {
     const provider = createExtraCloudProvider(perplexity, 'openai/gpt-5.6-sol', 'pplx-test')
 
     assert.ok(provider instanceof ResponsesProvider)
+  })
+})
+
+describe('tuned model parameters reach the provider', () => {
+  it('sends OpenRouter reasoning on its unified field, not the alias', async () => {
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('deepseek/deepseek-v4-flash', 'sk-or-test', undefined, {
+        params: { reasoning: 'max', temperature: 1, topP: 0.95 },
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.reasoning, { effort: 'max' })
+    assert.equal(request.reasoning_effort, undefined)
+    assert.equal(request.temperature, 1)
+    assert.equal(request.top_p, 0.95)
+  })
+
+  it('expresses OpenRouter "off" as disabled reasoning', async () => {
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('deepseek/deepseek-v4-flash', 'sk-or-test', undefined, {
+        params: { reasoning: 'off' },
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.reasoning, { enabled: false })
+  })
+
+  it('sends reasoning_effort to a local OpenAI-compatible server', async () => {
+    const provider = expectOpenAIProvider(
+      createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local', 'lm-studio', {
+        reasoning: 'high',
+        temperature: 0.6,
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.reasoning_effort, 'high')
+    assert.equal(request.temperature, 0.6)
+  })
+
+  it('leaves an untuned request body untouched', async () => {
+    const provider = expectOpenAIProvider(
+      createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local'),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.reasoning_effort, undefined)
+    assert.equal(request.temperature, undefined)
+    assert.equal(request.top_p, undefined)
+    assert.equal(request.reasoning, undefined)
   })
 })

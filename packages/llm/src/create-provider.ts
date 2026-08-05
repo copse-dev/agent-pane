@@ -7,6 +7,7 @@ import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import { assertProviderHostAllowed } from './provider-host-policy.ts'
 import { validateCredentialBaseUrl } from './credential-url.ts'
+import { openRouterReasoningBody, type ModelParameters } from './model-parameters.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
@@ -37,7 +38,7 @@ export function createProvider(
   model?: string,
   keys: ProviderKeys = {},
   promptCacheKey?: string,
-  opts: { serviceTier?: string } = {},
+  opts: { serviceTier?: string; params?: ModelParameters } = {},
 ): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
@@ -45,8 +46,11 @@ export function createProvider(
   const m = model ?? ''
   const cacheKeyOpt = promptCacheKey ? { promptCacheKey } : {}
   // Only ever reaches OpenAI: `service_tier` is an OpenAI request field, and
-  // Anthropic rejects unknown body fields outright.
+  // Anthropic rejects unknown body fields outright. Tuned parameters go to every
+  // branch instead — each provider maps them onto its own family's wire fields.
   const tierOpt = opts.serviceTier ? { serviceTier: opts.serviceTier } : {}
+  const params = opts.params ?? {}
+  const paramsOpt = { params }
   const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
   const openAiApiKey = keys.openAiApiKey ?? process.env['OPENAI_API_KEY']
   if (m.startsWith('gpt')) {
@@ -59,6 +63,7 @@ export function createProvider(
       apiKey: openAiApiKey,
       ...cacheKeyOpt,
       ...tierOpt,
+      ...paramsOpt,
       ...OPENAI_STORE_OPT_OUT,
     })
   }
@@ -68,11 +73,12 @@ export function createProvider(
         'Anthropic is not configured. Add ANTHROPIC_API_KEY in Settings or choose an OpenAI or LM Studio model.',
       )
     }
-    return new AnthropicProvider(m, { apiKey: anthropicApiKey })
+    return new AnthropicProvider(m, { apiKey: anthropicApiKey, ...paramsOpt })
   }
   if (anthropicApiKey) {
     return new AnthropicProvider(model ?? process.env['ANTHROPIC_MODEL'] ?? DEFAULT_CLOUD_MODEL, {
       apiKey: anthropicApiKey,
+      ...paramsOpt,
     })
   }
   if (openAiApiKey) {
@@ -80,6 +86,7 @@ export function createProvider(
       apiKey: openAiApiKey,
       ...cacheKeyOpt,
       ...tierOpt,
+      ...paramsOpt,
       ...OPENAI_STORE_OPT_OUT,
     })
   }
@@ -95,11 +102,17 @@ export function createLocalOpenAIProvider(
   baseURL: string,
   model: string,
   apiKey = 'lm-studio',
+  params: ModelParameters = {},
 ): LLMProvider {
   // LM Studio and other OpenAI-compatible local servers need stream_options.include_usage
   // or they never report prompt/completion tokens — without that, usage chunks (and the
   // Settings usage ledger) stay empty for local models such as qwen.
-  return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio', includeUsage: true })
+  return new OpenAIProvider(model, {
+    baseURL,
+    apiKey: apiKey || 'lm-studio',
+    includeUsage: true,
+    params,
+  })
 }
 
 export const createLMStudioProvider = createLocalOpenAIProvider
@@ -134,11 +147,17 @@ export function createOpenRouterProvider(
   model: string,
   apiKey: string,
   promptCacheKey?: string,
-  opts: { zdrOnly?: boolean; allowTraining?: boolean } = {},
+  opts: { zdrOnly?: boolean; allowTraining?: boolean; params?: ModelParameters } = {},
 ): LLMProvider {
   const zdrOnly = opts.zdrOnly ?? true
   const allowTraining = opts.allowTraining ?? false
+  // Reasoning rides OpenRouter's own unified field rather than the
+  // `reasoning_effort` alias, so it normalises across upstream vendors and can
+  // express "off". Sampling stays on the standard OpenAI-shaped fields, so the
+  // reasoning level is dropped from `params` to avoid sending both spellings.
+  const { reasoning: _reasoning, ...sampling } = opts.params ?? {}
   return new OpenAIProvider(model, {
+    params: sampling,
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
     includeUsage: true,
@@ -149,6 +168,7 @@ export function createOpenRouterProvider(
         ...(zdrOnly ? { zdr: true } : {}),
         ...(allowTraining ? {} : { data_collection: 'deny' }),
       },
+      ...openRouterReasoningBody(opts.params ?? {}),
     },
     ...(promptCacheKey ? { promptCacheKey } : {}),
   })
@@ -169,6 +189,7 @@ export function createExtraCloudProvider(
   model: string,
   apiKey: string,
   approvedHosts: readonly string[] = [],
+  params: ModelParameters = {},
 ): LLMProvider {
   validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
@@ -179,6 +200,7 @@ export function createExtraCloudProvider(
       baseURL: provider.baseUrl,
       apiKey,
       serverTools,
+      params,
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
     })
   }
@@ -188,6 +210,7 @@ export function createExtraCloudProvider(
     // (many reject a blank Authorization header), mirroring createLocalOpenAIProvider.
     apiKey: provider.local ? apiKey || 'lm-studio' : apiKey,
     includeUsage: provider.includeUsage ?? !provider.local,
+    params,
     ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),
   })
 }
