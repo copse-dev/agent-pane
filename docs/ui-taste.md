@@ -85,6 +85,21 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
+### Agent-authored dialog copy and secrets
+
+- Agent-authored prose in a dialog follows the same sanitized Markdown contract as transcript
+  prose. Render commands and paths as inline code; never show raw backtick delimiters as UI copy.
+  Suggested-answer buttons may render sanitized, phrasing-only Markdown (`code`, emphasis, and
+  strong text); block or interactive Markdown remains literal because buttons are controls, not
+  document containers.
+- Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
+  provider/ACP wording in a visually subordinate technical-details block so it remains copyable
+  without competing with the fix.
+- Password inputs retain native `type="password"` semantics and use Chromium’s filled-disc mask
+  (`-webkit-text-security: disc`). At compact UI sizes, use a large enough system-font mask that the
+  glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
+  text-field overlay.
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
@@ -226,6 +241,17 @@ copied. The contract test
 [`src/renderer/styles/text-selection.test.ts`](../src/renderer/styles/text-selection.test.ts) pins
 the policy: body defaults to non-selectable, the content regions opt back in, and the permission
 prompt stays non-selectable.
+
+## Responsive titlebar chrome
+
+Titlebar compactness follows the space its rendered contents actually need, not the window's aspect
+ratio or a fixed viewport breakpoint. Workspace names, branches, enabled panel packs, editor labels,
+and UI scale all change that width. Measure the full label state and collapse secondary labels only
+when it would overflow; expand them again when room returns.
+
+The flexible `.titlebar-drag` region always keeps at least `--spacing-lg` of width. Interactive
+controls must not consume that last draggable strip, even when every optional panel mode is visible.
+The regression state lives in [`tests/e2e/titlebar-compact.e2e.ts`](../tests/e2e/titlebar-compact.e2e.ts).
 
 ## Sticky footers inside scroll containers (gotcha)
 
@@ -393,11 +419,23 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `reasoning` field / provider events.
 - **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
   `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
-  into the live disclosure title so the transcript never shows two reasoning labels. The animated
-  spiral sits immediately beside the live label; settled disclosures return to a static chevron.
-- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
-  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
-  place so the existing past-tense label does not jump horizontally; do not keep animating it.
+  into the live disclosure title so the transcript never shows two reasoning labels. Settled
+  reasoning disclosures return to a static chevron.
+- **The activity spiral never sits ahead of a label in the text column.** Nothing in flow may
+  precede a live label, or the row reads at a different indent than its settled self and the hover
+  pill stretches past the text. Two placements, by where the row's label sits:
+  - **On the prose column → the gutter.** Top-level tool rows and the standalone activity row put
+    the spiral out of flow in the message's own padding column (`.tool-activity-icon-slot`,
+    `.agent-activity > .reasoning-activity-icon`). `.msg` clips horizontally, so that gutter is
+    `--spacing-md` wide — size the spiral to fit it, do not reach further left.
+  - **Indented under a rule → trailing its own line.** Rows inside `.tool-rollup-body` or
+    `.subagent-timeline` keep the slot in flow but `order` it after the label and stats, sized to
+    the status glyph beside it. A far-left gutter spiral would strand itself a column away from the
+    label it belongs to. Collapse the empty slot when such a row settles: with nothing ahead of the
+    label there is no indent to preserve, only a gap to avoid.
+
+  When a tool settles, drop the icon; do not keep animating it.
+
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on

@@ -13,6 +13,10 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import {
+  supervisedTaskMetaSchema,
+  type SupervisedTaskMeta,
+} from '../../../src/shared/supervisor/task-schema.ts'
 import type { AcpAgentConfig } from '../../../src/shared/types/acp.ts'
 import { explodeThread } from '../../../src/shared/threads/fold.ts'
 import {
@@ -47,9 +51,11 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
  */
 const DEFAULT_DISABLED_PACK_IDS = [
   'copse.advisor-strategy',
+  'copse.automations',
   'copse.background-tasks',
   'copse.ci-investigator',
   'copse.devtools-shortcut',
+  'copse.dark-factory',
   'copse.long-horizon-tasks',
   'copse.mcp-ui-canvas',
   'copse.model-comparison',
@@ -57,6 +63,13 @@ const DEFAULT_DISABLED_PACK_IDS = [
   'copse.pii-redaction',
   'copse.roadmap-plans',
 ] as const
+
+export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
+  const validated = supervisedTaskMetaSchema.parse(task)
+  const dir = join(e2eWorkspaceDir(), validated.projectId, 'tasks', validated.taskId)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(validated, null, 2)}\n`, 'utf8')
+}
 
 /** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
 function packDisabledSeed(enabled: readonly string[]): string[] {
@@ -352,6 +365,8 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    /** Opt into the session-scoped `run_background` tool. */
+    backgroundTasksEnabled?: boolean
     developerMode?: boolean
     /**
      * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
@@ -363,6 +378,15 @@ export function seedEmptyProject(
     autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
+    /**
+     * Store a Parallel API key. The `copse.parallel-search` pack is
+     * credential-gated in both directions — the host only registers
+     * `parallel_search` when a key resolves, and Settings only lets the toggle
+     * be turned on once one is saved — so a spec exercising the enabled pack
+     * has to seed one. Same base64-plaintext record shape as
+     * {@link seedOpenRouterFixture}.
+     */
+    parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
@@ -400,6 +424,7 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
+  if (options?.backgroundTasksEnabled) enabledPacks.push('copse.background-tasks')
   seedConfig.packDisabled =
     options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
   if (options?.packSources) {
@@ -460,6 +485,15 @@ export function seedEmptyProject(
   }
   if (options?.windowBounds !== undefined) {
     settings.windowBounds = options.windowBounds
+  }
+  if (options?.parallelApiKey !== undefined) {
+    settings.apiKey = {
+      parallel: {
+        v: 1,
+        enc: Buffer.from(options.parallelApiKey, 'utf8').toString('base64'),
+        plain: true,
+      },
+    }
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
@@ -1718,6 +1752,67 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
             'claude-haiku-4-5': { inputTokens: 800_000, outputTokens: 15_000 },
           },
         },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
+/** Action-first ACP authentication failure rendered as structured Markdown. */
+export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-auth-error-project'
+  const threadId = 'e2e-acp-auth-error-thread'
+  const now = Date.now()
+  const content = [
+    '> [!WARNING]',
+    '> **Claude sign-in expired**',
+    '>',
+    '> This turn couldn’t run because Claude’s saved credentials are no longer valid.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `claude /login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    'Alternatively, set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
+    'Details: {"errorKind":"authentication_failed"}',
+    '```',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP authentication failure',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-auth',
+            role: 'user',
+            content: 'Inspect the MDN reference for this API.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-auth',
+            role: 'assistant',
+            content,
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 1,
       },

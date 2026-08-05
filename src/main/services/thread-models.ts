@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { activateGuardedYoloForRun } from './security/guarded-yolo.ts'
 
 // Tracks which LLM models actually ran in each thread so `git_commit` can credit
@@ -13,13 +14,14 @@ const modelsByThread = new Map<string, Set<string>>()
 interface ActiveRunIdentity {
   readonly threadId: string
   model: string | null
+  turnTreeId: TurnTreeId | null
 }
 
 const activeRunStorage = new AsyncLocalStorage<ActiveRunIdentity>()
 
 /** Scope the active thread/model identity to one complete asynchronous run. */
 export function runWithActiveRunIdentity<T>(threadId: string, fn: () => T): T {
-  return activeRunStorage.run({ threadId, model: null }, fn)
+  return activeRunStorage.run({ threadId, model: null, turnTreeId: null }, fn)
 }
 
 /** Record a model id observed for a thread (no-op for blank ids). */
@@ -54,6 +56,7 @@ export function clearActiveRunThread(threadId: string): void {
   const active = activeRunStorage.getStore()
   if (active?.threadId === threadId) {
     active.model = null
+    active.turnTreeId = null
   }
 }
 
@@ -72,6 +75,18 @@ export function setActiveRunModel(model: string | null): void {
 /** The model the active run is executing on, or null when idle / unknown. */
 export function getActiveRunModel(): string | null {
   return activeRunStorage.getStore()?.model ?? null
+}
+
+/** Bind the human-originated turn-tree epoch to the active run. */
+export function setActiveRunTurnTreeId(turnTreeId: TurnTreeId): void {
+  const active = activeRunStorage.getStore()
+  if (!active) throw new Error('No active run identity context')
+  active.turnTreeId = turnTreeId
+}
+
+/** Human-originated turn-tree epoch for the active run, or null outside one. */
+export function getActiveRunTurnTreeId(): TurnTreeId | null {
+  return activeRunStorage.getStore()?.turnTreeId ?? null
 }
 
 /** Drop tracked models for a thread (e.g. when it is deleted). */

@@ -1,4 +1,5 @@
 import { clear, el } from '../dom/helpers.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
@@ -8,6 +9,23 @@ interface AskUserRequest {
   /** Thread this question belongs to; undefined = not tied to a run (show anywhere). */
   threadId: string | undefined
   questions: { question: string; options?: string[] }[]
+}
+
+/** Render the small, phrasing-only Markdown subset that is valid inside a button. */
+function setControlMarkdown(target: HTMLButtonElement, source: string): void {
+  const host = el('div')
+  host.innerHTML = renderMarkdown(source)
+  const paragraph = host.firstElementChild
+  const inlineTags = new Set(['CODE', 'EM', 'STRONG', 'S', 'DEL'])
+  const isInline =
+    host.children.length === 1 &&
+    paragraph?.tagName === 'P' &&
+    Array.from(paragraph.querySelectorAll('*')).every((node) => inlineTags.has(node.tagName))
+  if (!paragraph || !isInline) {
+    target.textContent = source
+    return
+  }
+  target.replaceChildren(...Array.from(paragraph.childNodes))
 }
 
 /**
@@ -53,24 +71,34 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
     form.append(el('h3', { class: 'ask-user-title' }, 'The agent has a question'))
 
     active.questions.forEach((q, i) => {
+      const questionId = `ask-user-question-${String(i)}`
       const input = el('textarea', {
         class: 'ask-user-input',
         rows: '2',
         'data-question-index': String(i),
+        'aria-labelledby': questionId,
       })
       inputs.push(input)
 
-      const field = el(
-        'div',
-        { class: 'ask-user-field' },
-        el('label', { class: 'ask-user-question' }, q.question),
-      )
+      // Questions are agent-authored content, so render the same sanitized
+      // Markdown as chat. In particular, commands should look like commands
+      // rather than showing their backtick delimiters. Quick-pick controls use
+      // only the phrasing subset that is valid inside a button (see above).
+      const question = el('div', {
+        id: questionId,
+        class: 'ask-user-question streaming-markdown',
+      })
+      question.innerHTML = renderMarkdown(q.question)
+      const field = el('div', { class: 'ask-user-field' }, question)
       if (q.options && q.options.length > 0) {
         const optionRow = el('div', { class: 'ask-user-options' })
         for (const option of q.options) {
-          const button = el('button', { type: 'button', class: 'ask-user-option' }, option)
+          const button = el('button', { type: 'button', class: 'ask-user-option' })
+          setControlMarkdown(button, option)
           button.addEventListener('click', () => {
-            input.value = option
+            // Insert the rendered label, not its Markdown source, so selecting
+            // a command does not put raw backticks back into the visible field.
+            input.value = button.textContent
             input.focus()
           })
           optionRow.append(button)
