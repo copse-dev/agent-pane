@@ -5,6 +5,7 @@ import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { SshConnectionState } from '@shared/types/ssh-workspace.ts'
 import {
+  addProject,
   attachProjectThreadCache,
   getSidebarThreads,
   isProjectSwitchInFlight,
@@ -341,6 +342,147 @@ test('a superseded project switch does not apply stale workspace state', async (
   assert.equal(store.getState().activeThreadId, 't-c')
   assert.ok(workspaceSets.includes('/c'))
   assert.equal(workspaceSets.at(-1), '/c')
+})
+
+// Switching to another project and immediately back is a decision to stay put.
+// The in-flight switch used to carry on regardless: it pointed main at the other
+// project's root, persisted it as the selected project and compacted the live
+// sidebar cache before bailing at its own expanded-project guard — leaving the
+// renderer on one project while everything main serves belonged to another.
+test('switching back cancels the in-flight switch and keeps the workspace put', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  attachProjectThreadCache(store)
+  store.emit('threads_changed')
+
+  const workspaceSets: string[] = []
+  let releaseWorkspace!: () => void
+  const workspaceGate = new Promise<string>((resolve) => {
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
+  })
+  const selections: unknown[] = []
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      workspaceSets.push(path)
+      if (path === '/b') return workspaceGate
+      return path
+    },
+    storageSet: async (key, value) => {
+      if (key === 'activeProjectId') selections.push(value)
+    },
+    loadProjectThreads: async (projectId) => (projectId === 'b' ? [thread('t-b')] : []),
+  })
+
+  switchProject(store, api, 'b')
+  assert.equal(store.getState().expandedProjectId, 'b')
+
+  // Back to A before B's workspace.set lands.
+  switchProject(store, api, 'a')
+  assert.equal(store.getState().expandedProjectId, 'a')
+
+  releaseWorkspace()
+  await waitUntil(() => workspaceSets.at(-1) === '/a')
+
+  // Still on A, with main pointed back at it and A persisted as the selection.
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().workspaceRoot, '/a')
+  assert.deepEqual(
+    store.getState().threads.map((t) => t.id),
+    ['t-a'],
+  )
+  assert.equal(selections.at(-1), 'a')
+  // A is still the live project, so its sidebar rows keep their transcripts —
+  // the cancelled switch must not have compacted them out from under it.
+  assert.equal(getSidebarThreads(store, 'a')[0]?.messages?.length, 1)
+})
+
+test('picking a thread in the active project cancels a switch in flight', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a1'), thread('t-a2')],
+    activeThreadId: 't-a1',
+  })
+
+  let releaseWorkspace!: () => void
+  const workspaceGate = new Promise<string>((resolve) => {
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
+  })
+  const api = makeApi({
+    workspaceSet: async (path) => (path === '/b' ? workspaceGate : path),
+    loadProjectThreads: async (projectId) => (projectId === 'b' ? [thread('t-b')] : []),
+  })
+
+  switchProjectThread(store, api, 'b', 't-b')
+  // The user changes their mind and clicks a thread in the project they are on.
+  switchProjectThread(store, api, 'a', 't-a2')
+
+  assert.equal(store.getState().activeThreadId, 't-a2')
+  assert.equal(store.getState().expandedProjectId, 'a')
+
+  releaseWorkspace()
+  await new Promise((r) => setTimeout(r, 20))
+
+  // The abandoned switch must not land on top of the thread just chosen.
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().activeThreadId, 't-a2')
+})
+
+// activateAndWait callers (File ▸ Open Folder, new project, relocate, orphan
+// recovery) await activation, and boot chains ensureLayout off that promise — so
+// a switch that is abandoned without settling its waiter leaves the whole layout,
+// transcript included, unmounted.
+test('an abandoned switch settles its waiter instead of hanging', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+
+  let releaseWorkspace!: () => void
+  const workspaceGate = new Promise<string>((resolve) => {
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
+  })
+  const api = makeApi({
+    workspaceOpen: async () => '/b',
+    workspaceSet: async (path) => (path === '/b' ? workspaceGate : path),
+    loadProjectThreads: async () => [],
+  })
+
+  const opened = addProject(store, api)
+  await waitUntil(() => store.getState().expandedProjectId !== 'a')
+  // User clicks back onto A while the newly-opened folder is still activating.
+  switchProject(store, api, 'a')
+  releaseWorkspace()
+
+  assert.equal(await opened, true)
+  assert.equal(store.getState().activeProjectId, 'a')
 })
 
 test('switchProject passes sshHost through to workspace.set', async () => {

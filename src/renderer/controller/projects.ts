@@ -110,17 +110,53 @@ let liveCacheProjectId: string | null = null
 /** Per-project right-panel view state, so switching projects restores panel visibility. */
 const projectViewState: ProjectViewStateRegistry = new Map()
 let switchGeneration = 0
-let pendingThreadAfterSwitch: string | null = null
 
-type ActivationWaiter = { resolve: () => void; reject: (err: Error) => void }
+/**
+ * The switch currently activating a project, if any. Held so a later click can
+ * cancel it: bumping {@link switchGeneration} stops `finishActivate` applying
+ * its state, but a switch that has already dispatched `workspace.set` has moved
+ * the *main* process off the project the renderer is still showing, and that has
+ * to be put back.
+ */
+interface PendingSwitch {
+  gen: number
+  projectId: string
+  /** Whether main / config were already told about the target project. */
+  dispatched: boolean
+}
+let pendingSwitch: PendingSwitch | null = null
+
+type ActivationWaiter = { resolve: () => void; reject: (err: Error) => void; unsub?: () => void }
 const activationWaiters = new Map<string, ActivationWaiter>()
 
 function settleActivationWaiter(projectId: string, error?: Error): void {
   const waiter = activationWaiters.get(projectId)
   if (!waiter) return
   activationWaiters.delete(projectId)
+  waiter.unsub?.()
   if (error) waiter.reject(error)
   else waiter.resolve()
+}
+
+/**
+ * Retire the in-flight switch — applied, superseded or abandoned — and release
+ * anything awaiting it. Every one of those endings has to settle the waiter:
+ * `activateAndWait` callers (File ▸ Open Folder, new project, relocate, orphan
+ * recovery) otherwise await a promise that can never resolve, and boot chains
+ * `ensureLayout` off that promise, so the whole layout — transcript included —
+ * never mounts.
+ */
+function endSwitch(gen: number, projectId: string): void {
+  if (pendingSwitch?.gen === gen) pendingSwitch = null
+  settleActivationWaiter(projectId)
+}
+
+/** A newer switch is taking over: release the previous one's waiter. */
+function supersedePendingSwitch(): void {
+  if (!pendingSwitch) return
+  const superseded = pendingSwitch
+  pendingSwitch = null
+  settleActivationWaiter(superseded.projectId)
 }
 
 export function getSidebarThreads(store: AppStore, projectId: string): SidebarThread[] {
@@ -169,6 +205,55 @@ async function trySetWorkspace(api: ApiClient, path: string, sshHost?: string): 
   }
 }
 
+/**
+ * `workspace:set` is not serialized in the main process, so two roots requested
+ * in quick succession — switch away, switch back — can land out of order and
+ * leave main serving the project the user moved off. Chain them here so the last
+ * root requested is the last one applied.
+ */
+let workspaceChain: Promise<unknown> = Promise.resolve()
+
+function setWorkspaceInOrder(
+  api: ApiClient,
+  path: string,
+  sshHost: string | undefined,
+): Promise<boolean> {
+  const next = workspaceChain.catch(() => undefined).then(() => trySetWorkspace(api, path, sshHost))
+  workspaceChain = next
+  return next
+}
+
+/**
+ * Abandon the switch still in flight and undo whatever it already dispatched, so
+ * main and config agree with the project the user is staying on.
+ *
+ * Clicking the project you are already on while a switch to another one is still
+ * running used to simply return, leaving that switch to finish behind the user's
+ * back: it pointed main at the other project's root, persisted it as the
+ * selected project, and compacted the live sidebar thread cache before finally
+ * bailing at its own expanded-project guard. The renderer was then showing one
+ * project while everything main serves — the file tree, git, terminals, the next
+ * run's working directory — belonged to another, and the next launch reopened
+ * the project that was cancelled.
+ */
+function cancelPendingSwitch(store: AppStore, api: ApiClient): void {
+  const cancelled = pendingSwitch
+  if (!cancelled) return
+  pendingSwitch = null
+  switchGeneration += 1
+  settleActivationWaiter(cancelled.projectId)
+  // Nothing to undo — and no IPC round trip to spend — if it never got that far.
+  if (!cancelled.dispatched) return
+  const { activeProjectId, projects } = store.getState()
+  const active = projects.find((p) => p.id === activeProjectId)
+  if (!active) return
+  // Both writes queue behind the cancelled switch's own (workspace activation
+  // through setWorkspaceInOrder, the selection through saveProjects' per-key
+  // chain), so the project being kept is the one that lands last.
+  void setWorkspaceInOrder(api, active.path, active.sshHost)
+  void saveProjects(api, projects, active.id)
+}
+
 function abortProjectActivation(
   store: AppStore,
   id: string,
@@ -177,6 +262,7 @@ function abortProjectActivation(
   error: Error,
 ): void {
   if (gen !== switchGeneration) return
+  if (pendingSwitch?.gen === gen) pendingSwitch = null
   settleActivationWaiter(id, error)
   const revertExpanded = outgoingId ?? store.getState().activeProjectId
   if (revertExpanded) {
@@ -232,8 +318,9 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
   const wasExpanded = (state.expandedProjectId ?? state.activeProjectId) === id
 
   if (!wasActive) {
-    // Cancel an in-flight switch that was targeting this project.
-    if (wasExpanded) switchGeneration += 1
+    // Cancel an in-flight switch that was targeting this project, putting the
+    // workspace back on the project that stays active.
+    if (wasExpanded) cancelPendingSwitch(store, api)
     await saveProjects(api, projects, state.activeProjectId)
     store.setState({
       projects,
@@ -244,6 +331,7 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
   }
 
   // Active project removed — switch to another, or clear the workspace UI.
+  supersedePendingSwitch()
   switchGeneration += 1
   const next = projects[0] ?? null
   await saveProjects(api, projects, next?.id ?? null)
@@ -292,8 +380,12 @@ async function finishActivate(
   gen: number,
   outgoingId: string | null,
   outgoingThreads: Thread[],
+  pendingThreadId: string | null,
 ): Promise<void> {
-  if (gen !== switchGeneration) return
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id)
+    return
+  }
 
   if (sshHost) {
     const enabled = await api.settings.get('sshWorkspaceEnabled')
@@ -310,7 +402,10 @@ async function finishActivate(
     try {
       await ensureSshConnected(api, sshHost)
     } catch (err) {
-      if (gen !== switchGeneration) return
+      if (gen !== switchGeneration) {
+        endSwitch(gen, id)
+        return
+      }
       const message = err instanceof Error ? err.message : String(err)
       abortProjectActivation(
         store,
@@ -331,13 +426,19 @@ async function finishActivate(
     outgoingId && outgoingId !== id
       ? flushProjectThreads(api, outgoingId, outgoingThreads)
       : Promise.resolve()
+  // Record the move before dispatching it: a cancel landing while these are in
+  // flight has to know main and config were pointed at `id`, and put them back
+  // (see cancelPendingSwitch).
+  if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true
   const persistSelection = saveProjects(api, store.getState().projects, id)
-  const workspaceOpened = trySetWorkspace(api, path, sshHost)
+  const workspaceOpened = setWorkspaceInOrder(api, path, sshHost)
   const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened])
-  if (gen !== switchGeneration) return
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id)
+    return
+  }
 
   if (!opened) {
-    if (gen !== switchGeneration) return
     // Quarantine rather than delete: flag the project missing and stay on the
     // project the user was already viewing (issue #997).
     await markProjectMissing(store, api, id)
@@ -354,15 +455,18 @@ async function finishActivate(
     )
     return
   }
-  if (gen !== switchGeneration) return
 
   const loaded = await loadThreads(api, id)
+  // Cache only once this switch is the one being applied. `cacheThreads` makes
+  // its project the live entry and compacts the previous one, so a superseded
+  // switch caching here would strip the transcripts off the project that is
+  // still on screen.
+  if (gen !== switchGeneration || store.getState().expandedProjectId !== id) {
+    endSwitch(gen, id)
+    return
+  }
   cacheThreads(id, loaded)
-  if (gen !== switchGeneration) return
-  if (store.getState().expandedProjectId !== id) return
 
-  const pendingThreadId = pendingThreadAfterSwitch
-  pendingThreadAfterSwitch = null
   const activeThreadId =
     pendingThreadId && loaded.some((t) => t.id === pendingThreadId)
       ? pendingThreadId
@@ -391,7 +495,7 @@ async function finishActivate(
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
-  settleActivationWaiter(id)
+  endSwitch(gen, id)
   resumePendingQueues(store, api)
 }
 
@@ -402,15 +506,23 @@ function activate(
   api: ApiClient,
   id: string,
   path: string,
-  sshHost?: string,
+  sshHost: string | undefined,
+  pendingThreadId: string | null,
 ): void {
   const { activeProjectId, threads, expandedProjectId } = store.getState()
-  if (activeProjectId === id && (expandedProjectId ?? activeProjectId) === id) return
+  // Already on this project — a click on it is a decision to stay, so any switch
+  // still running to a different one is cancelled rather than left to land.
+  if (activeProjectId === id) {
+    if ((expandedProjectId ?? activeProjectId) !== id) expandProject(store, id)
+    cancelPendingSwitch(store, api)
+    return
+  }
 
   expandProject(store, id)
-  if (activeProjectId === id) return
 
+  supersedePendingSwitch()
   const gen = ++switchGeneration
+  pendingSwitch = { gen, projectId: id, dispatched: false }
   const outgoingId = activeProjectId
   const outgoingThreads = threads
   if (outgoingId) {
@@ -419,13 +531,28 @@ function activate(
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()))
   }
 
-  void finishActivate(store, api, id, path, sshHost, gen, outgoingId, outgoingThreads)
+  void finishActivate(
+    store,
+    api,
+    id,
+    path,
+    sshHost,
+    gen,
+    outgoingId,
+    outgoingThreads,
+    pendingThreadId,
+  )
 }
 
-export function switchProject(store: AppStore, api: ApiClient, id: string): void {
+export function switchProject(
+  store: AppStore,
+  api: ApiClient,
+  id: string,
+  pendingThreadId: string | null = null,
+): void {
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
-  activate(store, api, id, proj.path, proj.sshHost)
+  activate(store, api, id, proj.path, proj.sshHost, pendingThreadId)
 }
 
 export function switchProjectThread(
@@ -434,13 +561,18 @@ export function switchProjectThread(
   projectId: string,
   threadId: string,
 ): void {
-  const { activeProjectId } = store.getState()
+  const { activeProjectId, expandedProjectId } = store.getState()
   if (projectId === activeProjectId) {
+    // Picking a thread in the project you are already on is also a decision to
+    // stay. Cancel any switch still in flight and re-expand this project —
+    // otherwise the sidebar keeps the other project open and its switch lands a
+    // moment later, replacing the thread just chosen.
+    cancelPendingSwitch(store, api)
+    if (expandedProjectId !== projectId) expandProject(store, projectId)
     switchThread(store, threadId)
     return
   }
-  pendingThreadAfterSwitch = threadId
-  switchProject(store, api, projectId)
+  switchProject(store, api, projectId, threadId)
 }
 
 // Register a folder as a project (dedup by path + sshHost) and switch to it.
@@ -499,14 +631,15 @@ function activateAndWait(
   path: string,
   sshHost?: string,
 ): Promise<void> {
-  activate(store, api, id, path, sshHost)
+  activate(store, api, id, path, sshHost, null)
   return waitForProjectActivation(store, id)
 }
 
 async function waitForProjectActivation(store: AppStore, projectId: string): Promise<void> {
   if (store.getState().activeProjectId === projectId) return
   await new Promise<void>((resolve, reject) => {
-    activationWaiters.set(projectId, { resolve, reject })
+    const waiter: ActivationWaiter = { resolve, reject }
+    activationWaiters.set(projectId, waiter)
     const unsub = store.on('workspace_changed', () => {
       if (store.getState().activeProjectId === projectId) {
         activationWaiters.delete(projectId)
@@ -514,6 +647,9 @@ async function waitForProjectActivation(store: AppStore, projectId: string): Pro
         resolve()
       }
     })
+    // Settling through settleActivationWaiter (superseded, cancelled, failed)
+    // bypasses the listener above, so hand it the unsubscribe to run.
+    waiter.unsub = unsub
   })
 }
 
@@ -560,7 +696,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   // Thread-store reads are project-id scoped and independent from workspace
   // activation. Overlap them on launch; both can scale on an aged profile.
   const [workspaceOpened, loaded] = await Promise.all([
-    trySetWorkspace(api, proj.path, proj.sshHost),
+    setWorkspaceInOrder(api, proj.path, proj.sshHost),
     loadThreads(api, id),
   ])
   if (!workspaceOpened) {
@@ -706,7 +842,8 @@ export async function recoverOrphanProject(
 /** Test hook — reset module-level switch state. */
 export function resetProjectSwitchStateForTest(): void {
   switchGeneration = 0
-  pendingThreadAfterSwitch = null
+  pendingSwitch = null
+  workspaceChain = Promise.resolve()
   threadCache.clear()
   liveCacheProjectId = null
   projectViewState.clear()

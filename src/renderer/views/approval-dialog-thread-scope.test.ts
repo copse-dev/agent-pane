@@ -164,6 +164,52 @@ describe('approval dialog thread scoping', () => {
     assert.equal(dialog.open, true)
   })
 
+  it('withdraws the open prompt when the user switches away from its thread', () => {
+    emit({ id: 'a', threadId: 'focused' })
+    assert.equal(dialog.open, true)
+
+    // Switching thread — or project, which swaps activeThreadId the same way —
+    // must not leave this prompt hanging over a thread that never asked it.
+    store.setState({ activeThreadId: 'other' })
+    store.emit('threads_changed')
+
+    assert.equal(dialog.open, false)
+    assert.deepEqual(responses, [])
+    assert.equal(isThreadAwaitingAttention('focused'), true)
+  })
+
+  it('brings a withdrawn prompt back when its thread is focused again', () => {
+    emit({ id: 'a', threadId: 'focused' })
+    store.setState({ activeThreadId: 'other' })
+    store.emit('threads_changed')
+    assert.equal(dialog.open, false)
+
+    store.setState({ activeThreadId: 'focused' })
+    store.emit('threads_changed')
+
+    assert.equal(dialog.open, true)
+    assert.equal(spy.showCalls, 2)
+    assert.equal(isThreadAwaitingAttention('focused'), false)
+    dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
+    assert.deepEqual(responses, [{ id: 'a', approved: true }])
+  })
+
+  it('keeps only the still-focused half of a mixed batch on screen', () => {
+    // A batch can span threads: an untied request (no threadId) shows anywhere,
+    // a thread-scoped one does not. Switching away withdraws just the latter.
+    emit({ id: 'untied' })
+    emit({ id: 'scoped', threadId: 'focused' })
+    assert.equal(dialog.open, true)
+
+    store.setState({ activeThreadId: 'other' })
+    store.emit('threads_changed')
+
+    assert.equal(dialog.open, true)
+    dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
+    assert.deepEqual(responses, [{ id: 'untied', approved: true }])
+    assert.equal(isThreadAwaitingAttention('focused'), true)
+  })
+
   describe('minimized (hidden) window', () => {
     afterEach(() => {
       // Leave the shared document visible for any later specs in this process.
