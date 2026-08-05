@@ -94,8 +94,11 @@ describe('new project flow', () => {
     await addBtn.waitForDisplayed({ timeout: 10_000 })
     await addBtn.click()
 
-    const menuItems = await $$('.context-menu-item')
-    const labels = (await Promise.all(menuItems.map((i) => i.getText()))).join('|')
+    // `$$(…).map` is WebdriverIO's own async map: it awaits each element and
+    // resolves to a plain string[]. Wrapping it in `Promise.all` hands a single
+    // Promise to something expecting an iterable, which throws. This was the only
+    // `Promise.all` in the e2e suite — every other spec uses the idiom below.
+    const labels = (await $$('.context-menu-item').map((item) => item.getText())).join('|')
     expect(labels).toContain('New project')
     expect(labels).toContain('Open folder')
   })
