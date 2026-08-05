@@ -5,8 +5,10 @@ import {
   anthropicThinkingBudget,
   decodeModelParametersMap,
   isEmptyModelParameters,
+  clampReasoning,
   isReasoningLevel,
   modelParameterSupport,
+  recommendedModelParameters,
   openAiParameterFields,
   openRouterReasoningBody,
   resolveModelParameters,
@@ -286,5 +288,47 @@ describe('isEmptyModelParameters', () => {
   it('distinguishes an unset entry from a zero value', () => {
     assert.equal(isEmptyModelParameters({}), true)
     assert.equal(isEmptyModelParameters({ temperature: 0 }), false)
+  })
+})
+
+describe('clampReasoning', () => {
+  it('leaves a level at or below the ceiling alone', () => {
+    assert.equal(clampReasoning('low', 'low'), 'low')
+    assert.equal(clampReasoning('off', 'low'), 'off')
+    assert.equal(clampReasoning('minimal', 'low'), 'minimal')
+  })
+
+  it('lowers a deeper level to the ceiling', () => {
+    assert.equal(clampReasoning('max', 'low'), 'low')
+    assert.equal(clampReasoning('xhigh', 'medium'), 'medium')
+  })
+
+  it('passes an unset level through untouched', () => {
+    assert.equal(clampReasoning(undefined, 'low'), undefined)
+  })
+})
+
+describe('recommendedModelParameters', () => {
+  it('returns the published recipe for a model we hold one for', () => {
+    const recommendation = recommendedModelParameters('openrouter:deepseek/deepseek-v4-flash-0731')
+    assert.ok(recommendation)
+    assert.deepEqual(recommendation.params, { reasoning: 'max', temperature: 1, topP: 0.95 })
+    assert.match(recommendation.source, /^https:\/\//)
+    assert.ok(recommendation.label)
+  })
+
+  it('matches the same model through a different route', () => {
+    assert.ok(recommendedModelParameters('lmstudio:deepseek-v4-flash-0731'))
+    assert.ok(recommendedModelParameters('deepseek:deepseek-v4-flash'))
+  })
+
+  it('returns nothing for a model with no published recipe', () => {
+    assert.equal(recommendedModelParameters('claude-opus-5'), null)
+    assert.equal(recommendedModelParameters('gpt-4o'), null)
+  })
+
+  it('never offers a recipe for a selection that takes no parameters', () => {
+    assert.equal(recommendedModelParameters('acp:deepseek-v4-flash'), null)
+    assert.equal(recommendedModelParameters('auto:best-value'), null)
   })
 })

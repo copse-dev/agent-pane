@@ -156,6 +156,7 @@ import { getPackService, inertPackSources, packUnavailableReason } from './packs
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
@@ -574,6 +575,11 @@ export interface RunAgentOptions {
   priorTodos?: TodoItem[]
   workingBrief?: string
   model?: string
+  /**
+   * Reasoning depth for this turn, from the composer's per-chat dial. Overrides
+   * the level saved on the model in Settings; absent means "use that level".
+   */
+  reasoning?: ReasoningLevel
   /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
   turnTreeId?: string
   /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
@@ -1050,7 +1056,11 @@ export async function runAgent(
     )
     const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = options?.provider ?? (await buildProvider(model, threadId))
+    const provider =
+      options?.provider ??
+      (await buildProvider(model, threadId, {
+        ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+      }))
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local

@@ -292,6 +292,79 @@ export function sanitizeModelParameters(
   return sanitized
 }
 
+/**
+ * Lower `level` to `ceiling` when it is deeper, keeping the model's own
+ * vocabulary. Ordered by {@link REASONING_LEVELS}, which runs cheapest-first.
+ *
+ * Used by roles whose job description is "cheap and fast": a user who set their
+ * chat model to `max` meant it for the work, not for generating a thread title
+ * with the same model.
+ */
+export function clampReasoning(
+  level: ReasoningLevel | undefined,
+  ceiling: ReasoningLevel,
+): ReasoningLevel | undefined {
+  if (level === undefined) return undefined
+  return REASONING_LEVELS.indexOf(level) <= REASONING_LEVELS.indexOf(ceiling) ? level : ceiling
+}
+
+// ── Sourced recommendations ──────────────────────────────────────────────────
+
+/**
+ * A vendor's published parameter recipe for a model.
+ *
+ * Deliberately *offered*, never applied: recipes are scenario-specific (DeepSeek
+ * publishes one `top_p` for agentic use and another for everything else), an
+ * aggregator may route the same id to an endpoint the recipe was not written
+ * for, and a value we applied on the user's behalf is invisible when it turns
+ * out to be wrong. Filling the visible fields keeps the choice theirs and the
+ * result on screen.
+ */
+export interface ModelParameterRecommendation {
+  /** What the recipe is tuned for, shown on the affordance. */
+  label: string
+  /** Where it comes from, so a user can check it rather than trust us. */
+  source: string
+  params: ModelParameters
+}
+
+/**
+ * Published recipes, matched by model-id prefix.
+ *
+ * This table is hand-maintained and dates: an entry is only as good as the
+ * version it was read against, so each carries its source. Add a row when a
+ * vendor publishes one — never infer a recipe from a benchmark table or from
+ * another model in the same family.
+ */
+const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: string }> = [
+  {
+    match: 'deepseek-v4-flash',
+    label: 'DeepSeek’s agentic recipe',
+    source: 'https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731',
+    // The model card's agentic profile: max reasoning effort, temperature 1.0,
+    // and the tighter top_p it specifies for agentic scenarios (0.95) rather
+    // than the 1.0 it recommends otherwise. Copse runs a tool loop, so the
+    // agentic column is the applicable one.
+    params: { reasoning: 'max', temperature: 1, topP: 0.95 },
+  },
+]
+
+/**
+ * The published recipe for `model`, sanitized against what it accepts, or
+ * `null` when we hold none. Sanitizing here means a recipe never offers a value
+ * the selected route would reject — an aggregator that cannot take one of the
+ * three simply offers the rest.
+ */
+export function recommendedModelParameters(model: string): ModelParameterRecommendation | null {
+  const selection = parseModelSelection(model)
+  if (AGENT_NAMESPACES.has(selection.namespace) || selection.namespace === 'auto') return null
+  const match = RECOMMENDATIONS.find((entry) => selection.modelId.includes(entry.match))
+  if (!match) return null
+  const params = sanitizeModelParameters(match.params, model)
+  if (isEmptyModelParameters(params)) return null
+  return { label: match.label, source: match.source, params }
+}
+
 // ── Wire mapping ─────────────────────────────────────────────────────────────
 
 /** Thinking budgets for the pre-`effort` Claude models, in output tokens. */

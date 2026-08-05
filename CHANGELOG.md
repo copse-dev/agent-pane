@@ -64,6 +64,23 @@ every published entry.
   model is re-checked against whatever it is read for, so a stale setting
   degrades to the provider default instead of failing the turn. Untouched models
   send exactly the request body they sent before.
+
+  Two shortcuts sit on top of it. Where a vendor publishes a recipe for a model
+  — DeepSeek V4 Flash asks for max reasoning effort with `temperature 1.0` and
+  `top_p 0.95` in agentic use — a **Use recommended** button fills the fields
+  from it and links the source. It is offered rather than applied: the recipes
+  are scenario-specific and only as current as the version they were read
+  against, so nothing is sent until you accept it. And a **reasoning dial** now
+  sits beside the model picker in the composer, scoped to one chat, for when a
+  single task wants more thinking than the model is normally set to — no
+  permanent re-tuning to get through one turn.
+
+  The two roles whose job is to be cheap — thread titles and follow-up
+  suggestions, and the shell-command classifier — cap the reasoning depth they
+  inherit. A model set to max effort for the work should not spend max effort
+  naming the conversation, and that bill would arrive with nothing on screen to
+  explain it.
+
 - The Parallel Search pack's switch no longer turns on without a key. The tool
   was already credential-gated where it counts — `parallel_search` is registered
   only when the pack is enabled _and_ a Parallel API key resolves — but Settings

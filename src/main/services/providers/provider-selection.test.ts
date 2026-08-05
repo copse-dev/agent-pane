@@ -197,6 +197,40 @@ describe('per-model parameters reach the built provider', () => {
     assert.equal(request['reasoning_effort'], undefined)
   })
 
+  it('lets a turn override the level saved on the model', async () => {
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'low', temperature: 0.6 } })
+    const request = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-tuned', undefined, { reasoning: 'max' }),
+    )
+    assert.equal(request['reasoning_effort'], 'max')
+    // Sampling describes how the user wants the model to write, not how hard
+    // this turn is, so the override leaves it alone.
+    assert.equal(request['temperature'], 0.6)
+  })
+
+  it('caps a deeply-tuned model for a role that is meant to be cheap', async () => {
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'max' } })
+    const request = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-tuned', undefined, { maxReasoning: 'low' }),
+    )
+    assert.equal(request['reasoning_effort'], 'low')
+  })
+
+  it('leaves an already-cheap level alone under a ceiling', async () => {
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'minimal' } })
+    const request = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-tuned', undefined, { maxReasoning: 'low' }),
+    )
+    assert.equal(request['reasoning_effort'], 'minimal')
+  })
+
+  it('does not invent a level for an untuned model under a ceiling', async () => {
+    const request = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-untuned', undefined, { maxReasoning: 'low' }),
+    )
+    assert.equal(request['reasoning_effort'], undefined)
+  })
+
   it('sends nothing when the stored map fails its schema', async () => {
     // Two layers guard the read: the settings schema rejects a map that is not
     // shaped like parameters at all (only reachable by hand-editing the file),

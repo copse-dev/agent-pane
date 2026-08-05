@@ -388,9 +388,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
-      model: 'openrouter:deepseek/deepseek-v4-flash',
+      model: 'openrouter:deepseek/deepseek-v4-flash-0731',
       modelParameters: {
-        'openrouter:deepseek/deepseek-v4-flash': { reasoning: 'max', temperature: 1, topP: 0.95 },
+        'openrouter:deepseek/deepseek-v4-flash-0731': {
+          reasoning: 'max',
+          temperature: 1,
+          topP: 0.95,
+        },
         'claude-opus-5': { reasoning: 'xhigh' },
       },
     },
@@ -399,6 +403,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         id: 'demo-model-parameters-thread',
         title: 'Model parameters',
         status: 'idle',
+        // A thread-level dial so the composer footer shows its set state
+        // alongside the Settings block.
+        model: 'claude-opus-5',
+        reasoning: 'max',
         messages: [],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,

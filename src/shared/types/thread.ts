@@ -1,3 +1,4 @@
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
@@ -186,6 +187,13 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
+  /**
+   * Per-chat reasoning dial, set from the composer footer. Overrides the level
+   * saved against the model in Settings for this chat's turns only, so "this
+   * one's hard, think harder" does not permanently re-tune the model. Absent
+   * means the model's own saved level applies.
+   */
+  reasoning?: ReasoningLevel
   /** Provenance for a task created by a project automation schedule. */
   automation?: {
     scheduleId: string

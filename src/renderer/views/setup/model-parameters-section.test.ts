@@ -49,6 +49,15 @@ function inputControl(root: HTMLElement, testid: string): HTMLInputElement {
   return node
 }
 
+// The DOM shim does not expose every element constructor as a global, so this
+// asserts on the tag rather than `instanceof`.
+function buttonControl(root: HTMLElement, testid: string): HTMLElement {
+  const node = control(root, testid)
+  assert.ok(node, testid)
+  assert.equal(node.tagName, 'BUTTON', testid)
+  return node
+}
+
 function fire(node: HTMLElement): void {
   node.dispatchEvent(new Event('change', { bubbles: true }))
 }
@@ -168,6 +177,53 @@ describe('model parameters section', () => {
 
     assert.equal(control(section.root, 'model-parameter-reasoning'), null)
     assert.match(section.root.textContent, /pin one to tune it/)
+  })
+
+  it('offers the published recipe for a model that has one, and fills the fields', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:deepseek/deepseek-v4-flash-0731')
+
+    const recommend = buttonControl(section.root, 'model-parameter-recommend')
+    assert.equal(recommend.closest('.model-parameter-recommend')?.hasAttribute('hidden'), false)
+    assert.match(section.root.textContent, /model card/)
+
+    recommend.click()
+    assert.equal(selectControl(section.root, 'model-parameter-reasoning').value, 'max')
+    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '1')
+    assert.equal(inputControl(section.root, 'model-parameter-top-p').value, '0.95')
+
+    await section.save()
+    assert.deepEqual(store.saved['modelParameters'], {
+      'openrouter:deepseek/deepseek-v4-flash-0731': {
+        reasoning: 'max',
+        temperature: 1,
+        topP: 0.95,
+      },
+    })
+  })
+
+  it('links to the source rather than asserting the numbers itself', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:deepseek/deepseek-v4-flash-0731')
+
+    const link = qs<HTMLAnchorElement>(section.root, '.model-parameter-recommend-note a')
+    assert.ok(link)
+    assert.match(link.href, /^https:\/\/huggingface\.co\//)
+    assert.equal(link.rel, 'noopener noreferrer')
+  })
+
+  it('hides the offer for a model with no published recipe', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('claude-opus-5')
+
+    const row = qs(section.root, '.model-parameter-recommend')
+    assert.ok(row)
+    assert.equal(row.hasAttribute('hidden'), true)
+    await section.save()
+    assert.equal(store.writes, 0)
   })
 
   it('ignores a corrupt saved map instead of failing to render', async () => {

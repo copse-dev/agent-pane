@@ -27,7 +27,12 @@ import {
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
 } from './lm-studio-models.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
-import { resolveModelParameters, type ModelParameters } from '@copse/llm/model-parameters.ts'
+import {
+  clampReasoning,
+  resolveModelParameters,
+  type ModelParameters,
+  type ReasoningLevel,
+} from '@copse/llm/model-parameters.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
 
@@ -174,6 +179,24 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
 // to the same prompt cache, lifting hit rates and lowering cost (#584). It is
 // intentionally omitted for local servers (LM Studio, Ollama, …), which don't
 // honour it and can reject unknown request fields.
+export interface BuildProviderOptions {
+  /**
+   * Reasoning depth for this turn only, from the composer's per-chat dial.
+   * Overrides the level saved on the model; the sampling values are untouched,
+   * since those are a property of how the user wants the model to write rather
+   * than of how hard this particular turn is.
+   */
+  reasoning?: ReasoningLevel
+  /**
+   * Ceiling on the reasoning depth, for roles whose job description is cheap
+   * and fast — thread titles, follow-up suggestions, shell-command
+   * classification. A user who set their chat model to `max` meant it for the
+   * work, not for naming the conversation with the same model, and that bill
+   * would arrive with nothing on screen to explain it.
+   */
+  maxReasoning?: ReasoningLevel
+}
+
 /**
  * Generation parameters the user tuned for this exact model selection
  * (Settings → Models → Model parameters), sanitized against what the model
@@ -184,13 +207,21 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
  * wherever it runs — chat, a task role, a subagent — the same way an ACP
  * agent's model and permission mode travel with the agent.
  */
-function tunedParameters(model: string): ModelParameters {
-  return resolveModelParameters(getSetting<unknown>('modelParameters', {}), model)
+function tunedParameters(model: string, opts: BuildProviderOptions = {}): ModelParameters {
+  const saved = resolveModelParameters(getSetting<unknown>('modelParameters', {}), model)
+  const requested = opts.reasoning ?? saved.reasoning
+  const reasoning =
+    opts.maxReasoning === undefined ? requested : clampReasoning(requested, opts.maxReasoning)
+  return { ...saved, ...(reasoning === undefined ? {} : { reasoning }) }
 }
 
-export async function buildProvider(model: string, promptCacheKey?: string): Promise<LLMProvider> {
+export async function buildProvider(
+  model: string,
+  promptCacheKey?: string,
+  opts: BuildProviderOptions = {},
+): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
-  const params = tunedParameters(model)
+  const params = tunedParameters(model, opts)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()
     const savedLocalDefault = normalizeRoleModelSelection(

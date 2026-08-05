@@ -7,6 +7,7 @@ import {
   isEmptyModelParameters,
   isReasoningLevel,
   modelParameterSupport,
+  recommendedModelParameters,
   sanitizeModelParameters,
   type ModelParameters,
   type ReasoningLevel,
@@ -66,6 +67,20 @@ export function createModelParametersSection(
   api: Pick<ApiClient['settings'], 'get' | 'set'>,
 ): ModelParametersSection {
   const fields = el('div', { class: 'model-parameter-fields' })
+  // Offered, never applied: the button fills the visible fields so the recipe
+  // is on screen and editable before anything is saved or sent.
+  const recommendBtn = el(
+    'button',
+    { type: 'button', class: 'provider-secondary', 'data-testid': 'model-parameter-recommend' },
+    'Use recommended',
+  )
+  const recommendNote = el('p', { class: 'field-hint model-parameter-recommend-note' })
+  const recommendRow = el(
+    'div',
+    { class: 'model-parameter-recommend', hidden: '' },
+    recommendBtn,
+    recommendNote,
+  )
   const note = el('p', { class: 'settings-fieldset-desc model-parameter-note' })
   const root = el(
     'div',
@@ -73,6 +88,7 @@ export function createModelParametersSection(
     el('h4', { class: 'model-role-heading' }, 'Model parameters'),
     note,
     fields,
+    recommendRow,
   )
 
   const reasoningSelect = el('select', {
@@ -120,10 +136,33 @@ export function createModelParametersSection(
     stored = { ...stored, [current]: sanitized }
   }
 
+  function renderRecommendation(): void {
+    const recommendation = recommendedModelParameters(current)
+    if (!recommendation) {
+      recommendRow.hidden = true
+      recommendNote.replaceChildren()
+      return
+    }
+    recommendRow.hidden = false
+    const link = el(
+      'a',
+      { href: recommendation.source, target: '_blank', rel: 'noopener noreferrer' },
+      'model card',
+    )
+    // Name the source rather than asserting the numbers are right: the recipe
+    // is only as current as the version it was read against.
+    recommendNote.replaceChildren(
+      document.createTextNode(`${recommendation.label} — fills the fields above from its `),
+      link,
+      document.createTextNode('. Change or clear them afterwards like any other value.'),
+    )
+  }
+
   function render(): void {
     const support = modelParameterSupport(current)
     const params = selected()
     fields.replaceChildren()
+    renderRecommendation()
 
     if (support.unavailableReason) {
       note.textContent = support.unavailableReason
@@ -200,6 +239,13 @@ export function createModelParametersSection(
     const topP = readNumberInput(topPInput)
     commit(topP === undefined ? rest : { ...rest, topP })
     topPInput.value = formatNumber(selected().topP)
+  })
+
+  recommendBtn.addEventListener('click', () => {
+    const recommendation = recommendedModelParameters(current)
+    if (!recommendation) return
+    commit({ ...selected(), ...recommendation.params })
+    render()
   })
 
   function setModel(model: string): void {

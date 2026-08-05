@@ -372,6 +372,18 @@ dialog.settings-overlay::backdrop {
 .model-parameter-fields input[type='number'] {
   max-width: 10rem;
 }
+/* The vendor-recipe offer sits after the fields it fills, reading as a shortcut
+   to them rather than a fourth control. */
+.model-parameter-recommend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+.model-parameter-recommend-note {
+  margin: 0;
+}
 .model-role-heading {
   margin: 0 0 var(--spacing-xs);
   color: var(--text-primary);
