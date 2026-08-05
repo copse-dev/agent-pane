@@ -2,8 +2,8 @@
 
 **Status: Proposed.** Design-only companion to the read-access approval work on
 the `claude/read-access-sandbox-warning-xh18ei` branch. Nothing is implemented;
-this plan records how the existing *prompt-level* read grant could be extended
-into a real *seatbelt-level* relaxation so read commands stay contained instead
+this plan records how the existing _prompt-level_ read grant could be extended
+into a real _seatbelt-level_ relaxation so read commands stay contained instead
 of running unsandboxed.
 
 ## The gap this follow-up closes
@@ -16,7 +16,7 @@ project sandbox active, the approval has a side effect that undercuts its own
 wording:
 
 - The grant only answers the **prompt**. The command itself still runs through
-  `spawnShellInProjectSandbox` with the *unrelaxed* `workspaceSandboxOverlay`,
+  `spawnShellInProjectSandbox` with the _unrelaxed_ `workspaceSandboxOverlay`,
   whose `denyRead: [homedir()]` blocks every read under `$HOME`.
 - When the seatbelt then denies the read, `runShellOnce` reports a sandbox
   violation, `maybeRetryUnsandboxed` detects it, and the command is offered the
@@ -84,7 +84,7 @@ thread the resulting targets to the spawn. Concretely:
    instead of the plain `workspaceSandboxOverlay(cwd)` for that one spawn.
 
 The first-time prompt (no grant yet) keeps today's flow: the user is asked, the
-grant is stored, and the *current* command can be re-evaluated with the grant so
+grant is stored, and the _current_ command can be re-evaluated with the grant so
 it runs relaxed immediately rather than only on the next occurrence.
 
 An important ordering guard: this must only fire when the decision's routing is
@@ -95,7 +95,7 @@ or full-escape lever.
 ### Unrelaxed paths that must not widen
 
 - **Writes stay out.** The relaxation adds `allowRead` only. A grant that would
-  let a later *write* to a granted path still prompts normally.
+  let a later _write_ to a granted path still prompts normally.
 - **Credential and breadth checks still apply.** `sensitiveTargetReason` /
   `breadthBlocker` already refuse `.env`, `~/.ssh`, `~/.aws`, the whole home dir,
   and the filesystem root at eligibility time — those never reach the overlay.
