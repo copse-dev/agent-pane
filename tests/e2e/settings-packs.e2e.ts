@@ -101,51 +101,54 @@ describe('settings packs (about:addons)', function () {
     // Wait for the async `packs:list` IPC to resolve and render a real
     // first-party pack. The old skeleton was a development fixture and should
     // no longer appear as an installed user-facing pack.
+    // `.pack-name` shows the sentence-cased display name, not the machine id:
+    // settings-dialog.ts strips the `copse.` prefix for first-party packs and
+    // keeps known acronyms uppercase. `data-pack-id` remains the identity pin.
     const todosRow = packs.$('.pack-row[data-pack-id="copse.todos"]')
     await todosRow.waitForExist({ timeout: 15_000 })
     await expect(todosRow.$('.pack-name')).toBeDisplayed()
-    assert.equal(await todosRow.$('.pack-name').getText(), 'copse.todos')
+    assert.equal(await todosRow.$('.pack-name').getText(), 'Todos')
     assert.equal(await packs.$('.pack-row[data-pack-id="copse.noop"]').isExisting(), false)
 
     // Long-horizon tasks pack (#558): listed, default-OFF (ships disabled).
     const longHorizonRow = packs.$('.pack-row[data-pack-id="copse.long-horizon-tasks"]')
     await expect(longHorizonRow).toBeDisplayed()
-    assert.equal(await longHorizonRow.$('.pack-name').getText(), 'copse.long-horizon-tasks')
+    assert.equal(await longHorizonRow.$('.pack-name').getText(), 'Long horizon tasks')
     await expect(longHorizonRow.$('.pack-badge-first-party')).toBeDisplayed()
     await expect(longHorizonRow.$('.pack-badge-experimental')).toHaveText('EXPERIMENTAL')
     assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
     // Roadmap plans pack (#556): listed, default-OFF (ships disabled).
     const roadmapPlansRow = packs.$('.pack-row[data-pack-id="copse.roadmap-plans"]')
     await expect(roadmapPlansRow).toBeDisplayed()
-    assert.equal(await roadmapPlansRow.$('.pack-name').getText(), 'copse.roadmap-plans')
+    assert.equal(await roadmapPlansRow.$('.pack-name').getText(), 'Roadmap plans')
     await expect(roadmapPlansRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await roadmapPlansRow.getAttribute('data-enabled'), 'false')
 
     // Advisor strategy pack: listed, default-OFF (ships disabled).
     const advisorRow = packs.$('.pack-row[data-pack-id="copse.advisor-strategy"]')
     await expect(advisorRow).toBeDisplayed()
-    assert.equal(await advisorRow.$('.pack-name').getText(), 'copse.advisor-strategy')
+    assert.equal(await advisorRow.$('.pack-name').getText(), 'Advisor strategy')
     await expect(advisorRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await advisorRow.getAttribute('data-enabled'), 'false')
 
     // OKF memories pack: listed, default-OFF (ships disabled).
     const okfMemoriesRow = packs.$('.pack-row[data-pack-id="copse.okf-memories"]')
     await expect(okfMemoriesRow).toBeDisplayed()
-    assert.equal(await okfMemoriesRow.$('.pack-name').getText(), 'copse.okf-memories')
+    assert.equal(await okfMemoriesRow.$('.pack-name').getText(), 'OKF memories')
     await expect(okfMemoriesRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await okfMemoriesRow.getAttribute('data-enabled'), 'false')
 
     // CI investigator pack: listed, default-OFF (ships disabled).
     const ciInvestigatorRow = packs.$('.pack-row[data-pack-id="copse.ci-investigator"]')
     await expect(ciInvestigatorRow).toBeDisplayed()
-    assert.equal(await ciInvestigatorRow.$('.pack-name').getText(), 'copse.ci-investigator')
+    assert.equal(await ciInvestigatorRow.$('.pack-name').getText(), 'CI investigator')
     await expect(ciInvestigatorRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await ciInvestigatorRow.getAttribute('data-enabled'), 'false')
 
     // PII redaction pack: listed, default-OFF (ships disabled).
     const packRow = packs.$('.pack-row[data-pack-id="copse.pii-redaction"]')
     await expect(packRow).toBeDisplayed()
-    assert.equal(await packRow.$('.pack-name').getText(), 'copse.pii-redaction')
+    assert.equal(await packRow.$('.pack-name').getText(), 'PII redaction')
     await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await packRow.getAttribute('data-enabled'), 'false')
 

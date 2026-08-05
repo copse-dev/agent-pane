@@ -92,11 +92,19 @@ function isSettingsSection(value: unknown): value is SettingsSection {
 }
 
 /**
+ * Segments of a pack id that are acronyms, and must stay uppercase rather than
+ * being sentence-cased. Without this `copse.pii-redaction` reads "Pii
+ * redaction" — a machine transformation showing through as user-facing copy.
+ */
+const PACK_NAME_ACRONYMS = new Set(['acp', 'api', 'ci', 'llm', 'mcp', 'okf', 'pii', 'ui'])
+
+/**
  * Friendly display name for a pack row. First-party packs ship with a
  * `copse.<kebab>` id; rather than showing that machine id verbatim, strip the
- * `copse.` prefix and present the rest dash-separated and sentence-cased
- * (e.g. `copse.post-turn-review` → "Post turn review"). User packs with their
- * own human name keep it as-is.
+ * `copse.` prefix and present the rest space-separated and sentence-cased —
+ * only the first word capitalised (e.g. `copse.post-turn-review` → "Post turn
+ * review"), with known acronyms left uppercase (`copse.pii-redaction` → "PII
+ * redaction"). User packs with their own human name keep it as-is.
  */
 function packDisplayName(pack: import('@shared/types/packs.ts').PackSummary): string {
   const raw = pack.name || pack.id
@@ -109,7 +117,15 @@ function packDisplayName(pack: import('@shared/types/packs.ts').PackSummary): st
       .filter(Boolean)
     if (words.length === 0) return raw
     const sentence = words
-      .map((word) => (word.length ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+      .map((word, index) => {
+        const lower = word.toLowerCase()
+        if (PACK_NAME_ACRONYMS.has(lower)) return lower.toUpperCase()
+        // Sentence case: lead word capitalised, the rest lowercase. Pack ids are
+        // kebab-lowercase already, so the lowercasing only matters for ids that
+        // arrive mixed-case.
+        if (index === 0) return lower.charAt(0).toUpperCase() + lower.slice(1)
+        return lower
+      })
       .join(' ')
     return sentence
   }
