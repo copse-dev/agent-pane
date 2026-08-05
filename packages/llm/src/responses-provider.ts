@@ -8,6 +8,7 @@ import type {
 } from 'openai/resources/responses/responses'
 import { withAppAttribution } from './app-attribution.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { serviceTierBody } from './service-tier.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
@@ -24,6 +25,7 @@ export class ResponsesProvider implements LLMProvider {
   private readonly model: string
   private readonly serverTools: Tool[]
   private readonly extraBody: Record<string, unknown> | undefined
+  private readonly serviceTier: string | undefined
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   constructor(
@@ -33,11 +35,14 @@ export class ResponsesProvider implements LLMProvider {
       apiKey: string
       serverTools?: Tool[]
       extraBody?: Record<string, unknown>
+      /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
+      serviceTier?: string
     },
   ) {
     this.model = model
     this.serverTools = opts.serverTools ?? []
     this.extraBody = opts.extraBody
+    this.serviceTier = opts.serviceTier
     this.client = new OpenAI({
       baseURL: opts.baseURL,
       apiKey: opts.apiKey,
@@ -66,6 +71,9 @@ export class ResponsesProvider implements LLMProvider {
             input: toResponsesInput(messages),
             stream: true,
             tools: [...self.serverTools, ...localTools],
+            ...serviceTierBody(self.serviceTier),
+            // Last, so an explicit extraBody entry still wins — that field is
+            // the user's own escape hatch for provider-specific overrides.
             ...(self.extraBody ?? {}),
           },
           { signal },
