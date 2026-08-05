@@ -8,6 +8,14 @@ every published entry.
 
 ## Unreleased
 
+- The Parallel Search pack's switch no longer turns on without a key. The tool
+  was already credential-gated where it counts — `parallel_search` is registered
+  only when the pack is enabled _and_ a Parallel API key resolves — but Settings
+  let you flip the toggle with no key saved, leaving a pack that read as on and
+  contributed nothing. The toggle now stays inert until a key is stored, with a
+  hint saying so. Turning it off is never blocked, so clearing the key on an
+  enabled pack shows the hint (and unregisters the tool) rather than trapping the
+  switch on.
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to
