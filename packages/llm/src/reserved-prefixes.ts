@@ -38,6 +38,15 @@ export const ACP_MODEL_PREFIX = 'acp:'
 export const PACK_MODEL_PREFIX = 'pack-model:'
 
 /**
+ * Model-selection prefix for a *dynamic* selection — a rule the host evaluates
+ * at run time instead of a pinned model id (`auto:best-value`,
+ * `auto:min-intellect:45`, `auto:role:reviewer`). Unlike its siblings this
+ * names no route: the rule resolves to one of the others. The vocabulary lives
+ * in `../dynamic-model.ts`.
+ */
+export const AUTO_MODEL_PREFIX = 'auto:'
+
+/**
  * Separator between an agent identity and its chosen model, shared by `acp:`
  * and `remote-agent:`. A model id may contain `[]`, `,`, `=` (e.g.
  * `composer-2.5[fast=true]`) but not `#`, so a first-`#` split is unambiguous.

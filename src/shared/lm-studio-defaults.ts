@@ -1,3 +1,4 @@
+import { BEST_VALUE_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { firstNonEmptyString } from './unknown-value.ts'
 
 /**
@@ -26,8 +27,11 @@ export const LM_STUDIO_MODEL_IDS = {
 /**
  * Settings / picker sentinel: each new chat window resolves the plan-aware
  * Pareto frontier and routes to the best-value model among configured providers.
+ * The literal lives with the rest of the dynamic-selection vocabulary
+ * (`@copse/llm/dynamic-model.ts`), of which this is one member; app code keeps
+ * importing it from here because that is where every other chat-model default is.
  */
-export const BEST_VALUE_CHAT_MODEL = 'auto:best-value'
+export const BEST_VALUE_CHAT_MODEL = BEST_VALUE_MODEL_SELECTOR
 
 /** Human label for {@link BEST_VALUE_CHAT_MODEL} in pickers and Settings. */
 export const BEST_VALUE_CHAT_MODEL_LABEL = 'Best value (plan / price)'

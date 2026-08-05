@@ -82,6 +82,7 @@ import { resolveModelPricing } from '../services/providers/model-pricing-store.t
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
+import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
@@ -1198,6 +1199,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
+  // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
+  // to show the concrete model behind a rule; a pinned id round-trips unchanged.
+  ipcMain.handle('models:resolveDynamic', (_event, rawValue: unknown) => {
+    const value = parseIpcArgs(z.string().trim().max(256), [rawValue])
+    return resolveDynamicModelId(value)
+  })
   ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
   ipcMain.handle('settings:modelPricing', () => resolveModelPricing())
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {

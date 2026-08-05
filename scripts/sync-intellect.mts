@@ -24,10 +24,13 @@
 //
 // API refresh (the scalable data channel):
 //   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api
-// Fetches Artificial Analysis' model list and refreshes/adds measurements for
-// models we support: those already in `scores`, PLUS the `wanted` allowlist of
-// catalog models we don't have a value for yet (local models, extra tracked
-// cloud models). Matched by id or alias — the API never introduces a model id
+// Fetches Artificial Analysis' model list from the supported free-tier language
+// feed (`/api/v2/language/models/free` — the documented replacement for the
+// legacy `/api/v2/data/llms/models`, which returns 410 Gone after 2026-11-04)
+// and refreshes/adds measurements for models we support: those already in
+// `scores`, PLUS the `wanted` allowlist of catalog models we don't have a value
+// for yet (local models, extra tracked cloud models). Every page of the feed is
+// walked. Matched by id or alias — the API never introduces a model id
 // that isn't scored or wanted, so every plotted model remains a reviewed
 // decision, and nobody hand-enters a mis-configured number. The index version
 // is read from the payload's declared version field when present, else defaults
@@ -50,6 +53,8 @@ import { optionalRecord } from '../src/shared/unknown-value.mts'
 
 const DATA_PATH = resolve('scripts/data/intellect-scores.json')
 const GENERATED_PATH = resolve('packages/llm/src/model-intellect.generated.ts')
+/** Supported free-tier feed; see {@link requestAaModels} for the migration note. */
+const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
 
 export interface Measurement {
   modelId: string
@@ -118,18 +123,32 @@ const dataFileSchema: z.ZodType<DataFile> = z.object({
   equatingPairs: z.array(z.object({ from: z.string(), to: z.string() })),
   equating: z.array(equatingMapSchema),
 })
+// `nullish`, not `optional`: the supported free feed represents "not measured"
+// as an explicit null (both for individual fields and for whole rows in `data`),
+// which `optional()` alone rejects.
 const aaApiModelSchema: z.ZodType<AaApiModel> = z.object({
-  id: z.string().optional(),
-  slug: z.string().optional(),
-  name: z.string().optional(),
+  id: z.string().nullish(),
+  slug: z.string().nullish(),
+  name: z.string().nullish(),
   evaluations: z
     .object({
-      artificial_analysis_intelligence_index: z.number().optional(),
-      artificial_analysis_intelligence_index_version: z.union([z.string(), z.number()]).optional(),
+      artificial_analysis_intelligence_index: z.number().nullish(),
+      artificial_analysis_intelligence_index_version: z.union([z.string(), z.number()]).nullish(),
     })
-    .optional(),
+    .nullish(),
 })
-const aaPayloadSchema = z.object({ data: z.array(aaApiModelSchema).optional() }).loose()
+const aaPayloadSchema = z
+  .object({
+    data: z.array(aaApiModelSchema.nullable()).nullish(),
+    pagination: z
+      .object({
+        page: z.number().optional(),
+        total_pages: z.number().optional(),
+        has_more: z.boolean().optional(),
+      })
+      .nullish(),
+  })
+  .loose()
 
 function isIsoDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -318,14 +337,15 @@ ${mapRows}
 }
 
 export interface AaApiModel {
-  id?: string | undefined
-  slug?: string | undefined
-  name?: string | undefined
+  id?: string | null | undefined
+  slug?: string | null | undefined
+  name?: string | null | undefined
   evaluations?:
     | {
-        artificial_analysis_intelligence_index?: number | undefined
-        artificial_analysis_intelligence_index_version?: string | number | undefined
+        artificial_analysis_intelligence_index?: number | null | undefined
+        artificial_analysis_intelligence_index_version?: string | number | null | undefined
       }
+    | null
     | undefined
 }
 
@@ -370,6 +390,48 @@ export function detectPayloadVersion(
 }
 
 /**
+ * Fetch every page of the supported free-tier language feed.
+ *
+ * This is the documented replacement for the retired `/api/v2/data/llms/models`
+ * — AA's migration guide maps the legacy path onto exactly this URL, legacy
+ * paths return 410 Gone after 2026-11-04 23:59 UTC, and the key is unchanged.
+ * Unlike the legacy feed it paginates (200 rows a page), so walk `pagination`
+ * until it says there is nothing more; the first page is returned alongside the
+ * rows because that is where the declared index version lives.
+ * See https://artificialanalysis.ai/data-api/migrate-v2-data.
+ */
+export async function requestAaModels(
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ firstPayload: Record<string, unknown>; models: AaApiModel[] }> {
+  const models: AaApiModel[] = []
+  let firstPayload: Record<string, unknown> = {}
+  let page = 1
+  let hasMore = true
+  while (hasMore) {
+    const url = new URL(AA_MODELS_URL)
+    url.searchParams.set('page', String(page))
+    const res = await fetchImpl(url, { headers: { 'x-api-key': apiKey } })
+    if (!res.ok) {
+      // 410 is AA's marker for a retired `/api/v2/data/*` path. We no longer
+      // request one, so it would mean the supported endpoint itself moved.
+      const hint = res.status === 410 ? ' (endpoint retired — AA_MODELS_URL needs updating)' : ''
+      fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}${hint}`)
+    }
+    const payload = aaPayloadSchema.parse((await res.json()) as unknown)
+    if (page === 1) firstPayload = payload
+    models.push(...(payload.data ?? []).filter((m): m is AaApiModel => m !== null))
+
+    const pagination = payload.pagination
+    hasMore =
+      pagination?.has_more === true ||
+      (typeof pagination?.total_pages === 'number' && page < pagination.total_pages)
+    if (hasMore) page += 1
+  }
+  return { firstPayload, models }
+}
+
+/**
  * Refresh measurements from the Artificial Analysis API for models the seed
  * file already knows (by modelId or alias). Returns the updated score list;
  * never invents a new model id. The index version comes from the payload's own
@@ -382,13 +444,8 @@ async function refreshFromApi(
   apiKey: string,
   today: string,
 ): Promise<Measurement[]> {
-  const res = await fetch('https://artificialanalysis.ai/api/v2/data/llms/models', {
-    headers: { 'x-api-key': apiKey },
-  })
-  if (!res.ok) fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}`)
-  const payload = aaPayloadSchema.parse((await res.json()) as unknown)
-  const apiModels = payload.data ?? []
-  const declared = detectPayloadVersion(payload, apiModels)
+  const { firstPayload, models: apiModels } = await requestAaModels(apiKey)
+  const declared = detectPayloadVersion(firstPayload, apiModels)
   const pinned = normalizeVersion(pinnedVersion)
   if (declared && pinned && declared !== pinned) {
     fail(`--index-version=${pinned} conflicts with the payload's declared index ${declared}`)

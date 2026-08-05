@@ -303,6 +303,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           bestAvailableContext: 200_000,
         }),
       bestValueDefault: () => resolved('lmstudio:qwen/qwen3.6-35b-a3b'),
+      resolveDynamic: (value: string) =>
+        resolved(value.startsWith('auto:') ? 'lmstudio:qwen/qwen3.6-35b-a3b' : value),
     },
     intellect: {
       liveModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),
