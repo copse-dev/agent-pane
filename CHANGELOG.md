@@ -16,6 +16,16 @@ every published entry.
   hint saying so. Turning it off is never blocked, so clearing the key on an
   enabled pack shows the hint (and unregisters the tool) rather than trapping the
   switch on.
+- The model value map keeps working past Artificial Analysis' API retirement.
+  AA retires its legacy `/api/v2/data/*` endpoints on 4 November 2026, after
+  which they answer `410 Gone`. The live panel already read the supported free
+  language feed, but it fell back to the legacy scores endpoint when a response
+  failed validation; since AA's documented replacement for that legacy endpoint
+  is the very feed we call first, the fallback had no successor and is gone —
+  one endpoint, one attempt. The `sync:intellect --from-api` refresh moves onto
+  the same feed, which means it now walks every page rather than reading only
+  the first, so a keyed refresh sees the whole model list instead of the first
+  200 rows. API keys are unchanged.
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to
