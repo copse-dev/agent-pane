@@ -32,6 +32,19 @@ Rules:
  * can't crowd out a small local model's context window. */
 const MAX_PRIOR_SUMMARY_CONTEXT_CHARS = 2_000
 
+/**
+ * Longest single background entry. A worker's summary is free-form text
+ * accumulated across its whole run, so one verbose worker can exceed the entire
+ * budget on its own — without a per-entry cap the newest (most relevant) step
+ * would push every other step out, or drop the section entirely.
+ */
+const MAX_PRIOR_SUMMARY_ENTRY_CHARS = 600
+
+function truncateForBrief(text: string, max: number): string {
+  const clean = text.trim()
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`
+}
+
 export interface RunTodoWorkerOptions {
   item: TodoItem
   provider: LLMProvider
@@ -61,10 +74,12 @@ function buildTodoWorkerBrief(opts: RunTodoWorkerOptions): string {
     const lines: string[] = []
     let usedChars = 0
     // Most recent first: on a long plan the nearest prior step is the most likely
-    // to be relevant to this one, so it should survive the char budget first.
+    // to be relevant to this one, so it should survive the char budget first. An
+    // entry that still doesn't fit is skipped rather than ending the scan, so one
+    // fat summary costs only itself instead of every older step behind it.
     for (const { content, summary } of [...priorSummaries.values()].reverse()) {
-      const line = `- ${content}\n  ${summary}`
-      if (usedChars + line.length > MAX_PRIOR_SUMMARY_CONTEXT_CHARS) break
+      const line = truncateForBrief(`- ${content}\n  ${summary}`, MAX_PRIOR_SUMMARY_ENTRY_CHARS)
+      if (usedChars + line.length > MAX_PRIOR_SUMMARY_CONTEXT_CHARS) continue
       lines.push(line)
       usedChars += line.length
     }

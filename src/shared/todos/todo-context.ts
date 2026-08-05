@@ -9,14 +9,34 @@ const FILES_TOUCHED_PREFIX = '\n\n---\n\n## Files touched so far (from compacted
 /** Max paths carried forward across compactions — bounded so a long plan can't grow this unboundedly. */
 const MAX_TOUCHED_FILES = 24
 
-/** Tool calls whose `path`/`paths` args are worth remembering past a compaction. */
+/**
+ * Tool calls that name a file or directory the model has already located, so the
+ * path is worth remembering past a compaction.
+ *
+ * Membership tracks the tools' real parameter schemas, not their names: a tool
+ * whose only inputs are a pattern or a query locates nothing concrete and is
+ * deliberately absent (`find_files` takes `pattern`; `git_*` take a path but
+ * point at history rather than at the code a retry needs to re-open). The edit
+ * tools matter most — `str_replace` is where a model that already knows the
+ * codebase spends its calls, so leaving it out drops exactly the paths most
+ * worth keeping.
+ */
 const PATH_BEARING_TOOLS = new Set([
   'read_file',
   'write_file',
-  'search_codebase',
-  'find_files',
+  'str_replace',
+  'read_staged_diff',
+  'delete_file',
+  'rename_file',
   'list_dir',
+  'explore',
+  'search_codebase',
+  'search_code',
+  'semantic_search',
 ])
+
+/** Single-path arg names across {@link PATH_BEARING_TOOLS} (`rename_file` uses from/to). */
+const PATH_ARG_KEYS = ['path', 'from', 'to']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -25,8 +45,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function pathsFromArgs(args: unknown): string[] {
   if (!isRecord(args)) return []
   const found: string[] = []
-  const { path, paths } = args
-  if (typeof path === 'string' && path.trim()) found.push(path.trim())
+  for (const key of PATH_ARG_KEYS) {
+    const value = args[key]
+    if (typeof value === 'string' && value.trim()) found.push(value.trim())
+  }
+  const { paths } = args
   if (Array.isArray(paths)) {
     for (const p of paths) if (typeof p === 'string' && p.trim()) found.push(p.trim())
   }

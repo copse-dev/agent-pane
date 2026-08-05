@@ -570,6 +570,34 @@ test('resumePendingQueues (#1406): still resets a different thread whose run is 
   assert.equal(getThread(store, staleId).status, 'idle')
 })
 
+test('resumePendingQueues (#1406): a failed liveness query still resumes, it does not strand the queues', async () => {
+  const store = createProjectStore()
+  const base = fakeApi()
+  // Both call sites invoke this behind `void`, so a rejection that escapes would
+  // silently skip the whole resume — no queue drained, no stale pause cleared.
+  const api: ApiClient = {
+    ...base,
+    agent: {
+      ...base.agent,
+      runningThreadIds: (): Promise<string[]> => Promise.reject(new Error('ipc gone')),
+    },
+  }
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setQueuePaused(store, threadId, true)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'queued work' },
+    createdAt: 1,
+  })
+
+  await resumePendingQueues(store, api)
+
+  const thread = getThread(store, threadId)
+  assert.ok(!thread.queuePaused, 'a stale persisted pause is still cleared')
+  assert.equal(base.runs.length, 1, 'the pending queue still drains')
+})
+
 // --- C2 contract tests ------------------------------------------------------
 // Named for the decisions they pin (execution-guidance rule 2), house style of
 // permission-platform.test.ts. See docs/plans/hooks-and-feature-packs.md.

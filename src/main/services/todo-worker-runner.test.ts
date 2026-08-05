@@ -68,8 +68,10 @@ describe('runTodoWorker briefing', () => {
     const captured: LLMMessage[][] = []
     const item: TodoItem = { id: '99', content: 'Final step', status: 'in_progress' }
     const priorSummaries = new Map([
-      ['1', { content: 'Oldest step', summary: 'x'.repeat(1_500) }],
-      ['2', { content: 'Newest step', summary: 'y'.repeat(1_500) }],
+      ['1', { content: 'Oldest step', summary: 'v'.repeat(1_500) }],
+      ['2', { content: 'Second step', summary: 'w'.repeat(1_500) }],
+      ['3', { content: 'Third step', summary: 'x'.repeat(1_500) }],
+      ['4', { content: 'Newest step', summary: 'y'.repeat(1_500) }],
     ])
 
     await runTodoWorker({
@@ -85,6 +87,33 @@ describe('runTodoWorker briefing', () => {
     const text = userMessageText(captured[0] ?? [])
     assert.match(text, /Newest step/)
     assert.doesNotMatch(text, /Oldest step/)
+  })
+
+  it('truncates one oversized summary rather than letting it evict every other step', async () => {
+    const captured: LLMMessage[][] = []
+    const item: TodoItem = { id: '99', content: 'Final step', status: 'in_progress' }
+    // A worker's summary is uncapped free-form text, so the newest step alone can
+    // exceed the whole background budget. It must not take the others down with it.
+    const priorSummaries = new Map([
+      ['1', { content: 'Oldest step', summary: 'Built the parser in src/parse.ts' }],
+      ['2', { content: 'Newest step', summary: 'z'.repeat(9_000) }],
+    ])
+
+    await runTodoWorker({
+      item,
+      provider: capturingProvider(captured),
+      registry: new ToolRegistry(),
+      contextWindow: 100_000,
+      toolSchemaReserve: 0,
+      signal: new AbortController().signal,
+      priorSummaries,
+    })
+
+    const text = userMessageText(captured[0] ?? [])
+    assert.match(text, /Newest step/)
+    assert.match(text, /Oldest step/)
+    assert.match(text, /Built the parser in src\/parse\.ts/)
+    assert.ok(!text.includes('z'.repeat(1_000)), 'oversized summary should be truncated')
   })
 
   it('omits the background section entirely when there is nothing to reuse', async () => {
