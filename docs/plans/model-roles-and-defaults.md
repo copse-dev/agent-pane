@@ -226,6 +226,18 @@ per-role axes can't provide. Pieces:
   genuinely clear the old bar to outrank an old model. Translated values are
   always `estimated` with the fit (and any extrapolation beyond the anchor
   range) named in `basis`.
+- **Vendor cards** (`packages/llm/src/model-cards.ts`, synced by
+  `npm run sync:model-cards` from the reviewed `scripts/data/model-cards.json`):
+  the documentation axis beside the number — a link to the model card / system
+  card its own vendor published, so a reader on the value map can check the
+  evaluation rather than take a score on trust. Same sourcing rule as the
+  measurements: a card is a cited URL with `source` + `asOf`, absent means "not
+  sourced" (no link), and a guessed slug is never acceptable because a 404 is
+  worse than nothing. `--discover` fills models listed in `wanted` from each
+  vendor's own card index; `--verify` fails the sync on link rot. Hugging Face
+  weights need no entry — the README _is_ the card, so the URL is derived from
+  the router id (whose casing came from the HF API), never from a lower-cased
+  local-catalog id.
 - **Quant blend**: intellect measurements carry `measuredBitsPerWeight: 16`
   (AA measures served full-precision endpoints), so `localBenchmarkScore()`
   quant-adjusts a local model's intellect exactly like any other axis — the UI

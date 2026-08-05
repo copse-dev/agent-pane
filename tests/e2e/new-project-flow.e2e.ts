@@ -1,9 +1,10 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { composerText } from './helpers/composer.ts'
 
 // Creating a project runs `git init` + writes AGENT.md/README.md, so it needs a
 // writable parent outside the repo working tree. A throwaway temp dir keeps the
@@ -69,6 +70,9 @@ describe('new project flow', () => {
     await $('.new-project-actions .ui-btn.primary').click()
 
     // The workspace activates and the composer appears with the starter prompt.
+    // The composer is a contenteditable, not an input: WDIO's value matchers read
+    // `undefined` off it (see helpers/composer.ts), so read its text the way the
+    // editor itself does, and poll — the prompt is seeded after activation.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     // `.prompt-input` is the composer's contenteditable root (see
     // composer-editor.ts), not an <input>/<textarea> — it has no `value`
@@ -94,8 +98,11 @@ describe('new project flow', () => {
     await addBtn.waitForDisplayed({ timeout: 10_000 })
     await addBtn.click()
 
-    const menuItems = await $$('.context-menu-item')
-    const labels = (await Promise.all(menuItems.map((i) => i.getText()))).join('|')
+    // `$$(…).map` is WebdriverIO's own async map: it awaits each element and
+    // resolves to a plain string[]. Wrapping it in `Promise.all` hands a single
+    // Promise to something expecting an iterable, which throws. This was the only
+    // `Promise.all` in the e2e suite — every other spec uses the idiom below.
+    const labels = (await $$('.context-menu-item').map((item) => item.getText())).join('|')
     expect(labels).toContain('New project')
     expect(labels).toContain('Open folder')
   })
