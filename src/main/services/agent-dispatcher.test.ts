@@ -22,6 +22,11 @@ const context: ThreadExecutionContext = {
   branch: null,
 }
 
+/** Let the checkpoint writer's queued write actually run before asserting. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 function request(overrides?: Partial<AgentDispatchRequest>): AgentDispatchRequest {
   return {
     projectId: 'project-1',
@@ -44,7 +49,6 @@ function dependencies(
     now: () => 100,
     createId: () => 'audit-id',
     prepareExecutionContext: async () => context,
-    transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
       messages: [...priorMessages, { role: 'user', content: userContent }],
@@ -151,105 +155,110 @@ describe('AgentDispatcher', () => {
     assert.equal(recoverCount, 1)
   })
 
-  it('warns when a turn starts with an empty history but a full transcript', async () => {
-    const emitted: StreamChunk[] = []
-    const dispatcher = new AgentDispatcher(
-      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
-      registry,
-      dependencies({ loadHistory: async () => [], transcriptLength: async () => 4 }),
-    )
-
-    await dispatcher.dispatch(request())
-
-    const notice = emitted.find((chunk) => chunk.type === 'text')
-    assert.ok(notice, 'expected a notice before the turn')
-    assert.match(notice.text, /Earlier context is missing/)
-    assert.match(notice.text, /4 messages/)
-  })
-
-  it('stays quiet on a fresh thread whose only message is the prompt', async () => {
-    const emitted: StreamChunk[] = []
-    const dispatcher = new AgentDispatcher(
-      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
-      registry,
-      dependencies({ loadHistory: async () => [], transcriptLength: async () => 1 }),
-    )
-
-    await dispatcher.dispatch(request())
-
-    assert.equal(
-      emitted.filter((chunk) => chunk.type === 'text').length,
-      0,
-      'a first turn has lost nothing',
-    )
-  })
-
-  it('stays quiet when the model already has history', async () => {
-    const emitted: StreamChunk[] = []
-    let transcriptReads = 0
-    const dispatcher = new AgentDispatcher(
-      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
-      registry,
-      dependencies({
-        loadHistory: async () => [{ role: 'assistant', content: 'prior' }],
-        transcriptLength: async () => {
-          transcriptReads += 1
-          return 9
-        },
-      }),
-    )
-
-    await dispatcher.dispatch(request())
-
-    assert.equal(emitted.filter((chunk) => chunk.type === 'text').length, 0)
-    // The common path must not pay for a thread read it cannot learn from.
-    assert.equal(transcriptReads, 0)
-  })
-
-  it('stays quiet when the transcript rebuild recovered the history', async () => {
-    const emitted: StreamChunk[] = []
-    const dispatcher = new AgentDispatcher(
-      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
-      registry,
-      dependencies({
-        loadHistory: async () => [],
-        // Recovery runs first and succeeds, so nothing was lost by the time the
-        // notice would fire — even though the sidecar itself was empty.
-        recoverHistory: async () => [{ role: 'user', content: 'the question a dead turn lost' }],
-        transcriptLength: async () => 6,
-      }),
-    )
-
-    await dispatcher.dispatch(request())
-
-    assert.equal(
-      emitted.filter((chunk) => chunk.type === 'text').length,
-      0,
-      'a recovered history is not a lost one',
-    )
-  })
-
-  it('runs the turn anyway when the transcript cannot be read', async () => {
-    let ran = false
+  it('persists each mid-turn checkpoint and finishes on the committed history', async () => {
+    const saved: LLMMessage[][] = []
     const dispatcher = new AgentDispatcher(
       host,
       registry,
       dependencies({
-        loadHistory: async () => [],
-        transcriptLength: () => Promise.reject(new Error('store unavailable')),
-        run: async (_threadId, userContent, priorMessages) => {
-          ran = true
-          return {
-            usage: { inputTokens: 0, outputTokens: 0 },
-            messages: [...priorMessages, { role: 'user', content: userContent }],
-          }
+        saveHistory: async (_projectId, _threadId, messages) => {
+          saved.push(messages)
+        },
+        run: async (_threadId, userContent, priorMessages, _host, _registry, options) => {
+          const messages: LLMMessage[] = [...priorMessages, { role: 'user', content: userContent }]
+          // The prompt lands before the first provider call — that alone is what
+          // a killed turn used to lose.
+          options.onHistoryCheckpoint?.([...messages])
+          await settle()
+          messages.push({ role: 'assistant', content: 'step one' })
+          options.onHistoryCheckpoint?.([...messages])
+          await settle()
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
         },
       }),
     )
 
     await dispatcher.dispatch(request())
 
-    assert.equal(ran, true)
+    assert.deepEqual(saved, [
+      [{ role: 'user', content: 'continue' }],
+      [
+        { role: 'user', content: 'continue' },
+        { role: 'assistant', content: 'step one' },
+      ],
+      [
+        { role: 'user', content: 'continue' },
+        { role: 'assistant', content: 'step one' },
+      ],
+    ])
+  })
+
+  it('keeps the checkpointed prompt when the run throws before committing', async () => {
+    const saved: LLMMessage[][] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        saveHistory: async (_projectId, _threadId, messages) => {
+          saved.push(messages)
+        },
+        run: (_threadId, userContent, priorMessages, _host, _registry, options) => {
+          options.onHistoryCheckpoint?.([...priorMessages, { role: 'user', content: userContent }])
+          return Promise.reject(new Error('provider exploded'))
+        },
+      }),
+    )
+
+    await assert.rejects(dispatcher.dispatch(request()), /provider exploded/)
+
+    assert.deepEqual(saved, [[{ role: 'user', content: 'continue' }]])
+    // The cache agrees with what reached disk, so the next turn does not resume
+    // from a history the sidecar has already moved past.
+    assert.deepEqual(await dispatcher.history('project-1', 'thread-1'), [
+      { role: 'user', content: 'continue' },
+    ])
+  })
+
+  it('coalesces checkpoints that arrive while a write is in flight', async () => {
+    const saved: LLMMessage[][] = []
+    let releaseWrite!: () => void
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      releaseWrite = resolve
+    })
+    let writes = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        saveHistory: async (_projectId, _threadId, messages) => {
+          writes += 1
+          saved.push(messages)
+          if (writes === 1) await firstWriteStarted
+        },
+        run: async (_threadId, userContent, priorMessages, _host, _registry, options) => {
+          const messages: LLMMessage[] = [...priorMessages, { role: 'user', content: userContent }]
+          options.onHistoryCheckpoint?.([...messages])
+          await Promise.resolve()
+          // Three more snapshots stack up behind the blocked first write; only
+          // the newest should reach disk.
+          for (const step of ['one', 'two', 'three']) {
+            messages.push({ role: 'assistant', content: step })
+            options.onHistoryCheckpoint?.([...messages])
+          }
+          releaseWrite()
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    // First checkpoint, the newest of the three that queued behind it, and the
+    // end-of-turn commit — not one write per checkpoint.
+    assert.equal(saved.length, 3)
+    assert.deepEqual(saved[0], [{ role: 'user', content: 'continue' }])
+    assert.deepEqual(saved[1]?.at(-1), { role: 'assistant', content: 'three' })
+    assert.deepEqual(saved[2]?.at(-1), { role: 'assistant', content: 'three' })
   })
 
   it('rejects a second active dispatch for the same project thread', async () => {
@@ -609,5 +618,106 @@ describe('AgentDispatcher', () => {
       'budget-exhausted',
     )
     assert.equal(runCount, 1)
+  })
+
+  it('warns when a turn starts with an empty history but a full transcript', async () => {
+    const emitted: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({ loadHistory: async () => [], transcriptLength: async () => 4 }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    const notice = emitted.find((chunk) => chunk.type === 'text')
+    assert.ok(notice, 'expected a notice before the turn')
+    assert.match(notice.text, /Earlier context is missing/)
+    assert.match(notice.text, /4 messages/)
+  })
+
+  it('stays quiet on a fresh thread whose only message is the prompt', async () => {
+    const emitted: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({ loadHistory: async () => [], transcriptLength: async () => 1 }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(
+      emitted.filter((chunk) => chunk.type === 'text').length,
+      0,
+      'a first turn has lost nothing',
+    )
+  })
+
+  it('stays quiet when the model already has history', async () => {
+    const emitted: StreamChunk[] = []
+    let transcriptReads = 0
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({
+        loadHistory: async () => [{ role: 'assistant', content: 'prior' }],
+        transcriptLength: async () => {
+          transcriptReads += 1
+          return 9
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(emitted.filter((chunk) => chunk.type === 'text').length, 0)
+    // The common path must not pay for a thread read it cannot learn from.
+    assert.equal(transcriptReads, 0)
+  })
+
+  it('stays quiet when the transcript rebuild recovered the history', async () => {
+    const emitted: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        // Recovery runs first and succeeds, so nothing was lost by the time the
+        // notice would fire — even though the sidecar itself was empty.
+        recoverHistory: async () => [{ role: 'user', content: 'the question a dead turn lost' }],
+        transcriptLength: async () => 6,
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(
+      emitted.filter((chunk) => chunk.type === 'text').length,
+      0,
+      'a recovered history is not a lost one',
+    )
+  })
+
+  it('runs the turn anyway when the transcript cannot be read', async () => {
+    let ran = false
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        transcriptLength: () => Promise.reject(new Error('store unavailable')),
+        run: async (_threadId, userContent, priorMessages) => {
+          ran = true
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(ran, true)
   })
 })
