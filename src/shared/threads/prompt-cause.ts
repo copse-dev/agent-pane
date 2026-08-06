@@ -198,6 +198,13 @@ export interface PromptOutcomeCounts {
   denied: number
   /** Timed out, cancelled, or resolved without a user verdict. */
   unresolved: number
+  /**
+   * Queued for later review by an unattended run instead of being shown
+   * (`deferred-approvals.md`). Counted apart from the rest because it is the one
+   * outcome where the user was *not* interrupted — folding it in would make the
+   * interruption totals look worse the more successfully deferral worked.
+   */
+  deferred: number
 }
 
 export interface PromptCauseRow extends PromptOutcomeCounts {
@@ -244,16 +251,18 @@ export function summarizePromptCauses(events: readonly PromptCauseInput[]): Prom
     const prompted =
       USER_VERDICTS.has(event.verdict) ||
       event.verdict === 'timeout' ||
-      event.verdict === 'cancelled'
+      event.verdict === 'cancelled' ||
+      event.verdict === 'deferred'
     if (!prompted) continue
     if (!isPromptCause(event.cause)) {
       uncaused++
       continue
     }
     total++
-    const row = counts.get(event.cause) ?? { approved: 0, denied: 0, unresolved: 0 }
+    const row = counts.get(event.cause) ?? { approved: 0, denied: 0, unresolved: 0, deferred: 0 }
     if (event.verdict === 'approved') row.approved++
     else if (event.verdict === 'denied') row.denied++
+    else if (event.verdict === 'deferred') row.deferred++
     else row.unresolved++
     counts.set(event.cause, row)
   }
@@ -262,7 +271,7 @@ export function summarizePromptCauses(events: readonly PromptCauseInput[]): Prom
   const rows: PromptCauseRow[] = []
   for (const [cause, outcome] of counts) {
     const containment = promptCauseContainment(cause)
-    const rowTotal = outcome.approved + outcome.denied + outcome.unresolved
+    const rowTotal = outcome.approved + outcome.denied + outcome.unresolved + outcome.deferred
     byContainment[containment] += rowTotal
     rows.push({ cause, containment, total: rowTotal, ...outcome })
   }

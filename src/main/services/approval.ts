@@ -11,6 +11,12 @@ import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
+import {
+  DeferredApprovalError,
+  deferredApprovalMessage,
+} from '@shared/threads/deferred-approval.ts'
+import { isDeferralModeActive } from './security/deferral-mode.ts'
+import { deferApproval } from './security/deferred-approval-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
@@ -207,7 +213,9 @@ function recordApprovalDecision(
           : 'denied'
         : resolution === 'timeout'
           ? 'timeout'
-          : 'cancelled',
+          : resolution === 'deferred'
+            ? 'deferred'
+            : 'cancelled',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
     ...(req.cause ? { cause: req.cause } : {}),
@@ -335,11 +343,85 @@ export function cancelApprovalsForAcpToolCall(toolCallId: string): boolean {
  *
  * Settled outcomes are appended to the durable decision log (best-effort).
  */
+/**
+ * Queue this request instead of prompting, when the thread is running
+ * unattended. Returns null for the ordinary interactive case so the caller falls
+ * through to the normal handler.
+ *
+ * Always rejects — never resolves — because every gate caller reads
+ * `approved === false` as "the user declined" and carries on quietly. A resolved
+ * denial would drop the request on the floor after telling nobody; the thrown
+ * {@link DeferredApprovalError} is what makes a deferral impossible to swallow
+ * (plan Decision 3).
+ *
+ * If the queue write fails we return null and let the modal happen. Blocking an
+ * unattended run is bad; telling the agent something was queued when it was not
+ * is worse, because the request would then exist nowhere at all.
+ */
+/**
+ * Queue the request and tell the agent, instead of opening a modal nobody is
+ * there to answer.
+ *
+ * Always throws on the happy path — never resolves — because every gate caller
+ * reads `approved === false` as "the user declined" and carries on quietly. A
+ * resolved denial would drop the request on the floor after telling nobody; the
+ * thrown {@link DeferredApprovalError} is what makes a deferral impossible to
+ * swallow by accident (plan Decision 3).
+ *
+ * If the queue write fails, fall back to prompting. Blocking an unattended run
+ * is bad, but telling the agent something was queued when it was not is worse:
+ * the request would then exist nowhere at all.
+ */
+async function deferInsteadOfPrompting(
+  req: ApprovalRequest,
+  threadId: string,
+  prompt: () => Promise<ApprovalResponse>,
+): Promise<ApprovalResponse> {
+  let entryId: string
+  try {
+    const entry = await deferApproval({
+      threadId,
+      kind: req.type,
+      title: req.title,
+      subject: req.subject ?? req.title,
+      ...(req.cause !== undefined ? { cause: req.cause } : {}),
+      ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+      ...(req.scope !== undefined ? { scope: req.scope } : {}),
+    })
+    entryId = entry.id
+  } catch (error) {
+    console.warn('[approval] could not queue a deferral; prompting instead:', error)
+    return prompt()
+  }
+  recordApprovalDecision(req, DENIED, 'deferred')
+  throw new DeferredApprovalError(
+    entryId,
+    deferredApprovalMessage({ title: req.title, reasons: req.reasons }),
+  )
+}
+
 export function requestApproval(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
+  // Unattended runs never open a modal (deferred-approvals.md Decision 6). This
+  // is the one choke point every gate already funnels through, so intercepting
+  // here covers shell, MCP, web, browser, PII, ACP and the rest without any of
+  // them growing a second code path — and without a gate being able to forget.
+  const deferringThread = getActiveRunThread()
+  if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
+    return deferInsteadOfPrompting(req, deferringThread, () =>
+      requestApprovalInteractive(req, signal),
+    )
+  }
+  return requestApprovalInteractive(req, signal)
+}
+
+function requestApprovalInteractive(
+  req: ApprovalRequest,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
   const scoped = scopedHandler.getStore()
   const activeHandler = scoped?.handler ?? handler
   if (!activeHandler) {

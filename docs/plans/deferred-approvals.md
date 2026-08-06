@@ -1,7 +1,7 @@
 # Deferred approvals and the review queue
 
-**Status: Active (D0 landed).** Phase D0 — prompt-cause instrumentation — is
-implemented; D1 onward is design only. Split out of
+**Status: Active (D0–D1 landed).** Prompt-cause instrumentation and the `defer`
+outcome with its durable queue are implemented; D2 onward is design only. Split out of
 [`unattended-runs.md`](unattended-runs.md), which originally carried this as one of
 its phases. It is separate work with a separate value case: **it needs no container, no
 Docker, and no new runtime**, and it is worth shipping on today's host sandbox on its own.
@@ -108,16 +108,42 @@ cause, by what would have removed it, and by how often each was approved (a caus
 always approved is a candidate for auto-approval; one that is often denied is doing real
 work).
 
-### D1 — the `defer` outcome and durable queue
+### D1 — the `defer` outcome and durable queue ✅
 
-- Extend the gate's outcome type; map to the headless contract's vocabulary.
-- Durable per-thread queue with the record from Decision 4.
-- Typed tool error, worded so a model treats it as "blocked, do something else" rather than
-  "failed, retry" — the wording matters more than the mechanism and should be tested for
-  its effect on the loop.
+What landed:
 
-Exit gate: a run in defer mode completes without opening a modal; every deferral is in the
-queue and in the decision log; nothing a deferral touched was actually executed.
+- `src/shared/threads/deferred-approval.ts` — the queue record, its type predicate, the
+  request-identity key, the folding rules, and `deferredApprovalMessage()`. Pure, so the
+  store, the renderer, and the tests share one definition of both the record and the
+  wording.
+- `deferral-mode.ts` — which threads are running unattended. Session-only and per-thread,
+  mirroring `guarded-yolo.ts`: nothing in settings, so no migration or restart can switch a
+  run to non-blocking behind the user's back.
+- `deferred-approval-store.ts` — append-only JSONL beside the decision log, at
+  `~/.copse/workspace/<projectId>/deferred-approvals.jsonl`. Append-only because the queue
+  is evidence as much as state: "asked at 03:00, approved at 09:00" is what a reviewer
+  wants, and rewriting the pending line in place would erase it. Resolving twice returns
+  null rather than minting a second verdict.
+- **One interception point.** `requestApproval` is the single seam every gate already
+  funnels through, so the mode is applied there — shell, MCP, web, browser, PII, ACP and
+  the rest are covered without any of them growing a second code path, and without a gate
+  being able to forget.
+- **It throws, it does not resolve.** Every existing caller reads `approved === false` as
+  "the user declined" and carries on quietly, which would drop the request on the floor
+  after telling nobody. `DeferredApprovalError` makes a deferral impossible to swallow by
+  accident (Decision 3).
+- A `deferred` verdict on the decision log, counted apart from approvals, denials and
+  timeouts in the D0 report — folding it in would make the interruption count _rise_ the
+  better deferral worked.
+- Repeat asks collapse onto one entry via `deferredRequestKey`, which handles D3's
+  repeat-request problem at the source rather than by steering the model.
+
+One deliberate trade: if the queue write fails, the deferral is abandoned and the modal is
+shown instead. Blocking an unattended run is bad; telling the agent something was queued
+when it was not is worse, because the request would then exist nowhere at all.
+
+Exit gate (met): a run in defer mode completes without opening a modal; every deferral is
+in the queue and in the decision log; nothing a deferral touched was executed.
 
 ### D2 — review surface
 

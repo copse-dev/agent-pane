@@ -78,6 +78,7 @@ describe('summarizePromptCauses', () => {
       approved: 1,
       denied: 1,
       unresolved: 0,
+      deferred: 0,
     })
   })
 
@@ -104,6 +105,7 @@ describe('summarizePromptCauses', () => {
       approved: 0,
       denied: 0,
       unresolved: 2,
+      deferred: 0,
     })
   })
 
@@ -129,6 +131,26 @@ describe('summarizePromptCauses', () => {
       summary.rows.map((row) => row.cause),
       ['mcp-tool', 'github-write', 'web-origin'],
     )
+  })
+
+  it('counts a queued prompt apart from an answered one', () => {
+    // A deferral is a prompt that never interrupted anyone. Rolling it in with
+    // timeouts would make the interruption count rise the better deferral works.
+    const summary = summarizePromptCauses([
+      { verdict: 'deferred', cause: 'shell-sandbox-escalation' },
+      { verdict: 'deferred', cause: 'shell-sandbox-escalation' },
+      { verdict: 'approved', cause: 'shell-sandbox-escalation' },
+    ])
+    assert.equal(summary.total, 3)
+    assert.deepEqual(summary.rows[0], {
+      cause: 'shell-sandbox-escalation',
+      containment: 'removed',
+      total: 3,
+      approved: 1,
+      denied: 0,
+      unresolved: 0,
+      deferred: 2,
+    })
   })
 
   it('is empty for an empty log', () => {

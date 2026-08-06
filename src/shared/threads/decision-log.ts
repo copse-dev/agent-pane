@@ -43,10 +43,21 @@ export type DecisionActor = 'user' | 'classifier' | 'hook' | 'system'
 /**
  * The outcome. `approved`/`denied` are user verdicts; `allowed`/`blocked`/`ask`
  * are non-interactive policy/hook verdicts; `timeout` is a prompt that expired
- * unanswered (treated as a denial by the caller, recorded distinctly here).
+ * unanswered (treated as a denial by the caller, recorded distinctly here);
+ * `deferred` is a prompt an unattended run queued for later review instead of
+ * showing — the action did not run, and a separate line records the human's
+ * eventual answer.
  */
 export type DecisionVerdict =
-  'approved' | 'denied' | 'allowed' | 'blocked' | 'ask' | 'classified' | 'timeout' | 'cancelled'
+  | 'approved'
+  | 'denied'
+  | 'allowed'
+  | 'blocked'
+  | 'ask'
+  | 'classified'
+  | 'timeout'
+  | 'cancelled'
+  | 'deferred'
 
 /** One line of `decisions.jsonl`: a single control-plane decision. */
 export interface DecisionEvent {
@@ -184,6 +195,7 @@ const DECISION_VERDICTS: ReadonlySet<string> = new Set([
   'classified',
   'timeout',
   'cancelled',
+  'deferred',
 ])
 
 function isOptionalString(value: unknown): boolean {

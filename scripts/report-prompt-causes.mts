@@ -71,13 +71,22 @@ function printReport(summary: PromptCauseSummary, sources: number): void {
 
   const width = Math.max(...summary.rows.map((row) => promptCauseLabel(row.cause).length))
   console.log(
-    `${'CAUSE'.padEnd(width)}  ${'N'.padStart(5)}  ${'SHARE'.padStart(6)}  ${'OK'.padStart(4)}  ${'NO'.padStart(4)}  CONTAINER`,
+    `${'CAUSE'.padEnd(width)}  ${'N'.padStart(5)}  ${'SHARE'.padStart(6)}  ${'OK'.padStart(4)}  ` +
+      `${'NO'.padStart(4)}  ${'DEFER'.padStart(5)}  CONTAINER`,
   )
   for (const row of summary.rows) {
     console.log(
       `${promptCauseLabel(row.cause).padEnd(width)}  ${String(row.total).padStart(5)}  ` +
         `${percent(row.total, summary.total).padStart(6)}  ${String(row.approved).padStart(4)}  ` +
-        `${String(row.denied).padStart(4)}  ${row.containment}`,
+        `${String(row.denied).padStart(4)}  ${String(row.deferred).padStart(5)}  ${row.containment}`,
+    )
+  }
+
+  const deferred = summary.rows.reduce((sum, row) => sum + row.deferred, 0)
+  if (deferred > 0) {
+    console.log(
+      `\n${String(deferred)} of these were queued for review rather than shown ` +
+        '(an unattended run was active), so they did not interrupt anyone.',
     )
   }
 
