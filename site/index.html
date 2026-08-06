@@ -129,9 +129,14 @@
                 tabindex="-1"
                 aria-hidden="true"
               ></iframe>
+              <!-- Click-to-interact is parked, not deleted. `hidden` is the whole
+                   switch: it keeps the chip off the page and out of the a11y tree,
+                   and hero-demo.js reads it to leave the frame inert. Drop the
+                   attribute to bring the overlay and in-place interaction back. -->
               <button
                 class="hero-demo-activate"
                 type="button"
+                hidden
                 aria-controls="hero-demo-frame"
                 aria-label="Interact with the Copse demo"
                 aria-pressed="false"

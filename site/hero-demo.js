@@ -3,7 +3,11 @@
   var host = document.querySelector('.hero-demo')
   if (!host) return
   var frame = host.querySelector('.hero-demo-frame')
-  var activate = host.querySelector('.hero-demo-activate')
+  // A hidden overlay means click-to-interact is parked (see index.html). The
+  // demo then stays a showcase — inert, with "Open demo fullscreen" carrying
+  // anyone who wants to drive it. Everything below stays wired for the day the
+  // attribute comes off.
+  var activate = host.querySelector('.hero-demo-activate:not([hidden])')
   var FRAME_HEIGHT = 800
 
   function setInteractive(interactive) {
@@ -25,10 +29,16 @@
     var height = host.clientHeight
     if (!width || !height) return
 
-    // Keep the complete desktop viewport visible. The surrounding panel uses
-    // the same dark treatment as the app, so any spare space at unusually wide
-    // or tall aspect ratios reads as a frame instead of cropping app chrome.
-    var scale = Math.min(width / 1280, height / FRAME_HEIGHT)
+    var byWidth = width / 1280
+    var byHeight = height / FRAME_HEIGHT
+    // The panel's aspect-ratio matches this frame, so the two fits agree to
+    // within the browser's integer rounding of clientWidth/clientHeight.
+    // Cover-fitting that fraction of a pixel keeps the app bled to the panel's
+    // rounded edge, so its corners are the only ones on show. A real ratio
+    // mismatch — only reachable by editing the panel — contain-fits instead,
+    // since spare panel background beats cropping app chrome.
+    var matched = Math.abs(byWidth - byHeight) < 0.005
+    var scale = matched ? Math.max(byWidth, byHeight) : Math.min(byWidth, byHeight)
     var left = (width - 1280 * scale) / 2
     var top = (height - FRAME_HEIGHT * scale) / 2
 
