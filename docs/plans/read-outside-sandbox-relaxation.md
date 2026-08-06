@@ -1,34 +1,30 @@
 # Dynamic read-sandbox relaxation (follow-up to read-access grants)
 
-**Status: Proposed.** Design-only companion to the read-access approval work on
-the `claude/read-access-sandbox-warning-xh18ei` branch. Nothing is implemented;
-this plan records how the existing _prompt-level_ read grant could be extended
-into a real _seatbelt-level_ relaxation so read commands stay contained instead
-of running unsandboxed.
+**Status: Implemented.** Design companion to the read-access approval work on the
+`claude/read-access-sandbox-warning-xh18ei` branch, now built on
+`claude/read-outside-sandbox-relaxation-impl`. The sections below are kept as the
+design record; **[What was actually built](#what-was-actually-built)** at the end
+notes where implementation diverged from this plan — including a correction to
+the diagnosis below.
 
 ## The gap this follow-up closes
 
 The read-access feature (this branch) is a **permission-gate** improvement: a
 command that only reads accountable paths outside the project gets a narrower
 "Allow read access outside of the project?" prompt and a thread-scoped in-memory
-grant (`read-outside-project.ts` → `read-outside-grant.ts`). But on macOS with the
-project sandbox active, the approval has a side effect that undercuts its own
-wording:
+grant (`read-outside-project.ts` → `read-outside-grant.ts`). But with the project
+sandbox active, the approval has a side effect that undercuts its own wording:
 
-- The grant only answers the **prompt**. The command itself still runs through
-  `spawnShellInProjectSandbox` with the _unrelaxed_ `workspaceSandboxOverlay`,
-  whose `denyRead: [homedir()]` blocks every read under `$HOME`.
-- When the seatbelt then denies the read, `runShellOnce` reports a sandbox
-  violation, `maybeRetryUnsandboxed` detects it, and the command is offered the
-  worst-case **"Run outside sandbox?"** escalation (`promptUnsandboxedShell`).
+- The grant only answers the **prompt**. Nothing about it changes how the command
+  is then routed or confined.
 - Off macOS there is no seatbelt to hit, so the read grant genuinely contains the
-  case; on macOS the two mechanisms fight: the user granted "read only, still
-  contained" and the runner still lands on "run fully unsandboxed".
+  case; with one active the two mechanisms fight: the user granted "read only,
+  still contained" and the runner still lands on "run fully unsandboxed".
 
-So a macOS user answering the read-access prompt still ends up with either a
-blocked command or a full sandbox escape — neither is what they approved. The fix
-is to make the grant also **relax the seatbelt** for the paths it named, so an
-approved read runs inside the sandbox with just those files readable.
+So a user answering the read-access prompt still ends up with a full sandbox
+escape — not what they approved. The fix is to make the grant also **relax the
+seatbelt** for the paths it named, so an approved read runs inside the sandbox
+with just those files readable.
 
 The branch/PR should hold this PR's current state for where the sandbox doesn't
 apply, and land this relaxation to reach parity: the same read UX on macOS and
@@ -106,6 +102,38 @@ or full-escape lever.
 - **Not a blanket "no sandbox".** No path rejects the seatbelt; the relaxation
   only narrows the read deny for named targets.
 
+### Why the shape allow-list stays, once the seatbelt enforces
+
+With containment in place the seatbelt, not `analyzeReadOutsideProject`, is what
+stops an approved command writing or reaching the network. It is therefore fair
+to ask whether the head allow-list and the exec-flag checks are still earning
+their keep, since they prove by inspection what the kernel now proves directly.
+
+They stay, but their job is renamed. They are not the enforcement; they are the
+judgement about **when we think a read-shaped hole can be poked in the sandbox
+safely**, and about whether the prompt's own sentence — "the agent wants to read
+X" — is an honest description of what the user is being asked to approve. Those
+are not the same question as "can this do damage":
+
+- A contained `rm ~/notes/todo.md` is harmless; the seatbelt refuses the unlink.
+  Describing it to the user as a read is not, and a standing thread grant would
+  cover every later one silently.
+- The grant is consulted _through this analysis_, so whatever the shape checks
+  admit is what a granted thread stops asking about. Widening them widens the
+  grant, not just the single prompt.
+
+So the relaxation stops at the sandbox boundary: the seatbelt decides what a
+command may do, and this module decides which commands are worth describing as
+reads.
+
+One check does align the two halves rather than judge the shape:
+`analyzeReadOutsideProject` requires `externalOnlyForOutsidePath`, the same
+predicate `readOutsideProjectGrantTargets` applies. Without it a command the tool
+would decline to contain (network signal, opaque local execution) could still be
+offered the read question, and approving it would run it fully unsandboxed on an
+answer that was only ever about reads. The head allow-list already excludes those
+shapes today; this keeps it true if either list moves.
+
 ### Decision-logging parity
 
 The durable decision log (`decisions.jsonl`) already records `scope: external-read`
@@ -150,3 +178,74 @@ for that command.
 - Persistent, cross-restart read grants (today the ledger is in-memory and dies
   with the process; that is a deliberate property, not a gap).
 - Applying relaxation to the `fs:*` read gateway (see Risks).
+
+## What was actually built
+
+### Correction: the failure was worse than this plan described
+
+The plan assumed an approved read ran through `spawnShellInProjectSandbox` under
+the unrelaxed overlay, got denied by `denyRead: [homedir()]`, and was then offered
+the escape. Reading the code, that is not what happens on the up-front path.
+
+`analyzeShellCommand` returns `external` for **any** out-of-workspace path, so
+`shellRunsOutsideSandbox` is already true before the command is spawned, and
+`run_shell` routes it to the plain `/bin/sh` branch. The approved read never met
+a seatbelt at all — it ran with full writes and full network, silently
+contradicting the prompt's own footer ("It does not allow writing, installing, or
+network access"). The escape was not a fallback after a denial; it was the first
+and only thing that happened. The retry path (`maybeRetryUnsandboxed` →
+`promptUnsandboxedShell`) had the same ending by a different route: the standing
+grant answered the escalation with `true`, and the retry ran unsandboxed.
+
+The plan's conclusion was right and its fix is the right fix. Only the mechanism
+in "The gap this follow-up closes" was wrong, so that section has been trimmed to
+what the code actually does.
+
+### The seam, and why no gate→tool plumbing was needed
+
+The plan's main open question was how to thread granted targets from
+`resolveReadOutsideProject` through to the spawn without the decision and the
+overlay drifting apart. That plumbing turned out to be unnecessary.
+
+`analyzeReadOutsideProject` is a **pure function of the raw command and the
+execution root** — the same two inputs the shell tool already has. So the tool
+re-derives the targets itself, exactly as it already re-derives the
+sandboxed/unsandboxed split through `shellRunsOutsideSandbox`. Nothing is passed
+between gate and tool, so there is nothing for them to disagree about.
+
+- `readOutsideProjectGrantTargets` (`read-outside-project.ts`) — the execution
+  half of the analysis: resolved absolute paths when the command is an
+  accountable read, else null.
+- `externalOnlyForOutsidePath` (`shell-scope.ts`) — the second guard. A read
+  shape that also carries any network signal, hard or fuzzy, is refused:
+  containing it would break it, and a read grant is not its approval.
+- `shellReadGrantTargets` (`command-routing-config.ts`) — layers the host gates:
+  no sandbox means nothing to relax, and an explicitly trusted allow-listed
+  command keeps the unsandboxed routing the user deliberately gave it.
+- `readAllowedSandboxOverlay` (`project-sandbox/config.ts`) — one axis only, as
+  planned.
+- `spawnShellInProjectSandbox` takes `readGrantTargets` (paths), **not** a
+  `sandboxConfig` (a whole profile) like its sibling. The caller names paths and
+  the spawn builds the overlay, so the option can only ever widen reads.
+
+### The grant is spent by containment
+
+One case the plan did not anticipate. If a relaxed run still hits the sandbox,
+`maybeRetryUnsandboxed` fires and the standing grant would have auto-approved the
+full escape — reopening the exact hole this closes, now with no prompt at all.
+`promptUnsandboxedShell` therefore takes `readGrantApplied`: a command already
+contained with everything the grant named does not get to spend the grant a
+second time on leaving the sandbox. It falls through to the real "Run outside
+sandbox?" question.
+
+### Resolved open questions
+
+- **Symlink canonicalization** — done. Targets are `realpath`'d the way
+  `canonicalizeWorkspaceRoot` treats the workspace root; a target that does not
+  exist yet is canonicalized through its parent.
+- **Ancestor traversal** — not in the plan, but required. Seatbelt resolves a
+  path component by component, so `denyRead: [homedir()]` stops the walk before
+  the leaf allow is consulted. Each ancestor is allowed as a literal path with no
+  `/**`, following the `worktreeDiscoveryRead` precedent.
+- **`sandbox-fs-client` parity** — still out of scope, as the plan proposed. This
+  affects `run_shell` only.
