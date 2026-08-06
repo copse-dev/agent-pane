@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { APP_ATTRIBUTION_TITLE, APP_ATTRIBUTION_URL } from './app-attribution.ts'
 import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
+import { SERVICE_TIERS } from './service-tier.ts'
 import type { LLMProvider } from './wire-types.ts'
 import {
   createExtraCloudProvider,
@@ -229,17 +230,22 @@ describe('createProvider service tier', () => {
     assert.equal(request.service_tier, undefined)
   })
 
-  it('passes an unrecognised tier through for the provider to judge', async () => {
-    // Not an enum on purpose: OpenAI's tier names are model-specific and keep
-    // changing, so validating here would reject a valid new tier until we
-    // shipped an update. A wrong value fails visibly with a 400.
-    const provider = expectOpenAIProvider(
-      createProvider('gpt-4o', { openAiApiKey: 'test-openai' }, undefined, {
-        serviceTier: 'some-future-tier',
-      }),
-    )
-    const request = await captureRequest(provider)
-    assert.equal(request.service_tier, 'some-future-tier')
+  it('sends each documented tier unchanged', async () => {
+    // The tier set is pinned (see service-tier.ts): `SERVICE_TIERS` matches
+    // OpenAI's documented values exactly, so an unrecognised tier is refused at
+    // the settings boundary rather than forwarded for the API to 400 on.
+    for (const tier of SERVICE_TIERS) {
+      // gpt-4o, not a reasoning model: this case is about the tier value
+      // surviving verbatim, and gpt-5.6-sol now routes to /v1/responses (see
+      // the Responses case below), where `expectOpenAIProvider` would fail.
+      const provider = expectOpenAIProvider(
+        createProvider('gpt-4o', { openAiApiKey: 'test-openai' }, undefined, {
+          serviceTier: tier,
+        }),
+      )
+      const request = await captureRequest(provider)
+      assert.equal(request.service_tier, tier)
+    }
   })
 
   it('carries the tier onto the Responses transport too', async () => {
