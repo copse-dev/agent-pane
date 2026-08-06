@@ -7,7 +7,11 @@ import {
   TRUST_TRANSPARENT_WRAPPERS,
   unwrapWrappers,
 } from './shell-argv.ts'
-import { dangerousInSandboxReasons, externalOnlyForOutsidePath } from './shell-scope.ts'
+import {
+  dangerousInSandboxReasons,
+  externalOnlyForOutsidePath,
+  needsMoreThanOutsideAccess,
+} from './shell-scope.ts'
 import {
   READ_ONLY_GIT_SUBCOMMANDS,
   READ_ONLY_SHELL_BASENAMES,
@@ -38,6 +42,17 @@ import {
  * does today. It can never turn a `deny` into an `allow`: the gate consults it
  * only after policy has already resolved to `prompt`.
  *
+ * WHAT THE ALLOW-LIST IS FOR. Where a seatbelt exists, it — not this module —
+ * is what stops an approved command writing or reaching the network
+ * (`readAllowedSandboxOverlay` widens `allowRead` and nothing else). So the
+ * shape checks are not the enforcement; they are the judgement about *when we
+ * believe a read-shaped hole can be poked in the sandbox safely*, and about
+ * whether "the agent wants to read X" is an honest description of what the user
+ * is approving. That is why they stay even under containment: a contained
+ * `rm ~/notes/todo.md` is harmless — the seatbelt refuses the unlink — but
+ * describing it to the user as a read, and covering it with a standing read
+ * grant, would not be.
+ *
  * WHAT IT DOES NOT PROTECT AGAINST. Eligibility is decided from the command
  * text alone, so a recursive read of a directory the user granted can still
  * traverse into a file this module would have refused as a direct target
@@ -61,32 +76,17 @@ const EXTRA_READ_ONLY_HEADS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Flags that turn an otherwise read-only command into one that WRITES a file.
- * Checked per head, because the same spelling is harmless elsewhere (`grep -o`
- * prints matches; `sort -o` overwrites a file).
- *
- * Never relaxed, even under containment: the seatbelt permits writes *inside*
- * the workspace, so a contained `sort ~/notes -o out.txt` would really write —
- * and the prompt's footer promises approving grants no writing.
+ * Flags that turn an otherwise read-only command into one that writes a file or
+ * runs another program. Checked per head, because the same spelling is harmless
+ * elsewhere (`grep -o` prints matches; `sort -o` overwrites a file).
  */
 const WRITING_FLAGS: ReadonlyMap<string, RegExp> = new Map([
-  ['find', /^-(?:delete|fprint|fprintf|fls|fprint0)$/],
-  ['sort', /^(?:-o|--output)(?:=|$)/],
-  ['tree', /^(?:-o|--output)(?:=|$)/],
-  ['git', /^(?:-o|-O|--output)(?:=|$)/],
-])
-
-/**
- * Flags that make an otherwise read-only command run ANOTHER program. Split from
- * {@link WRITING_FLAGS} because containment subsumes them: whatever they launch
- * inherits the same seatbelt, so it gains no reach the parent command lacked.
- * Disqualifying without a sandbox, ignored with one.
- */
-const EXECUTING_FLAGS: ReadonlyMap<string, RegExp> = new Map([
-  ['find', /^-(?:exec|execdir|ok|okdir)$/],
+  ['find', /^-(?:exec|execdir|ok|okdir|delete|fprint|fprintf|fls|fprint0)$/],
   ['fd', /^(?:-x|-X|--exec|--exec-batch)$/],
   ['rg', /^--pre(?:=|$)/],
-  ['git', /^--exec(?:=|$)/],
+  ['sort', /^(?:-o|--output)(?:=|$)/],
+  ['tree', /^(?:-o|--output)(?:=|$)/],
+  ['git', /^(?:-o|-O|--output|--exec)(?:=|$)/],
 ])
 
 /** Basenames whose contents are credentials by convention. */
@@ -150,24 +150,6 @@ export interface ReadOutsideProjectAnalysis {
 interface AnalyzeOptions {
   /** Overridable for tests, which must not depend on the runner's real home. */
   homeDir?: string
-  /**
-   * True when approving this command will run it CONTAINED — inside the seatbelt
-   * with {@link readOutsideProjectGrantTargets}' paths added to `allowRead` and
-   * nothing else widened — rather than unsandboxed.
-   *
-   * Only the checks that exist to prove "nothing but a read can happen" relax:
-   * the head allow-list and the exec flags, both of which a seatbelt enforces
-   * directly on the process. The checks that decide WHICH PATHS are opened
-   * ({@link sensitiveTargetReason}, {@link breadthBlocker}) never relax — the
-   * overlay is built from this analysis, so they are the only thing between a
-   * named `~/.ssh/id_rsa` and an `allowRead` rule for it. Neither do the write
-   * checks, because the seatbelt still permits writes inside the workspace.
-   *
-   * Must be false wherever approval leads to an UNSANDBOXED run — notably the
-   * post-failure "Run outside sandbox?" path, where the containment this relies
-   * on is exactly what the user is being asked to drop.
-   */
-  contained?: boolean
 }
 
 const INELIGIBLE = (blockers: string[]): ReadOutsideProjectAnalysis => ({
@@ -257,36 +239,22 @@ function breadthBlocker(token: string, resolved: string, homeDir: string): strin
  * disappear from it. Only the wrappers that change nothing about what runs
  * ({@link TRUST_TRANSPARENT_WRAPPERS}) may be looked through.
  */
-function headBlocker(
-  rawArgv: readonly string[],
-  argv: readonly string[],
-  contained: boolean,
-): string | null {
+function headBlocker(rawArgv: readonly string[], argv: readonly string[]): string | null {
   const rawHead = commandName(rawArgv[0])
   const head = commandName(argv[0])
   if (!head) return null
   if (rawHead !== head && !TRUST_TRANSPARENT_WRAPPERS.has(rawHead)) {
     return `runs through \`${rawHead}\`, which changes how the command runs`
   }
-  // The allow-list of heads exists to prove, from the text alone, that nothing
-  // but a read can happen. A seatbelt proves the same thing about the process,
-  // so an unrecognised head under containment is bounded by the overlay: the
-  // named paths, the workspace, no network, no outside writes.
-  if (!contained && !READ_ONLY_SHELL_BASENAMES.has(head) && !EXTRA_READ_ONLY_HEADS.has(head)) {
+  if (!READ_ONLY_SHELL_BASENAMES.has(head) && !EXTRA_READ_ONLY_HEADS.has(head)) {
     return `runs \`${head}\`, which is not a plain read`
   }
-  // Not relaxed under containment: the seatbelt allows writes inside the
-  // workspace, and `git commit`/`git stash` land there.
   if (head === 'git' && !READ_ONLY_GIT_SUBCOMMANDS.has(argv[1] ?? '')) {
     return `runs \`git ${argv[1] ?? ''}\`, which is not a plain read`
   }
   const writing = WRITING_FLAGS.get(head)
   if (writing && argv.slice(1).some((arg) => writing.test(arg))) {
-    return `\`${head}\` is asked to write, not just read`
-  }
-  const executing = contained ? undefined : EXECUTING_FLAGS.get(head)
-  if (executing && argv.slice(1).some((arg) => executing.test(arg))) {
-    return `\`${head}\` is asked to execute, not just read`
+    return `\`${head}\` is asked to write or execute, not just read`
   }
   return null
 }
@@ -307,22 +275,23 @@ export function analyzeReadOutsideProject(
 
   const root = resolve(workspaceRoot)
   const homeDir = options.homeDir ?? homedir()
-  const contained = options.contained === true
 
   const blockers: string[] = []
   const addBlocker = (blocker: string): void => {
     if (!blockers.includes(blocker)) blockers.push(blocker)
   }
 
-  // Relaxing the head allow-list widens what may reach this analysis, so the
-  // containment it relies on has to be genuinely available for the WHOLE command,
-  // not just plausible. `externalOnlyForOutsidePath` is the same predicate the
-  // execution half applies: it fails on any network signal (contained, such a
-  // command breaks, and a read grant is not its approval) and on opaque local
-  // execution. Without it an unrecognised head carrying a URL — `curl https://x
-  // --config ~/.curlrc` — would read as "reads outside the project", and the tool
-  // would then decline to contain it and run it fully unsandboxed on that answer.
-  if (contained && !externalOnlyForOutsidePath(trimmed, workspaceRoot)) {
+  // The shape checks say "this only reads"; this says "and a read is all it
+  // needs". It is the same condition the execution half applies, so the two
+  // halves agree by construction rather than by coincidence: a command the shell
+  // tool would decline to contain (network signal, opaque local execution) must
+  // not be offered the read question, or approving it would run it fully
+  // unsandboxed on an answer that was only ever about reads. Today the head
+  // allow-list already excludes those shapes; this keeps it true if either list
+  // moves. Deliberately the path-independent half — this module recognises
+  // `${HOME}/…` as an outside path and `shell-scope` does not, so asking the
+  // full predicate would refuse reads that are perfectly eligible.
+  if (needsMoreThanOutsideAccess(trimmed)) {
     addBlocker('needs more than reads outside the project')
   }
 
@@ -341,7 +310,7 @@ export function analyzeReadOutsideProject(
   for (const rawArgv of shellSegments(trimmed)) {
     const argv = unwrapWrappers(rawArgv)
     if (argv.length === 0) continue
-    const head = headBlocker(rawArgv, argv, contained)
+    const head = headBlocker(rawArgv, argv)
     if (head) addBlocker(head)
     for (const token of argv.slice(1)) {
       if (token.startsWith('-') || !looksLikePath(token)) continue
@@ -384,10 +353,7 @@ export function readOutsideProjectGrantTargets(
   workspaceRoot: string | null,
   options: AnalyzeOptions = {},
 ): string[] | null {
-  const analysis = analyzeReadOutsideProject(command, workspaceRoot, {
-    ...options,
-    contained: true,
-  })
+  const analysis = analyzeReadOutsideProject(command, workspaceRoot, options)
   if (!analysis.eligible || analysis.resolvedTargets.length === 0) return null
   if (!externalOnlyForOutsidePath(command, workspaceRoot)) return null
   return analysis.resolvedTargets

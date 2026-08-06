@@ -102,45 +102,37 @@ or full-escape lever.
 - **Not a blanket "no sandbox".** No path rejects the seatbelt; the relaxation
   only narrows the read deny for named targets.
 
-### Eligibility, once containment exists
+### Why the shape allow-list stays, once the seatbelt enforces
 
-The shape allow-list and the seatbelt were proving the same thing twice. Once a
-command is going to run contained, the checks that exist to show _from the text
-alone_ that nothing but a read can happen are redundant — the kernel shows it
-directly — so `analyzeReadOutsideProject` takes `contained` and drops two of
-them:
+With containment in place the seatbelt, not `analyzeReadOutsideProject`, is what
+stops an approved command writing or reaching the network. It is therefore fair
+to ask whether the head allow-list and the exec-flag checks are still earning
+their keep, since they prove by inspection what the kernel now proves directly.
 
-- the **head allow-list** (`READ_ONLY_SHELL_BASENAMES` / `EXTRA_READ_ONLY_HEADS`),
-  the main source of prompt fatigue: an unknown binary under the overlay reaches
-  the named paths, the workspace, no network, and no outside write;
-- the **exec flags** (`find -exec`, `fd -x`, `rg --pre`), whose child inherits
-  the same seatbelt.
+They stay, but their job is renamed. They are not the enforcement; they are the
+judgement about **when we think a read-shaped hole can be poked in the sandbox
+safely**, and about whether the prompt's own sentence — "the agent wants to read
+X" — is an honest description of what the user is being asked to approve. Those
+are not the same question as "can this do damage":
 
-Everything else holds unconditionally, for reasons that survive containment:
+- A contained `rm ~/notes/todo.md` is harmless; the seatbelt refuses the unlink.
+  Describing it to the user as a read is not, and a standing thread grant would
+  cover every later one silently.
+- The grant is consulted _through this analysis_, so whatever the shape checks
+  admit is what a granted thread stops asking about. Widening them widens the
+  grant, not just the single prompt.
 
-- **Target checks** (`sensitiveTargetReason`, `breadthBlocker`) decide _which
-  paths the overlay opens_. The overlay is built from this analysis, so they are
-  the only thing between a named `~/.ssh/id_rsa` and an `allowRead` rule for it.
-- **Write checks** (write flags, redirects, non-read `git` subcommands) stay
-  because the seatbelt permits writes _inside the workspace_ — a contained
-  `sort ~/x -o out.txt` really writes, and the prompt's footer says approving
-  grants no writing.
-- **Wrappers and expansions** (`sudo`/`env`/`xargs`, `$(…)`, `$VAR`) stay: they
-  make the target derivation itself unsound, and the overlay is derived from it.
+So the relaxation stops at the sandbox boundary: the seatbelt decides what a
+command may do, and this module decides which commands are worth describing as
+reads.
 
-Relaxing heads widens what reaches the analysis, so the containment it assumes
-must be real for the whole command: `contained` additionally requires
-`externalOnlyForOutsidePath`, the same predicate the execution half applies.
-Without it an unrecognised head carrying a URL (`curl https://x --config
-~/.curlrc`) would read as a plain out-of-project read, and the tool — which
-declines to contain a network command — would then run it fully unsandboxed on
-that answer. That guard also keeps `find -exec` refused (it reads as dynamic
-execution), so the flag relaxation is the belt and this is the braces.
-
-The relaxation is scoped to the **up-front gate**, where approving means a
-contained run. The post-failure "Run outside sandbox?" path passes
-`contained: false`: approving there drops the very containment the relaxed checks
-lean on.
+One check does align the two halves rather than judge the shape:
+`analyzeReadOutsideProject` requires `externalOnlyForOutsidePath`, the same
+predicate `readOutsideProjectGrantTargets` applies. Without it a command the tool
+would decline to contain (network signal, opaque local execution) could still be
+offered the read question, and approving it would run it fully unsandboxed on an
+answer that was only ever about reads. The head allow-list already excludes those
+shapes today; this keeps it true if either list moves.
 
 ### Decision-logging parity
 

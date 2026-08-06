@@ -481,6 +481,24 @@ export function analyzeShellCommand(
  * is enough to disqualify, because containment would break such a command and a
  * read relaxation is not the approval it needs.
  */
+/**
+ * True when the command carries a reason to leave the sandbox BEYOND naming an
+ * outside path — a network matcher (hard or fuzzy) or opaque local execution.
+ *
+ * The path-independent half of {@link externalOnlyForOutsidePath}, for callers
+ * that already decided a command reads outside the workspace by their own
+ * (broader) path analysis and only need to know whether anything *else* is going
+ * on. Asking the full predicate instead would fold in this module's narrower
+ * path detection and reject spellings such as `${HOME}/…` that it does not
+ * recognise but the caller does.
+ */
+export function needsMoreThanOutsideAccess(command: string): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  const { reasons } = collectExternalReasons(trimmed)
+  return reasons.length > 0
+}
+
 export function externalOnlyForOutsidePath(command: string, workspaceRoot: string | null): boolean {
   const trimmed = command.trim()
   if (!trimmed) return false
