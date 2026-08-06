@@ -75,6 +75,7 @@ import {
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@copse/agent/review-subagent.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
+import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -594,6 +595,14 @@ export interface RunAgentOptions {
   maxLlmCalls?: number
   /** Pack-scoped setting resolver owned by an explicit host profile. */
   resolvePackSetting?: (packId: string, key: string) => unknown
+  /**
+   * Called with the turn's provider history as it grows, so a host can persist
+   * progress a run that never returns would otherwise take with it. Fired once
+   * the (redacted) prompt has been prepared and again at each LLM call, always
+   * with system messages already stripped — the same shape `runAgent` returns.
+   * Purely observational: never awaited, and a throwing sink cannot fail a turn.
+   */
+  onHistoryCheckpoint?: (messages: LLMMessage[]) => void
 }
 
 export async function runAgent(
@@ -997,6 +1006,26 @@ export async function runAgent(
   let inputTokens = 0
   let outputTokens = 0
 
+  /**
+   * The turn's history in the shape the host persists: turn-local system
+   * steering never outlives the turn that injected it.
+   */
+  const persistableHistory = (): LLMMessage[] => trimmed.filter((m) => m.role !== 'system')
+
+  /**
+   * Hand the host the turn's history so far. Observational — a sink that throws
+   * must not take the turn down with it.
+   */
+  const checkpointHistory = (): void => {
+    const sink = options?.onHistoryCheckpoint
+    if (!sink) return
+    try {
+      sink(persistableHistory())
+    } catch {
+      // A checkpoint is a best-effort durability aid, never a turn's business.
+    }
+  }
+
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
@@ -1178,6 +1207,13 @@ export async function runAgent(
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed
+    // The turn's history is committed by the host once this function returns, so
+    // a run that never returns — the app quits, the process is killed, the turn
+    // is abandoned — takes the whole turn with it, the user's own prompt
+    // included. Checkpoint from here on: `trimmed` already holds the redacted
+    // prompt, and the loop mutates it in place as steps land, so replaying this
+    // at each LLM call keeps the persisted history within one step of the run.
+    checkpointHistory()
     const { wasTrimmed, conversationBudget } = prepared
     const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
     const sendTrimNotice = (): void => {
@@ -1316,7 +1352,11 @@ export async function runAgent(
       }
 
       const completed = findNewlyCompleted(before, todos)
-      if (completed && compactAtTodoBoundary(trimmed, todos)) {
+      // Measured at the boundary, not from the turn's opening snapshot: the run
+      // has been appending to `trimmed` ever since, and it is the size right now
+      // that decides whether there is any headroom to buy.
+      const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+      if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
         notifyTrimmed(sendTrimNotice)
       }
 
@@ -1492,7 +1532,12 @@ export async function runAgent(
           getOpenTodos: () => getAgentRunTodos(),
           continuationBudget,
           recordHookRun: recordFunctionHookRun,
-          onLlmCall: setHookRunStep,
+          onLlmCall: (count) => {
+            setHookRunStep(count)
+            // `messages` above is `trimmed`, mutated in place as turns land, so
+            // this persists everything the previous step produced.
+            checkpointHistory()
+          },
           recordStreamCut: (record) => {
             recordStreamCut(record, model)
           },
@@ -1573,7 +1618,10 @@ export async function runAgent(
         if (isEditTool(name)) turnChangedFiles = true
       },
       recordHookRun: recordFunctionHookRun,
-      onLlmCall: setHookRunStep,
+      onLlmCall: (count: number): void => {
+        setHookRunStep(count)
+        checkpointHistory()
+      },
       recordStreamCut: (record) => {
         recordStreamCut(record, model)
       },
@@ -1749,8 +1797,7 @@ export async function runAgent(
     abortMap.delete(threadId)
   }
 
-  const updatedHistory = trimmed.filter((m) => m.role !== 'system')
-  return { usage: { inputTokens, outputTokens }, messages: updatedHistory }
+  return { usage: { inputTokens, outputTokens }, messages: persistableHistory() }
 }
 
 export function abortAgent(threadId: string): void {

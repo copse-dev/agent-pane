@@ -130,6 +130,61 @@ function dispatchKey(projectId: string, threadId: string): string {
   return `${projectId}\0${threadId}`
 }
 
+interface HistoryCheckpointWriter {
+  /** Record the newest snapshot; never throws and never blocks the caller. */
+  submit: (messages: LLMMessage[]) => void
+  /** Stop accepting, and resolve once every accepted snapshot has been written. */
+  close: () => Promise<void>
+}
+
+/**
+ * Coalescing sink for a turn's mid-run history checkpoints.
+ *
+ * A long turn checkpoints once per LLM call, and each write is a full history —
+ * queueing one per call would spend the turn rewriting the same file. Writes are
+ * chained instead: a snapshot that arrives while an earlier write is in flight
+ * replaces any other waiting snapshot, so at most one write is outstanding and
+ * only the newest history is ever written. Order is strict, so a slow write can
+ * never land on top of a newer one.
+ *
+ * `close()` is what keeps a checkpoint from overwriting the end-of-turn commit:
+ * the caller closes the writer before saving the final history, so no checkpoint
+ * is still in flight when the authoritative version lands.
+ */
+function createHistoryCheckpointWriter(
+  save: (messages: LLMMessage[]) => Promise<void>,
+): HistoryCheckpointWriter {
+  let pending: LLMMessage[] | null = null
+  let chain: Promise<void> = Promise.resolve()
+  let closed = false
+
+  const flushNewest = async (): Promise<void> => {
+    const next = pending
+    pending = null
+    // Already written by an earlier link in the chain — this snapshot was
+    // superseded before it reached the front of the queue.
+    if (!next) return
+    try {
+      await save(next)
+    } catch {
+      // A checkpoint is a best-effort durability aid. The end-of-turn commit
+      // remains the authority, and a failing disk will surface there.
+    }
+  }
+
+  return {
+    submit(messages: LLMMessage[]): void {
+      if (closed) return
+      pending = messages
+      chain = chain.then(flushNewest)
+    },
+    close(): Promise<void> {
+      closed = true
+      return chain
+    },
+  }
+}
+
 /** Main-process authority for starting primary agent turns and committing provider history. */
 export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
@@ -371,11 +426,23 @@ export class AgentDispatcher {
     )
     if (!executionContext) return
 
+    // Reports on the pre-turn state, so it runs before the checkpoint writer
+    // starts moving that state on.
     await this.warnIfContextWasLost(projectId, threadId, priorMessages.length)
+
+    // Keep the in-memory history in step with each persisted checkpoint. A run
+    // that throws outright never reaches the commit below, and leaving the cache
+    // on the pre-turn history while the sidecar has moved on would hand the next
+    // turn a context that disagrees with disk.
+    const checkpoints = createHistoryCheckpointWriter(async (messages) => {
+      this.histories.set(key, messages)
+      await this.dependencies.saveHistory(projectId, threadId, messages)
+    })
 
     const options: RunAgentOptions = {
       invokedSkills: payload.invokedSkills,
       priorTodos: payload.priorTodos,
+      onHistoryCheckpoint: checkpoints.submit,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       ...(payload.model !== undefined ? { model: payload.model } : {}),
       ...(payload.reasoning !== undefined ? { reasoning: payload.reasoning } : {}),
@@ -384,18 +451,25 @@ export class AgentDispatcher {
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }
         : {}),
     }
-    const result = await runWithThreadExecutionContext(executionContext, () =>
-      runWithActiveRunIdentity(threadId, () =>
-        this.dependencies.run(
-          threadId,
-          payload.userContent,
-          priorMessages,
-          this.host,
-          this.registry,
-          options,
+    let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
+    try {
+      result = await runWithThreadExecutionContext(executionContext, () =>
+        runWithActiveRunIdentity(threadId, () =>
+          this.dependencies.run(
+            threadId,
+            payload.userContent,
+            priorMessages,
+            this.host,
+            this.registry,
+            options,
+          ),
         ),
-      ),
-    )
+      )
+    } finally {
+      // Drain before the commit below so no checkpoint can land on top of the
+      // turn's authoritative history.
+      await checkpoints.close()
+    }
     this.histories.set(key, result.messages)
     await this.dependencies.saveHistory(projectId, threadId, result.messages)
   }

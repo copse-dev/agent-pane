@@ -142,10 +142,12 @@ describe('validateAdvisorPair', () => {
     // Stronger advisor: fine even across providers (no native table entry).
     const stronger = validateAdvisorPair('gpt-4o-mini', 'claude-opus-4-8')
     assert.equal(stronger.level, 'good')
-    assert.match(stronger.reason, /annotated stronger/i)
+    assert.match(stronger.reason, /stronger than the executor/i)
 
-    // Equal intellect: a second opinion, not lift.
-    const equal = validateAdvisorPair('gpt-4o', 'claude-sonnet-4-6')
+    // Within the parity band: a second opinion, not lift. GPT-5.5 (55.0) and
+    // Opus 4.8 (55.7) are a fraction apart on the canonical scale — close
+    // enough that calling either "stronger" would oversell measurement noise.
+    const equal = validateAdvisorPair('gpt-5.5', 'claude-opus-4-8')
     assert.equal(equal.level, 'info')
     assert.match(equal.reason, /same intellect/i)
 
@@ -154,7 +156,7 @@ describe('validateAdvisorPair', () => {
     const weaker = validateAdvisorPair('claude-opus-4-8', 'claude-haiku-4-5')
     assert.equal(weaker.ok, true)
     assert.equal(weaker.level, 'warn')
-    assert.match(weaker.reason, /annotated weaker/i)
+    assert.match(weaker.reason, /weaker than the executor/i)
     assert.match(weaker.reason, /hidden/i)
   })
 
@@ -162,7 +164,8 @@ describe('validateAdvisorPair', () => {
     const a = validateAdvisorPair('openrouter:qwen/qwen3-235b-a22b:free', 'claude-opus-4-8')
     assert.equal(a.ok, true)
     assert.equal(a.level, 'info')
-    assert.match(a.reason, /intellect 9/i)
+    // Opus 4.8's canonical measurement, rounded for display.
+    assert.match(a.reason, /intellect 55\.7 of/i)
   })
 
   it('compares catalogued local models by size when both executor and advisor are local', () => {
@@ -211,7 +214,7 @@ describe('advisorAddsLift', () => {
 
   it('compares annotated cloud models by intellect', () => {
     assert.equal(advisorAddsLift('gpt-4o-mini', 'claude-opus-4-8'), true) // stronger
-    assert.equal(advisorAddsLift('gpt-4o', 'claude-sonnet-4-6'), true) // equal intellect → keep
+    assert.equal(advisorAddsLift('gpt-5.5', 'claude-opus-4-8'), true) // within parity → keep
     assert.equal(advisorAddsLift('claude-opus-4-8', 'claude-haiku-4-5'), false) // weaker → hide
   })
 

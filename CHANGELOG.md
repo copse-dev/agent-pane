@@ -8,6 +8,16 @@ every published entry.
 
 ## Unreleased
 
+- The Changes panel no longer goes blank when a diff is replaced. Opening a file
+  tore the current diff down before the next one had been computed, so for the
+  length of that compute the editor held nothing at all — and any attach that was
+  abandoned partway (a store update re-selecting the same file, a fresh proposal
+  arriving, a thread or project switch) returned without putting anything back,
+  leaving the panel showing an empty editor rather than a diff or its “Select a
+  changed file” message. The outgoing diff is now released only once its
+  replacement is on screen, so an abandoned attach leaves the diff you were
+  looking at in place. Clearing the viewer also releases the view-model wrapper
+  around the models, which nothing had been disposing.
 - Switching projects no longer carries a prompt across, or leaves the app half
   moved. Two problems, both about a switch and the thing it left behind.
   Approval prompts and `ask_user` questions were checked against the focused
