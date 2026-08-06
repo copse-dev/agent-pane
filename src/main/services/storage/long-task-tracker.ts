@@ -20,7 +20,8 @@ import { getActiveProjectRoot } from '../workspace.ts'
  * State persists per project as JSON under
  * `~/.copse/long-tasks/<workspace>/tasks.json` (mirroring the memories store's
  * workspace namespacing). It complements the in-thread `todos` (#530), which is
- * scoped to a single thread; a long task outlives the thread. Off by default:
+ * scoped to a single thread; a long task outlives the *turn* but still belongs
+ * to the thread that opened it — see {@link isOwnedByThread}. Off by default:
  * the `copse.long-horizon-tasks` first-party pack gates the `track_long_task`
  * tool registration (see `registry-bootstrap.ts`) so the feature is fully inert
  * until the user opts in via Settings → Packs.
@@ -41,6 +42,14 @@ const longTaskSchema = z.object({
   steps: z.array(stepSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /**
+   * Thread that created the task. The store is per workspace root, so without
+   * this every thread in a project reads every other thread's checklist as if it
+   * were its own plan. Optional because tasks written before this field existed
+   * name no owner; {@link isOwnedByThread} treats those as belonging to no
+   * thread rather than to whichever one asks.
+   */
+  threadId: z.string().optional(),
 })
 
 export type LongTask = z.infer<typeof longTaskSchema>
@@ -124,6 +133,20 @@ export interface CreateLongTaskInput {
   title: string
   goal: string
   steps: string[]
+  /** Owning thread; omitted only by callers with no thread of their own. */
+  threadId?: string
+}
+
+/**
+ * Whether `task` is this thread's to resume.
+ *
+ * A task with no recorded owner (written before tasks carried one) belongs to no
+ * thread. Handing it to whichever thread happens to ask is how an unrelated
+ * checklist gets adopted as the current plan, so unowned tasks stay visible only
+ * through an explicit workspace-wide listing.
+ */
+export function isOwnedByThread(task: LongTask, threadId: string): boolean {
+  return task.threadId !== undefined && task.threadId === threadId
 }
 
 /** Create a long task with a checklist of step labels. */
@@ -144,6 +167,7 @@ export function createLongTask(
     })),
     createdAt: now,
     updatedAt: now,
+    ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
   }
   writeLongTasks([...tasks, task], root)
   return task
