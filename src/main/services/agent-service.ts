@@ -57,6 +57,7 @@ import { recordReasoningCheckpoint } from './reasoning-checkpoint-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
+  resolveTurnParameters,
   buildSubagentRoute,
   buildReviewRoute,
   isBillableModel,
@@ -156,6 +157,7 @@ import { getPackService, inertPackSources, packUnavailableReason } from './packs
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import { isEmptyModelParameters, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
@@ -574,6 +576,11 @@ export interface RunAgentOptions {
   priorTodos?: TodoItem[]
   workingBrief?: string
   model?: string
+  /**
+   * Reasoning depth for this turn, from the composer's per-chat dial. Overrides
+   * the level saved on the model in Settings; absent means "use that level".
+   */
+  reasoning?: ReasoningLevel
   /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
   turnTreeId?: string
   /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
@@ -1078,7 +1085,18 @@ export async function runAgent(
     )
     const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = options?.provider ?? (await buildProvider(model, threadId))
+    const providerOptions = {
+      ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+    }
+    const provider = options?.provider ?? (await buildProvider(model, threadId, providerOptions))
+    // Stamp what this turn actually sends, not what the settings hold: the two
+    // diverge once a value is sanitized away, a dial overrides it, or a role
+    // caps it, and the settings can change afterwards. Silent for the common
+    // case of an untuned model, which sends nothing.
+    const turnParameters = resolveTurnParameters(model, providerOptions)
+    if (!isEmptyModelParameters(turnParameters)) {
+      sendChunk({ type: 'turn_parameters', model, parameters: turnParameters })
+    }
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
@@ -1254,6 +1272,13 @@ export async function runAgent(
       },
     })
 
+    // Briefs later local todo workers with what earlier ones already found (#i2jsed):
+    // each `runTodoWorker` call starts a fresh, isolated context, so without this a
+    // plan like "mirror complexity" (todo 2) has no way to know todo 1 just built it.
+    // Keyed by todo id; deliberately just completed-item outcomes, not the rest of
+    // the plan, so a worker sees background to reuse rather than other work to drift into.
+    const localWorkerSummaries = new Map<string, { content: string; summary: string }>()
+
     setTodoToolPostProcess(async (before, after) => {
       let todos = after
       let extraMessage: string | undefined
@@ -1277,6 +1302,12 @@ export async function runAgent(
             toolSchemaReserve: subagentRoute.toolSchemaReserve,
             signal: controller.signal,
             onChunk: sendChunk,
+            parentGoal,
+            priorSummaries: localWorkerSummaries,
+          })
+          localWorkerSummaries.set(localItem.id, {
+            content: localItem.content,
+            summary: worker.summary,
           })
           inputTokens += worker.usage.inputTokens
           outputTokens += worker.usage.outputTokens
@@ -1766,6 +1797,17 @@ export async function runAgent(
 
 export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
+}
+
+/**
+ * Thread ids with a live in-process run right now. Lets a renderer that's just
+ * (re)loaded a project's threads tell a genuinely still-running turn apart from
+ * one whose `status: 'running'` was merely the last thing persisted before a
+ * crash (#1406) — trusting the persisted flag alone flips a real run's status
+ * to idle and hides its stop control while it keeps streaming.
+ */
+export function listRunningThreadIds(): string[] {
+  return [...abortMap.keys()]
 }
 
 export interface RetryOptions {

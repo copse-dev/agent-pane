@@ -1,5 +1,3 @@
-import { basename } from 'node:path'
-import { parse as parseShellCommand } from 'shell-quote'
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import type { ShellHarmDecision } from './shell-harm.ts'
@@ -208,111 +206,18 @@ export function shellCommandFromArgs(args: unknown): string | null {
 }
 
 /**
- * Command basenames that only read. Exported so `read-outside-project.ts` can
- * build its own (slightly wider) read shape on top of this one instead of
- * restating it — two lists of "which commands only read" would drift.
+ * Read-only command recognition now lives in `shell-argv.ts` — `shell-scope.ts`
+ * needs it to tell a chat-store *read* from a chat-store write, and this module
+ * already imports `shell-scope.ts`. Re-exported so existing importers are
+ * unaffected, including `read-outside-project.ts`, which builds its wider read
+ * shape on top of `READ_ONLY_SHELL_BASENAMES`.
  */
-export const READ_ONLY_SHELL_BASENAMES: ReadonlySet<string> = new Set([
-  'pwd',
-  'ls',
-  'cat',
-  'head',
-  'tail',
-  'wc',
-  'sort',
-  'uniq',
-  'grep',
-  'egrep',
-  'fgrep',
-  'rg',
-  'fd',
-  'tree',
-  'stat',
-  'file',
-  'du',
-  'jq',
-  'cut',
-  'tr',
-  'basename',
-  'dirname',
-  'realpath',
-])
-
-/**
- * Git subcommands that only read. Exported so the auto-approval classifier can
- * build its (wider) read set as a superset of this one rather than restating it —
- * two independent lists of "which git subcommands are safe to read" would drift.
- */
-export const READ_ONLY_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  'status',
-  'diff',
-  'log',
-  'show',
-  'grep',
-  'ls-files',
-  'ls-tree',
-  'cat-file',
-  'rev-parse',
-])
-
-/**
- * Conservative structural read-only check for shell commands. This is not a
- * sandbox boundary; callers must compose it with normal scope analysis. It only
- * recognizes simple read/query commands and pipelines thereof, rejecting shell
- * control flow, redirection, substitutions, and command families with common
- * mutating modes.
- */
-export function isStructurallyReadOnlyShellCommand(command: string): boolean {
-  const trimmed = command.trim()
-  if (!trimmed) return false
-  if (/[`$<>&();]|\|\|/.test(trimmed) || trimmed.includes('&&')) return false
-  const segments = trimmed.split('|').map((segment) => segment.trim())
-  return segments.length > 0 && segments.every(isReadOnlySimpleCommand)
-}
-
-/**
- * Whether a single simple command (no pipeline, no control operators) is a
- * read/query invocation. Exported for the auto-approval classifier, which does
- * its own quote-aware segmentation and needs the per-segment verdict rather than
- * {@link isStructurallyReadOnlyShellCommand}'s whole-line one.
- */
-export function isReadOnlySimpleCommand(segment: string): boolean {
-  let tokens: ReturnType<typeof parseShellCommand>
-  try {
-    tokens = parseShellCommand(segment)
-  } catch {
-    return false
-  }
-  if (tokens.length === 0 || !tokens.every((token): token is string => typeof token === 'string')) {
-    return false
-  }
-
-  const argv = tokens
-  const commandName = basename(argv[0] ?? '')
-  if (!commandName) return false
-  if (commandName === 'git') return isReadOnlyGitCommand(argv)
-  if (!READ_ONLY_SHELL_BASENAMES.has(commandName)) return false
-  if (commandName === 'rg' && argv.some((arg) => arg === '--pre' || arg.startsWith('--pre='))) {
-    return false
-  }
-  return true
-}
-
-function isReadOnlyGitCommand(argv: readonly string[]): boolean {
-  const subcommand = argv[1]
-  if (!subcommand || !READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return false
-  return !argv
-    .slice(2)
-    .some(
-      (arg) =>
-        arg === '-o' ||
-        arg === '-O' ||
-        arg === '--output' ||
-        arg.startsWith('--output=') ||
-        arg.startsWith('--exec=') ||
-        arg === '--exec',
-    )
-}
+export {
+  READ_ONLY_GIT_SUBCOMMANDS,
+  READ_ONLY_SHELL_BASENAMES,
+  isReadOnlySimpleCommand,
+  isStructurallyReadOnlyShellCommand,
+} from './shell-argv.ts'
 
 export function formatShellPromptBody(command: string, reasons: string[]): string {
   return flattenShellPromptParts(formatShellPromptParts(command, reasons))

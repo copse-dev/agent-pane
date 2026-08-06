@@ -39,6 +39,20 @@ export function applyTodoUpdate(
   const byId = new Map<string, TodoItem>()
   if (merge) {
     for (const t of current) byId.set(t.id, { ...t })
+  } else {
+    // A full replace rewrites what is *left* to do — it does not get to erase
+    // what was already done. Completed items are a record, not a proposal, and
+    // after a todo-boundary compaction the pinned plan is often the only surviving
+    // trace of them; dropping one there tells the model the work never happened.
+    //
+    // Observed on a real long-running thread (a Tauri runtime migration): a
+    // mid-run replan swapped an eight-item plan for six fresh ids, and every
+    // completed step vanished from the pin in a single call. Re-listing a
+    // completed id is still honoured below, so a model that genuinely means to
+    // reopen or cancel finished work can still say so — it just has to say so.
+    for (const t of current) {
+      if (t.status === 'completed') byId.set(t.id, { ...t })
+    }
   }
   for (const raw of incoming) {
     const id = nonEmptyStringOr(raw.id?.trim(), randomUUID())

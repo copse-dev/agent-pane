@@ -8,6 +8,52 @@ every published entry.
 
 ## Unreleased
 
+- Switching projects no longer carries a prompt across, or leaves the app half
+  moved. Two problems, both about a switch and the thing it left behind.
+  Approval prompts and `ask_user` questions were checked against the focused
+  thread when they were raised, but the open dialog was never re-checked — so a
+  prompt from the project you just left stayed on screen over the thread you
+  landed on, reading as a question that thread never asked, and answering it
+  approved a tool call in the project behind you. A prompt whose thread loses
+  focus is now withdrawn and re-flagged as a sidebar bell, and comes back, in
+  order, when you return to it. Separately, switching away and immediately back
+  used to let the abandoned switch finish behind you: it pointed the main
+  process at the other project's root, saved it as the project to reopen at next
+  launch, and stripped the transcripts off the sidebar rows of the project still
+  on screen — leaving the file tree, git, terminals and the next run's working
+  directory all serving a project the window was not showing. Clicking the
+  project (or a thread in it) you are already on now cancels the switch in
+  flight and puts the workspace and the saved selection back. Workspace
+  activations are also applied in the order they were requested, so two quick
+  switches can no longer land out of order, and a switch that is cancelled or
+  superseded always releases whatever was waiting on it — File ▸ Open Folder,
+  new project, relocate and orphan recovery all awaited that, and on launch the
+  app layout itself was chained off it.
+- The model picker names Claude models one way, whoever supplied them. Every
+  provider spells them differently — Cursor's catalog returns a bare “Opus 5”
+  and puts the version first in “Claude 4.6 Sonnet (Thinking)”, device agents
+  label them by family alone, and some rows only had the raw id
+  (`claude-opus-4-7`) — so a list whose own rows read “Claude Opus 4.8” looked
+  like it held four vendors' models, and under a heading that names an agent
+  rather than a vendor (“Cursor Cloud Agent”) a bare “Opus 5” did not say whose
+  Opus it was. Those rows now read “Claude Opus 5”, “Claude Sonnet 4.6
+  (Thinking)”, “Claude Opus 4.7”, with qualifiers kept intact. The rewrite is
+  display-only and only reorders what a name already says: models it does not
+  recognise — Composer 2, GPT-5.6 Sol, local weights — are left exactly as their
+  provider named them. An agent's own spelling still resolves its intellect
+  hint, and a spelling no alias covers now finds the measurement through the
+  model it names, so more agent rows carry the score their cloud twin shows.
+- Hook cards are debuggable. A card that said “Added context · Injected 307 chars
+  of context” could tell you a hook had done something but never what — the
+  character counts were the whole story. Every card now carries an **Inspect run**
+  disclosure that shows the run itself: what the hook was handed and what it
+  returned, read on demand from the thread's own records. Command hooks show the
+  exact stdin they read alongside their stdout and stderr; in-process hooks, which
+  had no visible output at all, now show their dispatch payload and the full text
+  of everything they applied — the injected context, the message to the agent, a
+  rewritten tool input, a halt reason — with real line breaks, not escaped JSON.
+  Each block copies in one click. Nothing is fetched until you open a card, and
+  captures are bounded so a chatty hook cannot bloat a thread.
 - A long session holds on to much less memory. Two things kept transcript text
   alive that did not need to be. The transcript's render caches — the ones that
   let an unchanged tool card skip a rebuild — stored the card's whole JSON
@@ -26,6 +72,45 @@ every published entry.
   away from now keeps only what its rows draw: title, running mark, and the PR
   refs already scraped out of its messages. Switching back reloads from disk as
   before.
+- Models chosen through an API can now be tuned, the way a device agent's model
+  and permission mode already were. Settings → Models grows a **Model
+  parameters** block under the chat-model picker with reasoning depth,
+  temperature, and top-p. The values belong to the model rather than to the
+  field, so they follow it wherever it runs — chat, task roles, subagents — and
+  each model keeps its own set. Which controls appear is decided by the model:
+  the newest Claude models reject temperature and top-p outright and get the
+  reasoning ladder alone, older Claude models have no reasoning ladder and get a
+  thinking budget instead, and OpenAI-compatible providers get all three with a
+  note that the upstream model has the final say. A value saved against one
+  model is re-checked against whatever it is read for, so a stale setting
+  degrades to the provider default instead of failing the turn. Untouched models
+  send exactly the request body they sent before.
+
+  Two shortcuts sit on top of it. Where a vendor publishes a recipe for a model
+  — DeepSeek V4 Flash asks for max reasoning effort with `temperature 1.0` and
+  `top_p 0.95` in agentic use — a **Use recommended** button fills the fields
+  from it and links the source. It is offered rather than applied: the recipes
+  are scenario-specific and only as current as the version they were read
+  against, so nothing is sent until you accept it. And a **reasoning dial** now
+  sits beside the model picker in the composer, scoped to one chat, for when a
+  single task wants more thinking than the model is normally set to — no
+  permanent re-tuning to get through one turn.
+
+  What a turn actually ran with is now recorded on the assistant message, next
+  to the model that produced it. The saved values are mutable and the resolved
+  ones can differ from them — a stale value is dropped, the dial overrides the
+  level, a cheap role caps it — so without this a transcript would re-read as
+  though every past turn ran at whatever Settings holds today. The transcript
+  labels a turn where the model _or_ its parameters changed, so dialling effort
+  up mid-chat marks the turn it took effect on, and the values travel with the
+  thread through export.
+
+  The two roles whose job is to be cheap — thread titles and follow-up
+  suggestions, and the shell-command classifier — cap the reasoning depth they
+  inherit. A model set to max effort for the work should not spend max effort
+  naming the conversation, and that bill would arrive with nothing on screen to
+  explain it.
+
 - The Parallel Search pack's switch no longer turns on without a key. The tool
   was already credential-gated where it counts — `parallel_search` is registered
   only when the pack is enabled _and_ a Parallel API key resolves — but Settings

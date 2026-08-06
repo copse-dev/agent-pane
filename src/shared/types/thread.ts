@@ -1,3 +1,4 @@
+import type { ModelParameters, ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
@@ -186,6 +187,13 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
+  /**
+   * Per-chat reasoning dial, set from the composer footer. Overrides the level
+   * saved against the model in Settings for this chat's turns only, so "this
+   * one's hard, think harder" does not permanently re-tune the model. Absent
+   * means the model's own saved level applies.
+   */
+  reasoning?: ReasoningLevel
   /** Provenance for a task created by a project automation schedule. */
   automation?: {
     scheduleId: string
@@ -311,6 +319,16 @@ export interface Message {
    * primary model — subagent models live on {@link SubagentSession.model}.
    */
   model?: string
+  /**
+   * Generation parameters this turn actually ran with — resolved, not
+   * configured: the model's saved values after sanitizing for what it accepts,
+   * with a per-chat dial applied over them and a cheap role's ceiling applied
+   * under them. Recorded because the configuration is mutable and the resolved
+   * value can differ from it, so without this a transcript re-reads as though
+   * every past turn ran at whatever Settings says today. Absent when the turn
+   * sent no parameters at all, which is the common case.
+   */
+  parameters?: ModelParameters
   /**
    * Post-turn review verdict for the editing turn this message concluded. Set on
    * the turn's final assistant message so the review joins the transcript inline

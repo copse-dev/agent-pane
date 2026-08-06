@@ -1,3 +1,4 @@
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type {
   Message,
   ModelUsage,
@@ -51,6 +52,7 @@ interface MessageLike {
   toolSummary?: string
   attachments?: TranscriptAttachment[]
   model?: string
+  parameters?: ModelParameters
   review?: ThreadReview
   origin?: QueuedMessageOrigin
   editedByUser?: boolean
@@ -180,6 +182,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
     })
   }
   if (msg.model !== undefined) line.model = msg.model
+  if (msg.parameters !== undefined) line.parameters = msg.parameters
   if (msg.review !== undefined) line.review = msg.review
   if (msg.origin !== undefined) line.origin = msg.origin
   if (msg.editedByUser !== undefined) line.editedByUser = msg.editedByUser
@@ -370,6 +373,7 @@ function foldOne(
     })
   }
   if (line.model !== undefined) msg.model = line.model
+  if (line.parameters !== undefined) msg.parameters = line.parameters
   if (line.review !== undefined) msg.review = line.review
   if (line.origin !== undefined) msg.origin = line.origin
   if (line.editedByUser !== undefined) msg.editedByUser = line.editedByUser

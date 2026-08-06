@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import {
   analyzeShellCommand,
   dangerousInSandboxReasons,
@@ -158,6 +160,70 @@ describe('analyzeShellCommand', () => {
   it('allows workspace-relative paths', () => {
     const r = analyzeShellCommand('cat src/index.ts', root)
     assert.equal(r.verdict, 'sandbox')
+  })
+
+  describe('chat store (read-only seatbelt mount)', () => {
+    const chatRoot = join(homedir(), '.copse', 'workspace')
+    const threadFile = join(
+      chatRoot,
+      'e2e-mermaid-project/584472db-c76e-40b0-942a-3e5358d60a0c/blobs/archives/Pack-Review/e833d1aa/agent-history.json',
+    )
+
+    it('does not flag reading an absolute chat-store path', () => {
+      // The seatbelt overlay allowRead's the chat store, so this read is fully
+      // contained — prompting to run it OUTSIDE the sandbox would be strictly
+      // worse than letting it run inside.
+      const r = analyzeShellCommand(`cat ${threadFile}`, root)
+      assert.equal(r.verdict, 'sandbox', r.reasons.join('; '))
+    })
+
+    it('does not flag a read pipeline over the chat store', () => {
+      const r = analyzeShellCommand(`cat ${threadFile} | jq .messages`, root)
+      assert.equal(r.verdict, 'sandbox', r.reasons.join('; '))
+      assert.equal(analyzeShellCommand(`rg needle ${chatRoot}`, root).verdict, 'sandbox')
+    })
+
+    it('does not flag the tilde spelling of a chat-store read', () => {
+      const r = analyzeShellCommand('cat ~/.copse/workspace/proj/thread/agent-history.json', root)
+      assert.equal(r.verdict, 'sandbox', r.reasons.join('; '))
+    })
+
+    it('waives the ~/ rule only when every tilde token is a chat-store read', () => {
+      assert.equal(analyzeShellCommand('ls ~/', root).verdict, 'external')
+      // A bare `~` alongside a chat-store read does not qualify for the waiver.
+      assert.equal(analyzeShellCommand('cat ~/.copse/workspace/a.json ~', root).verdict, 'external')
+      assert.equal(
+        analyzeShellCommand('cat ~/.copse/workspace/a.json ~/.ssh/id_rsa', root).verdict,
+        'external',
+      )
+    })
+
+    it('still flags writes and deletes inside the chat store', () => {
+      // allowWrite deliberately excludes the chat store, so these are real
+      // escapes the sandbox would block.
+      for (const cmd of [
+        `rm ${threadFile}`,
+        `mv ${threadFile} ${chatRoot}/other.json`,
+        `echo x > ${threadFile}`,
+      ]) {
+        assert.equal(
+          analyzeShellCommand(cmd, root).verdict,
+          'external',
+          `expected external: ${cmd}`,
+        )
+      }
+    })
+
+    it('still flags a sibling dir sharing the chat-store name prefix', () => {
+      const r = analyzeShellCommand(`cat ${chatRoot}-stolen/x.json`, root)
+      assert.equal(r.verdict, 'external')
+      assert.ok(r.reasons.some((x) => x.includes('outside workspace')))
+    })
+
+    it('still flags a non-chat-store path read in the same command', () => {
+      const r = analyzeShellCommand(`cat ${threadFile} /etc/passwd`, root)
+      assert.equal(r.verdict, 'external')
+    })
   })
 
   it('flags rm -fr / variants', () => {

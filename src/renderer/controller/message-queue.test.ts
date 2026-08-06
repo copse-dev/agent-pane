@@ -60,14 +60,20 @@ function fakeApi(): ApiClient & {
   runs: Array<[string, string]>
   projectIds: string[]
   aborts: string[]
+  runningThreadIds: string[]
 } {
   const runs: Array<[string, string]> = []
   const projectIds: string[] = []
   const aborts: string[] = []
+  // Mutate this before calling resumePendingQueues to simulate a thread with a
+  // genuinely still-live main-process run (#1406) — defaults to none, matching
+  // "no live run survived" for tests that don't care about that distinction.
+  const runningThreadIds: string[] = []
   return ((): ApiClient & {
     runs: Array<[string, string]>
     projectIds: string[]
     aborts: string[]
+    runningThreadIds: string[]
   } => {
     const base = createFakeApi()
     return {
@@ -75,6 +81,7 @@ function fakeApi(): ApiClient & {
       runs,
       projectIds,
       aborts,
+      runningThreadIds,
       agent: {
         ...base['agent'],
         run: (projectId: string, threadId: string, payload: string): Promise<void> => {
@@ -86,11 +93,13 @@ function fakeApi(): ApiClient & {
           aborts.push(threadId)
           return Promise.resolve()
         },
+        runningThreadIds: (): Promise<string[]> => Promise.resolve(runningThreadIds),
       },
     } satisfies ApiClient & {
       runs: Array<[string, string]>
       projectIds: string[]
       aborts: string[]
+      runningThreadIds: string[]
     }
   })()
 }
@@ -261,7 +270,7 @@ test('dispatchAgentRun marks the thread running and sends payload', () => {
   assert.equal(api.runs.length, 1)
 })
 
-test('resumePendingQueues drains idle threads with pending messages', () => {
+test('resumePendingQueues drains idle threads with pending messages', async () => {
   const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
@@ -271,7 +280,7 @@ test('resumePendingQueues drains idle threads with pending messages', () => {
     createdAt: 1,
   })
 
-  resumePendingQueues(store, api)
+  await resumePendingQueues(store, api)
 
   assert.equal(api.runs.length, 1)
   assert.equal(store.getState().threads.find((t) => t.id === threadId)?.status, 'running')
@@ -501,7 +510,7 @@ test('sendQueuedMessageNow lifts pause and drains immediately when idle', () => 
   assert.match(firstRun(api)[1], /go now/)
 })
 
-test('resumePendingQueues clears a stale pause then drains', () => {
+test('resumePendingQueues clears a stale pause then drains', async () => {
   const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
@@ -512,24 +521,81 @@ test('resumePendingQueues clears a stale pause then drains', () => {
   })
   setQueuePaused(store, threadId, true)
 
-  resumePendingQueues(store, api)
+  await resumePendingQueues(store, api)
 
   const thread = getThread(store, threadId)
   assert.equal(thread.queuePaused, undefined)
   assert.equal(api.runs.length, 1)
 })
 
-test('resumePendingQueues resets a stale running status when the queue is empty', () => {
+test('resumePendingQueues resets a stale running status when the queue is empty', async () => {
   const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
 
-  resumePendingQueues(store, api)
+  await resumePendingQueues(store, api)
 
   const thread = getThread(store, threadId)
   assert.equal(thread.status, 'idle')
   assert.equal(api.runs.length, 0)
+})
+
+test('resumePendingQueues (#1406): leaves status alone when the main process confirms the run is still live', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  api.runningThreadIds.push(threadId)
+
+  await resumePendingQueues(store, api)
+
+  const thread = getThread(store, threadId)
+  assert.equal(thread.status, 'running', 'a genuinely still-running thread keeps its stop control')
+  assert.equal(api.runs.length, 0)
+})
+
+test('resumePendingQueues (#1406): still resets a different thread whose run is not in the live set', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const liveId = createThread(store)
+  const staleId = createThread(store)
+  setThreadStatus(store, liveId, 'running')
+  setThreadStatus(store, staleId, 'running')
+  api.runningThreadIds.push(liveId)
+
+  await resumePendingQueues(store, api)
+
+  assert.equal(getThread(store, liveId).status, 'running')
+  assert.equal(getThread(store, staleId).status, 'idle')
+})
+
+test('resumePendingQueues (#1406): a failed liveness query still resumes, it does not strand the queues', async () => {
+  const store = createProjectStore()
+  const base = fakeApi()
+  // Both call sites invoke this behind `void`, so a rejection that escapes would
+  // silently skip the whole resume — no queue drained, no stale pause cleared.
+  const api: ApiClient = {
+    ...base,
+    agent: {
+      ...base.agent,
+      runningThreadIds: (): Promise<string[]> => Promise.reject(new Error('ipc gone')),
+    },
+  }
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setQueuePaused(store, threadId, true)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'msg-1',
+    payload: { content: 'queued work' },
+    createdAt: 1,
+  })
+
+  await resumePendingQueues(store, api)
+
+  const thread = getThread(store, threadId)
+  assert.ok(!thread.queuePaused, 'a stale persisted pause is still cleared')
+  assert.equal(base.runs.length, 1, 'the pending queue still drains')
 })
 
 // --- C2 contract tests ------------------------------------------------------

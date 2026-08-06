@@ -376,6 +376,45 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    // Per-model generation parameters. The scenario only has to seed the chat
+    // model and its saved parameters — open Settings → General → Models in the
+    // preview and the section renders itself against that selection. Uses an
+    // OpenRouter model so all three controls are offered (a current Claude model
+    // would show the reasoning ladder alone).
+    id: 'model-parameters',
+    label: 'Per-model reasoning / temperature / top-p',
+    project: project('demo-model-parameters-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'openrouter:deepseek/deepseek-v4-flash-0731',
+      modelParameters: {
+        'openrouter:deepseek/deepseek-v4-flash-0731': {
+          reasoning: 'max',
+          temperature: 1,
+          topP: 0.95,
+        },
+        'claude-opus-5': { reasoning: 'xhigh' },
+      },
+    },
+    threads: [
+      {
+        id: 'demo-model-parameters-thread',
+        title: 'Model parameters',
+        status: 'idle',
+        // A thread-level dial so the composer footer shows its set state
+        // alongside the Settings block.
+        model: 'claude-opus-5',
+        reasoning: 'max',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'chat-layout-styling',
     label: 'Chat layout styling',
     project: project('demo-chat-layout-project'),

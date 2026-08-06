@@ -12,6 +12,7 @@ import {
 } from '@shared/threads/spine-schema.ts'
 import { hookCardFromSpineLine, type HookCard } from '@shared/hooks/hook-card.ts'
 import { fingerprintToolset, type ToolsetFingerprint } from '@shared/threads/toolset-fingerprint.ts'
+import { safeJsonStringify } from '@shared/safe-json.ts'
 import { appendHookRun } from './thread-store.ts'
 import { storageGet } from './storage/storage.ts'
 
@@ -35,6 +36,38 @@ const sha256 = (input: string): string => createHash('sha256').update(input, 'ut
 
 /** Keep spine lines small: error strings are summaries, not dumps. */
 const MAX_ERROR_CHARS = 500
+
+/**
+ * Ceiling on a captured payload / outcome blob. The spine line stays a compact
+ * summary (decision 6) and the bodies live in blobs, but a blob is still not a
+ * dump ground: a 10 MB tool input or a runaway steering block is truncated with
+ * a visible marker so the transcript's disk cost stays bounded and the reader
+ * knows they are looking at a prefix. Raw command-hook stdout/stderr keep their
+ * own (much larger) runner-side cap — those are the response channel itself.
+ */
+const MAX_CAPTURE_CHARS = 32_000
+
+/** Truncate to {@link MAX_CAPTURE_CHARS}, marking the cut so it is never silent. */
+function boundedCapture(text: string): string {
+  if (text.length <= MAX_CAPTURE_CHARS) return text
+  const dropped = text.length - MAX_CAPTURE_CHARS
+  return `${text.slice(0, MAX_CAPTURE_CHARS)}\n… [truncated ${String(dropped)} more chars]`
+}
+
+/**
+ * Serialize a captured value for a blob, pretty-printed so the inspector shows
+ * something a human can read. Returns null when the value cannot be serialized
+ * (a cycle, a BigInt) — capture is observability, so an unserializable payload
+ * costs the blob, never the hook run.
+ */
+function captureJson(value: unknown): string | null {
+  try {
+    const json = safeJsonStringify(value, 2)
+    return json === undefined ? null : boundedCapture(json)
+  } catch {
+    return null
+  }
+}
 
 interface HookRunRecordingContext {
   projectId: string
@@ -147,6 +180,16 @@ function blobRef(ref: string, contents: string): ContentRef {
   return { ref, sha256: sha256(contents) }
 }
 
+/** Blob holding what the hook was handed (command stdin / function payload). */
+function payloadBlobRef(id: string): string {
+  return `blobs/${id}.payload.json`
+}
+
+/** Blob holding the full text of a function hook's applied outcome. */
+function outcomeBlobRef(id: string): string {
+  return `blobs/${id}.outcome.json`
+}
+
 /** Attribution + toolset fields shared by both executor kinds. */
 function attributionFields(
   ctx: HookRunRecordingContext,
@@ -190,11 +233,67 @@ function decisionFromOutcome(outcome: BlockingHookOutcome | null): SpineHookRunD
 }
 
 /**
+ * The full text of every channel a function hook applied — the bodies the
+ * compact {@link SpineHookRunDecision} only counts characters of. Written as
+ * JSON (stable, machine-readable) rather than prose; the hook-card inspector
+ * splits it back into labeled blocks so injected context reads with real
+ * newlines instead of escapes.
+ */
+function outcomeCapture(outcome: BlockingHookOutcome): string | null {
+  const captured = {
+    ...(outcome.decision !== undefined ? { decision: outcome.decision } : {}),
+    ...(outcome.haltRun !== undefined ? { haltReason: outcome.haltRun.reason } : {}),
+    ...(outcome.updatedInput !== undefined ? { updatedInput: outcome.updatedInput } : {}),
+    ...(outcome.injectContext !== undefined ? { injectContext: outcome.injectContext } : {}),
+    ...(outcome.agentMessage !== undefined ? { agentMessage: outcome.agentMessage } : {}),
+    ...(outcome.userMessage !== undefined ? { userMessage: outcome.userMessage } : {}),
+  }
+  return Object.keys(captured).length === 0 ? null : captureJson(captured)
+}
+
+/**
+ * Payload + outcome blobs for one function-hook execution — the executor's
+ * answer to "what did it see, and what did it do?", which command hooks already
+ * get for free from their stdin / stdout captures.
+ *
+ * Captured only for a run that **acted** (returned an outcome) or **threw**. An
+ * abstaining hook is the overwhelmingly common case — steering hooks that fire
+ * every turn and decline — and its card already reads "No changes", so writing a
+ * payload blob per abstain would multiply a thread's blob count for no answer a
+ * reader is missing.
+ */
+function functionCaptureBlobs(
+  id: string,
+  record: HookRunRecord,
+): { refs: Pick<SpineHookRunLine, 'payload' | 'outcome'>; blobs: FileToWrite[] } {
+  if (record.outcome === null && record.error === undefined) return { refs: {}, blobs: [] }
+  const blobs: FileToWrite[] = []
+  const refs: Pick<SpineHookRunLine, 'payload' | 'outcome'> = {}
+
+  const payload = record.payload === undefined ? null : captureJson(record.payload)
+  if (payload !== null) {
+    const ref = payloadBlobRef(id)
+    refs.payload = blobRef(ref, payload)
+    blobs.push({ ref, contents: payload })
+  }
+
+  const outcome = record.outcome === null ? null : outcomeCapture(record.outcome)
+  if (outcome !== null) {
+    const ref = outcomeBlobRef(id)
+    refs.outcome = blobRef(ref, outcome)
+    blobs.push({ ref, contents: outcome })
+  }
+  return { refs, blobs }
+}
+
+/**
  * Sink for first-party function hooks — injected into `HookContext` /
  * `AgentLoopOptions` by the app so `packages/agent` never imports persistence
  * (execution-guidance rule 4). Function hooks run in-process with typed
  * outcomes: no process, so no exit code and no stdout/stderr blobs, and
- * `parseOk` is structurally true.
+ * `parseOk` is structurally true. The dispatch payload and the applied outcome
+ * are captured as blobs instead, so an in-process hook is as inspectable as a
+ * spawned one.
  */
 export function recordFunctionHookRun(
   record: HookRunRecord,
@@ -202,10 +301,12 @@ export function recordFunctionHookRun(
 ): void {
   const ctx = snapshot
   if (!ctx) return
+  const id = randomUUID()
+  const captured = functionCaptureBlobs(id, record)
   const line: SpineHookRunLine = {
     v: SPINE_SCHEMA_VERSION,
     type: 'hook_run',
-    id: randomUUID(),
+    id,
     event: record.event,
     hookId: record.hookId,
     executor: 'function',
@@ -215,8 +316,9 @@ export function recordFunctionHookRun(
     parseOk: true,
     decision: decisionFromOutcome(record.outcome),
     ...(record.error !== undefined ? { error: record.error.slice(0, MAX_ERROR_CHARS) } : {}),
+    ...captured.refs,
   }
-  persist(ctx, line, toolsetBlobs(ctx))
+  persist(ctx, line, [...captured.blobs, ...toolsetBlobs(ctx)])
 }
 
 /**
@@ -319,15 +421,18 @@ export interface CommandHookRunInput {
   /** Whether stdout parsed into a response (empty stdout = intentional no-response). */
   parseOk: boolean
   decision: SpineHookRunDecision
+  /** The exact JSON written to the hook's stdin, stored verbatim as a blob. */
+  stdin: string
   /** Raw captured streams, stored verbatim as blobs. */
   stdout: string
   stderr: string
 }
 
 /**
- * Record one command-hook execution. Raw stdout **and** stderr are stored as
- * blobs next to the normalized decision, so a debug print that corrupts a
- * response is visible as `parseOk: false` right next to the bytes (decision 6).
+ * Record one command-hook execution. The exact stdin bytes, raw stdout **and**
+ * stderr are stored as blobs next to the normalized decision, so a debug print
+ * that corrupts a response is visible as `parseOk: false` right next to the
+ * bytes — and the payload that provoked it is right there too (decision 6).
  */
 export function recordCommandHookRun(
   input: CommandHookRunInput,
@@ -338,6 +443,8 @@ export function recordCommandHookRun(
   const id = randomUUID()
   const stdoutRef = `blobs/${id}.stdout.txt`
   const stderrRef = `blobs/${id}.stderr.txt`
+  const payloadRef = payloadBlobRef(id)
+  const stdin = boundedCapture(input.stdin)
   const line: SpineHookRunLine = {
     v: SPINE_SCHEMA_VERSION,
     type: 'hook_run',
@@ -353,10 +460,12 @@ export function recordCommandHookRun(
     decision: input.decision,
     stdout: blobRef(stdoutRef, input.stdout),
     stderr: blobRef(stderrRef, input.stderr),
+    payload: blobRef(payloadRef, stdin),
   }
   persist(ctx, line, [
     { ref: stdoutRef, contents: input.stdout },
     { ref: stderrRef, contents: input.stderr },
+    { ref: payloadRef, contents: stdin },
     ...toolsetBlobs(ctx),
   ])
 }
