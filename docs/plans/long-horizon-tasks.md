@@ -27,8 +27,11 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
   seeds the pack into the persisted disabled set (default OFF).
 - **Store** `src/main/services/storage/long-task-tracker.ts` — per-project JSON persistence
   under `~/.copse/long-tasks/<workspace>/tasks.json`, zod-validated. A task has a `goal`
-  (its terminal condition), an ordered `steps` checklist, and a `taskProgress()` helper that
-  reports done/total, completeness, and the next step.
+  (its terminal condition), an ordered `steps` checklist, a `taskProgress()` helper that
+  reports done/total, completeness, and the next step, and the `threadId` that created it.
+  The file is namespaced per workspace root, so ownership is what keeps one thread's
+  checklist out of another's (`isOwnedByThread`); tasks written before the field existed
+  belong to no thread.
 - **Tool** `track_long_task` (`src/main/tools/long-task-tool.ts`) — `create` / `check` /
   `status` / `list` plus an explicit one-shot `continue`, registered via
   `syncLongHorizonTasksTools` in `registry-bootstrap.ts` (boot + live
@@ -46,9 +49,15 @@ completes without dispatching an agent turn.
 
 ## Relationship to existing state
 
-- **`Thread.todos` (#530)** is scoped to a single thread; a long task here is durable and
-  outlives the thread/session. A follow-up could let a thread's todos seed or sync with a
-  long task.
+- **`Thread.todos` (#530)** is scoped to a single turn's plan; a long task here is durable
+  and outlives the turn and the session, but still belongs to the thread that opened it. A
+  follow-up could let a thread's todos seed or sync with a long task.
+- **`list` is thread-scoped.** It used to return every task in the workspace, so a turn that
+  had lost its provider history read another thread's checklist as its own plan and resumed
+  whatever was unfinished. `list` now shows only the calling thread's tasks and reports the
+  rest as a count; `scope: 'workspace'` still shows everything, labelled by owner. Lookups by
+  explicit id (`status` / `check` / `continue`) stay workspace-wide, since the supervised
+  wake path resolves tasks that way.
 
 ## Not yet built (follow-ups on the issue)
 

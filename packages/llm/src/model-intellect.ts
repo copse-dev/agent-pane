@@ -17,9 +17,14 @@
 //    sync:intellect`) — measurements are cited facts, never guesses; an absent
 //    model means "not yet sourced", not zero.
 //
-// 2. The editorial ordinal scale (`MODEL_INTELLECT` and friends, below) — an
-//    open-ended annotation for the tracked cloud models, consumed by the
-//    advisor strategy and the model classifier's band representatives.
+// 2. The ranking view over that same axis (`modelIntellect` and the band
+//    helpers, below) — consumed by the advisor strategy and the model
+//    classifier, which only need "which of these is stronger".
+//
+//    This used to be a second, independent ordinal scale (a hand-maintained
+//    3-12 `MODEL_INTELLECT` map). It was redundant — every tracked model also
+//    had a measurement — and the two disagreed on 10 of 12 rank positions,
+//    with `gpt-4o` in particular frozen at a value from when it was frontier.
 
 import type { BenchmarkScore } from './local-model-catalog.ts'
 import { describeEquating, equateAcrossVersions } from './intellect-equating.ts'
@@ -31,7 +36,7 @@ import {
   MODEL_INTELLECT_RAW,
   type IntellectMeasurement,
 } from './model-intellect.generated.ts'
-import { type TrackedModel } from './model-catalog.ts'
+import { TRACKED_MODELS, type TrackedModel } from './model-catalog.ts'
 import { resolveModelIdForm } from './model-id-forms.ts'
 
 export { CANONICAL_INTELLECT_VERSION, INTELLECT_ATTRIBUTION }
@@ -212,35 +217,25 @@ export function explainIntellectScore(modelId: string): IntellectExplanation | n
 // than the executor?).
 
 /**
- * Intellect annotation for every tracked cloud model. `model-intellect.test.ts`
- * asserts the map covers `TRACKED_MODELS` exactly, so adding a model to the
- * catalog forces an annotation here. Extend the top for new frontier models;
- * never re-number existing entries.
+ * Intellect for a model id on the canonical scale, for *ranking* purposes.
+ *
+ * A thin view over the measurement: the consumers here only need "which of
+ * these is stronger", not the citation and derivation `getIntellectScore()`
+ * carries. Null when nothing is measured (e.g. a local id) — absent means
+ * "unknown", never zero.
  */
-export const MODEL_INTELLECT: Readonly<Record<TrackedModel, number>> = {
-  'gpt-4o-mini': 3,
-  'claude-haiku-4-5': 4,
-  'gpt-5-mini': 5,
-  'gpt-4o': 6,
-  'claude-sonnet-4-6': 6,
-  'gpt-5': 8,
-  'claude-opus-4-8': 9,
-  'gpt-5.6-terra': 9,
-  'claude-sonnet-5': 10,
-  'gpt-5.5': 10,
-  'gpt-5.6-sol': 11,
-  'claude-fable-5': 12,
-}
-
-const INTELLECT_BY_MODEL: ReadonlyMap<string, number> = new Map(Object.entries(MODEL_INTELLECT))
-
-/** Intellect for a cloud model id, or null when the model isn't annotated (e.g. local ids). */
 export function modelIntellect(model: string): number | null {
-  return INTELLECT_BY_MODEL.get(model) ?? null
+  return getIntellectScore(model)?.value ?? null
 }
 
-/** The currently-annotated distribution, for band derivation. */
-export const INTELLECT_SCALE: readonly number[] = Object.values(MODEL_INTELLECT)
+/**
+ * The distribution the bands are derived from: every tracked cloud model's
+ * intellect. Recomputed from the catalog rather than hand-maintained, so adding
+ * a model extends the scale automatically.
+ */
+export const INTELLECT_SCALE: readonly number[] = TRACKED_MODELS.map(
+  (model) => modelIntellect(model) ?? 0,
+).filter((value) => value > 0)
 
 /** The top of the annotated scale (rises as new frontier models are added). */
 export function topAnnotatedIntellect(scale: readonly number[] = INTELLECT_SCALE): number {

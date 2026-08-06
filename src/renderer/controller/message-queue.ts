@@ -163,6 +163,9 @@ function refreshPayload(
     // than the global default. Read at dispatch time so a change made while the
     // message was queued still takes effect. Absent → main uses the global default.
     ...(thread?.model !== undefined ? { model: thread.model } : {}),
+    // The composer's reasoning dial, read at dispatch time for the same reason:
+    // turning it up while a message sits queued should apply to that message.
+    ...(thread?.reasoning !== undefined ? { reasoning: thread.reasoning } : {}),
     // C3: thread the turn-tree epoch + the machine turns already spent so the
     // main-process continuation ledger keys and seeds the same counter this
     // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so

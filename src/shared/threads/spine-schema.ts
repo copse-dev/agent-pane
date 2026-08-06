@@ -1,3 +1,4 @@
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type {
   ModelUsage,
   QueuedMessageOrigin,
@@ -100,6 +101,12 @@ export interface SpineMessageLine {
    * legacy spines written before per-message provenance existed.
    */
   model?: string
+  /**
+   * Resolved generation parameters the turn ran with — see `Message.parameters`.
+   * Absent for a turn that sent none (the common case) and for spines written
+   * before they were recorded.
+   */
+  parameters?: ModelParameters
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
   /**

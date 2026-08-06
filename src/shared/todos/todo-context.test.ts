@@ -129,4 +129,84 @@ describe('compactAtTodoBoundary', () => {
     // Exactly one files-touched block, not one stacked on top of the last.
     assert.equal(sysText.match(/Files touched/g)?.length, 1)
   })
+
+  it('leaves history alone when the conversation is nowhere near its budget', () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Next step', status: 'in_progress' }]
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Do the refactor' },
+      { role: 'assistant', content: [{ id: 'tc1', name: 'read_file', args: { path: 'a.ts' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc1', result: 'file contents' }] },
+      { role: 'assistant', content: 'Step one done.' },
+      { role: 'user', content: 'continue' },
+    ]
+    const beforeLen = messages.length
+
+    // The fill ratio observed in the thread that motivated the gate: ~1% of a
+    // 1M-token budget, where dropping history buys nothing at all.
+    const changed = compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1, fillRatio: 0.01 })
+
+    assert.equal(changed, false)
+    assert.equal(messages.length, beforeLen, 'nothing dropped without budget pressure')
+  })
+
+  it('still pins the plan on the gated path, so the prompt never holds a stale plan', () => {
+    // The pinned blocks are written at the end of the compaction path, so an
+    // early return that skips them would leave the system prompt advertising
+    // whatever plan was pinned last — the failure mode this ordering prevents.
+    const todos: TodoItem[] = [
+      { id: '1', content: 'Old step', status: 'completed' },
+      { id: '2', content: 'Freshly planned step', status: 'in_progress' },
+    ]
+    const messages: LLMMessage[] = [
+      {
+        role: 'system',
+        content: 'You are helpful.\n\n---\n\n## Active plan (pinned)\n- [pending] Old step',
+      },
+      { role: 'user', content: 'Do the refactor' },
+      { role: 'assistant', content: [{ id: 'tc1', name: 'read_file', args: { path: 'a.ts' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc1', result: 'file contents' }] },
+      { role: 'assistant', content: 'Step one done.' },
+      { role: 'user', content: 'continue' },
+    ]
+
+    compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1, fillRatio: 0.01 })
+
+    const sys = at(messages, 0)
+    const sysText = 'content' in sys && typeof sys.content === 'string' ? sys.content : ''
+    assert.match(sysText, /Freshly planned step/, 'the pin tracks the current todos')
+    assert.equal(sysText.match(/Active plan/g)?.length, 1, 'exactly one plan block, not stacked')
+  })
+
+  it('still compacts once the conversation is genuinely under pressure', () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Next step', status: 'in_progress' }]
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Do the refactor' },
+      { role: 'assistant', content: [{ id: 'tc1', name: 'read_file', args: { path: 'a.ts' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc1', result: 'file contents' }] },
+      { role: 'assistant', content: 'Step one done.' },
+      { role: 'user', content: 'continue' },
+    ]
+    const beforeLen = messages.length
+
+    const changed = compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1, fillRatio: 0.9 })
+
+    assert.equal(changed, true)
+    assert.ok(messages.length < beforeLen)
+  })
+
+  it('compacts unconditionally when no fill ratio is supplied', () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Next step', status: 'in_progress' }]
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Do the refactor' },
+      { role: 'assistant', content: [{ id: 'tc1', name: 'read_file', args: { path: 'a.ts' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc1', result: 'file contents' }] },
+      { role: 'assistant', content: 'Step one done.' },
+      { role: 'user', content: 'continue' },
+    ]
+
+    assert.equal(compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1 }), true)
+  })
 })
