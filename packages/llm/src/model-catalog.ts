@@ -50,9 +50,11 @@ export const TRACKED_MODELS = [
   'claude-haiku-4-5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5.5',
   'gpt-5',
   'gpt-5-mini',
+  'gpt-5-nano',
   'gpt-4o',
   'gpt-4o-mini',
 ] as const
@@ -89,9 +91,11 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
   'claude-haiku-4-5': 'Claude Haiku 4.5',
   'gpt-5.6-sol': 'GPT-5.6 Sol',
   'gpt-5.6-terra': 'GPT-5.6 Terra',
+  'gpt-5.6-luna': 'GPT-5.6 Luna',
   'gpt-5.5': 'GPT-5.5',
   'gpt-5': 'GPT-5',
   'gpt-5-mini': 'GPT-5 mini',
+  'gpt-5-nano': 'GPT-5 nano',
   'gpt-4o': 'GPT-4o',
   'gpt-4o-mini': 'GPT-4o mini',
 }

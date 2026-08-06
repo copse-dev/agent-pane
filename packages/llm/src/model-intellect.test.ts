@@ -121,12 +121,14 @@ describe('catalog merge', () => {
 })
 
 describe('model intellect scale', () => {
-  it('ranks every tracked model, so none is unrankable', () => {
-    // Coverage is what the classifier and advisor need; the old editorial map
-    // guaranteed it by forcing a hand-written entry per model. It now comes
-    // from the measurements, which cover the whole tracked catalog.
+  it('ranks a tracked model exactly when it has a measurement', () => {
+    // The old editorial map guaranteed coverage by forcing a hand-written entry
+    // per model. Ranking now follows the measurements instead, so a model that
+    // ships ahead of its Intelligence Index reading is simply unranked —
+    // `null`, meaning unknown, never a stand-in number. Consumers must treat
+    // that as "not a candidate", not as "weakest".
     for (const model of TRACKED_MODELS) {
-      assert.ok(modelIntellect(model) !== null, `${model} has no rankable intellect`)
+      assert.equal(modelIntellect(model), getIntellectScore(model)?.value ?? null, model)
     }
   })
 
