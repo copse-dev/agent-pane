@@ -1,4 +1,5 @@
 import type { UserContent } from '@copse/llm/wire-types.ts'
+import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from './wire-types.ts'
 import { z } from 'zod'
 import { isRecord } from './internal-utils.ts'
@@ -37,6 +38,8 @@ export function parseAgentRunPayload(rawPrompt: string): {
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
+  /** Per-chat reasoning dial, overriding the level saved on the model. */
+  reasoning?: ReasoningLevel
   turnTreeId?: string
   continuationBudgetUsed?: number
 } {
@@ -68,6 +71,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
         ...(typeof parsed['model'] === 'string' && parsed['model']
           ? { model: parsed['model'] }
           : {}),
+        ...(isReasoningLevel(parsed['reasoning']) ? { reasoning: parsed['reasoning'] } : {}),
         ...(typeof parsed['turnTreeId'] === 'string' && parsed['turnTreeId']
           ? { turnTreeId: parsed['turnTreeId'] }
           : {}),

@@ -126,6 +126,21 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
     inputs[0]?.focus()
   }
 
+  /**
+   * Put the question on screen back in the queue once its thread stops being the
+   * focused one. `isShowable` gated the question when it was first surfaced, but
+   * the open dialog was never re-checked — so switching thread (or project,
+   * which swaps `activeThreadId` too) left a modal question hanging over a
+   * thread that never asked it, blocking the whole window until answered on its
+   * behalf. Re-queued at the front so it comes back, in order, on return.
+   */
+  function withdrawIfUnshowable(): void {
+    if (!active || isShowable(active)) return
+    dialog.close()
+    queue.unshift(active)
+    active = null
+  }
+
   function showNext(): void {
     if (active) return
     const idx = queue.findIndex(isShowable)
@@ -170,9 +185,12 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
     syncAttention()
   })
 
-  // Surface a backgrounded question when the user switches to its thread
-  // (also fires on project switches).
+  // Follow the focus when the user switches threads: withdraw a question whose
+  // thread they just left, then surface a backgrounded one for the thread they
+  // landed on. Also fires on project switches.
   store.on('threads_changed', () => {
+    withdrawIfUnshowable()
     showNext()
+    syncAttention()
   })
 }
