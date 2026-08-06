@@ -1144,6 +1144,28 @@ export function updateMetaOrThrow(
   })
 }
 
+/**
+ * Forget a thread's linked checkout after that checkout has been removed from
+ * disk. `updateMeta` cannot express this: it merges a patch, and an absent
+ * worktree has to actually leave `meta.json`. Without it the thread is bricked
+ * — {@link import('./thread-checkout-transaction.ts')} validates recorded
+ * worktree metadata on every send and deliberately never falls back to shared
+ * mode. Dropping the field (and keeping `worktreeChoice`) lets the thread carry
+ * on in the project checkout instead. Returns false when there was nothing to
+ * clear, so callers can tell a no-op from a real reversion.
+ */
+export function clearThreadWorktree(projectId: string, threadId: string): Promise<boolean> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    if (current === null || current.worktree === undefined) return false
+    const { worktree: _removed, ...rest } = current
+    writeFileSync(join(dir, META_FILE), `${JSON.stringify({ ...rest, id: threadId })}\n`)
+    refreshCatalogLine(projectId, threadId)
+    return true
+  })
+}
+
 export function deleteProjectThread(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
     const dir = threadDir(projectId, threadId)

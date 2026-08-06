@@ -267,6 +267,22 @@ export interface IpcInvokeMap {
     result: import('./state.ts').OrphanProjectStore[]
   }
 
+  // Worktree management (Settings → Sources → Worktrees). Sizing is separate
+  // from listing because it walks the whole checkout; removal is the only
+  // mutating call and is confirmed in the renderer first.
+  'worktrees:list': {
+    args: [projectId: string]
+    result: import('./worktree.ts').WorktreeInventoryEntry[]
+  }
+  'worktrees:size': {
+    args: [projectId: string, path: string]
+    result: import('./worktree.ts').WorktreeSizeResult
+  }
+  'worktrees:remove': {
+    args: [projectId: string, path: string, force: boolean]
+    result: import('./worktree.ts').WorktreeRemovalResult
+  }
+
   // Project-scoped automations (copse.automations pack).
   'automations:list': {
     args: [projectId: string]
