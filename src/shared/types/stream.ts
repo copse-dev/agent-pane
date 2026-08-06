@@ -1,6 +1,7 @@
 import type { ModelComparison } from './thread.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { TodoItem } from './todo.ts'
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 // The provider-emitted chunks are owned by the LLM module; the loop-emitted
 // chunks (provider contract + text rewrites, context pressure, subagents) are
 // owned by the agent module. The app's StreamChunk is that loop contract plus
@@ -80,3 +81,12 @@ export type StreamChunk =
    * message, mirroring how tool calls attach to the live assistant message.
    */
   | { type: 'hook_run'; card: HookCard }
+  /**
+   * The generation parameters this turn resolved to, emitted once before the
+   * first token. The renderer stamps them on the assistant message so the
+   * transcript records what the turn *sent* rather than what Settings says
+   * later: the saved values are mutable, and resolution can differ from them
+   * (a stale value is dropped, a per-chat dial overrides the level, a cheap
+   * role caps it). Emitted only when the turn actually sent parameters.
+   */
+  | { type: 'turn_parameters'; model: string; parameters: ModelParameters }

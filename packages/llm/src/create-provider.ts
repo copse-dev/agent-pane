@@ -7,6 +7,11 @@ import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import { assertProviderHostAllowed } from './provider-host-policy.ts'
 import { validateCredentialBaseUrl } from './credential-url.ts'
+import {
+  openRouterReasoningBody,
+  recommendedOutputCeiling,
+  type ModelParameters,
+} from './model-parameters.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
@@ -37,12 +42,26 @@ export function createProvider(
   model?: string,
   keys: ProviderKeys = {},
   promptCacheKey?: string,
+  opts: { serviceTier?: string; params?: ModelParameters } = {},
 ): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
   }
   const m = model ?? ''
   const cacheKeyOpt = promptCacheKey ? { promptCacheKey } : {}
+  // Only ever reaches OpenAI: `service_tier` is an OpenAI request field, and
+  // Anthropic rejects unknown body fields outright. Tuned parameters go to every
+  // branch instead — each provider maps them onto its own family's wire fields.
+  const tierOpt = opts.serviceTier ? { serviceTier: opts.serviceTier } : {}
+  const params = opts.params ?? {}
+  const paramsOpt = { params }
+  // The output ceiling depends on the model *and* the chosen reasoning level, so
+  // it is resolved per branch once the id is settled (the fallback branches only
+  // learn theirs from an env var).
+  const tunedOpts = (id: string): { params: ModelParameters; maxOutputTokens?: number } => {
+    const ceiling = recommendedOutputCeiling(id, params)
+    return { params, ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }) }
+  }
   const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
   const openAiApiKey = keys.openAiApiKey ?? process.env['OPENAI_API_KEY']
   if (m.startsWith('gpt')) {
@@ -51,7 +70,13 @@ export function createProvider(
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
     }
-    return new OpenAIProvider(m, { apiKey: openAiApiKey, ...cacheKeyOpt, ...OPENAI_STORE_OPT_OUT })
+    return new OpenAIProvider(m, {
+      apiKey: openAiApiKey,
+      ...cacheKeyOpt,
+      ...tierOpt,
+      ...tunedOpts(m),
+      ...OPENAI_STORE_OPT_OUT,
+    })
   }
   if (m.startsWith('claude')) {
     if (!anthropicApiKey) {
@@ -59,17 +84,21 @@ export function createProvider(
         'Anthropic is not configured. Add ANTHROPIC_API_KEY in Settings or choose an OpenAI or LM Studio model.',
       )
     }
-    return new AnthropicProvider(m, { apiKey: anthropicApiKey })
+    return new AnthropicProvider(m, { apiKey: anthropicApiKey, ...paramsOpt })
   }
   if (anthropicApiKey) {
     return new AnthropicProvider(model ?? process.env['ANTHROPIC_MODEL'] ?? DEFAULT_CLOUD_MODEL, {
       apiKey: anthropicApiKey,
+      ...paramsOpt,
     })
   }
   if (openAiApiKey) {
-    return new OpenAIProvider(model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o', {
+    const id = model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o'
+    return new OpenAIProvider(id, {
       apiKey: openAiApiKey,
       ...cacheKeyOpt,
+      ...tierOpt,
+      ...tunedOpts(id),
       ...OPENAI_STORE_OPT_OUT,
     })
   }
@@ -85,11 +114,19 @@ export function createLocalOpenAIProvider(
   baseURL: string,
   model: string,
   apiKey = 'lm-studio',
+  params: ModelParameters = {},
 ): LLMProvider {
   // LM Studio and other OpenAI-compatible local servers need stream_options.include_usage
   // or they never report prompt/completion tokens — without that, usage chunks (and the
   // Settings usage ledger) stay empty for local models such as qwen.
-  return new OpenAIProvider(model, { baseURL, apiKey: apiKey || 'lm-studio', includeUsage: true })
+  const ceiling = recommendedOutputCeiling(model, params)
+  return new OpenAIProvider(model, {
+    baseURL,
+    apiKey: apiKey || 'lm-studio',
+    includeUsage: true,
+    params,
+    ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
+  })
 }
 
 export const createLMStudioProvider = createLocalOpenAIProvider
@@ -124,11 +161,21 @@ export function createOpenRouterProvider(
   model: string,
   apiKey: string,
   promptCacheKey?: string,
-  opts: { zdrOnly?: boolean; allowTraining?: boolean } = {},
+  opts: { zdrOnly?: boolean; allowTraining?: boolean; params?: ModelParameters } = {},
 ): LLMProvider {
   const zdrOnly = opts.zdrOnly ?? true
   const allowTraining = opts.allowTraining ?? false
+  // Reasoning rides OpenRouter's own unified field rather than the
+  // `reasoning_effort` alias, so it normalises across upstream vendors and can
+  // express "off". Sampling stays on the standard OpenAI-shaped fields, so the
+  // reasoning level is dropped from `params` to avoid sending both spellings.
+  const { reasoning: _reasoning, ...sampling } = opts.params ?? {}
+  // Read from `opts.params` rather than from `sampling`: the ceiling keys off
+  // the reasoning level, which the destructure above just removed.
+  const ceiling = recommendedOutputCeiling(model, opts.params ?? {})
   return new OpenAIProvider(model, {
+    params: sampling,
+    ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
     includeUsage: true,
@@ -139,6 +186,7 @@ export function createOpenRouterProvider(
         ...(zdrOnly ? { zdr: true } : {}),
         ...(allowTraining ? {} : { data_collection: 'deny' }),
       },
+      ...openRouterReasoningBody(opts.params ?? {}),
     },
     ...(promptCacheKey ? { promptCacheKey } : {}),
   })
@@ -159,25 +207,33 @@ export function createExtraCloudProvider(
   model: string,
   apiKey: string,
   approvedHosts: readonly string[] = [],
+  params: ModelParameters = {},
 ): LLMProvider {
   validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   if (provider.apiStyle === 'responses') {
+    // No output ceiling on this transport: the cards we hold were written
+    // against Chat Completions endpoints, and this path has no drop-and-retry
+    // for a ceiling the server rejects. The server's own default stands.
     const { tools, ...extraBody } = provider.extraBody ?? {}
     const serverTools = Array.isArray(tools) ? tools.filter(isWebSearchTool) : []
     return new ResponsesProvider(model, {
       baseURL: provider.baseUrl,
       apiKey,
       serverTools,
+      params,
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
     })
   }
+  const ceiling = recommendedOutputCeiling(model, params)
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     // Local servers usually run without auth but still want a non-empty key
     // (many reject a blank Authorization header), mirroring createLocalOpenAIProvider.
     apiKey: provider.local ? apiKey || 'lm-studio' : apiKey,
     includeUsage: provider.includeUsage ?? !provider.local,
+    params,
+    ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
     ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),
   })
 }

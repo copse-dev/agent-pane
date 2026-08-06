@@ -26,6 +26,7 @@ describe('contextLossNotice', () => {
 
     assert.match(notice, /Earlier context is missing from this turn/)
     assert.match(notice, /transcript above has 3 messages/)
+    assert.match(notice, /could not be rebuilt from them/)
     assert.match(notice, /ended before it could save/)
   })
 })

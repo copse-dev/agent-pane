@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { hasUnquotedPipeline, maybeEnablePipefail } from './shell-pipeline.ts'
+import {
+  hasUnquotedPipeline,
+  isSigpipeOnlyFailure,
+  maybeEnablePipefail,
+  pipefailWasInjected,
+  SIGPIPE_EXIT_CODE,
+} from './shell-pipeline.ts'
 
 describe('hasUnquotedPipeline (issue #787)', () => {
   it('recognizes a real top-level pipeline', () => {
@@ -75,5 +81,35 @@ describe('maybeEnablePipefail (issue #787)', () => {
       maybeEnablePipefail('false | tail', { platform: 'darwin', isRemote: true }),
       'false | tail',
     )
+  })
+})
+
+describe('isSigpipeOnlyFailure', () => {
+  it('treats a producer killed by a downstream head as success', () => {
+    // `cargo check | grep -E "^error" | head -60`: grep dies of SIGPIPE once head
+    // has its 60 lines, and pipefail promotes that to the pipeline's status even
+    // though the output is exactly what was asked for.
+    assert.equal(isSigpipeOnlyFailure(SIGPIPE_EXIT_CODE, true), true)
+  })
+
+  it('leaves every other non-zero status a failure', () => {
+    for (const code of [1, 2, 127, 130, 137]) {
+      assert.equal(isSigpipeOnlyFailure(code, true), false)
+    }
+  })
+
+  it('does not second-guess a shell whose pipefail we did not inject', () => {
+    assert.equal(isSigpipeOnlyFailure(SIGPIPE_EXIT_CODE, false), false)
+  })
+})
+
+describe('pipefailWasInjected', () => {
+  const mac = { platform: 'darwin' as NodeJS.Platform, isRemote: false }
+
+  it('is true only when maybeEnablePipefail changed the command', () => {
+    const piped = 'make | head -5'
+    assert.equal(pipefailWasInjected(piped, maybeEnablePipefail(piped, mac)), true)
+    const plain = 'npm run build'
+    assert.equal(pipefailWasInjected(plain, maybeEnablePipefail(plain, mac)), false)
   })
 })

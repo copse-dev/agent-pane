@@ -49,6 +49,7 @@ import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { mountFooterReasoningDial } from './footer-reasoning-dial.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
@@ -230,6 +231,7 @@ export function mountInputBar(
   })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const reasoningHost = el('div', { class: 'footer-reasoning-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
   const checkoutBtn = el('button', {
     type: 'button',
@@ -266,7 +268,7 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
-  footer.append(modelHost, checkoutHost, branchHost)
+  footer.append(modelHost, reasoningHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
       label: guardedYolo.menuLabel,
@@ -344,6 +346,8 @@ export function mountInputBar(
       .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
     store.setState({ threads })
     modelPicker.refresh()
+    // The new model may offer a different ladder — or none at all.
+    reasoningDial.sync()
     updateFooter()
     // The context window depends on the model, so re-estimate the footer wheel
     // against the newly selected model rather than waiting for the next keystroke.
@@ -351,6 +355,36 @@ export function mountInputBar(
     void refreshAutomaticCheckoutPreview()
     void refreshImageCompatibilityWarning()
   }
+
+  // Per-chat effort, beside the model it applies to. Writes to the thread, so
+  // it lasts as long as the conversation and never re-tunes the model itself.
+  const reasoningDial = mountFooterReasoningDial(
+    reasoningHost,
+    footerChatModel,
+    () => getActiveThread(store)?.reasoning,
+    (reasoning) => {
+      const thread = getActiveThread(store)
+      if (!thread) return
+      const threads = store.getState().threads.map((t) =>
+        t.id !== thread.id
+          ? t
+          : {
+              ...t,
+              ...(reasoning === undefined ? {} : { reasoning }),
+              updatedAt: Date.now(),
+            },
+      )
+      // Clearing the dial has to delete the field rather than write undefined,
+      // or the thread keeps a key that reads as "set" on the next sync.
+      if (reasoning === undefined) {
+        const target = threads.find((t) => t.id === thread.id)
+        if (target) Reflect.deleteProperty(target, 'reasoning')
+      }
+      store.setState({ threads })
+      reasoningDial.sync()
+      composer.focus()
+    },
+  )
 
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     isSshWorkspace: (): boolean => {
@@ -368,6 +402,7 @@ export function mountInputBar(
   // the project changes so ACP options hide/show with SSH workspaces.
   store.on('threads_changed', () => {
     modelPicker.refresh()
+    reasoningDial.sync()
     void refreshAutomaticCheckoutPreview()
   })
   store.on('projects_changed', () => {

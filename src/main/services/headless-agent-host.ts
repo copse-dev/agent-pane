@@ -201,6 +201,10 @@ export async function runHeadlessAgent(
                           // Headless runs have no thread transcript to compare
                           // against, so there is no context loss to detect.
                           transcriptLength: (): Promise<number> => Promise.resolve(0),
+                          // Headless runs carry their history in `messages`
+                          // above rather than a thread transcript, so there is
+                          // no second source to recover an empty one from.
+                          recoverHistory: (): Promise<LLMMessage[]> => Promise.resolve([]),
                           loadEpoch: (): Promise<null> => Promise.resolve(null),
                           saveEpoch: (): Promise<void> => Promise.resolve(),
                           appendMachineContinuation,

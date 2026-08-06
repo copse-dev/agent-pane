@@ -87,9 +87,15 @@ describe('createProvider routing', () => {
 
 interface CapturedRequestBody {
   prompt_cache_key?: string
+  service_tier?: string
   store?: boolean
   provider?: { require_parameters?: boolean; zdr?: boolean; data_collection?: string }
   stream_options?: { include_usage?: boolean }
+  reasoning?: { effort?: string; enabled?: boolean }
+  reasoning_effort?: string
+  temperature?: number
+  top_p?: number
+  max_tokens?: number
 }
 
 function expectOpenAIProvider(provider: LLMProvider): OpenAIProvider {
@@ -202,6 +208,63 @@ describe('createProvider prompt cache key', () => {
     const provider = expectOpenAIProvider(createProvider('gpt-4o', { openAiApiKey: 'test-openai' }))
     const request = await captureRequest(provider)
     assert.equal(request.prompt_cache_key, undefined)
+  })
+})
+
+describe('createProvider service tier', () => {
+  it('sends service_tier to OpenAI when configured', async () => {
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }, undefined, {
+        serviceTier: 'flex',
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, 'flex')
+  })
+
+  it('omits service_tier entirely by default, keeping standard processing', async () => {
+    const provider = expectOpenAIProvider(createProvider('gpt-4o', { openAiApiKey: 'test-openai' }))
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, undefined)
+  })
+
+  it('passes an unrecognised tier through for the provider to judge', async () => {
+    // Not an enum on purpose: OpenAI's tier names are model-specific and keep
+    // changing, so validating here would reject a valid new tier until we
+    // shipped an update. A wrong value fails visibly with a 400.
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }, undefined, {
+        serviceTier: 'some-future-tier',
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, 'some-future-tier')
+  })
+
+  it('keeps the store opt-out alongside the tier', async () => {
+    // service_tier must not displace the privacy default.
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-4o', { openAiApiKey: 'test-openai' }, 'thread-1', {
+        serviceTier: 'priority',
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.service_tier, 'priority')
+    assert.equal(request.store, false)
+    assert.equal(request.prompt_cache_key, 'thread-1')
+  })
+
+  it('never sends service_tier to Anthropic, which rejects unknown fields', () => {
+    const provider = createProvider(
+      'claude-sonnet-4-6',
+      { anthropicApiKey: 'sk-ant-test' },
+      undefined,
+      {
+        serviceTier: 'flex',
+      },
+    )
+    // Routed to the Anthropic adapter, which has no service-tier concept at all.
+    assert.ok(!(provider instanceof OpenAIProvider))
   })
 })
 
@@ -324,5 +387,111 @@ describe('createExtraCloudProvider Responses transport', () => {
     const provider = createExtraCloudProvider(perplexity, 'openai/gpt-5.6-sol', 'pplx-test')
 
     assert.ok(provider instanceof ResponsesProvider)
+  })
+})
+
+describe('tuned model parameters reach the provider', () => {
+  it('sends OpenRouter reasoning on its unified field, not the alias', async () => {
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('deepseek/deepseek-v4-flash', 'sk-or-test', undefined, {
+        params: { reasoning: 'max', temperature: 1, topP: 0.95 },
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.reasoning, { effort: 'max' })
+    assert.equal(request.reasoning_effort, undefined)
+    assert.equal(request.temperature, 1)
+    assert.equal(request.top_p, 0.95)
+  })
+
+  it('expresses OpenRouter "off" as disabled reasoning', async () => {
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('deepseek/deepseek-v4-flash', 'sk-or-test', undefined, {
+        params: { reasoning: 'off' },
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.reasoning, { enabled: false })
+  })
+
+  it('sends reasoning_effort to a local OpenAI-compatible server', async () => {
+    const provider = expectOpenAIProvider(
+      createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local', 'lm-studio', {
+        reasoning: 'high',
+        temperature: 0.6,
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.reasoning_effort, 'high')
+    assert.equal(request.temperature, 0.6)
+  })
+
+  it('leaves an untuned request body untouched', async () => {
+    const provider = expectOpenAIProvider(
+      createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local'),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.reasoning_effort, undefined)
+    assert.equal(request.temperature, undefined)
+    assert.equal(request.top_p, undefined)
+    assert.equal(request.reasoning, undefined)
+    assert.equal(request.max_tokens, undefined)
+  })
+})
+
+describe('published output ceilings', () => {
+  it('sends the card’s ceiling once reasoning reaches the level it names', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createLocalOpenAIProvider(
+          'http://localhost:1234/v1',
+          'deepseek-v4-flash-0731',
+          'lm-studio',
+          {
+            reasoning: 'max',
+          },
+        ),
+      ),
+    )
+    assert.equal(request.max_tokens, 384_000)
+  })
+
+  it('sends it on OpenRouter too, where the level rides a different field', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createOpenRouterProvider('deepseek/deepseek-v4-flash-0731', 'sk-or-test', undefined, {
+          params: { reasoning: 'high' },
+        }),
+      ),
+    )
+    assert.deepEqual(request.reasoning, { effort: 'high' })
+    assert.equal(request.max_tokens, 384_000)
+  })
+
+  it('stays out of the body at a shallower level', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createLocalOpenAIProvider(
+          'http://localhost:1234/v1',
+          'deepseek-v4-flash-0731',
+          'lm-studio',
+          {
+            reasoning: 'medium',
+          },
+        ),
+      ),
+    )
+    assert.equal(request.max_tokens, undefined)
+  })
+
+  it('stays out of the body for a model we hold no card for', async () => {
+    const request = await captureRequest(
+      expectOpenAIProvider(
+        createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local', 'lm-studio', {
+          reasoning: 'max',
+        }),
+      ),
+    )
+    assert.equal(request.max_tokens, undefined)
   })
 })
