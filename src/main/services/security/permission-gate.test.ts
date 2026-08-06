@@ -1508,6 +1508,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     command: string,
     answer: { approved: boolean; remember: boolean },
     root: string,
+    sandboxEnabled = false,
   ): Promise<{ permitted: boolean; prompt: Prompt | null }> {
     setPermissionGateForTests(null)
     let prompt: Prompt | null = null
@@ -1525,7 +1526,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
     try {
       const permitted = await ensureShellCommandPermitted(command, {
-        sandboxEnabled: false,
+        sandboxEnabled,
         autoRun: true,
         executionRoot: root,
       })
@@ -1578,6 +1579,29 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       assert.match(prompt.bodyAdvice, /read from sensitive locations on your computer/)
       assert.equal(prompt.collapseDetails, true)
       assert.equal(prompt.approveOnceLabel, 'Approve this command')
+    })
+  })
+
+  it('asks the read question for an unrecognised head only when it can be contained', async () => {
+    await withRoot(async (root) => {
+      const contained = await runGate(
+        'yq .name ~/.copse/config.yaml',
+        { approved: false, remember: false },
+        root,
+        true,
+      )
+      assert.ok(contained.prompt)
+      assert.equal(contained.prompt.title, 'Allow read access outside of the project?')
+
+      // No seatbelt to bound it: the head allow-list still applies, so this is
+      // the worst-case escape question, not the read one.
+      const uncontained = await runGate(
+        'yq .name ~/.copse/config.yaml',
+        { approved: false, remember: false },
+        root,
+      )
+      assert.ok(uncontained.prompt)
+      assert.notEqual(uncontained.prompt.title, 'Allow read access outside of the project?')
     })
   })
 

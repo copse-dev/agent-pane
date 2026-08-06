@@ -254,9 +254,10 @@ async function requestEscalationApproval(
 async function resolveReadOutsideProject(
   command: string,
   workspaceRoot: string | null,
+  contained: boolean,
   signal?: AbortSignal,
 ): Promise<boolean | null> {
-  const analysis = analyzeReadOutsideProject(command, workspaceRoot)
+  const analysis = analyzeReadOutsideProject(command, workspaceRoot, { contained })
   if (!analysis.eligible) return null
 
   // The one fact the durable log can carry about this command: the paths, never
@@ -391,7 +392,16 @@ export async function promptUnsandboxedShell(
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
   if (opts.readGrantApplied !== true) {
-    const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
+    // `contained: false`, unlike the up-front gate: approving HERE runs the
+    // command outside the sandbox — that is the question being asked — so the
+    // seatbelt the relaxed checks lean on will not exist. This path keeps the
+    // strict allow-list, and only ever covers shapes that need no relaxation.
+    const readOutside = await resolveReadOutsideProject(
+      command,
+      getAgentExecutionRoot(),
+      false,
+      signal,
+    )
     if (readOutside !== null) return readOutside
   }
   return requestEscalationApproval(
@@ -859,7 +869,18 @@ export async function ensureShellCommandPermitted(
   // Ordered after the replay lease so a command the user already authorized for
   // exact retry in this turn tree is still replayed without a prompt: the lease
   // is a no-prompt fast path, whereas this gate may ask.
-  const readOutside = await resolveReadOutsideProject(command, workspaceRoot, opts.signal)
+  // `contained` = the shell tool will run an approval of this contained rather
+  // than unsandboxed, which is what lets the analysis relax its head allow-list.
+  // Both of that path's conditions are already known here: the sandbox is on, and
+  // a trusted command returned `allow` far above. Keep the two in step — a
+  // relaxation approved here that the tool then declines to contain would run the
+  // command unsandboxed on a read-shaped answer.
+  const readOutside = await resolveReadOutsideProject(
+    command,
+    workspaceRoot,
+    sandboxEnabled,
+    opts.signal,
+  )
   if (readOutside !== null) return readOutside
 
   // A plain package install gets a dedicated, readable approval rather than the

@@ -102,6 +102,46 @@ or full-escape lever.
 - **Not a blanket "no sandbox".** No path rejects the seatbelt; the relaxation
   only narrows the read deny for named targets.
 
+### Eligibility, once containment exists
+
+The shape allow-list and the seatbelt were proving the same thing twice. Once a
+command is going to run contained, the checks that exist to show _from the text
+alone_ that nothing but a read can happen are redundant — the kernel shows it
+directly — so `analyzeReadOutsideProject` takes `contained` and drops two of
+them:
+
+- the **head allow-list** (`READ_ONLY_SHELL_BASENAMES` / `EXTRA_READ_ONLY_HEADS`),
+  the main source of prompt fatigue: an unknown binary under the overlay reaches
+  the named paths, the workspace, no network, and no outside write;
+- the **exec flags** (`find -exec`, `fd -x`, `rg --pre`), whose child inherits
+  the same seatbelt.
+
+Everything else holds unconditionally, for reasons that survive containment:
+
+- **Target checks** (`sensitiveTargetReason`, `breadthBlocker`) decide _which
+  paths the overlay opens_. The overlay is built from this analysis, so they are
+  the only thing between a named `~/.ssh/id_rsa` and an `allowRead` rule for it.
+- **Write checks** (write flags, redirects, non-read `git` subcommands) stay
+  because the seatbelt permits writes _inside the workspace_ — a contained
+  `sort ~/x -o out.txt` really writes, and the prompt's footer says approving
+  grants no writing.
+- **Wrappers and expansions** (`sudo`/`env`/`xargs`, `$(…)`, `$VAR`) stay: they
+  make the target derivation itself unsound, and the overlay is derived from it.
+
+Relaxing heads widens what reaches the analysis, so the containment it assumes
+must be real for the whole command: `contained` additionally requires
+`externalOnlyForOutsidePath`, the same predicate the execution half applies.
+Without it an unrecognised head carrying a URL (`curl https://x --config
+~/.curlrc`) would read as a plain out-of-project read, and the tool — which
+declines to contain a network command — would then run it fully unsandboxed on
+that answer. That guard also keeps `find -exec` refused (it reads as dynamic
+execution), so the flag relaxation is the belt and this is the braces.
+
+The relaxation is scoped to the **up-front gate**, where approving means a
+contained run. The post-failure "Run outside sandbox?" path passes
+`contained: false`: approving there drops the very containment the relaxed checks
+lean on.
+
 ### Decision-logging parity
 
 The durable decision log (`decisions.jsonl`) already records `scope: external-read`
