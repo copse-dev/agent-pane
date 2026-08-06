@@ -1136,14 +1136,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   <option value="light">Light</option>
                 </select>
               </label>
-              <label>
-                Accent colour
-                <input type="color" name="uiAccentColor" />
-              </label>
-              <label>
-                Interface tint colour
-                <input type="color" name="uiTintColor" />
-              </label>
+              <!-- Two swatches, one decision each, read side by side: they are
+                   the section's only colour choices and comparing them is the
+                   whole task. -->
+              <div class="settings-swatch-row">
+                <label>
+                  Accent colour
+                  <input type="color" name="uiAccentColor" />
+                </label>
+                <label>
+                  Interface tint colour
+                  <input type="color" name="uiTintColor" />
+                </label>
+              </div>
               <label>
                 Interface tint strength
                 <span class="slider-row">
@@ -1177,7 +1182,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <label class="app-icon-option">
                   <input type="radio" name="appIconVariant" value="${variant}" />
                   <span class="app-icon-preview">
-                    <img src="./icon-previews/${variant}.png" alt="" width="80" height="80" />
+                    <img src="./icon-previews/${variant}.png" alt="" width="88" height="88" />
                   </span>
                   <span class="app-icon-label">${APP_ICON_VARIANT_LABELS[variant]}</span>
                 </label>`,
@@ -1562,6 +1567,45 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     activeSection = id
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
+    renderNavSubheadings(id)
+  }
+
+  // The open section's group headings, mirrored into the sidebar under its row.
+  // General and Appearance are several screens tall, so the nav doubles as that
+  // section's contents: what is on this page, and a click to jump to it. Only
+  // the open section expands, and the list is read back off the DOM each time —
+  // so a group that is hidden (developer-only) or mounted by a panel never has
+  // to be registered in a second place to show up here.
+  let navSubheadings: HTMLElement | null = null
+
+  function clearNavSubheadings(): void {
+    navSubheadings?.remove()
+    navSubheadings = null
+  }
+
+  function renderNavSubheadings(id: SettingsSection): void {
+    clearNavSubheadings()
+    const navBtn = Array.from(navBtns).find((btn) => btn.dataset['section'] === id)
+    const section = Array.from(sections).find((sec) => sec.dataset['section'] === id)
+    if (!navBtn || !section) return
+    const list = document.createElement('div')
+    list.className = 'settings-nav-subheadings'
+    for (const block of topLevelBlocks(section)) {
+      if (block.hidden) continue
+      const label = block.querySelector('legend')?.textContent.trim()
+      if (!label) continue
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'settings-nav-subheading'
+      btn.textContent = label
+      btn.addEventListener('click', () => {
+        block.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+      list.append(btn)
+    }
+    if (list.childElementCount === 0) return
+    navBtn.after(list)
+    navSubheadings = list
   }
 
   // A settings "block" is a top-level fieldset — one not nested inside another
@@ -1619,6 +1663,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     contentEl.classList.add('settings-searching')
+    // Results are lifted out of their sections, so the open section's contents
+    // list no longer describes what is on screen. Drop it until search clears.
+    clearNavSubheadings()
     const matches: { node: HTMLElement; rank: number }[] = []
     sections.forEach((sec) => {
       for (const block of topLevelBlocks(sec)) {
@@ -2062,18 +2109,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })
     toggleLabel.append(toggle, track)
 
+    // Who published the pack is the first thing to know about it and the same
+    // answer for every row, so it reads as an eyebrow over the name rather than
+    // as one more chip competing with it.
     const title = document.createElement('div')
     title.className = 'pack-row-title'
-    const nameEl = document.createElement('span')
-    nameEl.className = 'pack-name'
-    nameEl.textContent = packDisplayName(pack)
-    title.append(nameEl)
-    if (pack.version) {
-      const versionEl = document.createElement('span')
-      versionEl.className = 'pack-version'
-      versionEl.textContent = pack.version
-      title.append(versionEl)
-    }
     const trustBadge = document.createElement('span')
     trustBadge.className =
       pack.trust === 'first-party'
@@ -2081,6 +2121,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : 'pack-badge pack-badge-user'
     trustBadge.textContent = pack.trust === 'first-party' ? 'Copse' : 'User'
     title.append(trustBadge)
+
+    const nameLine = document.createElement('div')
+    nameLine.className = 'pack-row-name-line'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'pack-name'
+    nameEl.textContent = packDisplayName(pack)
+    nameLine.append(nameEl)
+    if (pack.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'pack-version'
+      versionEl.textContent = pack.version
+      nameLine.append(versionEl)
+    }
     const stabilityBadge = document.createElement('span')
     stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
     stabilityBadge.textContent = pack.stability
@@ -2088,9 +2141,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       pack.stability === 'experimental'
         ? 'Experimental: behavior and compatibility may change.'
         : 'Stable: supported as part of the current pack contract.'
-    title.append(stabilityBadge)
+    nameLine.append(stabilityBadge)
+    title.append(nameLine)
 
-    header.append(toggleLabel, title)
+    // A bare switch never says which way is on. The flanking words do, and CSS
+    // emphasises whichever side is live off `:checked` — so there is no second
+    // copy of the state to keep in sync. They restate the checkbox's own label,
+    // hence hidden from assistive tech.
+    const toggleControl = document.createElement('div')
+    toggleControl.className = 'pack-toggle-control'
+    const makeStateLabel = (side: 'off' | 'on'): HTMLElement => {
+      const stateEl = document.createElement('span')
+      stateEl.className = 'pack-toggle-state'
+      stateEl.dataset['side'] = side
+      stateEl.textContent = side === 'on' ? 'On' : 'Off'
+      stateEl.setAttribute('aria-hidden', 'true')
+      return stateEl
+    }
+    toggleControl.append(makeStateLabel('off'), toggleLabel, makeStateLabel('on'))
+
+    header.append(title, toggleControl)
     row.append(header)
 
     if (pack.description) {
@@ -2466,11 +2536,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         listEl.append(empty)
       } else {
         // Enabled packs first, disabled packs after — so a scrapped pack moves
-        // out of the way instead of sitting in the middle of the list.
+        // out of the way instead of sitting in the middle of the list. The two
+        // runs get a heading each: with rows this tall, "why is this one dimmed"
+        // is a question the list should answer before it is asked. A heading is
+        // skipped when nothing falls under it.
         const sorted = [...result.packs].sort(
           (a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id),
         )
-        for (const pack of sorted) listEl.append(makePackRow(pack))
+        let lastEnabled: boolean | null = null
+        for (const pack of sorted) {
+          if (pack.enabled !== lastEnabled) {
+            const heading = document.createElement('h4')
+            heading.className = 'packs-group-heading'
+            heading.textContent = pack.enabled ? 'Active' : 'Inactive'
+            listEl.append(heading)
+            lastEnabled = pack.enabled
+          }
+          listEl.append(makePackRow(pack))
+        }
       }
       statusEl.textContent = ''
     } catch {

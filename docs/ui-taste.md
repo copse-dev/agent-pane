@@ -21,10 +21,14 @@ landing page's decorative density.
 
 ### Shared foundations
 
-- **Space Grotesk** is the default interface and prose family.
-- **Averia Serif Libre** is a display face. Use it only through an explicit branded-heading class on
-  expressive or destination-level surfaces. Do not apply it globally to `h1`, `h2`, or `h3`;
-  utility headings, settings titles, field labels, and panel headings remain Space Grotesk.
+- **Pliant** is the default interface and prose family (`--font-family`, `tokens.css`). The
+  marketing site still ships Space Grotesk; the app does not use it anywhere.
+- **Averia Serif Libre** is a display face (`--font-display`). Use it on expressive or
+  destination-level surfaces — through a branded-heading class, or through the heading tier of a
+  full-window destination such as Settings, where the section `<h3>` and its top-level group
+  legends carry it. Do not apply it globally to `h1`, `h2`, or `h3`: utility headings, field
+  labels, nested card titles, and panel headings stay in Pliant, so the serif marks the top two
+  tiers of a page rather than every heading on it.
 - Code, commands, paths, hashes, and terminal content use `--font-mono`.
 - Use the exact Copse glyph and wordmark assets rather than approximating them with text or
   redrawing the mark.
@@ -284,8 +288,15 @@ Rules of thumb:
 
 - Put the scroll container's bottom breathing room **inside the sticky footer** (as the footer's own
   `padding-bottom`), not as `padding-bottom` on the scroll container.
-- The sticky footer needs an opaque `background` (`var(--bg-base)`) so content scrolling beneath it is
-  actually covered.
+- The sticky footer must **cover** the content scrolling beneath it — but covering is not the same as
+  hiding. A tall opaque slab makes a long page look like it has ended when it has only scrolled
+  under the bar. Prefer a frosted panel: a gradient wash plus `backdrop-filter`, both carried on a
+  masked `::before` so the effect ramps in rather than starting at a hard line, and no `border-top`
+  (a hairline across a see-through bar reads as the cut the fade exists to avoid). See
+  `.settings-buttons` in `settings.css`.
+- An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
+  in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
+  along with the backdrop.
 - Alternatively, mirror the onboarding pattern: make the footer a non-scrolling flex sibling
   (`flex-shrink: 0`) _outside_ the scroll region (see `onboarding.css` / `onboarding-dialog.ts`).
   Prefer this when the footer doesn't need to live inside a `<form>` for submit semantics.
@@ -314,6 +325,32 @@ At large interface scales or short window heights, the Settings sidebar can also
 Keep the native dialog itself `overflow: hidden` and give `.settings-nav` its own vertical overflow
 with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole sidebar moves upward,
 then ends above the window bottom and exposes a large blank surface beneath it.
+
+## Settings is a destination, not a dialog's worth of chrome
+
+It fills the window and its sections run several screens, so it is typed and spaced like a page:
+
+- **Two heading tiers in the display face** — the section `<h3>` and its top-level group `<legend>`s
+  (`--font-display`, weight 400: Averia ships one weight and synthetic bold smears it). Everything
+  below that — field labels, nested card titles inside a group, list headings such as Packs'
+  Active / Inactive — stays in the interface family, so the serif marks structure and not decoration.
+- **Group gaps are the page's punctuation.** Top-level groups clear `calc(var(--spacing-xl) * 2)`;
+  a field and its own hint stay tight while the gap lives _between_ fields.
+- **Controls are targets, not text.** Nav rows, the search box, selects, text/number inputs, colour
+  wells, and the provider chips all take `--action-min-height`; a checkbox's whole line is
+  clickable (padding on `.checkbox-label`, pulled back with a negative `margin-inline-start` so the
+  box still sits on the section's left edge).
+- **The sidebar doubles as the open section's contents.** `renderNavSubheadings()` reads the active
+  section's top-level legends straight off the DOM on every section change and lists them under
+  that nav row; clicking one scrolls to its group. Reading the DOM rather than a registry means a
+  group that is hidden (developer-only) or mounted by a panel needs no second place to be declared.
+  Search clears the list — its results are lifted out of their sections, so the contents no longer
+  describe what is on screen.
+- **A pack row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): publisher as a
+  tracked-caps eyebrow, the name leading its line, and the switch flanked by Off / On whose live
+  side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
+
+Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
 
 ## Markdown prose spacing in chat
 
