@@ -903,6 +903,45 @@ jobs:
               echo "## processes by RSS"
               ps -eo pid,ppid,state,etimes,rss,vsz,comm --sort=-rss | head -n 80 || true
               echo
+              # An RSS-sorted top-80 hides light, numerous processes — which is
+              # exactly the shape a leak takes. socat in particular is tiny, so a
+              # runner carrying dozens of orphans looks unremarkable above.
+              echo "## process counts by name"
+              ps -eo comm= | sort | uniq -c | sort -rn | head -n 30 || true
+              echo
+              echo "## e2e / sandbox process detail (orphans have ppid 1)"
+              ps -eo pid,ppid,etimes,comm,args \
+                | grep -E '[s]ocat|[b]wrap|[e]lectron|[c]hromedriver|[X]vfb' \
+                | head -n 60 || true
+              echo
+              # ASRT needs bubblewrap AND socat, and bwrap additionally needs
+              # usable unprivileged user namespaces at runtime (see
+              # ci-runners/docker-compose.yml). When these are wrong the app does
+              # not crash — it degrades to sandbox-off — so the fault is invisible
+              # unless captured here.
+              echo "## sandbox preconditions"
+              echo "socat=$(command -v socat || echo MISSING)"
+              echo "bwrap=$(command -v bwrap || echo MISSING)"
+              bwrap --version 2>&1 || true
+              for sysctl_file in \
+                /proc/sys/kernel/apparmor_restrict_unprivileged_userns \
+                /proc/sys/kernel/unprivileged_userns_clone \
+                /proc/sys/user/max_user_namespaces; do
+                if [ -r "$sysctl_file" ]; then
+                  echo "$sysctl_file=$(cat "$sysctl_file")"
+                else
+                  echo "$sysctl_file=UNREADABLE"
+                fi
+              done
+              # The same shape ASRT asks for. Proves the chain rather than just
+              # the binary's presence.
+              echo "### bwrap probe"
+              bwrap --unshare-all --dev-bind / / --die-with-parent true 2>&1 \
+                && echo "bwrap_probe=ok" || echo "bwrap_probe=FAILED"
+              echo
+              echo "## open file descriptors"
+              echo "fd_nr=$(cat /proc/sys/fs/file-nr 2>/dev/null || echo unknown)"
+              echo
               echo "## filesystems"
               df -h / /tmp /dev/shm || true
               echo
