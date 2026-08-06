@@ -8,6 +8,27 @@ every published entry.
 
 ## Unreleased
 
+- Switching projects no longer carries a prompt across, or leaves the app half
+  moved. Two problems, both about a switch and the thing it left behind.
+  Approval prompts and `ask_user` questions were checked against the focused
+  thread when they were raised, but the open dialog was never re-checked — so a
+  prompt from the project you just left stayed on screen over the thread you
+  landed on, reading as a question that thread never asked, and answering it
+  approved a tool call in the project behind you. A prompt whose thread loses
+  focus is now withdrawn and re-flagged as a sidebar bell, and comes back, in
+  order, when you return to it. Separately, switching away and immediately back
+  used to let the abandoned switch finish behind you: it pointed the main
+  process at the other project's root, saved it as the project to reopen at next
+  launch, and stripped the transcripts off the sidebar rows of the project still
+  on screen — leaving the file tree, git, terminals and the next run's working
+  directory all serving a project the window was not showing. Clicking the
+  project (or a thread in it) you are already on now cancels the switch in
+  flight and puts the workspace and the saved selection back. Workspace
+  activations are also applied in the order they were requested, so two quick
+  switches can no longer land out of order, and a switch that is cancelled or
+  superseded always releases whatever was waiting on it — File ▸ Open Folder,
+  new project, relocate and orphan recovery all awaited that, and on launch the
+  app layout itself was chained off it.
 - The model picker names Claude models one way, whoever supplied them. Every
   provider spells them differently — Cursor's catalog returns a bare “Opus 5”
   and puts the version first in “Claude 4.6 Sonnet (Thinking)”, device agents
