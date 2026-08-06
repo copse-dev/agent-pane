@@ -1,4 +1,5 @@
 import type { StreamChunk, Thread } from '@shared/types'
+import type { PackContributionsSummary, PackSummary } from '@shared/types/packs.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -8,6 +9,72 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
+
+/**
+ * Packs shown in the browser demo's Settings → Packs list. The real list comes
+ * from the host registry, which the demo has no access to, so a small stand-in
+ * covers the shapes the row has to render: a first-party pack, one that is
+ * experimental and carries a setting, and a user-installed one that is off.
+ */
+const DEMO_PACK_CONTRIBUTIONS: PackContributionsSummary = {
+  toolNames: [],
+  modelRoutes: [],
+  browserOrigins: [],
+  blockingHooks: [],
+  asyncHooks: [],
+  commandHooks: [],
+  promptBlocks: [],
+  ui: [],
+  capabilities: [],
+  permissions: [],
+}
+
+const DEMO_PACKS: readonly PackSummary[] = [
+  {
+    id: 'copse.todos',
+    trust: 'first-party',
+    stability: 'stable',
+    name: 'Todos',
+    version: '1.0.0',
+    description:
+      'Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.',
+    enabled: true,
+    contributions: { ...DEMO_PACK_CONTRIBUTIONS, toolNames: ['todo_write', 'todo_read'] },
+    settings: [],
+  },
+  {
+    id: 'copse.advisor-strategy',
+    trust: 'first-party',
+    stability: 'experimental',
+    name: 'Advisor strategy',
+    version: '0.3.1',
+    description:
+      'Pairs a second model with the executor to review strategy before long or risky work starts.',
+    enabled: true,
+    contributions: { ...DEMO_PACK_CONTRIBUTIONS, toolNames: ['consult_advisor'] },
+    settings: [
+      {
+        id: 'maxReviewCycles',
+        kind: 'number',
+        title: 'Max review cycles',
+        description: 'How many times a failing review may buy the agent another turn.',
+        default: 2,
+        value: 2,
+      },
+    ],
+  },
+  {
+    id: 'personal.reference-tools',
+    trust: 'user',
+    stability: 'experimental',
+    name: 'Reference tools',
+    version: '0.1.0',
+    description: 'A locally installed pack from a selected directory.',
+    enabled: false,
+    contributions: DEMO_PACK_CONTRIBUTIONS,
+    settings: [],
+  },
+]
 
 /**
  * Provider slug for a model id, matching the conventions used elsewhere:
@@ -517,7 +584,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runDetail: () => resolved({ found: false }),
     },
     packs: {
-      list: () => resolved({ packs: [] }),
+      list: () => resolved({ packs: DEMO_PACKS }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
       addSource: () => resolved({ packs: [] }),
