@@ -13,6 +13,7 @@ import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import { responsesParameterFields, type ModelParameters } from './model-parameters.ts'
 
 /**
  * Provider adapter for OpenAI-compatible Responses API endpoints.
@@ -27,6 +28,8 @@ export class ResponsesProvider implements LLMProvider {
   private readonly serverTools: Tool[]
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly serviceTier: string | undefined
+  /** User-tuned reasoning / sampling, in this API's request shape. */
+  private readonly tuned: ReturnType<typeof responsesParameterFields>
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   constructor(
@@ -38,12 +41,14 @@ export class ResponsesProvider implements LLMProvider {
       extraBody?: Record<string, unknown>
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
       serviceTier?: string
+      params?: ModelParameters
     },
   ) {
     this.model = model
     this.serverTools = opts.serverTools ?? []
     this.extraBody = opts.extraBody
     this.serviceTier = opts.serviceTier
+    this.tuned = responsesParameterFields(opts.params ?? {})
     this.client = new OpenAI({
       baseURL: opts.baseURL,
       apiKey: opts.apiKey,
@@ -75,6 +80,7 @@ export class ResponsesProvider implements LLMProvider {
             ...serviceTierBody(self.serviceTier),
             // Last, so an explicit extraBody entry still wins — that field is
             // the user's own escape hatch for provider-specific overrides.
+            ...self.tuned,
             ...(self.extraBody ?? {}),
           },
           { signal },

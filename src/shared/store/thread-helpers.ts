@@ -1,5 +1,6 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = (): string => globalThis.crypto.randomUUID()
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type { AppStore } from './store.ts'
 import { at } from '@shared/array-utils.ts'
 import type {
@@ -275,7 +276,12 @@ export function addMessage(
   content = '',
   images?: string[],
   attachments?: TranscriptAttachment[],
-  opts?: { model?: string; startingCommit?: string; dirty?: boolean },
+  opts?: {
+    model?: string
+    parameters?: ModelParameters
+    startingCommit?: string
+    dirty?: boolean
+  },
 ): string {
   const id = randomUUID()
   const { threads } = store.getState()
@@ -293,6 +299,7 @@ export function addMessage(
               ...(images?.length ? { images } : {}),
               ...(attachments?.length ? { attachments } : {}),
               ...(opts?.model !== undefined ? { model: opts.model } : {}),
+              ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
               ...(opts?.startingCommit !== undefined
                 ? { startingCommit: opts.startingCommit }
                 : {}),

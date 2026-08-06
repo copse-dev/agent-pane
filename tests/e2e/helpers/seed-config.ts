@@ -349,6 +349,8 @@ export function seedEmptyProject(
     safetyModel?: string
     reviewModel?: string
     roleModels?: Record<string, string>
+    /** Per-model generation parameters, keyed by model selection. */
+    modelParameters?: Record<string, { reasoning?: string; temperature?: number; topP?: number }>
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
@@ -464,6 +466,9 @@ export function seedEmptyProject(
   }
   if (options?.roleModels !== undefined) {
     settings.roleModels = options.roleModels
+  }
+  if (options?.modelParameters !== undefined) {
+    settings.modelParameters = options.modelParameters
   }
   if (options?.localSubagentsEnabled !== undefined) {
     settings.localSubagentsEnabled = options.localSubagentsEnabled

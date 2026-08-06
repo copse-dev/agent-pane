@@ -27,6 +27,12 @@ import {
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
 } from './lm-studio-models.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
+import {
+  clampReasoning,
+  resolveModelParameters,
+  type ModelParameters,
+  type ReasoningLevel,
+} from '@copse/llm/model-parameters.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
 
@@ -173,8 +179,52 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
 // to the same prompt cache, lifting hit rates and lowering cost (#584). It is
 // intentionally omitted for local servers (LM Studio, Ollama, …), which don't
 // honour it and can reject unknown request fields.
-export async function buildProvider(model: string, promptCacheKey?: string): Promise<LLMProvider> {
+export interface BuildProviderOptions {
+  /**
+   * Reasoning depth for this turn only, from the composer's per-chat dial.
+   * Overrides the level saved on the model; the sampling values are untouched,
+   * since those are a property of how the user wants the model to write rather
+   * than of how hard this particular turn is.
+   */
+  reasoning?: ReasoningLevel
+  /**
+   * Ceiling on the reasoning depth, for roles whose job description is cheap
+   * and fast — thread titles, follow-up suggestions, shell-command
+   * classification. A user who set their chat model to `max` meant it for the
+   * work, not for naming the conversation with the same model, and that bill
+   * would arrive with nothing on screen to explain it.
+   */
+  maxReasoning?: ReasoningLevel
+}
+
+/**
+ * Generation parameters the user tuned for this exact model selection
+ * (Settings → Models → Model parameters), sanitized against what the model
+ * accepts so a value saved before the selection changed cannot 400 the turn.
+ * Empty for every model the user has not touched.
+ *
+ * Keyed by selection rather than by feature, so a model carries its parameters
+ * wherever it runs — chat, a task role, a subagent — the same way an ACP
+ * agent's model and permission mode travel with the agent.
+ */
+export function resolveTurnParameters(
+  model: string,
+  opts: BuildProviderOptions = {},
+): ModelParameters {
+  const saved = resolveModelParameters(getSetting<unknown>('modelParameters', {}), model)
+  const requested = opts.reasoning ?? saved.reasoning
+  const reasoning =
+    opts.maxReasoning === undefined ? requested : clampReasoning(requested, opts.maxReasoning)
+  return { ...saved, ...(reasoning === undefined ? {} : { reasoning }) }
+}
+
+export async function buildProvider(
+  model: string,
+  promptCacheKey?: string,
+  opts: BuildProviderOptions = {},
+): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
+  const params = resolveTurnParameters(model, opts)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()
     const savedLocalDefault = normalizeRoleModelSelection(
@@ -191,7 +241,7 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
         'No local model available. Open Settings → Local models, check the server URL/API key, and pick a model.',
       )
     }
-    return createLocalOpenAIProvider(url, id, getLmStudioApiKey())
+    return createLocalOpenAIProvider(url, id, getLmStudioApiKey(), params)
   }
   if (isOpenRouterModel(model)) {
     const apiKey = storedOrEnvApiKey('openrouter')
@@ -207,6 +257,7 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
         // stay excluded unless explicitly allowed.
         zdrOnly: getSetting<boolean>('openRouterZdrOnly', true),
         allowTraining: getSetting<boolean>('openRouterAllowTraining', false),
+        params,
       }),
     )
   }
@@ -225,26 +276,23 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
       extraProviderModelId(model),
       apiKey ?? '',
       getApprovedProviderHosts(),
+      params,
     )
     return extra.local ? provider : redactedRemoteProvider(provider)
   }
   if (model.startsWith('claude')) {
     return redactedRemoteProvider(
-      createProvider(model, {
-        anthropicApiKey: storedOrEnvApiKey('anthropic'),
+      createProvider(model, { anthropicApiKey: storedOrEnvApiKey('anthropic') }, undefined, {
+        params,
       }),
     )
   }
   if (model.startsWith('gpt')) {
     return redactedRemoteProvider(
-      createProvider(
-        model,
-        {
-          openAiApiKey: storedOrEnvApiKey('openai'),
-        },
-        promptCacheKey,
-        openAiServiceTierOption(),
-      ),
+      createProvider(model, { openAiApiKey: storedOrEnvApiKey('openai') }, promptCacheKey, {
+        ...openAiServiceTierOption(),
+        params,
+      }),
     )
   }
   return redactedRemoteProvider(
@@ -255,7 +303,7 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
         openAiApiKey: storedOrEnvApiKey('openai'),
       },
       promptCacheKey,
-      openAiServiceTierOption(),
+      { ...openAiServiceTierOption(), params },
     ),
   )
 }
