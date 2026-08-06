@@ -1682,6 +1682,34 @@ dialog.settings-overlay::backdrop {
   align-items: flex-start;
   gap: var(--spacing-md);
 }
+/* The pack's mark. Sized to span the eyebrow + name pair beside it, with the
+   app-icon tile's corner treatment so the two read as the same family of
+   object. */
+.pack-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(40px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
+  border-radius: 10px;
+  overflow: hidden;
+  /* Fallback tile for a user-installed pack: its initial on a neutral surface,
+     deliberately unbranded. */
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+.pack-icon-copse {
+  /* The mark asset carries its own neon field and corner radius. */
+  background: none;
+}
+.pack-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .pack-row-title {
   display: flex;
   flex-direction: column;
@@ -1779,13 +1807,26 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
+/* Stability sits next to the pack's name as a pill in sentence case — a label
+   on the thing, not a shouted status. `pack.stability` arrives lowercase, so the
+   capital comes from CSS. */
+.pack-badge-stable,
+.pack-badge-experimental {
+  border-radius: var(--action-radius);
+  padding: 1px var(--spacing-sm);
+  text-transform: capitalize;
+  letter-spacing: 0;
+}
 .pack-badge-stable {
   color: var(--success, #3fb950);
   border-color: var(--success, #3fb950);
 }
+/* Experimental is the one thing on the card you must read before flipping the
+   switch, so it takes the interaction accent rather than a status hue — the
+   documented exception in docs/ui-taste.md. */
 .pack-badge-experimental {
-  color: var(--warning, #d29922);
-  border-color: var(--warning, #d29922);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .pack-row-desc {
   font-size: var(--font-size-sm);
@@ -1811,14 +1852,53 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-style: italic;
 }
+/* "Pack settings ⌄" — one fold per card holding the manifest fields and any
+   first-party detail panel. Closed by default: a list of packs is for deciding
+   which ones you want, and every pack's form unrolled at once buries that. */
+.pack-settings-fold {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-sm);
+}
+.pack-settings-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  /* The row is the target, so it takes padding — pulled back inline so the
+     label still starts on the card's own left edge. */
+  min-height: calc(28px * var(--ui-scale));
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin-inline: calc(-1 * var(--spacing-sm));
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  /* Drop the UA disclosure triangle; the chevron below is ours, and it matches
+     every other disclosure in the app. */
+  list-style: none;
+}
+.pack-settings-summary::-webkit-details-marker {
+  display: none;
+}
+.pack-settings-summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.pack-settings-chevron {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s ease;
+}
+.pack-settings-fold[open] .pack-settings-chevron {
+  transform: rotate(180deg);
+}
 .pack-settings {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
-  margin-top: var(--spacing-xs);
-  border-top: 1px solid var(--border);
+  gap: var(--spacing-sm);
   padding-top: var(--spacing-sm);
 }
+/* Names a block *inside* the fold ("Schedules", the Parallel Search key) — the
+   summary already names the fold itself, so these stay captions. */
 .pack-settings-heading {
   font-size: 11px;
   font-weight: 600;

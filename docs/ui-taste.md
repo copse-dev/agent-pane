@@ -23,12 +23,14 @@ landing page's decorative density.
 
 - **Pliant** is the default interface and prose family (`--font-family`, `tokens.css`). The
   marketing site still ships Space Grotesk; the app does not use it anywhere.
-- **Averia Serif Libre** is a display face (`--font-display`). Use it on expressive or
-  destination-level surfaces — through a branded-heading class, or through the heading tier of a
-  full-window destination such as Settings, where the section `<h3>` and its top-level group
-  legends carry it. Do not apply it globally to `h1`, `h2`, or `h3`: utility headings, field
-  labels, nested card titles, and panel headings stay in Pliant, so the serif marks the top two
-  tiers of a page rather than every heading on it.
+- **Averia Serif Libre** is a display face (`--font-display`). `brand.css` binds it to `h1`–`h3`
+  app-wide at weight 400 (Averia ships one weight; asking for 600 only gets Chromium's synthetic
+  bold, which smears the serifs). Treat that as the rule it implies: **`h1`–`h3` are the display
+  tier**. A heading that should not be in the serif is not an `h1`–`h3` — reach for `h4`+ or a
+  styled `<span>`, as Packs' Active/Inactive headings do. Group headings on a destination surface
+  may opt in explicitly (Settings' top-level `<legend>`s), but utility headings, field labels, and
+  nested card titles stay in Pliant, so the serif marks the top two tiers of a page rather than
+  every heading on it.
 - Code, commands, paths, hashes, and terminal content use `--font-mono`.
 - Use the exact Copse glyph and wordmark assets rather than approximating them with text or
   redrawing the mark.
@@ -45,6 +47,11 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
   optional so the workbench stays low-fatigue.
 - Pink is the default interaction emphasis, not a product status colour. Do not use it for errors,
   warnings, success, or routine headings; those keep their semantic/text tokens.
+  - **Exception — "experimental".** Where a surface asks you to opt into something unfinished, the
+    experimental marker takes the accent (`.pack-badge-experimental` in Settings → Packs). It is not
+    reporting that anything has gone wrong; it is the one thing on the card you must read before
+    flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
+    owns "this needs your attention because something is off".
 - Error, warning, success, and danger continue to use their semantic tokens.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
@@ -346,9 +353,14 @@ It fills the window and its sections run several screens, so it is typed and spa
   group that is hidden (developer-only) or mounted by a panel needs no second place to be declared.
   Search clears the list — its results are lifted out of their sections, so the contents no longer
   describe what is on screen.
-- **A pack row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): publisher as a
-  tracked-caps eyebrow, the name leading its line, and the switch flanked by Off / On whose live
-  side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
+- **A pack row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): its mark, then
+  the publisher as a tracked-caps eyebrow over the name, and the switch flanked by Off / On whose
+  live side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
+  Everything configurable folds into one closed `Pack settings` disclosure, so a list of packs stays
+  a list of packs; the credential gate stays outside it, because it explains a switch you can see is
+  locked. Only **first-party** packs wear the Copse mark (`assets/brand-mark.svg`, copied to the
+  renderer by `build.mts`) — a user-installed pack gets a neutral initial tile, or a sideloaded pack
+  would be wearing our badge of trust.
 
 Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
 

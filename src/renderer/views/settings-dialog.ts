@@ -29,6 +29,7 @@ import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { chevronDownIcon } from '../dom/icons.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import {
@@ -2073,6 +2074,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const header = document.createElement('div')
     header.className = 'pack-row-header'
 
+    // A pack is a thing you install, so it gets a mark like one. First-party
+    // packs carry the Copse glyph itself (the real asset, not a redraw); a
+    // user-installed pack must not, or a sideloaded pack would wear our badge
+    // of trust — it gets a neutral tile with its own initial instead.
+    const icon = document.createElement('span')
+    icon.className = 'pack-icon'
+    icon.setAttribute('aria-hidden', 'true')
+    if (pack.trust === 'first-party') {
+      icon.classList.add('pack-icon-copse')
+      const mark = document.createElement('img')
+      mark.src = './brand-mark.svg'
+      mark.alt = ''
+      mark.width = 40
+      mark.height = 40
+      icon.append(mark)
+    } else {
+      icon.textContent = (packDisplayName(pack).trim()[0] ?? '?').toUpperCase()
+    }
+    header.append(icon)
+
     const toggleLabel = document.createElement('label')
     toggleLabel.className = 'toggle-switch pack-toggle'
     toggleLabel.title = pack.enabled ? 'Turn off this pack' : 'Turn on this pack'
@@ -2292,18 +2313,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(emptyChips)
     }
 
+    // Everything configurable about a pack folds into one disclosure. The card
+    // leads with what the pack *is* and what it contributes — the decision you
+    // make from a list of packs — and keeps its knobs one click away rather than
+    // stacking every pack's form on top of the next pack's name. Appended to the
+    // row at the end, and only if something landed inside it.
+    const settingsFold = document.createElement('details')
+    settingsFold.className = 'pack-settings-fold'
+    const settingsSummary = document.createElement('summary')
+    settingsSummary.className = 'pack-settings-summary'
+    const settingsSummaryLabel = document.createElement('span')
+    settingsSummaryLabel.textContent = 'Pack settings'
+    settingsSummary.append(settingsSummaryLabel, chevronDownIcon('pack-settings-chevron'))
+    settingsFold.append(settingsSummary)
+
     // Generic pack-scoped settings fields (rendered from the manifest schema).
     if (pack.settings.length > 0) {
       const settingsBox = document.createElement('div')
       settingsBox.className = 'pack-settings'
-      const heading = document.createElement('div')
-      heading.className = 'pack-settings-heading'
-      heading.textContent = 'Settings'
-      settingsBox.append(heading)
       for (const field of pack.settings) {
         settingsBox.append(makePackSettingField(pack.id, field))
       }
-      row.append(settingsBox)
+      settingsFold.append(settingsBox)
       // The advisor model field owns the live executor/advisor pairing hint (it
       // moved here from the Experimental section with the model itself). Wire the
       // advisor select + a hint element into the shared refs, keep the `#advisorModel`
@@ -2348,7 +2379,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
       )
     ) {
-      row.append(createAutomationPackSettings(store, api, pack.enabled))
+      settingsFold.append(createAutomationPackSettings(store, api, pack.enabled))
     }
     if (
       pack.id === PARALLEL_SEARCH_PACK_ID &&
@@ -2362,10 +2393,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // on-looking pack contributing no tool. Block the on-direction until a key
       // is stored (never the off-direction, or a user who clears their key would
       // be stuck with the pack showing enabled), and say why in a hint.
+      // The gate explains a switch you can see is locked, so it stays on the
+      // face of the card — folding the reason away under "Pack settings" would
+      // leave a dead toggle with no explanation next to it.
       const gate = document.createElement('p')
       gate.className = 'field-hint pack-credential-gate'
       gate.hidden = true
-      row.append(
+      row.append(gate)
+      settingsFold.append(
         createParallelSearchPackSettings(api, {
           onKeyPresence: (hasKey) => {
             credentialLocked = !hasKey
@@ -2377,9 +2412,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             if (toggle.disabled) toggleLabel.title = 'Add a Parallel API key to turn this pack on'
           },
         }),
-        gate,
       )
     }
+
+    // A pack with nothing to configure shows no fold — an empty disclosure is
+    // worse than none, because it invites a click that reveals nothing.
+    if (settingsFold.childElementCount > 1) row.append(settingsFold)
 
     // Disabling greys the whole row so the effect of the toggle is immediately
     // visible; individual pack-scoped settings stay editable so users can

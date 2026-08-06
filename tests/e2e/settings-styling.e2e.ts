@@ -206,6 +206,7 @@ describe('settings styling', function () {
       const offLabel = toggleControl?.querySelector<HTMLElement>(
         '.pack-toggle-state[data-side="off"]',
       )
+      const mark = row?.querySelector<HTMLImageElement>('.pack-icon-copse img')
       if (!list || !row || !name || !eyebrow || !toggleControl || !onLabel || !offLabel) return null
       const rowRect = row.getBoundingClientRect()
       const nameRect = name.getBoundingClientRect()
@@ -228,6 +229,33 @@ describe('settings styling', function () {
         toggleOnTheRight: toggleRect.right > rowRect.left + rowRect.width / 2,
         liveLabelWeight: Number.parseInt(getComputedStyle(liveLabel).fontWeight, 10),
         idleLabelWeight: Number.parseInt(getComputedStyle(idleLabel).fontWeight, 10),
+        // A first-party pack wears the Copse mark itself; a user-installed one
+        // must not, so it falls back to an unbranded initial tile.
+        markSrc: mark?.getAttribute('src') ?? null,
+        markRendered: (mark?.getBoundingClientRect().width ?? 0) > 0 && mark.naturalWidth > 0,
+        brandedRows: list.querySelectorAll('.pack-icon-copse').length,
+        firstPartyRows: list.querySelectorAll('.pack-badge-first-party').length,
+        // The experimental marker takes the interaction accent, in a pill, in
+        // sentence case — the mockup's treatment.
+        experimental: (() => {
+          const badge = list.querySelector<HTMLElement>('.pack-badge-experimental')
+          if (!badge) return null
+          const style = getComputedStyle(badge)
+          const accent = getComputedStyle(document.documentElement)
+            .getPropertyValue('--accent')
+            .trim()
+          const probe = document.createElement('span')
+          probe.style.color = accent
+          document.body.append(probe)
+          const accentRgb = getComputedStyle(probe).color
+          probe.remove()
+          return {
+            color: style.color,
+            accentRgb,
+            transform: style.textTransform,
+            radius: Number.parseFloat(style.borderTopLeftRadius),
+          }
+        })(),
       }
     })
 
@@ -249,8 +277,77 @@ describe('settings styling', function () {
       packs.liveLabelWeight > packs.idleLabelWeight,
       `live toggle label (${String(packs.liveLabelWeight)}) must outweigh the idle one (${String(packs.idleLabelWeight)})`,
     )
+    // The mark is the real asset and actually decodes — a broken <img> here
+    // would still measure as a laid-out box.
+    assert.equal(packs.markSrc, './brand-mark.svg')
+    assert.equal(packs.markRendered, true, 'the Copse mark must load')
+    assert.equal(
+      packs.brandedRows,
+      packs.firstPartyRows,
+      'the Copse mark belongs to first-party packs and only those',
+    )
+    assert.ok(packs.experimental, 'the seeded packs include an experimental one')
+    assert.equal(
+      packs.experimental.color,
+      packs.experimental.accentRgb,
+      'experimental takes the interaction accent',
+    )
+    assert.equal(packs.experimental.transform, 'capitalize')
+    assert.ok(packs.experimental.radius >= 12, 'the stability badge is a pill')
 
     await saveElementScreenshot('#settings-dialog', 'settings-styling-packs.png')
+  })
+
+  it('folds each pack’s settings away until asked for', async () => {
+    const fold = await $('.pack-row .pack-settings-fold')
+    await fold.waitForExist({ timeout: 10_000 })
+
+    const closed = await browser.execute(() => {
+      const details = document.querySelector<HTMLDetailsElement>('.pack-row .pack-settings-fold')
+      const field = details?.querySelector<HTMLElement>('.pack-settings, .pack-setting-field')
+      if (!details || !field) return null
+      return {
+        open: details.open,
+        summary: details.querySelector<HTMLElement>('.pack-settings-summary')?.textContent.trim(),
+        summaryHeight:
+          details.querySelector<HTMLElement>('.pack-settings-summary')?.getBoundingClientRect()
+            .height ?? 0,
+        // A closed <details> lays its content out at zero size.
+        fieldVisible: field.getBoundingClientRect().height > 0,
+        // Our own chevron, not the UA triangle.
+        marker: getComputedStyle(details.querySelector('summary') ?? details).listStyleType,
+        hasChevron: details.querySelector('.pack-settings-chevron') !== null,
+      }
+    })
+
+    assert.ok(closed, 'a pack with settings must render the fold')
+    assert.equal(closed.open, false, 'pack settings start folded away')
+    assert.equal(closed.fieldVisible, false, 'the fields are not laid out while closed')
+    assert.equal(closed.summary, 'Pack settings')
+    assert.ok(closed.summaryHeight >= 26, 'the summary is a row-sized target')
+    assert.equal(closed.hasChevron, true)
+    assert.equal(closed.marker, 'none', 'the UA disclosure triangle is replaced by our chevron')
+
+    // Opening it reveals the fields, and the chevron turns over.
+    await $('.pack-row .pack-settings-summary').click()
+    const opened = await browser.execute(() => {
+      const details = document.querySelector<HTMLDetailsElement>('.pack-row .pack-settings-fold')
+      const field = details?.querySelector<HTMLElement>('.pack-settings, .pack-setting-field')
+      const chevron = details?.querySelector<HTMLElement>('.pack-settings-chevron')
+      if (!details || !field || !chevron) return null
+      return {
+        open: details.open,
+        fieldVisible: field.getBoundingClientRect().height > 0,
+        chevronTransform: getComputedStyle(chevron).transform,
+      }
+    })
+
+    assert.ok(opened, 'the fold must still be there once open')
+    assert.equal(opened.open, true)
+    assert.equal(opened.fieldVisible, true, 'opening the fold reveals the pack’s fields')
+    assert.notEqual(opened.chevronTransform, 'none', 'the chevron turns over when open')
+
+    await saveElementScreenshot('#settings-dialog', 'settings-styling-pack-settings-open.png')
   })
 
   it('pairs the appearance colour wells and enlarges the app-icon tiles', async () => {
