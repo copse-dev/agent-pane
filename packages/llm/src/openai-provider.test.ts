@@ -294,6 +294,96 @@ describe('OpenAIProvider stream parsing', () => {
     assert.equal(done.stopReason, 'tool_calls')
   })
 
+  it('synthesizes distinct ids for parallel tool calls a server left unidentified', async () => {
+    // LM Studio / llama.cpp / vLLM can stream tool calls with no `id`. Both used
+    // to arrive as '', collide on the result-correlation key, and lose a result.
+    const provider = new OpenAIProvider('local-model', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+    })
+    withFakeStream(provider, [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+                { index: 1, function: { name: 'read_file', arguments: '{"path":"b.ts"}' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+
+    const toolCalls = (await collect(provider)).filter(
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.equal(toolCalls.length, 2)
+    const ids = toolCalls.map((c) => c.toolCall.id)
+    for (const id of ids) assert.match(id, /^tc_/)
+    assert.equal(new Set(ids).size, 2, 'each unidentified tool call needs its own id')
+    // The synthesized id must not disturb the rest of the call.
+    assert.deepEqual(at(toolCalls, 0).toolCall.args, { path: 'a.ts' })
+    assert.deepEqual(at(toolCalls, 1).toolCall.args, { path: 'b.ts' })
+  })
+
+  it('keeps a provider-supplied tool-call id instead of synthesizing one', async () => {
+    const provider = new OpenAIProvider('gpt-test')
+    withFakeStream(provider, [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_real', function: { name: 'list_dir', arguments: '{}' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+
+    const toolCalls = (await collect(provider)).filter(
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).toolCall.id, 'call_real')
+  })
+
+  it('synthesizes an id when the id arrives blank across the call deltas', async () => {
+    const provider = new OpenAIProvider('gpt-test')
+    withFakeStream(provider, [
+      {
+        choices: [
+          {
+            delta: { tool_calls: [{ index: 0, id: '  ', function: { name: 'list_dir' } }] },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: { tool_calls: [{ index: 0, function: { arguments: '{}' } }] },
+            finish_reason: null,
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+
+    const toolCalls = (await collect(provider)).filter(
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.equal(toolCalls.length, 1)
+    assert.match(at(toolCalls, 0).toolCall.id, /^tc_/)
+  })
+
   it('flushes tool calls when the stream ends with finish_reason stop', async () => {
     const provider = new OpenAIProvider('local-model', {
       baseURL: 'http://localhost:11434/v1',
