@@ -5,7 +5,7 @@ import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
 import { setSetting } from './storage/settings.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
-import type { StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 import { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
@@ -177,5 +177,57 @@ describe('runAgent AgentHost decoupling', () => {
       setPackToolRuntimeController(null)
       setDefaultPackRegistry(null)
     }
+  })
+
+  // The host commits history when the run returns, so a turn that never returns
+  // takes the user's prompt with it. Checkpoints are what survive that.
+  it('checkpoints the prompt before the provider answers, and again as the turn grows', async () => {
+    const host: AgentHost<StreamChunk> = { emit: () => undefined }
+    const provider: LLMProvider = {
+      stream: async function* () {
+        yield { type: 'text' as const, text: 'An answer.' }
+      },
+    }
+    const checkpoints: LLMMessage[][] = []
+
+    const result = await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-checkpoint',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-checkpoint', () =>
+          agentService.runAgent(
+            'thread-checkpoint',
+            'why does this thread forget?',
+            [{ role: 'user', content: 'earlier' }],
+            host,
+            new ToolRegistry(),
+            {
+              provider,
+              contextWindow: 100_000,
+              onHistoryCheckpoint: (messages) => checkpoints.push(messages),
+            },
+          ),
+        ),
+    )
+
+    assert.ok(checkpoints.length >= 1, 'expected at least one checkpoint')
+    // The first one lands before any provider call, and already carries the
+    // prompt the old commit-at-the-end behaviour would have lost.
+    assert.deepEqual(checkpoints[0], [
+      { role: 'user', content: 'earlier' },
+      { role: 'user', content: 'why does this thread forget?' },
+    ])
+    // Turn-local system steering is stripped from every checkpoint, exactly as
+    // it is from the committed history.
+    for (const snapshot of checkpoints) {
+      assert.ok(!snapshot.some((message) => message.role === 'system'))
+    }
+    assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
   })
 })
