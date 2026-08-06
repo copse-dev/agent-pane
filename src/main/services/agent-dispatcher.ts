@@ -7,6 +7,7 @@ import {
   type SpineMachineContinuationLine,
 } from '@shared/threads/spine-schema.ts'
 import { randomUUID } from 'node:crypto'
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
 import {
@@ -31,6 +32,8 @@ export interface AgentDispatchPayload {
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
+  /** Per-chat reasoning dial for this turn; absent means the model's own level. */
+  reasoning?: ReasoningLevel
   turnTreeId?: string
   continuationBudgetUsed?: number
 }
@@ -299,6 +302,7 @@ export class AgentDispatcher {
       priorTodos: payload.priorTodos,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       ...(payload.model !== undefined ? { model: payload.model } : {}),
+      ...(payload.reasoning !== undefined ? { reasoning: payload.reasoning } : {}),
       ...(payload.turnTreeId !== undefined ? { turnTreeId: payload.turnTreeId } : {}),
       ...(payload.continuationBudgetUsed !== undefined
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }

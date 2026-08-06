@@ -3,11 +3,13 @@ import assert from 'node:assert/strict'
 import type { Message } from '@shared/types'
 import {
   formatPrimaryChatModelLabel,
+  formatTurnParameters,
   primaryChatModels,
   shouldShowPrimaryChatModelLabels,
 } from './message-model.ts'
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 
-function assistant(id: string, model?: string): Message {
+function assistant(id: string, model?: string, parameters?: ModelParameters): Message {
   return {
     id,
     role: 'assistant',
@@ -15,6 +17,7 @@ function assistant(id: string, model?: string): Message {
     toolCalls: [],
     createdAt: 1,
     ...(model !== undefined ? { model } : {}),
+    ...(parameters !== undefined ? { parameters } : {}),
   }
 }
 
@@ -62,5 +65,57 @@ describe('message-model helpers', () => {
     assert.equal(formatPrimaryChatModelLabel('claude-sonnet-4-6'), 'Claude Sonnet 4.6')
     assert.equal(formatPrimaryChatModelLabel('openrouter:openai/gpt-4o'), 'GPT-4o')
     assert.equal(formatPrimaryChatModelLabel('auto:best-value'), 'Best value (plan / price)')
+  })
+})
+
+describe('turn parameters on the model label', () => {
+  it('formats the resolved values compactly', () => {
+    assert.equal(formatTurnParameters({ reasoning: 'max' }), 'max effort')
+    assert.equal(
+      formatTurnParameters({ reasoning: 'max', temperature: 1, topP: 0.95 }),
+      'max effort · temp 1 · top-p 0.95',
+    )
+    assert.equal(formatTurnParameters({ reasoning: 'off' }), 'no thinking')
+    assert.equal(formatTurnParameters({ temperature: 0 }), 'temp 0')
+  })
+
+  it('says nothing for a turn that sent no parameters', () => {
+    assert.equal(formatTurnParameters(undefined), '')
+    assert.equal(formatTurnParameters({}), '')
+  })
+
+  it('appends them to the model label, and omits them when absent', () => {
+    assert.equal(
+      formatPrimaryChatModelLabel('claude-opus-4-8', { reasoning: 'xhigh' }),
+      'Claude Opus 4.8 · xhigh effort',
+    )
+    assert.equal(formatPrimaryChatModelLabel('claude-opus-4-8'), 'Claude Opus 4.8')
+  })
+
+  it('labels a thread where one model ran at two different depths', () => {
+    assert.equal(
+      shouldShowPrimaryChatModelLabels([
+        assistant('a', 'claude-opus-5'),
+        assistant('b', 'claude-opus-5', { reasoning: 'max' }),
+      ]),
+      true,
+    )
+  })
+
+  it('leaves a thread that never changed either unlabeled', () => {
+    assert.equal(
+      shouldShowPrimaryChatModelLabels([
+        assistant('a', 'claude-opus-5', { reasoning: 'high' }),
+        assistant('b', 'claude-opus-5', { reasoning: 'high' }),
+      ]),
+      false,
+    )
+    assert.equal(
+      shouldShowPrimaryChatModelLabels([
+        assistant('a', 'claude-opus-5'),
+        assistant('b', 'claude-opus-5'),
+      ]),
+      false,
+    )
   })
 })

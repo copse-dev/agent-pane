@@ -44,6 +44,7 @@ import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
+import { createModelParametersSection } from './setup/model-parameters-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
@@ -542,6 +543,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
 
@@ -1381,6 +1383,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
+
+  // Sits directly under the chat-model picker and follows it: the parameters
+  // belong to the selected model, so switching models re-renders the controls.
+  const modelParametersSection = createModelParametersSection(api.settings)
+  qsRequired(overlay, '#settings-model-parameters-host').append(modelParametersSection.root)
 
   const settingsModelPickers = {
     model: mountModelSelectPicker(qsRequired<HTMLSelectElement>(overlay, 'select[name="model"]'), {
@@ -2860,6 +2867,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await refreshStage('model-pickers', async () => {
         const model = storedString(await api.settings.get('model'))
         await settingsModelPickers.model.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
+        // Parameters are per model, so the section renders against whichever
+        // chat model just settled.
+        await modelParametersSection.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
         // The executor (chat) model just settled — re-grade the advisor pairing
         // hint, which lives with the advisor pack in the Packs section. No-op until
         // that pack row has rendered (its select/hint refs are still null); pairs
@@ -3007,6 +3017,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // which now lives with the advisor pack's model field (Settings → Packs).
     if (target instanceof HTMLSelectElement && target.name === 'model') {
       updateAdvisorPairHint()
+      modelParametersSection.setModel(target.value)
     }
   })
   settingsForm.addEventListener('submit', (e) => {
@@ -3018,6 +3029,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (claudeAgentKeysDirty) await claudeAgentKeySection.saveKeys()
       if (aaKeysDirty) await aaKeySection.saveKeys()
       if (providersDirty) await providersPanel.saveKeys()
+      await modelParametersSection.save()
       if (lmStudioDirty) await lmStudioSection.saveApiKey()
       const routingValues = modelRoutingSection.readValues()
 

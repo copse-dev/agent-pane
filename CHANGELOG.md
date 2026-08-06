@@ -72,6 +72,45 @@ every published entry.
   away from now keeps only what its rows draw: title, running mark, and the PR
   refs already scraped out of its messages. Switching back reloads from disk as
   before.
+- Models chosen through an API can now be tuned, the way a device agent's model
+  and permission mode already were. Settings → Models grows a **Model
+  parameters** block under the chat-model picker with reasoning depth,
+  temperature, and top-p. The values belong to the model rather than to the
+  field, so they follow it wherever it runs — chat, task roles, subagents — and
+  each model keeps its own set. Which controls appear is decided by the model:
+  the newest Claude models reject temperature and top-p outright and get the
+  reasoning ladder alone, older Claude models have no reasoning ladder and get a
+  thinking budget instead, and OpenAI-compatible providers get all three with a
+  note that the upstream model has the final say. A value saved against one
+  model is re-checked against whatever it is read for, so a stale setting
+  degrades to the provider default instead of failing the turn. Untouched models
+  send exactly the request body they sent before.
+
+  Two shortcuts sit on top of it. Where a vendor publishes a recipe for a model
+  — DeepSeek V4 Flash asks for max reasoning effort with `temperature 1.0` and
+  `top_p 0.95` in agentic use — a **Use recommended** button fills the fields
+  from it and links the source. It is offered rather than applied: the recipes
+  are scenario-specific and only as current as the version they were read
+  against, so nothing is sent until you accept it. And a **reasoning dial** now
+  sits beside the model picker in the composer, scoped to one chat, for when a
+  single task wants more thinking than the model is normally set to — no
+  permanent re-tuning to get through one turn.
+
+  What a turn actually ran with is now recorded on the assistant message, next
+  to the model that produced it. The saved values are mutable and the resolved
+  ones can differ from them — a stale value is dropped, the dial overrides the
+  level, a cheap role caps it — so without this a transcript would re-read as
+  though every past turn ran at whatever Settings holds today. The transcript
+  labels a turn where the model _or_ its parameters changed, so dialling effort
+  up mid-chat marks the turn it took effect on, and the values travel with the
+  thread through export.
+
+  The two roles whose job is to be cheap — thread titles and follow-up
+  suggestions, and the shell-command classifier — cap the reasoning depth they
+  inherit. A model set to max effort for the work should not spend max effort
+  naming the conversation, and that bill would arrive with nothing on screen to
+  explain it.
+
 - The Parallel Search pack's switch no longer turns on without a key. The tool
   was already credential-gated where it counts — `parallel_search` is registered
   only when the pack is enabled _and_ a Parallel API key resolves — but Settings

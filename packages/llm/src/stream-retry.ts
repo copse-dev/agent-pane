@@ -68,6 +68,27 @@ export function isImageUnsupportedError(err: unknown): boolean {
   )
 }
 
+/**
+ * The server rejected the request's output ceiling (`max_tokens`).
+ *
+ * We only ever send one when a model card publishes it, and a card is written
+ * against the vendor's own API — an aggregator or a self-hosted server may serve
+ * the same weights with a lower cap and reject the number outright. Deterministic,
+ * so the caller retries *without* the field and lets the server's default stand
+ * rather than failing a turn over a ceiling nobody asked for.
+ *
+ * Matched narrowly: the message must name the field, so an unrelated 400 cannot
+ * silently drop a limit that was being honoured.
+ */
+export function isOutputCeilingRejectedError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const status = errorStatus(err)
+  if (status !== 400 && status !== 422) return false
+  return /max_tokens|max_completion_tokens|max_output_tokens|maximum output tokens/i.test(
+    err.message,
+  )
+}
+
 export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof Anthropic.APIUserAbortError) return false
   if (err instanceof OpenAI.APIUserAbortError) return false
