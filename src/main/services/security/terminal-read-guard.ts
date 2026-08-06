@@ -48,7 +48,9 @@ export async function classifyTerminalSnapshot(text: string): Promise<TerminalRe
   if (!model) return null
 
   try {
-    const provider = await buildProvider(model)
+    // Screening a terminal read is a one-shot judgement — same cap as the
+    // shell-command classifier.
+    const provider = await buildProvider(model, undefined, { maxReasoning: 'low' })
     const { text: content, usage } = await completeMessagesWithUsage(
       provider,
       [

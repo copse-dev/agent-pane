@@ -2051,21 +2051,24 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     if (!thread) return
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
-    let prevModel: string | undefined
+    // A segment starts where the model *or* the parameters change, so dialling
+    // effort up mid-thread marks the turn it took effect on.
+    let prevLabel: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
       const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
       if (!msgEl) continue
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
-      if (show && model && model !== prevModel) {
+      const text = model ? formatPrimaryChatModelLabel(model, msg.parameters) : undefined
+      if (show && text && text !== prevLabel) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = formatPrimaryChatModelLabel(model)
+        label.textContent = text
         if (!existing) msgEl.prepend(label)
       } else {
         existing?.remove()
       }
-      prevModel = model
+      prevLabel = text
     }
   }
 

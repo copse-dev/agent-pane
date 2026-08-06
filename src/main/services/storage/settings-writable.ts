@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
+import { REASONING_LEVELS } from '@copse/llm/model-parameters.ts'
 import {
   validateRemoteAgentBaseUrl,
   validateWebOriginPattern,
@@ -99,6 +100,26 @@ export const acpAgentConfigSchema = z.object({
 
 export const registeredAcpAgentsSchema = z.array(acpAgentConfigSchema).max(64)
 
+/**
+ * Generation parameters the user tuned for one model selection. Mirrors
+ * `ModelParameters` in `@copse/llm/model-parameters.ts`; the bounds here are
+ * the loosest any family accepts (Anthropic caps temperature at 1, but the
+ * read side clamps per model, so a value saved against one model and later
+ * read for a stricter one degrades rather than 400s).
+ */
+export const modelParametersSchema = z.object({
+  reasoning: z.enum(REASONING_LEVELS).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  topP: z.number().min(0).max(1).optional(),
+  topK: z.number().int().min(0).max(500).optional(),
+  minP: z.number().min(0).max(1).optional(),
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  repetitionPenalty: z.number().min(0).max(2).optional(),
+})
+
+/** Model selection → its tuned parameters. Keys are picker values, not bare ids. */
+export const modelParametersMapSchema = z.record(z.string().max(512), modelParametersSchema)
+
 export const webAllowedOriginsSchema = z
   .array(
     z
@@ -155,6 +176,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // roles (safety, review) are NOT routed here so they stay on the guarded
   // security IPC.
   roleModels: z.record(z.string().max(64), z.string().max(256)),
+  // Per-model generation parameters (reasoning depth and the sampling knobs),
+  // keyed by the model selection they were tuned for so they travel with the
+  // model rather than with a feature. Sanitized per model on read — see
+  // `resolveModelParameters` — so an entry saved against one model cannot be
+  // sent to another that rejects it.
+  modelParameters: modelParametersMapSchema,
   openRouterModel: z.string().max(256),
   // OpenAI `service_tier` for first-party gpt-* models: 'flex' for slower and
   // cheaper, 'priority'/'fast' for quicker at a higher price. Empty (default)

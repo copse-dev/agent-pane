@@ -1,11 +1,16 @@
 import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
-import { isImageUnsupportedError, yieldStreamWithRetry } from './stream-retry.ts'
+import {
+  isImageUnsupportedError,
+  isOutputCeilingRejectedError,
+  yieldStreamWithRetry,
+} from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { serviceTierBody } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
+import { openAiParameterFields, type ModelParameters } from './model-parameters.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
 
@@ -95,6 +100,8 @@ export class OpenAIProvider implements LLMProvider {
       defaultHeaders?: Readonly<Record<string, string>>
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
       serviceTier?: string
+      params?: ModelParameters
+      maxOutputTokens?: number
     } = {},
   ) {
     this.model = model
@@ -102,6 +109,10 @@ export class OpenAIProvider implements LLMProvider {
     this.extraBody = opts.extraBody
     this.promptCacheKey = opts.promptCacheKey
     this.serviceTier = opts.serviceTier
+    this.maxOutputTokens = opts.maxOutputTokens
+    // Already sanitized for the selected model by the caller; empty unless the
+    // user tuned this model, so an untouched request body is unchanged.
+    this.tuned = openAiParameterFields(opts.params ?? {})
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -113,6 +124,14 @@ export class OpenAIProvider implements LLMProvider {
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
   private readonly serviceTier: string | undefined
+  private readonly tuned: ReturnType<typeof openAiParameterFields>
+  /**
+   * Output ceiling published by the model's own card for the reasoning level
+   * this provider was built with (`recommendedOutputCeiling`). Absent for every
+   * model we hold no card for, which is all but a handful — those keep sending
+   * no `max_tokens` at all, exactly as before.
+   */
+  private readonly maxOutputTokens: number | undefined
 
   stream(
     messages: LLMMessage[],
@@ -133,15 +152,23 @@ export class OpenAIProvider implements LLMProvider {
               },
             }))
           : undefined
-        // A server that cannot take images (a text-only local model, or one
-        // that only accepts certain encodings) rejects the whole request. Retry
-        // once without them rather than failing the turn — the tool result's
-        // text still describes what the images showed. Deliberately not part of
-        // `isRetryableStreamError`: this retry changes the request, so it
-        // cannot be a blind replay.
+        // Two request-changing retries, each taken at most once. Deliberately
+        // not part of `isRetryableStreamError`: those are blind replays, and
+        // these send something different.
+        //
+        //  - A server that cannot take images (a text-only local model, or one
+        //    that only accepts certain encodings) rejects the whole request.
+        //    Retry without them rather than failing the turn — the tool result's
+        //    text still describes what the images showed.
+        //  - A published output ceiling the endpoint won't accept: drop it and
+        //    let the server's own default stand. Nothing the user chose is lost;
+        //    the ceiling was ours to offer, not theirs to set.
         let outbound = messages
+        let ceiling = self.maxOutputTokens
+        let droppedImages = false
+        let droppedCeiling = false
         let stream
-        for (let attempt = 0; ; attempt++) {
+        for (;;) {
           try {
             stream = await client.chat.completions.create(
               {
@@ -152,16 +179,27 @@ export class OpenAIProvider implements LLMProvider {
                 ...(mappedTools ? { tools: mappedTools } : {}),
                 ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
                 ...serviceTierBody(self.serviceTier),
+                ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
                 // Last, so an explicit extraBody entry still wins — that field is
                 // the user's own escape hatch for provider-specific overrides.
+                ...self.tuned,
                 ...(self.extraBody ?? {}),
               },
               { signal },
             )
             break
           } catch (err) {
-            if (attempt > 0 || !isImageUnsupportedError(err)) throw err
-            outbound = dropImageContent(messages)
+            if (!droppedImages && isImageUnsupportedError(err)) {
+              droppedImages = true
+              outbound = dropImageContent(messages)
+              continue
+            }
+            if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
+              droppedCeiling = true
+              ceiling = undefined
+              continue
+            }
+            throw err
           }
         }
 

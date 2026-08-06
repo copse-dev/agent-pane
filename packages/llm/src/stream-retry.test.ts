@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   isImageUnsupportedError,
+  isOutputCeilingRejectedError,
   isRetryableStreamError,
   streamRetryDelayMs,
   sleepMs,
@@ -241,6 +242,44 @@ describe('isImageUnsupportedError', () => {
     const err = Object.assign(new Error("'url' field must be a base64 encoded image."), {
       status: 400,
     })
+    assert.equal(isRetryableStreamError(err), false)
+  })
+})
+
+describe('isOutputCeilingRejectedError', () => {
+  it('matches a server refusing the max_tokens we sent', () => {
+    const err = Object.assign(
+      new Error('max_tokens is too large: 384000. This model supports at most 65536.'),
+      { status: 400 },
+    )
+    assert.equal(isOutputCeilingRejectedError(err), true)
+  })
+
+  it('matches the other spellings of the same field', () => {
+    for (const message of [
+      'Invalid value for max_completion_tokens',
+      'max_output_tokens exceeds the limit for this model',
+      'requested maximum output tokens exceeds model limit',
+    ]) {
+      assert.equal(
+        isOutputCeilingRejectedError(Object.assign(new Error(message), { status: 422 })),
+        true,
+      )
+    }
+  })
+
+  it('ignores a 400 that names something else, so a ceiling is never dropped by mistake', () => {
+    const err = Object.assign(new Error('context length exceeded'), { status: 400 })
+    assert.equal(isOutputCeilingRejectedError(err), false)
+  })
+
+  it('ignores retryable statuses even when the message names the field', () => {
+    const err = Object.assign(new Error('max_tokens is too large'), { status: 500 })
+    assert.equal(isOutputCeilingRejectedError(err), false)
+  })
+
+  it('is not treated as a plain retry — the same body would be rejected again', () => {
+    const err = Object.assign(new Error('max_tokens is too large'), { status: 400 })
     assert.equal(isRetryableStreamError(err), false)
   })
 })

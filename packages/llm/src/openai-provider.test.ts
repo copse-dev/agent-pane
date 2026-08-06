@@ -10,6 +10,7 @@ interface CapturedChatCompletionRequest {
   stream_options?: { include_usage?: boolean }
   provider?: { require_parameters?: boolean }
   prompt_cache_key?: string
+  max_tokens?: number
   tools?: Array<{
     type: 'function'
     function: { name: string; description: string; parameters: Record<string, unknown> }
@@ -94,6 +95,68 @@ describe('OpenAIProvider request options', () => {
     await collect(provider)
 
     assert.equal(captured.request?.stream_options?.include_usage, true)
+  })
+
+  it('sends the output ceiling it was built with', async () => {
+    const provider = new OpenAIProvider('deepseek-v4-flash-0731', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+      maxOutputTokens: 384_000,
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+
+    assert.equal(captured.request?.max_tokens, 384_000)
+  })
+
+  it('drops an output ceiling the server rejects and retries without it', async () => {
+    // The card's number is written against the vendor's own API; an aggregator
+    // or a self-hosted server may serve the same weights with a lower cap.
+    const provider = new OpenAIProvider('deepseek-v4-flash-0731', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+      maxOutputTokens: 384_000,
+    })
+    const seen: Array<number | undefined> = []
+    withFakeCreate(provider, (request) => {
+      seen.push(request.max_tokens)
+      if (seen.length === 1) {
+        throw Object.assign(new Error('max_tokens is too large: 384000'), { status: 400 })
+      }
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    const chunks = await collect(provider)
+
+    assert.deepEqual(seen, [384_000, undefined])
+    assert.equal(
+      chunks
+        .filter((c): c is Extract<ProviderStreamChunk, { type: 'text' }> => c.type === 'text')
+        .map((c) => c.text)
+        .join(''),
+      'ok',
+    )
+  })
+
+  it('surfaces a rejection that is not about the ceiling', async () => {
+    const provider = new OpenAIProvider('deepseek-v4-flash-0731', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+      maxOutputTokens: 384_000,
+    })
+    let calls = 0
+    withFakeCreate(provider, () => {
+      calls += 1
+      throw Object.assign(new Error('context length exceeded'), { status: 400 })
+    })
+
+    await assert.rejects(collect(provider), /context length exceeded/)
+    assert.equal(calls, 1)
   })
 
   it('omits stream_options for custom base URLs by default', async () => {
