@@ -5,6 +5,7 @@ import {
   createExtraCloudProvider,
 } from '@copse/llm/create-provider.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
+import { SERVICE_TIERS, isServiceTier, type ServiceTier } from '@copse/llm/service-tier.ts'
 import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
@@ -314,10 +315,23 @@ export async function buildProvider(
  * Trimmed and dropped when blank so a cleared Settings field means "standard
  * processing" (field omitted) rather than sending `service_tier: ""`, which
  * OpenAI rejects. `createProvider` only forwards it to its OpenAI branches.
+ *
+ * The settings schema already pins writes to `SERVICE_TIERS`, but a value
+ * stored before that enum existed can still be on disk, so re-check here and
+ * drop an unrecognised one with a warning. Sending it would earn a 400 on every
+ * turn; dropping it silently would leave someone wondering why their tier had
+ * no effect.
  */
-function openAiServiceTierOption(): { serviceTier?: string } {
+function openAiServiceTierOption(): { serviceTier?: ServiceTier } {
   const tier = getSetting<string>('openAiServiceTier', '').trim()
-  return tier ? { serviceTier: tier } : {}
+  if (!tier) return {}
+  if (!isServiceTier(tier)) {
+    console.warn(
+      `[providers] ignoring unrecognised openAiServiceTier ${JSON.stringify(tier)}; expected one of ${SERVICE_TIERS.join(', ')}`,
+    )
+    return {}
+  }
+  return { serviceTier: tier }
 }
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
