@@ -947,7 +947,10 @@ footer a:hover {
   position: relative;
   display: block;
   height: auto;
-  aspect-ratio: 1285 / 869;
+  /* Must track the demo iframe's own 1280x800 viewport. Any other ratio makes
+     hero-demo.js letterbox the frame, and the resulting band of panel
+     background puts a second rounded edge above and below the app chrome. */
+  aspect-ratio: 8 / 5;
   overflow: hidden;
   contain: paint;
   border-radius: 20px;
