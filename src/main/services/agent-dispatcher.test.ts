@@ -49,6 +49,7 @@ function dependencies(
     now: () => 100,
     createId: () => 'audit-id',
     prepareExecutionContext: async () => context,
+    transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
       messages: [...priorMessages, { role: 'user', content: userContent }],
