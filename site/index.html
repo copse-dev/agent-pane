@@ -91,8 +91,9 @@
             </h1>
             <p class="hero-lede">An agentic workspace, not a chat tab bolted onto an editor.</p>
             <p>
-              Bring the cloud model, local model, or coding agent you already trust. Follow its
-              work, shape how much autonomy it has, and keep the whole project on your machine.
+              Bring the cloud model, local model, or coding agent you already trust.<br />
+              Follow its work, shape how much autonomy it has, and keep the whole project on your
+              machine.
             </p>
             <div class="button-row">
               <a class="pill pill-primary" href="#download">Download for macOS</a>
@@ -107,10 +108,13 @@
               href="demo/main/?scenario=landing"
               target="_blank"
               rel="noreferrer"
-              aria-label="Open the Copse demo in a new window"
-              title="Open demo in a new window"
-              >⧉</a
             >
+              <svg class="hero-demo-popout-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="1.5" y="5.5" width="9" height="9" rx="1" />
+                <rect x="5.5" y="1.5" width="9" height="9" rx="1" />
+              </svg>
+              Open demo fullscreen
+            </a>
             <div class="hero-demo">
               <iframe
                 id="hero-demo-frame"
@@ -125,9 +129,14 @@
                 tabindex="-1"
                 aria-hidden="true"
               ></iframe>
+              <!-- Click-to-interact is parked, not deleted. `hidden` is the whole
+                   switch: it keeps the chip off the page and out of the a11y tree,
+                   and hero-demo.js reads it to leave the frame inert. Drop the
+                   attribute to bring the overlay and in-place interaction back. -->
               <button
                 class="hero-demo-activate"
                 type="button"
+                hidden
                 aria-controls="hero-demo-frame"
                 aria-label="Interact with the Copse demo"
                 aria-pressed="false"
@@ -422,18 +431,6 @@
           </section>
 
           <section class="other-features" aria-labelledby="other-features-title">
-            <svg
-              class="other-features-spiral"
-              viewBox="-540 -540 1080 1080"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                class="other-features-spiral-path"
-                pathLength="1"
-                d="M416.134 -141.959 C384 -475 -72 -488 -286.485 -266.216 C-474.71 -71.585 -423.084 227.135 -226.856 360.464 C5 518 328 385 297.052 111.165 C273.531 -96.947 -15 -98 -62.629 47.319 C-128.956 249.689 154 322 180.928 153.093"
-              ></path>
-            </svg>
             <div class="section-rule section-rule-left" aria-hidden="true"></div>
             <h2 id="other-features-title">Other features</h2>
             <div class="other-grid">
