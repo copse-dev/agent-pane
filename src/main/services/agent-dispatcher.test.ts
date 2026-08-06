@@ -37,6 +37,7 @@ function dependencies(
   return {
     loadHistory: async () => [],
     saveHistory: async () => undefined,
+    recoverHistory: async () => [],
     loadEpoch: async () => null,
     saveEpoch: async () => undefined,
     appendMachineContinuation: async () => undefined,
@@ -80,6 +81,73 @@ describe('AgentDispatcher', () => {
       [...loaded, { role: 'user', content: 'continue' }],
       [...loaded, { role: 'user', content: 'continue' }, { role: 'user', content: 'again' }],
     ])
+  })
+
+  it('rebuilds history from the transcript when the sidecar is empty', async () => {
+    const recovered: LLMMessage[] = [
+      { role: 'user', content: 'the question a dead turn lost' },
+      { role: 'user', content: 'continue' },
+    ]
+    const saved: LLMMessage[][] = []
+    let recoverCount = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        recoverHistory: async () => {
+          recoverCount += 1
+          return recovered
+        },
+        saveHistory: async (_projectId, _threadId, messages) => {
+          saved.push(messages)
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(recoverCount, 1)
+    assert.deepEqual(saved, [[...recovered, { role: 'user', content: 'continue' }]])
+  })
+
+  it('does not consult the transcript when the sidecar already has history', async () => {
+    let recoverCount = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => [{ role: 'assistant', content: 'prior' }],
+        recoverHistory: async () => {
+          recoverCount += 1
+          return []
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+
+    assert.equal(recoverCount, 0)
+  })
+
+  it('recovers at most once, then reuses the cached history', async () => {
+    let recoverCount = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        recoverHistory: async () => {
+          recoverCount += 1
+          return [{ role: 'user', content: 'recovered' }]
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+    await dispatcher.dispatch(request())
+
+    assert.equal(recoverCount, 1)
   })
 
   it('rejects a second active dispatch for the same project thread', async () => {

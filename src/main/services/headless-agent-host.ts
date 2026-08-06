@@ -198,6 +198,10 @@ export async function runHeadlessAgent(
                             messages = nextMessages
                             return Promise.resolve()
                           },
+                          // Headless runs carry their history in `messages`
+                          // above rather than a thread transcript, so there is
+                          // no second source to recover an empty one from.
+                          recoverHistory: (): Promise<LLMMessage[]> => Promise.resolve([]),
                           loadEpoch: (): Promise<null> => Promise.resolve(null),
                           saveEpoch: (): Promise<void> => Promise.resolve(),
                           appendMachineContinuation,
