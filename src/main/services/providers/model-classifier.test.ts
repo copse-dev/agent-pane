@@ -7,6 +7,7 @@ import {
   pickCheapestFittingModel,
   suggestRoleForTask,
 } from './model-classifier.ts'
+import { modelIntellect } from '@copse/llm/model-intellect.ts'
 
 describe('model-classifier', () => {
   it('routes trivial mechanical edits to the low band', () => {
@@ -37,9 +38,34 @@ describe('model-classifier', () => {
     )
   })
 
+  it('bands the catalog exactly as the retired editorial scale did', () => {
+    // Pins the behaviour-neutrality of moving banding onto the measured axis.
+    // The two scales disagreed on 10 of 12 rank *positions*, but every model
+    // lands in the same band, so routing is unchanged. If a future measurement
+    // moves a model across a band boundary this fails, which is the point —
+    // that is a routing change and should be seen, not absorbed silently.
+    assert.deepEqual([...BAND_CANDIDATES.low].sort(), [
+      'claude-haiku-4-5',
+      'claude-sonnet-4-6',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-5',
+      'gpt-5-mini',
+    ])
+    assert.deepEqual([...BAND_CANDIDATES.mid].sort(), [
+      'claude-opus-4-8',
+      'claude-sonnet-5',
+      'gpt-5.5',
+      'gpt-5.6-terra',
+    ])
+    assert.deepEqual([...BAND_CANDIDATES.top].sort(), ['claude-fable-5', 'gpt-5.6-sol'])
+  })
+
   it("reports the representative model's intellect from the shared scale", () => {
     const rec = classifyModelForTask({ task: 'Rename the variable foo to bar' })
-    assert.equal(rec.intellect, 3)
+    // The claim is that the number comes from the one shared scale for the
+    // model actually picked — not that any particular value is hardcoded here.
+    assert.equal(rec.intellect, modelIntellect(rec.model))
   })
 
   it('prefers a wider-context candidate within the same band', () => {
