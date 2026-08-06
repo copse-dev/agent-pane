@@ -9,6 +9,7 @@ import type {
 import { withAppAttribution } from './app-attribution.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { serviceTierBody } from './service-tier.ts'
+import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
@@ -109,7 +110,9 @@ function* streamEventChunks(
     yield {
       type: 'tool_call',
       toolCall: {
-        id: event.item.call_id,
+        // OpenAI always sets call_id, but this adapter also drives third-party
+        // Responses-compatible endpoints (e.g. Perplexity) that may not.
+        id: toolCallIdOrSynthesized(event.item.call_id),
         name: event.item.name,
         args: parsed.args,
         ...(parsed.error ? { argsError: parsed.error } : {}),

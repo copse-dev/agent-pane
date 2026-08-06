@@ -4,6 +4,7 @@ import { withAppAttribution } from './app-attribution.ts'
 import { isImageUnsupportedError, yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { serviceTierBody } from './service-tier.ts'
+import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
@@ -55,7 +56,10 @@ function* yieldAssembledToolCalls(
     yield {
       type: 'tool_call',
       toolCall: {
-        id: builder.id,
+        // Synthesized here rather than when the builder is created: the id can
+        // arrive in any delta of the call, so it is only known to be absent
+        // once the whole call has been assembled.
+        id: toolCallIdOrSynthesized(builder.id),
         name: builder.name,
         args: parsed.args,
         ...(parsed.error ? { argsError: parsed.error } : {}),
