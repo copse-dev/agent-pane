@@ -48,7 +48,7 @@ function openAiResponsesProvider(
   model: string,
   apiKey: string,
   promptCacheKey: string | undefined,
-  serviceTier: string | undefined,
+  serviceTier: ServiceTier | undefined,
 ): LLMProvider {
   return new ResponsesProvider(model, {
     apiKey,
