@@ -91,16 +91,39 @@ function touchedFilesFromDroppedMessage(message: LLMMessage): string[] {
 }
 
 /**
+ * Share of the conversation budget that must be in use before finishing a todo
+ * is allowed to throw history away.
+ *
+ * Compaction exists to buy headroom, so below this it buys nothing and costs the
+ * model everything it has learned. Measured on a real long-running thread (a
+ * Tauri runtime migration on a 1M-token model), compaction fired seven times at a
+ * conversation fill of 2-9% — roughly 10-13k tokens against a 1,046,552-token
+ * budget. Each one reset the model to a one-line todo description, and it went on
+ * to re-fetch the same PR reviews five times and oscillate between 60 and 0
+ * compile errors without converging.
+ *
+ * Half the budget leaves the overflow trimmer (which runs per turn, and can drop
+ * what this cannot) plenty of room to do its own job.
+ */
+export const TODO_COMPACTION_MIN_FILL_RATIO = 0.5
+
+/**
  * After a todo item completes, compact history while keeping the pinned plan.
  * Drops oldest assistant/tool pairs; never removes user messages. The file paths
  * those dropped tool calls touched are kept (bounded, deduped) in a separate
  * pinned block so a still-in-progress item's later retries know where to look
  * instead of rediscovering it via fresh explore calls (#i2jsed).
+ *
+ * `fillRatio` is the conversation's current share of its token budget. Below
+ * {@link TODO_COMPACTION_MIN_FILL_RATIO} the history is left alone — the pinned
+ * blocks are still rewritten, since the plan has to track the todos either way.
+ * Omit it to compact unconditionally (the pre-gate behaviour, kept for callers
+ * with no budget to measure against).
  */
 export function compactAtTodoBoundary(
   messages: LLMMessage[],
   todos: readonly TodoItem[],
-  opts?: { keepRecentPairs?: number },
+  opts?: { keepRecentPairs?: number; fillRatio?: number },
 ): boolean {
   const keepRecent = opts?.keepRecentPairs ?? 2
   if (messages.length <= keepRecent + 2) return false
@@ -109,6 +132,38 @@ export function compactAtTodoBoundary(
   const system = messages[0]?.role === 'system' ? messages[0] : null
   const baseContent = system && typeof system.content === 'string' ? system.content : ''
   let touchedFiles = parseTouchedFiles(baseContent)
+
+  // Rewrites both pinned blocks from the current todos and touched-file list.
+  // Every exit path calls this, including the gated one that drops no history:
+  // the pin is what keeps the plan in the system prompt in step with the todos,
+  // so returning early without it would leave the previous plan pinned while the
+  // todos moved on.
+  const writePinnedBlocks = (): void => {
+    const pinned = formatTodosForPrompt(todos)
+    if (!system || (!pinned && touchedFiles.length === 0)) return
+    // Both pinned blocks are always written together (files block first, see
+    // below), so the old-content cutoff is whichever marker appears first —
+    // using only the todo marker would leave a stale files block in place and
+    // stack duplicates call over call.
+    const markerIndexes = [
+      baseContent.indexOf(FILES_TOUCHED_PREFIX),
+      baseContent.indexOf(TODO_PIN_PREFIX),
+    ].filter((i) => i >= 0)
+    const cut = markerIndexes.length > 0 ? Math.min(...markerIndexes) : -1
+    const withoutOldPins = cut >= 0 ? baseContent.slice(0, cut) : baseContent
+    const filesBlock =
+      touchedFiles.length > 0
+        ? FILES_TOUCHED_PREFIX + touchedFiles.map((p) => `- ${p}`).join('\n')
+        : ''
+    const todoBlock = pinned ? TODO_PIN_PREFIX + pinned.trim() : ''
+    messages[0] = { role: 'system', content: withoutOldPins + filesBlock + todoBlock }
+  }
+
+  const fillRatio = opts?.fillRatio
+  if (fillRatio !== undefined && fillRatio < TODO_COMPACTION_MIN_FILL_RATIO) {
+    writePinnedBlocks()
+    return false
+  }
 
   let removed = false
   while (messages.length - start > keepRecent + 1) {
@@ -142,25 +197,7 @@ export function compactAtTodoBoundary(
     removed = true
   }
 
-  const pinned = formatTodosForPrompt(todos)
-  if (system && (pinned || touchedFiles.length > 0)) {
-    // Both pinned blocks are always written together (files block first, see
-    // below), so the old-content cutoff is whichever marker appears first —
-    // using only the todo marker would leave a stale files block in place and
-    // stack duplicates call over call.
-    const markerIndexes = [
-      baseContent.indexOf(FILES_TOUCHED_PREFIX),
-      baseContent.indexOf(TODO_PIN_PREFIX),
-    ].filter((i) => i >= 0)
-    const cut = markerIndexes.length > 0 ? Math.min(...markerIndexes) : -1
-    const withoutOldPins = cut >= 0 ? baseContent.slice(0, cut) : baseContent
-    const filesBlock =
-      touchedFiles.length > 0
-        ? FILES_TOUCHED_PREFIX + touchedFiles.map((p) => `- ${p}`).join('\n')
-        : ''
-    const todoBlock = pinned ? TODO_PIN_PREFIX + pinned.trim() : ''
-    messages[0] = { role: 'system', content: withoutOldPins + filesBlock + todoBlock }
-  }
+  writePinnedBlocks()
 
   return removed
 }
