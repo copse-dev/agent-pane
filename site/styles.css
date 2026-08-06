@@ -976,7 +976,10 @@ footer a:hover {
   pointer-events: auto;
 }
 
-.marketing-site .hero-demo-activate {
+/* :not([hidden]) is load-bearing while click-to-interact is parked — an author
+   `display` outranks the UA's [hidden] rule, so the overlay would otherwise
+   still paint over the demo with the attribute set. */
+.marketing-site .hero-demo-activate:not([hidden]) {
   position: absolute;
   z-index: 2;
   inset: 0;

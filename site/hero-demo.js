@@ -3,7 +3,11 @@
   var host = document.querySelector('.hero-demo')
   if (!host) return
   var frame = host.querySelector('.hero-demo-frame')
-  var activate = host.querySelector('.hero-demo-activate')
+  // A hidden overlay means click-to-interact is parked (see index.html). The
+  // demo then stays a showcase — inert, with "Open demo fullscreen" carrying
+  // anyone who wants to drive it. Everything below stays wired for the day the
+  // attribute comes off.
+  var activate = host.querySelector('.hero-demo-activate:not([hidden])')
   var FRAME_HEIGHT = 800
 
   function setInteractive(interactive) {
