@@ -9,6 +9,7 @@ import {
   commandName,
   isStructurallyReadOnlyShellCommand,
   shellSegments,
+  unwrapWrappers,
 } from './shell-argv.ts'
 
 export type ScopeVerdict = 'sandbox' | 'external' | 'ambiguous'
@@ -305,7 +306,8 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
   }
 
   for (const segment of shellSegments(command)) {
-    const exe0 = segment[0]
+    const argv = unwrapWrappers(segment)
+    const exe0 = argv[0]
     if (exe0 === undefined) continue
     // argv[0] is a workspace-relative path (`./x`, `../x`, `bin/tool`) — the shell
     // executes the file directly from the cwd. Absolute paths are left to the
@@ -317,7 +319,7 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
       hasHard = true
     }
     const exe = commandName(exe0)
-    const args = segment.slice(1)
+    const args = argv.slice(1)
     if (isHostDependentBuildDriver(exe, args)) {
       addReason(REASON_BUILD_DRIVER)
     }
