@@ -38,7 +38,15 @@ export const config: Options.Testrunner = {
   exclude: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
   specFileRetries: 0,
-  logLevel: 'warn',
+  // TEMPORARY DIAGNOSTIC — do not merge.
+  //
+  // At 'warn' the window between "deleteSession returned" and "POST /session
+  // timed out" is completely dark, which is exactly where the remaining e2e
+  // failures live. `connectionRetryTimeout: 30_000` in wdio.ci.conf.ts is what
+  // ends them (30s + overhead = the near-constant 35.2s every failing spec
+  // reports), but nothing yet says what consumes those 30s when the driver
+  // starts cleanly and Electron boots in ~170ms.
+  logLevel: 'info',
   bail: 0,
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
