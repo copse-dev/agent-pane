@@ -12,6 +12,10 @@ import {
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import {
+  installReloadSessionPortRotation,
+  withRotatedDebugPort,
+} from './tests/e2e/helpers/session-debug-port.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
@@ -94,6 +98,12 @@ export const config: Options.Testrunner = {
     // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
     // Cap + swallow transport deaths.
     installDeleteSessionSafety(browser)
+    // `beforeSession` runs once per worker, so without this the Electron that
+    // `reloadSession()` starts inherits the debug port the outgoing one is still
+    // shutting down on — and chromedriver then hangs 10s per DevTools probe
+    // against that half-dead listener until connectionRetryTimeout aborts the
+    // new session. See tests/e2e/helpers/session-debug-port.ts.
+    installReloadSessionPortRotation(browser)
   },
   afterTest: async (test, _context, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
@@ -215,16 +225,15 @@ export const config: Options.Testrunner = {
       'goog:chromeOptions'?: { args?: string[] }
     }
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
-    const debugPort = randomInt(9300, 9999)
+    // Only the *first* session of the worker. Nothing holds the port yet, so a
+    // random pick is fine here; it is `reloadSession` that inherits a port still
+    // in use, and installReloadSessionPortRotation handles that.
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
-      args: [
-        ...new Set([
-          ...(chromeOptions.args ?? []),
-          `--user-data-dir=${e2eUserDataDir}`,
-          `--remote-debugging-port=${debugPort}`,
-        ]),
-      ],
+      args: withRotatedDebugPort(
+        [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
+        randomInt(9300, 9999),
+      ),
     }
   },
   onComplete() {
