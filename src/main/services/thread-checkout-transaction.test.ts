@@ -77,19 +77,12 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
 
 describe('first-message checkout transaction', () => {
   it('previews the same authoritative automatic policy used during preparation', async () => {
-    const project: Project = {
-      id: 'project-1',
-      name: 'Project',
-      path: '/repo',
-      worktreeMode: 'from-default-branch',
-    }
-    const { preview } = fixture({ getProject: () => project })
+    const { preview } = fixture()
     assert.deepEqual(await preview({ projectId: 'project-1', choice: 'automatic' }), {
       checkoutMode: 'worktree',
     })
 
     const unsupported = fixture({
-      getProject: () => project,
       inspect: async () => ({
         isGitRepository: true,
         currentBranch: 'main',
@@ -101,10 +94,27 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(await unsupported.preview({ projectId: 'project-1', choice: 'automatic' }), {
       checkoutMode: 'shared',
     })
+
+    const optedOut: Project = {
+      id: 'project-1',
+      name: 'Project',
+      path: '/repo',
+      worktreeMode: 'never',
+    }
+    const shared = fixture({ getProject: () => optedOut })
+    assert.deepEqual(await shared.preview({ projectId: 'project-1', choice: 'automatic' }), {
+      checkoutMode: 'shared',
+    })
   })
 
-  it('persists the default shared decision before returning', async () => {
-    const { prepare, getThread, patches } = fixture()
+  it('persists the shared decision of an opted-out project before returning', async () => {
+    const optedOut: Project = {
+      id: 'project-1',
+      name: 'Project',
+      path: '/repo',
+      worktreeMode: 'never',
+    }
+    const { prepare, getThread, patches } = fixture({ getProject: () => optedOut })
     const result = await prepare({
       projectId: 'project-1',
       threadId: 'thread-1',
@@ -120,6 +130,42 @@ describe('first-message checkout transaction', () => {
     assert.equal(patches.length, 1)
     assert.equal(getThread().worktreeChoice, 'automatic')
     assert.equal(getThread().gitBranch, 'main')
+  })
+
+  it('bases an automatic worktree on the default branch, not the live checkout', async () => {
+    const allocations: Array<{ baseBranch: string; seedFromDirtyProject: boolean }> = []
+    const { prepare } = fixture({
+      // The user's checkout is parked on the previous thread's branch, with
+      // that thread's uncommitted work still in it.
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'copse/previous-thread',
+        defaultBranch: 'main',
+        isDirty: true,
+        hasSubmodules: false,
+      }),
+      allocate: async ({ baseBranch, seedFromDirtyProject }) => {
+        allocations.push({ baseBranch, seedFromDirtyProject })
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/fresh-thread1',
+          baseBranch,
+          baseCommit: 'e'.repeat(40),
+          createdAt: 5,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Something unrelated',
+      choice: 'automatic',
+    })
+
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.deepEqual(allocations, [{ baseBranch: 'main', seedFromDirtyProject: false }])
   })
 
   it('allocates exactly once under concurrent isolated preparation and reuses metadata', async () => {
