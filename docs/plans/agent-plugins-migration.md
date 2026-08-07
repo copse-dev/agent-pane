@@ -182,6 +182,9 @@ register it. That distinction matters for the error message.
 
 ## Stage A — AP-native user-plugin discovery
 
+**Status: landed.** A1, A2, and the pure half of A3 are on `main`; what remains
+of A3/A4 is listed at the end of this section.
+
 This is #1342's intent, re-expressed. Scope is unchanged from marketplace P1:
 discovery and Settings rows only. No install records, no network, no index.
 
@@ -222,10 +225,35 @@ resolved by _source_, not by racing manifest names in one directory:
 A directory carrying both `plugin.json` and `copse-pack.json` prefers `plugin.json`
 and warns — one rule, stated once.
 
-**Exit gate.** A fixture AP plugin registers as a user row; enable/disable is atomic;
-prompt trust is forced untrusted; a malformed sibling is skipped without affecting
-it; no network; `PLUGIN_ROOT`/`PLUGIN_DATA` are set and expanded; a `../` escape in
-`mcp.json` fails that server entry and no more.
+**Exit gate — met.** A fixture AP plugin registers as a user row; enable/disable is
+atomic; prompt trust is forced untrusted; a malformed sibling is skipped without
+affecting it; no network; `PLUGIN_ROOT`/`PLUGIN_DATA` are set and expanded; a `../`
+escape in `mcp.json` fails that server entry and no more. Pinned by
+`agent-plugin-manifest.test.ts`, `agent-plugin-mcp.test.ts`, and
+`discover-user-plugins.test.ts`.
+
+### What Stage A deliberately left
+
+Two things the landed slice validates but does not yet run, both because
+discovering bytes must not be what activates behavior:
+
+- **Runtime wiring.** A discovered plugin's command hooks and MCP servers are
+  parsed, validated, and held on the candidate — not registered into
+  `createHookRegistry` or spawned by `mcp-registry.ts`. That wiring is the
+  natural next slice, and it needs the consent step the #1082 follow-up asks for
+  ("derive review/consent from requested behaviors before contributions become
+  live"), not just a flag flip.
+- **`PLUGIN_DATA` on disk.** `userPluginDataDir()` computes the path and
+  `resolveStdioServer()` expands it, but nothing creates the directory yet —
+  §9.1 requires it to exist and be writable _before_ a subprocess launches, so
+  it belongs with the spawn, not ahead of it.
+
+One seam Stage A added that the plan did not anticipate: a `pluginsSeen`
+storage key. `packDisabled` cannot express "never seen before" — an id absent
+from it means both "the user enabled this" and "this appeared a moment ago" —
+so a separate record is what lets a new plugin be seeded off exactly once
+without ever re-seeding a plugin the user later enabled. Stage C renames it
+alongside the other persisted keys.
 
 ## Stage C — packs become plugins
 

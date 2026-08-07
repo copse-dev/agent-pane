@@ -9,18 +9,70 @@ lifecycle and internal design, see [`docs/packs.md`](./packs.md).
 
 ## What you can do today
 
-| Goal                                         | Where it lives today                                                                | Shows up in Settings…                       |
-| -------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
-| Turn a shipped Copse feature on or off       | First-party packs (`copse.todos`, `copse.pii-redaction`, …)                         | **Packs** (toggle per row)                  |
-| Add skills and/or MCP servers                | A Cursor-style plugin under `~/.cursor/plugins/`                                    | **Sources → Plugins** (and **MCP servers**) |
-| Add command hooks                            | Cursor / Claude / Copse hooks files                                                 | **Sources → Hooks**                         |
-| Add an in-process custom tool                | `<userData>/tools/*.mjs`                                                            | Used by the agent (approval-gated)          |
-| Add a personal pack with executable behavior | Explicit folder selected in **Settings → Packs**                                    | **Packs** (ordinary user-pack row)          |
-| Author a full user pack row in **Packs**     | Manifest shape exists (`plugin.json` + pack slots); host discovery is not wired yet | Not yet — see [Status](#status-user-packs)  |
+| Goal                                         | Where it lives today                                                                          | Shows up in Settings…                                          |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Turn a shipped Copse feature on or off       | First-party packs (`copse.todos`, `copse.pii-redaction`, …)                                   | **Packs** (toggle per row)                                     |
+| Add skills and/or MCP servers                | A Cursor-style plugin under `~/.cursor/plugins/`                                              | **Sources → Plugins** (and **MCP servers**)                    |
+| Add command hooks                            | Cursor / Claude / Copse hooks files                                                           | **Sources → Hooks**                                            |
+| Add an in-process custom tool                | `<userData>/tools/*.mjs`                                                                      | Used by the agent (approval-gated)                             |
+| Add a personal pack with executable behavior | Explicit folder selected in **Settings → Packs**                                              | **Packs** (ordinary user-pack row)                             |
+| Author a full user pack row in **Packs**     | An [Agent Plugins](https://agent-plugins.org/specification) package under `~/.copse/plugins/` | **Packs** (row, seeded off — see [Status](#status-user-packs)) |
 
-So: you can extend Copse today with the same _kinds_ of contributions a pack
-owns, but a third-party bundle does **not** yet appear as its own row under
-**Settings → Packs**. First-party packs are the rows you see there now.
+So: a third-party bundle now appears as its own row under **Settings → Packs**.
+What it _contributes_ is still limited — the row and the enable/disable
+lifecycle landed first, deliberately, because finding a manifest on disk must
+not be what starts running its behavior.
+
+## Author an Agent Plugins package
+
+Drop a directory under `~/.copse/plugins/` (override the root with
+`COPSE_PLUGINS_DIR`). Copse implements
+[Agent Plugins v1.0.0](https://agent-plugins.org/specification), so the layout
+and manifest are the same ones Cursor, Claude Code, and Codex read:
+
+```
+~/.copse/plugins/acme.reviewer/
+├── plugin.json
+├── skills/
+│   └── summarize/
+│       └── SKILL.md
+├── mcp.json
+└── dev.copse/              # Copse-specific files (hook scripts, runtime)
+```
+
+```json
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "acme.reviewer",
+  "version": "1.0.0",
+  "description": "Review helpers",
+  "license": "MIT",
+  "extensions": {
+    "dev.copse": {
+      "stability": "experimental",
+      "settings": { "strictness": { "kind": "number", "title": "Strictness", "default": 2 } }
+    }
+  }
+}
+```
+
+Everything beyond skills and MCP goes under `extensions["dev.copse"]` — the
+spec standardizes only those two component types, and other clients must ignore
+our namespace without validating it. So the same directory loads as a plain
+skills+MCP plugin elsewhere, and as a full pack row here.
+
+A few rules worth knowing before you hit them:
+
+- **The name is constrained.** 1–64 characters, lowercase `a-z0-9-.`, starting
+  and ending alphanumeric, no `--` or `..`.
+- **A new plugin starts disabled.** Enable it in **Settings → Packs**; your
+  choice then persists.
+- **You cannot self-grant first-party power.** Native tool registration, ACP
+  exposure, level-3 renderer views, and `trusted` prompt blocks are stripped on
+  load, with a warning in the console.
+- **Failures are isolated.** A malformed neighbour is skipped, not fatal; a bad
+  `mcp.json` disables MCP for that plugin only; a bad server entry skips that
+  entry only.
 
 ## Install skills + MCP (closest thing to a user pack today)
 
@@ -279,23 +331,27 @@ Electron authority from the manifest.
 
 ## Status: user packs
 
-| Piece                                              | Status                     |
-| -------------------------------------------------- | -------------------------- |
-| Manifest types + JSON schema                       | Landed                     |
-| `packManifestFromPluginJson()` mapper              | Landed                     |
-| Settings → Packs list + enable/disable             | Landed (first-party packs) |
-| Explicit selected-pack tools and model routes      | Landed                     |
-| Isolated executable behavior                       | Landed (macOS P2/P3 slice) |
-| Bounded image/transcript handoff + thread sessions | Landed                     |
-| Origin-scoped visible browser tabs + image upload  | Landed (macOS P4 slice)    |
-| Direct network or generic host gateway             | Intentionally unavailable  |
-| User-pack renderer code                            | **Not wired**              |
-| Host disk discovery → register user packs          | **Not wired yet**          |
-| Runtime wiring of user-pack hooks/MCP via registry | Follows discovery          |
+| Piece                                              | Status                      |
+| -------------------------------------------------- | --------------------------- |
+| Manifest types + JSON schema                       | Landed                      |
+| `packManifestFromPluginJson()` mapper              | Landed                      |
+| Settings → Packs list + enable/disable             | Landed (first-party packs)  |
+| Explicit selected-pack tools and model routes      | Landed                      |
+| Isolated executable behavior                       | Landed (macOS P2/P3 slice)  |
+| Bounded image/transcript handoff + thread sessions | Landed                      |
+| Origin-scoped visible browser tabs + image upload  | Landed (macOS P4 slice)     |
+| Direct network or generic host gateway             | Intentionally unavailable   |
+| User-pack renderer code                            | **Not wired**               |
+| Host disk discovery → register user packs          | Landed (Agent Plugins)      |
+| Runtime wiring of user-pack hooks/MCP via registry | **Not wired**               |
+| Install records, pinning, update, rollback         | **Not wired** (#1082 P2–P5) |
 
-Until discovery lands, put skills/MCP in a Cursor plugin (above) and hooks in
-the dialect files. When user packs are discovered, the same `plugin.json`
-(optionally with the extra slots) is the intended on-disk unit.
+Discovery landed as Stage A of
+[`docs/plans/agent-plugins-migration.md`](plans/agent-plugins-migration.md): a
+package under the plugin root gets a **Packs** row and the enable/disable
+lifecycle. Its hooks and MCP servers are validated and held but not yet
+registered into the live agent loop — until that lands, put skills/MCP in a
+Cursor plugin (above) and hooks in the dialect files if you need them to run.
 
 ## Contributing a first-party pack (Copse developers)
 

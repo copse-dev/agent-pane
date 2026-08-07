@@ -45,14 +45,31 @@ the runtime `RegisteredPack.contributions`, not in the serializable manifest.
 The one user-code exception is an explicitly selected pack's isolated
 shared `runtime`; it never imports code into Electron main.
 
-`packManifestFromPluginJson()` maps a discovered `plugin.json` into a
+`packManifestFromPluginJson()` maps a Cursor-shaped `plugin.json` into a
 `PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
 fields fold into the pack slots (`mcpServers` → `tools.mcpServers`). The
 Settings pack list that renders `settings` landed in the pack-list UI phase (see
-[Pack list UI](#pack-list-ui) below). Host disk-discovery that feeds user
-packs into the registry is **not wired yet** — until it is, skills/MCP from a
-`plugin.json` still load via Cursor plugin discovery (see
-[`docs/adding-a-pack.md`](adding-a-pack.md)).
+[Pack list UI](#pack-list-ui) below).
+
+**Host disk discovery is wired** for [Agent Plugins](https://agent-plugins.org/specification)
+packages, per Stage A of
+[`docs/plans/agent-plugins-migration.md`](plans/agent-plugins-migration.md). A
+directory under the Copse plugin root (`~/.copse/plugins/`, or `COPSE_PLUGINS_DIR`)
+with a root `plugin.json` registers as a user pack row:
+`parseAgentPluginManifest()`
+([`packages/agent/src/packs/agent-plugin-manifest.ts`](../packages/agent/src/packs/agent-plugin-manifest.ts))
+parses the envelope and the `extensions["dev.copse"]` block, and
+`discoverUserPlugins()`
+([`src/main/services/packs/discover-user-plugins.ts`](../src/main/services/packs/discover-user-plugins.ts))
+walks the root and feeds the registry.
+
+Discovery **validates but never activates**: a discovered plugin gets a Settings
+row and the enable/disable lifecycle, and is seeded **off** the first time it is
+seen. Its command hooks and MCP servers are parsed and held, not registered into
+the live agent loop — that wiring is deliberately separate work. Skills and MCP
+from a Cursor-installed plugin still load via Cursor plugin discovery (see
+[`docs/adding-a-pack.md`](adding-a-pack.md)), which remains a distinct
+compatibility path.
 
 An explicitly selected pack directory is an ordinary **user** pack, not a new
 trust tier. Its `copse-pack.json` can declare tool names under `tools.provides`,
