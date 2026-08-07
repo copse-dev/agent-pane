@@ -54,6 +54,11 @@ import {
   type PackToolSourceCandidate,
 } from './pack-tool-source.ts'
 import {
+  discoverUserPlugins,
+  registeredUserPlugin,
+  type UserPluginCandidate,
+} from './discover-user-plugins.ts'
+import {
   getPackToolRuntimeController,
   setPackToolRuntimeController,
 } from './pack-tool-controller.ts'
@@ -71,6 +76,16 @@ const PACK_DISABLED_KEY = 'packDisabled'
 
 /** Explicitly user-selected pack directories (#1336 P1). */
 const PACK_SOURCES_KEY = 'packSources'
+
+/**
+ * Ids of discovered Agent Plugins packages this profile has already seen.
+ *
+ * Purely a "have we met" record, so a plugin appearing in the plugin root can be
+ * seeded off exactly once and never re-seeded afterwards. Without it, an id
+ * missing from `packDisabled` is ambiguous — it means both "the user enabled
+ * this" and "this is brand new".
+ */
+const PLUGINS_SEEN_KEY = 'pluginsSeen'
 
 /**
  * Packs that ship registered but off.
@@ -118,6 +133,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Read the persisted disable set. */
 function readDisabledIds(): Set<string> {
   return new Set(parseStringList(storageGet(PACK_DISABLED_KEY)))
+}
+
+/** Ids of discovered plugins this profile has already seeded an answer for. */
+function knownPluginIds(): Set<string> {
+  return new Set(parseStringList(storageGet(PLUGINS_SEEN_KEY)))
 }
 
 /**
@@ -273,6 +293,11 @@ export interface PackService {
   setSetting(packId: string, key: string, value: unknown): Promise<void>
   /** Reconcile explicitly selected pack sources into the registry. */
   refreshPackSources(): Promise<void>
+  /**
+   * Discover Agent Plugins packages under the Copse-owned plugin root and give
+   * each a registry row. Stage A2 of `docs/plans/agent-plugins-migration.md`.
+   */
+  refreshUserPlugins(): Promise<void>
   /** Persist and discover one directory selected through the host-owned native dialog. */
   addPackSource(sourcePath: string): Promise<void>
 }
@@ -323,8 +348,85 @@ export function inertPackSources(): readonly string[] {
 export function createPackService(registry: PackRegistry): PackService {
   const disabled = readDisabledIds()
   const selectedCandidates = new Map<string, PackToolSourceCandidate>()
+  const userPlugins = new Map<string, UserPluginCandidate>()
   for (const id of disabled) {
     if (registry.has(id)) registry.disable(id)
+  }
+
+  /**
+   * Reconcile the Agent Plugins packages on disk into the registry.
+   *
+   * Registration is deliberately all a discovered plugin gets: a Settings row
+   * and the atomic enable/disable lifecycle. Its command hooks and MCP servers
+   * are not wired into the live agent loop here, because finding bytes must not
+   * be what activates behavior (#1082 follow-up).
+   *
+   * A plugin whose directory disappeared is unregistered, mirroring the
+   * selected-source reconciliation above. Its persisted settings and disable
+   * state survive — like a disabled browser extension's data (decision 17).
+   */
+  async function refreshUserPlugins(): Promise<void> {
+    const discovery = await discoverUserPlugins()
+    for (const failure of discovery.failures) {
+      inertSourceReasons.set(failure.pluginRoot, failure.reason)
+      console.warn(`[plugins] ${failure.pluginRoot} is inert: ${failure.reason}`)
+    }
+
+    const found = new Map(discovery.plugins.map((plugin) => [plugin.manifest.name, plugin]))
+    for (const [id, previous] of userPlugins) {
+      const next = found.get(id)
+      if (next && next.pluginRoot === previous.pluginRoot) continue
+      registry.disable(id)
+      registry.unregister(id)
+      userPlugins.delete(id)
+    }
+
+    const fresh: string[] = []
+    for (const candidate of discovery.plugins) {
+      const id = candidate.manifest.name
+      if (userPlugins.has(id)) continue
+      if (registry.has(id)) {
+        // A first-party or selected-directory pack already owns this id.
+        // Refusing here keeps the incumbent working rather than throwing.
+        inertSourceReasons.set(
+          candidate.pluginRoot,
+          `plugin id ${JSON.stringify(id)} is already registered`,
+        )
+        console.warn(`[plugins] ${candidate.pluginRoot} conflicts with a registered pack id.`)
+        continue
+      }
+      for (const warning of candidate.warnings) {
+        console.warn(`[plugins] ${id}: ${warning}`)
+      }
+      registry.register(registeredUserPlugin(candidate))
+      userPlugins.set(id, candidate)
+      if (!knownPluginIds().has(id)) fresh.push(id)
+    }
+
+    // A plugin seen for the first time is seeded **off**. `packDisabled` alone
+    // cannot express this: an id absent from it means "enabled", which is
+    // indistinguishable between a plugin the user switched on and one that
+    // appeared on disk a moment ago. `pluginsSeen` is the missing record, so a
+    // manifest arriving in the plugin root can never start contributing before
+    // anyone looks at it — while a later toggle stays the user's own.
+    if (fresh.length > 0) {
+      await storageUpdate(PLUGINS_SEEN_KEY, (raw) => {
+        const seen = new Set(parseStringList(raw))
+        for (const id of fresh) seen.add(id)
+        return [...seen].sort()
+      })
+      await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+        const off = new Set(parseStringList(raw))
+        for (const id of fresh) off.add(id)
+        return [...off].sort()
+      })
+    }
+
+    const off = readDisabledIds()
+    for (const id of userPlugins.keys()) {
+      if (off.has(id)) registry.disable(id)
+      else registry.enable(id)
+    }
   }
 
   async function refreshPackSources(): Promise<void> {
@@ -472,6 +574,7 @@ export function createPackService(registry: PackRegistry): PackService {
       })
     },
     refreshPackSources,
+    refreshUserPlugins,
     async addPackSource(sourcePath: string): Promise<void> {
       const candidate = await discoverPackToolSource(sourcePath)
       if (
