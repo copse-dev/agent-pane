@@ -411,6 +411,18 @@ Automatically prune only provably clean, merged, ownerless entries. Surface ever
 orphan with retain/reconnect/remove actions. Retention count/age may limit suggestions,
 but never overrides the dirty/unmerged rule.
 
+The surface for "every other orphan" is **Settings → Sources → Worktrees**
+(`src/main/services/worktree-inventory.ts`, `worktrees:list|size|remove`). It lists every
+linked checkout of the project with the thread it was allocated for, whether that thread
+still points at it, when it was last used, and its measured size; removal is the manual
+counterpart to `pruneSafeOrphans`, so it can delete the dirty and unmerged cases the
+automatic path must refuse. Three rules hold there and must not be relaxed: a checkout with
+a running turn is never removable; uncommitted, untracked, or ignored content is reported
+back and deleted only under an explicit second confirmation; and a removed checkout's owning
+thread has its `worktree` metadata cleared (`clearThreadWorktree`) so it reverts to the
+shared project checkout rather than failing validation on its next message. Branch deletion
+stays at `git branch -d`, so unmerged commits outlive the checkout that held them.
+
 ## Environment bootstrap
 
 Linked worktrees do not inherit ignored dependencies or secrets. Add optional project

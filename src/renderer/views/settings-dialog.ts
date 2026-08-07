@@ -29,6 +29,9 @@ import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
+import { formatByteSize } from '@shared/file-bytes.ts'
+import { showConfirmDialog } from './confirm-dialog.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import {
@@ -923,8 +926,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="sources">
             <h3>Sources</h3>
             <p class="settings-section-desc">
-              Everything Copse loads for this project. This list is read-only: edit the files
-              themselves to change what is loaded.
+              Everything Copse loads for this project, and the worktrees it keeps on disk. The
+              loaded lists are read-only: edit the files themselves to change what is loaded.
             </p>
             <div class="settings-action-row">
               <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
@@ -1006,6 +1009,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <div id="sources-plugins-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
               </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Worktrees</legend>
+              <p class="settings-fieldset-desc">
+                Linked Git checkouts of this project. Copse creates one per isolated thread so
+                agents can work without touching your checkout; each row shows the thread it was
+                created for, when it was last used, and what it costs on disk. Deleting one removes
+                the directory and, when the branch is fully merged, the branch with it.
+              </p>
+              <div id="sources-worktrees-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+              <span class="lmstudio-test-status" id="sources-worktrees-status"></span>
             </fieldset>
           </section>
 
@@ -1915,9 +1932,227 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     for (const row of rows) el.append(row)
   }
 
+  /** Coarse "when", accurate enough for a list that is scanned, not audited. */
+  function relativeTime(value: number): string {
+    const elapsed = Date.now() - value
+    const minute = 60_000
+    const hour = 60 * minute
+    const day = 24 * hour
+    if (elapsed < 0) return 'just now'
+    if (elapsed < minute) return 'just now'
+    if (elapsed < hour) return `${String(Math.floor(elapsed / minute))}m ago`
+    if (elapsed < day) return `${String(Math.floor(elapsed / hour))}h ago`
+    if (elapsed < 30 * day) return `${String(Math.floor(elapsed / day))}d ago`
+    return new Date(value).toLocaleDateString()
+  }
+
+  /**
+   * What a worktree is *for*, in one word. A checkout with a live turn in it
+   * cannot be deleted at all; one whose thread has gone (or stopped pointing at
+   * it) is the case worth reclaiming, so both are said plainly rather than left
+   * for the user to infer from the detail line.
+   */
+  function worktreeBadge(entry: WorktreeInventoryEntry): {
+    text: string
+    className: string | undefined
+  } {
+    if (entry.usage?.running) return { text: 'in use', className: 'sources-badge-project' }
+    if (!entry.managed) return { text: 'external', className: undefined }
+    if (!entry.usage) return { text: 'orphaned', className: 'sources-badge-warning' }
+    if (!entry.usage.linked) return { text: 'released', className: 'sources-badge-warning' }
+    if (entry.usage.archived) return { text: 'archived thread', className: undefined }
+    return { text: 'thread', className: undefined }
+  }
+
+  function worktreeDetail(entry: WorktreeInventoryEntry): string {
+    const bits: string[] = []
+    if (entry.usage) bits.push(`Thread “${entry.usage.title}”`)
+    else if (entry.managed) bits.push('No thread on record')
+    else bits.push('Created outside Copse')
+    if (entry.lastUsedAt !== null) bits.push(`last used ${relativeTime(entry.lastUsedAt)}`)
+    if (entry.createdAt !== null) bits.push(`created ${relativeTime(entry.createdAt)}`)
+    return bits.join(' · ')
+  }
+
+  /** The row, plus the slot its measured size lands in once `worktrees:size` answers. */
+  function makeWorktreeRow(entry: WorktreeInventoryEntry): {
+    row: HTMLElement
+    size: HTMLElement
+  } {
+    const badge = worktreeBadge(entry)
+    const extraBadges: Array<{ text: string; className: string }> = []
+    if (entry.changedCount !== null && entry.changedCount > 0) {
+      extraBadges.push({
+        text: `${String(entry.changedCount)} uncommitted`,
+        className: 'sources-badge-warning',
+      })
+    }
+    if (entry.merged === false) {
+      extraBadges.push({ text: 'unmerged', className: 'sources-badge-warning' })
+    }
+    if (entry.detached) {
+      extraBadges.push({ text: 'detached HEAD', className: 'sources-badge-unsupported' })
+    }
+    if (entry.locked !== null) {
+      extraBadges.push({ text: 'locked', className: 'sources-badge-unsupported' })
+    }
+
+    const row = makeSourceRow(entry.branch ?? entry.path, badge.text, worktreeDetail(entry), {
+      ...(badge.className ? { badgeClass: badge.className } : {}),
+      extraBadges,
+      titleAttr: entry.path,
+      hoverDetail: entry.path,
+    })
+    row.dataset['worktreePath'] = entry.path
+
+    // Size arrives from a second call per row (`worktrees:size` walks the whole
+    // checkout), so the row reserves its slot rather than reflowing later.
+    const size = document.createElement('span')
+    size.className = 'sources-worktree-size'
+    size.textContent = 'sizing…'
+    row.querySelector('.sources-row-detail')?.append(' · ', size)
+
+    const removeBtn = document.createElement('button')
+    removeBtn.type = 'button'
+    removeBtn.className = 'sources-worktree-delete-btn'
+    removeBtn.textContent = 'Delete'
+    if (entry.usage?.running) {
+      removeBtn.disabled = true
+      removeBtn.title = 'An agent turn is running in this worktree'
+    } else {
+      removeBtn.title = 'Remove this linked checkout from disk'
+    }
+    removeBtn.addEventListener('click', () => {
+      void removeWorktree(entry, removeBtn)
+    })
+    row.querySelector('.sources-row-header')?.append(removeBtn)
+    return { row, size }
+  }
+
+  /** Fill in each row's on-disk size, one checkout at a time so the walks don't pile up. */
+  async function fillWorktreeSizes(
+    projectId: string,
+    targets: Array<{ entry: WorktreeInventoryEntry; size: HTMLElement }>,
+  ): Promise<void> {
+    for (const target of targets) {
+      // A refresh mid-walk detaches the row it was measuring; dropping the
+      // answer is right, and cheaper than cancelling the call.
+      if (!target.size.isConnected) continue
+      try {
+        const size = await api.worktrees.size(projectId, target.entry.path)
+        target.size.textContent = size.truncated
+          ? `over ${formatByteSize(size.bytes)}`
+          : formatByteSize(size.bytes)
+      } catch {
+        target.size.textContent = 'size unavailable'
+      }
+    }
+  }
+
+  /**
+   * Delete one checkout. The first confirmation covers the directory; a second
+   * one appears only when Git reports content that would be destroyed with it,
+   * and lists what that content is — the state is re-read at delete time, so a
+   * checkout the agent dirtied since the list rendered still stops here.
+   */
+  async function removeWorktree(
+    entry: WorktreeInventoryEntry,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    const projectId = store.getState().activeProjectId
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    if (!projectId) return
+    const name = entry.branch ?? entry.path
+    const consequences = [entry.path]
+    if (entry.usage?.linked) {
+      consequences.push(`Thread “${entry.usage.title}” will continue in the project checkout.`)
+    }
+    if (entry.merged === false && entry.branch) {
+      consequences.push(`Branch ${entry.branch} has unmerged commits and will be kept.`)
+    }
+    const confirmed = await showConfirmDialog({
+      message: `Delete worktree ${name}?`,
+      detail: consequences.join('\n'),
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!confirmed) return
+
+    button.disabled = true
+    statusEl.textContent = 'Deleting…'
+    try {
+      let result = await api.worktrees.remove(projectId, entry.path, false)
+      if (result.status === 'blocked-dirty') {
+        const shown = result.changed.slice(0, 10)
+        const rest = result.changed.length - shown.length
+        const forced = await showConfirmDialog({
+          message: `Discard ${String(result.changed.length)} uncommitted file${
+            result.changed.length === 1 ? '' : 's'
+          }?`,
+          detail: [...shown, ...(rest > 0 ? [`…and ${String(rest)} more`] : [])].join('\n'),
+          confirmLabel: 'Delete anyway',
+          danger: true,
+        })
+        if (!forced) {
+          statusEl.textContent = 'Kept.'
+          button.disabled = false
+          return
+        }
+        result = await api.worktrees.remove(projectId, entry.path, true)
+      }
+      if (result.status === 'blocked-running') {
+        statusEl.textContent = 'That worktree has an agent turn running in it.'
+        button.disabled = false
+        return
+      }
+      if (result.status === 'blocked-dirty') {
+        statusEl.textContent = 'Git still reports uncommitted work in that worktree.'
+        button.disabled = false
+        return
+      }
+      await refreshWorktrees(
+        result.branchDeleted ? `Deleted ${name} and its branch.` : `Deleted ${name}.`,
+      )
+    } catch (error) {
+      statusEl.textContent = errorMessage(error)
+      button.disabled = false
+    }
+  }
+
+  /**
+   * `status` survives the reload that follows a delete — the list re-renders
+   * without the row, and the line saying what happened to it has to outlive
+   * that, or the only feedback for a destructive action flashes and is gone.
+   */
+  async function refreshWorktrees(status = ''): Promise<void> {
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    const projectId = store.getState().activeProjectId
+    if (!projectId) {
+      fillSourceList('#sources-worktrees-list', [], 'Open a project to see its worktrees.')
+      return
+    }
+    try {
+      const entries = await api.worktrees.list(projectId)
+      const rendered = entries.map((entry) => ({ entry, ...makeWorktreeRow(entry) }))
+      fillSourceList(
+        '#sources-worktrees-list',
+        rendered.map((item) => item.row),
+        'No worktrees. Copse creates one when a thread runs in its own checkout.',
+      )
+      statusEl.textContent = status
+      await fillWorktreeSizes(projectId, rendered)
+    } catch (error) {
+      fillSourceList('#sources-worktrees-list', [], 'Could not list worktrees.')
+      statusEl.textContent = errorMessage(error)
+    }
+  }
+
   async function refreshSources(): Promise<void> {
     const statusEl = qsRequired(overlay, '#sources-reload-status')
     statusEl.textContent = 'Loading…'
+    // Worktrees load on their own: they shell out to Git per checkout, and a
+    // repository problem there must not blank the file-based lists beside them.
+    void refreshWorktrees()
     try {
       const [instructions, cursorRules, skills, hooks, plugins] = await Promise.all([
         api.instructions.list(),
