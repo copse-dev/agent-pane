@@ -16,6 +16,7 @@ import {
 } from '../thread-execution-context.ts'
 import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
 import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
+import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // pack (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
@@ -276,11 +277,13 @@ export async function startBackgroundProcess(
       entry.exitCode = code
       notifyCompletion(entry)
       done()
+      notifyThreadResourceFinished(entry.owner.threadId)
     })
     proc.on('error', () => {
       entry.exited = true
       notifyCompletion(entry)
       done()
+      notifyThreadResourceFinished(entry.owner.threadId)
     })
   })
 
@@ -313,6 +316,7 @@ export function stopBackgroundProcess(
   if (entry.completionTimer) clearTimeout(entry.completionTimer)
   terminateProcessTree(entry.proc)
   processes.delete(id)
+  notifyThreadResourceFinished(entry.owner.threadId)
   return true
 }
 
@@ -352,6 +356,10 @@ export async function stopBackgroundProcessesForThread(
     ),
   )
   return entries.map((entry) => entry.id)
+}
+
+export function hasBackgroundProcessesForThread(owner: ThreadExecutionOwner): boolean {
+  return [...processes.values()].some((entry) => !entry.exited && sameOwner(entry.owner, owner))
 }
 
 /** Kill every tracked process — called on app shutdown. */
