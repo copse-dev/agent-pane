@@ -33,6 +33,7 @@ export const revealPiiTool = defineTool({
 
     const decision = await requestApproval({
       type: 'pii',
+      cause: 'pii-reveal',
       title: 'Reveal redacted personal data?',
       body:
         `The agent is asking to see the real value behind ${token}. ` +
