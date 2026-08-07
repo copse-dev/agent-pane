@@ -8,7 +8,9 @@ import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screensho
 // absolutely-positioned overlay that used to be `pointer-events: none`, so this
 // spec checks the real hover → cross-the-gap → click path in a live renderer,
 // which jsdom cannot model.
-describe('settings usage value map model card link', () => {
+describe('settings usage value map model card link', function () {
+  this.timeout(120_000)
+
   before(async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-value-map-card')

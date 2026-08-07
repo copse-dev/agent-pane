@@ -82,8 +82,14 @@ describe('tool activity icon', () => {
       const runningPath = runningSlot?.querySelector('.reasoning-activity-path')
       // The prose column the label must line up with, and the message box that
       // clips horizontally — the gutter spiral has to stay inside it.
-      const body = runningCard?.closest('.message-body')
+      //
+      // `.message-body` is a *sibling* of the tool card, not an ancestor: both
+      // hang off `.msg` (… > .messages-list > .msg > .tool-card). `closest()`
+      // therefore always returned null here, so the alignment assertion below
+      // compared a real offset against null and could never pass. Reach the
+      // prose column through the shared `.msg` parent instead.
       const message = runningCard?.closest('.msg')
+      const body = message?.querySelector('.message-body')
       const nameRect = runningName?.getBoundingClientRect()
       const slotRect = runningSlot?.getBoundingClientRect()
       return {
