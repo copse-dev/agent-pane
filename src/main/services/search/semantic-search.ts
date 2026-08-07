@@ -4,6 +4,11 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { getWorkspaceIndexStatus } from './index-status.ts'
 import {
+  overlayWorktreeSemanticResults,
+  type WorktreeSemanticOverlayOptions,
+  type WorktreeSemanticOverlayResult,
+} from './worktree-semantic-overlay.ts'
+import {
   ensureSemanticIndex,
   formatSemanticSearchResults,
   isSemanticIndexReady,
@@ -20,6 +25,20 @@ export interface SemanticSearchRequest {
   query: string
   filterPath?: string
   maxResults?: number
+  /** Overlay the shared semantic snapshot with the active worktree's changed files. */
+  includeWorktreeDelta?: boolean
+}
+
+let worktreeOverlayExecutor: (
+  options: WorktreeSemanticOverlayOptions,
+) => Promise<WorktreeSemanticOverlayResult> = overlayWorktreeSemanticResults
+
+/** Test hook — replace git/filesystem worktree overlay generation. */
+export function setWorktreeSemanticOverlayExecutorForTest(
+  executor:
+    ((options: WorktreeSemanticOverlayOptions) => Promise<WorktreeSemanticOverlayResult>) | null,
+): void {
+  worktreeOverlayExecutor = executor ?? overlayWorktreeSemanticResults
 }
 
 export type SemanticSearchOutcome =
@@ -43,9 +62,8 @@ export function semanticIndexBuildingNote(): string {
   }
   if (isWorktreeExecutionContext()) {
     return (
-      'Semantic search is unavailable inside worktree threads (v1) — the native ' +
-      'index only tracks the shared workspace checkout. Use regex search ' +
-      '(search_code, or search_codebase with mode: regex) instead.'
+      'The shared semantic index used by this worktree is still building. ' +
+      'Use regex search (search_code, or search_codebase with mode: regex) for now.'
     )
   }
   const semantic = getWorkspaceIndexStatus().semantic
@@ -69,58 +87,74 @@ export function semanticIndexBuildingNote(): string {
   )
 }
 
-/**
- * True when the active agent turn is running inside a worktree thread's linked
- * checkout rather than the shared workspace root. gortex/vera only ever index
- * the workspace root (`scopeGortexToActiveRepo` scopes the shared daemon to
- * one active repo), so semantic search inside a worktree thread must fall back
- * to regex/text search rather than silently answering from the wrong checkout
- * (#1400) — the same posture already taken for SSH workspaces.
- */
+/** True when the active turn executes in a linked worktree checkout. */
 export function isWorktreeExecutionContext(): boolean {
   return getThreadExecutionContext()?.checkoutMode === 'worktree'
 }
 
-/** Native gortex/vera semantic search only. */
+/** Native gortex/vera search, with a worktree-local delta overlay when needed. */
 export async function executeSemanticSearch(
   request: SemanticSearchRequest,
   signal: AbortSignal,
 ): Promise<SemanticSearchOutcome> {
-  const root = getAgentExecutionRoot()
+  const executionRoot = getAgentExecutionRoot()
+  const context = getThreadExecutionContext()
   const maxResults = request.maxResults ?? 20
 
-  if (!root || !isSemanticSearchAvailable() || isWorktreeExecutionContext()) {
-    return { status: 'unavailable' }
-  }
+  if (!executionRoot || !isSemanticSearchAvailable()) return { status: 'unavailable' }
 
   const semanticPhase = getWorkspaceIndexStatus().semantic.phase
   if (semanticPhase === 'limited' || semanticPhase === 'skipped') {
     return { status: 'unavailable' }
   }
 
-  if (semanticIndexPending(root)) {
+  const isWorktree = context?.checkoutMode === 'worktree'
+  const indexRoot = isWorktree ? context.projectRoot : executionRoot
+  if (semanticIndexPending(indexRoot)) return { status: 'building' }
+
+  if (!isSemanticIndexReady(indexRoot)) {
+    // Worktrees reuse the project root's index. This starts only the shared
+    // baseline and never asks gortex to track the linked checkout.
+    void ensureSemanticIndex(indexRoot)
     return { status: 'building' }
   }
 
-  if (!isSemanticIndexReady(root)) {
-    // Kick (or join) the build in the background rather than awaiting it —
-    // workspace open already started it, so this only matters when that
-    // failed or the workspace was opened through an unusual path.
-    void ensureSemanticIndex(root)
-    return { status: 'building' }
-  }
-
+  const includeWorktreeDelta = isWorktree && request.includeWorktreeDelta !== false
+  const baselineLimit = includeWorktreeDelta ? Math.min(1000, maxResults * 5) : maxResults
   const native = await searchSemanticContent({
     query: request.query,
-    workspaceRoot: root,
-    maxResults,
+    workspaceRoot: indexRoot,
+    maxResults: baselineLimit,
     signal,
     ...(request.filterPath ? { filterPath: request.filterPath } : {}),
   })
   if (!native) return { status: 'unavailable' }
 
-  return {
-    status: 'ok',
-    text: formatSemanticSearchResults(native.hits, maxResults, native.backend),
+  if (!includeWorktreeDelta) {
+    return {
+      status: 'ok',
+      text: formatSemanticSearchResults(native.hits, maxResults, native.backend),
+    }
+  }
+
+  try {
+    const overlay = await worktreeOverlayExecutor({
+      query: request.query,
+      projectRoot: context.projectRoot,
+      worktreeRoot: executionRoot,
+      maxResults,
+      baselineHits: native.hits,
+      signal,
+      ...(request.filterPath ? { filterPath: request.filterPath } : {}),
+    })
+    return {
+      status: 'ok',
+      text:
+        formatSemanticSearchResults(overlay.hits, maxResults, native.backend) +
+        `\n[Applied worktree delta overlay across ${String(overlay.changedPathCount)} changed paths.]`,
+    }
+  } catch (error) {
+    console.warn('[copse-panel] worktree semantic delta failed:', error)
+    return { status: 'unavailable' }
   }
 }
