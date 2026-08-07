@@ -111,6 +111,83 @@ describe('footer branch status', () => {
     assert.equal(document.querySelector('.toast-error'), null)
   })
 
+  it('keeps a readable branch status when only the branch listing fails', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: 'main', pr: null })
+
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        listBranches: async () => {
+          throw new Error('Thread worktree is missing')
+        },
+      },
+    })
+    await settle()
+
+    // The picker's list is unavailable, but branchStatus answered — so the
+    // widget still names the branch rather than hiding itself entirely.
+    const wrap = qsRequired(host, '.branch-picker')
+    assert.equal(wrap.hidden, false)
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+    assert.equal(document.querySelector('.toast-error'), null)
+  })
+
+  it('drops a slow branch list from a refresh the user has already overtaken', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: 'main', pr: null })
+
+    let releaseStale: ((value: GitBranchInfo[]) => void) | null = null
+    let listBranches = async (): Promise<GitBranchInfo[]> => [
+      { name: 'main', lastCommitDate: '2024-01-01' },
+    ]
+
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: { ...base['git'], listBranches: () => listBranches() },
+    })
+    await settle()
+    await openBranchMenu(host)
+
+    // Refresh A stalls inside loadBranches...
+    listBranches = (): Promise<GitBranchInfo[]> =>
+      new Promise<GitBranchInfo[]>((resolve) => {
+        releaseStale = resolve
+      })
+    store.emit('git_branch_changed')
+    await settle()
+
+    // ...while refresh B starts and finishes with the list that is now current.
+    listBranches = async (): Promise<GitBranchInfo[]> => [
+      { name: 'feature/current', lastCommitDate: '2024-01-02' },
+    ]
+    store.emit('git_branch_changed')
+    await settle()
+
+    releaseStale?.([{ name: 'feature/stale', lastCommitDate: '2024-01-03' }])
+    await settle()
+
+    const labels = [...host.querySelectorAll('.branch-picker-option-label')].map(
+      (node) => node.textContent,
+    )
+    assert.deepEqual(labels, ['feature/current'])
+  })
+
   it('copies the thread branch on click for existing chats', async () => {
     let copiedBranch: string | null = null
     installClipboard(async (text) => {

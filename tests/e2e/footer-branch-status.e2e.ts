@@ -80,6 +80,7 @@ describe('footer branch status for a detached thread worktree', () => {
   const detachedThreadId = 'e2e-footer-detached-thread'
   const detachedBranch = 'copse/e2e-footer-detached'
   let projectRoot = ''
+  let worktreeRoot = ''
 
   function git(cwd: string, args: string[]): string {
     return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -102,7 +103,7 @@ describe('footer branch status for a detached thread worktree', () => {
     git(projectRoot, ['add', 'README.md'])
     git(projectRoot, ['commit', '-qm', 'seed'])
 
-    const worktreeRoot = join(worktreesRoot, projectId, detachedThreadId)
+    worktreeRoot = join(worktreesRoot, projectId, detachedThreadId)
     mkdirSync(dirname(worktreeRoot), { recursive: true })
     const baseBranch = git(projectRoot, ['branch', '--show-current'])
     const baseCommit = git(projectRoot, ['rev-parse', 'HEAD'])
@@ -152,6 +153,9 @@ describe('footer branch status for a detached thread worktree', () => {
 
   after(() => {
     resetUserData()
+    // Reclaim the checkout *and* its worktree: e2e containers are reused, and a
+    // worktree orphaned by deleting its repository outlives the spec otherwise.
+    if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
   })
 
