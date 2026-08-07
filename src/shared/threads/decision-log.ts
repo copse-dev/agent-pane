@@ -22,6 +22,8 @@
  * evaluate the log on its own, rather than merely re-reading it.
  */
 
+import { isPromptCause, type PromptCause } from './prompt-cause.ts'
+
 /** Bump when the decision line shape changes in a backwards-incompatible way. */
 export const DECISION_LOG_SCHEMA_VERSION = 1
 
@@ -41,10 +43,21 @@ export type DecisionActor = 'user' | 'classifier' | 'hook' | 'system'
 /**
  * The outcome. `approved`/`denied` are user verdicts; `allowed`/`blocked`/`ask`
  * are non-interactive policy/hook verdicts; `timeout` is a prompt that expired
- * unanswered (treated as a denial by the caller, recorded distinctly here).
+ * unanswered (treated as a denial by the caller, recorded distinctly here);
+ * `deferred` is a prompt an unattended run queued for later review instead of
+ * showing — the action did not run, and a separate line records the human's
+ * eventual answer.
  */
 export type DecisionVerdict =
-  'approved' | 'denied' | 'allowed' | 'blocked' | 'ask' | 'classified' | 'timeout' | 'cancelled'
+  | 'approved'
+  | 'denied'
+  | 'allowed'
+  | 'blocked'
+  | 'ask'
+  | 'classified'
+  | 'timeout'
+  | 'cancelled'
+  | 'deferred'
 
 /** One line of `decisions.jsonl`: a single control-plane decision. */
 export interface DecisionEvent {
@@ -77,6 +90,14 @@ export interface DecisionEvent {
   threadId?: string
   /** Redacted extra context: hook config path, classifier model id, etc. */
   source?: string
+  /**
+   * Why the user was interrupted, for a decision that prompted. Absent on
+   * non-interactive verdicts and on prompts recorded before the taxonomy
+   * existed — `summarizePromptCauses` counts those separately rather than
+   * guessing. An unrecognised value is dropped at parse time, so a log written
+   * by a newer build degrades to "uncaused" here instead of failing to load.
+   */
+  cause?: PromptCause
 }
 
 /** Longest subject/reason we persist; keeps a runaway command line bounded. */
@@ -155,6 +176,8 @@ export function makeDecisionEvent(input: DecisionInput, id: string, at: number):
   }
   if (input.threadId !== undefined) event.threadId = input.threadId
   if (input.source !== undefined) event.source = clampField(redactSecrets(input.source))
+  // Not redacted or clamped: a cause is one of a fixed set of slugs, never free text.
+  if (input.cause !== undefined) event.cause = input.cause
   return event
 }
 
@@ -172,6 +195,7 @@ const DECISION_VERDICTS: ReadonlySet<string> = new Set([
   'classified',
   'timeout',
   'cancelled',
+  'deferred',
 ])
 
 function isOptionalString(value: unknown): boolean {
@@ -205,7 +229,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
   if (!isRecord(parsed)) return null
   const event = parsed
   const { v, type, id, at, kind, actor, verdict, subject } = event
-  const { scope, remembered, confidence, reasons, threadId, source } = event
+  const { scope, remembered, confidence, reasons, threadId, source, cause } = event
   if (
     v !== DECISION_LOG_SCHEMA_VERSION ||
     type !== 'decision' ||
@@ -247,6 +271,9 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     ...(reasons !== undefined ? { reasons } : {}),
     ...(typeof threadId === 'string' ? { threadId } : {}),
     ...(typeof source === 'string' ? { source } : {}),
+    // Unknown slugs drop rather than reject the line: a log written by a newer
+    // build must stay readable, just without that dimension.
+    ...(isPromptCause(cause) ? { cause } : {}),
   }
 }
 

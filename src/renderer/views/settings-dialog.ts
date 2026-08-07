@@ -29,6 +29,7 @@ import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { chevronDownIcon } from '../dom/icons.ts'
 import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
@@ -1155,14 +1156,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   <option value="light">Light</option>
                 </select>
               </label>
-              <label>
-                Accent colour
-                <input type="color" name="uiAccentColor" />
-              </label>
-              <label>
-                Interface tint colour
-                <input type="color" name="uiTintColor" />
-              </label>
+              <!-- Two swatches, one decision each, read side by side: they are
+                   the section's only colour choices and comparing them is the
+                   whole task. -->
+              <div class="settings-swatch-row">
+                <label>
+                  Accent colour
+                  <input type="color" name="uiAccentColor" />
+                </label>
+                <label>
+                  Interface tint colour
+                  <input type="color" name="uiTintColor" />
+                </label>
+              </div>
               <label>
                 Interface tint strength
                 <span class="slider-row">
@@ -1196,7 +1202,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <label class="app-icon-option">
                   <input type="radio" name="appIconVariant" value="${variant}" />
                   <span class="app-icon-preview">
-                    <img src="./icon-previews/${variant}.png" alt="" width="80" height="80" />
+                    <img src="./icon-previews/${variant}.png" alt="" width="88" height="88" />
                   </span>
                   <span class="app-icon-label">${APP_ICON_VARIANT_LABELS[variant]}</span>
                 </label>`,
@@ -1586,6 +1592,45 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     activeSection = id
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
+    renderNavSubheadings(id)
+  }
+
+  // The open section's group headings, mirrored into the sidebar under its row.
+  // General and Appearance are several screens tall, so the nav doubles as that
+  // section's contents: what is on this page, and a click to jump to it. Only
+  // the open section expands, and the list is read back off the DOM each time —
+  // so a group that is hidden (developer-only) or mounted by a panel never has
+  // to be registered in a second place to show up here.
+  let navSubheadings: HTMLElement | null = null
+
+  function clearNavSubheadings(): void {
+    navSubheadings?.remove()
+    navSubheadings = null
+  }
+
+  function renderNavSubheadings(id: SettingsSection): void {
+    clearNavSubheadings()
+    const navBtn = Array.from(navBtns).find((btn) => btn.dataset['section'] === id)
+    const section = Array.from(sections).find((sec) => sec.dataset['section'] === id)
+    if (!navBtn || !section) return
+    const list = document.createElement('div')
+    list.className = 'settings-nav-subheadings'
+    for (const block of topLevelBlocks(section)) {
+      if (block.hidden) continue
+      const label = block.querySelector('legend')?.textContent.trim()
+      if (!label) continue
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'settings-nav-subheading'
+      btn.textContent = label
+      btn.addEventListener('click', () => {
+        block.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+      list.append(btn)
+    }
+    if (list.childElementCount === 0) return
+    navBtn.after(list)
+    navSubheadings = list
   }
 
   // A settings "block" is a top-level fieldset — one not nested inside another
@@ -1643,6 +1688,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     contentEl.classList.add('settings-searching')
+    // Results are lifted out of their sections, so the open section's contents
+    // list no longer describes what is on screen. Drop it until search clears.
+    clearNavSubheadings()
     const matches: { node: HTMLElement; rank: number }[] = []
     sections.forEach((sec) => {
       for (const block of topLevelBlocks(sec)) {
@@ -2268,6 +2316,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const header = document.createElement('div')
     header.className = 'pack-row-header'
 
+    // A pack is a thing you install, so it gets a mark like one. First-party
+    // packs carry the Copse glyph itself (the real asset, not a redraw); a
+    // user-installed pack must not, or a sideloaded pack would wear our badge
+    // of trust — it gets a neutral tile with its own initial instead.
+    const icon = document.createElement('span')
+    icon.className = 'pack-icon'
+    icon.setAttribute('aria-hidden', 'true')
+    if (pack.trust === 'first-party') {
+      icon.classList.add('pack-icon-copse')
+      const mark = document.createElement('img')
+      mark.src = './brand-mark.svg'
+      mark.alt = ''
+      mark.width = 40
+      mark.height = 40
+      icon.append(mark)
+    } else {
+      icon.textContent = (packDisplayName(pack).trim()[0] ?? '?').toUpperCase()
+    }
+    header.append(icon)
+
     const toggleLabel = document.createElement('label')
     toggleLabel.className = 'toggle-switch pack-toggle'
     toggleLabel.title = pack.enabled ? 'Turn off this pack' : 'Turn on this pack'
@@ -2304,18 +2372,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })
     toggleLabel.append(toggle, track)
 
+    // Who published the pack is the first thing to know about it and the same
+    // answer for every row, so it reads as an eyebrow over the name rather than
+    // as one more chip competing with it.
     const title = document.createElement('div')
     title.className = 'pack-row-title'
-    const nameEl = document.createElement('span')
-    nameEl.className = 'pack-name'
-    nameEl.textContent = packDisplayName(pack)
-    title.append(nameEl)
-    if (pack.version) {
-      const versionEl = document.createElement('span')
-      versionEl.className = 'pack-version'
-      versionEl.textContent = pack.version
-      title.append(versionEl)
-    }
     const trustBadge = document.createElement('span')
     trustBadge.className =
       pack.trust === 'first-party'
@@ -2323,6 +2384,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : 'pack-badge pack-badge-user'
     trustBadge.textContent = pack.trust === 'first-party' ? 'Copse' : 'User'
     title.append(trustBadge)
+
+    const nameLine = document.createElement('div')
+    nameLine.className = 'pack-row-name-line'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'pack-name'
+    nameEl.textContent = packDisplayName(pack)
+    nameLine.append(nameEl)
+    if (pack.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'pack-version'
+      versionEl.textContent = pack.version
+      nameLine.append(versionEl)
+    }
     const stabilityBadge = document.createElement('span')
     stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
     stabilityBadge.textContent = pack.stability
@@ -2330,9 +2404,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       pack.stability === 'experimental'
         ? 'Experimental: behavior and compatibility may change.'
         : 'Stable: supported as part of the current pack contract.'
-    title.append(stabilityBadge)
+    nameLine.append(stabilityBadge)
+    title.append(nameLine)
 
-    header.append(toggleLabel, title)
+    // A bare switch never says which way is on. The flanking words do, and CSS
+    // emphasises whichever side is live off `:checked` — so there is no second
+    // copy of the state to keep in sync. They restate the checkbox's own label,
+    // hence hidden from assistive tech.
+    const toggleControl = document.createElement('div')
+    toggleControl.className = 'pack-toggle-control'
+    const makeStateLabel = (side: 'off' | 'on'): HTMLElement => {
+      const stateEl = document.createElement('span')
+      stateEl.className = 'pack-toggle-state'
+      stateEl.dataset['side'] = side
+      stateEl.textContent = side === 'on' ? 'On' : 'Off'
+      stateEl.setAttribute('aria-hidden', 'true')
+      return stateEl
+    }
+    toggleControl.append(makeStateLabel('off'), toggleLabel, makeStateLabel('on'))
+
+    header.append(title, toggleControl)
     row.append(header)
 
     if (pack.description) {
@@ -2464,18 +2555,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(emptyChips)
     }
 
+    // Everything configurable about a pack folds into one disclosure. The card
+    // leads with what the pack *is* and what it contributes — the decision you
+    // make from a list of packs — and keeps its knobs one click away rather than
+    // stacking every pack's form on top of the next pack's name. Appended to the
+    // row at the end, and only if something landed inside it.
+    const settingsFold = document.createElement('details')
+    settingsFold.className = 'pack-settings-fold'
+    const settingsSummary = document.createElement('summary')
+    settingsSummary.className = 'pack-settings-summary'
+    const settingsSummaryLabel = document.createElement('span')
+    settingsSummaryLabel.textContent = 'Pack settings'
+    settingsSummary.append(settingsSummaryLabel, chevronDownIcon('pack-settings-chevron'))
+    settingsFold.append(settingsSummary)
+
     // Generic pack-scoped settings fields (rendered from the manifest schema).
     if (pack.settings.length > 0) {
       const settingsBox = document.createElement('div')
       settingsBox.className = 'pack-settings'
-      const heading = document.createElement('div')
-      heading.className = 'pack-settings-heading'
-      heading.textContent = 'Settings'
-      settingsBox.append(heading)
       for (const field of pack.settings) {
         settingsBox.append(makePackSettingField(pack.id, field))
       }
-      row.append(settingsBox)
+      settingsFold.append(settingsBox)
       // The advisor model field owns the live executor/advisor pairing hint (it
       // moved here from the Experimental section with the model itself). Wire the
       // advisor select + a hint element into the shared refs, keep the `#advisorModel`
@@ -2520,7 +2621,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
       )
     ) {
-      row.append(createAutomationPackSettings(store, api, pack.enabled))
+      settingsFold.append(createAutomationPackSettings(store, api, pack.enabled))
     }
     if (
       pack.id === PARALLEL_SEARCH_PACK_ID &&
@@ -2534,10 +2635,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // on-looking pack contributing no tool. Block the on-direction until a key
       // is stored (never the off-direction, or a user who clears their key would
       // be stuck with the pack showing enabled), and say why in a hint.
+      // The gate explains a switch you can see is locked, so it stays on the
+      // face of the card — folding the reason away under "Pack settings" would
+      // leave a dead toggle with no explanation next to it.
       const gate = document.createElement('p')
       gate.className = 'field-hint pack-credential-gate'
       gate.hidden = true
-      row.append(
+      row.append(gate)
+      settingsFold.append(
         createParallelSearchPackSettings(api, {
           onKeyPresence: (hasKey) => {
             credentialLocked = !hasKey
@@ -2549,9 +2654,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             if (toggle.disabled) toggleLabel.title = 'Add a Parallel API key to turn this pack on'
           },
         }),
-        gate,
       )
     }
+
+    // A pack with nothing to configure shows no fold — an empty disclosure is
+    // worse than none, because it invites a click that reveals nothing.
+    if (settingsFold.childElementCount > 1) row.append(settingsFold)
 
     // Disabling greys the whole row so the effect of the toggle is immediately
     // visible; individual pack-scoped settings stay editable so users can
@@ -2708,11 +2816,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         listEl.append(empty)
       } else {
         // Enabled packs first, disabled packs after — so a scrapped pack moves
-        // out of the way instead of sitting in the middle of the list.
+        // out of the way instead of sitting in the middle of the list. The two
+        // runs get a heading each: with rows this tall, "why is this one dimmed"
+        // is a question the list should answer before it is asked. A heading is
+        // skipped when nothing falls under it.
         const sorted = [...result.packs].sort(
           (a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id),
         )
-        for (const pack of sorted) listEl.append(makePackRow(pack))
+        let lastEnabled: boolean | null = null
+        for (const pack of sorted) {
+          if (pack.enabled !== lastEnabled) {
+            const heading = document.createElement('h4')
+            heading.className = 'packs-group-heading'
+            heading.textContent = pack.enabled ? 'Active' : 'Inactive'
+            listEl.append(heading)
+            lastEnabled = pack.enabled
+          }
+          listEl.append(makePackRow(pack))
+        }
       }
       statusEl.textContent = ''
     } catch {
