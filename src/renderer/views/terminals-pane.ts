@@ -88,7 +88,7 @@ export function mountTerminalsPane(
     },
     '+',
   )
-  listHeader.append(panePopoutButton(api, 'terminal', 'terminal'), newBtn)
+  listHeader.append(panePopoutButton(store, api, 'terminal', 'terminal'), newBtn)
 
   const tabsWrap = el('div', { class: 'terminals-list' })
   listRoot.append(listHeader, tabsWrap)

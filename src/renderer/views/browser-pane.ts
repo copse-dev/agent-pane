@@ -157,7 +157,7 @@ export function mountBrowserPane(
     },
     '+',
   )
-  if (api) listHeader.append(panePopoutButton(api, 'browser', 'browser'))
+  if (api) listHeader.append(panePopoutButton(store, api, 'browser', 'browser'))
   listHeader.append(newBtn)
 
   const tabsWrap = el('div', { class: 'browser-tabs-list' })
