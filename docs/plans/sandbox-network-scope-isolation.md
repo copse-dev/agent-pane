@@ -43,7 +43,7 @@ SandboxManager.updateConfig({ ...config, network: mergedScopeNetwork([...activeS
 
 `mergedScopeNetwork` unions every active scope. A command spawned through
 `workspaceSandboxOverlay(cwd)` carries `network: containedSandboxNetworkConfig()`
-(`allowedDomains: []`), but that block only selects *whether* restriction is
+(`allowedDomains: []`), but that block only selects _whether_ restriction is
 wired up — the proxies decide allow/deny against the global config. So during a
 widening, an unrelated command really does run with the widened allowlist, and
 ASRT cannot attribute a connection to a process. Suspending auto-run for the
@@ -53,10 +53,10 @@ duration is the only lever the current API offers.
 
 Exactly two callers:
 
-| caller | trigger | lifetime |
-| --- | --- | --- |
-| `project-sandbox/spawn.ts:308` | background task with `allow_port_binding` (dev server) | until the process exits |
-| `services/acp/acp-client.ts:287` | any sandboxed ACP agent process | pooled session, 10 min idle |
+| caller                           | trigger                                                | lifetime                    |
+| -------------------------------- | ------------------------------------------------------ | --------------------------- |
+| `project-sandbox/spawn.ts:308`   | background task with `allow_port_binding` (dev server) | until the process exits     |
+| `services/acp/acp-client.ts:287` | any sandboxed ACP agent process                        | pooled session, 10 min idle |
 
 The second includes work no one initiated. `workspace:set` fires
 `revalidateStaleAcpModels()` (`ipc/register-handlers.ts:513`), which re-probes
@@ -109,11 +109,12 @@ This settles whether the fix can be per-spawn or has to be per-process.
    directly (`:1116`):
 
    > Even with empty allowedDomains, we route through proxy so that:
+   >
    > 1. `updateConfig()` can enable network access for already-running processes
    > 2. The proxy blocks all requests when allowlist is empty
 
-   The per-spawn overlay picks *whether* to restrict; the global config picks
-   *what is allowed*. The `network-scope.ts` docblock is accurate.
+   The per-spawn overlay picks _whether_ to restrict; the global config picks
+   _what is allowed_. The `network-scope.ts` docblock is accurate.
 
 3. **No attribution hook.** `SandboxAskCallback` receives `{ host, port }`.
    `FilterRequestCallback` (`dist/sandbox/request-filter.d.ts`) receives a
@@ -179,7 +180,7 @@ overlap is not a reason to prompt it.
   script-shape analysis, not a basename add: `sed -i`, `sed -n 'w out'`, GNU
   `sed`'s `e`, `awk`'s `system()`, `print > file`, and `|& "cmd"` all write or
   execute.
-- Honest limit: a read-only command still *runs* during the widened window. The
+- Honest limit: a read-only command still _runs_ during the widened window. The
   argument is that it opens no sockets, not that it is harmless.
 
 ### Phase 4 — Move background probes out of process
@@ -209,7 +210,7 @@ across 10 idle minutes, give it a host process too — same mechanism, higher co
 **Per-thread network sandboxes are not recommended.** Every thread's shell policy
 is already deny-all and identical; threads differ in filesystem root, which
 `workspaceSandboxOverlay(cwd)` already handles correctly per spawn — and
-per-spawn *filesystem* is the axis ASRT does honor. The variance that justifies
+per-spawn _filesystem_ is the axis ASRT does honor. The variance that justifies
 isolation is per-agent, not per-thread.
 
 ## Not recommended
