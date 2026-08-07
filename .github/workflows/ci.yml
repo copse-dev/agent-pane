@@ -1069,7 +1069,12 @@ jobs:
             for log_file in "$logs_dir"/*.log; do
               [ -f "$log_file" ] || continue
               echo "### $log_file"
-              tail -n 200 "$log_file" || true
+              # TEMPORARY DIAGNOSTIC — do not merge. Paired with logLevel:'info'
+              # in wdio.conf.ts: at that verbosity 200 lines covers only the last
+              # moments of a worker, which is not enough to see what precedes a
+              # 30s session-creation timeout. Artifact download is unavailable to
+              # this token, so the job log is the only way these get read.
+              tail -n 600 "$log_file" || true
               echo
             done
             echo "::endgroup::"
