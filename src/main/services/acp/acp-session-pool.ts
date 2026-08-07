@@ -2,6 +2,7 @@ import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from '.
 import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
 /**
  * Per-thread pool of persistent ACP sessions (issue #605).
@@ -234,6 +235,7 @@ export async function disposeAcpSession(
   }
   pool.delete(threadId)
   await entry.dispose()
+  notifyThreadResourceFinished(threadId)
   return true
 }
 

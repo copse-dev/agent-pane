@@ -17,6 +17,14 @@ export interface ThreadWorktree {
   baseCommit: string
   createdAt: number
   seededFromDirtyProject: boolean
+  /** PR that made this checkout eligible for space-saving retirement. */
+  pullRequestUrl?: string
+  /** Set while the checkout is removed but its repository branch is retained. */
+  retiredAt?: number
+  /** Local HEAD verified against its upstream immediately before retirement. */
+  retiredHead?: string
+  /** Tracking ref whose commit matched retiredHead. */
+  upstreamRef?: string
 }
 
 export type ThreadCheckoutMode = 'shared' | 'worktree'

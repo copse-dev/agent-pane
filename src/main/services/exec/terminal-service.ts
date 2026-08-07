@@ -10,6 +10,7 @@ import {
 } from './subprocess-output-cap.ts'
 import { READ_TERMINAL_DEFAULT_LINES, takeLastLines } from '@shared/terminal/read-terminal.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
 interface PtyListeners {
   onData: IDisposable
@@ -99,7 +100,7 @@ function clearActiveIfNeeded(sessionId: string, ownerId: number): void {
   if (activeByOwner.get(ownerId) === sessionId) activeByOwner.delete(ownerId)
 }
 
-function disposeSession(session: TerminalSession, sessionId: string): void {
+function disposeSession(session: TerminalSession, sessionId: string, notify = true): void {
   disposeSessionListeners(session)
   clearActiveIfNeeded(sessionId, session.ownerId)
   try {
@@ -108,6 +109,7 @@ function disposeSession(session: TerminalSession, sessionId: string): void {
     // PTY may already be dead during shutdown.
   }
   sessions.delete(sessionId)
+  if (notify) notifyThreadResourceFinished(session.threadId)
 }
 
 function attachPtyHandlers(
@@ -124,6 +126,7 @@ function attachPtyHandlers(
     disposeSessionListeners(session)
     clearActiveIfNeeded(sessionId, session.ownerId)
     sessions.delete(sessionId)
+    notifyThreadResourceFinished(session.threadId)
     // exitCode comes from node-pty (external); guard against a missing code at runtime.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     sendTerminalEvent(win, 'terminal:exit', sessionId, exitCode ?? 1)
@@ -202,7 +205,7 @@ export function destroyTerminalSession(sessionId: string, ownerId: number): void
 
 export function destroyAllTerminalSessions(): void {
   for (const [sessionId, session] of sessions) {
-    disposeSession(session, sessionId)
+    disposeSession(session, sessionId, false)
   }
   sessions.clear()
   activeByOwner.clear()
