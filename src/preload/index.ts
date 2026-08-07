@@ -890,6 +890,13 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  worktrees: {
+    list: (projectId: string) => ipcRenderer.invoke('worktrees:list', projectId),
+    size: (projectId: string, path: string) =>
+      ipcRenderer.invoke('worktrees:size', projectId, path),
+    remove: (projectId: string, path: string, force: boolean) =>
+      ipcRenderer.invoke('worktrees:remove', projectId, path, force),
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },

@@ -153,8 +153,10 @@ describe('ensureToolPermitted', () => {
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
+    let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
+      approvalCause = request.cause
       return { approved: false, remember: false }
     })
     try {
@@ -163,6 +165,7 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.match(approvalBody, /api\.parallel\.ai/)
+      assert.equal(approvalCause, 'web-origin')
       assert.match(approvalBody, /paid API credits/i)
       assert.match(approvalBody, /Zero Data Retention/i)
     } finally {
@@ -179,10 +182,12 @@ describe('ensureToolPermitted', () => {
     let approvalBody = ''
     let approvalSubject = ''
     let approvalFooter = ''
+    let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
       approvalSubject = request.subject ?? ''
       approvalFooter = request.bodyFooter ?? ''
+      approvalCause = request.cause
       return { approved: false, remember: false }
     })
     try {
@@ -193,6 +198,10 @@ describe('ensureToolPermitted', () => {
       assert.equal(approvalBody, 'printf hello')
       assert.match(approvalFooter, /network access is temporarily widened/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
+      // The cause is what makes this prompt countable in the D0/U0 report: an
+      // artifact of ASRT's process-global allowlist, which a per-runtime
+      // container would not produce at all.
+      assert.equal(approvalCause, 'shell-network-scope-overlap')
     } finally {
       setApprovalHandler(null)
       release()
