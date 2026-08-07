@@ -509,6 +509,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       cancel: () => resolved({ task: null }),
       onChanged: subscribe,
     },
+    // The browser demo has no repository behind it, so it owns no checkouts to
+    // list and nothing that could be measured or deleted.
+    worktrees: {
+      list: emptyArray,
+      size: (_projectId: string, path: string) =>
+        resolved({ path, bytes: 0, fileCount: 0, truncated: false }),
+      remove: unsupported,
+    },
     skills: { list: emptyArray },
     plugins: { list: emptyArray },
     hooks: {
