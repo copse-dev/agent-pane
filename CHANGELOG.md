@@ -8,6 +8,13 @@ every published entry.
 
 ## Unreleased
 
+- Opening a new thread with the Terminal pane already visible no longer fails
+  to spawn a shell. Autosave already flushed `threads:create` immediately on a
+  new id, but `terminal:create` did not wait for that write — main's ownership
+  check then treated the missing `meta.json` as "thread does not belong to
+  project". The terminal spawn now awaits the in-flight create first, and a
+  missing meta is reported as "not persisted yet" rather than a membership
+  mismatch.
 - A thread that went wrong can now be handed to a thread that can read it.
   **Debug trace**, in the composer's overflow menu, exports the conversation
   you are looking at as a zip of its whole store directory — the spine, the
