@@ -185,6 +185,13 @@ const deleteSessionPatched = new WeakSet<object>()
 export const DELETE_SESSION_BUDGET_MS = 5_000
 
 /**
+ * Cap how long we then wait for that abandoned DELETE to drain out of
+ * ChromeDriver before handing the driver to `newSession`. See
+ * {@link installDeleteSessionSafety} for why the wait exists at all.
+ */
+export const DELETE_SESSION_DRAIN_MS = 15_000
+
+/**
  * Wrap `session.deleteSession` so a wedged Chromedriver teardown cannot mark a
  * passing suite FAILED. On timeout / transport death: force-kill orphans and
  * return. Real deleteSession success is unchanged.
@@ -192,11 +199,27 @@ export const DELETE_SESSION_BUDGET_MS = 5_000
  * Prefer {@link SessionDeleter.overwriteCommand} when present (live WDIO
  * browser / `@wdio/globals` Proxy). Fall back to own-property assignment for
  * plain unit-test fakes.
+ *
+ * **Giving up on the budget does not cancel the request.** `withTimeout` only
+ * stops *us* waiting; the `DELETE /session/<id>` is still in flight inside
+ * ChromeDriver. `Browser.reloadSession` is `await this.deleteSession(…)`
+ * followed immediately by `POST /session` on that same driver, so returning
+ * the moment the budget fires hands `newSession` a driver that is still busy
+ * — and the new session request queues behind the old delete until it times
+ * out ("The operation was aborted due to timeout"). An idle driver answers in
+ * ~170ms, the boot time these same logs report, so a POST that outlives the
+ * timeout on a driver that is demonstrably alive is a driver that is not idle.
+ *
+ * Killing Electron is what unblocks the stuck DELETE, so we kill first and
+ * then wait for the abandoned request to drain before handing the driver back.
+ * Raising {@link DELETE_SESSION_BUDGET_MS} would not help: it delays the same
+ * collision rather than removing it.
  */
 export function installDeleteSessionSafety(
   session: SessionDeleter,
   options?: {
     budgetMs?: number
+    drainMs?: number
     kill?: () => void
   },
 ): void {
@@ -204,13 +227,24 @@ export function installDeleteSessionSafety(
   deleteSessionPatched.add(session)
 
   const budgetMs = options?.budgetMs ?? DELETE_SESSION_BUDGET_MS
+  const drainMs = options?.drainMs ?? DELETE_SESSION_DRAIN_MS
   const kill = options?.kill ?? forceKillWedgedE2eSession
 
   const runSafeDelete = async (invoke: () => Promise<unknown>): Promise<unknown> => {
+    const inFlight = invoke()
+    // Settle-only view of the same request: attached before any await so an
+    // abandoned rejection can never surface as an unhandled rejection.
+    const drained = inFlight.then(
+      () => undefined,
+      () => undefined,
+    )
     try {
-      return await withTimeout(invoke(), budgetMs, 'deleteSession')
+      return await withTimeout(inFlight, budgetMs, 'deleteSession')
     } catch (error) {
       kill()
+      // Electron is gone, so the stuck DELETE can now complete. Wait for it,
+      // bounded, so `newSession` does not race it.
+      await withTimeout(drained, drainMs, 'deleteSession drain').catch(() => undefined)
       if (isIgnorableDeleteSessionError(error)) return undefined
       throw error
     }
