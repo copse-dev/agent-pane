@@ -86,7 +86,10 @@ export async function resolveThreadExecutionContext(
   if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
 
   const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
-  if (threadMeta?.id !== threadId) {
+  if (threadMeta == null) {
+    throw new Error(`Thread "${threadId}" is not persisted yet under project "${projectId}"`)
+  }
+  if (threadMeta.id !== threadId) {
     throw new Error(`Thread "${threadId}" does not belong to project "${projectId}"`)
   }
 
