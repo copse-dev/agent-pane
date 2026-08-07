@@ -28,6 +28,12 @@ let e2eUserDataDir: string | null = null
 
 export const config: Options.Testrunner = {
   runner: 'local',
+  // Keep the runner + chromedriver logs instead of discarding them. When a spec
+  // dies with "Unable to connect to http://localhost:PORT", that message is the
+  // symptom; the driver's own log is the only place the cause is written down.
+  // Landing them under e2e-failure-artifacts/ puts them in the directory CI
+  // already uploads and prints on a failing shard.
+  outputDir: join(process.cwd(), 'e2e-failure-artifacts', 'wdio-logs'),
   specs: ['./tests/e2e/**/*.e2e.ts'],
   exclude: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
