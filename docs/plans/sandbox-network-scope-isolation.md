@@ -1,14 +1,13 @@
 # Sandbox network scope isolation
 
-**Status: Phases 1–3 implemented; 4–5 proposed.** Written after a user report of
+**Status: Phases 1–4 implemented; 5 proposed.** Written after a user report of
 constant "Run shell command?" prompts in a pane running an OpenRouter model,
 where the reason line named a network widening the pane had nothing to do with.
 
 Phases 1–3 (probe teardown, scope labelling, capability-based gating) shipped
-together and are marked inline below. Phase 4 (moving background probes to their
-own process) and Phase 5 are unstarted — they are the parts that depend on the
-ASRT audit's conclusion, and Phase 3 should be given time to show how much
-residual prompting is left before paying for them.
+first; phase 4 (probes in their own process) followed. Each is marked inline
+below. Phase 5 is unstarted and should stay that way until the phase 2 logs show
+whether a pooled ACP session still pins the allowlist often enough to matter.
 
 ## The symptom
 
@@ -204,7 +203,7 @@ Built as the conservative option: the gate now also requires
 widening, exactly as this section predicted — the reported command is not fixed
 by this phase, only the `cat`/`rg`/`git status` class around it.
 
-### Phase 4 — Move background probes out of process
+### Phase 4 — Move background probes out of process (implemented)
 
 Probes are the largest and least explicable source of scope activation: seconds
 long, no user-visible turn, egress needed to exactly one vendor.
@@ -222,6 +221,37 @@ long, no user-visible turn, egress needed to exactly one vendor.
   to long-lived sessions.
 - Independently worth doing: stop `revalidateStaleAcpModels()` firing on every
   `workspace:set` for agents the user has never selected in a pane.
+
+Built as described, with one addition the plan did not anticipate: a **fallback**.
+`probeAcpAgentIsolated` (`acp-probe-host.ts`) spawns `acp-probe-worker.js`, which
+calls its own `SandboxManager.initialize` and returns one JSON line; if the helper
+cannot run, it degrades to the in-process `probeAcpAgent`. That path still widens
+the global scope — today's behaviour — but a probe that cannot run leaves the user
+with no model list at all, which is worse.
+
+Getting there needed the probe's import graph to be free of `node-pty` and
+`electron`, since the worker runs as a plain Node script and a native module in
+the graph fails at _require_ time (which the build's `assertParses` cannot catch).
+Four leaf extractions did it, with no behaviour change:
+
+- `project-sandbox/sandbox-argv.ts` — pure argv/env wrap helpers out of `spawn.ts`
+- `project-sandbox/enabled.ts` — `isProjectSandboxEnabled`, which needs ASRT and so
+  could not live in the deliberately native-free `state.ts`
+- `services/acp/acp-bridge-name.ts` — the bridge's server-name constant, which was
+  dragging the whole bridge (and thus `node-pty`) into `acp-client.ts`
+- `services/acp/acp-permission-registry.ts` — the ACP toolCallId → AbortController
+  map, which was pulling `approval.ts`'s graph in for one function
+
+`spawn.ts` and `approval.ts` re-export what they moved, so no caller changed.
+`acp-probe-worker.test.ts` bundles the worker and asserts it links neither native —
+the guard that keeps this property from silently regressing.
+
+Not verified in this environment: the _sandboxed_ probe path. The container has no
+`bwrap`, so ASRT cannot initialize and the worker exercises its documented
+degradation to an unsandboxed spawn. The handshake, JSON contract, timeout,
+failure reporting, and the built `dist/main/acp-probe-worker.js` artifact were all
+run end-to-end against a fake ACP agent; confinement itself still wants a check on
+macOS or a bwrap-capable Linux box.
 
 ### Phase 5 — Long-lived ACP sessions (deferred)
 
