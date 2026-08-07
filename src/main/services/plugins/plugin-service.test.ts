@@ -44,11 +44,11 @@ import {
   type PluginToolRuntimeController,
 } from './plugin-tool-controller.ts'
 
-const PLUGIN_DISABLED_KEY = 'packDisabled'
-const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
-const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'packMigration.parallelSearchEnablement'
-const PLUGIN_SOURCES_KEY = 'packSources'
-const pluginSettingsKey = (id: string): string => `pack.${id}.settings`
+const PLUGIN_DISABLED_KEY = 'pluginDisabled'
+const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
+const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearchEnablement'
+const PLUGIN_SOURCES_KEY = 'pluginSources'
+const pluginSettingsKey = (id: string): string => `plugin.${id}.settings`
 const localPluginRoots: string[] = []
 
 async function makeToolPlugin(): Promise<string> {
@@ -385,5 +385,106 @@ describe('PluginService', () => {
 
     assert.equal(service.registry.isEnabled(FORCED_PLANNING_PLUGIN_ID), true)
     assert.deepEqual(storageGet(PLUGIN_DISABLED_KEY), [PII_REDACTION_PLUGIN_ID])
+  })
+})
+
+// C3 of docs/plans/agent-plugins-migration.md — the `pack*` → `plugin*` key
+// rename. These are the cases where getting it wrong is *silent*: nobody sees
+// an error, they just find their choices reverted after an update.
+describe('migratePackKeysToPlugin', () => {
+  const OLD_KEYS = [
+    'packDisabled',
+    'packSources',
+    'packMigration.packModelSettings',
+    'packMigration.automationsEnablement',
+    'packMigration.parallelSearchEnablement',
+    'pack.demo.plugin.settings',
+  ]
+  const NEW_KEYS = [
+    'pluginDisabled',
+    'pluginSources',
+    'pluginMigration.pluginModelSettings',
+    'pluginMigration.automationsEnablement',
+    'pluginMigration.parallelSearchEnablement',
+    'plugin.demo.plugin.settings',
+  ]
+
+  function wipe(): void {
+    for (const key of [...OLD_KEYS, ...NEW_KEYS]) storageDelete(key)
+  }
+
+  beforeEach(() => {
+    __resetPluginServiceForTests()
+    wipe()
+  })
+
+  afterEach(() => {
+    __resetPluginServiceForTests()
+    wipe()
+    clearStorage()
+  })
+
+  it('carries a disable set forward instead of re-seeding the shipped defaults', () => {
+    // A profile that turned an experiment ON (absent from the list) and a
+    // stable plugin OFF (present). Both must survive.
+    storageSet('packDisabled', ['copse.todos'])
+    storageSet('packMigration.automationsEnablement', true)
+    storageSet('packMigration.parallelSearchEnablement', true)
+
+    getPluginService()
+
+    assert.deepEqual(parseStringList(storageGet('pluginDisabled')), ['copse.todos'])
+    // The seeding path must not have fired: `copse.model-comparison` ships
+    // disabled, and its absence here is the user's explicit opt-in.
+    assert.equal(
+      parseStringList(storageGet('pluginDisabled')).includes(MODEL_COMPARISON_PLUGIN_ID),
+      false,
+    )
+  })
+
+  it('treats an empty disable set as a value, not a blank', () => {
+    // `[]` means "everything on" — the opposite of "never configured". Copying
+    // it is what stops a fully-opted-in profile reverting to the defaults.
+    storageSet('packDisabled', [])
+    storageSet('packMigration.automationsEnablement', true)
+    storageSet('packMigration.parallelSearchEnablement', true)
+
+    getPluginService()
+
+    assert.deepEqual(storageGet('pluginDisabled'), [])
+  })
+
+  it('carries per-plugin settings bags forward, ids containing dots included', () => {
+    storageSet('packDisabled', [])
+    storageSet('pack.demo.plugin.settings', { strictness: 4 })
+
+    getPluginService()
+
+    assert.deepEqual(storageGet('plugin.demo.plugin.settings'), { strictness: 4 })
+  })
+
+  it('never overwrites a value already written under the new key', () => {
+    storageSet('packDisabled', ['stale.from.before'])
+    storageSet('pluginDisabled', ['current'])
+
+    getPluginService()
+
+    assert.deepEqual(parseStringList(storageGet('pluginDisabled')), ['current'])
+  })
+
+  it('leaves the old keys in place so a downgrade still finds them', () => {
+    storageSet('packDisabled', ['copse.todos'])
+
+    getPluginService()
+
+    assert.deepEqual(parseStringList(storageGet('packDisabled')), ['copse.todos'])
+  })
+
+  it('is inert on a profile that never had the old keys', () => {
+    getPluginService()
+    // Nothing to carry forward, so seeding owns the result: the shipped
+    // default-off set, exactly as a fresh install gets.
+    assert.equal(parseStringList(storageGet('pluginDisabled')).length > 0, true)
+    assert.equal(storageGet('packDisabled'), undefined)
   })
 })

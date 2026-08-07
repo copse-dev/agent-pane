@@ -145,8 +145,8 @@ groups every plugin's contributions by plugin id and owns the lifecycle:
   `stable` or `experimental`; missing user-plugin values fail safe to experimental.
   Settings shows the status before enablement. `createFirstPartyPluginRegistry()`
   seeds every plugin enabled, then `EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS` derives the
-  off-by-default set from those declarations and writes it into `packDisabled` on
-  a profile that has never had one. Once `packDisabled` exists it is the user's
+  off-by-default set from those declarations and writes it into `pluginDisabled` on
+  a profile that has never had one. Once `pluginDisabled` exists it is the user's
   own and is never re-seeded.
 - **Atomic enable/disable** — `disable(id)` flips a single flag, so every one of
   a plugin's contribution kinds drops from the active getters at once: tools leave
@@ -238,8 +238,8 @@ settings the manifest declares. This is the `about:addons` of Copse.
   **atomically** (P1 contract) — every one of the plugin's contribution kinds
   drops from the active getters at once.
 - **Persistence.** The disable set is stored as a `readonly string[]` under the
-  `packDisabled` key (same pattern as `mcpDisabledServers`); each plugin's
-  settings values live under `pack.<packId>.settings` as a plain record keyed
+  `pluginDisabled` key (same pattern as `mcpDisabledServers`); each plugin's
+  settings values live under `plugin.<pluginId>.settings` as a plain record keyed
   by field id. Writes go through `storageUpdate` so concurrent toggles cannot
   drop each other's change. Applied to the registry at boot before the
   provider is installed, so a plugin the user turned off stays off across
@@ -296,7 +296,7 @@ disable is pinned by
 - The generic list/tree panel renderer lives in `src/renderer/views/plugin-panel.ts`
   and consumes the Electron-free `PanelData` types across the package boundary.
 - Host persistence of the enable/disable set + plugin-scoped settings values
-  (`electron-store` under `packDisabled` and `pack.<packId>.settings`), the
+  (`electron-store` under `pluginDisabled` and `plugin.<pluginId>.settings`), the
   shared `PluginRegistry` singleton, and the Settings plugin list UI landed in P3
   (`src/main/services/plugins/plugin-service.ts` + `src/renderer/views/settings-dialog.ts`).
   Host disk-discovery of user plugins into that registry is still outstanding.

@@ -18,16 +18,14 @@
 // no partial state; persistence is a write-behind snapshot of `registry`.
 //
 // Storage layout under the shared `electron-store`:
-//   `packDisabled`             → readonly string[]   (plugin ids the user disabled)
-//   `pack.<pluginId>.settings` → Record<string, unknown> (values keyed by field id)
+//   `pluginDisabled`             → readonly string[]   (plugin ids the user disabled)
+//   `plugin.<pluginId>.settings` → Record<string, unknown> (values keyed by field id)
 //
-// **Those key names are deliberately still `pack*`.** Stage C2 of
-// docs/plans/agent-plugins-migration.md renames identifiers, not wire strings:
-// a persisted key is a contract with every profile already on disk, and
-// renaming one without a migration silently discards a user's enablement
-// choices. C3 renames them behind a fallback read. The same rule keeps the
-// `packs:*` IPC channel names — C1 renames those alongside the Settings merge
-// that resolves the collision with Cursor's existing `plugins` surface.
+// Renamed from `packDisabled` / `pack.<id>.settings` in C3 of
+// docs/plans/agent-plugins-migration.md. `migratePackKeysToPlugin()` copies
+// every old key forward on first boot and leaves the originals in place for one
+// release; see its comment for why the copy is guarded by the destination key
+// rather than a migration flag.
 //
 // The disable list stays a plain array (like `mcpDisabledServers`) so it is
 // still readable / editable by hand and easy to migrate. Plugin settings are
@@ -52,7 +50,7 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
-import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
+import { storageGet, storageListKeys, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import {
@@ -76,13 +74,13 @@ import { setPluginBrowserService } from './plugin-browser-service.ts'
 export { discoverPluginToolSource, hashPluginToolSource } from './plugin-tool-source.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by plugins. */
-const PLUGIN_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
+const PLUGIN_MODEL_SETTINGS_MIGRATION_KEY = 'pluginMigration.pluginModelSettings'
 
 /** Storage key holding the ids of plugins the user disabled. */
-const PLUGIN_DISABLED_KEY = 'packDisabled'
+const PLUGIN_DISABLED_KEY = 'pluginDisabled'
 
 /** Explicitly user-selected plugin directories (#1336 P1). */
-const PLUGIN_SOURCES_KEY = 'packSources'
+const PLUGIN_SOURCES_KEY = 'pluginSources'
 
 /**
  * Ids of discovered Agent Plugins packages this profile has already seen.
@@ -116,14 +114,14 @@ const PLUGINS_SEEN_KEY = 'pluginsSeen'
 const DEFAULT_DISABLED_PLUGIN_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS
 
 /** One-time default-off seed for the new local automations prototype. */
-const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
+const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
 
 /** One-time default-off seed for the hosted Parallel Search integration. */
-const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'packMigration.parallelSearchEnablement'
+const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearchEnablement'
 
 /** Storage key holding one plugin's settings values (`pluginId` scoped). */
 function pluginSettingsKey(pluginId: string): string {
-  return `pack.${pluginId}.settings`
+  return `plugin.${pluginId}.settings`
 }
 
 /**
@@ -133,6 +131,48 @@ function pluginSettingsKey(pluginId: string): string {
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Carry every `pack*` storage key forward to its `plugin*` name (C3).
+ *
+ * **This is user data, and getting it wrong is silent.** `packDisabled` holds
+ * the plugins someone deliberately switched off — and, just as importantly, the
+ * *absence* of an id from it is how "I turned this experiment on" is recorded.
+ * If the new key simply started life empty, every one of those choices would
+ * revert on the upgrade that renamed them, and nothing would report it.
+ *
+ * Copy-if-absent rather than a one-shot guarded by its own flag: a flag can be
+ * written when the copy half-failed, and there is no second chance. Here the
+ * presence of the destination key *is* the guard, so a partial run resumes and
+ * a completed one is a no-op.
+ *
+ * An **empty array is a value, not a blank.** `[]` means "everything on", which
+ * is the opposite of "never configured", so the copy is keyed on `undefined`
+ * and never on emptiness. The old keys are left in place for one release, so a
+ * user who downgrades still finds their settings.
+ */
+function migratePackKeysToPlugin(): void {
+  const copyIfAbsent = (from: string, to: string): void => {
+    if (storageGet(to) !== undefined) return
+    const previous = storageGet(from)
+    if (previous === undefined) return
+    storageSet(to, previous)
+  }
+
+  copyIfAbsent('packDisabled', PLUGIN_DISABLED_KEY)
+  copyIfAbsent('packSources', PLUGIN_SOURCES_KEY)
+  copyIfAbsent('packMigration.packModelSettings', PLUGIN_MODEL_SETTINGS_MIGRATION_KEY)
+  copyIfAbsent('packMigration.automationsEnablement', AUTOMATIONS_ENABLEMENT_MIGRATION_KEY)
+  copyIfAbsent('packMigration.parallelSearchEnablement', PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY)
+
+  // Per-plugin bags — `pack.<id>.settings`, `.threadSessions`, `.storage`. The
+  // id is opaque and may itself contain dots (`copse.todos`), so this rewrites
+  // the prefix rather than parsing the key into parts.
+  for (const key of storageListKeys()) {
+    if (!key.startsWith('pack.')) continue
+    copyIfAbsent(key, `plugin.${key.slice('pack.'.length)}`)
+  }
 }
 
 /** Read the persisted disable set. */
@@ -600,6 +640,12 @@ export function createPluginService(registry: PluginRegistry): PluginService {
  */
 export function getPluginService(): PluginService {
   if (singleton) return singleton
+  // Must run first. `seedDefaultDisabledPlugins` writes the default-off set on
+  // any profile with no `pluginDisabled` key — so on the upgrade that renames
+  // the keys, running it before the copy would overwrite the user's real
+  // choices with the shipped defaults, and the old key would still be sitting
+  // there unread.
+  migratePackKeysToPlugin()
   seedDefaultDisabledPlugins()
   migratePluginModelSettings()
   migrateAutomationsEnablement()

@@ -12,7 +12,7 @@ import { createThread } from '../thread-store.ts'
 import { cronMatches, validateCronExpression } from './cron.ts'
 import { getTaskSupervisor } from '../supervisor/task-supervisor.ts'
 
-const STORAGE_KEY = `pack.${AUTOMATIONS_PLUGIN_ID}.storage`
+const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 
 function isSchedule(value: unknown): value is AutomationSchedule {

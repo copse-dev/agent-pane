@@ -308,6 +308,28 @@ updating.
 identically under the new keys; no pack silently changes enablement across the
 migration; visual evals cover Settings and the site; `npm run check` clean.
 
+### What C3 found that the plan did not anticipate
+
+**A third contract was hiding in plain sight: `copse-pack.json`.** The C2 sweep
+renamed it to `copse-plugin.json`, and that name lives on the _user's_ disk in
+whatever folder they selected — outside anything Copse can migrate. Every
+already-selected directory would have silently stopped loading, the only symptom
+being a plugin quietly missing from Settings. `discoverPluginToolSource` now
+prefers the new name and falls back to the old one. The lesson generalises: the
+question is not "is this string a storage key" but "does someone else already
+have this string written down".
+
+`schemas/copse-pack.schema.json` keeps its filename **and** its `$id`
+(`https://copse.dev/schemas/copse-pack.schema.json`) for the same reason — a
+published schema identifier is a URL other people may reference, and reassigning
+it is worse than an inconsistent filename.
+
+**The migration is guarded by the destination key, not a migration flag.** Every
+other one-shot in `plugin-service.ts` uses a `*Migration.*` marker, but a marker
+can be written when the copy half-failed, and there is no second chance at user
+data. Keying on "has the new key been written" makes a partial run resume and a
+completed run a no-op.
+
 ## Stage B — built-ins become plugins
 
 Runs last, so it is authored once in post-rename vocabulary: `FIRST_PARTY_PLUGINS`,
