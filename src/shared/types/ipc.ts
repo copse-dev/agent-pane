@@ -316,7 +316,7 @@ export interface IpcInvokeMap {
       rows: number,
       meta: { label?: string; projectId: string; threadId: string | null },
     ]
-    result: string
+    result: { sessionId: string; checkoutMode: 'shared' | 'worktree' }
   }
   'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
   'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: undefined }
