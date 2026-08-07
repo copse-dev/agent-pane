@@ -75,23 +75,20 @@ export type ShellPermissionDecision =
 export type ShellPermissionMode = 'standard' | 'guarded-yolo'
 
 export type TerminalPermissionDecision =
-  | { action: 'allow' }
-  | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' | 'widened-network' }
+  { action: 'allow' } | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' }
 
 /**
  * Integrated terminals are user-directed and run outside the project seatbelt on
- * macOS. They can open without prompting only while no widened network scope is
- * active and the spawn path is a local PTY (not SSH).
+ * macOS. A local PTY can therefore open without prompting when the sandbox is
+ * available; SSH remains an explicit remote boundary.
  */
 export function decideTerminalPermission(input: {
   sandboxEnabled: boolean
   remoteTarget: boolean
-  networkScopeActive: boolean
 }): TerminalPermissionDecision {
   // SSH PTYs intentionally launch outside the local seatbelt. Treat the actual
   // spawn path as the boundary, not merely the platform's sandbox capability.
   if (input.remoteTarget) return { action: 'prompt', reason: 'remote-target' }
-  if (input.networkScopeActive) return { action: 'prompt', reason: 'widened-network' }
   if (!input.sandboxEnabled) return { action: 'prompt', reason: 'sandbox-unavailable' }
   return { action: 'allow' }
 }
