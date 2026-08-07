@@ -77,6 +77,7 @@ export async function ensureProviderHostApproved(baseUrl: string): Promise<void>
       'Approve to always allow this provider host (saved in Settings).',
     ].join('\n'),
     type: 'web',
+    cause: 'provider-host',
     allowRemember: false,
     showWhileSettingsOpen: true,
   })
