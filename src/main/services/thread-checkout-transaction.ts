@@ -66,6 +66,7 @@ export interface ThreadCheckoutTransactionDependencies {
     projectRoot: string
     prompt: string
     baseBranch: string
+    seedFromDirtyProject: boolean
   }) => Promise<ThreadWorktree>
   /**
    * Reclaim a linked checkout left behind when allocate succeeded but
@@ -183,7 +184,7 @@ export function createThreadCheckoutPreview(
     const inspection = await dependencies.inspect(project, isLocal)
     const decision = decideThreadWorktreePolicy({
       choice: input.choice,
-      projectMode: project.worktreeMode ?? 'never',
+      ...(project.worktreeMode ? { projectMode: project.worktreeMode } : {}),
       isLocal,
       ...inspection,
     })
@@ -241,7 +242,7 @@ export function createThreadCheckoutTransaction(
       const inspection = await dependencies.inspect(project, isLocal)
       const decision = decideThreadWorktreePolicy({
         choice: input.choice,
-        projectMode: project.worktreeMode ?? 'never',
+        ...(project.worktreeMode ? { projectMode: project.worktreeMode } : {}),
         isLocal,
         ...inspection,
       })
@@ -257,8 +258,15 @@ export function createThreadCheckoutTransaction(
         return persistedResult(input.choice, inspection.currentBranch ?? undefined)
       }
 
-      if (!inspection.currentBranch)
-        throw new Error('Cannot create a worktree from a detached HEAD')
+      // The base is the repository's default branch, never the branch the
+      // project checkout happens to be sitting on. Cutting from live HEAD meant
+      // a thread started on top of whatever the previous thread had left
+      // checked out, which is precisely the isolation the worktree promises.
+      // `unsupportedReason` already routed an unresolved default branch to
+      // shared (or blocked an explicit choice), so this is a type guard.
+      if (!inspection.defaultBranch)
+        throw new Error('Cannot create a worktree without a resolved default branch')
+      const baseBranch = inspection.defaultBranch
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw
       // "already registered" and strand the thread.
@@ -266,7 +274,7 @@ export function createThreadCheckoutTransaction(
         projectId: input.projectId,
         threadId: input.threadId,
         projectRoot: project.path,
-        baseBranch: inspection.currentBranch,
+        baseBranch,
       })
       const worktree =
         recovered ??
@@ -275,7 +283,8 @@ export function createThreadCheckoutTransaction(
           threadId: input.threadId,
           projectRoot: project.path,
           prompt: input.prompt,
-          baseBranch: inspection.currentBranch,
+          baseBranch,
+          seedFromDirtyProject: decision.seededFromDirtyProject,
         }))
       if (recovered) {
         await dependencies.validate({

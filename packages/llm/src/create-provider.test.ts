@@ -425,6 +425,98 @@ describe('createExtraCloudProvider Responses transport', () => {
 
     assert.ok(provider instanceof ResponsesProvider)
   })
+
+  /** Shortest stream that lets `provider.stream()` run to completion. */
+  async function* oneTextDelta(): AsyncIterable<{ type: string; delta: string }> {
+    yield { type: 'response.output_text.delta', delta: 'ok' }
+  }
+
+  /** The `tools` array that reaches the Responses request for a configured provider. */
+  async function requestedTools(configuredTools: unknown): Promise<readonly unknown[]> {
+    const responsesProvider: ExtraProvider = {
+      id: 'acme',
+      label: 'Acme',
+      prefix: 'acme:',
+      baseUrl: 'https://api.acme.example/v1',
+      apiStyle: 'responses',
+      builtin: false,
+      local: false,
+      keyLabel: 'Key',
+      keyPlaceholder: '…',
+      keyHint: '',
+      fallbackContextWindow: 128_000,
+      extraBody: { tools: configuredTools },
+      models: [],
+    }
+    const provider = createExtraCloudProvider(responsesProvider, 'some-model', 'key', [
+      'api.acme.example',
+    ])
+    const captured: { tools?: readonly unknown[] | undefined } = {}
+    Object.defineProperty(provider, 'client', {
+      value: {
+        responses: {
+          create: (request: {
+            tools?: readonly unknown[]
+          }): AsyncIterable<{ type: string; delta: string }> => {
+            captured.tools = request.tools
+            return oneTextDelta()
+          },
+        },
+      },
+      configurable: true,
+    })
+    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // drain
+    }
+    const { tools: sent } = captured
+    assert.ok(sent, 'the provider should have issued a request')
+    return sent
+  }
+
+  it('forwards server-side tools other than web_search instead of dropping them', async () => {
+    // The previous allowlist kept only `web_search`, so a user who configured
+    // CodeInterpreter got no tool and no error — the request simply went out
+    // without it. Anything the provider executes itself must survive.
+    assert.deepEqual(
+      await requestedTools([
+        { type: 'web_search' },
+        { type: 'code_interpreter', container: { type: 'auto' } },
+        { type: 'image_generation' },
+      ]),
+      [
+        { type: 'web_search' },
+        { type: 'code_interpreter', container: { type: 'auto' } },
+        { type: 'image_generation' },
+      ],
+    )
+  })
+
+  it('forwards a provider-specific server tool spec it has never seen', async () => {
+    // e.g. OpenRouter's own web-search shape. An allowlist cannot enumerate
+    // these; an unknown type belongs to the provider to accept or reject.
+    assert.deepEqual(
+      await requestedTools([{ type: 'web_search_preview', search_context: 'high' }]),
+      [{ type: 'web_search_preview', search_context: 'high' }],
+    )
+  })
+
+  it('refuses a function tool smuggled in through provider config', async () => {
+    // Function tools come from Copse's registry and have implementations behind
+    // them. One injected here would be advertised with nothing able to run it.
+    assert.deepEqual(
+      await requestedTools([
+        { type: 'function', name: 'rm_rf', parameters: {} },
+        { type: 'web_search' },
+      ]),
+      [{ type: 'web_search' }],
+    )
+  })
+
+  it('ignores malformed tools entries without failing the request', async () => {
+    assert.deepEqual(await requestedTools([null, 'web_search', 42, {}, { type: 'web_search' }]), [
+      { type: 'web_search' },
+    ])
+  })
 })
 
 describe('tuned model parameters reach the provider', () => {

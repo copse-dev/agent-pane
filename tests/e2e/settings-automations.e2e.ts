@@ -68,6 +68,8 @@ describe('settings automations pack', function () {
     assert.equal(await row.getAttribute('data-enabled'), 'true')
     await expect(row.$('.pack-chip=UI × 1')).toBeDisplayed()
 
+    // The pack's detail panel sits inside its closed "Pack settings" fold.
+    await row.$('.pack-settings-summary').click()
     const detail = row.$('.automation-pack-settings')
     await expect(detail).toBeDisplayed()
     assert.match(await detail.getText(), /Project: workspace · local time/)

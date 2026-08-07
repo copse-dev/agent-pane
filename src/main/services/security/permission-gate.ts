@@ -19,6 +19,7 @@ import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { ShellPermissionDecision, ShellPromptParts } from './permission-policy.ts'
 import { errorMessage } from '@shared/errors.ts'
+import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
@@ -200,6 +201,7 @@ function autoApproveShell(
 async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
+  cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
@@ -212,6 +214,7 @@ async function requestEscalationApproval(
       ...shellPromptToApprovalFields(parts),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
+      cause,
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
       ...(leaseIdentity
@@ -285,6 +288,7 @@ async function resolveReadOutsideProject(
       ...shellPromptToApprovalFields(formatReadOutsideProjectPromptParts(command, analysis)),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external-read',
+      cause: 'shell-read-outside-project',
       // Recorded with the answer, so the log line that carries `remembered: true`
       // also says what the user granted read access *to*.
       reasons,
@@ -302,10 +306,16 @@ async function resolveReadOutsideProject(
   return approved
 }
 
+/**
+ * @param containedCause why an *in-sandbox* prompt is interrupting. The
+ *   escalation branch always records `shell-sandbox-escalation`, because that is
+ *   what the user is being asked about regardless of how the command got here.
+ */
 async function promptShell(
   command: string,
   reasons: string[],
   outsideSandbox: boolean,
+  containedCause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
@@ -316,6 +326,7 @@ async function promptShell(
     return requestEscalationApproval(
       'Run outside sandbox?',
       formatExternalSandboxPromptParts(command, reasons),
+      'shell-sandbox-escalation',
       signal,
       leaseIdentity,
     )
@@ -327,6 +338,7 @@ async function promptShell(
       ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons)),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'sandbox',
+      cause: containedCause,
       // A sandboxed approval includes a bounded replay lease by default. The
       // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
       // explicit because they weaken containment.
@@ -353,6 +365,7 @@ async function promptGuardedYoloHarm(command: string, reasons: string[]): Promis
     body: command,
     bodyAdvice: formatGuardedYoloHarmPromptAdvice(reasons),
     type: 'shell',
+    cause: 'shell-guarded-yolo-harm',
     allowRemember: false,
   })
   return approved
@@ -370,21 +383,34 @@ function readScriptForHarm(path: string): string | null {
   }
 }
 
-/** Prompt when a sandboxed command failed and may succeed unsandboxed. */
+/**
+ * Prompt when a sandboxed command failed and may succeed unsandboxed.
+ *
+ * `readGrantApplied` says the failed run had already been given the read-access
+ * relaxation for the paths it names. That command has now been contained with
+ * exactly what the read grant promised and still hit the sandbox, so the grant
+ * has been spent: it must not also auto-answer the full-escape question. Falling
+ * through to "Run outside sandbox?" puts the escalation back in front of the
+ * user, where a read grant silently approving writes and network never belonged.
+ */
 export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
+  opts: { readGrantApplied?: boolean } = {},
 ): Promise<boolean> {
   if (autoApproveShell(command, 'external')) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
-  const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
-  if (readOutside !== null) return readOutside
+  if (opts.readGrantApplied !== true) {
+    const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
+    if (readOutside !== null) return readOutside
+  }
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
+    'shell-sandbox-retry',
     signal,
   )
 }
@@ -407,6 +433,7 @@ export async function promptExpectedSandboxBlock(
       ...shellPromptToApprovalFields(formatExpectedSandboxBlockPromptParts(command, reasons)),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
+      cause: 'shell-expected-sandbox-block',
     },
     signal,
   )
@@ -420,6 +447,7 @@ export async function promptExpectedSandboxBlock(
 export async function promptInstallSocketFirewall(command: string): Promise<boolean> {
   const { approved } = await requestApproval({
     title: 'Install Socket Firewall?',
+    cause: 'shell-package-install',
     body: [
       'This command installs packages and will be scanned by Socket Firewall (sfw)',
       'to block known-malicious packages — but sfw is not installed yet.',
@@ -454,6 +482,7 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
     type: 'mcp',
     subject: toolName,
     scope: 'external',
+    cause: 'mcp-tool',
     allowRemember: true,
   })
   if (approved && remember) await rememberMcpTool(toolName)
@@ -473,6 +502,7 @@ async function promptWebOrigin(origin: string, detail: string): Promise<boolean>
     title: 'Allow web origin?',
     body: formatWebPromptBody(origin, detail),
     type: 'web',
+    cause: 'web-origin',
     subject: origin,
     scope: 'external',
     allowRemember: true,
@@ -549,6 +579,7 @@ async function checkCustomToolPermission(toolName: string, args: unknown): Promi
     title: `Custom tool: ${customToolLabel(toolName)}`,
     body: JSON.stringify(args, null, 2),
     type: 'mcp',
+    cause: 'custom-tool',
     // No "remember" for always-prompt tools: a saved grant would never be honored.
     allowRemember: !alwaysPrompt,
   })
@@ -566,6 +597,7 @@ async function checkGithubWriteToolPermission(toolName: string, args: unknown): 
     title: `GitHub action: ${toolName}`,
     body: JSON.stringify(args, null, 2),
     type: 'mcp',
+    cause: 'github-write',
     allowRemember: false,
   })
   return approved
@@ -617,7 +649,9 @@ function firePermissionDecision(
 
 async function checkShellPermission(args: unknown, originalCommand?: string): Promise<boolean> {
   const command = shellCommandFromArgs(args)
-  if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
+  if (!command) {
+    return promptShell('(invalid command)', ['missing command argument'], false, 'shell-in-sandbox')
+  }
 
   return ensureShellCommandPermitted(
     command,
@@ -693,6 +727,7 @@ export async function ensureShellCommandPermitted(
       command,
       ['sandbox network access is temporarily widened for another process'],
       false,
+      'shell-network-scope-overlap',
       opts.signal,
     )
   }
@@ -867,6 +902,7 @@ export async function ensureShellCommandPermitted(
             ),
             subject: SHELL_DECISION_SUBJECT,
             scope: outsideSandbox ? 'external' : 'sandbox',
+            cause: 'shell-package-install',
           }
         : {
             title: 'Run package install?',
@@ -880,16 +916,21 @@ export async function ensureShellCommandPermitted(
             ),
             subject: SHELL_DECISION_SUBJECT,
             scope: outsideSandbox ? 'external' : 'sandbox',
+            cause: 'shell-package-install',
           },
       opts.signal,
     )
     return approved
   }
 
+  // Distinguish "contained, but policy still wants a human" from "nothing is
+  // containing this at all" — the second is the prompt a container would remove,
+  // and collapsing them would make the U0 measurement unreadable.
   return promptShell(
     command,
     decision.reasons,
     outsideSandbox,
+    sandboxEnabled ? 'shell-in-sandbox' : 'shell-no-containment',
     opts.signal,
     leaseOfferIdentity ?? undefined,
   )
@@ -926,6 +967,7 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
     title: 'Allow browser navigation?',
     body: formatBrowserPromptBody(decision.origin, url),
     type: 'mcp',
+    cause: 'browser-navigation',
     subject: url,
     scope: 'external',
     allowRemember: true,
@@ -979,6 +1021,7 @@ async function checkBackgroundProcessPermission(
   const { approved, remember } = await requestApproval({
     title: 'Allow this project to bind a local port?',
     type: 'shell',
+    cause: 'shell-port-binding',
     ...shellPromptToApprovalFields(
       formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
     ),
@@ -1014,6 +1057,7 @@ export async function ensureTerminalPermitted(
   if (decision.reason === 'widened-network') {
     const { approved } = await requestApproval({
       title: 'Open terminal with widened network access?',
+      cause: 'terminal-network-widened',
       body:
         'The project sandbox network is temporarily widened for another process. ' +
         'A new integrated terminal would inherit that network access until the scope closes.',
@@ -1026,6 +1070,7 @@ export async function ensureTerminalPermitted(
   if (decision.reason === 'remote-target') {
     const { approved } = await requestApproval({
       title: 'Open remote terminal?',
+      cause: 'terminal-remote',
       body:
         'SSH-backed integrated terminals run outside the local project sandbox. ' +
         'Commands you run can access the configured remote account and network.',
@@ -1037,6 +1082,7 @@ export async function ensureTerminalPermitted(
 
   const { approved } = await requestApproval({
     title: 'Open unsandboxed terminal?',
+    cause: 'terminal-unsandboxed',
     body:
       'The integrated terminal cannot be confined by the project sandbox on this platform. ' +
       'Commands you run in it can access your full user account, filesystem, and network.',
@@ -1059,6 +1105,7 @@ async function promptHookAsk(check: PermissionCheck, decision: HookGateDecision)
   const { approved } = await requestApproval({
     title: `Hook asks to confirm: ${check.toolName}`,
     body: bodyLines.join('\n'),
+    cause: 'hook-ask',
     type: check.toolName === 'run_shell' || check.toolName === 'run_background' ? 'shell' : 'mcp',
   })
   return approved

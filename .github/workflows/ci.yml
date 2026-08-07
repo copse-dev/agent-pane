@@ -833,6 +833,22 @@ jobs:
           # a wedged run) so the command can't die with "timeout: not found".
           TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
 
+          # ASRT's Linux network bridge, matched by the socket path it owns.
+          #
+          # `@anthropic-ai/sandbox-runtime` spawns socat on both sides of the
+          # sandbox boundary, and both forms name the same generated socket
+          # (`linux-sandbox-utils.js`, initializeLinuxNetworkBridge):
+          #
+          #   host:    socat UNIX-LISTEN:$TMPDIR/claude-http-<hex>.sock,… TCP:localhost:<port>,…
+          #   sandbox: socat TCP-LISTEN:3128,… UNIX-CONNECT:$TMPDIR/claude-http-<hex>.sock
+          #
+          # Matching that socket name — rather than the bare word `socat` — is
+          # what makes this safe to run on a shared runner. A blanket
+          # `pkill -f socat` would also reap a socat the runner infrastructure
+          # itself depends on, which is why #1561 recorded the leak but left
+          # the fix alone. Nothing but ASRT creates `claude-{http,socks}-*.sock`.
+          E2E_SOCAT_PATTERN='[s]ocat.*claude-(http|socks)-[0-9a-f]+\.sock'
+
           cleanup_e2e_processes() {
             # Bracketed patterns avoid matching this shell's own command line.
             # A failed deleteSession can orphan any of these; self-hosted runner
@@ -841,11 +857,23 @@ jobs:
             pkill -TERM -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
             pkill -TERM -f '[X]vfb' 2>/dev/null || true
             pkill -TERM -f '[g]ortex' 2>/dev/null || true
+            # Added for #1442's socat bridges: the reaper predates them, so they
+            # survived into the next job on a reused container. Each leaked
+            # bridge holds its listening socket, and a shard that then cannot
+            # start a session fails every spec that calls `reloadSession`.
+            pkill -TERM -f "$E2E_SOCAT_PATTERN" 2>/dev/null || true
             sleep 1
             pkill -KILL -f '[e]lectron/dist/electron' 2>/dev/null || true
             pkill -KILL -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
             pkill -KILL -f '[X]vfb' 2>/dev/null || true
             pkill -KILL -f '[g]ortex' 2>/dev/null || true
+            pkill -KILL -f "$E2E_SOCAT_PATTERN" 2>/dev/null || true
+            # The sockets outlive the processes that listened on them. Leaving
+            # them behind fills $TMPDIR on a long-lived runner and makes the
+            # diagnostics harder to read.
+            find "${TMPDIR:-/tmp}" -maxdepth 1 \
+              \( -name 'claude-http-*.sock' -o -name 'claude-socks-*.sock' \) \
+              -delete 2>/dev/null || true
           }
 
           capture_e2e_runner_diagnostics() {
@@ -949,6 +977,34 @@ jobs:
               ulimit -a || true
             } >"$diagnostics_file" 2>&1
             echo "Saved runner diagnostics to $diagnostics_file"
+            # Also print it. The artifact is the durable copy, but downloading a
+            # workflow artifact needs a token with `actions:read`, which a GitHub
+            # App integration does not get — so for anyone triaging through the
+            # API the file may as well not exist (`403 Resource not accessible by
+            # integration`). The job log has no such gate. Collapsed by default,
+            # so a green-eyed scroll past a failing shard costs nothing.
+            echo "::group::runner diagnostics (attempt $attempt)"
+            cat "$diagnostics_file" || true
+            echo "::endgroup::"
+          }
+
+          # Dump whatever WebdriverIO and chromedriver wrote about the session.
+          # "Unable to connect to http://localhost:PORT" tells us the driver
+          # stopped accepting — it never says why, because the only account of
+          # that is the driver's own log, which lives in wdio's outputDir and was
+          # being discarded at job end. Tail rather than cat: a driver log can run
+          # to megabytes and the failure is always at the end.
+          dump_e2e_session_logs() {
+            local logs_dir="e2e-failure-artifacts/wdio-logs"
+            [ -d "$logs_dir" ] || return 0
+            echo "::group::wdio + chromedriver logs (attempt $1)"
+            for log_file in "$logs_dir"/*.log; do
+              [ -f "$log_file" ] || continue
+              echo "### $log_file"
+              tail -n 200 "$log_file" || true
+              echo
+            done
+            echo "::endgroup::"
           }
 
           trap cleanup_e2e_processes EXIT
@@ -967,6 +1023,7 @@ jobs:
             fi
             echo "::endgroup::"
             capture_e2e_runner_diagnostics "$attempt" "$attempt_status" || true
+            dump_e2e_session_logs "$attempt" || true
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
