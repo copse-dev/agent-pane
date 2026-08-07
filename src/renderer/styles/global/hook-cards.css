@@ -19,6 +19,16 @@
   margin-top: calc(-1 * var(--spacing-sm));
 }
 
+/* The first turn's `sessionStart` hooks fire detached before any message has
+   been written, so `attachHookCards` folds them onto the first message. That
+   anchor (a plain sticky user prompt) carries none of the assistant-message
+   bulk the negative margin above is tuned for, so the pull-up would leave the
+   cards flush against the prompt. Give that host a normal gap instead, matching
+   how later turns' cards sit relative to their message. */
+.messages-list > :first-child + .hook-card-host {
+  margin-top: var(--spacing-sm);
+}
+
 .hook-card,
 .hook-card-group {
   align-self: flex-end;
