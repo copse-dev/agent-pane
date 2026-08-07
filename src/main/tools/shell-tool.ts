@@ -50,6 +50,7 @@ import { getActiveRunThread } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
 import { recordDecision } from '../services/security/decision-log-store.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
+import { recordCreatedPullRequest } from '../services/worktree-parking.ts'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -441,7 +442,10 @@ export const runShellTool = defineTool({
       const succeeded = (r: ShellRunResult): boolean =>
         r.exitCode === 0 || isSigpipeOnlyFailure(r.exitCode, pipefailInjected)
 
-      if (succeeded(result)) return `${containmentBanner}${withBanner(formatShellSuccess(result))}`
+      if (succeeded(result)) {
+        recordCreatedPullRequest(command, result.output)
+        return `${containmentBanner}${withBanner(formatShellSuccess(result))}`
+      }
 
       if (!suppressUnsandboxedRetry) {
         const retry = await maybeRetryUnsandboxed(
@@ -457,6 +461,7 @@ export const runShellTool = defineTool({
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
           if (succeeded(retry)) {
+            recordCreatedPullRequest(command, retry.output)
             const retryBanner = guardedYolo ? '[Guarded YOLO · unsandboxed retry]\n' : ''
             return `${retryBanner}${withBanner(formatShellSuccess(retry))}`
           }

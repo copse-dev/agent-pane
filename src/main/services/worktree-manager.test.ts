@@ -15,8 +15,10 @@ import {
   expectedThreadWorktreePath,
   listProjectWorktrees,
   managedThreadIdForPath,
+  parkThreadWorktree,
   parseWorktreePorcelain,
   pruneSafeOrphans,
+  restoreRetiredThreadWorktree,
   retireThreadWorktree,
   validateThreadWorktree,
 } from './worktree-manager.ts'
@@ -144,6 +146,61 @@ describe('worktree manager', () => {
       { status: 'removed', branch: worktree.branch },
     )
     assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
+  })
+
+  it('parks a clean pushed PR branch and restores it without deleting the branch', async () => {
+    const { temp, repo } = await setup()
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', '-u', 'origin', 'main'])
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-pr',
+      projectRoot: repo,
+      prompt: 'Ship the fix',
+      baseBranch: 'main',
+    })
+    await writeFile(join(worktree.path, 'change.txt'), 'done\n')
+    git(worktree.path, ['add', '.'])
+    git(worktree.path, ['commit', '-q', '-m', 'done'])
+
+    assert.deepEqual(
+      await parkThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-pr',
+        projectRoot: repo,
+        worktree,
+      }),
+      { status: 'blocked-unpushed', branch: worktree.branch },
+    )
+
+    git(worktree.path, ['push', '-q', '-u', 'origin', worktree.branch])
+    const parked = await parkThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-pr',
+      projectRoot: repo,
+      worktree,
+    })
+    assert.equal(parked.status, 'removed')
+    assert.equal(git(repo, ['rev-parse', '--verify', worktree.branch]).trim(), parked.head)
+    assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
+
+    const restored = await restoreRetiredThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-pr',
+      projectRoot: repo,
+      worktree: {
+        ...worktree,
+        pullRequestUrl: 'https://github.com/example/repo/pull/1',
+        retiredAt: Date.now(),
+        retiredHead: parked.head,
+        upstreamRef: parked.upstreamRef,
+      },
+    })
+    assert.equal(git(restored.path, ['rev-parse', 'HEAD']).trim(), parked.head)
+    assert.equal(restored.pullRequestUrl, 'https://github.com/example/repo/pull/1')
+    assert.equal(restored.retiredAt, undefined)
   })
 
   it('preserves a project subdirectory as the effective execution root', async () => {
