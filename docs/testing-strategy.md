@@ -157,6 +157,20 @@ new tests should keep that trend:
 - The **cheap static gate** (`lint`/typecheck/format/dead-code) short-circuits
   the pipeline before any build or e2e shard burns minutes. Put fast, broad
   checks here.
+- The same oracle call also emits a **unit plan** (`unit_mode` / `unit_specs`),
+  which the `check` job applies **only to a PR stacked on another PR's branch**.
+  Such a layer cannot merge — the layer below has to land first, and when it
+  does the PR is retargeted at trunk and re-runs the whole suite under the
+  coverage ratchet. So the run that actually gates a merge is never a thinned
+  one. Two properties keep this honest, and both are pinned by
+  `npm run check:oracle`:
+  - **An empty selection means `full`, never `skip`.** A fixture, JSON snapshot
+    or config a test _reads_ is invisible to the import graph, so "no unit test
+    selected" is evidence of a blind spot, not of safety. Only a docs-only diff
+    skips outright.
+  - **`subset` skips the coverage ratchet**, because a partial run's coverage
+    number isn't comparable to `coverage-baseline.json`. The trunk-targeted run
+    is where the ratchet applies.
 - **Remote e2e for the local loop** (`npm run e2e:remote`) runs the same
   oracle-selected / CI-shaped suite on a cloud container from the working tree
   so agents and humans can keep iterating. Prefer it over local `test:e2e`
