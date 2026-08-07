@@ -410,7 +410,13 @@ describe('analyzeShellCommand', () => {
   it('flags direct execution of an in-workspace file (./x, ../x, bin/tool)', () => {
     // The agent can write and `chmod +x` these; their contents are opaque here, so
     // they must not auto-run — hard-external, like `node ./x.js`.
-    for (const cmd of ['./deploy', '../tool run', 'bin/gen-thing', 'cat x | ./x']) {
+    for (const cmd of [
+      './deploy',
+      '../tool run',
+      'bin/gen-thing',
+      'MODE=release ./deploy',
+      'cat x | ./x',
+    ]) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
       assert.ok(
@@ -423,6 +429,15 @@ describe('analyzeShellCommand', () => {
   it('does not flag a relative path passed as an argument as an executable', () => {
     // `src/index.ts` here is an argument to `cat`, not the command word.
     const r = analyzeShellCommand('cat src/index.ts', root)
+    assert.equal(r.verdict, 'sandbox')
+    assert.ok(!r.reasons.some((x) => /executes an in-workspace file directly/.test(x)))
+  })
+
+  it('does not treat an environment assignment containing a path as an executable', () => {
+    const r = analyzeShellCommand(
+      'TMPDIR="$PWD/.tmp/e2e-tmp" npm run test:e2e -- --spec tests/e2e/example.e2e.ts',
+      root,
+    )
     assert.equal(r.verdict, 'sandbox')
     assert.ok(!r.reasons.some((x) => /executes an in-workspace file directly/.test(x)))
   })
