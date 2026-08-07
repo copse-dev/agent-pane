@@ -90,11 +90,15 @@ export interface DialectAdapter {
   /**
    * Apply this dialect's per-event exit-code table to a spawn result. Pure w.r.t.
    * the process (no I/O); the runner owns spawning, spine recording, and the
-   * `onFailure` resolution that this interpretation feeds.
+   * `onFailure` resolution that this interpretation feeds. `hook` is passed so a
+   * dialect whose events fan out over the one canonical gate (Cursor's dedicated
+   * flavors + generic `preToolUse`) can resolve which wire event ran from
+   * `hook.wireEvent` — the same reason {@link interpretAfterToolUse} takes it.
    */
   interpretToolGate(
     spawn: HookSpawnResult,
     payload: HookEventPayloads['toolGate'],
+    hook?: CommandHook,
   ): DialectInterpretation
   /**
    * Marshal a canonical `beforeSubmitPrompt` payload into this dialect's stdin

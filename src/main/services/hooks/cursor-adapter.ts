@@ -18,7 +18,9 @@ import { dirname, join, relative } from 'node:path'
 import micromatch from 'micromatch'
 import {
   CURSOR_AFTER_TOOL_HOOK_EVENTS,
+  CURSOR_GENERIC_TOOL_GATE_EVENT,
   CURSOR_HOOK_EVENTS,
+  CURSOR_TOOL_GATE_HOOK_EVENTS,
   isCursorWiredHookEvent,
   type CursorAfterToolHookEvent,
   type CursorHookEvent,
@@ -26,7 +28,9 @@ import {
   type CursorHooksListResult,
   type CursorHookValidationWarning,
   type CursorPermissionHookEvent,
+  type CursorToolGateHookEvent,
 } from '@shared/types/cursor-hooks.ts'
+import { isRecognisedCursorEvent } from '@shared/hooks/vendored-hook-schemas.ts'
 import type { HooksListResult } from '@shared/types/hooks.ts'
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
@@ -187,7 +191,16 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
   const out: DiscoveredCursorHook[] = []
   for (const [event, entries] of Object.entries(hooks)) {
     if (!isHookEvent(event)) {
-      warn(`Unknown hook event "${event}" — entries skipped`)
+      // Same warn-level lint split the Claude adapter has used since G3: a real
+      // Cursor event Copse does not act on is *reported as such*, not accused of
+      // being a typo. Both are skipped; only the wording differs.
+      if (isRecognisedCursorEvent(event)) {
+        warn(
+          `Cursor hook event "${event}" is recognised by Cursor but not supported by Copse yet — entries skipped`,
+        )
+      } else {
+        warn(`Unknown hook event "${event}" — entries skipped`)
+      }
       continue
     }
     if (!Array.isArray(entries)) {
@@ -389,6 +402,26 @@ function isCursorAfterToolHookEvent(value: string | undefined): value is CursorA
   return value !== undefined && (CURSOR_AFTER_TOOL_HOOK_EVENTS as readonly string[]).includes(value)
 }
 
+function isCursorToolGateHookEvent(value: string | undefined): value is CursorToolGateHookEvent {
+  return value !== undefined && (CURSOR_TOOL_GATE_HOOK_EVENTS as readonly string[]).includes(value)
+}
+
+/**
+ * Resolve the dialect event carried by a registered canonical `toolGate` hook —
+ * the pre-side twin of {@link cursorWireAfterToolEvent}. Several Cursor events
+ * share the one canonical gate (the dedicated shell/MCP/read flavors plus the
+ * generic `preToolUse`), each with its own stdin shape, so the discovered hook
+ * carries the exact one in `wireEvent`. The fallback keeps hooks built without a
+ * `wireEvent` (tests, the pre-`preToolUse` shape) on their dedicated flavor.
+ */
+function cursorWireToolGateEvent(
+  hook: CommandHook,
+  payload: HookEventPayloads['toolGate'],
+): CursorToolGateHookEvent | null {
+  if (isCursorToolGateHookEvent(hook.wireEvent)) return hook.wireEvent
+  return cursorEventForTool(payload.toolName)
+}
+
 /** Resolve the dialect event carried by a registered canonical afterToolUse hook. */
 function cursorWireAfterToolEvent(
   hook: CommandHook,
@@ -486,6 +519,7 @@ function cursorMatcherSubject(event: CursorHookEvent, ctx: CursorMatcherContext)
     case 'beforeMCPExecution':
     case 'afterMCPExecution':
       return ctx.toolName ?? ''
+    case 'preToolUse':
     case 'postToolUse':
     case 'postToolUseFailure':
       return ctx.toolType ?? ''
@@ -529,10 +563,20 @@ function cursorMatcherMatches(hook: DiscoveredCursorHook, ctx: CursorMatcherCont
 
 /**
  * Discover the Cursor command hooks that gate `payload.toolName`, as registry
- * `CommandHook`s. Only permission events (shell / MCP / read) map onto the
- * canonical `toolGate`; the tool → event mapping ({@link cursorEventForTool}) is
- * the first filter and the per-event `matcher` (D3 — shell command text /
- * MCP tool name / read tool-type) is the second. Each hook's `onFailure` is
+ * `CommandHook`s. Two kinds of Cursor event map onto the canonical `toolGate`
+ * and both are collected here, mirroring how {@link cursorAfterToolUseHooks}
+ * collects the dedicated + generic post-tool events:
+ *
+ *   - the **dedicated** flavors selected by {@link cursorEventForTool}
+ *     (`beforeShellExecution` / `beforeMCPExecution` / `beforeReadFile`), which
+ *     cover shell, MCP, and file-read calls only; and
+ *   - the **generic** `preToolUse`, which fires for *every* tool — including the
+ *     ones no dedicated flavor covers (writes, searches, subagent spawns).
+ *
+ * The per-event `matcher` (D3) is then applied on top: shell command text /
+ * MCP tool name for the dedicated flavors, Cursor's tool-type token for the
+ * generic gate. Each hook carries its exact dialect event in `wireEvent` so the
+ * marshaller can build the right stdin shape, and each hook's `onFailure` is
  * `closed` when its `failClosed` flag is set, `open` otherwise (the Cursor
  * default).
  */
@@ -540,15 +584,25 @@ export async function cursorToolGateHooks(
   payload: HookEventPayloads['toolGate'],
   opts: DialectDiscoverOpts,
 ): Promise<CommandHook<'toolGate'>[]> {
-  const event = cursorEventForTool(payload.toolName)
-  if (!event) return []
+  const dedicatedEvent = cursorEventForTool(payload.toolName)
+  const events = new Set<CursorToolGateHookEvent>(
+    dedicatedEvent
+      ? [dedicatedEvent, CURSOR_GENERIC_TOOL_GATE_EVENT]
+      : [CURSOR_GENERIC_TOOL_GATE_EVENT],
+  )
   const matcherCtx: CursorMatcherContext = {
     command: stringField(payload.input, 'command'),
     toolName: payload.toolName,
+    toolType: cursorGenericToolName(payload.toolName),
   }
   const { hooks } = await discoverHooksDetailed(opts)
   return hooks
-    .filter((h) => h.event === event && cursorMatcherMatches(h, matcherCtx))
+    .filter(
+      (h): h is DiscoveredCursorHook & { event: CursorToolGateHookEvent } =>
+        isCursorToolGateHookEvent(h.event) &&
+        events.has(h.event) &&
+        cursorMatcherMatches(h, matcherCtx),
+    )
     .map((h) => {
       auditProjectHook(h)
       return {
@@ -556,6 +610,7 @@ export async function cursorToolGateHooks(
         event: 'toolGate' as const,
         executor: 'command' as const,
         dialect: 'cursor' as const,
+        wireEvent: h.event,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
@@ -995,9 +1050,23 @@ export const cursorAdapter: DialectAdapter = {
   dialect: 'cursor',
 
   marshalToolGateRequest(hook, payload, session) {
-    const event = cursorEventForTool(payload.toolName)
+    const event = cursorWireToolGateEvent(hook, payload)
     if (!event) return null
     const base = agentSessionEnvelope(event, session, hook.executionRoot)
+    if (event === 'preToolUse') {
+      // Cursor's generic pre-tool stdin, the mirror of its generic `postToolUse`
+      // (which is why the field names match): the tool-type token rather than
+      // Copse's canonical id, the raw input object, and the cwd. There is no
+      // `tool_use_id` here — the canonical `toolGate` payload fires *before* the
+      // call exists, so no id has been minted; inventing one would be a lie a
+      // hook could try to correlate against.
+      return {
+        ...base,
+        tool_name: cursorGenericToolName(payload.toolName),
+        tool_input: payload.input,
+        cwd: hook.executionRoot ?? getAgentExecutionRoot() ?? '',
+      }
+    }
     if (event === 'beforeShellExecution') {
       return {
         ...base,
@@ -1019,8 +1088,12 @@ export const cursorAdapter: DialectAdapter = {
     }
   },
 
-  interpretToolGate(spawn: HookSpawnResult, payload): DialectInterpretation {
-    const spineEvent = cursorEventForTool(payload.toolName) ?? 'toolGate'
+  interpretToolGate(spawn: HookSpawnResult, payload, hook): DialectInterpretation {
+    // The spine event is the resolved dialect flavor (dedicated or generic
+    // `preToolUse`), so the Sources per-hook error key matches discovery/list.
+    const spineEvent =
+      (hook ? cursorWireToolGateEvent(hook, payload) : cursorEventForTool(payload.toolName)) ??
+      'toolGate'
     const emptyDecision: SpineHookRunDecision = {}
     const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
 

@@ -21,7 +21,7 @@
 // them, this host module owns discovery / dialects / dispatch.
 //
 // Cursor + Copse (F1) declare `subagentStart` / `subagentStop` (wired here);
-// Claude has no subagent-lifecycle hook, so no Claude hooks participate —
+// Claude has no subagent *start* hook (its `SubagentStop` is wired below) —
 // matching the vendor audit in docs/plans/hooks-and-feature-packs.md.
 import { errorMessage } from '@shared/errors.ts'
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -32,6 +32,7 @@ import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts
 import type { RunSubagentOptions, SubagentStartDecision } from '@copse/agent/run-subagent.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSubagentStartHooks, cursorSubagentStopHooks } from './cursor-adapter.ts'
+import { claudeSubagentStopHooks } from './claude-adapter.ts'
 import { copseSubagentStartHooks, copseSubagentStopHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { snapshotHookRunContext, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
@@ -148,11 +149,12 @@ export async function runSubagentStopHooks(
     ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
-  const [cursorHooks, copseHooks] = await Promise.all([
+  const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
     cursorSubagentStopHooks(payload, discoverOpts),
+    claudeSubagentStopHooks(payload, discoverOpts),
     copseSubagentStopHooks(payload, discoverOpts),
   ])
-  const hooks = [...cursorHooks, ...copseHooks]
+  const hooks = [...cursorHooks, ...claudeHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()

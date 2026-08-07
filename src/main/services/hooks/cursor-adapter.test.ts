@@ -104,6 +104,40 @@ describe('cursor-adapter', () => {
       assert.equal(warning.scope, 'user')
     })
 
+    it('distinguishes a recognised-but-unwired Cursor event from a typo', async () => {
+      await writeUserHooks({
+        version: 1,
+        hooks: {
+          // A real Cursor event Copse has no fire site for.
+          sessionEnd: [{ command: './teardown.sh' }],
+          // A Cursor Tab event — out of scope by construction (no inline-tab surface).
+          afterTabFileEdit: [{ command: './tab.sh' }],
+          // Not a Cursor event at all.
+          beforeShellExecutionn: [{ command: './typo.sh' }],
+          // The valid hook still loads — the lint is warn-only, never a gate.
+          beforeShellExecution: [{ command: './ok.sh' }],
+        },
+      })
+
+      const { hooks, warnings } = await listCursorHooks({
+        workspaceRoot: null,
+        projectTrusted: false,
+      })
+      assert.equal(hooks.length, 1)
+      assert.equal(hooks[0]?.event, 'beforeShellExecution')
+
+      const recognised = warnings.filter((w) =>
+        /recognised by Cursor but not supported/.test(w.message),
+      )
+      assert.equal(recognised.length, 2, 'sessionEnd + afterTabFileEdit should read as recognised')
+      assert.ok(recognised.some((w) => w.message.includes('sessionEnd')))
+      assert.ok(recognised.some((w) => w.message.includes('afterTabFileEdit')))
+
+      const unknown = warnings.filter((w) => /Unknown hook event/.test(w.message))
+      assert.equal(unknown.length, 1)
+      assert.ok(unknown[0]?.message.includes('beforeShellExecutionn'))
+    })
+
     it('marks every declared Cursor event supported (stop is wired in B3)', async () => {
       await writeUserHooks({
         hooks: {
@@ -270,6 +304,62 @@ describe('cursor-adapter', () => {
       // A read-file hook must not gate a shell command.
       assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'allow')
       assert.equal((await gate('read_file', { path: 'x' })).permission, 'deny')
+    })
+  })
+
+  // Cursor's generic pre-tool gate — the pre-side twin of `postToolUse`. Unlike
+  // the dedicated flavors it covers *every* tool, so it is the only way a Cursor
+  // hook can gate a write / search / subagent call.
+  describe('generic preToolUse gate', () => {
+    it('gates a tool no dedicated flavor covers (write_file)', async () => {
+      const script = await writeHookScript(
+        'pre-deny.sh',
+        '{"permission":"deny","agentMessage":"no writes today"}',
+      )
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script }] } })
+
+      const decision = await gate('write_file', { path: 'a.ts', contents: 'x' })
+      assert.equal(decision.permission, 'deny')
+      assert.equal(decision.agentMessage, 'no writes today')
+    })
+
+    it('fires alongside the dedicated flavor for a shell call', async () => {
+      const generic = await writeHookScript('pre-generic.sh', '{"permission":"deny"}')
+      const dedicated = await writeHookScript('pre-shell.sh', '{"permission":"allow"}')
+      await writeUserHooks({
+        hooks: {
+          preToolUse: [{ command: generic }],
+          beforeShellExecution: [{ command: dedicated }],
+        },
+      })
+
+      // Both ran; deny wins, which is only possible if the generic hook fired
+      // even though a dedicated flavor also matched.
+      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'deny')
+    })
+
+    it('receives the Cursor tool-type token, not the canonical tool id', async () => {
+      const stdinPath = join(tempHome, 'pre-stdin.json')
+      const script = join(tempHome, 'capture-pre.sh')
+      await writeFile(script, `#!/bin/sh\ncat > '${stdinPath}'\nexit 0\n`, 'utf-8')
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script }] } })
+
+      await gate('search_code', { query: 'needle' })
+
+      const stdin = expectRecord(parseJsonUnknown(await readFile(stdinPath, 'utf-8')))
+      assert.equal(stdin['hook_event_name'], 'preToolUse')
+      assert.equal(stdin['tool_name'], 'Grep')
+      assert.deepEqual(stdin['tool_input'], { query: 'needle' })
+    })
+
+    it('matches on the tool-type token (D3 matcher subject)', async () => {
+      const script = await writeHookScript('pre-writes.sh', '{"permission":"deny"}')
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script, matcher: 'Write' }] } })
+
+      assert.equal((await gate('write_file', { path: 'a.ts' })).permission, 'deny')
+      // A `Write` matcher must not gate a shell call.
+      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'allow')
     })
   })
 

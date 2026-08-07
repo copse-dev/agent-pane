@@ -69,6 +69,32 @@
       "file_path": "/fixture/workspace/README.md",
       "content": "synthetic file bytes\n"
     },
+    "toolGate/preToolUse": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "preToolUse",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "tool_name": "Write",
+      "tool_input": {
+        "path": "/fixture/workspace/src/example.ts",
+        "contents": "x\n"
+      },
+      "cwd": "/fixture/workspace"
+    },
     "beforeSubmitPrompt": {
       "conversation_id": "conv-fixture-1",
       "generation_id": "gen-fixture-1",
@@ -309,22 +335,22 @@
   },
   "claude": {
     "toolGate/shell": {
-      "session_id": "",
+      "session_id": "conv-fixture-1",
       "transcript_path": "",
       "cwd": "/fixture/workspace",
-      "permission_mode": "default",
       "hook_event_name": "PreToolUse",
+      "permission_mode": "default",
       "tool_name": "Bash",
       "tool_input": {
         "command": "echo \"hello from a hook\""
       }
     },
     "toolGate/mcp": {
-      "session_id": "",
+      "session_id": "conv-fixture-1",
       "transcript_path": "",
       "cwd": "/fixture/workspace",
-      "permission_mode": "default",
       "hook_event_name": "PreToolUse",
+      "permission_mode": "default",
       "tool_name": "mcp__example__run",
       "tool_input": {
         "query": "weather",
@@ -332,15 +358,61 @@
       }
     },
     "toolGate/read": {
-      "session_id": "",
+      "session_id": "conv-fixture-1",
       "transcript_path": "",
       "cwd": "/fixture/workspace",
-      "permission_mode": "default",
       "hook_event_name": "PreToolUse",
+      "permission_mode": "default",
       "tool_name": "Read",
       "tool_input": {
         "file_path": "/fixture/workspace/README.md"
       }
+    },
+    "beforeSubmitPrompt": {
+      "session_id": "conv-fixture-1",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "Fix the failing test."
+    },
+    "stop": {
+      "session_id": "conv-fixture-1",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "hook_event_name": "Stop",
+      "stop_hook_active": false
+    },
+    "afterToolUse/shell": {
+      "session_id": "conv-fixture-1",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "default",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo \"hello from a hook\""
+      },
+      "tool_response": "hello from a hook\n"
+    },
+    "afterToolUse/mcp": {
+      "session_id": "conv-fixture-1",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "default",
+      "tool_name": "mcp__example__run",
+      "tool_input": {
+        "query": "weather",
+        "limit": 3
+      },
+      "tool_response": "{\"result\":\"sunny\"}"
+    },
+    "subagentStop": {
+      "session_id": "conv-fixture-1",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "hook_event_name": "SubagentStop",
+      "stop_hook_active": false
     },
     "sessionStart": {
       "session_id": "conv-fixture-1",
