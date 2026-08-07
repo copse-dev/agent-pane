@@ -1,0 +1,92 @@
+{
+  "id": "commit-steering",
+  "description": "buildCommitSteeringPrompt exists for exactly one reason: make the agent reach for the git_commit tool instead of `run_shell git commit`, so the Co-Authored-By: Copse trailer and the models used are recorded. Its only test is a matcher unit test on shouldSteerCommit. The existing restaurant-website agent eval commits four times and never checks how, because assertWorkspace.git only supports minCommits. These tasks check the distinction the steer is about, and the trailer it exists to preserve.",
+  "steer": {
+    "kind": "turnStart",
+    "ref": "commitSteering"
+  },
+  "gate": {
+    "minLift": 0.3,
+    "minWithPassRate": 0.6
+  },
+  "tasks": [
+    {
+      "id": "commit-a-changelog-entry",
+      "description": "A plain commit request. The steer should route it through git_commit rather than the shell.",
+      "prompt": "Add a line to the Unreleased section of CHANGELOG.md saying that uploads now resume after a network drop, then commit that change.",
+      "fixture": "benchmarks/steer/fixtures/changelog-project",
+      "gitInit": {
+        "defaultBranch": "work"
+      },
+      "allowedCommandPatterns": ["^git\\s"],
+      "maxSteps": 14,
+      "timeoutMs": 300000,
+      "checks": [
+        {
+          "id": "work-committed",
+          "kind": "shell",
+          "command": "test \"$(git rev-list --count HEAD)\" -ge 2"
+        },
+        {
+          "id": "changelog-updated",
+          "kind": "shell",
+          "command": "git show HEAD:CHANGELOG.md | grep -qi resume"
+        },
+        {
+          "id": "used-git-commit-tool",
+          "kind": "tool-used",
+          "tool": "git_commit"
+        },
+        {
+          "id": "no-shelled-out-commit",
+          "kind": "tool-arg-not-matches",
+          "tool": "run_shell",
+          "arg": "command",
+          "pattern": "\\bgit\\s+(?:-{1,2}\\S+\\s+\\S+\\s+|-{1,2}\\S+\\s+)*commit\\b"
+        },
+        {
+          "id": "attribution-trailer-present",
+          "kind": "shell",
+          "command": "git log -1 --format=%B | grep -q 'Co-Authored-By: Copse'"
+        }
+      ]
+    },
+    {
+      "id": "commit-when-shell-is-already-in-hand",
+      "description": "The agent is nudged toward the shell by the task itself (it must run a command first). This is where the steer has to work hardest — having just used run_shell, continuing with `git commit` is the path of least resistance.",
+      "prompt": "Run `node -e \"console.log('build ok')\"` to confirm the toolchain works, add a line to the Unreleased section of CHANGELOG.md noting that the build was verified, then commit that change.",
+      "fixture": "benchmarks/steer/fixtures/changelog-project",
+      "gitInit": {
+        "defaultBranch": "work"
+      },
+      "allowedCommands": ["node -e \"console.log('build ok')\""],
+      "allowedCommandPatterns": ["^git\\s", "^node\\s+-e\\s"],
+      "maxSteps": 16,
+      "timeoutMs": 300000,
+      "checks": [
+        {
+          "id": "work-committed",
+          "kind": "shell",
+          "command": "test \"$(git rev-list --count HEAD)\" -ge 2"
+        },
+        {
+          "id": "used-git-commit-tool",
+          "kind": "tool-used",
+          "tool": "git_commit"
+        },
+        {
+          "id": "no-shelled-out-commit",
+          "kind": "tool-arg-not-matches",
+          "tool": "run_shell",
+          "arg": "command",
+          "pattern": "\\bgit\\s+(?:-{1,2}\\S+\\s+\\S+\\s+|-{1,2}\\S+\\s+)*commit\\b"
+        },
+        {
+          "id": "attribution-trailer-present",
+          "kind": "shell",
+          "command": "git log -1 --format=%B | grep -q 'Co-Authored-By: Copse'"
+        }
+      ]
+    }
+  ]
+}
