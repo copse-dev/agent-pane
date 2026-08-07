@@ -8,6 +8,22 @@ every published entry.
 
 ## Unreleased
 
+- A thread that went wrong can now be handed to a thread that can read it.
+  **Debug trace**, in the composer's overflow menu, exports the conversation
+  you are looking at as a zip of its whole store directory — the spine, the
+  message prose, tool arguments and results, plans, nested subagent runs — opens
+  a new thread with that archive attached, and drafts a prompt asking for the
+  diagnosis: a timeline of what the thread was asked to do and what it actually
+  did, the point it went wrong quoted from the trace, the failure mode behind it,
+  and what would have prevented it. It says up front when history was trimmed
+  mid-run, which is a common cause and one the transcript alone cannot show. The
+  archive is stored with the new thread, so the investigation outlives the thread
+  it is about, and the agent unpacks it into files with `read_archive` rather
+  than ever taking the bytes into context. Nothing is sent: the draft ends on an
+  open line for you to say what you actually saw, which is the one thing a trace
+  cannot contain. Debug trace and **Share trace** are also no longer behind
+  Developer mode — someone whose thread has just gone wrong is by definition not
+  the person who went looking for a developer setting first.
 - New threads are now isolated by default, and no longer pick up where the last
   thread left off. A new thread in a Git project gets its own linked checkout,
   branched from the project's default branch — `origin/main` as last fetched,
