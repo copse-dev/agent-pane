@@ -1,0 +1,334 @@
+/**
+ * Unit pins for the steer A/B harness.
+ *
+ * The point of the harness is that a check must be able to FAIL — a checker
+ * that always passes would make every steer look effective. Each check kind is
+ * therefore asserted in both directions.
+ */
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  buildSteerEvalPrompt,
+  parseSteerEvalArgs,
+  renderSteerEvalMarkdown,
+  runChecks,
+  STEER_BLOCK_TEXTS,
+  STEER_NUDGE_TEXTS,
+  STEER_TURN_START_TEXTS,
+  steerText,
+  summarizeSteerPack,
+  type SteerEvalAttempt,
+  type SteerPack,
+} from './steer-eval-lib.mts'
+
+const CALLS = [
+  { name: 'git_status', args: {} },
+  { name: 'run_shell', args: { command: 'git commit -m "wip"' } },
+  { name: 'git_commit', args: { message: 'add feature' } },
+]
+
+function checkPass(results: ReturnType<typeof runChecks>, id: string): boolean {
+  const found = results.find((result) => result.id === id)
+  assert.ok(found, `expected a result for check ${id}`)
+  return found.pass
+}
+
+function withWorkspace(run: (workspace: string) => void): void {
+  const workspace = mkdtempSync(join(tmpdir(), 'steer-eval-test-'))
+  try {
+    run(workspace)
+  } finally {
+    rmSync(workspace, { recursive: true, force: true })
+  }
+}
+
+describe('steer eval checks', () => {
+  it('tool-used and tool-not-used discriminate in both directions', () => {
+    const results = runChecks(
+      [
+        { id: 'commit-tool', kind: 'tool-used', tool: 'git_commit' },
+        { id: 'absent-tool', kind: 'tool-used', tool: 'update_todos' },
+        { id: 'no-shell', kind: 'tool-not-used', tool: 'run_shell' },
+        { id: 'no-todos', kind: 'tool-not-used', tool: 'update_todos' },
+      ],
+      { calls: CALLS, finalMessage: 'done', workspace: '/tmp' },
+    )
+    assert.equal(checkPass(results, 'commit-tool'), true)
+    assert.equal(checkPass(results, 'absent-tool'), false)
+    assert.equal(checkPass(results, 'no-shell'), false)
+    assert.equal(checkPass(results, 'no-todos'), true)
+  })
+
+  it('first-tool-is pins the opening move', () => {
+    const results = runChecks(
+      [
+        { id: 'opens-status', kind: 'first-tool-is', tool: 'git_status' },
+        { id: 'opens-todos', kind: 'first-tool-is', tool: 'update_todos' },
+      ],
+      { calls: CALLS, finalMessage: '', workspace: '/tmp' },
+    )
+    assert.equal(checkPass(results, 'opens-status'), true)
+    assert.equal(checkPass(results, 'opens-todos'), false)
+  })
+
+  it('tool-arg matching catches a shelled-out git commit', () => {
+    const results = runChecks(
+      [
+        {
+          id: 'shell-commits',
+          kind: 'tool-arg-matches',
+          tool: 'run_shell',
+          arg: 'command',
+          pattern: '\\bgit\\s+commit\\b',
+        },
+        {
+          id: 'no-shell-commit',
+          kind: 'tool-arg-not-matches',
+          tool: 'run_shell',
+          arg: 'command',
+          pattern: '\\bgit\\s+commit\\b',
+        },
+        {
+          id: 'no-shell-push',
+          kind: 'tool-arg-not-matches',
+          tool: 'run_shell',
+          arg: 'command',
+          pattern: '\\bgit\\s+push\\b',
+        },
+      ],
+      { calls: CALLS, finalMessage: '', workspace: '/tmp' },
+    )
+    assert.equal(checkPass(results, 'shell-commits'), true)
+    assert.equal(checkPass(results, 'no-shell-commit'), false)
+    assert.equal(checkPass(results, 'no-shell-push'), true)
+  })
+
+  it('final-message checks cover match, absence, and length bounds', () => {
+    const results = runChecks(
+      [
+        { id: 'mentions-branch', kind: 'final-matches', pattern: 'branch' },
+        { id: 'mentions-rocket', kind: 'final-matches', pattern: 'rocket' },
+        { id: 'no-rocket', kind: 'final-not-matches', pattern: 'rocket' },
+        { id: 'short-enough', kind: 'final-max-chars', max: 100 },
+        { id: 'too-short', kind: 'final-max-chars', max: 5 },
+        { id: 'long-enough', kind: 'final-min-chars', min: 5 },
+      ],
+      {
+        calls: [],
+        finalMessage: 'Committed on a working branch rather than main.',
+        workspace: '/tmp',
+      },
+    )
+    assert.equal(checkPass(results, 'mentions-branch'), true)
+    assert.equal(checkPass(results, 'mentions-rocket'), false)
+    assert.equal(checkPass(results, 'no-rocket'), true)
+    assert.equal(checkPass(results, 'short-enough'), true)
+    assert.equal(checkPass(results, 'too-short'), false)
+    assert.equal(checkPass(results, 'long-enough'), true)
+  })
+
+  it('max-tool-calls bounds loop length', () => {
+    const results = runChecks(
+      [
+        { id: 'under', kind: 'max-tool-calls', max: 5 },
+        { id: 'over', kind: 'max-tool-calls', max: 1 },
+      ],
+      { calls: CALLS, finalMessage: '', workspace: '/tmp' },
+    )
+    assert.equal(checkPass(results, 'under'), true)
+    assert.equal(checkPass(results, 'over'), false)
+  })
+
+  it('shell checks run against the finished workspace', () => {
+    withWorkspace((workspace) => {
+      writeFileSync(join(workspace, 'built.txt'), 'ok', 'utf8')
+      const results = runChecks(
+        [
+          { id: 'file-there', kind: 'shell', command: 'test -f built.txt' },
+          { id: 'file-missing', kind: 'shell', command: 'test -f absent.txt' },
+        ],
+        { calls: [], finalMessage: '', workspace },
+      )
+      assert.equal(checkPass(results, 'file-there'), true)
+      assert.equal(checkPass(results, 'file-missing'), false)
+    })
+  })
+})
+
+describe('steer eval prompt arms', () => {
+  it('a section steer varies the base prompt by omission only', () => {
+    const withArm = buildSteerEvalPrompt(
+      '/tmp/ws',
+      { kind: 'section', ref: 'gitBranchSafety' },
+      'with',
+    )
+    const withoutArm = buildSteerEvalPrompt(
+      '/tmp/ws',
+      { kind: 'section', ref: 'gitBranchSafety' },
+      'without',
+    )
+    assert.match(withArm, /Git branch safety:/)
+    assert.doesNotMatch(withoutArm, /Git branch safety:/)
+    assert.match(withoutArm, /Working style:/)
+    assert.match(withoutArm, /Working directory: \/tmp\/ws/)
+  })
+
+  it('a block steer appends the shipping block text to the with arm only', () => {
+    const withArm = buildSteerEvalPrompt('/tmp/ws', { kind: 'block', ref: 'browserTools' }, 'with')
+    const withoutArm = buildSteerEvalPrompt(
+      '/tmp/ws',
+      { kind: 'block', ref: 'browserTools' },
+      'without',
+    )
+    assert.ok(withArm.includes(STEER_BLOCK_TEXTS.browserTools))
+    assert.ok(!withoutArm.includes(STEER_BLOCK_TEXTS.browserTools))
+    assert.equal(withArm.replace(STEER_BLOCK_TEXTS.browserTools, ''), withoutArm)
+  })
+
+  it('a turn-start steer appends the shipping injection to the with arm only', () => {
+    const withArm = buildSteerEvalPrompt(
+      '/tmp/ws',
+      { kind: 'turnStart', ref: 'forcedTodoPlan' },
+      'with',
+    )
+    const withoutArm = buildSteerEvalPrompt(
+      '/tmp/ws',
+      { kind: 'turnStart', ref: 'forcedTodoPlan' },
+      'without',
+    )
+    assert.ok(withArm.includes(STEER_TURN_START_TEXTS.forcedTodoPlan))
+    assert.ok(!withoutArm.includes(STEER_TURN_START_TEXTS.forcedTodoPlan))
+  })
+
+  it('a nudge steer leaves both prompts identical — it varies mid-loop', () => {
+    const spec = { kind: 'nudge', ref: 'stuckFinalize', afterSteps: 3 } as const
+    assert.equal(
+      buildSteerEvalPrompt('/tmp/ws', spec, 'with'),
+      buildSteerEvalPrompt('/tmp/ws', spec, 'without'),
+    )
+    assert.equal(steerText(spec), STEER_NUDGE_TEXTS.stuckFinalize)
+  })
+
+  it('resolves steer text from the shipping constants, not a copy', () => {
+    assert.equal(
+      steerText({ kind: 'turnStart', ref: 'commitSteering' }),
+      STEER_TURN_START_TEXTS.commitSteering,
+    )
+    assert.match(STEER_TURN_START_TEXTS.commitSteering, /git_commit tool/)
+  })
+})
+
+function attempt(armId: 'with' | 'without', compliant: boolean): SteerEvalAttempt {
+  return {
+    packId: 'pack',
+    taskId: 'task',
+    armId,
+    attempt: 1,
+    compliant,
+    checks: [
+      {
+        id: 'only-check',
+        kind: 'tool-used',
+        pass: compliant,
+        detail: compliant ? 'ok' : 'missing',
+      },
+    ],
+    toolNames: [],
+    finalMessage: 'Final answer.',
+    finalChars: 13,
+    inputTokens: 100,
+    outputTokens: 20,
+    usageEstimated: false,
+    durationMs: 5,
+    trace: 'trace.jsonl',
+  }
+}
+
+const PACK: SteerPack = {
+  id: 'pack',
+  description: 'fixture pack',
+  steer: { kind: 'section', ref: 'gitBranchSafety' },
+  gate: { minLift: 0.3, minWithPassRate: 0.6 },
+  tasks: [{ id: 'task', prompt: 'do the thing', checks: [] as never[] }],
+}
+
+describe('steer eval reporting', () => {
+  it('reports lift as the steered arm minus the control arm', () => {
+    const summary = summarizeSteerPack(PACK, [
+      attempt('with', true),
+      attempt('with', true),
+      attempt('without', false),
+      attempt('without', false),
+    ])
+    assert.equal(summary.lift, 1)
+    assert.equal(summary.gatePassed, true)
+    assert.equal(summary.arms.find((arm) => arm.armId === 'with')?.passRate, 1)
+    assert.equal(summary.arms.find((arm) => arm.armId === 'without')?.passRate, 0)
+  })
+
+  it('fails the gate when a steer changes nothing', () => {
+    const summary = summarizeSteerPack(PACK, [attempt('with', true), attempt('without', true)])
+    assert.equal(summary.lift, 0)
+    assert.equal(summary.gatePassed, false)
+    assert.match(summary.gateDetail, /minLift/)
+  })
+
+  it('fails the gate when the steered arm is unreliable even with positive lift', () => {
+    const summary = summarizeSteerPack(PACK, [
+      attempt('with', true),
+      attempt('with', false),
+      attempt('without', false),
+      attempt('without', false),
+    ])
+    assert.equal(summary.lift, 0.5)
+    assert.equal(summary.gatePassed, false)
+    assert.match(summary.gateDetail, /minWithPassRate/)
+  })
+
+  it('renders a markdown matrix with the lift column', () => {
+    const markdown = renderSteerEvalMarkdown({
+      schemaVersion: 1,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      provider: 'mock',
+      model: 'mock',
+      repeats: 1,
+      packs: [summarizeSteerPack(PACK, [attempt('with', true), attempt('without', false)])],
+      attempts: [],
+    })
+    assert.match(markdown, /\| pack \| steer \| with \| without \| lift \| gate \|/)
+    assert.match(markdown, /\+100%/)
+  })
+})
+
+describe('steer eval CLI parsing', () => {
+  it('parses provider, repeats, and pack filters', () => {
+    const options = parseSteerEvalArgs([
+      '--provider',
+      'lmstudio',
+      '--model',
+      'qwen/qwen3.6-35b-a3b',
+      '--repeats',
+      '5',
+      '--pack',
+      'git-branch-safety',
+      '--require-gates',
+    ])
+    assert.equal(options.providerId, 'lmstudio')
+    assert.equal(options.model, 'qwen/qwen3.6-35b-a3b')
+    assert.equal(options.repeats, 5)
+    assert.equal(options.packId, 'git-branch-safety')
+    assert.equal(options.requireGates, true)
+    assert.equal(options.packsDir, 'benchmarks/steer/packs')
+  })
+
+  it('rejects an unknown provider', () => {
+    assert.throws(() => parseSteerEvalArgs(['--provider', 'ollama']), /--provider must be one of/)
+  })
+
+  it('rejects a non-positive repeat count', () => {
+    assert.throws(() => parseSteerEvalArgs(['--repeats', '0']), /--repeats must be a positive/)
+  })
+})
