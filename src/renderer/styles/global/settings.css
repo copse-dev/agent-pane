@@ -1729,7 +1729,11 @@ dialog.settings-overlay::backdrop {
    flat groups around it, per the card convention at the top of this file. */
 .plugin-row {
   background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
+  /* `--border`, not `--border-subtle`: these cards are the primary object of the
+     section and each one is a decision (on or off), so the edge that says where
+     one plugin ends and the next begins should be legible rather than implied.
+     #333 on the #252526 card was close enough to vanish. */
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   display: flex;
@@ -1774,12 +1778,13 @@ dialog.settings-overlay::backdrop {
 }
 /* Cursor's mark sits on the same neutral tile a user-installed plugin gets —
    the glyph identifies the origin, and borrowing the Copse tile's neon field
-   for someone else's plugin would read as an endorsement. */
-.plugin-icon-cursor .plugin-icon-svg {
-  width: 60%;
-  height: 60%;
-  stroke-width: 1.5;
-  color: var(--text-secondary);
+   for someone else's plugin would read as an endorsement. The asset is taller
+   than it is wide, so it is inset and contained rather than filling the tile
+   like the Copse mark (which is drawn to the tile's own bounds). */
+.plugin-icon-cursor img {
+  width: 58%;
+  height: 58%;
+  object-fit: contain;
 }
 .plugin-row-title {
   display: flex;
@@ -1859,6 +1864,11 @@ dialog.settings-overlay::backdrop {
 .plugin-toggle-state {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+  /* Centre the *glyphs* on the switch, not the line box. A default line-height
+     pads above the cap height and below the baseline, and "Off"/"On" have no
+     descenders — so flex centring lines up boxes that are optically bottom-heavy
+     and both labels read as sitting low beside the pill. */
+  line-height: 1;
 }
 .plugin-toggle-control:has(.plugin-toggle-input:checked) .plugin-toggle-state[data-side='on'],
 .plugin-toggle-control:not(:has(.plugin-toggle-input:checked))

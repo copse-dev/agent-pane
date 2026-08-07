@@ -206,6 +206,10 @@ copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
 // The Copse mark, drawn as-is wherever the app has to stand for itself in a
 // list of other people's things (today: first-party plugin rows in Settings).
 copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
+// Cursor's cube mark, for the Cursor-installed plugin rows that list alongside
+// the first-party ones. Shipped as the real asset for the same reason the Copse
+// mark is: an approximation drawn by hand would misrepresent someone's brand.
+copyFileSync('assets/cursor-mark.svg', `${rendererOutDir}/cursor-mark.svg`)
 cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
 copyMonacoWorkers(rendererOutDir)
 cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {

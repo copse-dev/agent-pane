@@ -142,7 +142,9 @@ describe('settings → Cursor plugins in the plugin list', () => {
     assert.equal(row.querySelector('.plugin-badge-cursor')?.textContent, 'Cursor')
     const icon = row.querySelector('.plugin-icon-cursor')
     assert.ok(icon, 'the origin reads as a mark, not a letter')
-    assert.equal(icon.querySelector('svg')?.getAttribute('data-icon'), 'cursor')
+    // Cursor's real asset, the same way a first-party row uses the Copse one —
+    // a mark stands for who made the thing, so it is not ours to redraw.
+    assert.equal(icon.querySelector('img')?.getAttribute('src'), './cursor-mark.svg')
 
     // Same row furniture as every other plugin, not a bespoke card.
     assert.equal(row.classList.contains('plugin-row'), true)

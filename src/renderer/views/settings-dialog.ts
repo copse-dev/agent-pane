@@ -30,7 +30,6 @@ import {
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { chevronDownIcon } from '../dom/icons.ts'
-import { outlineIcon } from '../dom/outline-icon.ts'
 import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
@@ -2879,22 +2878,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   /**
-   * Cursor's cube mark, drawn in the app's own outline style.
-   *
-   * Not the official asset — an isometric-cube approximation in `currentColor`,
-   * so it reads as an origin glyph beside the Copse mark rather than as a brand
-   * lockup we are not entitled to reproduce. Swap in the real SVG if Cursor
-   * publishes one for embedding.
-   */
-  function cursorMarkIcon(): SVGSVGElement {
-    return outlineIcon(
-      'cursor',
-      ['M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z', 'M12 12 4 7.5', 'M12 12l8-4.5', 'M12 12v9'],
-      'ui-icon plugin-icon-svg',
-    )
-  }
-
-  /**
    * A Cursor-installed plugin, rendered as an ordinary plugin row.
    *
    * It gets the same shape as every other row — icon, origin badge, name,
@@ -2925,10 +2908,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const header = document.createElement('div')
     header.className = 'plugin-row-header'
 
+    // Cursor's own cube mark, the real asset — the same reasoning that gives a
+    // first-party row the Copse glyph and a sideloaded one a neutral initial:
+    // a mark stands for who made the thing, so it is theirs to draw, not ours.
+    // It keeps the neutral tile rather than the Copse mark's neon field, which
+    // would read as our endorsement of someone else's plugin.
     const icon = document.createElement('span')
     icon.className = 'plugin-icon plugin-icon-cursor'
     icon.setAttribute('aria-hidden', 'true')
-    icon.append(cursorMarkIcon())
+    const mark = document.createElement('img')
+    mark.src = './cursor-mark.svg'
+    mark.alt = ''
+    icon.append(mark)
     header.append(icon)
 
     const title = document.createElement('div')
