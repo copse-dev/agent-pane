@@ -64,4 +64,3 @@ export * from './hooks/before-finalize-hooks.ts'
 // Pure turn-start steering helpers (owned here so hooks stay Electron-free).
 export * from './todo-steering.ts'
 export * from './github-link-steering.ts'
-export * from './commit-steering.ts'

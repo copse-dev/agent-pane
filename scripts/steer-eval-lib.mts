@@ -53,7 +53,6 @@ import {
   READ_TERMINAL_BLOCK,
   SHARED_WORKING_STYLE,
 } from '../src/main/services/agent-prompt.ts'
-import { buildCommitSteeringPrompt } from '@copse/agent/commit-steering.ts'
 import { TODO_STEERING_PROMPT } from '@copse/agent/todo-steering.ts'
 import {
   FORCED_TODO_PLAN_PROMPT,
@@ -98,12 +97,7 @@ export const STEER_BLOCK_IDS = [
   'opus5ToneReminder',
   'readTerminal',
 ] as const
-export const STEER_TURN_START_IDS = [
-  'commitSteering',
-  'forcedTodoPlan',
-  'forcedWrittenPlan',
-  'todoSteering',
-] as const
+export const STEER_TURN_START_IDS = ['forcedTodoPlan', 'forcedWrittenPlan', 'todoSteering'] as const
 export const STEER_NUDGE_IDS = [
   'loopNudge',
   'openTodosFinalize',
@@ -128,7 +122,6 @@ export const STEER_BLOCK_TEXTS: Record<SteerBlockId, string> = {
 
 /** Steers a `turnStart` hook injects into the system prompt for one turn. */
 export const STEER_TURN_START_TEXTS: Record<SteerTurnStartId, string> = {
-  commitSteering: buildCommitSteeringPrompt(),
   forcedTodoPlan: FORCED_TODO_PLAN_PROMPT,
   forcedWrittenPlan: FORCED_WRITTEN_PLAN_PROMPT,
   todoSteering: TODO_STEERING_PROMPT,
@@ -413,9 +406,8 @@ const steerPackSchema: z.ZodType<SteerPack> = z.object({
 // Tools
 //
 // The doctrine harness ships file tools only. Steer evals additionally need git
-// (branch safety, commit steering) and a plan tool (forced planning), and they
-// need `run_shell` to be able to do the WRONG thing — a model that shells out
-// to `git commit` must be observable, or the commit-steering eval cannot fail.
+// (branch safety), a plan tool (forced planning), and `run_shell` for task
+// validation.
 // ---------------------------------------------------------------------------
 
 export const STEER_EVAL_TOOLS: LLMTool[] = [
@@ -533,7 +525,7 @@ const EVAL_PROMPT_VARS: PromptSectionVars = {
   inspectVerb: 'read',
   toolChoice: `- Use read_file and list_dir for workspace inspection, not run_shell
 - Use the dedicated file tools for edits
-- Use the git_* tools for version control rather than run_shell`,
+- Reserve run_shell for running tests, builds, package installs, and other commands with no dedicated tool`,
   workingStyle: SHARED_WORKING_STYLE,
   gitBranchSafety: GIT_BRANCH_SAFETY,
 }
@@ -626,8 +618,7 @@ async function executeTool(
   }
   if (name === 'git_commit') {
     // Mirrors the shipping tool: stage everything, then commit with the Copse
-    // trailer. The trailer is exactly what `run_shell git commit` loses, so the
-    // commit-steering eval can assert on it.
+    // trailer.
     git(workspace, 'add -A')
     const message = stringArg(args, 'message')
     const body = `${message}\n\nCo-Authored-By: Copse <noreply@copse.dev>`

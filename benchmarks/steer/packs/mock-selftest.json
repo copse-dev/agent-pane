@@ -1,7 +1,7 @@
 {
   "id": "mock-selftest",
   "description": "Harness self-test: exercises the agent loop, git workspace setup, the git_commit and run_shell tools, and the check runner against the deterministic mock provider. The mock ignores the system prompt, so lift is meaningless here and this pack declares no gate.",
-  "steer": { "kind": "turnStart", "ref": "commitSteering" },
+  "steer": { "kind": "turnStart", "ref": "todoSteering" },
   "tasks": [
     {
       "id": "mock-git-commit",

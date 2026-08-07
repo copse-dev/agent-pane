@@ -62,7 +62,7 @@ describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize + E1 step-boundary list
     // members that survive independent of any pack registration.
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
-      ['github-link-steering', 'commit-steering'],
+      ['github-link-steering'],
     )
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').map((h) => h.id),
