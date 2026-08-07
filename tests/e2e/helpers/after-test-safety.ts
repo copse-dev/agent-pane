@@ -16,8 +16,6 @@
  * dead deleteSession errors so teardown cannot flip a green suite red.
  */
 
-import { execFileSync } from 'node:child_process'
-
 /** Mocha's generic "Timeout of Nms exceeded…" error (hooks and tests). */
 export function isMochaTimeoutError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false
@@ -108,34 +106,82 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
   )
 }
 
-/**
- * Bracketed patterns match CI's shard cleanup (`.github/workflows/ci.yml`) and
- * avoid matching the caller's own command line.
- */
-const WEDGED_SESSION_PATTERNS = [
-  '[e]lectron/dist/electron',
-  '[e]lectron-chromedriver/bin/chromedriver',
-] as const
+/** The processes backing one WDIO session: its driver and its Electron. */
+export type WedgedSessionPids = {
+  /** chromedriver, from WDIO's `wdio:driverPID`. */
+  driverPid?: number
+  /** Electron's main process, from chromedriver's `goog:processID`. */
+  browserPid?: number
+}
 
 /**
- * Best-effort: TERM then KILL wedged Electron + chromedriver so a subsequent
- * deleteSession fails fast (ECONNREFUSED) instead of burning
- * connectionRetryTimeout.
+ * Pull this session's own pids out of its capabilities.
+ *
+ * Read these at kill time, never cached: `reloadSession` replaces
+ * `instance.capabilities` wholesale, so a pid captured at install time belongs
+ * to a process that is already gone.
  */
-export function forceKillWedgedE2eSession(): void {
-  for (const signal of ['-TERM', '-KILL'] as const) {
-    for (const pattern of WEDGED_SESSION_PATTERNS) {
-      try {
-        execFileSync('pkill', [signal, '-f', pattern], { stdio: 'ignore' })
-      } catch {
-        // pkill exits non-zero when nothing matched
-      }
-    }
+export function sessionPidsFromCapabilities(capabilities: unknown): WedgedSessionPids {
+  if (typeof capabilities !== 'object' || capabilities === null) return {}
+  const caps = capabilities as Record<string, unknown>
+  const pids: WedgedSessionPids = {}
+  if (isKillablePid(caps['wdio:driverPID'])) pids.driverPid = caps['wdio:driverPID']
+  if (isKillablePid(caps['goog:processID'])) pids.browserPid = caps['goog:processID']
+  return pids
+}
+
+/**
+ * A pid we are allowed to signal. Excludes init and our own process, and
+ * rejects `0`/negatives outright — `process.kill` reads those as "every process
+ * in a group", which is the blast radius this function exists to avoid.
+ */
+function isKillablePid(pid: unknown): pid is number {
+  return typeof pid === 'number' && Number.isInteger(pid) && pid > 1 && pid !== process.pid
+}
+
+function signalPid(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(pid, signal)
+  } catch {
+    // already gone, or not ours to signal
+  }
+}
+
+/**
+ * Best-effort: TERM then KILL **this session's own** Electron + chromedriver so
+ * a subsequent deleteSession fails fast (ECONNREFUSED) instead of burning
+ * connectionRetryTimeout.
+ *
+ * This used to `pkill -f` every `electron-chromedriver/bin/chromedriver` on the
+ * host, which is self-defeating inside a shard. WDIO starts the next spec's
+ * worker while the previous one tears down, so worker N's kill reaped the
+ * driver worker N+1 had just spawned; N+1 then failed with "Unable to connect
+ * … make sure browser driver is running", its own afterTest saw a dead session
+ * and fired the same global kill at N+2. One genuine wedge cascaded to every
+ * remaining spec in the shard — run 31204691492 shows one wedge marker against
+ * 21 started-then-killed drivers, 0-2 passed / 19-21 failed on every shard.
+ *
+ * Passing no pids kills nothing. That is deliberate: if we cannot identify our
+ * own processes, doing nothing costs one slow teardown, whereas guessing by
+ * name costs every other worker on the host. CI's `cleanup_e2e_processes`
+ * (`.github/workflows/ci.yml`) remains the between-jobs sweep for real orphans.
+ */
+export function forceKillWedgedE2eSession(pids: WedgedSessionPids = {}): void {
+  const targets = [pids.browserPid, pids.driverPid].filter(isKillablePid)
+  // TERM everything before escalating, matching the previous ordering.
+  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+    for (const pid of targets) signalPid(pid, signal)
   }
 }
 
 export type SessionDeleter = {
   deleteSession: (options?: unknown) => Promise<unknown>
+  /**
+   * The live session capabilities, when the caller has them. Supplies the pids
+   * {@link forceKillWedgedE2eSession} needs to scope its kill; without it the
+   * default kill is a no-op rather than a host-wide sweep.
+   */
+  capabilities?: unknown
   /**
    * WDIO's supported command override. Required when `session` is the
    * `@wdio/globals` Proxy — that Proxy has no `set` trap, so assigning
@@ -179,7 +225,13 @@ export function installDeleteSessionSafety(
   deleteSessionPatched.add(session)
 
   const budgetMs = options?.budgetMs ?? DELETE_SESSION_BUDGET_MS
-  const kill = options?.kill ?? forceKillWedgedE2eSession
+  // Resolve capabilities on each call, not here: reloadSession swaps them out,
+  // so an install-time snapshot names a process that has already exited.
+  const kill =
+    options?.kill ??
+    ((): void => {
+      forceKillWedgedE2eSession(sessionPidsFromCapabilities(session.capabilities))
+    })
 
   const runSafeDelete = async (invoke: () => Promise<unknown>): Promise<unknown> => {
     try {
