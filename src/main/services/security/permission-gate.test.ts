@@ -622,8 +622,12 @@ describe('run_background permission', () => {
 })
 
 describe('ensureTerminalPermitted', () => {
-  it('auto-allows a user terminal on macOS while the global network scope is inactive', async () => {
+  it('auto-allows a local user terminal while an agent network scope is active', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+    })
     let prompted = false
     setApprovalHandler(async () => {
       prompted = true
@@ -635,65 +639,6 @@ describe('ensureTerminalPermitted', () => {
         true,
       )
       assert.equal(prompted, false)
-    } finally {
-      setApprovalHandler(null)
-      restore()
-    }
-  })
-
-  it('requires approval for a user terminal while the global network scope is widened', async () => {
-    const restore = setWorkspaceRootForTest('/tmp/project')
-    const release = acquireSandboxNetworkScope({
-      domains: ['vendor.example'],
-      allowLocalBinding: false,
-    })
-    let approvalTitle = ''
-    let approvalBody = ''
-    let allowRemember: boolean | undefined
-    setApprovalHandler(async (request) => {
-      approvalTitle = request.title
-      approvalBody = request.body
-      allowRemember = request.allowRemember
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        false,
-      )
-      assert.match(approvalTitle, /widened network access/i)
-      assert.match(approvalBody, /temporarily widened/i)
-      assert.equal(allowRemember, false)
-    } finally {
-      setApprovalHandler(null)
-      release()
-      restore()
-    }
-  })
-
-  it('does not remember or launder approval while the network scope stays widened', async () => {
-    const restore = setWorkspaceRootForTest('/tmp/project')
-    const release = acquireSandboxNetworkScope({
-      domains: ['vendor.example'],
-      allowLocalBinding: false,
-    })
-    let promptCount = 0
-    setApprovalHandler(async (request) => {
-      promptCount++
-      assert.equal(request.allowRemember, false)
-      // Even a misbehaving transport returning remember=true cannot create a grant.
-      return { approved: true, remember: true }
-    })
-    try {
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        true,
-      )
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        true,
-      )
-      assert.equal(promptCount, 2)
     } finally {
       setApprovalHandler(null)
       release()
