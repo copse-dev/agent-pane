@@ -38,6 +38,45 @@
 .mcp-server-row.mcp-state-untrusted .mcp-server-summary {
   color: var(--warning, #d29922);
 }
+
+/* Origin chip: who asked for this server. Sits at the end of the header so the
+   name stays the thing you read first, and the answer to "and where is this
+   from?" is in a fixed place down the right-hand edge of every row. */
+.mcp-origin-chip {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* Only the repo-supplied origin is coloured. Every other source is one the user
+   or Copse chose; a project config is the one that arrives with a checkout, so
+   it is the one worth catching an eye. */
+.mcp-origin-chip.mcp-origin-project {
+  border-color: var(--warning, #d29922);
+  color: var(--warning, #d29922);
+}
+
+.mcp-declared-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+/* Nothing on a declared row is actionable — no toggle, no connection. Dashed,
+   like the read-only plugin rows, rather than greyed: it is not switched off,
+   it is not started. */
+.mcp-declared-row {
+  border-style: dashed;
+}
 .mcp-trust-banner {
   display: flex;
   align-items: center;

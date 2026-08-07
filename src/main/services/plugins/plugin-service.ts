@@ -68,6 +68,7 @@ import {
   setPluginToolRuntimeController,
 } from './plugin-tool-controller.ts'
 import { setPluginBrowserService } from './plugin-browser-service.ts'
+import type { DeclaredMcpServer } from '@shared/types/mcp.ts'
 
 // P1 of #1336: selected-plugin discovery is part of the production graph before
 // the isolated behavior runtime is wired by the host.
@@ -333,6 +334,11 @@ export interface PluginService {
    * each a registry row. Stage A2 of `docs/plans/agent-plugins-migration.md`.
    */
   refreshUserPlugins(): Promise<void>
+  /**
+   * MCP servers discovered plugins declare that nothing is running, so
+   * Settings → MCP servers can account for them. See {@link DeclaredMcpServer}.
+   */
+  declaredMcpServers(): readonly DeclaredMcpServer[]
   /** Persist and discover one directory selected through the host-owned native dialog. */
   addPluginSource(sourcePath: string): Promise<void>
 }
@@ -462,6 +468,35 @@ export function createPluginService(registry: PluginRegistry): PluginService {
       if (off.has(id)) registry.disable(id)
       else registry.enable(id)
     }
+  }
+
+  /**
+   * Every MCP server a discovered plugin declares, as an inert record.
+   *
+   * Discovery validates these entries and stops there — wiring them into the
+   * live agent loop is separate work, and a disabled plugin's servers would not
+   * run in any case. Both are states a user reading Settings → MCP servers
+   * needs told about, because the alternative is a section that says "no
+   * servers" while a package on disk names three. Nothing here is spawned:
+   * reporting a declaration is not honouring it.
+   */
+  function declaredMcpServers(): readonly DeclaredMcpServer[] {
+    const out: DeclaredMcpServer[] = []
+    for (const [id, candidate] of userPlugins) {
+      const enabled = registry.has(id) && registry.isEnabled(id)
+      for (const [name, server] of candidate.mcpServers) {
+        out.push({
+          name,
+          transport: server.type === 'stdio' ? 'stdio' : 'http',
+          pluginId: id,
+          pluginEnabled: enabled,
+          reason: enabled
+            ? 'Declared by an enabled plugin; Copse does not start plugin MCP servers yet.'
+            : 'The plugin that declares it is turned off.',
+        })
+      }
+    }
+    return out.sort((a, b) => a.pluginId.localeCompare(b.pluginId) || a.name.localeCompare(b.name))
   }
 
   async function refreshPluginSources(): Promise<void> {
@@ -610,6 +645,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
     },
     refreshPluginSources,
     refreshUserPlugins,
+    declaredMcpServers,
     async addPluginSource(sourcePath: string): Promise<void> {
       const candidate = await discoverPluginToolSource(sourcePath)
       if (

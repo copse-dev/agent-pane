@@ -44,7 +44,7 @@ async function openSkillsList(skills: SkillSummary[]): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(createStore(), stubApi(skills))
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
-    '.settings-nav-btn[data-section="sources"]',
+    '.settings-nav-btn[data-section="customise"]',
   )
   assert.ok(sourcesBtn)
   sourcesBtn.click()

@@ -185,7 +185,7 @@ describe('settings styling', function () {
   })
 
   it('renders plugins as cards with a publisher eyebrow and a labelled toggle', async () => {
-    await $('.settings-nav-btn[data-section="plugins"]').click()
+    await $('.settings-nav-btn[data-section="customise"]').click()
     await $('.plugin-row').waitForDisplayed({ timeout: 30_000 })
     // The scrollport is shared between sections, so start this one at the top.
     await browser.execute(() => {

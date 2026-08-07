@@ -214,7 +214,7 @@ contract-tested, waiting for the drain-path wiring.
 | `null` (Cursor "unlimited") | **clamped to the global remaining, with a warning** — the "unlimited" intent is refused; the shared cap is the ceiling           |
 | negative / non-integer      | ignored (parse-time warning; no field carried) — Copse dialect only                                                              |
 
-The `null`-is-refused warning already surfaces at parse time in Settings → Sources (the
+The `null`-is-refused warning already surfaces at parse time in Settings → Customise (the
 Copse adapter emits it while parsing `.copse/hooks.json`). Only the **Copse** dialect
 exposes `loop_limit` on disk today; the field and its reserved status are documented
 per-dialect in [`docs/copse-hooks.md`](./copse-hooks.md#copse-native-fields).
@@ -263,7 +263,7 @@ off runner-side violation signals (never the hook's own stdout, so a hook can't 
 ## Enablement, trust, and security
 
 Hooks are **off by default**, gated behind the `cursorHooksEnabled` security setting
-(Developer mode → Settings → Sources → Hooks) — the same gate for all three dialects. When disabled the gate
+(Developer mode → Settings → Customise → Hooks) — the same gate for all three dialects. When disabled the gate
 skips discovery on the hot path; Sources still lists discovered hooks so authoring problems
 are visible before enabling. User configs (`~/.cursor` / `~/.claude` / `~/.copse`) are always
 honoured; **project configs require workspace trust** (#100) and are skipped for untrusted
@@ -301,7 +301,7 @@ Security section for the full model.
   hook shows `stdin` / `stdout` / `stderr`. The presentation model is pure and unit-tested
   (`src/shared/hooks/hook-run-detail.ts`). Distinct from the dry-run tester below: this shows
   what **actually ran**, the tester re-runs a hook against a synthetic payload.
-- **Sources panel ([foundations phase](./plans/hooks-and-feature-packs.md#phase-a--foundations)).** Settings → Sources → Hooks lists every discovered hook across all
+- **Sources panel ([foundations phase](./plans/hooks-and-feature-packs.md#phase-a--foundations)).** Settings → Customise → Hooks lists every discovered hook across all
   three dialects, per-entry validation warnings, unsupported-event badges, the
   "outside sandbox" badge ([Copse-dialect phase](./plans/hooks-and-feature-packs.md#phase-f--copse-dialect-native-events-sandbox)), and per-hook runtime error state (first failure per session).
   Developer mode reveals this advanced panel; if hooks are already enabled it remains visible

@@ -9,7 +9,7 @@ async function openPacksSection(): Promise<WebdriverIO.Element> {
   await $('[aria-label="Settings"]').click()
   const dialog = $('#settings-dialog')
   await expect(dialog).toBeDisplayed()
-  await dialog.$('button[data-section="plugins"]').click()
+  await dialog.$('button[data-section="customise"]').click()
   const row = dialog.$('.plugin-row[data-plugin-id="copse.parallel-search"]')
   await row.waitForExist({ timeout: 15_000 })
   await row.scrollIntoView({ block: 'center' })

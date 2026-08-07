@@ -7,7 +7,7 @@ the registry, atomic enable/disable, and the level-2 declarative panel
 contribution.
 
 **Want to install or author a plugin?** Start with
-[`docs/adding-a-plugin.md`](adding-a-plugin.md) — Settings → Plugins links there.
+[`docs/adding-a-plugin.md`](adding-a-plugin.md) — Settings → Customise links there.
 
 The design source of truth is
 [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md)
@@ -223,10 +223,33 @@ rendering.
 
 ## Plugin list UI
 
-Every registered plugin — first-party and user — shows up in **Settings → Plugins**
+Every registered plugin — first-party and user — shows up in **Settings → Customise**
 as a row with an enable/disable toggle, an enumeration of what the plugin
 contributes (tools / hooks / prompt blocks / UI panels), and any plugin-scoped
 settings the manifest declares. This is the `about:addons` of Copse.
+
+Customise holds one plugin list, not several. Plugins installed through Cursor
+(`~/.cursor/plugins/`) appear in the same list, badged **Cursor** and read-only —
+Cursor owns their lifecycle, so there is no toggle, but leaving them out would
+have meant two places to look for the answer to "what is extending Copse".
+Worktrees are not customisation and live under **Settings → Storage**.
+
+### MCP servers as a lens
+
+**Settings → MCP servers** stays its own section and is the complete account of
+what Copse talks to over MCP, from any source. Two things make it a lens rather
+than a status list:
+
+- **Every row says who asked for it.** `McpServerStatus.origin`
+  ([`src/shared/types/mcp.ts`](../src/shared/types/mcp.ts)) classifies the config
+  source as `user` / `project` / `plugin` / `curated` / `built-in`, computed in
+  `mcp-registry.ts` where the roots of each are known. Only `project` is
+  coloured: a `.mcp.json` is the one that arrives with a checkout.
+- **Declarations nothing is running are disclosed, not omitted.**
+  `PluginService.declaredMcpServers()` reports every server a discovered plugin's
+  `mcp.json` names, with the reason it is inert — the plugin is off, or Copse
+  does not start plugin MCP servers yet. These rows carry no toggle: a
+  disclosure that offered a switch would imply Copse could start the server.
 
 - **Shared registry.** The host's `PluginService`
   ([`src/main/services/plugins/plugin-service.ts`](../src/main/services/plugins/plugin-service.ts))
@@ -303,7 +326,7 @@ disable is pinned by
 
 ## Related
 
-- [`docs/adding-a-plugin.md`](adding-a-plugin.md) — practical install / authoring guide (linked from Settings → Plugins)
+- [`docs/adding-a-plugin.md`](adding-a-plugin.md) — practical install / authoring guide (linked from Settings → Customise)
 - [`docs/forced-planning.md`](forced-planning.md) — `copse.forced-planning`, the first plugin born as a plugin rather than extracted, and the `resolvePackSetting` seam it introduced
 - [`docs/parallel-search.md`](parallel-search.md) — direct Parallel Search API plugin, credentials, permissions, and ZDR boundary
 - [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) — design source of truth (Plugins, the [two-capability-tiers](plans/hooks-and-feature-packs.md#decisions-log) and [disable-never-breaks-history](plans/hooks-and-feature-packs.md#decisions-log) decisions)

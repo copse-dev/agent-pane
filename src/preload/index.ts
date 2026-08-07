@@ -508,6 +508,7 @@ contextBridge.exposeInMainWorld('api', {
     setEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setEnabled', name, enabled),
     listCurated: () => ipcRenderer.invoke('mcp:listCurated'),
+    listDeclared: () => ipcRenderer.invoke('mcp:listDeclared'),
     setCuratedEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setCuratedEnabled', name, enabled),
     onStatusChanged: (handler: (statuses: unknown) => void) => {

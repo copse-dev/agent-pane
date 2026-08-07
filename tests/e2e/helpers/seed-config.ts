@@ -228,6 +228,24 @@ export function resetUserData(): void {
   writeSettings({})
 }
 
+/** Copse's own `mcp.json` under userData — a *user* MCP source, not a project one. */
+const USER_MCP_PATH = join(USER_DATA, 'mcp.json')
+
+/**
+ * Seed the user-owned MCP config. Deliberately writes the userData copy rather
+ * than `~/.cursor/mcp.json`: the latter is the developer's real file, and an
+ * e2e that edits it would both leak their servers into the run and risk leaving
+ * fixture servers behind in it.
+ */
+export function seedUserMcpConfig(servers: Record<string, unknown>): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(USER_MCP_PATH, JSON.stringify({ mcpServers: servers }, null, 2), 'utf8')
+}
+
+export function resetUserMcpConfig(): void {
+  rmSync(USER_MCP_PATH, { force: true })
+}
+
 /** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in hooks/cursor-adapter.ts. */
 const USER_CURSOR_HOOKS_PATH = join(homedir(), '.cursor', 'hooks.json')
 const USER_CURSOR_HOOKS_BACKUP = `${USER_CURSOR_HOOKS_PATH}.e2e-backup`

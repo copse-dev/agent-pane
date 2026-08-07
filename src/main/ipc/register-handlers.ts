@@ -2110,6 +2110,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return getCuratedServerStatuses(getMcpServerStatuses())
   })
+  ipcMain.handle('mcp:listDeclared', (event) => {
+    assertMainFrameSender(event, win)
+    return getPluginService().declaredMcpServers()
+  })
   ipcMain.handle('mcp:setCuratedEnabled', async (event, name: unknown, enabled: unknown) => {
     assertMainFrameSender(event, win)
     const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [

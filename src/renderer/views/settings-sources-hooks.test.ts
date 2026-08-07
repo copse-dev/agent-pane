@@ -89,7 +89,7 @@ async function openSources(
   document.body.innerHTML = ''
   mountSettingsDialog(createStore({ developerMode }), stubApi(hooksResult, testResult))
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
-    '.settings-nav-btn[data-section="sources"]',
+    '.settings-nav-btn[data-section="customise"]',
   )
   assert.ok(sourcesBtn)
   sourcesBtn.click()

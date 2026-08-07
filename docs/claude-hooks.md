@@ -42,7 +42,7 @@ Example settings fragment:
 | **Exit code 2 deny**               | Supported     | stderr (else stdout) becomes the agent-facing deny reason        |
 | **JSON `permissionDecision`**      | Supported     | `allow` / `deny` / `ask`; `defer` mapped to `ask`                |
 | **User / project / local**         | Supported     | Project + local require workspace trust (#100)                   |
-| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Sources              |
+| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Customise            |
 | **Prompt / HTTP / agent handlers** | Not supported | Only `type: "command"` (or omitted type)                         |
 | **`if` permission-rule filters**   | Not supported | Matcher-only for v1                                              |
 | **PostToolUse / lifecycle**        | Not supported | Same gap as Cursor lifecycle hooks                               |
@@ -50,7 +50,7 @@ Example settings fragment:
 ### Enablement
 
 Execution is gated by the same **`cursorHooksEnabled`** setting as Cursor hooks (off by
-default). Discovery for Settings → Sources always runs.
+default). Discovery for Settings → Customise always runs.
 
 ### Tool mapping
 

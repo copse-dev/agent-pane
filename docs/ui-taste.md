@@ -597,7 +597,7 @@ Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.
 
 ## Sources lists: origin on hover, not in the resting row
 
-Settings → Sources rows already carry a coarse source badge (`bundled`, `project`, …). When the
+Settings → Customise rows already carry a coarse source badge (`bundled`, `project`, …). When the
 useful origin is a long filesystem path, keep it out of the resting list: put it in
 `.sources-row-hover-detail` inside the header gutter (between title and badge), revealed on
 `:hover` / `:focus-within` without growing the row. Truncate with left-elision
