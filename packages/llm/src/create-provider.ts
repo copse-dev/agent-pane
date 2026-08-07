@@ -12,6 +12,7 @@ import {
   recommendedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
+import type { Tool } from 'openai/resources/responses/responses'
 import type { ServiceTier } from './service-tier.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
@@ -28,10 +29,33 @@ interface ProviderKeys {
 // OpenAI-specific). See docs/provider-data-policies.md.
 const OPENAI_STORE_OPT_OUT = { extraBody: { store: false } } as const
 
-function isWebSearchTool(tool: unknown): tool is { type: 'web_search' } {
-  if (!tool || typeof tool !== 'object') return false
-  const candidate = tool as { type?: unknown }
-  return candidate.type === 'web_search'
+/**
+ * Whether a `tools` entry from a provider's advanced config is a server-side
+ * tool — one the provider executes itself, rather than handing back to Copse.
+ *
+ * Deliberately not an allowlist. The Responses API's server-side tool set is
+ * open-ended and provider-specific: OpenAI ships WebSearch and CodeInterpreter,
+ * OpenRouter has its own web-search spec, and more arrive without our involvement.
+ * An allowlist silently discards everything it hasn't been taught, which is
+ * exactly the bug this replaces — a user who configured `code_interpreter` got
+ * no tool and no error. An unrecognised type now reaches the provider, which
+ * rejects it loudly with a 400 if it really is wrong.
+ *
+ * `function` is the one exclusion, and it is not cosmetic: function tools are
+ * Copse's own local tools, built from the tool registry with an implementation
+ * behind each one. A `function` entry injected through this config would be
+ * advertised to the model with nothing able to execute it, so every call to it
+ * would fail.
+ *
+ * Narrows to the SDK's `Tool` because that is what the request field takes. The
+ * full shape is not checked here and cannot be: these specs are user-authored
+ * and provider-specific. The provider is the validator, and it answers with a
+ * 400 the user can see.
+ */
+function isServerSideTool(tool: unknown): tool is Tool {
+  if (tool === null || typeof tool !== 'object' || !('type' in tool)) return false
+  const { type } = tool
+  return typeof type === 'string' && type !== 'function'
 }
 
 // `model` is the user's selected model (from settings). It both picks the
@@ -217,7 +241,7 @@ export function createExtraCloudProvider(
     // against Chat Completions endpoints, and this path has no drop-and-retry
     // for a ceiling the server rejects. The server's own default stands.
     const { tools, ...extraBody } = provider.extraBody ?? {}
-    const serverTools = Array.isArray(tools) ? tools.filter(isWebSearchTool) : []
+    const serverTools: Tool[] = Array.isArray(tools) ? tools.filter(isServerSideTool) : []
     return new ResponsesProvider(model, {
       baseURL: provider.baseUrl,
       apiKey,
