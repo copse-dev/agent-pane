@@ -362,6 +362,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   void packService.refreshPackSources().catch((error: unknown) => {
     console.warn('[packs] selected-pack startup reconciliation failed:', error)
   })
+  void packService.refreshUserPlugins().catch((error: unknown) => {
+    console.warn('[plugins] user-plugin discovery failed:', error)
+  })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
   // getPackService() has already layered the user's explicit choices on top, so
