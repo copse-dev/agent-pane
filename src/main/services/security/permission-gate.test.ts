@@ -178,6 +178,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let approvalBody = ''
     let approvalSubject = ''
@@ -208,12 +209,96 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('names the holder in the overlap prompt instead of "another process"', async () => {
+    setPermissionGateForTests(null)
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalFooter = ''
+    setApprovalHandler(async (request) => {
+      approvalFooter = request.bodyFooter ?? ''
+      return { approved: false, remember: false }
+    })
+    try {
+      await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
+      assert.match(approvalFooter, /widened for ACP agent: codex/)
+    } finally {
+      setApprovalHandler(null)
+      release()
+    }
+  })
+
+  // The overlap gate exists because a command spawned during the widening
+  // inherits the process-global allowlist. A structurally read-only command
+  // opens no sockets, so there is nothing for it to inherit — gating it turned
+  // one background probe into a prompt on every `cat`/`rg` in every pane.
+  it('does not prompt a structurally read-only command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/readonly-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('rg TODO src | head -20', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('still prompts a network-capable command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/network-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalCause: string | undefined
+    setApprovalHandler(async (request) => {
+      approvalCause = request.cause
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('curl https://example.com', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        false,
+      )
+      assert.equal(approvalCause, 'shell-network-scope-overlap')
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
   it('can share the active network scope with an already-sandboxed ACP command', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/acp-network-scope-project')
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -243,6 +328,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -627,6 +713,7 @@ describe('ensureTerminalPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
