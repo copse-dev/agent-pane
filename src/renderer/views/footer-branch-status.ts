@@ -31,6 +31,15 @@ function orderBranchesWithDefaultFirst(
   return ordered
 }
 
+/**
+ * A branch is "trunk" when it is the repo's default branch. Open PRs whose head
+ * is a trunk branch (e.g. the daily main->release promotion) are incidental, so
+ * we keep showing the branch name instead of replacing it with a PR link.
+ */
+function isTrunkBranch(branch: string | null, defaultBranch: string | null): boolean {
+  return defaultBranch != null && branch != null && branch === defaultBranch
+}
+
 export function mountFooterBranchStatus(
   host: HTMLElement,
   store: AppStore,
@@ -85,6 +94,8 @@ export function mountFooterBranchStatus(
     const currentBranch = status?.currentBranch ?? null
     const displayBranch = threadBranch ?? currentBranch
     const pickerMode = isPickerMode()
+    const trunk = isTrunkBranch(displayBranch, defaultBranch)
+    const showPr = Boolean(status?.pr) && !trunk
 
     if (!displayBranch) {
       wrap.hidden = true
@@ -114,17 +125,16 @@ export function mountFooterBranchStatus(
       setOpen(false)
     }
 
-    if (status?.pr) {
-      label.textContent = `PR #${String(status.pr.number)}`
-      trigger.title = mismatch ? `${mismatchMessage} (${status.pr.title})` : status.pr.title
+    if (showPr) {
+      const pr = status?.pr
+      label.textContent = `PR #${String(pr?.number)}`
+      trigger.title = mismatch ? `${mismatchMessage} (${pr?.title})` : (pr?.title ?? '')
       trigger.classList.add('is-link')
       trigger.classList.remove('is-copyable')
       branchToCopy = null
       trigger.setAttribute(
         'aria-label',
-        pickerMode
-          ? `Open pull request #${String(status.pr.number)}`
-          : `Open pull request #${String(status.pr.number)}`,
+        `Open pull request #${String(pr?.number)}`,
       )
     } else {
       label.textContent = displayBranch
@@ -161,9 +171,12 @@ export function mountFooterBranchStatus(
     if (!isPickerMode()) return
 
     const current = status?.currentBranch ?? null
+    const trunk = isTrunkBranch(current, defaultBranch)
+    const showPr = Boolean(status?.pr) && !trunk
 
-    if (status?.pr) {
-      const pr = status.pr
+    if (showPr) {
+      const pr = status?.pr
+      if (!pr) return
       const prItem = el(
         'button',
         { type: 'button', class: 'branch-picker-option branch-picker-action' },
@@ -214,7 +227,7 @@ export function mountFooterBranchStatus(
       menu.append(item)
     }
 
-    if (ordered.length === 0 && !status?.pr) {
+    if (ordered.length === 0 && !showPr) {
       menu.append(el('div', { class: 'branch-picker-empty' }, 'No branches found.'))
     }
   }
@@ -245,7 +258,7 @@ export function mountFooterBranchStatus(
     if (isPickerMode()) await loadBranches()
     else {
       branches = []
-      defaultBranch = null
+      defaultBranch = await api.git.getDefaultBranch(owner.projectId, owner.threadId)
     }
     renderTrigger()
     if (open) renderMenu()
@@ -269,7 +282,10 @@ export function mountFooterBranchStatus(
 
   trigger.addEventListener('click', () => {
     if (!isPickerMode()) {
-      const url = status?.pr?.url
+      const threadBranch = getActiveThreadBranch()
+      const displayBranch = threadBranch ?? status?.currentBranch ?? null
+      const trunk = isTrunkBranch(displayBranch, defaultBranch)
+      const url = !trunk ? status?.pr?.url : undefined
       if (url) {
         openBrowserUrl(store, url)
         return
