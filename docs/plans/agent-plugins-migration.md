@@ -5,7 +5,8 @@ Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
 **Status: Proposed.** Adopts the [Agent Plugins Specification v1.0.0](https://agent-plugins.org/specification)
 as Copse's on-disk distribution format, carries the intent of closed
 [#1342](https://github.com/copse-dev/agent-pane/pull/1342) forward in that format,
-then renames the product surface from **packs** to **plugins**.
+renames the product surface from **packs** to **plugins**, and only then expresses
+the built-in features as plugins.
 
 This plan **amends** [`feature-pack-marketplace.md`](feature-pack-marketplace.md)
 rather than replacing it: every binding decision there still holds, and the
@@ -72,6 +73,28 @@ and gains portability for the two that other clients can actually load.
    permanent design decision, not a migration backlog (see [Stage B](#stage-b--built-ins-become-plugins)).
 8. **The rename is a rename.** Stage C changes names, not semantics. No contribution
    kind, trust rule, or lifecycle behavior may change in a Stage C PR.
+
+## Stage order: A → C → B
+
+The stages are lettered by topic and executed **A, then C, then B**. The order is
+load-bearing in both directions:
+
+- **A before C.** Stage C's Settings merge (collision 1) argues that the Cursor list
+  and the registry rows are the same concept and belong in one section. That argument
+  is only true once Copse-native plugins are AP directories too. Renaming first would
+  merge two sections on a promise rather than on a shared format.
+- **C before B.** Stage B rewrites the declarative half of all sixteen built-ins. Run
+  before the rename, every one of those manifests is authored in `pack` vocabulary and
+  then rewritten a PR later; run after, each is authored once, in its final form. B is
+  also the only stage whose size scales with the number of built-ins, so it is the
+  worst one to do twice.
+
+The cost of this order is that Stage A writes new modules into
+`packages/agent/src/packs/`, which Stage C then renames. That is a path change in a
+mechanical rename PR — cheap, and cheaper than authoring sixteen manifests twice.
+
+Each stage is independently shippable and leaves the product working. Nothing here
+requires the whole sequence to land before any of it is useful.
 
 ## The `dev.copse` namespace mapping
 
@@ -204,39 +227,6 @@ prompt trust is forced untrusted; a malformed sibling is skipped without affecti
 it; no network; `PLUGIN_ROOT`/`PLUGIN_DATA` are set and expanded; a `../` escape in
 `mcp.json` fails that server entry and no more.
 
-## Stage B — built-ins become plugins
-
-The goal is that a built-in feature is a plugin like any other. The honest boundary:
-**Agent Plugins v1 cannot express what first-party packs contribute.** Typed
-`AgentStreamChunk` emission, live loop-state access, and real renderer views are not
-component types in the spec, and the spec says so deliberately. So Stage B moves what
-can move and names the rest as a decision.
-
-**B1 — Every built-in gets an AP-shaped manifest.** All sixteen entries in
-`FIRST_PARTY_PACKS` express their declarative half as an AP manifest — core fields at
-the top level, Copse slots under `dev.copse`. Contributions stay in code. This is one
-manifest shape across the product: the same parser, the same Settings projection, the
-same schema. Mechanical and low-risk.
-
-**B2 — Fully-declarative built-ins ship as real directories.** Some built-ins have no
-typed contributions at all and can become on-disk plugins loaded through the Stage A
-path: `copse.post-turn-review` (declarative-only), `copse.mcp-ui-canvas` and
-`copse.devtools-shortcut` (capability-only). These prove the loader against real
-content and shrink the compiled surface. Trust stays first-party — shipped-with-app
-is a source, not a manifest claim.
-
-**B3 — The rest stay compiled, permanently.** `copse.todos` (panel emission),
-`copse.automations` (level-3 view), `copse.parallel-search` (credential-gated native
-tool), and the other typed-contribution packs remain in `FIRST_PARTY_PACKS`. This is
-VS Code's built-in-extensions model and hooks-and-feature-packs decision 15, not an
-unfinished migration. If Agent Plugins later standardizes a hooks or UI component
-type, B3 reopens; until then it is closed.
-
-**Exit gate.** Every built-in's manifest validates against the AP envelope plus the
-`dev.copse` extension schema; the B2 packs load from disk with byte-identical
-Settings rows and behavior; `enable-disable-atomicity.test.ts` and
-`history-never-consults-live-registration.test.ts` pass unchanged.
-
 ## Stage C — packs become plugins
 
 A rename with two real collisions to resolve first.
@@ -281,6 +271,42 @@ updating.
 **Exit gate.** A seeded profile with `packDisabled` and pack settings reads back
 identically under the new keys; no pack silently changes enablement across the
 migration; visual evals cover Settings and the site; `npm run check` clean.
+
+## Stage B — built-ins become plugins
+
+Runs last, so it is authored once in post-rename vocabulary: `FIRST_PARTY_PLUGINS`,
+`PluginManifest`, `plugin.<pluginId>.settings`. Nothing below should be written twice.
+
+The goal is that a built-in feature is a plugin like any other. The honest boundary:
+**Agent Plugins v1 cannot express what first-party packs contribute.** Typed
+`AgentStreamChunk` emission, live loop-state access, and real renderer views are not
+component types in the spec, and the spec says so deliberately. So Stage B moves what
+can move and names the rest as a decision.
+
+**B1 — Every built-in gets an AP-shaped manifest.** All sixteen shipped plugins
+express their declarative half as an AP manifest — core fields at the top level,
+Copse slots under `dev.copse`. Contributions stay in code. This is one manifest shape
+across the product: the same parser, the same Settings projection, the same schema.
+Mechanical and low-risk.
+
+**B2 — Fully-declarative built-ins ship as real directories.** Some built-ins have no
+typed contributions at all and can become on-disk plugins loaded through the Stage A
+path: `copse.post-turn-review` (declarative-only), `copse.mcp-ui-canvas` and
+`copse.devtools-shortcut` (capability-only). These prove the loader against real
+content and shrink the compiled surface. Trust stays first-party — shipped-with-app
+is a source, not a manifest claim.
+
+**B3 — The rest stay compiled, permanently.** `copse.todos` (panel emission),
+`copse.automations` (level-3 view), `copse.parallel-search` (credential-gated native
+tool), and the other typed-contribution plugins stay in the shipped static list. This
+is VS Code's built-in-extensions model and hooks-and-feature-packs decision 15, not an
+unfinished migration. If Agent Plugins later standardizes a hooks or UI component
+type, B3 reopens; until then it is closed.
+
+**Exit gate.** Every built-in's manifest validates against the AP envelope plus the
+`dev.copse` extension schema; the B2 plugins load from disk with byte-identical
+Settings rows and behavior; the atomicity and history-never-consults-live-registration
+tests pass unchanged.
 
 ## Docs to amend
 
