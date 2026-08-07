@@ -1,6 +1,8 @@
 import { el, clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
+import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -104,6 +106,24 @@ interface MountInputBarOptions {
    * can omit this and keep all generated UI under their fixture root.
    */
   portraitPanelHost?: HTMLElement
+}
+
+/** One image in the composer, with the fidelity chosen for it (default `auto`). */
+interface AttachedImage {
+  dataUrl: string
+  mimeType: string
+  detail?: ImageDetail
+}
+
+/**
+ * Menu copy for each fidelity. Says what it costs as well as what it does —
+ * `low` is the one with a consequence worth warning about, because it
+ * downsamples far enough that text in a screenshot stops being readable.
+ */
+const IMAGE_DETAIL_LABELS: Record<ImageDetail, string> = {
+  auto: 'Auto detail (provider decides)',
+  low: 'Low detail — cheapest, text may be unreadable',
+  high: 'High detail — full fidelity, most tokens',
 }
 
 export function mountInputBar(
@@ -478,7 +498,7 @@ export function mountInputBar(
   const followUpPlaceholder = 'Send follow-up'
 
   let attachedFiles: { path: string; content: string }[] = []
-  let attachedImages: { dataUrl: string; mimeType: string }[] = []
+  let attachedImages: AttachedImage[] = []
   // Attached videos (screen recordings). Stored on disk and referenced by path —
   // the media never enters the prompt, so unlike images these cost no context.
   // The agent reads them through the `video_frames` tool.
@@ -1347,7 +1367,13 @@ export function mountInputBar(
     let fullContent: UserContent
     if (attachedImages.length > 0) {
       fullContent = [
-        ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
+        ...attachedImages.map((img) => ({
+          type: 'image' as const,
+          dataUrl: img.dataUrl,
+          // Omitted at 'auto' so an untouched attachment sends the same content
+          // it always has, and stored history stays free of a redundant field.
+          ...(img.detail && img.detail !== 'auto' ? { detail: img.detail } : {}),
+        })),
         {
           type: 'text' as const,
           text: buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
@@ -1645,7 +1671,8 @@ export function mountInputBar(
   }
 
   function addImageChip(dataUrl: string, mimeType: string): void {
-    attachedImages.push({ dataUrl, mimeType })
+    const entry: AttachedImage = { dataUrl, mimeType }
+    attachedImages.push(entry)
     const chip = document.createElement('span')
     chip.className = 'attachment-chip image-chip'
     const thumb = document.createElement('img')
@@ -1655,10 +1682,36 @@ export function mountInputBar(
     const remove = document.createElement('button')
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
-      attachedImages = attachedImages.filter((i) => i.dataUrl !== dataUrl)
+      attachedImages = attachedImages.filter((i) => i !== entry)
       chip.remove()
       void refreshImageCompatibilityWarning()
       scheduleContextEstimate()
+    })
+    // Fidelity is per image, so it is chosen on the image rather than in
+    // Settings: a stack trace in one chip and a frame in the next want
+    // opposite answers, and only the person attaching them knows which.
+    const applyDetail = (detail: ImageDetail): void => {
+      entry.detail = detail
+      chip.dataset['detail'] = detail
+      chip.title = IMAGE_DETAIL_LABELS[detail]
+      scheduleContextEstimate()
+    }
+    applyDetail('auto')
+    chip.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(
+        e.clientX,
+        e.clientY,
+        IMAGE_DETAILS.map((detail) => ({
+          // The shared menu has no checked state, so the current choice is
+          // marked in the label rather than by changing that component.
+          label: `${(entry.detail ?? 'auto') === detail ? '✓ ' : '  '}${IMAGE_DETAIL_LABELS[detail]}`,
+          onSelect: (): void => {
+            applyDetail(detail)
+          },
+        })),
+      )
     })
     chip.append(thumb, remove)
     chips.append(chip)

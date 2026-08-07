@@ -158,26 +158,37 @@ describe('ResponsesProvider input mapping', () => {
     ])
   })
 
-  it('applies the configured image detail to attachments and tool-result images', () => {
-    const input = toResponsesInput(
-      [
-        { role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,abc' }] },
-        {
-          role: 'tool',
-          toolResults: [
-            {
-              toolCallId: 'call_1',
-              result: 'captured',
-              images: [{ dataUrl: 'data:image/png;base64,frame', name: 'frame-1.png' }],
-            },
-          ],
-        },
-      ],
-      'low',
-    )
-    // Both the direct attachment and the tool-result follow-up must carry it —
-    // tool-produced frames are exactly the images worth downsampling.
-    assert.deepEqual(collectImageDetails(input), ['low', 'low'])
+  it('carries a different detail per image within one message', () => {
+    // The case a single provider-wide setting could never express: a screenshot
+    // whose text has to stay legible sitting beside a frame worth downsampling.
+    const input = toResponsesInput([
+      {
+        role: 'user',
+        content: [
+          { type: 'image', dataUrl: 'data:image/png;base64,trace', detail: 'high' },
+          { type: 'image', dataUrl: 'data:image/png;base64,frame', detail: 'low' },
+          { type: 'text', text: 'what went wrong?' },
+        ],
+      },
+    ])
+    assert.deepEqual(collectImageDetails(input), ['high', 'low'])
+  })
+
+  it('leaves tool-result images at auto — nobody chose a detail for them', () => {
+    const input = toResponsesInput([
+      { role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,abc' }] },
+      {
+        role: 'tool',
+        toolResults: [
+          {
+            toolCallId: 'call_1',
+            result: 'captured',
+            images: [{ dataUrl: 'data:image/png;base64,frame', name: 'frame-1.png' }],
+          },
+        ],
+      },
+    ])
+    assert.deepEqual(collectImageDetails(input), ['auto', 'auto'])
   })
 })
 

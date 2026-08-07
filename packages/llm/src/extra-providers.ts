@@ -19,7 +19,6 @@ import { isSafeCredentialBaseUrl } from './credential-url.ts'
 import { isProviderSlug, parseModelSelection } from './model-selection.ts'
 import { blendedRate } from './pareto-frontier.ts'
 import type { ModelPricing, ModelPricingMap } from './model-pricing.ts'
-import { isImageDetail, type ImageDetail } from './wire-types.ts'
 
 /** Fallback context window for any provider/model whose size we don't know. */
 export const DEFAULT_EXTRA_PROVIDER_CONTEXT = 128_000
@@ -109,12 +108,6 @@ export interface ExtraProvider {
   includeUsage?: boolean
   /** Extra fields merged into every request body (e.g. OpenRouter routing hints). */
   extraBody?: Record<string, unknown>
-  /**
-   * Image fidelity to request for attachments. Omitted means `'auto'` — the
-   * provider decides, which is what Copse has always sent. Set `'low'` for an
-   * endpoint where full-detail screenshots are not worth the input tokens.
-   */
-  imageDetail?: ImageDetail
   /** Curated/known model shortlist for the picker (may be empty for a fresh custom). */
   models: readonly ExtraProviderModel[]
 }
@@ -131,12 +124,6 @@ export interface StoredExtraProvider {
   fallbackContextWindow?: number
   includeUsage?: boolean
   extraBody?: Record<string, unknown>
-  /**
-   * Unvalidated on read, like `baseUrl` and `keyPrefix` above: this interface
-   * describes what is on disk, and a synced or hand-edited settings.json never
-   * passed the write-time schema. `isImageDetail` narrows it at resolution.
-   */
-  imageDetail?: string
 }
 
 // Mistral and DeepSeek serve up to 128K context; Gemini Flash serves ~1M.
@@ -535,7 +522,6 @@ function mergeBuiltin(base: ExtraProvider, override: StoredExtraProvider): Extra
     ...(override.extraBody && typeof override.extraBody === 'object'
       ? { extraBody: override.extraBody }
       : {}),
-    ...(isImageDetail(override.imageDetail) ? { imageDetail: override.imageDetail } : {}),
     ...(typeof override.keyPrefix === 'string' ? { keyPrefix: override.keyPrefix } : {}),
   }
 }
@@ -570,7 +556,6 @@ function customToProvider(stored: StoredExtraProvider): ExtraProvider | null {
     ...(stored.extraBody && typeof stored.extraBody === 'object'
       ? { extraBody: stored.extraBody }
       : {}),
-    ...(isImageDetail(stored.imageDetail) ? { imageDetail: stored.imageDetail } : {}),
     models: normalizeModels(stored.models),
   }
 }

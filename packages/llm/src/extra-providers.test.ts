@@ -175,31 +175,6 @@ describe('resolveExtraProviders', () => {
     assert.deepEqual(mistral.models, [{ id: 'mistral-tiny' }]) // replaced
   })
 
-  it('carries a stored imageDetail onto a preset and a custom alike', () => {
-    const providers = resolveExtraProviders([
-      { slug: 'mistral', imageDetail: 'low' },
-      {
-        slug: 'acme',
-        label: 'Acme AI',
-        baseUrl: 'https://api.acme.example/v1',
-        imageDetail: 'high',
-      },
-    ])
-    assert.equal(providers.find((p) => p.id === 'mistral')?.imageDetail, 'low')
-    assert.equal(providers.find((p) => p.id === 'acme')?.imageDetail, 'high')
-  })
-
-  it('drops an unrecognised imageDetail rather than sending it upstream', () => {
-    // A hand-edited or synced settings.json bypasses the write-time schema, so
-    // resolution is the last gate before the value reaches an `image_url` part.
-    const providers = resolveExtraProviders([
-      { slug: 'mistral', imageDetail: 'ultra' },
-      { slug: 'acme', label: 'Acme AI', baseUrl: 'https://api.acme.example/v1' },
-    ])
-    assert.equal(providers.find((p) => p.id === 'mistral')?.imageDetail, undefined)
-    assert.equal(providers.find((p) => p.id === 'acme')?.imageDetail, undefined)
-  })
-
   it('appends a valid user custom and defaults its context window', () => {
     const providers = resolveExtraProviders([
       { slug: 'acme', label: 'Acme AI', baseUrl: 'https://api.acme.example/v1' },

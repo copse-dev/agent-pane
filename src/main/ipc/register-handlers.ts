@@ -1265,7 +1265,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (parsed.includeUsage !== undefined) provider.includeUsage = parsed.includeUsage
     if (parsed.extraBody !== undefined) provider.extraBody = parsed.extraBody
-    if (parsed.imageDetail !== undefined) provider.imageDetail = parsed.imageDetail
     return saveExtraProvider(provider)
   })
   ipcMain.handle('settings:deleteExtraProvider', async (event, slug: unknown) => {

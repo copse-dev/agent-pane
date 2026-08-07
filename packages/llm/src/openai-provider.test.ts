@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from './internal-utils.ts'
-import type { LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type { ImageDetail, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 
 interface CapturedChatCompletionRequest {
@@ -108,13 +108,10 @@ function collectImageUrls(
 }
 
 describe('OpenAIProvider image detail', () => {
-  async function capturedImageUrl(
-    imageDetail?: 'auto' | 'low' | 'high',
-  ): Promise<Record<string, unknown>> {
-    const provider = new OpenAIProvider('gpt-test', {
-      apiKey: 'test-openai-key',
-      ...(imageDetail ? { imageDetail } : {}),
-    })
+  async function capturedImageUrls(
+    ...details: (ImageDetail | undefined)[]
+  ): Promise<Record<string, unknown>[]> {
+    const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })
     const captured: { request?: { messages?: unknown } } = {}
     Object.defineProperty(provider, 'client', {
       value: {
@@ -132,35 +129,52 @@ describe('OpenAIProvider image detail', () => {
       configurable: true,
     })
     for await (const _ of provider.stream(
-      [{ role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,abc' }] }],
+      [
+        {
+          role: 'user',
+          content: details.map((detail, i) => ({
+            type: 'image' as const,
+            dataUrl: `data:image/png;base64,img${String(i)}`,
+            ...(detail ? { detail } : {}),
+          })),
+        },
+      ],
       [],
     )) {
       // drain
     }
     const found = collectImageUrls(captured.request?.messages)
-    assert.equal(found.length, 1, 'expected exactly one image part in the request')
-    return at(found, 0)
+    assert.equal(found.length, details.length, 'expected one image part per requested detail')
+    return found
   }
 
   it('omits detail entirely by default, so the request is byte-identical to before', async () => {
     // Explicitly sending detail:'auto' would be a no-op for OpenAI but a new
     // unknown field for the OpenAI-compatible servers this adapter also drives.
-    assert.deepEqual(await capturedImageUrl(), { url: 'data:image/png;base64,abc' })
+    assert.deepEqual(await capturedImageUrls(undefined), [{ url: 'data:image/png;base64,img0' }])
   })
 
-  it('omits detail when auto is requested explicitly', async () => {
-    assert.deepEqual(await capturedImageUrl('auto'), { url: 'data:image/png;base64,abc' })
+  it('omits detail when auto is set explicitly on the part', async () => {
+    assert.deepEqual(await capturedImageUrls('auto'), [{ url: 'data:image/png;base64,img0' }])
   })
 
-  it('sends detail when a non-auto fidelity is configured', async () => {
-    assert.deepEqual(await capturedImageUrl('low'), {
-      url: 'data:image/png;base64,abc',
-      detail: 'low',
-    })
-    assert.deepEqual(await capturedImageUrl('high'), {
-      url: 'data:image/png;base64,abc',
-      detail: 'high',
-    })
+  it('sends a non-auto fidelity through on the part that carries it', async () => {
+    assert.deepEqual(await capturedImageUrls('low'), [
+      { url: 'data:image/png;base64,img0', detail: 'low' },
+    ])
+    assert.deepEqual(await capturedImageUrls('high'), [
+      { url: 'data:image/png;base64,img0', detail: 'high' },
+    ])
+  })
+
+  it('keeps each image on its own detail within one message', async () => {
+    // The whole point of moving this off the provider: one request can carry a
+    // screenshot that must stay legible and a frame that need not.
+    assert.deepEqual(await capturedImageUrls('high', 'low', undefined), [
+      { url: 'data:image/png;base64,img0', detail: 'high' },
+      { url: 'data:image/png;base64,img1', detail: 'low' },
+      { url: 'data:image/png;base64,img2' },
+    ])
   })
 })
 
