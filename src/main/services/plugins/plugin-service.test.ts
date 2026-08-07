@@ -515,3 +515,98 @@ describe('migratePackKeysToPlugin', () => {
     assert.equal(storageGet('packDisabled'), undefined)
   })
 })
+
+// Settings → MCP servers reads this to disclose servers nothing is running.
+// The value of the disclosure rests entirely on it being *complete* and on it
+// staying inert, so both are pinned: a declaration reaches the list whether or
+// not its plugin is on, and reading it never starts anything.
+describe('declaredMcpServers', () => {
+  const roots: string[] = []
+
+  async function seedPlugin(
+    name: string,
+    servers: Record<string, unknown> | null,
+  ): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'copse-declared-mcp-'))
+    roots.push(root)
+    const pluginDir = join(root, name)
+    await mkdir(pluginDir, { recursive: true })
+    await writeFile(
+      join(pluginDir, 'plugin.json'),
+      JSON.stringify({
+        $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
+        name,
+        version: '1.0.0',
+      }),
+    )
+    if (servers) {
+      await writeFile(
+        join(pluginDir, 'mcp.json'),
+        JSON.stringify({
+          $schema: 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json',
+          mcpServers: servers,
+        }),
+      )
+    }
+    return root
+  }
+
+  beforeEach(() => {
+    __resetPluginServiceForTests()
+    clearStorage()
+  })
+
+  afterEach(async () => {
+    __resetPluginServiceForTests()
+    delete process.env['COPSE_PLUGINS_DIR']
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  })
+
+  it('reports a disabled plugin server, naming the plugin and why it is inert', async () => {
+    process.env['COPSE_PLUGINS_DIR'] = await seedPlugin('acme.declarer', {
+      reviewer: { type: 'stdio', command: './bin/reviewer' },
+    })
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshUserPlugins()
+
+    // Discovery seeds a newly found plugin off, which is the common case for
+    // this list: the server is not running because the plugin is not.
+    assert.deepEqual(service.declaredMcpServers(), [
+      {
+        name: 'reviewer',
+        transport: 'stdio',
+        pluginId: 'acme.declarer',
+        pluginEnabled: false,
+        reason: 'The plugin that declares it is turned off.',
+      },
+    ])
+  })
+
+  it('keeps reporting the server once the user turns the plugin on', async () => {
+    process.env['COPSE_PLUGINS_DIR'] = await seedPlugin('acme.declarer', {
+      reviewer: { type: 'stdio', command: './bin/reviewer' },
+    })
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshUserPlugins()
+    await service.setEnabled('acme.declarer', true)
+
+    // Enabling a plugin does not start its MCP servers, so the row has to stay —
+    // dropping it here would read as "now running", which is the one thing it
+    // must never imply.
+    const [declared] = service.declaredMcpServers()
+    assert.ok(declared)
+    assert.equal(declared.pluginEnabled, true)
+    assert.match(declared.reason, /does not start plugin MCP servers yet/)
+  })
+
+  it('is empty when no discovered plugin declares any', async () => {
+    process.env['COPSE_PLUGINS_DIR'] = await seedPlugin('acme.quiet', null)
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshUserPlugins()
+
+    assert.deepEqual(service.declaredMcpServers(), [])
+  })
+})

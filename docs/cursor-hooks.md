@@ -190,13 +190,13 @@ returning modified content.
 | **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt ([permission-hook I/O](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))                                                                                                                                                                                                                       |
 | **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is the [tool-gate input rewriting phase](plans/hooks-and-feature-packs.md#phase-h--vendor-response-semantics))                                                                                                                                                                                                                                                            |
 | **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                                                                                                                                                                                                                                                                                                                   |
-| **Settings UI**               | Supported     | Developer mode → Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                                                                                                                          |
+| **Settings UI**               | Supported     | Developer mode → Settings → Customise → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                                                                                                                        |
 
 ### Enablement
 
 Hooks are **off by default**. Honouring a hook spawns a user/project script on the
 agent's hot path, so it is gated behind the `cursorHooksEnabled` security setting
-(Developer mode → Settings → Sources → Hooks). When disabled the gate skips discovery entirely (no
+(Developer mode → Settings → Customise → Hooks). When disabled the gate skips discovery entirely (no
 overhead); the Sources panel still lists discovered hooks so authoring problems are
 visible before enabling.
 
@@ -311,7 +311,7 @@ a load gate** (a config that violates an upstream schema still loads):
 1. **Warn-level authoring lint.** Parsing a foreign config uses the schema's
    published event list to warn when a hooks group targets an event the vendor
    recognises but Copse does not act on yet (vs an outright typo). The valid
-   hooks still load; the warning surfaces in Settings → Sources.
+   hooks still load; the warning surfaces in Settings → Customise.
 2. **CI drift detector** (`src/main/services/hooks/vendor-schema-drift.test.ts`)
    diffs each vendored schema's published events against the events our adapters
    wire. Every published event must be either wired or listed in an explicit

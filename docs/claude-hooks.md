@@ -47,7 +47,7 @@ Example settings fragment:
 | **`UserPromptSubmit`**             | Supported     | Blocking: a `block` decision (or exit 2) halts the submit                            |
 | **`Stop` / `SubagentStop`**        | Supported     | Detached observation — see below                                                     |
 | **User / project / local**         | Supported     | Project + local require workspace trust (#100)                                       |
-| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Sources                                  |
+| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Customise                                |
 | **Prompt / HTTP / agent handlers** | Not supported | Only `type: "command"` (or omitted type)                                             |
 | **`if` permission-rule filters**   | Not supported | Matcher-only for v1                                                                  |
 | **`PreCompact`**                   | Not supported | The canonical `compaction` event is typed but has no fire site                       |
@@ -76,7 +76,7 @@ honoured on its own path.
 ### Enablement
 
 Execution is gated by the same **`cursorHooksEnabled`** setting as Cursor hooks (off by
-default). Discovery for Settings → Sources always runs.
+default). Discovery for Settings → Customise always runs.
 
 ### Tool mapping
 

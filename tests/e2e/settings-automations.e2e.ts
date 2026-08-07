@@ -60,7 +60,7 @@ describe('settings automations plugin', function () {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="plugins"]').click()
+    await dialog.$('button[data-section="customise"]').click()
 
     const row = dialog.$(`.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`)
     await row.waitForExist({ timeout: 15_000 })

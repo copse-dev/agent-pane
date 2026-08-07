@@ -32,11 +32,11 @@ const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
 /**
- * Packs the host turns off on a profile with no `packDisabled` list — mirrors
- * `DEFAULT_DISABLED_PACK_IDS` in `src/main/services/plugins/plugin-service.ts`.
+ * Plugins the host turns off on a profile with no `packDisabled` list — mirrors
+ * `DEFAULT_DISABLED_PLUGIN_IDS` in `src/main/services/plugins/plugin-service.ts`.
  * Seeding the list explicitly means a fixture never depends on that default.
  */
-const DEFAULT_DISABLED_PACK_IDS = [
+const DEFAULT_DISABLED_PLUGIN_IDS = [
   'copse.advisor-strategy',
   'copse.automations',
   'copse.ci-investigator',
@@ -59,7 +59,7 @@ export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
 
 /** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
 function packDisabledSeed(enabled: readonly string[]): string[] {
-  return DEFAULT_DISABLED_PACK_IDS.filter((id) => !enabled.includes(id))
+  return DEFAULT_DISABLED_PLUGIN_IDS.filter((id) => !enabled.includes(id))
 }
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
@@ -231,6 +231,24 @@ export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   writeSettings({})
+}
+
+/** Copse's own `mcp.json` under userData — a *user* MCP source, not a project one. */
+const USER_MCP_PATH = join(USER_DATA, 'mcp.json')
+
+/**
+ * Seed the user-owned MCP config. Deliberately writes the userData copy rather
+ * than `~/.cursor/mcp.json`: the latter is the developer's real file, and an
+ * e2e that edits it would both leak their servers into the run and risk leaving
+ * fixture servers behind in it.
+ */
+export function seedUserMcpConfig(servers: Record<string, unknown>): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(USER_MCP_PATH, JSON.stringify({ mcpServers: servers }, null, 2), 'utf8')
+}
+
+export function resetUserMcpConfig(): void {
+  rmSync(USER_MCP_PATH, { force: true })
 }
 
 /** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in hooks/cursor-adapter.ts. */
@@ -480,16 +498,18 @@ export function seedEmptyProject(
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
-  // Pack enablement lives in `config.json` under `packDisabled` (what the host
+  // Plugin enablement lives in `config.json` under `packDisabled` (what the host
   // pack service reads via `storageGet`). Write it explicitly: an explicit
   // `packDisabled` wins, otherwise the host defaults with the opted-in packs
   // lifted out.
-  const enabledPacks: string[] = []
-  if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
-  if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
-  if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
+  const enabledPlugins: string[] = []
+  if (options?.modelComparisonEnabled) enabledPlugins.push('copse.model-comparison')
+  if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
+  if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
   seedConfig.packDisabled =
-    options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
+    options?.packDisabled !== undefined
+      ? [...options.packDisabled]
+      : packDisabledSeed(enabledPlugins)
   if (options?.packSources) {
     seedConfig.packSources = [...options.packSources]
   }

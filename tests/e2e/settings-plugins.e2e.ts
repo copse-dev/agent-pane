@@ -78,22 +78,23 @@ describe('settings plugins (about:addons)', function () {
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
 
-    const navBtn = dialog.$('button[data-section="plugins"]')
+    const navBtn = dialog.$('button[data-section="customise"]')
     await expect(navBtn).toBeDisplayed()
     await navBtn.click()
 
-    const plugins = settingsSection('plugins')
+    const plugins = settingsSection('customise')
     await expect(plugins).toBeDisplayed()
-    await expect(plugins.$('legend=Installed plugins')).toBeDisplayed()
+    await expect(plugins.$('legend=Plugins')).toBeDisplayed()
 
-    // Section copy must stay user-facing: no internal design-doc refs, and the
-    // add-a-plugin guide must be a real link (not a bare <code> path).
-    const desc = plugins.$('.settings-section-desc')
+    // Plugin copy must stay user-facing: no internal design-doc refs, and the
+    // add-a-plugin guide must be a real link (not a bare <code> path). It lives
+    // on the Plugins fieldset now that plugins are one part of Customise.
+    const desc = plugins.$('#plugins-fieldset .settings-fieldset-desc')
     await expect(desc).toBeDisplayed()
     const descText = await desc.getText()
     assert.doesNotMatch(descText, /decision\s*17/i)
     const docsLink = desc.$(
-      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md"]',
+      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-plugin.md"]',
     )
     await expect(docsLink).toBeDisplayed()
     assert.match(await docsLink.getText(), /how to add a plugin/i)

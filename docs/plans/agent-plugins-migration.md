@@ -330,6 +330,42 @@ can be written when the copy half-failed, and there is no second chance at user
 data. Keying on "has the new key been written" makes a partial run resume and a
 completed run a no-op.
 
+### C4 — the convergence C1 deferred
+
+C1 deferred "one list with a source column" on decision 8's authority: it is not a
+rename. That was right, and it is why this is a separate change rather than a
+larger C1.
+
+Three lists each answered a slice of "what is extending Copse" — Sources, Plugins,
+and the Cursor-plugins fieldset inside Sources — so answering the whole question
+meant knowing which of three places held which kind. They are one section now,
+**Customise**, and Cursor plugins are rows in the single plugin list, badged
+`Cursor` and toggle-less because Cursor owns their lifecycle. **Worktrees left with
+them**: managing disk is not customising behaviour, so it is its own nav item,
+**Storage**.
+
+**MCP stayed separate**, because outbound connections are a different question from
+what is installed — but it became a _lens_ on both:
+
+- `McpServerStatus.origin` classifies each server's config source. The renderer
+  cannot do this: `source` is a bare path, and telling `~/.cursor/mcp.json` from a
+  plugin's bundled `mcp.json` means knowing where each root lives. It is derived in
+  `mcp-registry.ts` beside `isUserMcpSource`, which already needs the same
+  knowledge to scope env interpolation. An unrecognised source falls back to
+  `project` — repo-supplied until shown otherwise is the safe direction for a label
+  someone reads before deciding what to leave running.
+- `PluginService.declaredMcpServers()` reports servers a discovered plugin's
+  `mcp.json` names that nothing is running. Stage A validated these declarations
+  and deliberately stopped short of wiring them into the loop; a disabled plugin's
+  servers would not run either way. Both are states the section has to disclose,
+  because the alternative is "No servers configured" displayed over a package on
+  disk naming three. The rows carry no toggle — offering one would imply Copse
+  could start the server, which is the opposite of what the row exists to say.
+
+**What C4 does not do.** It does not start plugin MCP servers. Nothing about the
+discovery-is-not-activation split from Stage A changes here; C4 only stops the UI
+from being silent about it.
+
 ## Stage B — built-ins become plugins
 
 Runs last, so it is authored once in post-rename vocabulary: `FIRST_PARTY_PLUGINS`,

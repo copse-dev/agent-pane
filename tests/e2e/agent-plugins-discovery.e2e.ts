@@ -101,9 +101,9 @@ describe('agent plugins discovery', function () {
 
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="plugins"]').click()
+    await dialog.$('button[data-section="customise"]').click()
 
-    const plugins = settingsSection('plugins')
+    const plugins = settingsSection('customise')
     await expect(plugins).toBeDisplayed()
 
     const row = plugins.$(`.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`)
@@ -146,7 +146,7 @@ describe('agent plugins discovery', function () {
   })
 
   it('renders the manifest-declared setting and persists an explicit enable', async () => {
-    const plugins = settingsSection('plugins')
+    const plugins = settingsSection('customise')
     const row = plugins.$(`.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`)
 
     // The `dev.copse` settings schema renders through the same generic field
@@ -173,9 +173,11 @@ describe('agent plugins discovery', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed()
-    await $('#settings-dialog').$('button[data-section="plugins"]').click()
+    await $('#settings-dialog').$('button[data-section="customise"]').click()
 
-    const reopened = settingsSection('plugins').$(`.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`)
+    const reopened = settingsSection('customise').$(
+      `.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`,
+    )
     await reopened.waitForExist({ timeout: 15_000 })
     assert.equal(
       await reopened.getAttribute('data-enabled'),

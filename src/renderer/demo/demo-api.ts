@@ -427,6 +427,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
+      listDeclared: emptyArray,
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe,
     },

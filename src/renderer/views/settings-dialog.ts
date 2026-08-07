@@ -80,8 +80,8 @@ export type SettingsSection =
   | 'agent'
   | 'permissions'
   | 'mcp'
-  | 'sources'
-  | 'plugins'
+  | 'customise'
+  | 'storage'
   | 'appearance'
   | 'ssh'
   | 'experimental'
@@ -93,8 +93,8 @@ function isSettingsSection(value: unknown): value is SettingsSection {
     value === 'agent' ||
     value === 'permissions' ||
     value === 'mcp' ||
-    value === 'sources' ||
-    value === 'plugins' ||
+    value === 'customise' ||
+    value === 'storage' ||
     value === 'appearance' ||
     value === 'ssh' ||
     value === 'experimental'
@@ -499,8 +499,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="agent">Agent</button>
           <button type="button" class="settings-nav-btn" data-section="permissions">Permissions</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
-          <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
-          <button type="button" class="settings-nav-btn" data-section="plugins">Plugins</button>
+          <button type="button" class="settings-nav-btn" data-section="customise">Customise</button>
+          <button type="button" class="settings-nav-btn" data-section="storage">Storage</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
@@ -883,11 +883,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="mcp">
             <h3>MCP servers</h3>
             <p class="settings-section-desc">
-              Model Context Protocol servers expose external tools to the agent. Define them in
-              <code>.cursor/mcp.json</code> (project), <code>.mcp.json</code> (project),
-              <code>~/.cursor/mcp.json</code> (global), or a Cursor marketplace plugin's
-              <code>.mcp.json</code> (via <code>plugin.json</code> <code>mcpServers</code>), then
-              reload.
+              Model Context Protocol servers expose external tools to the agent. This section is
+              the whole picture of what Copse talks to over MCP — servers you configured, servers
+              the open project asks for, and servers your plugins bring with them. Each row says
+              where it came from. Configure your own in <code>.cursor/mcp.json</code> (project),
+              <code>.mcp.json</code> (project), or <code>~/.cursor/mcp.json</code> (global), then
+              reload. Plugins are installed and turned on under Customise.
             </p>
 
             <fieldset>
@@ -903,6 +904,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
+            </fieldset>
+
+            <fieldset id="mcp-declared-fieldset" hidden>
+              <legend>Declared by plugins, not running</legend>
+              <p class="settings-fieldset-desc">
+                Plugins you have installed name these servers. Copse is not connected to any of
+                them — either the plugin is turned off, or it declares servers Copse does not start
+                yet. They are listed so this section stays a complete account of what could reach
+                out.
+              </p>
+              <div id="mcp-declared-list" class="mcp-declared-list"></div>
             </fieldset>
 
             <fieldset>
@@ -936,11 +948,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
-          <section class="settings-section" data-section="sources">
-            <h3>Sources</h3>
+          <section class="settings-section" data-section="customise">
+            <h3>Customise</h3>
             <p class="settings-section-desc">
-              Everything Copse loads for this project, and the worktrees it keeps on disk. The
-              loaded lists are read-only: edit the files themselves to change what is loaded.
+              Everything Copse loads for this project, and every plugin extending it. The loaded
+              lists are read-only: edit the files themselves to change what is loaded.
             </p>
             <div class="settings-action-row">
               <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
@@ -1013,16 +1025,41 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Cursor plugins</legend>
+            <fieldset id="plugins-fieldset">
+              <legend>Plugins</legend>
               <p class="settings-fieldset-desc">
-                Cursor plugins installed under <code>~/.cursor/plugins/</code>. Each can contribute
-                skills and MCP servers.
+                Every plugin Copse knows about, whatever installed it — shipped with the app,
+                added to <code>~/.copse/plugins/</code>, selected as a folder, or installed through
+                Cursor. Each row says where it came from and what it contributes. Turning one off
+                drops all of its contributions from new work in one action; its stored data and old
+                conversation history remain available. Cursor-installed plugins are read-only here
+                because Cursor owns their lifecycle. See
+                <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-plugin.md" target="_blank" rel="noopener noreferrer">how to add a plugin</a>
+                for authoring and install steps.
               </p>
-              <div id="sources-plugins-list" class="sources-group">
-                <span class="sources-empty">Loading…</span>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
+                  Add plugin…
+                </button>
+                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
+                  Reload
+                </button>
+                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+              </div>
+              <div id="plugins-list" class="plugins-group">
+                <span class="plugins-empty">Loading…</span>
               </div>
             </fieldset>
+
+          </section>
+
+          <section class="settings-section" data-section="storage">
+            <h3>Storage</h3>
+            <p class="settings-section-desc">
+              What Copse keeps on disk for this project, and what it costs. Nothing here changes
+              how the agent behaves — it is where you go to see what has accumulated and reclaim
+              space.
+            </p>
 
             <fieldset>
               <legend>Worktrees</legend>
@@ -1036,34 +1073,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <span class="sources-empty">Loading…</span>
               </div>
               <span class="lmstudio-test-status" id="sources-worktrees-status"></span>
-            </fieldset>
-          </section>
-
-          <section class="settings-section" data-section="plugins">
-            <h3>Plugins</h3>
-            <p class="settings-section-desc">
-              Feature plugins installed in Copse, and the tools, hooks, prompts, and panels each one
-              adds. Each row declares whether the plugin is stable or experimental before you
-              enable it. Turning a plugin off drops all of its contributions from new work in one
-              action; its stored data and old conversation history remain available. See
-              <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a plugin</a>
-              for authoring and install steps.
-            </p>
-            <div class="settings-action-row">
-              <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
-                Add plugin…
-              </button>
-              <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
-                Reload
-              </button>
-              <span class="lmstudio-test-status" id="plugins-reload-status"></span>
-            </div>
-
-            <fieldset>
-              <legend>Installed plugins</legend>
-              <div id="plugins-list" class="plugins-group">
-                <span class="plugins-empty">Loading…</span>
-              </div>
             </fieldset>
           </section>
 
@@ -1747,8 +1756,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // don't trigger an fs walk (Sources) on open. The Providers panel defers
         // its own device scan until an agent block is actually shown.
         if (id === 'ssh') void sshWorkspaceSection.refresh()
-        if (id === 'sources') void refreshSources()
-        if (id === 'plugins') void refreshPlugins()
+        if (id === 'customise') {
+          void refreshSources()
+          void refreshPlugins()
+        }
+        if (id === 'storage') void refreshWorktrees()
+        // Plugin toggles and config edits both change what this section claims,
+        // and the open-time staged refresh already ran by the time a user comes
+        // back to it — so re-read on entry rather than showing a stale account
+        // of what Copse is connected to.
+        if (id === 'mcp') {
+          void refreshMcpServers()
+          void refreshDeclaredMcpServers()
+        }
       }
     })
   })
@@ -2216,16 +2236,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   async function refreshSources(): Promise<void> {
     const statusEl = qsRequired(overlay, '#sources-reload-status')
     statusEl.textContent = 'Loading…'
-    // Worktrees load on their own: they shell out to Git per checkout, and a
-    // repository problem there must not blank the file-based lists beside them.
-    void refreshWorktrees()
     try {
-      const [instructions, cursorRules, skills, hooks, plugins] = await Promise.all([
+      const [instructions, cursorRules, skills, hooks] = await Promise.all([
         api.instructions.list(),
         api.cursorRules.list(),
         api.skills.list(),
         api.hooks.list(),
-        api.cursorPlugins.list(),
       ])
 
       fillSourceList(
@@ -2282,20 +2298,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         '#sources-hooks-list',
         [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
         'No Cursor or Claude Code hooks configured.',
-      )
-
-      fillSourceList(
-        '#sources-plugins-list',
-        plugins.map((p) => {
-          const caps: string[] = []
-          if (p.skillsDir) caps.push('skills')
-          if (p.mcpConfigPath) caps.push('MCP')
-          const detail = [caps.length ? caps.join(' + ') : 'no capabilities', p.root]
-            .filter(Boolean)
-            .join(' · ')
-          return makeSourceRow(p.version ? `${p.name} (${p.version})` : p.name, null, detail)
-        }),
-        'No Cursor plugins installed.',
       )
 
       statusEl.textContent = ''
@@ -2374,6 +2376,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         .setEnabled(plugin.id, toggle.checked)
         .then(async () => {
           await refreshPlugins()
+          // Turning a plugin off is exactly what moves its declared MCP servers
+          // between "off because the plugin is" and "off because we don't start
+          // them yet", so the MCP lens has to follow the toggle rather than wait
+          // for the next dialog open.
+          void refreshDeclaredMcpServers()
           // Wake listeners that gate chrome on plugin enablement (e.g. the
           // Memories / Roadmap titlebar buttons in panel-mode-controls, which
           // read the plugin list) so a toggle takes effect without an app restart —
@@ -2584,7 +2591,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     settingsSummary.className = 'plugin-settings-summary'
     const settingsSummaryLabel = document.createElement('span')
     settingsSummaryLabel.textContent = 'Plugin settings'
-    settingsSummary.append(settingsSummaryLabel, chevronDownIcon('plugin-settings-chevron'))
+    // `ui-icon` is what carries `fill: none; stroke: currentColor` — an SVG path
+    // without it takes the SVG default (filled, unstroked), so this chevron was
+    // rendering as a solid triangle rather than the outline stroke every other
+    // disclosure in the app uses. The class is replaced, not appended, by
+    // outlineIcon, so it has to be named here.
+    settingsSummary.append(settingsSummaryLabel, chevronDownIcon('ui-icon plugin-settings-chevron'))
     settingsFold.append(settingsSummary)
 
     // Generic plugin-scoped settings fields (rendered from the manifest schema).
@@ -2827,12 +2839,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const statusEl = qsRequired(overlay, '#plugins-reload-status')
     statusEl.textContent = 'Loading…'
     try {
-      const result = await api.plugins.list()
+      // Two origins, one list. The registry owns lifecycle for everything Copse
+      // installed; Cursor owns its own cache, so those rows are read-only. A
+      // Cursor failure must not blank the registry rows beside it, hence the
+      // catch rather than a bare Promise.all.
+      const [result, cursorPlugins] = await Promise.all([
+        api.plugins.list(),
+        api.cursorPlugins.list().catch(() => []),
+      ])
       listEl.innerHTML = ''
-      if (result.plugins.length === 0) {
+      if (result.plugins.length === 0 && cursorPlugins.length === 0) {
         const empty = document.createElement('span')
         empty.className = 'plugins-empty'
-        empty.textContent = 'No plugins registered.'
+        empty.textContent = 'No plugins installed.'
         listEl.append(empty)
       } else {
         // Enabled plugins first, disabled plugins after — so a scrapped plugin moves
@@ -2840,25 +2859,197 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // runs get a heading each: with rows this tall, "why is this one dimmed"
         // is a question the list should answer before it is asked. A heading is
         // skipped when nothing falls under it.
-        const sorted = [...result.plugins].sort(
-          (a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id),
-        )
+        // One sequence, whatever installed the plugin. A Cursor plugin sorts in
+        // as `enabled: true` because it genuinely is — nothing gates
+        // `~/.cursor/plugins`, so it is contributing exactly like the rows
+        // around it, and the reader's question is "is this on", not "who
+        // packaged it". Origin is a badge on the row, not a section.
+        const entries: { id: string; enabled: boolean; render: () => HTMLElement }[] = [
+          ...result.plugins.map((plugin) => ({
+            id: plugin.id,
+            enabled: plugin.enabled,
+            render: () => makePluginRow(plugin),
+          })),
+          ...cursorPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: true,
+            render: () => makeCursorPluginRow(plugin),
+          })),
+        ].sort((a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id))
+
         let lastEnabled: boolean | null = null
-        for (const plugin of sorted) {
-          if (plugin.enabled !== lastEnabled) {
+        for (const entry of entries) {
+          if (entry.enabled !== lastEnabled) {
             const heading = document.createElement('h4')
             heading.className = 'plugins-group-heading'
-            heading.textContent = plugin.enabled ? 'Active' : 'Inactive'
+            heading.textContent = entry.enabled ? 'Active' : 'Inactive'
             listEl.append(heading)
-            lastEnabled = plugin.enabled
+            lastEnabled = entry.enabled
           }
-          listEl.append(makePluginRow(plugin))
+          listEl.append(entry.render())
         }
       }
       statusEl.textContent = ''
     } catch {
       statusEl.textContent = 'Failed to load plugins.'
     }
+  }
+
+  /**
+   * A Cursor-installed plugin, rendered as an ordinary plugin row.
+   *
+   * It gets the same shape as every other row — icon, origin badge, name,
+   * switch, contributions — because a user asking "what is extending Copse"
+   * should not have to learn that one answer lives in a differently-shaped card
+   * at the bottom of the list.
+   *
+   * **It reports Active, and that is a claim worth being sure of.** Nothing
+   * gates `~/.cursor/plugins`: `skills-registry.ts` adds every discovered
+   * plugin's skills directory unconditionally, and `mcp-registry.ts` reads
+   * every discovered plugin's MCP config the same way. So an installed Cursor
+   * plugin is always contributing, and the row says so.
+   *
+   * The switch is therefore shown **on and disabled**. Cursor owns the
+   * lifecycle, so this is the honest rendering: the state is real, and the
+   * control is visibly not ours to move. Omitting the switch entirely was worse
+   * — it left the one question the list exists to answer unanswered.
+   */
+  function makeCursorPluginRow(
+    plugin: import('@shared/types/cursor-plugins.ts').CursorPluginSummary,
+  ): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'plugin-row'
+    row.dataset['pluginId'] = plugin.name
+    row.dataset['pluginOrigin'] = 'cursor'
+    row.dataset['enabled'] = 'true'
+
+    const header = document.createElement('div')
+    header.className = 'plugin-row-header'
+
+    // Cursor's own cube mark, the real asset — the same reasoning that gives a
+    // first-party row the Copse glyph and a sideloaded one a neutral initial:
+    // a mark stands for who made the thing, so it is theirs to draw, not ours.
+    // It keeps the neutral tile rather than the Copse mark's neon field, which
+    // would read as our endorsement of someone else's plugin.
+    const icon = document.createElement('span')
+    icon.className = 'plugin-icon plugin-icon-cursor'
+    icon.setAttribute('aria-hidden', 'true')
+    const mark = document.createElement('img')
+    mark.src = './cursor-mark.svg'
+    mark.alt = ''
+    icon.append(mark)
+    header.append(icon)
+
+    const title = document.createElement('div')
+    title.className = 'plugin-row-title'
+    const originBadge = document.createElement('span')
+    originBadge.className = 'plugin-badge plugin-badge-cursor'
+    originBadge.textContent = 'Cursor'
+    originBadge.title = 'Installed through Cursor — Copse loads it, Cursor manages it.'
+    title.append(originBadge)
+
+    const nameLine = document.createElement('div')
+    nameLine.className = 'plugin-row-name-line'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'plugin-name'
+    nameEl.textContent = plugin.name
+    nameLine.append(nameEl)
+    if (plugin.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'plugin-version'
+      versionEl.textContent = plugin.version
+      nameLine.append(versionEl)
+    }
+    title.append(nameLine)
+
+    const toggleControl = document.createElement('div')
+    toggleControl.className = 'plugin-toggle-control'
+    const makeStateLabel = (side: 'off' | 'on'): HTMLElement => {
+      const stateEl = document.createElement('span')
+      stateEl.className = 'plugin-toggle-state'
+      stateEl.dataset['side'] = side
+      stateEl.textContent = side === 'on' ? 'On' : 'Off'
+      stateEl.setAttribute('aria-hidden', 'true')
+      return stateEl
+    }
+    const toggleLabel = document.createElement('label')
+    toggleLabel.className = 'toggle-switch plugin-toggle'
+    toggleLabel.title = 'Managed by Cursor — turn it off in Cursor, not here.'
+    const toggle = document.createElement('input')
+    toggle.type = 'checkbox'
+    toggle.checked = true
+    toggle.disabled = true
+    toggle.className = 'plugin-toggle-input'
+    toggle.setAttribute('aria-label', `${plugin.name} plugin enabled (managed by Cursor)`)
+    const track = document.createElement('span')
+    track.className = 'toggle-switch-track'
+    track.setAttribute('aria-hidden', 'true')
+    toggleLabel.append(toggle, track)
+    toggleControl.append(makeStateLabel('off'), toggleLabel, makeStateLabel('on'))
+
+    header.append(title, toggleControl)
+    row.append(header)
+
+    if (plugin.description) {
+      const desc = document.createElement('div')
+      desc.className = 'plugin-row-desc'
+      desc.textContent = plugin.description
+      row.append(desc)
+    }
+
+    const chips = document.createElement('div')
+    chips.className = 'plugin-chips'
+    const contributes: string[] = []
+    if (plugin.skillsDir) contributes.push('Skills')
+    if (plugin.mcpConfigPath) contributes.push('MCP servers')
+    if (contributes.length === 0) {
+      const none = document.createElement('span')
+      none.className = 'plugin-chips-empty'
+      none.textContent = 'Contributes nothing Copse can load'
+      chips.append(none)
+    } else {
+      for (const label of contributes) {
+        const chip = document.createElement('span')
+        chip.className = 'plugin-chip'
+        chip.textContent = label
+        chips.append(chip)
+      }
+    }
+    row.append(chips)
+
+    const path = document.createElement('p')
+    path.className = 'plugin-source-path'
+    path.textContent = plugin.root
+    row.append(path)
+
+    return row
+  }
+
+  /**
+   * The origin chip: who asked for this server.
+   *
+   * A user scanning this list is deciding what the app is allowed to reach, and
+   * the answer depends far more on *who declared it* than on whether it is
+   * currently connected — a server a cloned repo supplied and one the user
+   * wrote into their own config warrant different scrutiny even when both read
+   * "connected". The full source path goes in the tooltip rather than the chip,
+   * because a home-directory path is long enough to bury the one word that
+   * matters.
+   */
+  function mcpOriginChip(s: import('@shared/types/mcp.ts').McpServerStatus): HTMLElement {
+    const labels: Record<import('@shared/types/mcp.ts').McpServerOrigin, string> = {
+      user: 'Your config',
+      project: 'This project',
+      plugin: 'Plugin',
+      curated: 'Copse reviewed',
+      'built-in': 'Built in',
+    }
+    const chip = document.createElement('span')
+    chip.className = `mcp-origin-chip mcp-origin-${s.origin}`
+    chip.dataset['mcpOrigin'] = s.origin
+    chip.textContent = s.originDetail && s.origin === 'plugin' ? s.originDetail : labels[s.origin]
+    chip.title = s.originDetail ? `${labels[s.origin]} — ${s.originDetail}` : labels[s.origin]
+    return chip
   }
 
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
@@ -2977,7 +3168,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       title.className = 'mcp-server-summary'
       title.append(`${s.name} (${s.transport}): `, badge)
 
-      header.append(toggleLabel, title)
+      header.append(toggleLabel, title, mcpOriginChip(s))
       row.append(header)
 
       let detailText =
@@ -3008,6 +3199,57 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       renderMcpServers(await api.mcp.list())
     } catch {
       renderMcpServers([])
+    }
+  }
+
+  /**
+   * Plugin-declared servers Copse is not running. Hidden entirely when there are
+   * none — an empty "not running" list is noise in the common case, and the
+   * fieldset only earns its space when it has something to disclose.
+   */
+  function renderDeclaredMcpServers(
+    declared: import('@shared/types/mcp.ts').DeclaredMcpServer[],
+  ): void {
+    const fieldset = qsRequired(overlay, '#mcp-declared-fieldset')
+    const listEl = qsRequired(overlay, '#mcp-declared-list')
+    fieldset.hidden = declared.length === 0
+    listEl.innerHTML = ''
+
+    for (const s of declared) {
+      const row = document.createElement('div')
+      row.className = 'mcp-server-row mcp-declared-row'
+      row.dataset['mcpServer'] = s.name
+      row.dataset['pluginId'] = s.pluginId
+
+      const header = document.createElement('div')
+      header.className = 'mcp-server-header'
+      const title = document.createElement('div')
+      title.className = 'mcp-server-summary'
+      title.append(`${s.name} (${s.transport}): `, inlineStatus('idle', 'not running'))
+
+      const chip = document.createElement('span')
+      chip.className = 'mcp-origin-chip mcp-origin-plugin'
+      chip.dataset['mcpOrigin'] = 'plugin'
+      chip.textContent = s.pluginId
+      chip.title = `Declared by the plugin ${s.pluginId}`
+
+      header.append(title, chip)
+      row.append(
+        header,
+        Object.assign(document.createElement('div'), {
+          className: 'mcp-server-detail',
+          textContent: s.reason,
+        }),
+      )
+      listEl.append(row)
+    }
+  }
+
+  async function refreshDeclaredMcpServers(): Promise<void> {
+    try {
+      renderDeclaredMcpServers(await api.mcp.listDeclared())
+    } catch {
+      renderDeclaredMcpServers([])
     }
   }
 
@@ -3112,6 +3354,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       .then((statuses) => {
         renderMcpServers(statuses)
         void refreshCuratedServers()
+        void refreshDeclaredMcpServers()
         const visible = statuses.filter((s) => !s.curated)
         const ok = visible.filter((s) => s.state === 'connected').length
         setInlineStatus(
@@ -3216,7 +3459,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
-    if (openedSection === 'sources') void refreshSources()
+    if (openedSection === 'customise') {
+      void refreshSources()
+      void refreshPlugins()
+    }
+    if (openedSection === 'storage') void refreshWorktrees()
     searchInput.focus()
     void (async (): Promise<void> => {
       // These stages used to be one unbroken `await` chain inside this
@@ -3342,6 +3589,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await refreshStage('mcp-servers', async () => {
         await refreshMcpServers()
         await refreshCuratedServers()
+        await refreshDeclaredMcpServers()
       })
     })()
   })

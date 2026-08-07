@@ -152,7 +152,7 @@ describe('AutomationService', () => {
     const threads = new Map<string, Thread>()
     const service = createAutomationService({
       now: () => now,
-      isPackEnabled: () => true,
+      isPluginEnabled: () => true,
       createProjectThread: (_projectId, thread) => {
         threads.set(thread.id, thread)
         return Promise.resolve()
@@ -210,7 +210,7 @@ describe('AutomationService', () => {
     const threads = new Map<string, Thread>()
     const service = createAutomationService({
       now: () => now,
-      isPackEnabled: () => true,
+      isPluginEnabled: () => true,
       createProjectThread: (_projectId, thread) => {
         threads.set(thread.id, thread)
         return Promise.resolve()
@@ -255,7 +255,7 @@ describe('AutomationService', () => {
     const threads = new Map<string, Thread>()
     const service = createAutomationService({
       now: () => now,
-      isPackEnabled: () => true,
+      isPluginEnabled: () => true,
       createProjectThread: (_projectId, thread) => {
         threads.set(thread.id, thread)
         return Promise.resolve()

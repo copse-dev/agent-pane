@@ -31,8 +31,8 @@ describe('advisor pair assessment hint', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await expect($('#settings-dialog')).toBeDisplayed()
-    await $('.settings-nav-btn[data-section="plugins"]').click()
-    await expect($('.settings-section[data-section="plugins"]')).toBeDisplayed()
+    await $('.settings-nav-btn[data-section="customise"]').click()
+    await expect($('.settings-section[data-section="customise"]')).toBeDisplayed()
     // The advisor plugin's `model` field renders as `#advisorModel`, with the
     // pairing hint appended below it (settings stay editable even while the plugin
     // is off). Wait for both to render from the live plugin list.

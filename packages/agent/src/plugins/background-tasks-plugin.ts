@@ -31,7 +31,11 @@
 // Electron-free (execution-guidance rule 4): pure declarations. Host wiring (the
 // tool registration + live sync, and the permission-gate's loopback-bind gate)
 // reads through the shared `getDefaultPluginRegistry()` seam.
-import { definePlugin, type PluginPermissionDecl, type RegisteredPlugin } from './plugin-manifest.ts'
+import {
+  definePlugin,
+  type PluginPermissionDecl,
+  type RegisteredPlugin,
+} from './plugin-manifest.ts'
 
 /** Stable pack id — the manifest name + the grouping key across contributions. */
 export const BACKGROUND_TASKS_PLUGIN_ID = 'copse.background-tasks'

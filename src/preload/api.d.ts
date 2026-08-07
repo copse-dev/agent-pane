@@ -32,7 +32,11 @@ import type {
   GhPrSummary,
   PrActionResult,
 } from '@shared/types/git.ts'
-import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
+import type {
+  McpServerStatus,
+  CuratedMcpServerStatus,
+  DeclaredMcpServer,
+} from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
@@ -300,6 +304,8 @@ export interface ApiClient {
     reload: () => Promise<McpServerStatus[]>
     setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
     listCurated: () => Promise<CuratedMcpServerStatus[]>
+    /** Plugin-declared servers nothing is running. See {@link DeclaredMcpServer}. */
+    listDeclared: () => Promise<DeclaredMcpServer[]>
     setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }

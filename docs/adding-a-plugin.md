@@ -2,7 +2,7 @@
 
 A **plugin** bundles related agent capabilities — tools, whole-thread model routes,
 hooks, prompt blocks, UI panels, and plugin-scoped settings — behind one enable/disable toggle in
-**Settings → Plugins**.
+**Settings → Customise**.
 
 This is the practical guide for installing or authoring one. For the registry
 lifecycle and internal design, see [`docs/plugins.md`](./plugins.md).
@@ -15,10 +15,10 @@ lifecycle and internal design, see [`docs/plugins.md`](./plugins.md).
 | Add skills and/or MCP servers                  | A Cursor-style plugin under `~/.cursor/plugins/`                                              | **Sources → Plugins** (and **MCP servers**)                        |
 | Add command hooks                              | Cursor / Claude / Copse hooks files                                                           | **Sources → Hooks**                                                |
 | Add an in-process custom tool                  | `<userData>/tools/*.mjs`                                                                      | Used by the agent (approval-gated)                                 |
-| Add a personal plugin with executable behavior | Explicit folder selected in **Settings → Plugins**                                            | **Plugins** (ordinary user-plugin row)                             |
+| Add a personal plugin with executable behavior | Explicit folder selected in **Settings → Customise**                                          | **Plugins** (ordinary user-plugin row)                             |
 | Author a full user plugin row in **Plugins**   | An [Agent Plugins](https://agent-plugins.org/specification) package under `~/.copse/plugins/` | **Plugins** (row, seeded off — see [Status](#status-user-plugins)) |
 
-So: a third-party bundle now appears as its own row under **Settings → Plugins**.
+So: a third-party bundle now appears as its own row under **Settings → Customise**.
 What it _contributes_ is still limited — the row and the enable/disable
 lifecycle landed first, deliberately, because finding a manifest on disk must
 not be what starts running its behavior.
@@ -65,7 +65,7 @@ A few rules worth knowing before you hit them:
 
 - **The name is constrained.** 1–64 characters, lowercase `a-z0-9-.`, starting
   and ending alphanumeric, no `--` or `..`.
-- **A new plugin starts disabled.** Enable it in **Settings → Plugins**; your
+- **A new plugin starts disabled.** Enable it in **Settings → Customise**; your
   choice then persists.
 - **You cannot self-grant first-party power.** Native tool registration, ACP
   exposure, level-3 renderer views, and `trusted` prompt blocks are stripped on
@@ -108,16 +108,16 @@ mkdir -p ~/.cursor/plugins/local
 ln -sfn "$(pwd)" ~/.cursor/plugins/local/my-plugin
 ```
 
-Then restart Copse, or use **Settings → Sources → Reload** / reload MCP from
+Then restart Copse, or use **Settings → Customise → Reload** / reload MCP from
 **Settings → MCP servers**. Confirm the plugin appears under
-**Settings → Sources → Plugins**.
+**Settings → Customise → Plugins**.
 
 Details and trust rules: [`docs/cursor-plugins.md`](./cursor-plugins.md).
 
 ## Add a personal plugin with executable behavior
 
 Executable plugin behavior is deliberately explicit: Copse does not scan
-arbitrary plugin directories for code. Choose **Settings → Plugins → Add plugin…**
+arbitrary plugin directories for code. Choose **Settings → Customise → Add plugin…**
 and select a folder containing `copse-pack.json`. Selecting the folder is the
 current opt-in. Copse validates the manifest and source tree and computes a
 content hash used to create a consistent executable snapshot; the hash is not a
@@ -238,7 +238,7 @@ only with a model route in API v1; tool handlers do not receive browser access.
 ## Add hooks (command hooks)
 
 Hooks are not installed through the Plugins list today. Author them with one of
-the on-disk dialects and reload **Settings → Sources**:
+the on-disk dialects and reload **Settings → Customise**:
 
 | Dialect | Doc                                         |
 | ------- | ------------------------------------------- |
@@ -335,7 +335,7 @@ Electron authority from the manifest.
 | ---------------------------------------------------- | ---------------------------- |
 | Manifest types + JSON schema                         | Landed                       |
 | `pluginManifestFromCursorJson()` mapper              | Landed                       |
-| Settings → Plugins list + enable/disable             | Landed (first-party plugins) |
+| Settings → Customise list + enable/disable           | Landed (first-party plugins) |
 | Explicit selected-plugin tools and model routes      | Landed                       |
 | Isolated executable behavior                         | Landed (macOS P2/P3 slice)   |
 | Bounded image/transcript handoff + thread sessions   | Landed                       |

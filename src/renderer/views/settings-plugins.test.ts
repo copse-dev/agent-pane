@@ -202,7 +202,9 @@ async function openPlugins(
 ): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(store, stubApi(initial, spy))
-  const btn = document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="plugins"]')
+  const btn = document.querySelector<HTMLButtonElement>(
+    '.settings-nav-btn[data-section="customise"]',
+  )
   assert.ok(btn)
   btn.click()
   // refreshPlugins() awaits api.plugins.list — let the microtask queue drain.
@@ -210,6 +212,15 @@ async function openPlugins(
   const list = document.getElementById('plugins-list')
   assert.ok(list)
   return list
+}
+
+/** The Plugins fieldset within Customise — the list's own prose lives here. */
+function pluginsFieldset(): HTMLElement {
+  const list = document.getElementById('plugins-list')
+  assert.ok(list)
+  const fieldset = list.closest('fieldset')
+  assert.ok(fieldset)
+  return fieldset
 }
 
 describe('settings → plugins list', () => {
@@ -226,17 +237,17 @@ describe('settings → plugins list', () => {
 
   it('renders a nav button and empty state', async () => {
     const list = await openPlugins({ plugins: [] }, spy)
-    const btn = document.querySelector('.settings-nav-btn[data-section="plugins"]')
+    const btn = document.querySelector('.settings-nav-btn[data-section="customise"]')
     assert.ok(btn)
-    assert.match(btn.textContent, /Plugins/)
-    assert.match(list.textContent, /No plugins registered\./)
+    assert.match(btn.textContent, /Customise/)
+    assert.match(list.textContent, /No plugins installed\./)
   })
 
   it('describes plugins without internal design-doc leaks, linking the add-a-plugin guide', async () => {
     await openPlugins({ plugins: [] }, spy)
-    const section = document.querySelector('.settings-section[data-section="plugins"]')
-    assert.ok(section)
-    const desc = section.querySelector('.settings-section-desc')
+    // Plugins are a fieldset within Customise, so the prose that has to stay
+    // free of design-doc vocabulary is the fieldset's, not the section's.
+    const desc = pluginsFieldset().querySelector('.settings-fieldset-desc')
     assert.ok(desc)
     assert.doesNotMatch(desc.textContent, /decision\s*17/i)
     assert.doesNotMatch(
@@ -244,7 +255,7 @@ describe('settings → plugins list', () => {
       /<code>\s*docs\/(?:plugins|adding-a-plugin)\.md\s*<\/code>/i,
     )
     const docsLink = desc.querySelector<HTMLAnchorElement>(
-      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md"]',
+      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-plugin.md"]',
     )
     assert.ok(docsLink)
     assert.equal(docsLink.target, '_blank')
