@@ -19,7 +19,7 @@ import { isSafeCredentialBaseUrl } from './credential-url.ts'
 import { isProviderSlug, parseModelSelection } from './model-selection.ts'
 import { blendedRate } from './pareto-frontier.ts'
 import type { ModelPricing, ModelPricingMap } from './model-pricing.ts'
-import type { ImageDetail } from './wire-types.ts'
+import { isImageDetail, type ImageDetail } from './wire-types.ts'
 
 /** Fallback context window for any provider/model whose size we don't know. */
 export const DEFAULT_EXTRA_PROVIDER_CONTEXT = 128_000
@@ -131,6 +131,7 @@ export interface StoredExtraProvider {
   fallbackContextWindow?: number
   includeUsage?: boolean
   extraBody?: Record<string, unknown>
+  imageDetail?: ImageDetail
 }
 
 // Mistral and DeepSeek serve up to 128K context; Gemini Flash serves ~1M.
@@ -529,6 +530,7 @@ function mergeBuiltin(base: ExtraProvider, override: StoredExtraProvider): Extra
     ...(override.extraBody && typeof override.extraBody === 'object'
       ? { extraBody: override.extraBody }
       : {}),
+    ...(isImageDetail(override.imageDetail) ? { imageDetail: override.imageDetail } : {}),
     ...(typeof override.keyPrefix === 'string' ? { keyPrefix: override.keyPrefix } : {}),
   }
 }
@@ -563,6 +565,7 @@ function customToProvider(stored: StoredExtraProvider): ExtraProvider | null {
     ...(stored.extraBody && typeof stored.extraBody === 'object'
       ? { extraBody: stored.extraBody }
       : {}),
+    ...(isImageDetail(stored.imageDetail) ? { imageDetail: stored.imageDetail } : {}),
     models: normalizeModels(stored.models),
   }
 }

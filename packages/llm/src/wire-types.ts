@@ -20,7 +20,14 @@ export type UserContent =
  * screenshot you only need the gist of. `high` pays for full detail. `auto`
  * leaves the choice to the provider, which is what Copse has always done.
  */
-export type ImageDetail = 'auto' | 'low' | 'high'
+export const IMAGE_DETAILS = ['auto', 'low', 'high'] as const
+
+export type ImageDetail = (typeof IMAGE_DETAILS)[number]
+
+/** Narrow a stored/config string to a detail the providers will send. */
+export function isImageDetail(value: unknown): value is ImageDetail {
+  return typeof value === 'string' && (IMAGE_DETAILS as readonly string[]).includes(value)
+}
 
 export type LLMMessage =
   | { role: 'system'; content: string }

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
+import { IMAGE_DETAILS } from '@copse/llm/wire-types.ts'
 import {
   autoApprovalLevelSchema,
   RENDERER_WRITABLE_SETTING_SCHEMAS,
@@ -56,6 +57,11 @@ export const storedExtraProviderSchema = z.object({
   fallbackContextWindow: z.number().int().positive().optional(),
   includeUsage: z.boolean().optional(),
   extraBody: z.record(z.string(), z.unknown()).optional(),
+  // Image fidelity for attachments sent to this provider. Absent means `auto`
+  // (the provider decides) — the behaviour Copse has always had. Kept out of
+  // `extraBody` because it is not a body field: the providers place it on each
+  // `image_url`/`input_image` part, not at the top level of the request.
+  imageDetail: z.enum(IMAGE_DETAILS).optional(),
 })
 
 export const extraProvidersSchema = z.array(storedExtraProviderSchema).max(64)
