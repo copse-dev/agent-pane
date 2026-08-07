@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import {
   analyzeShellCommand,
   dangerousInSandboxReasons,
+  externalOnlyForOutsidePath,
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 
@@ -555,6 +556,34 @@ describe('isReplayableOpaqueLocalExecution', () => {
     ]) {
       assert.equal(isReplayableOpaqueLocalExecution(analyzeShellCommand(command, root)), false)
     }
+  })
+})
+
+describe('externalOnlyForOutsidePath', () => {
+  const root = '/Users/me/project'
+
+  it('accepts a command whose only escape is the path it names', () => {
+    for (const command of ['cat ~/notes.md', 'ls -la ~/.copse', 'rg foo /etc/hosts']) {
+      assert.equal(externalOnlyForOutsidePath(command, root), true)
+    }
+  })
+
+  it('rejects a command with any network signal, hard or fuzzy', () => {
+    for (const command of [
+      'curl https://example.com',
+      'cat ~/notes.md && curl https://example.com',
+      // Fuzzy "may reach the network" is disqualifying too: containing such a
+      // command would break it, and a read relaxation is not its approval.
+      'aws s3 ls ~/manifest.txt',
+      'nc -l ~/socket',
+    ]) {
+      assert.equal(externalOnlyForOutsidePath(command, root), false)
+    }
+  })
+
+  it('rejects a command that names no outside path', () => {
+    assert.equal(externalOnlyForOutsidePath('cat src/index.ts', root), false)
+    assert.equal(externalOnlyForOutsidePath('', root), false)
   })
 })
 
