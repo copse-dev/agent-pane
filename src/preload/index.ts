@@ -76,14 +76,14 @@ contextBridge.exposeInMainWorld('api', {
       ): void => {
         void handler(request).then(
           (ready) => {
-            ipcRenderer.send('packs:browser-tab-ready', {
+            ipcRenderer.send('plugins:browser-tab-ready', {
               requestId: request.requestId,
               ok: true,
               ...ready,
             })
           },
           (error: unknown) => {
-            ipcRenderer.send('packs:browser-tab-ready', {
+            ipcRenderer.send('plugins:browser-tab-ready', {
               requestId: request.requestId,
               ok: false,
               error: error instanceof Error ? error.message : String(error),
@@ -91,9 +91,9 @@ contextBridge.exposeInMainWorld('api', {
           },
         )
       }
-      ipcRenderer.on('packs:browser-tab-request', listener)
+      ipcRenderer.on('plugins:browser-tab-request', listener)
       return (): void => {
-        ipcRenderer.off('packs:browser-tab-request', listener)
+        ipcRenderer.off('plugins:browser-tab-request', listener)
       }
     },
   },
@@ -913,12 +913,12 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('hooks:runDetail', projectId, threadId, runId),
   },
   plugins: {
-    list: () => ipcRenderer.invoke('packs:list'),
+    list: () => ipcRenderer.invoke('plugins:list'),
     setEnabled: (id: string, enabled: boolean) =>
-      ipcRenderer.invoke('packs:setEnabled', id, enabled),
+      ipcRenderer.invoke('plugins:setEnabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
-      ipcRenderer.invoke('packs:setSetting', id, key, value),
-    addSource: () => ipcRenderer.invoke('packs:addSource'),
+      ipcRenderer.invoke('plugins:setSetting', id, key, value),
+    addSource: () => ipcRenderer.invoke('plugins:addSource'),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),

@@ -1640,7 +1640,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Settings plugin list ("about:addons") calls these to enumerate every
   // registered plugin, toggle enablement atomically (P1 contract), and read /
   // write plugin-scoped settings values under the manifest's declared schema.
-  ipcMain.handle('packs:list', async (event) => {
+  ipcMain.handle('plugins:list', async (event) => {
     assertMainFrameSender(event, win)
     await getPluginService().refreshPluginSources()
     return { plugins: getPluginService().list() }
@@ -1679,7 +1679,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       : null
     return { task: summary }
   })
-  ipcMain.handle('packs:addSource', async (event) => {
+  ipcMain.handle('plugins:addSource', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
       title: 'Add plugin',
@@ -1691,7 +1691,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { plugins: getPluginService().list() }
   })
-  ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
+  ipcMain.handle('plugins:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
@@ -1758,7 +1758,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return { plugins: getPluginService().list() }
   })
   ipcMain.handle(
-    'packs:setSetting',
+    'plugins:setSetting',
     async (event, rawId: unknown, rawKey: unknown, rawValue: unknown) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])

@@ -499,7 +499,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="permissions">Permissions</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
-          <button type="button" class="settings-nav-btn" data-section="plugins">Packs</button>
+          <button type="button" class="settings-nav-btn" data-section="plugins">Plugins</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
@@ -674,7 +674,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 />
               </label>
               <p class="field-hint">
-                Turn the review itself on or off under <strong>Packs</strong>. If it runs on a paid
+                Turn the review itself on or off under <strong>Plugins</strong>. If it runs on a paid
                 model you are asked to approve the spend once per chat; choose a model on this
                 machine to review for free.
               </p>
@@ -1002,7 +1002,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Plugins</legend>
+              <legend>Cursor plugins</legend>
               <p class="settings-fieldset-desc">
                 Cursor plugins installed under <code>~/.cursor/plugins/</code>. Each can contribute
                 skills and MCP servers.
@@ -1028,7 +1028,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           </section>
 
           <section class="settings-section" data-section="plugins">
-            <h3>Packs</h3>
+            <h3>Plugins</h3>
             <p class="settings-section-desc">
               Feature plugins installed in Copse, and the tools, hooks, prompts, and panels each one
               adds. Each row declares whether the plugin is stable or experimental before you
@@ -1048,7 +1048,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </div>
 
             <fieldset>
-              <legend>Installed packs</legend>
+              <legend>Installed plugins</legend>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading…</span>
               </div>
@@ -1280,7 +1280,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Model comparison</legend>
               <p class="field-hint">
                 Reviews your current changes through two models independently, then has a third
-                compare their verdicts. Turn it on under <strong>Packs</strong>, where you also
+                compare their verdicts. Turn it on under <strong>Plugins</strong>, where you also
                 choose how the three models are picked — they always resolve to different models,
                 so there is something to compare. A run makes up to three model calls, so it asks
                 before spending on a paid model.
