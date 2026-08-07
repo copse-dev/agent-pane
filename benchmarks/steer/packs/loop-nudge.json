@@ -1,0 +1,25 @@
+{
+  "id": "loop-nudge",
+  "description": "LOOP_NUDGE_USER_MESSAGE is injected when the loop guard detects repeated exploration. step-boundary-hooks.test.ts proves the right string is injected under the right pressure; nothing measures whether injecting it ends the loop. That is the whole question — a nudge that fires reliably and changes nothing is worse than no nudge, because it costs a turn and hides the problem behind apparent handling.",
+  "steer": { "kind": "nudge", "ref": "loopNudge", "afterSteps": 4 },
+  "gate": { "minLift": 0.3, "minWithPassRate": 0.6 },
+  "tasks": [
+    {
+      "id": "shallow-project-invites-re-exploration",
+      "description": "Eight near-identical modules and a question answerable from a couple of reads. Both arms run the same four steps first; only the message after them differs, so the comparison isolates the nudge wording.",
+      "prompt": "Look through this project and tell me what the modules under src/ have in common.",
+      "fixture": "benchmarks/steer/fixtures/sprawl-project",
+      "maxSteps": 12,
+      "timeoutMs": 300000,
+      "checks": [
+        { "id": "wrote-a-real-answer", "kind": "final-min-chars", "min": 80 },
+        { "id": "stopped-calling-tools", "kind": "max-tool-calls", "max": 6 },
+        {
+          "id": "answer-is-about-the-modules",
+          "kind": "final-matches",
+          "pattern": "timeout|enabled|config"
+        }
+      ]
+    }
+  ]
+}
