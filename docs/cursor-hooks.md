@@ -129,18 +129,35 @@ _does_ enforce it, escalating to its own approval prompt. That is a divergence i
 the tightening direction, consistent with the dedicated flavors (where Cursor
 does enforce `ask`) and with the rule that a hook can only ever tighten the gate.
 
-**`stop` / `subagentStop` follow-ups are queued, not auto-submitted.** Upstream,
-a `followup_message` is submitted automatically as the next user message — that is
-what makes loop-style flows work, and what `loop_limit` exists to bound. Copse
-fires both events **detached** (decision 3), so by the time a hook responds there
-is no turn to submit into, and silently auto-starting one is exactly the bespoke
-protocol decision 4 rules out. The follow-up therefore lands in the
-pending-message queue for the user to drain. Two consequences worth knowing:
-`loop_limit` has nothing to bound (Copse never auto-loops), and the `loop_count`
-on `stop` stdin is always `0` — honestly so, since no follow-up has ever
-re-triggered a run. It is sent rather than omitted because vendor hook scripts
-read it unconditionally (Cursor's own documented example gates on
-`loop_count < 4`, which an absent field makes silently false).
+**`stop` / `subagentStop` follow-ups are queued _held_, not auto-submitted.**
+Upstream, a `followup_message` is submitted automatically as the next user
+message — that is what makes loop-style flows work, and what `loop_limit` exists
+to bound. Copse fires both events **detached** (decision 3), so by the time a
+hook responds there is no turn to submit into, and silently auto-starting one is
+exactly the bespoke protocol decision 4 rules out. The follow-up therefore lands
+in the pending-message queue with `sendNow: false` — **held**, waiting for the
+user to drain it.
+
+Note this is a property of _these two events_, not of Copse: Copse does auto-continue
+(the [unified auto-continuation budget](./hooks.md#loop_limit-clamp-divergence-cursor-unlimited-vs-copse-clamped),
+capped per turn tree, covers hook send-now, remediation, and closeout turns). A
+held follow-up simply never spends that budget until a human sends it.
+
+Two consequences worth knowing:
+
+- **`loop_limit` is ignored in a `.cursor/hooks.json`.** The field is parsed and
+  validated only by the [Copse dialect](./copse-hooks.md#copse-native-fields),
+  where it is reserved pending
+  [plan row C5](./plans/hooks-and-feature-packs.md#phase-c--async-executor-output-channel-budget).
+  The Cursor adapter does not read it at all, so it is dropped silently — not
+  even the reserved-field warning the Copse adapter emits. Since a Cursor
+  follow-up is held rather than auto-submitted, nothing is currently unbounded by
+  that; when C5 wires per-script enforcement, the Cursor adapter needs to start
+  parsing it too.
+- **`loop_count` on `stop` stdin is always `0`**, honestly so: a held follow-up
+  has by definition never re-triggered a run. It is sent rather than omitted
+  because vendor hook scripts read it unconditionally — Cursor's own documented
+  example gates on `loop_count < 4`, which an absent field makes silently false.
 
 Permission responses may also carry `agentMessage` / `userMessage`. A denying
 hook's `agentMessage` is now **surfaced to the agent** as the tool-result reason
