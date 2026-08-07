@@ -42,7 +42,13 @@ describe('isLoopbackUrlHost', () => {
   })
 
   it('rejects non-loopback hosts and lookalikes', () => {
-    for (const host of ['example.com', '128.0.0.1', 'localhost.evil.com', '10.0.0.1', '999.0.0.1']) {
+    for (const host of [
+      'example.com',
+      '128.0.0.1',
+      'localhost.evil.com',
+      '10.0.0.1',
+      '999.0.0.1',
+    ]) {
       assert.equal(isLoopbackUrlHost(host), false, host)
     }
   })
