@@ -156,7 +156,7 @@ export function parseWorktreePorcelain(raw: string): WorktreeRecord[] {
 }
 
 /** Drop a retired/failed worktree's internal-root authority and its index/watcher (#1400). */
-function releaseWorktreeRoot(executionRoot: string): void {
+export function releaseWorktreeRoot(executionRoot: string): void {
   unregisterInternalWorkspaceRoot(executionRoot)
   stopExecutionRootIndexing(executionRoot)
 }
@@ -193,7 +193,13 @@ export function expectedThreadWorktreePath(projectId: string, threadId: string):
   return target
 }
 
-async function git(
+/**
+ * Worktree bookkeeping `git`: repository hooks disabled (a checkout's own hooks
+ * must never run because Copse listed or removed it) and unsandboxed, because
+ * it operates on the linked-checkout root rather than the project sandbox.
+ * Shared with `worktree-inventory.ts`, which manages the same checkouts.
+ */
+export async function runWorktreeGit(
   cwd: string,
   args: string[],
   env?: NodeJS.ProcessEnv,
@@ -205,6 +211,9 @@ async function git(
     timeout_ms: 60_000,
   })
 }
+
+/** Local shorthand: every call in this module goes through the exported helper above. */
+const git = runWorktreeGit
 
 function commandFailure(
   action: string,
@@ -232,12 +241,13 @@ async function assertBranchName(cwd: string, branch: string, label: string): Pro
   if (result.code !== 0) throw new Error(`${label} is not a valid local branch name`)
 }
 
-interface RepositoryLocation {
+export interface RepositoryLocation {
   repositoryRoot: string
   projectRelativePath: string
 }
 
-async function repositoryLocation(projectRoot: string): Promise<RepositoryLocation> {
+/** Canonical repository top level for a project root, plus the project's offset inside it. */
+export async function repositoryLocation(projectRoot: string): Promise<RepositoryLocation> {
   const canonicalProject = await realpath(resolve(projectRoot))
   const topLevel = await requireGitValue(
     canonicalProject,
@@ -522,7 +532,8 @@ export async function listProjectWorktrees(projectRoot: string): Promise<Worktre
   return listRecords((await repositoryLocation(projectRoot)).repositoryRoot)
 }
 
-function changedPaths(raw: string): string[] {
+/** Paths out of `git status --porcelain=v1 -z`, with rename/copy sources folded in. */
+export function changedPaths(raw: string): string[] {
   const out: string[] = []
   const entries = raw.split('\0').filter(Boolean)
   for (let index = 0; index < entries.length; index++) {

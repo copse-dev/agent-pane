@@ -48,6 +48,9 @@ import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
+  WorktreeInventoryEntry,
+  WorktreeRemovalResult,
+  WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
@@ -720,6 +723,19 @@ export interface ApiClient {
     list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
     cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
     onChanged(callback: (projectId: string) => void): () => void
+  }
+  /** Linked checkouts of the project's repository, listed and managed in Settings → Sources. */
+  worktrees: {
+    /** Every linked checkout, most recently used first. Empty for a non-Git project. */
+    list: (projectId: string) => Promise<WorktreeInventoryEntry[]>
+    /** Walk one checkout for its on-disk size — separate from `list`, which stays fast. */
+    size: (projectId: string, path: string) => Promise<WorktreeSizeResult>
+    /**
+     * Delete one checkout. Without `force` a checkout holding uncommitted,
+     * untracked, or ignored files is reported back rather than removed, so the
+     * caller can show what would be destroyed and ask again.
+     */
+    remove: (projectId: string, path: string, force: boolean) => Promise<WorktreeRemovalResult>
   }
   skills: {
     list: () => Promise<SkillSummary[]>
