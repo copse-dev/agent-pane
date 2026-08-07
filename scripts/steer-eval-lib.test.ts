@@ -290,6 +290,34 @@ describe('steer eval reporting', () => {
     assert.match(summary.gateDetail, /minWithPassRate/)
   })
 
+  it('scores length reduction from the arm means, not an absolute threshold', () => {
+    const long = { ...attempt('without', true), finalChars: 1000 }
+    const short = { ...attempt('with', true), finalChars: 400 }
+    const pack: SteerPack = {
+      ...PACK,
+      gate: { meanFinalCharsReduction: 0.5 },
+    }
+    const summary = summarizeSteerPack(pack, [short, long])
+    assert.equal(summary.meanFinalCharsReduction, 0.6)
+    assert.equal(summary.gatePassed, true)
+
+    const tooLenient = summarizeSteerPack({ ...PACK, gate: { meanFinalCharsReduction: 0.75 } }, [
+      short,
+      long,
+    ])
+    assert.equal(tooLenient.gatePassed, false)
+    assert.match(tooLenient.gateDetail, /length reduction/)
+  })
+
+  it('an empty control arm cannot manufacture a length win', () => {
+    const summary = summarizeSteerPack({ ...PACK, gate: { meanFinalCharsReduction: 0.1 } }, [
+      { ...attempt('with', true), finalChars: 0 },
+      { ...attempt('without', true), finalChars: 0 },
+    ])
+    assert.equal(summary.meanFinalCharsReduction, 0)
+    assert.equal(summary.gatePassed, false)
+  })
+
   it('renders a markdown matrix with the lift column', () => {
     const markdown = renderSteerEvalMarkdown({
       schemaVersion: 1,
@@ -300,7 +328,7 @@ describe('steer eval reporting', () => {
       packs: [summarizeSteerPack(PACK, [attempt('with', true), attempt('without', false)])],
       attempts: [],
     })
-    assert.match(markdown, /\| pack \| steer \| with \| without \| lift \| gate \|/)
+    assert.match(markdown, /\| pack \| steer \| with \| without \| lift \| len Δ \| gate \|/)
     assert.match(markdown, /\+100%/)
   })
 })

@@ -217,6 +217,13 @@ export interface SteerEvalTask {
   allowedCommandPatterns?: string[] | undefined
   /** Mock-provider self-test task; excluded from real-model matrices (and vice versa). */
   mockOnly?: boolean | undefined
+  /**
+   * Tools to withhold from this task. Some steers exist precisely because a
+   * tool is absent — FORCED_WRITTEN_PLAN_PROMPT is the fallback for turns where
+   * `update_todos` was not offered — and cannot be evaluated with the full tool
+   * list registered.
+   */
+  excludeTools?: string[] | undefined
   checks: SteerCheck[]
   maxSteps?: number | undefined
   timeoutMs?: number | undefined
@@ -233,6 +240,13 @@ export interface SteerPack {
         minLift?: number | undefined
         /** Minimum absolute pass rate for the steered arm. */
         minWithPassRate?: number | undefined
+        /**
+         * Minimum fractional reduction in mean final-answer length, steered arm
+         * versus control. For a steer whose whole job is response length, an
+         * absolute character threshold is meaningless across models and tasks —
+         * only the delta between the arms means anything.
+         */
+        meanFinalCharsReduction?: number | undefined
       }
     | undefined
   tasks: SteerEvalTask[]
@@ -276,6 +290,8 @@ export interface SteerEvalPackSummary {
   arms: SteerEvalArmSummary[]
   /** withPassRate - withoutPassRate. */
   lift: number
+  /** Fractional reduction in mean final-answer length, steered arm vs control. */
+  meanFinalCharsReduction: number
   gatePassed: boolean
   gateDetail: string
 }
@@ -348,6 +364,7 @@ const steerTaskSchema: z.ZodType<SteerEvalTask> = z.object({
   allowedCommands: z.array(z.string()).optional(),
   allowedCommandPatterns: z.array(z.string()).optional(),
   mockOnly: z.boolean().optional(),
+  excludeTools: z.array(z.string()).optional(),
   checks: z.array(steerCheckSchema).min(1),
   maxSteps: z.number().int().positive().optional(),
   timeoutMs: z.number().int().positive().optional(),
@@ -379,6 +396,7 @@ const steerPackSchema: z.ZodType<SteerPack> = z.object({
     .object({
       minLift: z.number().optional(),
       minWithPassRate: z.number().optional(),
+      meanFinalCharsReduction: z.number().optional(),
     })
     .optional(),
   tasks: z.array(steerTaskSchema).min(1),
@@ -857,6 +875,8 @@ async function runAttempt(
     }
   }
 
+  const excluded = new Set(task.excludeTools ?? [])
+  const tools = STEER_EVAL_TOOLS.filter((tool) => !excluded.has(tool.name))
   const maxSteps = task.maxSteps ?? 16
   try {
     if (pack.steer.kind === 'nudge') {
@@ -867,7 +887,7 @@ async function runAttempt(
       await runAgentLoop({
         provider,
         messages,
-        tools: STEER_EVAL_TOOLS,
+        tools,
         executeTool: (name, args) => executeTool(workspace, task, name, args),
         signal: controller.signal,
         maxSteps: Math.min(afterSteps, maxSteps),
@@ -881,7 +901,7 @@ async function runAttempt(
       await runAgentLoop({
         provider,
         messages,
-        tools: STEER_EVAL_TOOLS,
+        tools,
         executeTool: (name, args) => executeTool(workspace, task, name, args),
         signal: controller.signal,
         maxSteps: Math.max(1, maxSteps - afterSteps),
@@ -891,7 +911,7 @@ async function runAttempt(
       await runAgentLoop({
         provider,
         messages,
-        tools: STEER_EVAL_TOOLS,
+        tools,
         executeTool: (name, args) => executeTool(workspace, task, name, args),
         signal: controller.signal,
         maxSteps,
@@ -968,6 +988,17 @@ export function summarizeSteerPack(
   const withArm = summarizeArm(attempts, 'with')
   const withoutArm = summarizeArm(attempts, 'without')
   const lift = Number((withArm.passRate - withoutArm.passRate).toFixed(3))
+  // Positive = the steered arm answered more briefly. Zero when the control
+  // produced nothing, so an empty control cannot manufacture a win.
+  const meanFinalCharsReduction =
+    withoutArm.meanFinalChars === 0
+      ? 0
+      : Number(
+          (
+            (withoutArm.meanFinalChars - withArm.meanFinalChars) /
+            withoutArm.meanFinalChars
+          ).toFixed(3),
+        )
   const failures: string[] = []
   if (pack.gate?.minLift !== undefined && lift < pack.gate.minLift) {
     failures.push(`lift ${String(lift)} < minLift ${String(pack.gate.minLift)}`)
@@ -975,6 +1006,14 @@ export function summarizeSteerPack(
   if (pack.gate?.minWithPassRate !== undefined && withArm.passRate < pack.gate.minWithPassRate) {
     failures.push(
       `with-arm pass rate ${String(withArm.passRate)} < minWithPassRate ${String(pack.gate.minWithPassRate)}`,
+    )
+  }
+  if (
+    pack.gate?.meanFinalCharsReduction !== undefined &&
+    meanFinalCharsReduction < pack.gate.meanFinalCharsReduction
+  ) {
+    failures.push(
+      `mean final-answer length reduction ${String(meanFinalCharsReduction)} < ${String(pack.gate.meanFinalCharsReduction)}`,
     )
   }
   return {
@@ -985,6 +1024,7 @@ export function summarizeSteerPack(
     steerChars: steerText(pack.steer).length,
     arms: [withArm, withoutArm],
     lift,
+    meanFinalCharsReduction,
     gatePassed: failures.length === 0,
     gateDetail: failures.length === 0 ? 'ok' : failures.join('; '),
   }
@@ -1005,14 +1045,14 @@ export function renderSteerEvalMarkdown(report: SteerEvalReport): string {
     '`lift` is the steered arm pass rate minus the unsteered arm pass rate. It is the',
     'number that matters: a steer with ~0 lift is not changing behaviour.',
     '',
-    '| pack | steer | with | without | lift | gate |',
-    '| --- | --- | --- | --- | --- | --- |',
+    '| pack | steer | with | without | lift | len Δ | gate |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const pack of report.packs) {
     const withArm = pack.arms.find((a) => a.armId === 'with')
     const withoutArm = pack.arms.find((a) => a.armId === 'without')
     lines.push(
-      `| ${pack.packId} | ${pack.steerKind}:${pack.steerRef} (${String(pack.steerChars)} ch) | ${percent(withArm?.passRate ?? 0)} | ${percent(withoutArm?.passRate ?? 0)} | ${pack.lift >= 0 ? '+' : ''}${percent(pack.lift)} | ${pack.gatePassed ? 'pass' : `FAIL — ${pack.gateDetail}`} |`,
+      `| ${pack.packId} | ${pack.steerKind}:${pack.steerRef} (${String(pack.steerChars)} ch) | ${percent(withArm?.passRate ?? 0)} | ${percent(withoutArm?.passRate ?? 0)} | ${pack.lift >= 0 ? '+' : ''}${percent(pack.lift)} | ${pack.meanFinalCharsReduction >= 0 ? '-' : '+'}${percent(Math.abs(pack.meanFinalCharsReduction))} | ${pack.gatePassed ? 'pass' : `FAIL — ${pack.gateDetail}`} |`,
     )
   }
   return `${lines.join('\n')}\n`

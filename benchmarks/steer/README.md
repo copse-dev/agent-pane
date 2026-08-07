@@ -121,6 +121,23 @@ An attempt is compliant only when **every** check passes. Checks are asserted in
 both directions in `scripts/steer-eval-lib.test.ts` — a checker that cannot fail
 would make every steer look effective.
 
+### Gates
+
+| gate                      | meaning                                                                |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `minLift`                 | minimum `withPassRate - withoutPassRate` — the real signal             |
+| `minWithPassRate`         | minimum absolute pass rate for the steered arm                         |
+| `meanFinalCharsReduction` | minimum fractional cut in mean final-answer length, steered vs control |
+
+`meanFinalCharsReduction` exists for steers whose whole job is response length.
+An absolute character threshold is meaningless across models and tasks — only
+the delta between the arms means anything. It reports 0 when the control arm
+produced nothing, so an empty control cannot manufacture a win.
+
+A pack with real-model tasks **must** declare a gate; `npm test` enforces it. An
+eval with no threshold cannot fail, and a suite of evals that cannot fail is the
+same false assurance as the presence tests this harness replaces.
+
 ## Tasks and the sandbox
 
 Tasks run in a throwaway temp workspace. `fixture` copies a directory in and
@@ -144,6 +161,11 @@ has to let the agent do the wrong thing, or the check can never fail.
 
 `mockOnly: true` marks a task as a harness self-test; it is excluded from
 real-model runs, and real-model tasks are excluded from `--provider mock`.
+
+`excludeTools` withholds tools from a task. Some steers exist _because_ a tool is
+absent — `FORCED_WRITTEN_PLAN_PROMPT` is the fallback for turns where
+`update_todos` was not offered — and cannot be evaluated with the full tool list
+registered.
 
 ## Relationship to the other harnesses
 
