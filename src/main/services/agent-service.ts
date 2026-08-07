@@ -259,6 +259,7 @@ async function ensureReviewApproved(
   const { approved, remember } = await requestApproval({
     type: 'review-spend',
     title: 'Review this diff with a paid model?',
+    cause: 'review-spend',
     body: reviewSpendApprovalBody(reviewModel),
     allowRemember: true,
     rememberLabel: 'Always review with this model in this chat',
