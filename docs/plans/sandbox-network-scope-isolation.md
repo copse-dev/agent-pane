@@ -1,8 +1,14 @@
 # Sandbox network scope isolation
 
-**Status: Proposed.** Nothing implemented. Written after a user report of constant
-"Run shell command?" prompts in a pane running an OpenRouter model, where the
-reason line named a network widening the pane had nothing to do with.
+**Status: Phases 1–3 implemented; 4–5 proposed.** Written after a user report of
+constant "Run shell command?" prompts in a pane running an OpenRouter model,
+where the reason line named a network widening the pane had nothing to do with.
+
+Phases 1–3 (probe teardown, scope labelling, capability-based gating) shipped
+together and are marked inline below. Phase 4 (moving background probes to their
+own process) and Phase 5 are unstarted — they are the parts that depend on the
+ASRT audit's conclusion, and Phase 3 should be given time to show how much
+residual prompting is left before paying for them.
 
 ## The symptom
 
@@ -143,7 +149,7 @@ cheaper per-spawn route.
 
 Phases 1–3 are independent of each other and of the architecture question.
 
-### Phase 1 — Stop the leak
+### Phase 1 — Stop the leak (implemented)
 
 - Replace the bare `child.kill()` in `probeAcpAgent` (`:934`, `:952`) and the
   session transport's `dispose` (`:564`) with `terminateProcessTree`
@@ -155,7 +161,13 @@ Phases 1–3 are independent of each other and of the architecture question.
 - Regression test: a probe whose agent forks a child that outlives SIGTERM must
   still release its scope.
 
-### Phase 2 — Make it observable
+Built as described. `terminateAcpChild` in `acp-client.ts` wraps
+`terminateProcessTree` and cancels its SIGKILL escalation on close, replacing all
+five bare `child.kill()` sites; both spawn paths now pass
+`detached: detachForGroupKill` (newly exported from `project-sandbox/spawn.ts`),
+and `release` is bound to `exit`, `close`, and `error`.
+
+### Phase 2 — Make it observable (implemented)
 
 - Add a `label` to `SandboxNetworkScope` (`acp-probe:codex`,
   `background:npm run dev`).
@@ -166,7 +178,11 @@ Phases 1–3 are independent of each other and of the architecture question.
 This is what makes the next occurrence self-diagnosing, and it should land before
 Phase 4 so the improvement is measurable.
 
-### Phase 3 — Gate on capability, not the clock
+Built as described. `SandboxNetworkScope.label` is required rather than optional,
+so a new holder cannot be added anonymously; `activeSandboxNetworkScopeLabels()`
+deduplicates and the gate interpolates it into the prompt reason.
+
+### Phase 3 — Gate on capability, not the clock (implemented)
 
 A command that cannot open a socket cannot reach the widened allowlist, so the
 overlap is not a reason to prompt it.
@@ -182,6 +198,11 @@ overlap is not a reason to prompt it.
   execute.
 - Honest limit: a read-only command still _runs_ during the widened window. The
   argument is that it opens no sockets, not that it is harmless.
+
+Built as the conservative option: the gate now also requires
+`!isStructurallyReadOnlyShellCommand(command)`. `sed` still prompts during a
+widening, exactly as this section predicted — the reported command is not fixed
+by this phase, only the `cat`/`rg`/`git status` class around it.
 
 ### Phase 4 — Move background probes out of process
 
