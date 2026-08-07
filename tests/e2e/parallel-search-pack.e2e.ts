@@ -83,6 +83,8 @@ describe('Parallel Search pack settings', function () {
       timeout: 5_000,
       timeoutMsg: 'expected Parallel Search pack to enable',
     })
+    // The key field sits inside the pack's closed "Pack settings" fold.
+    await row.$('.pack-settings-summary').click()
     await browser.execute(() => {
       document
         .querySelector('.parallel-search-pack-settings')
