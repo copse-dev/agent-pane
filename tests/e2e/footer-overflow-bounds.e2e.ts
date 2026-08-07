@@ -86,10 +86,10 @@ describe('footer overflow menu bounds', () => {
   before(async () => {
     resetUserData()
     seedThread()
-    // Four of the five overflow items are gated behind Developer mode. Without
-    // this the menu holds only "Enable Guarded YOLO", which is both too short
-    // to give the bounds assertions below anything to measure and not the menu
-    // this spec was written against.
+    // Three of the six overflow items are gated behind Developer mode. Without
+    // this the menu holds only Guarded YOLO and the two trace exits, which is
+    // both too short to give the bounds assertions below anything to measure
+    // and not the menu this spec was written against.
     seedDeveloperModeSetting(true)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -258,9 +258,10 @@ describe('footer overflow menu bounds', () => {
       async () => (await $('.input-footer').getAttribute('class'))?.includes('is-compact') ?? false,
       { timeoutMsg: 'expected the narrow composer footer to enter compact layout' },
     )
-    // Guarded YOLO + Copy thread ID + both exports + Share trace. The roster is
-    // pinned by label in input-bar.test.ts; keep the two in step when it grows.
-    await expect($$('.footer-overflow-item')).toBeElementsArrayOfSize(5)
+    // Guarded YOLO + Copy thread ID + both exports + Debug trace + Share trace.
+    // The roster is pinned by label in input-bar.test.ts; keep the two in step
+    // when it grows.
+    await expect($$('.footer-overflow-item')).toBeElementsArrayOfSize(6)
 
     await browser.waitUntil(
       async () => {
