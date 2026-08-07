@@ -147,15 +147,24 @@ export function mountFollowUpSuggestions(
       return
     }
 
+    const { activeProjectId } = store.getState()
+    if (!activeProjectId) return
+
     const token = nextFetchToken(threadId)
     try {
-      // Result crosses the IPC boundary; the runtime value may be undefined despite the typed contract.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const suggestions = (await api.agent.suggestFollowUps(JSON.stringify(exchange.context))) ?? []
+      const suggestions = await api.agent.suggestFollowUps(
+        activeProjectId,
+        threadId,
+        JSON.stringify(exchange.context),
+      )
       if (token !== fetchTokens.get(threadId)) return
       suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
       if (store.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions)
+        // Reconcile the Changes chip against the thread checkout immediately —
+        // suggestFollowUps already scopes to the worktree, but a concurrent
+        // filesystem update can still race the snapshot.
+        void refreshChangesStat()
       }
     } catch {
       if (token !== fetchTokens.get(threadId)) return
