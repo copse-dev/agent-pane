@@ -383,18 +383,30 @@ function readScriptForHarm(path: string): string | null {
   }
 }
 
-/** Prompt when a sandboxed command failed and may succeed unsandboxed. */
+/**
+ * Prompt when a sandboxed command failed and may succeed unsandboxed.
+ *
+ * `readGrantApplied` says the failed run had already been given the read-access
+ * relaxation for the paths it names. That command has now been contained with
+ * exactly what the read grant promised and still hit the sandbox, so the grant
+ * has been spent: it must not also auto-answer the full-escape question. Falling
+ * through to "Run outside sandbox?" puts the escalation back in front of the
+ * user, where a read grant silently approving writes and network never belonged.
+ */
 export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
+  opts: { readGrantApplied?: boolean } = {},
 ): Promise<boolean> {
   if (autoApproveShell(command, 'external')) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
-  const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
-  if (readOutside !== null) return readOutside
+  if (opts.readGrantApplied !== true) {
+    const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
+    if (readOutside !== null) return readOutside
+  }
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
