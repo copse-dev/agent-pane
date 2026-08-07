@@ -131,7 +131,12 @@ export interface StoredExtraProvider {
   fallbackContextWindow?: number
   includeUsage?: boolean
   extraBody?: Record<string, unknown>
-  imageDetail?: ImageDetail
+  /**
+   * Unvalidated on read, like `baseUrl` and `keyPrefix` above: this interface
+   * describes what is on disk, and a synced or hand-edited settings.json never
+   * passed the write-time schema. `isImageDetail` narrows it at resolution.
+   */
+  imageDetail?: string
 }
 
 // Mistral and DeepSeek serve up to 128K context; Gemini Flash serves ~1M.

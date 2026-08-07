@@ -193,7 +193,7 @@ describe('resolveExtraProviders', () => {
     // A hand-edited or synced settings.json bypasses the write-time schema, so
     // resolution is the last gate before the value reaches an `image_url` part.
     const providers = resolveExtraProviders([
-      { slug: 'mistral', imageDetail: 'ultra' as never },
+      { slug: 'mistral', imageDetail: 'ultra' },
       { slug: 'acme', label: 'Acme AI', baseUrl: 'https://api.acme.example/v1' },
     ])
     assert.equal(providers.find((p) => p.id === 'mistral')?.imageDetail, undefined)
