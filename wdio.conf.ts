@@ -12,6 +12,7 @@ import {
   sessionPidsFromCapabilities,
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
+  writeKillDiagnostic,
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
@@ -88,12 +89,13 @@ export const config: Options.Testrunner = {
     // [wedged-kill] fire lines this attributes the death: a driver already gone
     // here with no preceding fire line means nothing in this file killed it.
     if (commandName !== 'reloadSession') return
-    const { driverPid } = sessionPidsFromCapabilities(browser.capabilities)
-    console.log(
-      `[wedged-kill] reloadSession driver=${String(driverPid ?? 'none')} alive=${
-        driverPid === undefined ? 'unknown' : String(isProcessAlive(driverPid))
-      }`,
-    )
+    const { driverPid, browserPid } = sessionPidsFromCapabilities(browser.capabilities)
+    const state = (pid: number | undefined): string =>
+      pid === undefined ? 'none' : `${String(pid)}=${isProcessAlive(pid) ? 'alive' : 'DEAD'}`
+    // The runner diagnostics show ~21 Electrons orphaned to PPID 1 with their
+    // chromedriver gone, so record both: a dead driver beside a live browser
+    // here, with no preceding fire line, means nothing in this file killed it.
+    writeKillDiagnostic(`reloadSession driver=${state(driverPid)} browser=${state(browserPid)}`)
   },
   before() {
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf

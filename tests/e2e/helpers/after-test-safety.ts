@@ -1,3 +1,6 @@
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+
 /**
  * WDIO afterTest / session-teardown hygiene for Electron sessions that wedge.
  *
@@ -117,12 +120,29 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
  *     worker's next reloadSession fails because of us. The bug is the trigger.
  *   - already dead             -> something outside this code killed it first.
  *
- * Gated on COPSE_E2E so unit-test output stays clean. Remove once answered.
+ * Written to a file, not the console: WDIO pipes worker stdout through its own
+ * logger, and the first attempt at this emitted nothing at all to the job log.
+ * `dump_e2e_session_logs` in ci.yml tails every *.log in this directory, so a
+ * file here is guaranteed to reach the failing job's output.
+ *
+ * Remove once the question is answered.
  */
 const KILL_DEBUG = process.env['COPSE_E2E'] === '1'
 
+const KILL_LOG_PATH = join(process.cwd(), 'e2e-failure-artifacts', 'wdio-logs', 'wedged-kill.log')
+
+/** Always writes. Called directly from wdio.conf, which only runs under e2e. */
+export function writeKillDiagnostic(message: string): void {
+  try {
+    mkdirSync(dirname(KILL_LOG_PATH), { recursive: true })
+    appendFileSync(KILL_LOG_PATH, `${new Date().toISOString()} [wedged-kill] ${message}\n`)
+  } catch {
+    // diagnostics must never be able to fail a run
+  }
+}
+
 function killDebug(message: string): void {
-  if (KILL_DEBUG) console.log(`[wedged-kill] ${message}`)
+  if (KILL_DEBUG) writeKillDiagnostic(message)
 }
 
 /** Signal 0 probes liveness without touching the process. */
