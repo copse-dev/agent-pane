@@ -17,7 +17,19 @@ const WORKER_ALIASES: ReadonlyArray<[dest: string, src: string]> = [
  * workers (those call `define()` and fail with "define is not defined").
  */
 export function copyMonacoWorkers(rendererOutDir: string): void {
-  const monacoDest = resolve(rendererOutDir, 'monaco')
+  populateMonacoRoot(resolve(rendererOutDir, 'monaco'))
+}
+
+/**
+ * Fill `monacoDest` with the tree `monaco/setup.ts` expects to find under its
+ * root: `vs/`, `external/`, the worker aliases, and the ESM worker host.
+ *
+ * Split out from {@link copyMonacoWorkers} so the demo-preview workflow can
+ * publish one shared copy (`vendor/monaco/<version>/`) for every PR preview to
+ * point at, instead of committing 34MB per preview per push into the
+ * `demo-previews` branch.
+ */
+export function populateMonacoRoot(monacoDest: string): void {
   const vsDest = resolve(monacoDest, 'vs')
   cpSync(resolve('node_modules/monaco-editor/esm/vs'), vsDest, { recursive: true })
   // Language workers import from `../../../external/...` (sibling of `vs/`, not inside it).
@@ -35,5 +47,12 @@ export function copyMonacoWorkers(rendererOutDir: string): void {
     copyFileSync(src, dest)
   }
 
-  copyFileSync(ESM_WORKER_HOST_SRC, resolve(rendererOutDir, 'monaco/esm-worker-host.js'))
+  copyFileSync(ESM_WORKER_HOST_SRC, resolve(monacoDest, 'esm-worker-host.js'))
+}
+
+// `node scripts/copy-monaco-workers.mts <dir>` populates <dir> as a Monaco root.
+// Used by the demo-preview workflow to publish the shared vendor copy.
+if (process.argv[1]?.endsWith('copy-monaco-workers.mts') && process.argv[2] !== undefined) {
+  populateMonacoRoot(resolve(process.argv[2]))
+  console.log(`[monaco] populated ${process.argv[2]}`)
 }

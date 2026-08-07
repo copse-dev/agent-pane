@@ -5,7 +5,29 @@ declare global {
   var _VSCODE_FILE_ROOT: string | undefined
 }
 
+declare global {
+  /**
+   * Where Monaco's `vs/` tree and worker host are served from, as a URL.
+   *
+   * Unset in the shipped app, which carries its own copy next to the bundle.
+   * The demo build sets it so many PR previews can share one published copy
+   * instead of each committing the 34MB ESM tree into the `demo-previews`
+   * branch — see `.github/workflows/demo-preview.yml`.
+   */
+  var __COPSE_MONACO_BASE__: string | undefined
+}
+
+/**
+ * Every Monaco asset path derives from here, so relocating the tree is a
+ * one-line change rather than a hunt through hardcoded './monaco/' strings.
+ * Always ends in a slash, so `new URL(relative, root)` resolves within it.
+ */
 function monacoVsRoot(): string {
+  const configured = globalThis.__COPSE_MONACO_BASE__
+  if (typeof configured === 'string' && configured.length > 0) {
+    return new URL(configured.endsWith('/') ? configured : `${configured}/`, window.location.href)
+      .href
+  }
   return new URL('./monaco/', window.location.href).href
 }
 
@@ -13,28 +35,25 @@ function configureMonacoFileRoot(): void {
   globalThis._VSCODE_FILE_ROOT = monacoVsRoot()
 }
 
-function workerPathForLabel(label: string): string {
+/** Worker entry, relative to {@link monacoVsRoot}. */
+function workerEntryRelativeToMonacoRoot(label: string): string {
   switch (label) {
     case 'typescript':
     case 'javascript':
-      return './monaco/vs/language/typescript/ts.worker.js'
+      return 'vs/language/typescript/ts.worker.js'
     case 'json':
-      return './monaco/vs/language/json/json.worker.js'
+      return 'vs/language/json/json.worker.js'
     case 'css':
     case 'scss':
     case 'less':
-      return './monaco/vs/language/css/css.worker.js'
+      return 'vs/language/css/css.worker.js'
     case 'html':
     case 'handlebars':
     case 'razor':
-      return './monaco/vs/language/html/html.worker.js'
+      return 'vs/language/html/html.worker.js'
     default:
-      return './monaco/vs/editor/editor.worker.js'
+      return 'vs/editor/editor.worker.js'
   }
-}
-
-function workerEntryRelativeToMonacoRoot(label: string): string {
-  return workerPathForLabel(label).replace(/^\.\/monaco\//, '')
 }
 
 function createMonacoWorker(label: string): Promise<Worker> {
@@ -52,7 +71,9 @@ function createMonacoWorker(label: string): Promise<Worker> {
 const workerPromises = new Map<string, Promise<Worker>>()
 
 function createMonacoWorkerOnce(label: string): Promise<Worker> {
-  const hostUrl = new URL('./monaco/esm-worker-host.js', window.location.href)
+  // Resolved against the Monaco root, not the page: when the tree is shared
+  // (demo previews), the host must load from beside the `vs/` it imports.
+  const hostUrl = new URL('esm-worker-host.js', monacoVsRoot())
   hostUrl.searchParams.set('entry', workerEntryRelativeToMonacoRoot(label))
   const worker = new Worker(hostUrl, { name: label, type: 'module' })
   return new Promise((resolve, reject) => {

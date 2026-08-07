@@ -207,7 +207,33 @@ copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
 // list of other people's things (today: first-party pack rows in Settings).
 copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
 cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
-copyMonacoWorkers(rendererOutDir)
+
+// Monaco's ESM `vs/` tree is ~34MB of small files, and it is identical for every
+// build pinned to the same monaco-editor version. The shipped app carries its
+// own copy; demo previews do not, because each one is committed to the
+// `demo-previews` branch and a per-PR copy made that branch grow by 34MB per
+// preview per push, forever (git keeps the history even after the preview is
+// removed). Point them at one published copy instead.
+//
+// Only ever set for the demo build. An unset MONACO_BASE_URL leaves the app's
+// packaging byte-identical.
+const monacoBaseUrl = isDemo ? (process.env['MONACO_BASE_URL'] ?? '').trim() : ''
+if (monacoBaseUrl === '') {
+  copyMonacoWorkers(rendererOutDir)
+} else {
+  console.log(`[build] Monaco served from ${monacoBaseUrl} — not copying the vs/ tree`)
+  const indexPath = `${rendererOutDir}/index.html`
+  const html = readFileSync(indexPath, 'utf8')
+  // Inline and ahead of the app bundle: setup.ts reads this the first time an
+  // editor is opened, and a separate file would be one more request to get
+  // wrong. JSON.stringify keeps a quote or backslash in the URL from breaking
+  // out of the string.
+  const inject = `<script>window.__COPSE_MONACO_BASE__=${JSON.stringify(monacoBaseUrl)}</script>`
+  if (!html.includes('</head>')) {
+    throw new Error('index.html has no </head> to inject the Monaco base into')
+  }
+  writeFileSync(indexPath, html.replace('</head>', `  ${inject}\n  </head>`))
+}
 cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {
   recursive: true,
 })
