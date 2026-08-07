@@ -45,8 +45,8 @@ function recordRun(context: HookContext, record: HookRunRecord): void {
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
 import { STEP_BOUNDARY_HOOKS } from './step-boundary-hooks.ts'
-import { getDefaultPackRegistry } from '../packs/default-pack-registry.ts'
-import type { PackRegistry } from '../packs/pack-registry.ts'
+import { getDefaultPluginRegistry } from '../plugins/default-plugin-registry.ts'
+import type { PluginRegistry } from '../plugins/plugin-registry.ts'
 
 /**
  * Thread a tool-gate rewrite into the payload so the **next** hook in the
@@ -527,21 +527,21 @@ export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [
 
 /**
  * Build a registry pre-loaded with the static first-party hook list **and** the
- * hooks contributed by every enabled first-party pack (P1). The pack seam is the
- * forcing function for decision 15: a pack's hooks are registered through the
- * same registry the loop uses, so disabling the pack (a `PackRegistry` flag)
+ * hooks contributed by every enabled first-party plugin (P1). The plugin seam is the
+ * forcing function for decision 15: a plugin's hooks are registered through the
+ * same registry the loop uses, so disabling the plugin (a `PluginRegistry` flag)
  * removes them from new work without touching loop code. P1's original skeleton
  * contributed no hooks, making the seam byte-identical to M0 behavior; P4's
- * todos pack registers its turn-start / finalize hooks via `packs` instead of
+ * todos plugin registers its turn-start / finalize hooks via `plugins` instead of
  * the static {@link FIRST_PARTY_HOOKS} list.
  */
 export function createHookRegistry(
   hooks: readonly BlockingHook[] = FIRST_PARTY_HOOKS,
-  packs: PackRegistry = getDefaultPackRegistry(),
+  plugins: PluginRegistry = getDefaultPluginRegistry(),
 ): HookRegistry {
   const registry = new HookRegistry()
   for (const hook of hooks) registry.register(hook)
-  for (const hook of packs.activeBlockingHooks()) registry.register(hook)
-  for (const hook of packs.activeAsyncHooks()) registry.registerAsync(hook)
+  for (const hook of plugins.activeBlockingHooks()) registry.register(hook)
+  for (const hook of plugins.activeAsyncHooks()) registry.registerAsync(hook)
   return registry
 }

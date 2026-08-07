@@ -4,8 +4,8 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 
-// The Memories pane is gated on the `copse.okf-memories` first-party pack, so
-// unlike the other right-panel panes it needs the pack seeded on and a couple of
+// The Memories pane is gated on the `copse.okf-memories` first-party plugin, so
+// unlike the other right-panel panes it needs the plugin seeded on and a couple of
 // notes to render. This
 // spec seeds both, opens the pane, and pops it out so the list + inline editor
 // get a committed reference screenshot.

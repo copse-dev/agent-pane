@@ -1,31 +1,31 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { AUTOMATIONS_PACK_ID } from '../../packages/agent/src/packs/automations-pack.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '../../packages/agent/src/plugins/automations-plugin.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-settings-automations'
 const SCHEDULE_ID = 'schedule-morning-review'
 
-describe('settings automations pack', function () {
+describe('settings automations plugin', function () {
   this.timeout(60_000)
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), PROJECT_ID, { model: 'claude-sonnet-4-6' })
-    // The automations pack has no legacy opt-in, so production seeds it off
+    // The automations plugin has no legacy opt-in, so production seeds it off
     // once. Mark that migration complete and seed the explicit enabled state +
-    // pack storage for this visual fixture.
+    // plugin storage for this visual fixture.
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
       activeProjectId: PROJECT_ID,
       [`threads:${PROJECT_ID}`]: [],
-      packDisabled: [],
+      pluginDisabled: [],
       // electron-store resolves dotted keys through nested config objects.
-      packMigration: { automationsEnablement: true },
-      pack: {
+      pluginMigration: { automationsEnablement: true },
+      plugin: {
         copse: {
           automations: {
             storage: [
@@ -60,17 +60,17 @@ describe('settings automations pack', function () {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="packs"]').click()
+    await dialog.$('button[data-section="plugins"]').click()
 
-    const row = dialog.$(`.pack-row[data-pack-id="${AUTOMATIONS_PACK_ID}"]`)
+    const row = dialog.$(`.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`)
     await row.waitForExist({ timeout: 15_000 })
     await row.scrollIntoView({ block: 'center' })
     assert.equal(await row.getAttribute('data-enabled'), 'true')
-    await expect(row.$('.pack-chip=UI × 1')).toBeDisplayed()
+    await expect(row.$('.plugin-chip=UI × 1')).toBeDisplayed()
 
-    // The pack's detail panel sits inside its closed "Pack settings" fold.
-    await row.$('.pack-settings-summary').click()
-    const detail = row.$('.automation-pack-settings')
+    // The plugin's detail panel sits inside its closed "Plugin settings" fold.
+    await row.$('.plugin-settings-summary').click()
+    const detail = row.$('.automation-plugin-settings')
     await expect(detail).toBeDisplayed()
     assert.match(await detail.getText(), /Project: workspace · local time/)
     assert.match(await detail.getText(), /Weekday project review/)

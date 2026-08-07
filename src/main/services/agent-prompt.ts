@@ -177,19 +177,19 @@ You can read the user's open Shells tabs (interactive terminals in the right pan
 - read: snapshot recent scrollback (defaults to the active tab; pass id / max_lines to target another or pull more history)
 This is for user-run terminals, not your own run_shell / run_background output. Prefer read_terminal over asking the user to paste when a relevant shell is open. Users may also @shell a tab into the message explicitly.`
 
-// Optional steering, gated by the `copse.okf-memories` first-party pack. Only
+// Optional steering, gated by the `copse.okf-memories` first-party plugin. Only
 // appended when the remember/recall tools are actually registered. The block
-// text lives in the pack (its `promptBlocks` declaration) so the pack decl and
+// text lives in the plugin (its `promptBlocks` declaration) so the plugin decl and
 // the host appending site read the identical string; re-exported here to keep
 // this module's block-export surface stable for `agent-system-prompt.ts`.
-export { MEMORY_TOOLS_BLOCK } from '@copse/agent/packs/okf-memories-pack.ts'
+export { MEMORY_TOOLS_BLOCK } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
-// Optional steering, gated by the `copse.pii-redaction` first-party pack. Only
-// appended when the pack is enabled (the same flag that registers the reveal_pii
-// tool). The block TEXT is owned by the pack so its `promptBlocks` declaration
+// Optional steering, gated by the `copse.pii-redaction` first-party plugin. Only
+// appended when the plugin is enabled (the same flag that registers the reveal_pii
+// tool). The block TEXT is owned by the plugin so its `promptBlocks` declaration
 // and this appended text stay a single source of truth; re-exported here so
 // `agent-system-prompt.ts` keeps importing it from this module.
-export { PII_REDACTION_BLOCK } from '@copse/agent/packs/pii-redaction-pack.ts'
+export { PII_REDACTION_BLOCK } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 
 // Model-specific steering, appended only when the turn runs on Claude Opus 5
 // (`isOpus5Model`). The base prompt above is deliberately model-agnostic; this

@@ -33,7 +33,7 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
 /**
  * Packs the host turns off on a profile with no `packDisabled` list — mirrors
- * `DEFAULT_DISABLED_PACK_IDS` in `src/main/services/packs/pack-service.ts`.
+ * `DEFAULT_DISABLED_PACK_IDS` in `src/main/services/plugins/plugin-service.ts`.
  * Seeding the list explicitly means a fixture never depends on that default.
  */
 const DEFAULT_DISABLED_PACK_IDS = [

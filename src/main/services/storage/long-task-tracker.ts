@@ -22,9 +22,9 @@ import { projectStoreNamespaceDir } from './project-namespace.ts'
  * workspace namespacing). It complements the in-thread `todos` (#530), which is
  * scoped to a single thread; a long task outlives the *turn* but still belongs
  * to the thread that opened it — see {@link isOwnedByThread}. Off by default:
- * the `copse.long-horizon-tasks` first-party pack gates the `track_long_task`
+ * the `copse.long-horizon-tasks` first-party plugin gates the `track_long_task`
  * tool registration (see `registry-bootstrap.ts`) so the feature is fully inert
- * until the user opts in via Settings → Packs.
+ * until the user opts in via Settings → Plugins.
  */
 
 const stepSchema = z.object({

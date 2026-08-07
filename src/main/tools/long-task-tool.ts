@@ -40,7 +40,7 @@ function formatTask(task: LongTask, viewerThreadId?: string): string {
  * durable, resumable checklist for a grind-it-out task within a PR (clearing a
  * lint backlog, a deep research pass) so progress survives across turns and
  * sessions and the agent knows when it is actually done. Registered only when
- * the `copse.long-horizon-tasks` first-party pack is enabled.
+ * the `copse.long-horizon-tasks` first-party plugin is enabled.
  *
  * The store is namespaced per workspace root, not per thread, so `list` filters
  * to the calling thread's own tasks. It used to return every task in the

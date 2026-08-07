@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
-import { DARK_FACTORY_PACK_ID, darkFactoryPack } from '@copse/agent/packs/dark-factory-pack.ts'
+import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import {
+  DARK_FACTORY_PLUGIN_ID,
+  darkFactoryPlugin,
+} from '@copse/agent/plugins/dark-factory-plugin.ts'
 import type { LoadedSupervisedTasks, SupervisedTaskStore } from './task-store.ts'
 import type {
   SupervisedTaskAuditEvent,
@@ -52,9 +55,9 @@ class SensorClock implements DarkFactorySensorClock {
 
 describe('dark-factory fleet sensor', () => {
   it('stays inert while disabled and delivers one adaptive fleet event while enabled', async () => {
-    const registry = new PackRegistry()
-    registry.register(darkFactoryPack)
-    registry.disable(DARK_FACTORY_PACK_ID)
+    const registry = new PluginRegistry()
+    registry.register(darkFactoryPlugin)
+    registry.disable(DARK_FACTORY_PLUGIN_ID)
     const supervisor = new TaskSupervisor({ store: new EmptyTaskStore() })
     const clock = new SensorClock()
     let urgency: FleetPollUrgency = 'idle'
@@ -71,7 +74,7 @@ describe('dark-factory fleet sensor', () => {
     sensor.sync()
     assert.equal(clock.scheduled.length, 0)
 
-    registry.enable(DARK_FACTORY_PACK_ID)
+    registry.enable(DARK_FACTORY_PLUGIN_ID)
     sensor.sync()
     sensor.sync()
     assert.deepEqual(
@@ -109,7 +112,7 @@ describe('dark-factory fleet sensor', () => {
       [15 * 60_000, 60_000],
     )
 
-    registry.disable(DARK_FACTORY_PACK_ID)
+    registry.disable(DARK_FACTORY_PLUGIN_ID)
     sensor.sync()
     assert.deepEqual(clock.cleared, [2])
   })

@@ -11,7 +11,7 @@
 //
 // `parseModelSelection` classifies the namespace and splits the parts; the
 // namespace owners keep their own validity rules on top (which providers are
-// real remote agents, which slugs are configured extra providers, how a pack
+// real remote agents, which slugs are configured extra providers, how a plugin
 // decodes its halves). Parsing here, policy there.
 //
 // Leaf module by design: it imports only the prefix literals, so both
@@ -24,7 +24,7 @@ import {
   AGENT_MODEL_SEP,
   AUTO_MODEL_PREFIX,
   LMSTUDIO_MODEL_PREFIX,
-  PACK_MODEL_PREFIX,
+  PLUGIN_MODEL_PREFIX,
   REMOTE_AGENT_MODEL_PREFIX,
 } from './reserved-prefixes.ts'
 
@@ -49,7 +49,7 @@ export type ModelNamespace =
   | 'extra-provider'
   | 'remote-agent'
   | 'acp'
-  | 'pack-model'
+  | 'plugin-model'
   | 'auto'
 
 export interface ModelSelection {
@@ -57,9 +57,9 @@ export interface ModelSelection {
   /** Namespace token without its trailing colon; `''` for a bare cloud id. */
   slug: string
   /**
-   * Agent, provider, or pack identity for the agent-shaped namespaces (`acp`,
-   * `remote-agent`, `pack-model`); `''` for the rest. Raw as stored —
-   * `pack-model` URI-encodes its halves and decodes them in its own parser.
+   * Agent, provider, or plugin identity for the agent-shaped namespaces (`acp`,
+   * `remote-agent`, `plugin-model`); `''` for the rest. Raw as stored —
+   * `plugin-model` URI-encodes its halves and decodes them in its own parser.
    */
   agent: string
   /**
@@ -84,9 +84,9 @@ const VENDOR_ADDRESSED: ReadonlySet<ModelNamespace> = new Set(['openrouter', 'ex
 const AGENT_SHAPED: ReadonlyArray<readonly [ModelNamespace, string, string]> = [
   ['remote-agent', REMOTE_AGENT_MODEL_PREFIX, AGENT_MODEL_SEP],
   ['acp', ACP_MODEL_PREFIX, AGENT_MODEL_SEP],
-  // A pack route separates its two halves with `:` rather than `#`; both are
+  // A plugin route separates its two halves with `:` rather than `#`; both are
   // URI-encoded, so an encoded separator cannot be mistaken for the real one.
-  ['pack-model', PACK_MODEL_PREFIX, ':'],
+  ['plugin-model', PLUGIN_MODEL_PREFIX, ':'],
 ]
 
 /** Namespaces that are a plain routing slug in front of an upstream model id. */

@@ -68,7 +68,7 @@ function stubApi(
     instructions: { ...base.instructions, list: () => Promise.resolve([]) },
     cursorRules: { ...base.cursorRules, list: () => Promise.resolve([]) },
     skills: { ...base.skills, list: () => Promise.resolve([]) },
-    plugins: { ...base.plugins, list: () => Promise.resolve([]) },
+    cursorPlugins: { ...base.cursorPlugins, list: () => Promise.resolve([]) },
     hooks: { ...base.hooks, list: () => Promise.resolve({ hooks: [], warnings: [] }) },
     worktrees: {
       list: () => Promise.resolve(entries),

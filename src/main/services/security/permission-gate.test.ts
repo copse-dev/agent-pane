@@ -41,10 +41,10 @@ import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
 } from '../mcp/custom-tools-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
-import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -177,12 +177,12 @@ describe('ensureToolPermitted', () => {
     }
   })
 
-  it('auto-allows a direct Parallel Search request while its pack is enabled', async () => {
+  it('auto-allows a direct Parallel Search request while its plugin is enabled', async () => {
     setPermissionGateForTests(null)
-    // A fresh first-party seed enables every pack, so `copse.parallel-search`
-    // declares the tool here (default-OFF is a pack-service migration concern).
-    const registry = createFirstPartyPackRegistry()
-    setDefaultPackRegistry(registry)
+    // A fresh first-party seed enables every plugin, so `copse.parallel-search`
+    // declares the tool here (default-OFF is a plugin-service migration concern).
+    const registry = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(registry)
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let prompted = false
@@ -198,14 +198,14 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompted, false)
     } finally {
       setApprovalHandler(null)
-      setDefaultPackRegistry(null)
+      setDefaultPluginRegistry(null)
     }
   })
 
-  it('prompts before sending a direct Parallel Search request while its pack is disabled', async () => {
-    const registry = createFirstPartyPackRegistry()
-    registry.disable(PARALLEL_SEARCH_PACK_ID)
-    setDefaultPackRegistry(registry)
+  it('prompts before sending a direct Parallel Search request while its plugin is disabled', async () => {
+    const registry = createFirstPartyPluginRegistry()
+    registry.disable(PARALLEL_SEARCH_PLUGIN_ID)
+    setDefaultPluginRegistry(registry)
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
@@ -226,7 +226,7 @@ describe('ensureToolPermitted', () => {
       assert.match(approvalBody, /Zero Data Retention/i)
     } finally {
       setApprovalHandler(null)
-      setDefaultPackRegistry(null)
+      setDefaultPluginRegistry(null)
     }
   })
 
@@ -725,29 +725,29 @@ describe('run_background permission', () => {
   })
 
   // Issue #1190: the loopback port-binding relaxation is an authority the
-  // `copse.background-tasks` pack DECLARES. The gate resolves it through the pack
-  // registry, so it is grantable ONLY while the pack declares it — disabling the
-  // pack revokes the relaxation in one flag flip.
-  it('only offers the loopback grant while the background-tasks pack declares it', async () => {
+  // `copse.background-tasks` plugin DECLARES. The gate resolves it through the plugin
+  // registry, so it is grantable ONLY while the plugin declares it — disabling the
+  // plugin revokes the relaxation in one flag flip.
+  it('only offers the loopback grant while the background-tasks plugin declares it', async () => {
     setPermissionGateForTests(null)
-    // A fresh first-party seed enables every pack (default-OFF is a pack-service
+    // A fresh first-party seed enables every plugin (default-OFF is a plugin-service
     // migration concern, not the raw seed), so background-tasks declares
     // loopback-bind here.
-    const registry = createFirstPartyPackRegistry()
-    setDefaultPackRegistry(registry)
+    const registry = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(registry)
     const restore = setWorkspaceRootForTest('/tmp/loopback-gated-project')
     setApprovalHandler(async () => ({ approved: true, remember: false }))
     try {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
-      // Pack enabled → the relaxation is declared → the grant is offered and, on
+      // Plugin enabled → the relaxation is declared → the grant is offered and, on
       // approval, the start proceeds.
       assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
 
-      // Disable the pack → `isPermissionDeclared('loopback-bind')` flips false in
+      // Disable the plugin → `isPermissionDeclared('loopback-bind')` flips false in
       // the same flag flip, so the gate refuses the relaxation (a thrown error
       // surfaces the reason to the agent). The task could still run without
       // allow_port_binding.
-      registry.disable(BACKGROUND_TASKS_PACK_ID)
+      registry.disable(BACKGROUND_TASKS_PLUGIN_ID)
       await assert.rejects(
         () =>
           ensureToolPermitted({
@@ -759,7 +759,7 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
-      setDefaultPackRegistry(null)
+      setDefaultPluginRegistry(null)
     }
   })
 })

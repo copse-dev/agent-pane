@@ -9,7 +9,7 @@ import { getAdvisorRunner } from '../services/advisor-runner.ts'
  * enhancements — the native `advisor_20260301` tool takes none, so the no-arg
  * call stays a drop-in: `question` focuses the advice, `include_diff` attaches
  * the current working-tree diff. Registered only when the
- * `copse.advisor-strategy` first-party pack is enabled.
+ * `copse.advisor-strategy` first-party plugin is enabled.
  */
 export const advisorTool = defineTool({
   name: 'advisor',

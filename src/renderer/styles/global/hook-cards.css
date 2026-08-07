@@ -1,4 +1,4 @@
-/* Hook card family (decision 10 of docs/plans/hooks-and-feature-packs.md).
+/* Hook card family (decision 10 of docs/plans/hooks-and-feature-plugins.md).
    Hook executions, deny/ask decisions, and halts render as a distinct
    tool-call-style card family: right-aligned, same blue as the user's own
    messages (--accent), but clearly NOT a user message — they carry the hook

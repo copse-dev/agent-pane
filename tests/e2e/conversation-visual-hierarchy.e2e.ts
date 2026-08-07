@@ -54,7 +54,7 @@ describe('conversation visual hierarchy', () => {
       const messagesList = document.querySelector<HTMLElement>('.messages-list')
       const user = rect('[data-message-id="msg-user-hierarchy"]')
       const trace = rect('[data-message-id="msg-assistant-check"]')
-      const todoPanel = rect('.conversation-todos-host .pack-panel')
+      const todoPanel = rect('.conversation-todos-host .plugin-panel')
       const answerElement = document.querySelector('[data-message-id="msg-assistant-result"]')
       const answer = answerElement?.getBoundingClientRect()
       const reviewElement = document.querySelector('[data-review-card]')

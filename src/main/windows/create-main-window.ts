@@ -4,8 +4,8 @@ import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import { MainWindowRegistry, type MainWindowContext } from './main-window-registry.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
@@ -139,17 +139,17 @@ export function unregisterDevtoolsShortcut(): void {
 
 /**
  * Register or unregister the DevTools shortcut to match the current enablement
- * of the `copse.devtools-shortcut` first-party pack's `devtools-shortcut`
+ * of the `copse.devtools-shortcut` first-party plugin's `devtools-shortcut`
  * capability. Called at boot (via `registerAllHandlers`) and again whenever the
- * pack is toggled from Settings > Packs (see `ipc/register-handlers.ts`
- * `packs:setEnabled`), so the shortcut appears or disappears live — the atomic
- * pack disable unregisters it in the same flag flip that drops the pack's
- * capability from the Settings pack list. Replaces the retired
- * `devtoolsShortcutEnabled` standalone setting: the pack capability is now the
+ * plugin is toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * `plugins:setEnabled`), so the shortcut appears or disappears live — the atomic
+ * plugin disable unregisters it in the same flag flip that drops the plugin's
+ * capability from the Settings plugin list. Replaces the retired
+ * `devtoolsShortcutEnabled` standalone setting: the plugin capability is now the
  * single source of truth.
  */
 export function syncDevtoolsShortcut(): void {
-  if (getDefaultPackRegistry().isCapabilityActive(DEVTOOLS_SHORTCUT_CAPABILITY)) {
+  if (getDefaultPluginRegistry().isCapabilityActive(DEVTOOLS_SHORTCUT_CAPABILITY)) {
     registerDevtoolsShortcut()
   } else {
     unregisterDevtoolsShortcut()

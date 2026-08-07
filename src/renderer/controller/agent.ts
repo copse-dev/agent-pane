@@ -377,7 +377,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'panel_update': {
-        // P4: the todos pack emits `panel_update` alongside `todo_update` (the
+        // P4: the todos plugin emits `panel_update` alongside `todo_update` (the
         // ACP bridge maps it for external clients). The renderer already drives
         // the plan panel from `thread.todos` via the `todo_update` above, so the
         // chunk is redundant here — ignore it explicitly rather than through a

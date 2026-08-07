@@ -28,7 +28,7 @@ function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): Api
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.list': () => Promise.resolve([]),
-    'plugins.list': () => Promise.resolve([]),
+    'cursorPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve(hooksResult),
     'hooks.test': (req: unknown) => {
       lastTestRequest = req

@@ -5,7 +5,7 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 // Visual eval for the Settings restyle: the display-face heading tier, the
 // roomier rhythm and hit areas, the sidebar contents list under the open
-// section, the see-through footer, and the Packs / Appearance surfaces.
+// section, the see-through footer, and the Plugins / Appearance surfaces.
 describe('settings styling', function () {
   this.timeout(120_000)
   before(async () => {
@@ -184,40 +184,42 @@ describe('settings styling', function () {
     await saveElementScreenshot('#settings-dialog', 'settings-styling-footer.png')
   })
 
-  it('renders packs as cards with a publisher eyebrow and a labelled toggle', async () => {
-    await $('.settings-nav-btn[data-section="packs"]').click()
-    await $('.pack-row').waitForDisplayed({ timeout: 30_000 })
+  it('renders plugins as cards with a publisher eyebrow and a labelled toggle', async () => {
+    await $('.settings-nav-btn[data-section="plugins"]').click()
+    await $('.plugin-row').waitForDisplayed({ timeout: 30_000 })
     // The scrollport is shared between sections, so start this one at the top.
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       if (content) content.scrollTop = 0
     })
 
-    const packs = await browser.execute(() => {
-      const list = document.querySelector<HTMLElement>('#packs-list')
-      const row = list?.querySelector<HTMLElement>('.pack-row')
-      const name = row?.querySelector<HTMLElement>('.pack-name')
-      const eyebrow = row?.querySelector<HTMLElement>('.pack-badge-first-party, .pack-badge-user')
-      const toggleControl = row?.querySelector<HTMLElement>('.pack-toggle-control')
-      const desc = row?.querySelector<HTMLElement>('.pack-row-desc')
+    const plugins = await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('#plugins-list')
+      const row = list?.querySelector<HTMLElement>('.plugin-row')
+      const name = row?.querySelector<HTMLElement>('.plugin-name')
+      const eyebrow = row?.querySelector<HTMLElement>(
+        '.plugin-badge-first-party, .plugin-badge-user',
+      )
+      const toggleControl = row?.querySelector<HTMLElement>('.plugin-toggle-control')
+      const desc = row?.querySelector<HTMLElement>('.plugin-row-desc')
       const onLabel = toggleControl?.querySelector<HTMLElement>(
-        '.pack-toggle-state[data-side="on"]',
+        '.plugin-toggle-state[data-side="on"]',
       )
       const offLabel = toggleControl?.querySelector<HTMLElement>(
-        '.pack-toggle-state[data-side="off"]',
+        '.plugin-toggle-state[data-side="off"]',
       )
-      const mark = row?.querySelector<HTMLImageElement>('.pack-icon-copse img')
+      const mark = row?.querySelector<HTMLImageElement>('.plugin-icon-copse img')
       if (!list || !row || !name || !eyebrow || !toggleControl || !onLabel || !offLabel) return null
       const rowRect = row.getBoundingClientRect()
       const nameRect = name.getBoundingClientRect()
       const eyebrowRect = eyebrow.getBoundingClientRect()
       const toggleRect = toggleControl.getBoundingClientRect()
       const checked =
-        toggleControl.querySelector<HTMLInputElement>('.pack-toggle-input')?.checked ?? false
+        toggleControl.querySelector<HTMLInputElement>('.plugin-toggle-input')?.checked ?? false
       const liveLabel = checked ? onLabel : offLabel
       const idleLabel = checked ? offLabel : onLabel
       return {
-        groupHeadings: Array.from(list.querySelectorAll<HTMLElement>('.packs-group-heading')).map(
+        groupHeadings: Array.from(list.querySelectorAll<HTMLElement>('.plugins-group-heading')).map(
           (el) => el.textContent.trim(),
         ),
         cardBackground: getComputedStyle(row).backgroundColor,
@@ -229,16 +231,16 @@ describe('settings styling', function () {
         toggleOnTheRight: toggleRect.right > rowRect.left + rowRect.width / 2,
         liveLabelWeight: Number.parseInt(getComputedStyle(liveLabel).fontWeight, 10),
         idleLabelWeight: Number.parseInt(getComputedStyle(idleLabel).fontWeight, 10),
-        // A first-party pack wears the Copse mark itself; a user-installed one
+        // A first-party plugin wears the Copse mark itself; a user-installed one
         // must not, so it falls back to an unbranded initial tile.
         markSrc: mark?.getAttribute('src') ?? null,
         markRendered: (mark?.getBoundingClientRect().width ?? 0) > 0 && mark.naturalWidth > 0,
-        brandedRows: list.querySelectorAll('.pack-icon-copse').length,
-        firstPartyRows: list.querySelectorAll('.pack-badge-first-party').length,
+        brandedRows: list.querySelectorAll('.plugin-icon-copse').length,
+        firstPartyRows: list.querySelectorAll('.plugin-badge-first-party').length,
         // The experimental marker takes the interaction accent, in a pill, in
         // sentence case — the mockup's treatment.
         experimental: (() => {
-          const badge = list.querySelector<HTMLElement>('.pack-badge-experimental')
+          const badge = list.querySelector<HTMLElement>('.plugin-badge-experimental')
           if (!badge) return null
           const style = getComputedStyle(badge)
           const accent = getComputedStyle(document.documentElement)
@@ -259,58 +261,60 @@ describe('settings styling', function () {
       }
     })
 
-    assert.ok(packs, 'the packs list must render rows')
+    assert.ok(plugins, 'the plugins list must render rows')
     assert.ok(
-      packs.groupHeadings.includes('Active'),
-      `packs are grouped by state, got ${packs.groupHeadings.join(', ')}`,
+      plugins.groupHeadings.includes('Active'),
+      `plugins are grouped by state, got ${plugins.groupHeadings.join(', ')}`,
     )
-    // A pack reads as a card: it paints its own surface and rounds its corners,
+    // A plugin reads as a card: it paints its own surface and rounds its corners,
     // rather than being a hairline box on the section background.
-    assert.notEqual(packs.cardBackground, 'rgba(0, 0, 0, 0)')
-    assert.ok(packs.cardRadius >= 8, `pack card radius ${String(packs.cardRadius)}`)
-    assert.equal(packs.eyebrowAboveName, true, 'the publisher sits above the pack name')
-    assert.equal(packs.eyebrowTransform, 'uppercase')
-    assert.ok(packs.nameSize > packs.descSize, 'the pack name leads its description')
-    assert.equal(packs.toggleOnTheRight, true, 'the toggle sits opposite the title')
+    assert.notEqual(plugins.cardBackground, 'rgba(0, 0, 0, 0)')
+    assert.ok(plugins.cardRadius >= 8, `plugin card radius ${String(plugins.cardRadius)}`)
+    assert.equal(plugins.eyebrowAboveName, true, 'the publisher sits above the plugin name')
+    assert.equal(plugins.eyebrowTransform, 'uppercase')
+    assert.ok(plugins.nameSize > plugins.descSize, 'the plugin name leads its description')
+    assert.equal(plugins.toggleOnTheRight, true, 'the toggle sits opposite the title')
     // Off/On flank the switch and the live side is the emphasised one.
     assert.ok(
-      packs.liveLabelWeight > packs.idleLabelWeight,
-      `live toggle label (${String(packs.liveLabelWeight)}) must outweigh the idle one (${String(packs.idleLabelWeight)})`,
+      plugins.liveLabelWeight > plugins.idleLabelWeight,
+      `live toggle label (${String(plugins.liveLabelWeight)}) must outweigh the idle one (${String(plugins.idleLabelWeight)})`,
     )
     // The mark is the real asset and actually decodes — a broken <img> here
     // would still measure as a laid-out box.
-    assert.equal(packs.markSrc, './brand-mark.svg')
-    assert.equal(packs.markRendered, true, 'the Copse mark must load')
+    assert.equal(plugins.markSrc, './brand-mark.svg')
+    assert.equal(plugins.markRendered, true, 'the Copse mark must load')
     assert.equal(
-      packs.brandedRows,
-      packs.firstPartyRows,
-      'the Copse mark belongs to first-party packs and only those',
+      plugins.brandedRows,
+      plugins.firstPartyRows,
+      'the Copse mark belongs to first-party plugins and only those',
     )
-    assert.ok(packs.experimental, 'the seeded packs include an experimental one')
+    assert.ok(plugins.experimental, 'the seeded plugins include an experimental one')
     assert.equal(
-      packs.experimental.color,
-      packs.experimental.accentRgb,
+      plugins.experimental.color,
+      plugins.experimental.accentRgb,
       'experimental takes the interaction accent',
     )
-    assert.equal(packs.experimental.transform, 'capitalize')
-    assert.ok(packs.experimental.radius >= 12, 'the stability badge is a pill')
+    assert.equal(plugins.experimental.transform, 'capitalize')
+    assert.ok(plugins.experimental.radius >= 12, 'the stability badge is a pill')
 
-    await saveElementScreenshot('#settings-dialog', 'settings-styling-packs.png')
+    await saveElementScreenshot('#settings-dialog', 'settings-styling-plugins.png')
   })
 
-  it('folds each pack’s settings away until asked for', async () => {
-    const fold = await $('.pack-row .pack-settings-fold')
+  it('folds each plugin’s settings away until asked for', async () => {
+    const fold = await $('.plugin-row .plugin-settings-fold')
     await fold.waitForExist({ timeout: 10_000 })
 
     const closed = await browser.execute(() => {
-      const details = document.querySelector<HTMLDetailsElement>('.pack-row .pack-settings-fold')
-      const field = details?.querySelector<HTMLElement>('.pack-settings, .pack-setting-field')
+      const details = document.querySelector<HTMLDetailsElement>(
+        '.plugin-row .plugin-settings-fold',
+      )
+      const field = details?.querySelector<HTMLElement>('.plugin-settings, .plugin-setting-field')
       if (!details || !field) return null
       return {
         open: details.open,
-        summary: details.querySelector<HTMLElement>('.pack-settings-summary')?.textContent.trim(),
+        summary: details.querySelector<HTMLElement>('.plugin-settings-summary')?.textContent.trim(),
         summaryHeight:
-          details.querySelector<HTMLElement>('.pack-settings-summary')?.getBoundingClientRect()
+          details.querySelector<HTMLElement>('.plugin-settings-summary')?.getBoundingClientRect()
             .height ?? 0,
         // `getBoundingClientRect().height > 0` used to mean "the fold is open",
         // on the assumption that a closed <details> lays its content out at zero
@@ -330,24 +334,26 @@ describe('settings styling', function () {
         }),
         // Our own chevron, not the UA triangle.
         marker: getComputedStyle(details.querySelector('summary') ?? details).listStyleType,
-        hasChevron: details.querySelector('.pack-settings-chevron') !== null,
+        hasChevron: details.querySelector('.plugin-settings-chevron') !== null,
       }
     })
 
-    assert.ok(closed, 'a pack with settings must render the fold')
-    assert.equal(closed.open, false, 'pack settings start folded away')
+    assert.ok(closed, 'a plugin with settings must render the fold')
+    assert.equal(closed.open, false, 'plugin settings start folded away')
     assert.equal(closed.fieldVisible, false, 'the fields are not laid out while closed')
-    assert.equal(closed.summary, 'Pack settings')
+    assert.equal(closed.summary, 'Plugin settings')
     assert.ok(closed.summaryHeight >= 26, 'the summary is a row-sized target')
     assert.equal(closed.hasChevron, true)
     assert.equal(closed.marker, 'none', 'the UA disclosure triangle is replaced by our chevron')
 
     // Opening it reveals the fields, and the chevron turns over.
-    await $('.pack-row .pack-settings-summary').click()
+    await $('.plugin-row .plugin-settings-summary').click()
     const opened = await browser.execute(() => {
-      const details = document.querySelector<HTMLDetailsElement>('.pack-row .pack-settings-fold')
-      const field = details?.querySelector<HTMLElement>('.pack-settings, .pack-setting-field')
-      const chevron = details?.querySelector<HTMLElement>('.pack-settings-chevron')
+      const details = document.querySelector<HTMLDetailsElement>(
+        '.plugin-row .plugin-settings-fold',
+      )
+      const field = details?.querySelector<HTMLElement>('.plugin-settings, .plugin-setting-field')
+      const chevron = details?.querySelector<HTMLElement>('.plugin-settings-chevron')
       if (!details || !field || !chevron) return null
       return {
         open: details.open,
@@ -364,10 +370,10 @@ describe('settings styling', function () {
 
     assert.ok(opened, 'the fold must still be there once open')
     assert.equal(opened.open, true)
-    assert.equal(opened.fieldVisible, true, 'opening the fold reveals the pack’s fields')
+    assert.equal(opened.fieldVisible, true, 'opening the fold reveals the plugin’s fields')
     assert.notEqual(opened.chevronTransform, 'none', 'the chevron turns over when open')
 
-    await saveElementScreenshot('#settings-dialog', 'settings-styling-pack-settings-open.png')
+    await saveElementScreenshot('#settings-dialog', 'settings-styling-plugin-settings-open.png')
   })
 
   it('pairs the appearance colour wells and enlarges the app-icon tiles', async () => {
