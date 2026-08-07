@@ -14,19 +14,20 @@
   flex-direction: column;
   align-items: flex-end;
   gap: var(--spacing-xs);
-  /* Pull up against the anchor message so the hook cards read as part of that
-     turn, matching the tool-card top spacing. */
-  margin-top: calc(-1 * var(--spacing-sm));
+  /* `.messages-list`'s flex gap already spaces each host from its anchor; the
+     pull-up below is the only reason a host deviates from that. */
 }
 
-/* The first turn's `sessionStart` hooks fire detached before any message has
-   been written, so `attachHookCards` folds them onto the first message. That
-   anchor (a plain sticky user prompt) carries none of the assistant-message
-   bulk the negative margin above is tuned for, so the pull-up would leave the
-   cards flush against the prompt. Give that host a normal gap instead, matching
-   how later turns' cards sit relative to their message. */
-.messages-list > :first-child + .hook-card-host {
-  margin-top: var(--spacing-sm);
+/* The pull-up exists only for an *assistant*-anchored host: the assistant
+   message carries visual bulk (border-top, padding-block, model line — see
+   .msg-assistant:has(...) in conversation.css), so we close the flex gap to
+   make the cards read as part of that turn, matching the tool-card top spacing.
+   A host anchored to a user message (the first turn's `sessionStart` hooks fold
+   onto the plain sticky prompt, and any user-originated turn) has no such bulk,
+   so it keeps the normal flex gap instead of being pulled flush — the same
+   spacing as later turns. */
+.messages-list > .msg-assistant + .hook-card-host {
+  margin-top: calc(-1 * var(--spacing-sm));
 }
 
 .hook-card,
