@@ -36,12 +36,19 @@ describe('tool call turn rollup', () => {
     )
     await expect($$('.msg-assistant .message-body > .message-reasoning')).toBeElementsArrayOfSize(1)
 
-    const nameStyle = await browser.execute(() => {
+    const italicFont = await browser.execute(async () => {
       const el = document.querySelector('.tool-card-rollup > .tool-card-header .tool-name')
       if (!el) return null
-      return getComputedStyle(el).fontStyle
+      const style = getComputedStyle(el)
+      await document.fonts.load(`${style.fontStyle} ${style.fontSize} ${style.fontFamily}`)
+      return {
+        style: style.fontStyle,
+        hasLoadedFace: Array.from(document.fonts).some(
+          (face) => face.family === 'Pliant' && face.style === 'italic' && face.status === 'loaded',
+        ),
+      }
     })
-    expect(nameStyle).toBe('italic')
+    expect(italicFont).toEqual({ style: 'italic', hasLoadedFace: true })
 
     await browser.execute(() => {
       const list = document.querySelector('.messages-list')

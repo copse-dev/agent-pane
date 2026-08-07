@@ -435,7 +435,7 @@ async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
   openRightPanel(store, mode)
   document.documentElement.setAttribute('data-popout-mode', mode)
   const seed = await api.panes.takePopoutSeed(mode)
-  await applyPopoutSeed(mode, seed)
+  await applyPopoutSeed(mode, seed, store)
 }
 
 if (popoutMode) {

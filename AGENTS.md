@@ -244,6 +244,31 @@ and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) 
 [`docs/testing-strategy.md`](docs/testing-strategy.md). The per-spec e2e→component migration backlog
 is in [`docs/e2e-component-migration.md`](docs/e2e-component-migration.md).
 
+### Don't add product API for tests
+
+An option, field, or flag whose only writer is a test is not configuration — it is a backdoor with a
+type. It costs the same as real API: everyone reading the code takes it for a supported knob, every
+policy that consults it has to keep handling it, and its default silently becomes product behaviour.
+
+`project.worktreeMode` is the standing example. No shipped code path has ever written it — there is
+no UI, no IPC, no setting — and its only writer is `tests/e2e/helpers/seed-config.ts`, which stamps
+`'never'` on every seeded project so specs keep asserting against the shared checkout instead of a
+fresh worktree. Because nothing else wrote it, `projectMode ?? 'never'` meant the automatic choice
+could never isolate, and every automatic thread quietly took the shared checkout — the user-visible
+bug #1568 had to fix by changing the default rather than the design.
+
+When a test needs a state the product cannot express:
+
+- **Reach it through the surface a user would.** Here the per-thread `worktreeChoice` already says
+  `'shared'`; the harness can seed that instead of inventing a project-level mode.
+- **Or make the option real** — give it a UI or a setting, and it stops being test-only.
+- **Or move the seam.** Inject the dependency, or take the fixture in at the boundary. A helper that
+  builds state is fine; a _product type_ that exists to be built by helpers is not.
+
+The tell is a grep: if every writer is under `tests/` or ends in `.test.ts`, the option is not
+earning its place. Check the whole repo before concluding an option is unused, too — `src/` alone
+will tell you a test-only field has no writer at all.
+
 ### Run the smallest set of tests
 
 A full `npm test` is ~3 minutes over 530 files. While iterating, run the tests your change can

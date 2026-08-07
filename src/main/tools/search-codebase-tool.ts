@@ -12,7 +12,6 @@ import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import {
   executeSemanticSearch,
-  isWorktreeExecutionContext,
   semanticIndexBuildingNote,
 } from '../services/search/semantic-search.ts'
 
@@ -50,10 +49,25 @@ export const searchCodebaseTool = defineTool({
       .optional()
       .default(false)
       .describe('Case-sensitive match (regex mode)'),
+    include_worktree_delta: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('Overlay changed worktree files on the shared semantic index (semantic mode only)'),
     max_results: z.number().int().min(1).max(500).optional().default(50),
   }),
   async execute(
-    { query, pattern, mode, path, file_glob, fixed_string, case_sensitive, max_results },
+    {
+      query,
+      pattern,
+      mode,
+      path,
+      file_glob,
+      fixed_string,
+      case_sensitive,
+      include_worktree_delta,
+      max_results,
+    },
     signal,
   ) {
     const root = getAgentExecutionRoot()
@@ -75,6 +89,7 @@ export const searchCodebaseTool = defineTool({
         {
           query: searchText,
           maxResults: max_results,
+          includeWorktreeDelta: include_worktree_delta,
           ...(filterPath ? { filterPath } : {}),
         },
         signal,
@@ -85,7 +100,7 @@ export const searchCodebaseTool = defineTool({
       if (mode === 'semantic') {
         return semantic.status === 'building'
           ? semanticIndexBuildingNote()
-          : isActiveSshWorkspace() || isWorktreeExecutionContext()
+          : isActiveSshWorkspace()
             ? semanticIndexBuildingNote()
             : 'Semantic search unavailable. Bundled gortex failed to install or ' +
               'gortex/vera is missing on PATH (see README.md), or retry with mode: regex.'
@@ -117,9 +132,7 @@ export const searchCodebaseTool = defineTool({
         : semanticFallback === 'unavailable'
           ? isActiveSshWorkspace()
             ? '[semantic search unavailable on SSH workspace — regex fallback]\n'
-            : isWorktreeExecutionContext()
-              ? '[semantic search unavailable in worktree threads — regex fallback]\n'
-              : '[semantic search unavailable — regex fallback]\n'
+            : '[semantic search unavailable — regex fallback]\n'
           : '[regex search]\n'
     return header + formatCodeSearchResults(lines, max_results, backend)
   },
@@ -137,9 +150,14 @@ export const semanticSearchTool = defineTool({
     // Undocumented fallback: accepted but deliberately not described.
     pattern: z.string().optional(),
     path: z.string().optional().describe('Optional subdirectory scope'),
+    include_worktree_delta: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('Overlay changed worktree files on the shared semantic index'),
     max_results: z.number().int().min(1).max(100).optional().default(20),
   }),
-  async execute({ query, pattern, path, max_results }, signal) {
+  async execute({ query, pattern, path, include_worktree_delta, max_results }, signal) {
     const root = getAgentExecutionRoot()
     if (!root) return 'No workspace open.'
 
@@ -155,6 +173,7 @@ export const semanticSearchTool = defineTool({
       {
         query: searchText,
         maxResults: max_results,
+        includeWorktreeDelta: include_worktree_delta,
         ...(filterPath ? { filterPath } : {}),
       },
       signal,
@@ -163,7 +182,7 @@ export const semanticSearchTool = defineTool({
       return semanticIndexBuildingNote()
     }
     if (semantic.status === 'unavailable') {
-      return isActiveSshWorkspace() || isWorktreeExecutionContext()
+      return isActiveSshWorkspace()
         ? semanticIndexBuildingNote()
         : 'Semantic search unavailable. Bundled gortex failed to install or ' +
             'gortex/vera is missing on PATH (see README.md).'

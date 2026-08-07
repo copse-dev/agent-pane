@@ -10,9 +10,11 @@ import {
   recordThreadVideos,
   recordThreadArchives,
   applyPreparedThreadCheckout,
+  createThread,
   getThreadById,
   getActiveThread,
   setThreadDraftPrompt,
+  setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import {
   dispatchAgentRun,
@@ -57,9 +59,11 @@ import { mountFooterOverflow } from './footer-overflow.ts'
 import {
   downloadThreadArchive,
   downloadThreadJsonl,
+  threadExportBaseName,
   threadHasExportableContent,
 } from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
+import { buildDebugTracePrompt, debugTraceThreadTitle } from '@shared/threads/debug-trace-prompt.ts'
 import {
   formatFooterUsageDetail,
   formatFooterUsageSummary,
@@ -297,10 +301,20 @@ export function mountInputBar(
         !threadHasExportableContent(getActiveThread(store)),
       onClick: exportThreadArchive,
     },
+    // Debug trace and Share trace are the two "something went wrong here" exits,
+    // so unlike the diagnostics above them they are not behind Developer mode —
+    // the user who needs them is by definition not the one who went looking for
+    // a developer setting first.
+    {
+      label: 'Debug trace',
+      hidden: (): boolean =>
+        store.getState().activeProjectId === null ||
+        !threadHasExportableContent(getActiveThread(store)),
+      onClick: debugTrace,
+    },
     {
       label: 'Share trace',
-      hidden: (): boolean =>
-        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
       onClick: shareTrace,
     },
   ])
@@ -437,6 +451,46 @@ export function mountInputBar(
     downloadThreadJsonl(thread)
     void api.shell.openExternal(buildShareTraceIssueUrl(thread)).catch((error: unknown) => {
       showErrorToast('Share trace failed', error)
+    })
+  }
+
+  /**
+   * Hand this thread's trace to a fresh thread and ask what went wrong in it.
+   *
+   * Everything the model needs is the zip — the same archive "Export thread
+   * folder (ZIP)" downloads — attached to a new conversation rather than saved to
+   * disk, so the diagnosis happens where the user already is. The draft prompt is
+   * deliberately left unsent: only the person who watched the run knows which
+   * part of it looked wrong, and the draft ends on a line for them to say so.
+   */
+  async function startDebugTrace(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (projectId === null || !threadHasExportableContent(thread)) return
+    // Zip before switching away: a failed export should leave the user on the
+    // thread they were reading, not on an empty one with nothing attached.
+    const bytes = await api.threads.exportArchive(projectId, thread.id)
+    const name = `${threadExportBaseName(thread)}.zip`
+    // Persist whatever is in the composer to its own thread before switching.
+    store.emit('composer_draft_flush')
+    const debugThreadId = createThread(store, buildDebugTracePrompt(thread, name))
+    // A title now, rather than one auto-suggested from the first message later:
+    // the sidebar should say which thread this is about before it is ever sent.
+    setThreadTitle(store, debugThreadId, debugTraceThreadTitle(thread))
+    // `threads_changed` has already switched the composer to the new thread, so
+    // the archive is stored under *its* blobs and lives as long as it does.
+    // `.slice` narrows the transferred view to exactly its own bytes, which is
+    // what the attach path re-wraps.
+    await addArchiveChip({
+      name,
+      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    })
+    composer.focus()
+  }
+
+  function debugTrace(): void {
+    void startDebugTrace().catch((error: unknown) => {
+      showErrorToast('Debug trace failed', error)
     })
   }
   usageBtn.addEventListener('mouseenter', usagePopover.show)

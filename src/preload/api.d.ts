@@ -160,7 +160,11 @@ export interface ApiClient {
     suggestTerminalTitle: (text: string) => Promise<string | null>
     suggestCommandSummary: (commands: string[]) => Promise<string | null>
     suggestToolTurnSummary: (actions: string[]) => Promise<string | null>
-    suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
+    suggestFollowUps: (
+      projectId: string,
+      threadId: string,
+      contextJson: string,
+    ) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {
