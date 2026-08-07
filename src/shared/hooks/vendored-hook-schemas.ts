@@ -67,11 +67,79 @@ export const CURSOR_PUBLISHED_HOOK_EVENTS = [
 export const CURSOR_INTENTIONALLY_UNSUPPORTED_EVENTS: readonly string[] = []
 
 /**
+ * Cursor events Copse **recognises as real** but does not wire — the Cursor
+ * counterpart to {@link CLAUDE_INTENTIONALLY_UNSUPPORTED_EVENTS}.
+ *
+ * Why this is separate from {@link CURSOR_INTENTIONALLY_UNSUPPORTED_EVENTS}:
+ * that list is scoped to the *vendored community pin* (`cursor-hooks@1.1.5`),
+ * which publishes only 6 events and lags Cursor's own docs badly. Without this
+ * second tier the adapter had no way to tell "a real Cursor event we don't act
+ * on" from "a typo", so **every** unwired Cursor event was reported to the user
+ * as `Unknown hook event` — misleading for a config Cursor itself accepts. The
+ * Claude side has had that distinction since G3 (`isPublishedClaudeEvent`);
+ * this brings Cursor to parity.
+ *
+ * Provenance: read off Cursor's published hooks documentation (the "Hook
+ * categories" and "Hook events" sections of https://cursor.com/docs/hooks),
+ * which lists a substantially larger surface than the community pin. They are
+ * **not** asserted against any vendored JSON — being on this list changes only
+ * the *warning wording*, never whether a hook loads. Re-vendoring a Cursor
+ * schema that publishes any of them should move it into the pin-backed lists
+ * above.
+ *
+ * Grouped as Cursor groups them:
+ *
+ * **Agent hooks** (fire during an agent session, like every event Copse wires):
+ * - `sessionEnd` — session teardown; Copse has no canonical session-end event.
+ * - `preCompact` — the canonical `compaction` event is typed but has no fire
+ *   site. Observational upstream too: it cannot block or alter compaction.
+ * - `afterAgentResponse` / `afterAgentThought` — per-assistant-message and
+ *   per-reasoning-block observation, neither of which Copse has a fire point
+ *   for; `stop` fires once at turn end instead.
+ *
+ * **Tab hooks** (inline completions) — out of scope by construction, since Copse
+ * has no inline-tab surface at all. This is the same reason its matcher table
+ * already treats the `TabRead` / `TabWrite` tool types as never-matching:
+ * - `beforeTabFileRead` / `afterTabFileEdit`
+ *
+ * **App lifecycle hooks** (fire outside any agent session):
+ * - `workspaceOpen` — fires on workspace open and folder change, and returns
+ *   extra plugin paths to load. It is an IDE-lifecycle event with no agent
+ *   session attached (Cursor's own docs note its payload omits
+ *   `conversation_id` / `generation_id` / `model` entirely), so it has no
+ *   natural home in Copse's canonical-event taxonomy.
+ */
+export const CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS: readonly string[] = [
+  'sessionEnd',
+  'preCompact',
+  'afterAgentResponse',
+  'afterAgentThought',
+  'beforeTabFileRead',
+  'afterTabFileEdit',
+  'workspaceOpen',
+]
+
+/**
+ * Whether `event` is a Cursor event Copse recognises but does not wire — either
+ * published by the vendored pin or listed in
+ * {@link CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS}. Drives the "recognised by
+ * Cursor but not supported by Copse yet" wording, distinguishing it from an
+ * outright unknown event (likely a typo).
+ */
+export function isRecognisedCursorEvent(event: string): boolean {
+  return (
+    (CURSOR_PUBLISHED_HOOK_EVENTS as readonly string[]).includes(event) ||
+    CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS.includes(event)
+  )
+}
+
+/**
  * Every hook event the pinned **Claude Code** SchemaStore schema publishes (the
  * keys of its `hooks` object). Mirror of
- * `schemas/vendor/claude-code-settings.schema.json`. Copse wires only `PreToolUse`
- * (tool gate) and `SessionStart` (H4); everything else is intentionally
- * unsupported v1 — see {@link CLAUDE_INTENTIONALLY_UNSUPPORTED_EVENTS}.
+ * `schemas/vendor/claude-code-settings.schema.json`. Copse wires the events whose
+ * canonical fire point already exists (`PreToolUse`, `SessionStart`, `PostToolUse`,
+ * `UserPromptSubmit`, `Stop`, `SubagentStop`); everything else is intentionally
+ * unsupported — see {@link CLAUDE_INTENTIONALLY_UNSUPPORTED_EVENTS}.
  */
 export const CLAUDE_PUBLISHED_HOOK_EVENTS = [
   'PreToolUse',
@@ -108,22 +176,26 @@ export const CLAUDE_PUBLISHED_HOOK_EVENTS = [
 
 /**
  * Claude events the vendored schema publishes that Copse deliberately does **not**
- * wire in v1 (decision: "Long-tail Claude events (Notification, TeammateIdle, …) —
+ * wire (decision: "Long-tail Claude events (Notification, TeammateIdle, …) —
  * Unsupported-and-reported + G3 drift detector"). Listed **explicitly** (not
  * computed) so the choice is reviewable: the drift detector asserts this list
  * equals the published set minus the wired set, so wiring a new event (or a
  * re-vendored schema dropping one) forces a matching edit here.
+ *
+ * The events removed from this list are the ones whose **canonical fire point
+ * already existed** — Copse was firing `afterToolUse` / `stop` / `subagentStop` /
+ * `beforeSubmitPrompt` for Cursor hooks while ignoring the Claude settings that
+ * asked for the same moments. The remainder need new plumbing (a fire site, or a
+ * canonical event that does not exist yet), which is why they stay here:
+ * `PreCompact` has a typed `compaction` event but no fire site, and `SessionEnd`
+ * / `Notification` have no canonical event at all.
  */
 export const CLAUDE_INTENTIONALLY_UNSUPPORTED_EVENTS: readonly string[] = [
-  'PostToolUse',
   'PostToolUseFailure',
   'PermissionRequest',
   'Notification',
-  'UserPromptSubmit',
-  'Stop',
   'StopFailure',
   'SubagentStart',
-  'SubagentStop',
   'PreCompact',
   'PostCompact',
   'Elicitation',
