@@ -40,6 +40,14 @@ describe('hook cards in the transcript', function () {
     const host = await $('[data-hook-cards-for="msg-assistant-hook"]')
     await expect(host).toBeExisting()
 
+    // The first turn's `sessionStart` hooks fire detached before any message
+    // exists and fold onto the first message, so its host leads the transcript.
+    // The shared host margin is tuned for assistant-message bulk; the first
+    // host must not be pulled flush against the sticky user prompt, or the
+    // first-turn cards read as a cramped "no gap" next to later turns.
+    const firstHost = await $('[data-hook-cards-for="msg-user-hook-open"]')
+    await expect(firstHost).toBeExisting()
+
     // Multi-card turns always collapse into one summary group by default. The
     // summary leads with the outcome instead of merely reporting that hooks ran.
     const group = await host.$('.hook-card-group')
