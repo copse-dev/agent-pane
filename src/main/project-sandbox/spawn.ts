@@ -83,8 +83,12 @@ function strippedBaseEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   return envForRendererChildProcess(base)
 }
 
-/** POSIX-only: run the child as its own process-group leader so the group can be killed together. */
-const detachForGroupKill = process.platform !== 'win32'
+/**
+ * POSIX-only: run the child as its own process-group leader so the group can be killed together.
+ * Exported so every long-lived sandboxed child (ACP agents included) detaches the same way —
+ * `terminateProcessTree` can only reach grandchildren when the child leads a group.
+ */
+export const detachForGroupKill = process.platform !== 'win32'
 const DEFAULT_SANDBOX_SHELL = '/bin/bash'
 
 function ensurePathIncludes(dirs: string[]): void {
@@ -309,6 +313,7 @@ export async function spawnBackgroundProcess(
     ? acquireSandboxNetworkScope({
         domains: overlay.network?.allowedDomains ?? [],
         allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
+        label: `background task: ${shellCommandLine}`,
       })
     : (): void => {}
   try {
