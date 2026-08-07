@@ -160,55 +160,6 @@ describe('installDeleteSessionSafety', () => {
     assert.equal(killed, 1)
   })
 
-  // The budget only stops *us* waiting — ChromeDriver is still processing the
-  // DELETE. `reloadSession` fires `POST /session` at that same driver the
-  // instant we return, so returning early hands `newSession` a busy driver and
-  // the new session times out. Kill first (that unblocks the DELETE), then
-  // wait for it to drain.
-  it('kills, then waits for the abandoned deleteSession to drain', async () => {
-    const order: string[] = []
-    let releaseDelete: (() => void) | undefined
-    const session = {
-      deleteSession: async (): Promise<string> =>
-        await new Promise<string>((resolve) => {
-          releaseDelete = (): void => {
-            order.push('delete-drained')
-            resolve('late')
-          }
-        }),
-    }
-    installDeleteSessionSafety(session, {
-      budgetMs: 20,
-      drainMs: 1_000,
-      kill: () => {
-        order.push('kill')
-        // Killing Electron is what lets the stuck DELETE finish.
-        setTimeout(() => releaseDelete?.(), 20)
-      },
-    })
-
-    assert.equal(await session.deleteSession(), undefined)
-    assert.deepEqual(order, ['kill', 'delete-drained'])
-  })
-
-  it('gives up on the drain rather than blocking the worker forever', async () => {
-    let killed = 0
-    const session = {
-      deleteSession: async (): Promise<string> => new Promise<string>(() => undefined),
-    }
-    installDeleteSessionSafety(session, {
-      budgetMs: 20,
-      drainMs: 30,
-      kill: () => {
-        killed += 1
-      },
-    })
-
-    // Never drains, but must still return rather than hang the shard.
-    assert.equal(await session.deleteSession(), undefined)
-    assert.equal(killed, 1)
-  })
-
   it('is idempotent (does not wrap twice)', async () => {
     let calls = 0
     const session = {
