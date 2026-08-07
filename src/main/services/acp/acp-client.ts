@@ -36,20 +36,20 @@ import type {
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
-import { cancelApprovalsForAcpToolCall } from '../approval.ts'
+import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
-import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
   detachForGroupKill,
   formatArgvForShell,
-  isProjectSandboxEnabled,
   resolveSandboxShellExecutable,
   shellForSandboxWrap,
   withSandboxShellPath,
-} from '../../project-sandbox/spawn.ts'
+} from '../../project-sandbox/sandbox-argv.ts'
+import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
