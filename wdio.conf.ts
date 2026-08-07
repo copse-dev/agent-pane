@@ -8,6 +8,7 @@ import {
   forceKillWedgedE2eSession,
   installDeleteSessionSafety,
   isIgnorableAfterTestError,
+  sessionPidsFromCapabilities,
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
@@ -92,7 +93,7 @@ export const config: Options.Testrunner = {
     // connectionRetryTimeout (main tip a73ba769 / e2e shard 8, dff94ce5 / shard 7,
     // cdeb3abf / shard 2).
     if (shouldSkipAfterTestSessionTraffic(result?.error)) {
-      forceKillWedgedE2eSession()
+      forceKillWedgedE2eSession(sessionPidsFromCapabilities(browser.capabilities))
       return
     }
 
@@ -138,7 +139,7 @@ export const config: Options.Testrunner = {
       // the residual gap in #987 (markdown-nbsp-metadata afterTest on a green
       // spec). Real toast failures return quickly with "Unexpected error toast".
       if (isIgnorableAfterTestError(error)) {
-        forceKillWedgedE2eSession()
+        forceKillWedgedE2eSession(sessionPidsFromCapabilities(browser.capabilities))
         return
       }
       if (result?.passed) throw error
