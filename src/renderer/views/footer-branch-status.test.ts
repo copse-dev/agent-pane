@@ -255,4 +255,43 @@ describe('footer branch status', () => {
     )
     assert.deepEqual(labels[0], 'main')
   })
+
+  it('keeps the trunk PR out of the branch picker menu too', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        {
+          currentBranch: 'main',
+          pr: {
+            number: 1531,
+            title: 'Promote main to release',
+            url: 'https://github.com/example/repo/pull/1531',
+          },
+        },
+        [{ name: 'main', lastCommitDate: '2024-01-01' }],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+
+    // The trigger already hides the promotion PR; the menu's "Open PR #N" row
+    // must agree rather than offering the branch back as a link.
+    assert.equal(host.querySelectorAll('.branch-picker-action').length, 0)
+    assert.equal(host.querySelector('.branch-picker-empty'), null)
+    const labels = [...host.querySelectorAll('.branch-picker-option-label')].map(
+      (node) => node.textContent,
+    )
+    assert.deepEqual(labels, ['main'])
+  })
 })
