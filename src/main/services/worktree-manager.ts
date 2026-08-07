@@ -98,6 +98,16 @@ export class WorktreeAllocationError extends Error {
   }
 }
 
+export class ThreadWorktreeDetachedError extends Error {
+  readonly branch: string
+
+  constructor(branch: string) {
+    super('Thread worktree is on a detached HEAD')
+    this.name = 'ThreadWorktreeDetachedError'
+    this.branch = branch
+  }
+}
+
 interface MutableWorktreeRecord {
   path?: string
   head?: string
@@ -299,6 +309,23 @@ async function refExists(projectRoot: string, ref: string): Promise<boolean> {
 
 async function branchExists(projectRoot: string, branch: string): Promise<boolean> {
   return refExists(projectRoot, `refs/heads/${branch}`)
+}
+
+/**
+ * Read HEAD from the checkout itself. `git worktree list` is authoritative for
+ * registration, but its repository-wide inventory can transiently omit branch
+ * information while another worktree is being updated. That must not turn an
+ * attached checkout into a false "detached HEAD" failure.
+ */
+async function symbolicHeadBranch(worktreePath: string): Promise<string | null> {
+  const result = await git(worktreePath, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  if (result.code === 0) {
+    const branch = result.stdout.trim()
+    if (branch) return branch
+    throw new Error('Thread worktree branch name is empty')
+  }
+  if (result.code === 1) return null
+  throw commandFailure('Cannot inspect thread worktree HEAD', result)
 }
 
 /**
@@ -585,12 +612,11 @@ export async function validateThreadWorktree(
   })
   if (!record) throw new Error('Thread worktree is not registered with Git')
   // Path is the durable identity. Agents commonly `git checkout -b` inside the
-  // linked checkout; treat Git's live branch as authoritative and adopt it so
-  // reopen / continue is not bricked by stale meta (detached HEAD still fails).
-  const liveBranch = record.branch
-  if (!liveBranch || record.detached) {
-    throw new Error('Thread worktree is on a detached HEAD')
-  }
+  // linked checkout; read that checkout's HEAD directly and adopt its live
+  // branch. The repository-wide worktree inventory above proves registration,
+  // but a missing branch field there is not evidence that this HEAD detached.
+  const liveBranch = await symbolicHeadBranch(canonicalPath)
+  if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
   await assertBranchName(projectRoot, liveBranch, 'Thread branch')
   if (liveBranch === input.worktree.baseBranch) {
     throw new Error('Thread worktree branch must differ from its recorded base branch')

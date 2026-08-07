@@ -611,7 +611,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     instructions: { list: emptyArray },
     cursorRules: { list: emptyArray },
     terminal: {
-      create: () => resolved('demo-terminal'),
+      create: () =>
+        resolved<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>({
+          sessionId: 'demo-terminal',
+          checkoutMode: 'shared',
+        }),
       write: resolvedVoid,
       resize: resolvedVoid,
       destroy: resolvedVoid,

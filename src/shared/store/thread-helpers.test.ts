@@ -20,6 +20,7 @@ import {
   appendReasoning,
   addToolCall,
   updateToolCall,
+  applyPreparedThreadCheckout,
 } from './thread-helpers.ts'
 import type { AppStore } from './store.ts'
 import type { Thread } from '@shared/types'
@@ -50,6 +51,31 @@ describe('addMessage prompt provenance', () => {
     assert.ok(message)
     assert.equal('startingCommit' in message, false)
     assert.equal('dirty' in message, false)
+  })
+})
+
+describe('prepared thread checkout', () => {
+  it('announces when a blank thread gains an isolated worktree', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const changed: string[] = []
+    store.on('thread_checkout_changed', (changedThreadId) => changed.push(changedThreadId))
+
+    applyPreparedThreadCheckout(store, threadId, {
+      checkoutMode: 'worktree',
+      choice: 'automatic',
+      branch: 'copse/thread',
+      worktree: {
+        path: '/worktrees/thread',
+        branch: 'copse/thread',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: 1,
+        seededFromDirtyProject: false,
+      },
+    })
+
+    assert.deepEqual(changed, [threadId])
   })
 })
 
