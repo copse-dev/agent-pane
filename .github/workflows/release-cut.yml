@@ -1,0 +1,114 @@
+name: Cut release tag
+
+# `release` receives nothing but promotion merges from `main` (promote-develop.yml),
+# and the ruleset only lets one merge after the full `CI Passed` tier is green.
+# Tagging that commit is mechanical, so do it here rather than by hand: when a
+# promotion carries a package version that has never been tagged, create
+# `v<version>` at that exact commit and hand it to `Release (macOS)`.
+#
+# Promotions that do not change the version — most of them — are no-ops, so the
+# release cadence is driven entirely by bumping `package.json` on `main`. A
+# version is cut exactly once: if its release run fails, bump to the next version
+# rather than re-cutting the same one. Releases are forward-fix only
+# (docs/recovery.md), and the publisher refuses to replace an existing release.
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the tag ref
+  actions: write # dispatch Release (macOS)
+
+concurrency:
+  group: release-cut
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - id: target
+        name: Resolve the release commit to cut from
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # On a push this is the promoted commit. A manual dispatch runs from
+          # the default branch, whose version may already be ahead of what was
+          # promoted, so resolve `release` explicitly instead of trusting
+          # github.sha.
+          PUSHED_SHA: ${{ github.event_name == 'push' && github.sha || '' }}
+        run: |
+          set -euo pipefail
+          sha="$PUSHED_SHA"
+          if [ -z "$sha" ]; then
+            sha="$(gh api "/repos/$GITHUB_REPOSITORY/commits/release" --jq .sha)"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # Read the version from the commit being cut, never from the workflow's
+      # own ref: those differ on a manual dispatch.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+
+      # The classifier and note generator are `.mts`, which needs the type
+      # stripping that .nvmrc's Node has and the runner default may not.
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+
+      - id: version
+        name: Read and classify the promoted version
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          # The shared classifier fails closed on anything that is not X.Y.Z or
+          # X.Y.Z-beta.N, so an alpha, RC, or malformed version cannot be tagged.
+          channel="$(node scripts/release-channel.mts --channel "$version")"
+          echo "Promoted version $version targets the $channel channel"
+          # Fail here rather than after signing and notarization: the publisher
+          # generates the GitHub Release body from CHANGELOG.md's Unreleased
+          # section, and `gh release create` cannot run without one.
+          node scripts/release-notes.mts "$version" > /dev/null
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the commit and start Release (macOS)
+        uses: actions/github-script@v9
+        env:
+          RELEASE_SHA: ${{ steps.target.outputs.sha }}
+          TAG: ${{ steps.version.outputs.tag }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = process.env.RELEASE_SHA;
+            const tag = process.env.TAG;
+
+            // Most promotions carry an already-released version, so finding the
+            // tag is the ordinary outcome and not a failure.
+            try {
+              const existing = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+              core.info(
+                `${tag} already exists at ${existing.data.object.sha}; nothing to cut. ` +
+                  'Bump package.json on `main` to release the next version.',
+              );
+              return;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tag}`, sha });
+            core.info(`Created ${tag} at ${sha}.`);
+
+            // A tag pushed with GITHUB_TOKEN raises no `push` event, so the
+            // `tags: ['v*']` trigger on Release (macOS) would never fire.
+            // workflow_dispatch is the documented exception that does fire, and
+            // dispatching also avoids a third heavy-tier CI run on this SHA: the
+            // push that promoted it is already producing the `CI Passed` check
+            // that the release preflight waits for.
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: 'release-mac.yml',
+              ref: context.payload.repository.default_branch,
+              inputs: { tag },
+            });
+            core.info(`Dispatched Release (macOS) for ${tag}.`);

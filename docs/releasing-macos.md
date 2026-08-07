@@ -76,22 +76,47 @@ publishes releases. Local commands are deliberately non-publishing so the
 signed, notarized, smoke-tested artifacts cannot be replaced by a separate
 local build.
 
+Releases are cut from `release`, not from trunk. `main` absorbs the day's
+merges under the light CI tier; the daily promotion PR runs the full tier once
+for the whole batch and is what the ruleset gates on. `release` is therefore the
+only branch that is always in a state a release can be cut from.
+
+The version in `package.json` is the trigger. Bumping it is the only manual step:
+
 1. Complete [the release checklist](release-checklist.md), including security
    review and GA-blocker handling.
-2. Set `package.json` to the next supported version, such as `0.1.0-beta.2` or
-   `0.1.0`.
-3. Merge that version to `main`, then create and push the exact matching tag.
-   For example: `git tag v0.1.0-beta.2 && git push origin v0.1.0-beta.2`.
-4. Wait for the tagged commit's exact `CI Passed` check. The release workflow
-   will not accept a branch-tip, merge-ref, or unrelated successful run.
-5. The workflow builds, signs, notarizes, staples, verifies, smoke-tests, and
-   attests the package. A separate publisher job promotes those exact files as
-   a prerelease for beta or a normal/latest release for stable.
-6. Review and update the generated GitHub Release notes before announcing the
-   release.
+2. In one PR into `main`, set `package.json` to the next supported version —
+   such as `0.1.0-beta.2` or `0.1.0` — and write that release's notes into
+   `CHANGELOG.md`'s `Unreleased` section, resetting it for subsequent work.
+3. Let [the daily promotion](../.github/workflows/promote-develop.yml) carry
+   `main` to `release`, or dispatch it early. Merging requires the full
+   `CI Passed` tier.
+4. [`Cut release tag`](../.github/workflows/release-cut.yml) sees the new
+   version on `release`, creates `v<version>` at that exact commit, and starts
+   `Release (macOS)`. A promotion whose version is already tagged is a no-op, so
+   ordinary promotions cut nothing.
+5. `Release (macOS)` re-checks the tag, the version match, reachability from
+   `release`, and the tagged commit's exact `CI Passed` check — it will not
+   accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
+   signs, notarizes, staples, verifies, smoke-tests, and (on a public
+   repository) attests the package. A separate publisher job promotes those
+   exact files as a prerelease for beta or a normal/latest release for stable,
+   with notes generated from `CHANGELOG.md`.
+6. Review the published GitHub Release notes and add known issues before
+   announcing the release.
+
+A version is cut exactly once. If its release run fails, fix forward and bump to
+the next version rather than re-cutting the same one: the publisher refuses to
+replace an existing release, and downgrade is not a supported rollback.
 
 A manual workflow dispatch accepts only an existing matching tag reachable
-from `main`; it does not provide a bypass around those gates.
+from `release`; it does not provide a bypass around those gates.
+
+Artifact attestation is skipped, with a warning, while this repository is
+private: provenance requires a public repository or GitHub Enterprise Cloud, and
+this organization is on Team. `SHA256SUMS` is published either way. Making the
+repository public — which [public distribution requires anyway](#channel-contract)
+— turns attestation back on with no workflow change.
 
 ## Local validation
 

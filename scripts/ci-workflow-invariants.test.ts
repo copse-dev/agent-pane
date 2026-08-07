@@ -372,6 +372,82 @@ describe('promote-develop.yml workflow invariants', () => {
   })
 })
 
+describe('release-cut.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/release-cut.yml'), 'utf8')
+
+  it('cuts from pushes to release only', () => {
+    assert.match(workflow, /^ {4}branches: \[release\]$/m)
+    assert.doesNotMatch(
+      workflow,
+      /branches: \[[^\]]*main/,
+      'cutting from trunk would skip the promotion gate that release exists to enforce',
+    )
+  })
+
+  it('is a no-op when the promoted version is already tagged', () => {
+    // Most promotions carry an already-released version. Without the 404 guard
+    // this workflow would fail on every ordinary promotion, and re-cutting an
+    // existing tag would move a published release's commit.
+    assert.match(workflow, /git\.getRef\(\{ owner, repo, ref: `tags\/\$\{tag\}` \}\)/)
+    assert.match(workflow, /if \(error\.status !== 404\) throw error/)
+    const guard = workflow.indexOf('error.status !== 404')
+    const create = workflow.indexOf('git.createRef')
+    assert.ok(guard >= 0 && create > guard, 'the existing-tag check must precede tag creation')
+  })
+
+  it('starts the publisher by dispatch, because a GITHUB_TOKEN tag raises no push event', () => {
+    // `push: tags` on release-mac.yml cannot fire for a tag this token created,
+    // so dropping the dispatch would silently cut tags nothing ever publishes.
+    assert.match(workflow, /createWorkflowDispatch/)
+    assert.match(workflow, /workflow_id: 'release-mac\.yml'/)
+    assert.match(workflow, /^ {2}actions: write/m)
+    assert.match(workflow, /^ {2}contents: write/m)
+  })
+
+  it('classifies the version and proves the notes exist before tagging', () => {
+    // Both fail closed in seconds; the same failures after a dispatch would cost
+    // a full sign-and-notarize cycle first.
+    assert.match(workflow, /release-channel\.mts --channel/)
+    assert.match(workflow, /release-notes\.mts/)
+  })
+})
+
+describe('release-mac.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/release-mac.yml'), 'utf8')
+
+  it('requires the tagged commit to be reachable from release, not trunk', () => {
+    // A promotion merge is a commit ON `release` and is not reachable from
+    // `main`, so an ancestry check against trunk rejects every real release.
+    assert.match(workflow, /--is-ancestor "\$release_sha" origin\/release/)
+    assert.doesNotMatch(workflow, /--is-ancestor "\$release_sha" origin\/main/)
+  })
+
+  it('publishes with a body, because gh release create refuses without one', () => {
+    assert.match(workflow, /release-notes\.mts > release\/RELEASE_NOTES\.md/)
+    assert.match(workflow, /--notes-file release\/RELEASE_NOTES\.md/)
+    assert.match(
+      workflow,
+      /release\/RELEASE_NOTES\.md\n {10}if-no-files-found: error/,
+      'the notes must travel in the tested artifact so `publish` stays artifact-only',
+    )
+  })
+
+  it('skips provenance on a private repository instead of failing the release', () => {
+    // Artifact attestations need a public repository or GitHub Enterprise Cloud;
+    // on Team + private the action fails the job outright.
+    assert.match(
+      workflow,
+      /if: \$\{\{ !github\.event\.repository\.private \}\}\n {8}uses: actions\/attest/,
+    )
+    assert.match(workflow, /if: github\.event\.repository\.private/)
+  })
+
+  it('packages on a runner that can run an LSMinimumSystemVersion 26.0 build', () => {
+    assert.match(workflow, /^ {4}runs-on: macos-26$/m)
+    assert.doesNotMatch(workflow, /runs-on: macos-14/)
+  })
+})
+
 describe('reconcile-screenshots.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/reconcile-screenshots.yml'), 'utf8')
 
