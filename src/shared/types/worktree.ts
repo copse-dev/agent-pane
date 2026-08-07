@@ -1,6 +1,12 @@
 export type ThreadWorktreeChoice = 'automatic' | 'shared' | 'worktree'
 
-export type ProjectWorktreeMode = 'from-default-branch' | 'always' | 'never'
+/**
+ * Whether a project isolates threads by default. Worktrees are always cut from
+ * the repository's default branch, so the old `from-default-branch` mode — which
+ * only isolated while the project checkout itself sat on that branch — no longer
+ * describes anything distinct and is migrated to `always` on load.
+ */
+export type ProjectWorktreeMode = 'always' | 'never'
 
 /** Durable metadata for a linked checkout owned by one thread. */
 export interface ThreadWorktree {

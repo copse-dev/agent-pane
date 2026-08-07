@@ -8,6 +8,26 @@ every published entry.
 
 ## Unreleased
 
+- New threads are now isolated by default, and no longer pick up where the last
+  thread left off. A new thread in a Git project gets its own linked checkout,
+  branched from the project's default branch — `origin/main` as last fetched,
+  not whatever happens to be checked out. Both halves of that are the fix. The
+  automatic choice deferred to a per-project setting that defaulted to off and
+  that nothing in the app could turn on, so in practice every thread shared the
+  project checkout; and because Copse leaves that checkout on the branch a
+  thread created, the next thread opened straight into the previous one's
+  working tree, on its branch, and built on top of it. Isolated threads were
+  affected too, more quietly: a worktree was cut from the live checkout, so even
+  an explicitly isolated thread started from the previous thread's commits.
+  Uncommitted work in the project checkout still comes along when it belongs to
+  the same commit the thread is starting from; when it does not — the checkout
+  is on another branch, or the default branch has moved on since — the thread
+  starts clean rather than mixing two unrelated states, and your own checkout is
+  left exactly as it was either way. Threads that cannot be isolated are
+  unchanged: a project that is not a Git repository, is reached over SSH, uses
+  submodules, or has no resolvable default branch shares the project checkout
+  and says so before you send. So does a project set to `worktreeMode: never`,
+  and either way the choice is still yours per thread, from the composer.
 - The Changes panel no longer goes blank when a diff is replaced. Opening a file
   tore the current diff down before the next one had been computed, so for the
   length of that compute the editor held nothing at all — and any attach that was
