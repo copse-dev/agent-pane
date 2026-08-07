@@ -132,10 +132,7 @@ export function mountFooterBranchStatus(
       trigger.classList.add('is-link')
       trigger.classList.remove('is-copyable')
       branchToCopy = null
-      trigger.setAttribute(
-        'aria-label',
-        `Open pull request #${String(pr?.number)}`,
-      )
+      trigger.setAttribute('aria-label', `Open pull request #${String(pr?.number)}`)
     } else {
       label.textContent = displayBranch
       if (pickerMode) {
