@@ -75,6 +75,59 @@ export function invalidateThreadCatalog(projectId: string): void {
   rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
 }
 
+/** Agent Plugins discovery root; mirrors `userPluginsRoot()` (COPSE_PLUGINS_DIR). */
+export function e2ePluginsDir(): string {
+  const override = process.env.COPSE_PLUGINS_DIR?.trim()
+  return override && override.length > 0 ? override : join(homedir(), '.copse', 'plugins')
+}
+
+/** The canonical `$schema` a conformant plugin manifest declares (Agent Plugins §5.2). */
+export const AGENT_PLUGIN_SCHEMA =
+  'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' as const
+
+/**
+ * Write one Agent Plugins package into the e2e discovery root.
+ *
+ * `manifest` is written verbatim so a spec can seed a *deliberately malformed*
+ * package — proving discovery isolates its failures needs a bad neighbour, and
+ * a helper that only emits valid JSON could not express one.
+ */
+export function seedAgentPlugin(
+  dirName: string,
+  manifest: Record<string, unknown> | string,
+  extras: { skill?: string; mcp?: Record<string, unknown> | string } = {},
+): string {
+  const pluginRoot = join(e2ePluginsDir(), dirName)
+  mkdirSync(pluginRoot, { recursive: true })
+  writeFileSync(
+    join(pluginRoot, 'plugin.json'),
+    typeof manifest === 'string' ? manifest : JSON.stringify(manifest, null, 2),
+    'utf8',
+  )
+  if (extras.skill !== undefined) {
+    const skillDir = join(pluginRoot, 'skills', extras.skill)
+    mkdirSync(skillDir, { recursive: true })
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      `---\nname: ${extras.skill}\ndescription: An e2e fixture skill.\n---\n\nFixture.\n`,
+      'utf8',
+    )
+  }
+  if (extras.mcp !== undefined) {
+    writeFileSync(
+      join(pluginRoot, 'mcp.json'),
+      typeof extras.mcp === 'string' ? extras.mcp : JSON.stringify(extras.mcp, null, 2),
+      'utf8',
+    )
+  }
+  return pluginRoot
+}
+
+/** Clear the discovery root so one spec's fixtures cannot leak into another. */
+export function resetAgentPlugins(): void {
+  rmSync(e2ePluginsDir(), { recursive: true, force: true })
+}
+
 // Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
 // real store explode path requires (`toolCalls`, tool `result`). Fill those in
 // so the seed matches what the app would have persisted.
