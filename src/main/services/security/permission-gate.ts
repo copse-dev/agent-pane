@@ -1038,9 +1038,9 @@ async function checkBackgroundProcessPermission(
  * User-initiated integrated terminals always spawn outside the project seatbelt
  * (see terminal-service.ts). On platforms without an OS sandbox boundary, or
  * when an SSH-backed PTY necessarily runs outside the local seatbelt, opening
- * one is an explicit user decision. A new terminal also prompts while the
- * process-global sandbox network scope is widened, because an unsandboxed PTY
- * would inherit that temporary egress. Agent shell confinement stays on
+ * one is an explicit user decision. A local integrated terminal is already
+ * user-directed and unsandboxed, so an agent's process-global network scope does
+ * not add a separate approval boundary. Agent shell confinement stays on
  * run_shell / run_background. (#662, #803, #812)
  */
 export async function ensureTerminalPermitted(
@@ -1050,22 +1050,8 @@ export async function ensureTerminalPermitted(
   const decision = decideTerminalPermission({
     sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
     remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
-    networkScopeActive: isSandboxNetworkScopeActive(),
   })
   if (decision.action === 'allow') return true
-
-  if (decision.reason === 'widened-network') {
-    const { approved } = await requestApproval({
-      title: 'Open terminal with widened network access?',
-      cause: 'terminal-network-widened',
-      body:
-        'The project sandbox network is temporarily widened for another process. ' +
-        'A new integrated terminal would inherit that network access until the scope closes.',
-      type: 'shell',
-      allowRemember: false,
-    })
-    return approved
-  }
 
   if (decision.reason === 'remote-target') {
     const { approved } = await requestApproval({
