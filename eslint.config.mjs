@@ -122,6 +122,26 @@ export default ts.config(
     },
   },
   {
+    // Standalone test fixtures that are spawned as real child processes (see
+    // tests/fixtures/mock-acp-agent.mjs). They run as plain ESM under `node`,
+    // not through the test bundler, so they carry no TS annotations and are not
+    // part of the TS project graph.
+    files: ['tests/fixtures/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        ReadableStream: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
     // Static ESM worker host copied to dist; not part of the TS project graph.
     files: ['src/renderer/monaco/esm-worker-host.js'],
     extends: [ts.configs.disableTypeChecked],
