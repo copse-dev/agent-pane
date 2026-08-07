@@ -8,7 +8,9 @@ import {
   CLAUDE_SCHEMA_PIN,
   CURSOR_PUBLISHED_HOOK_EVENTS,
   CURSOR_INTENTIONALLY_UNSUPPORTED_EVENTS,
+  CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS,
   CURSOR_SCHEMA_PIN,
+  isRecognisedCursorEvent,
 } from '@shared/hooks/vendored-hook-schemas.ts'
 import { CURSOR_WIRED_HOOK_EVENTS } from '@shared/types/cursor-hooks.ts'
 import { CLAUDE_WIRED_HOOK_EVENTS } from './claude-adapter.ts'
@@ -71,6 +73,30 @@ describe('vendor-schema-drift (G3)', () => {
       for (const e of CURSOR_WIRED_HOOK_EVENTS) {
         assert.equal(unsupported.has(e), false, `wired Cursor event "${e}" is marked unsupported`)
       }
+    })
+
+    it('never lists a wired event as recognised-but-unwired', () => {
+      // The recognised-unwired list only softens a *warning*; listing an event
+      // Copse actually fires would be a contradiction (the hook loads, so no
+      // warning is ever emitted for it) and a sign the two lists have drifted.
+      const recognised = new Set<string>(CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS)
+      for (const e of CURSOR_WIRED_HOOK_EVENTS) {
+        assert.equal(
+          recognised.has(e),
+          false,
+          `wired Cursor event "${e}" is listed as recognised-but-unwired`,
+        )
+      }
+    })
+
+    it('classifies a recognised event as recognised and a typo as unknown', () => {
+      assert.equal(isRecognisedCursorEvent('sessionEnd'), true)
+      assert.equal(
+        isRecognisedCursorEvent('beforeShellExecution'),
+        true,
+        'published pin counts too',
+      )
+      assert.equal(isRecognisedCursorEvent('notARealEvent'), false)
     })
   })
 

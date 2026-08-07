@@ -5,8 +5,12 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   claudeAdapter,
+  claudeAfterToolUseHooks,
+  claudeBeforeSubmitPromptHooks,
   claudeMatcherMatches,
   claudeSessionStartHooks,
+  claudeStopHooks,
+  claudeSubagentStopHooks,
   listClaudeHooks,
   userClaudeSettingsPath,
   projectClaudeSettingsPath,
@@ -14,6 +18,7 @@ import {
   CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
 } from './claude-adapter.ts'
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
+import type { HookSpawnResult } from './hook-spawn.ts'
 import { runToolGateHooks } from './tool-gate.ts'
 import { resetCursorHookSessionErrorsForTest } from './cursor-adapter.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
@@ -116,7 +121,9 @@ describe('claude-adapter', () => {
               ],
             },
           ],
-          PostToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './nope.sh' }] }],
+          // Still unsupported: `compaction` is a typed canonical event with no
+          // fire site, so a PreCompact hook is discovered-and-warned, not wired.
+          PreCompact: [{ hooks: [{ type: 'command', command: './nope.sh' }] }],
         },
       })
 
@@ -134,9 +141,9 @@ describe('claude-adapter', () => {
       assert.equal(hook.scope, 'user')
       // G3 warn-level lint: a declared-but-unwired vendor event is skipped WITH a
       // warning (never a load gate — the PreToolUse hook still loaded above).
-      const postToolWarning = warnings.find((w) => w.event === 'PostToolUse')
-      assert.ok(postToolWarning, 'expected a warning for the unsupported PostToolUse event')
-      assert.match(postToolWarning.message, /not supported by Copse/)
+      const preCompactWarning = warnings.find((w) => w.event === 'PreCompact')
+      assert.ok(preCompactWarning, 'expected a warning for the unsupported PreCompact event')
+      assert.match(preCompactWarning.message, /not supported by Copse/)
     })
 
     it('warns (warn-only, never a gate) on unknown vs recognised-unsupported events', async () => {
@@ -356,6 +363,191 @@ describe('claude-adapter', () => {
         ),
       )
       assert.equal('model' in withoutModel, false)
+    })
+  })
+
+  // The four Claude events wired onto canonical fire points Cursor hooks were
+  // already using. Each is discovered from `.claude/settings.json`, marshalled
+  // into Claude's own stdin shape, and interpreted per Claude's exit-code table.
+  describe('events riding existing canonical fire points', () => {
+    /** A fake spawn result, the shape a dialect interpretation reads. */
+    function spawn(over: Partial<HookSpawnResult> = {}): HookSpawnResult {
+      return {
+        stdin: '{}',
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+        durationMs: 1,
+        timedOut: false,
+        spawnError: false,
+        sandboxed: false,
+        sandboxViolationCount: 0,
+        startedAt: 0,
+        ...over,
+      }
+    }
+
+    const HOOK: CommandHook = {
+      id: 'h',
+      event: 'stop',
+      executor: 'command',
+      dialect: 'claude',
+      command: './h.sh',
+      onFailure: 'open',
+    }
+
+    describe('PostToolUse → afterToolUse', () => {
+      it('discovers only PostToolUse hooks whose tool matcher applies', async () => {
+        await writeUserSettings({
+          hooks: {
+            PostToolUse: [
+              { matcher: 'Bash', hooks: [{ type: 'command', command: './bash.sh' }] },
+              { matcher: 'Read', hooks: [{ type: 'command', command: './read.sh' }] },
+            ],
+            // A PreToolUse hook must never be discovered as a post-tool hook.
+            PreToolUse: [{ hooks: [{ type: 'command', command: './pre.sh' }] }],
+          },
+        })
+        const hooks = await claudeAfterToolUseHooks(
+          { toolName: 'run_shell', toolCallId: 'c1', isError: false, input: { command: 'ls' } },
+          { workspaceRoot: null, projectTrusted: false },
+        )
+        assert.deepEqual(
+          hooks.map((h) => h.command),
+          ['./bash.sh'],
+        )
+        assert.equal(hooks[0]?.event, 'afterToolUse')
+      })
+
+      it('routes a block reason to the queue — the tool has already run', () => {
+        const interpret = claudeAdapter.interpretAfterToolUse?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(
+          spawn({ stdout: '{"decision":"block","reason":"lint failed"}' }),
+          { toolName: 'run_shell', toolCallId: 'c1', isError: false },
+          HOOK,
+        )
+        assert.equal(interp.outcome, null, 'a detached observation can never gate control flow')
+        assert.ok(interp.queueMessage)
+        assert.equal(interp.queueMessage.text, 'lint failed')
+        assert.equal(interp.queueMessage.sendNow, false)
+        assert.equal(interp.spineEvent, 'PostToolUse')
+      })
+
+      it('routes exit-2 stderr to the queue', () => {
+        const interpret = claudeAdapter.interpretAfterToolUse?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(
+          spawn({ exitCode: 2, stderr: 'run the formatter\n' }),
+          { toolName: 'run_shell', toolCallId: 'c1', isError: false },
+          HOOK,
+        )
+        assert.equal(interp.failed, false, 'exit 2 is a decision, not a failure')
+        assert.equal(interp.queueMessage?.text, 'run the formatter')
+      })
+    })
+
+    describe('UserPromptSubmit → beforeSubmitPrompt', () => {
+      it('discovers UserPromptSubmit hooks (no matcher subject in the contract)', async () => {
+        await writeUserSettings({
+          hooks: {
+            UserPromptSubmit: [{ hooks: [{ type: 'command', command: './check.sh' }] }],
+          },
+        })
+        const hooks = await claudeBeforeSubmitPromptHooks(
+          { prompt: 'hi' },
+          { workspaceRoot: null, projectTrusted: false },
+        )
+        assert.equal(hooks.length, 1)
+        assert.equal(hooks[0]?.event, 'beforeSubmitPrompt')
+      })
+
+      it('halts the submit on a block decision, carrying the reason', () => {
+        const interpret = claudeAdapter.interpretBeforeSubmitPrompt?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(
+          spawn({ stdout: '{"decision":"block","reason":"no secrets in prompts"}' }),
+          { prompt: 'hi' },
+        )
+        assert.equal(interp.outcome?.haltRun?.reason, 'no secrets in prompts')
+        assert.equal(interp.failed, false)
+      })
+
+      it('halts on exit 2 with stderr as the reason', () => {
+        const interpret = claudeAdapter.interpretBeforeSubmitPrompt?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(spawn({ exitCode: 2, stderr: 'blocked\n' }), { prompt: 'hi' })
+        assert.equal(interp.outcome?.haltRun?.reason, 'blocked')
+      })
+
+      it('injects additionalContext when the submit proceeds', () => {
+        const interpret = claudeAdapter.interpretBeforeSubmitPrompt?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(
+          spawn({
+            stdout:
+              '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"branch is main"}}',
+          }),
+          { prompt: 'hi' },
+        )
+        assert.equal(interp.outcome?.haltRun, undefined)
+        assert.equal(interp.outcome?.injectContext, 'branch is main')
+      })
+
+      it('fails open on a crash (Claude has no failClosed)', () => {
+        const interpret = claudeAdapter.interpretBeforeSubmitPrompt?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(spawn({ exitCode: 1 }), { prompt: 'hi' })
+        assert.equal(interp.failed, true)
+        assert.equal(interp.outcome, null)
+      })
+    })
+
+    describe('Stop / SubagentStop', () => {
+      it('discovers Stop and SubagentStop hooks separately', async () => {
+        await writeUserSettings({
+          hooks: {
+            Stop: [{ hooks: [{ type: 'command', command: './stop.sh' }] }],
+            SubagentStop: [{ hooks: [{ type: 'command', command: './substop.sh' }] }],
+          },
+        })
+        const opts = { workspaceRoot: null, projectTrusted: false }
+        const stops = await claudeStopHooks({ status: 'completed' }, opts)
+        const subStops = await claudeSubagentStopHooks(
+          { subagentType: 'explore', status: 'completed' },
+          opts,
+        )
+        assert.deepEqual(
+          stops.map((h) => h.command),
+          ['./stop.sh'],
+        )
+        assert.deepEqual(
+          subStops.map((h) => h.command),
+          ['./substop.sh'],
+        )
+      })
+
+      it('cannot resume a finished turn — a block reason becomes a queued message', () => {
+        const interpret = claudeAdapter.interpretStop?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(
+          spawn({ stdout: '{"decision":"block","reason":"todos still open"}' }),
+          { status: 'completed' },
+        )
+        assert.equal(interp.outcome, null)
+        assert.equal(interp.queueMessage?.text, 'todos still open')
+        assert.equal(interp.spineEvent, 'Stop')
+      })
+
+      it('is a clean no-op when the hook says nothing', () => {
+        const interpret = claudeAdapter.interpretSubagentStop?.bind(claudeAdapter)
+        assert.ok(interpret)
+        const interp = interpret(spawn(), { subagentType: 'explore', status: 'completed' })
+        assert.equal(interp.failed, false)
+        assert.equal(interp.parseOk, true)
+        assert.equal(interp.queueMessage, undefined)
+        assert.equal(interp.spineEvent, 'SubagentStop')
+      })
     })
   })
 })
