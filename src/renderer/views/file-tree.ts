@@ -27,7 +27,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   const header = el(
     'div',
     { class: 'sidebar-header sidebar-header-compact' },
-    panePopoutButton(api, 'explorer', 'explorer'),
+    panePopoutButton(store, api, 'explorer', 'explorer'),
     refreshBtn,
   )
   const treeEl = el('div', { class: 'file-tree', role: 'tree' })
