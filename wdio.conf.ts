@@ -54,7 +54,16 @@ export const config: Options.Testrunner = {
       // Must match the Chromium shipped by the pinned Electron (electron ^43 →
       // Chromium 150); the session reports 150.0.7871.46 at runtime.
       browserVersion: '150.0.7871.46',
-      'wdio:chromedriverOptions': { binary: chromedriverBinary },
+      // `verbose` is forwarded to the driver as `--verbose` (@wdio/utils turns
+      // every chromedriverOptions key into a CLI flag). Without it the log this
+      // uploads is a three-line startup banner plus Electron's own stdout, which
+      // says the driver started and the app booted but nothing about the session
+      // handshake between them — exactly the gap that left run 31187232755
+      // unexplainable. CI-only: the verbose log is large and worthless locally.
+      'wdio:chromedriverOptions': {
+        binary: chromedriverBinary,
+        ...(process.env['CI'] ? { verbose: true } : {}),
+      },
       'wdio:enforceWebDriverClassic': true,
       // Without this chromedriver collects no browser log and `getLogs('browser')`
       // comes back empty, so the renderer-side diagnostics the failure artifacts
