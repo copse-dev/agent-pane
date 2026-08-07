@@ -760,12 +760,52 @@ export function parseOriginHeadSymbolicRef(ref: string): string | null {
   return branch || null
 }
 
+/**
+ * Cache of resolved default branches, keyed by repository root. Callers on a UI
+ * refresh path (the footer branch status re-reads it on every `message_added`
+ * and file-watcher tick) would otherwise spawn up to three `git` processes a
+ * second for a value that changes about once in a repository's lifetime.
+ */
+const defaultBranchCache = new Map<string, { branch: string | null; checkedAt: number }>()
+
+/**
+ * A resolved name is effectively immutable: `refs/remotes/origin/HEAD` is a local
+ * ref that `git fetch` does not update, so it only moves on an explicit
+ * `git remote set-head` (or a re-clone). The TTL exists so a rename still
+ * surfaces without an app restart, not because we expect churn.
+ */
+export const DEFAULT_BRANCH_TTL_MS = 5 * 60 * 1000
+
+/**
+ * A `null` result means no remote and no `init.defaultBranch` — the state a
+ * freshly `git init`ed project sits in until the user adds a remote, which they
+ * usually do within minutes. Re-check that case far sooner than a resolved name.
+ */
+export const DEFAULT_BRANCH_MISS_TTL_MS = 30 * 1000
+
+/** Test hook — drop every cached default branch. */
+export function resetDefaultBranchCache(): void {
+  defaultBranchCache.clear()
+}
+
 /** Return the default branch name for the current repository. */
 export async function getDefaultBranch(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<string | null> {
   if (!root) return null
 
+  const cached = defaultBranchCache.get(root)
+  if (cached) {
+    const ttl = cached.branch === null ? DEFAULT_BRANCH_MISS_TTL_MS : DEFAULT_BRANCH_TTL_MS
+    if (Date.now() - cached.checkedAt < ttl) return cached.branch
+  }
+
+  const branch = await resolveDefaultBranch(root)
+  defaultBranchCache.set(root, { branch, checkedAt: Date.now() })
+  return branch
+}
+
+async function resolveDefaultBranch(root: string): Promise<string | null> {
   const { stdout: originHeadStdout, code: originHeadCode } = await runGit(
     ['symbolic-ref', 'refs/remotes/origin/HEAD'],
     root,

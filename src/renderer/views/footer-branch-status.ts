@@ -2,7 +2,7 @@ import { el, clear, on } from '../dom/helpers.ts'
 import { chevronDownIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
+import type { GitBranchInfo, GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import type { Thread } from '@shared/types'
 import {
   threadGitBranchMismatch,
@@ -29,6 +29,15 @@ function orderBranchesWithDefaultFirst(
   ordered.splice(index, 1)
   ordered.unshift(defaultEntry)
   return ordered
+}
+
+/**
+ * A branch is "trunk" when it is the repo's default branch. Open PRs whose head
+ * is a trunk branch (e.g. the daily main->release promotion) are incidental, so
+ * we keep showing the branch name instead of replacing it with a PR link.
+ */
+function isTrunkBranch(branch: string | null, defaultBranch: string | null): boolean {
+  return defaultBranch != null && branch != null && branch === defaultBranch
 }
 
 export function mountFooterBranchStatus(
@@ -73,6 +82,22 @@ export function mountFooterBranchStatus(
     return thread ? isBlankThread(thread) : false
   }
 
+  /** The branch the widget speaks for: the thread's binding, else the checkout. */
+  function getDisplayBranch(): string | null {
+    return getActiveThreadBranch() ?? status?.currentBranch ?? null
+  }
+
+  /**
+   * The open PR worth surfacing, or null on a trunk branch. Every caller goes
+   * through here so the label, the picker row and the click action can't
+   * disagree about which branch they are judging.
+   */
+  function getVisiblePr(): GitOpenPr | null {
+    const pr = status?.pr
+    if (!pr) return null
+    return isTrunkBranch(getDisplayBranch(), defaultBranch) ? null : pr
+  }
+
   function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
@@ -83,8 +108,9 @@ export function mountFooterBranchStatus(
   function renderTrigger(): void {
     const threadBranch = getActiveThreadBranch()
     const currentBranch = status?.currentBranch ?? null
-    const displayBranch = threadBranch ?? currentBranch
+    const displayBranch = getDisplayBranch()
     const pickerMode = isPickerMode()
+    const pr = getVisiblePr()
 
     if (!displayBranch) {
       wrap.hidden = true
@@ -114,18 +140,13 @@ export function mountFooterBranchStatus(
       setOpen(false)
     }
 
-    if (status?.pr) {
-      label.textContent = `PR #${String(status.pr.number)}`
-      trigger.title = mismatch ? `${mismatchMessage} (${status.pr.title})` : status.pr.title
+    if (pr) {
+      label.textContent = `PR #${String(pr.number)}`
+      trigger.title = mismatch ? `${mismatchMessage} (${pr.title})` : pr.title
       trigger.classList.add('is-link')
       trigger.classList.remove('is-copyable')
       branchToCopy = null
-      trigger.setAttribute(
-        'aria-label',
-        pickerMode
-          ? `Open pull request #${String(status.pr.number)}`
-          : `Open pull request #${String(status.pr.number)}`,
-      )
+      trigger.setAttribute('aria-label', `Open pull request #${String(pr.number)}`)
     } else {
       label.textContent = displayBranch
       if (pickerMode) {
@@ -161,9 +182,9 @@ export function mountFooterBranchStatus(
     if (!isPickerMode()) return
 
     const current = status?.currentBranch ?? null
+    const pr = getVisiblePr()
 
-    if (status?.pr) {
-      const pr = status.pr
+    if (pr) {
       const prItem = el(
         'button',
         { type: 'button', class: 'branch-picker-option branch-picker-action' },
@@ -214,7 +235,7 @@ export function mountFooterBranchStatus(
       menu.append(item)
     }
 
-    if (ordered.length === 0 && !status?.pr) {
+    if (ordered.length === 0 && !pr) {
       menu.append(el('div', { class: 'branch-picker-empty' }, 'No branches found.'))
     }
   }
@@ -245,7 +266,7 @@ export function mountFooterBranchStatus(
     if (isPickerMode()) await loadBranches()
     else {
       branches = []
-      defaultBranch = null
+      defaultBranch = await api.git.getDefaultBranch(owner.projectId, owner.threadId)
     }
     renderTrigger()
     if (open) renderMenu()
@@ -269,7 +290,7 @@ export function mountFooterBranchStatus(
 
   trigger.addEventListener('click', () => {
     if (!isPickerMode()) {
-      const url = status?.pr?.url
+      const url = getVisiblePr()?.url
       if (url) {
         openBrowserUrl(store, url)
         return
