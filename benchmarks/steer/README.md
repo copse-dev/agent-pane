@@ -22,6 +22,10 @@ lift = withPassRate - withoutPassRate
 A steer with ~0 lift is not steering. That is the finding the existing tests
 cannot produce, and it is the reason this harness exists.
 
+For how to run the suite against real models, what each pack proves, expected
+runtime and cost, and how to calibrate the gates, see
+[`docs/steer-evals.md`](../../docs/steer-evals.md).
+
 ## Running it
 
 ```bash
