@@ -1078,8 +1078,13 @@ jobs:
             for log_file in "$logs_dir"/*.log; do
               [ -f "$log_file" ] || continue
               echo "### $log_file"
-              if grep -nE "$E2E_LOG_SIGNALS" "$log_file" | tail -n 60; then
-                :
+              # Capture first: `grep … | tail` exits with *tail's* status, which
+              # is 0 even when grep matched nothing, so testing the pipeline
+              # directly would make the fallback dead code and print nothing at
+              # all for a log with no known signal — the exact case it exists for.
+              matched="$(grep -nE "$E2E_LOG_SIGNALS" "$log_file" | tail -n 60)"
+              if [ -n "$matched" ]; then
+                printf '%s\n' "$matched"
               else
                 echo "(no signal lines matched — raw tail)"
                 tail -n 60 "$log_file" || true
