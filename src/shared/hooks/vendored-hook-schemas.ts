@@ -79,23 +79,35 @@ export const CURSOR_INTENTIONALLY_UNSUPPORTED_EVENTS: readonly string[] = []
  * Claude side has had that distinction since G3 (`isPublishedClaudeEvent`);
  * this brings Cursor to parity.
  *
- * Provenance: these names were observed in real `~/.cursor/hooks.json` configs
- * (a user bug report) rather than read off a schema — the community pin does not
- * publish them and Cursor's docs site is not fetchable from CI, so they are
- * **not** asserted against any vendored JSON. Being on this list changes only
- * the *warning wording*; it never wires a hook, and a name that turns out not to
- * be a Cursor event costs nothing beyond a gentler message. Re-vendoring a
- * Cursor schema that publishes any of them should move it into the pin-backed
- * lists above.
+ * Provenance: read off Cursor's published hooks documentation (the "Hook
+ * categories" and "Hook events" sections of https://cursor.com/docs/hooks),
+ * which lists a substantially larger surface than the community pin. They are
+ * **not** asserted against any vendored JSON — being on this list changes only
+ * the *warning wording*, never whether a hook loads. Re-vendoring a Cursor
+ * schema that publishes any of them should move it into the pin-backed lists
+ * above.
  *
+ * Grouped as Cursor groups them:
+ *
+ * **Agent hooks** (fire during an agent session, like every event Copse wires):
  * - `sessionEnd` — session teardown; Copse has no canonical session-end event.
- * - `preCompact` — the canonical `compaction` event is typed but has no fire site.
+ * - `preCompact` — the canonical `compaction` event is typed but has no fire
+ *   site. Observational upstream too: it cannot block or alter compaction.
  * - `afterAgentResponse` / `afterAgentThought` — per-assistant-message and
- *   per-reasoning-block observation; Copse fires `stop` at turn end instead.
- * - `beforeTabFileRead` / `afterTabFileEdit` — Cursor **Tab** (inline
- *   autocomplete) events. Out of scope by construction: Copse has no inline-tab
- *   surface, which is why its matcher table already treats the `TabRead` /
- *   `TabWrite` tool types as never-matching.
+ *   per-reasoning-block observation, neither of which Copse has a fire point
+ *   for; `stop` fires once at turn end instead.
+ *
+ * **Tab hooks** (inline completions) — out of scope by construction, since Copse
+ * has no inline-tab surface at all. This is the same reason its matcher table
+ * already treats the `TabRead` / `TabWrite` tool types as never-matching:
+ * - `beforeTabFileRead` / `afterTabFileEdit`
+ *
+ * **App lifecycle hooks** (fire outside any agent session):
+ * - `workspaceOpen` — fires on workspace open and folder change, and returns
+ *   extra plugin paths to load. It is an IDE-lifecycle event with no agent
+ *   session attached (Cursor's own docs note its payload omits
+ *   `conversation_id` / `generation_id` / `model` entirely), so it has no
+ *   natural home in Copse's canonical-event taxonomy.
  */
 export const CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS: readonly string[] = [
   'sessionEnd',
@@ -104,6 +116,7 @@ export const CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS: readonly string[] = [
   'afterAgentThought',
   'beforeTabFileRead',
   'afterTabFileEdit',
+  'workspaceOpen',
 ]
 
 /**

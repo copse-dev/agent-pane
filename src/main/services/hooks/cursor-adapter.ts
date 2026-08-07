@@ -722,9 +722,11 @@ export async function cursorAfterFileEditHooks(
  * `CommandHook`s. Same discovery + trust + `failClosed` → `onFailure` mapping as
  * {@link cursorToolGateHooks}; the turn-end / abort fire site (`stop.ts`)
  * registers and fires them **detached** (decision 3, never awaited) through the
- * shared registry → runner → adapter seam. Cursor's `stop` is notification-only,
- * so `failClosed` has nothing to block post-hoc — but the flag still maps to
- * `onFailure` for the spine + Sources error indicator uniformity.
+ * shared registry → runner → adapter seam. Nothing a `stop` hook returns can gate
+ * the finished turn, so `failClosed` has nothing to block post-hoc — but the flag
+ * still maps to `onFailure` for the spine + Sources error indicator uniformity.
+ * Its one actionable output, `followup_message`, routes through the pending-message
+ * queue (see {@link cursorAdapter.interpretStop}).
  */
 export async function cursorStopHooks(
   _payload: HookEventPayloads['stop'],
@@ -1056,10 +1058,14 @@ export const cursorAdapter: DialectAdapter = {
     if (event === 'preToolUse') {
       // Cursor's generic pre-tool stdin, the mirror of its generic `postToolUse`
       // (which is why the field names match): the tool-type token rather than
-      // Copse's canonical id, the raw input object, and the cwd. There is no
-      // `tool_use_id` here — the canonical `toolGate` payload fires *before* the
-      // call exists, so no id has been minted; inventing one would be a lie a
-      // hook could try to correlate against.
+      // Copse's canonical id, the raw input object, and the cwd.
+      //
+      // Two documented fields are **deliberately absent** rather than faked:
+      // `tool_use_id` (Cursor sends one, but Copse's permission gate is handed
+      // only `{ toolName, args }` — the call id never reaches it, and a
+      // synthesized id is worse than none for a hook trying to correlate
+      // pre/post) and `agent_message` (the assistant text preceding the call,
+      // which the canonical `toolGate` payload does not carry).
       return {
         ...base,
         tool_name: cursorGenericToolName(payload.toolName),
@@ -1237,26 +1243,39 @@ export const cursorAdapter: DialectAdapter = {
   },
 
   marshalStopRequest(hook, payload, session) {
-    // Cursor's stop stdin: the terminal `status` plus the standard agent-session
-    // envelope (real conversation/generation ids + model — B4). The fire site
-    // captures the session by value before dispatching detached, so a slow stop
-    // hook still marshals the finished turn's identity (decision 3).
+    // Cursor's stop stdin: the terminal `status` and `loop_count`, plus the
+    // standard agent-session envelope (real conversation/generation ids +
+    // model — B4). The fire site captures the session by value before
+    // dispatching detached, so a slow stop hook still marshals the finished
+    // turn's identity (decision 3).
+    //
+    // `loop_count` is how many times a stop follow-up has *already* auto-submitted
+    // for this conversation. Copse never auto-submits: a `followup_message` becomes
+    // a queued message the user drains (see `interpretStop`), so no stop hook has
+    // ever re-triggered the loop and the honest value is always 0. It is sent
+    // rather than omitted because vendor hook scripts read it unconditionally —
+    // Cursor's own documented example gates its follow-up on `loop_count < 4`,
+    // which would silently never fire against an absent field.
     return {
       ...agentSessionEnvelope('stop', session, hook.executionRoot),
       status: payload.status,
+      loop_count: 0,
     }
   },
 
   interpretStop(spawn: HookSpawnResult, _payload): DialectInterpretation {
-    // Cursor's stop is a notification: it carries only `status` and returns
-    // nothing (vendor docs). So stdout never yields a control-flow decision —
-    // the outcome is always null. We still surface a crash / timeout / non-zero
-    // exit as `failed` for the Sources per-hook error indicator and the spine,
-    // but the fire site (stop.ts) fires detached and never acts on it (decision
-    // 3, no drain barrier), so `failClosed` has nothing to block. Any
-    // `followup_message` a dialect might return is *not* parsed into an action
-    // here — follow-ups route through the pending-message queue (C2), never a
-    // bespoke stop protocol (decision 4).
+    // Cursor's stop returns an optional `followup_message`, which upstream
+    // auto-submits as the next user message to drive loop-style flows. Copse
+    // fires `stop` **detached** (decision 3, no drain barrier), so the turn is
+    // already over and there is nothing to auto-submit into — and silently
+    // auto-starting a turn from a finished one is exactly the bespoke protocol
+    // decision 4 rules out. The follow-up therefore routes through the
+    // pending-message queue (C2), the same channel `subagentStop`'s follow-up
+    // uses, where the user drains it. So the blocking outcome is always null.
+    //
+    // A crash / timeout / non-zero exit is surfaced as `failed` for the Sources
+    // per-hook error indicator and the spine, but the fire site never acts on
+    // it, so `failClosed` has nothing to block post-hoc.
     const spineEvent = 'stop'
     const emptyDecision: SpineHookRunDecision = {}
     const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
@@ -1278,6 +1297,29 @@ export const cursorAdapter: DialectAdapter = {
         failed: true,
         parseOk: true,
         runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) return { ...base, failed: false, parseOk: true }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // A notification hook that prints noise is not a failure to block on
+      // (nothing to block post-hoc); record parseOk:false for the spine only.
+      return { ...base, failed: false, parseOk: false }
+    }
+    const followup = isRecord(parsed)
+      ? firstString(parsed['followup_message'], parsed['followupMessage'])
+      : undefined
+    if (followup !== undefined) {
+      return {
+        ...base,
+        queueMessage: { text: followup, sendNow: false },
+        spineDecision: { queuedMessageChars: followup.length },
+        failed: false,
+        parseOk: true,
       }
     }
     return { ...base, failed: false, parseOk: true }

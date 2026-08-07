@@ -26,18 +26,16 @@
 // assert the event fired. See docs/plans/hooks-and-feature-packs.md (C1 row,
 // decisions 3, 13, 16).
 //
-// **Follow-ups via C2, not a bespoke protocol (decision 4).** Cursor's `stop` is
-// notification-only (it carries `status` and returns nothing), so it never
-// produces one. Claude's `Stop` does: it can return `decision: "block"` with a
-// reason meaning "don't stop, keep going". A detached dispatch cannot resume a
-// finished turn, so that reason is *not* turned into a bespoke continuation —
-// it routes through the pending-message queue via `onAsyncOutcome` below (C2,
-// which owns origin attribution + the held state), like every other async
-// follow-up.
+// **Follow-ups via C2, not a bespoke protocol (decision 4).** Both dialects can
+// ask for the run to keep going: Cursor's `stop` returns `followup_message`
+// (upstream auto-submits it as the next user message), Claude's `Stop` returns
+// `decision: "block"` with a reason. A detached dispatch cannot resume a finished
+// turn, and silently auto-starting one is exactly the bespoke protocol decision 4
+// rules out — so both route through the pending-message queue via `onAsyncOutcome`
+// below (C2, which owns origin attribution + the held state), where the user
+// drains them.
 //
 // Cursor declares a `stop` hook and Claude a `Stop` hook; both are wired here.
-// Claude's `Stop` can ask the agent to keep going, which a detached dispatch
-// cannot honour — its block `reason` routes through the queue above instead.
 import { HookRegistry } from '@copse/agent/hooks/hook-registry.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
@@ -54,10 +52,9 @@ import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 /** What the turn-end / abort fire site learns from the stop hooks. */
 export interface StopResult {
   /**
-   * How many `stop` hooks matched and were dispatched. `stop` is
-   * notification-only and detached, so there is no decision to surface — the
-   * count is enough for the fire site to know work was dispatched and for tests
-   * to assert the event fired.
+   * How many `stop` hooks matched and were dispatched. `stop` is detached, so
+   * there is no decision to surface — the count is enough for the fire site to
+   * know work was dispatched and for tests to assert the event fired.
    */
   ran: number
   /**
@@ -146,11 +143,9 @@ export async function runStopHooks(
       opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
     ),
     // C2: a `queueMessage` outcome lands in the renderer's pending queue via this
-    // sink (decision 4) — an async function hook's, or a Claude `Stop` hook's
-    // block `reason`, which is the one thing a run-end command hook can return
-    // that Copse can still act on. Cursor's `stop` is notification-only and never
-    // produces one. A stale send-now is downgraded to held on the renderer side
-    // (decision 16).
+    // sink (decision 4) — an async function hook's, Cursor's `followup_message`,
+    // or a Claude `Stop` hook's block `reason`. A stale send-now is downgraded to
+    // held on the renderer side (decision 16).
     onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })

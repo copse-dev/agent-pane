@@ -158,7 +158,8 @@
           "value": "high"
         }
       ],
-      "status": "completed"
+      "status": "completed",
+      "loop_count": 0
     },
     "afterToolUse/shell": {
       "conversation_id": "conv-fixture-1",

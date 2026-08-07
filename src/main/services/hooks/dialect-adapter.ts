@@ -147,8 +147,7 @@ export interface DialectAdapter {
   /**
    * Marshal a canonical `stop` payload into this dialect's stdin wire shape
    * (B3). Optional: a dialect with no run-end hook equivalent omits it and the
-   * runner abstains for that dialect. Cursor's `stop` is a notification (it
-   * carries only `status` and returns nothing), so its paired
+   * runner abstains for that dialect. The event is detached, so its paired
    * {@link interpretStop} never yields a control-flow decision.
    */
   marshalStopRequest?(
@@ -159,11 +158,11 @@ export interface DialectAdapter {
   /**
    * Apply this dialect's `stop` exit-code table to a spawn result (B3).
    * Optional, paired with {@link marshalStopRequest}. `stop` is detached
-   * (decision 3, never awaited) and notification-only for Cursor, so the outcome
-   * is always null; a crash / timeout / non-zero exit is reported as `failed`
-   * for the spine + Sources error indicator only. Follow-ups (`followup_message`
-   * on dialects that declare one) route through the pending-message queue (C2),
-   * never a bespoke stop protocol (decision 4).
+   * (decision 3, never awaited), so the outcome is always null; a crash /
+   * timeout / non-zero exit is reported as `failed` for the spine + Sources
+   * error indicator only. Follow-ups (Cursor's `followup_message`, Claude's
+   * block `reason`) route through the pending-message queue (C2), never a
+   * bespoke stop protocol (decision 4).
    */
   interpretStop?(spawn: HookSpawnResult, payload: HookEventPayloads['stop']): DialectInterpretation
   /**

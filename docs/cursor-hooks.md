@@ -50,9 +50,10 @@ the vendor contract (the [permission-hook I/O phase](plans/hooks-and-feature-pac
 | `beforeShellExecution` | `command`, `cwd`                                                                                             | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured                                                                                                          |
 | `beforeMCPExecution`   | `tool_name`, `tool_input`                                                                                    | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured                                                                                                          |
 | `beforeReadFile`       | `file_path`, `content`                                                                                       | `{ permission: "allow"\|"deny" }`        | ✅ honoured                                                                                                          |
+| `preToolUse`           | `tool_name` (tool type), `tool_input`, `cwd`                                                                 | `{ permission, updated_input }`          | ✅ wired                                                                                                             |
 | `beforeSubmitPrompt`   | `prompt`, `attachments`                                                                                      | `{ continue: boolean }`                  | ✅ wired ([beforeSubmitPrompt](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))      |
 | `afterFileEdit`        | `file_path`, `edits`                                                                                         | none (notification)                      | ✅ wired ([afterFileEdit](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))           |
-| `stop`                 | `status`                                                                                                     | none (notification)                      | ✅ wired ([stop](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))                    |
+| `stop`                 | `status`, `loop_count`                                                                                       | `followup_message` (queued)              | ✅ wired ([stop](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))                    |
 | `afterShellExecution`  | `command`, `output`, `duration`                                                                              | none (notification)                      | ✅ wired ([afterShellExecution / afterMCPExecution](plans/hooks-and-feature-packs.md#phase-d--parity-tier-2-events)) |
 | `afterMCPExecution`    | `tool_name`, `tool_input`, `result_json`, `duration`                                                         | none (notification)                      | ✅ wired ([afterShellExecution / afterMCPExecution](plans/hooks-and-feature-packs.md#phase-d--parity-tier-2-events)) |
 | `postToolUse`          | `tool_name`, `tool_input`, `tool_output`, `tool_use_id`, `cwd`, `duration`                                   | `additional_context` (queued)            | ✅ wired                                                                                                             |
@@ -68,16 +69,16 @@ A hook entry may carry an optional `matcher` — a **regex string** that filters
 when the hook runs. Which field the regex is tested against depends on the event
 (matching Cursor's "which field the matcher applies to depends on the hook"):
 
-| Event(s)                                       | matcher matched against       |
-| ---------------------------------------------- | ----------------------------- |
-| `beforeShellExecution` / `afterShellExecution` | the full shell command string |
-| `beforeMCPExecution` / `afterMCPExecution`     | the (MCP) tool name           |
-| `beforeReadFile`                               | the tool type (`Read`)        |
-| `afterFileEdit`                                | the tool type (`Write`)       |
-| `beforeSubmitPrompt`                           | the value `UserPromptSubmit`  |
-| `stop`                                         | the value `Stop`              |
-| `subagentStart` / `subagentStop`               | the subagent type             |
-| `postToolUse` / `postToolUseFailure`           | the Cursor tool type          |
+| Event(s)                                            | matcher matched against       |
+| --------------------------------------------------- | ----------------------------- |
+| `beforeShellExecution` / `afterShellExecution`      | the full shell command string |
+| `beforeMCPExecution` / `afterMCPExecution`          | the (MCP) tool name           |
+| `beforeReadFile`                                    | the tool type (`Read`)        |
+| `afterFileEdit`                                     | the tool type (`Write`)       |
+| `beforeSubmitPrompt`                                | the value `UserPromptSubmit`  |
+| `stop`                                              | the value `Stop`              |
+| `subagentStart` / `subagentStop`                    | the subagent type             |
+| `preToolUse` / `postToolUse` / `postToolUseFailure` | the Cursor tool type          |
 
 ```json
 {
@@ -120,6 +121,27 @@ Matcher evaluation is centralized in the Cursor adapter
 adapter's dispatch-side filter — so every event runs the same matcher code with
 only its subject field differing (the [dialect-by-source-path decision](plans/hooks-and-feature-packs.md#decisions-log): adapters own matchers).
 
+### Two deliberate divergences
+
+**`preToolUse` `ask`.** Cursor's docs say `ask` "is accepted by the schema but
+not enforced for `preToolUse` today" — upstream it behaves as allow. Copse
+_does_ enforce it, escalating to its own approval prompt. That is a divergence in
+the tightening direction, consistent with the dedicated flavors (where Cursor
+does enforce `ask`) and with the rule that a hook can only ever tighten the gate.
+
+**`stop` / `subagentStop` follow-ups are queued, not auto-submitted.** Upstream,
+a `followup_message` is submitted automatically as the next user message — that is
+what makes loop-style flows work, and what `loop_limit` exists to bound. Copse
+fires both events **detached** (decision 3), so by the time a hook responds there
+is no turn to submit into, and silently auto-starting one is exactly the bespoke
+protocol decision 4 rules out. The follow-up therefore lands in the
+pending-message queue for the user to drain. Two consequences worth knowing:
+`loop_limit` has nothing to bound (Copse never auto-loops), and the `loop_count`
+on `stop` stdin is always `0` — honestly so, since no follow-up has ever
+re-triggered a run. It is sent rather than omitted because vendor hook scripts
+read it unconditionally (Cursor's own documented example gates on
+`loop_count < 4`, which an absent field makes silently false).
+
 Permission responses may also carry `agentMessage` / `userMessage`. A denying
 hook's `agentMessage` is now **surfaced to the agent** as the tool-result reason
 (the [permission-hook I/O phase](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)) — a message-bearing `deny` fails the call with that reason so the model sees
@@ -144,7 +166,7 @@ returning modified content.
 | **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                                                                                                                                                                                                                                                                                                                   |
 | **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt`, `afterFileEdit`, `stop`, `afterShellExecution` / `afterMCPExecution` are wired ([phase B](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface), [phase D](plans/hooks-and-feature-packs.md#phase-d--parity-tier-2-events))                                                                                                                                                                                  |
 | **Generic `preToolUse`**      | Supported     | The pre-side twin of `postToolUse`: gates **every** tool, not just the shell / MCP / read calls the dedicated flavors cover, so a hook can deny a write, a search, or a subagent spawn. Matcher is the Cursor tool-type token (`Shell`, `Read`, `Write`, `Grep`, `Delete`, `Task`, `MCP:<tool_name>`). Fires alongside a dedicated flavor when both are declared                                                                                             |
-| **Unwired Cursor events**     | Not supported | `sessionEnd`, `preCompact`, `afterAgentResponse`, `afterAgentThought`, and the Tab events `beforeTabFileRead` / `afterTabFileEdit` are recognised and **reported as unsupported** in Sources rather than dismissed as typos. Copse has no inline-tab surface at all, and no canonical session-end / compaction fire site yet                                                                                                                                 |
+| **Unwired Cursor events**     | Not supported | `sessionEnd`, `preCompact`, `afterAgentResponse`, `afterAgentThought`, the Tab events `beforeTabFileRead` / `afterTabFileEdit`, and the app-lifecycle `workspaceOpen` are recognised and **reported as unsupported** in Sources rather than dismissed as typos. Copse has no inline-tab surface at all, no canonical session-end / compaction fire site yet, and nowhere to hang an event that fires outside any agent session                               |
 | **Post-tool observation**     | Supported     | `afterShellExecution` / `afterMCPExecution` plus generic `postToolUse` / `postToolUseFailure` fire **detached** from the one canonical `afterToolUse` event. Generic events cover every tool and split on success/failure; the output snapshot is capped before it reaches hook stdin. Because detached hooks cannot mutate an already-consumed result, `additional_context` becomes a budgeted queued message and `updated_mcp_tool_output` is not applied. |
 | **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin ([permission-hook I/O](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)                                                                                                                                                                                                   |
 | **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event ([permission-hook I/O](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)), sourced from the model actually running                                                                                                                                                                                                                                          |

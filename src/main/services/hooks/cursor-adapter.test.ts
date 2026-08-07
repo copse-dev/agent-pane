@@ -4,17 +4,36 @@ import { mkdtemp, mkdir, writeFile, rm, chmod, readFile, realpath } from 'node:f
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  cursorAdapter,
   listCursorHooks,
   userHooksConfigPath,
   projectHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
 } from './cursor-adapter.ts'
+import type { HookSpawnResult } from './hook-spawn.ts'
 import { runToolGateHooks } from './tool-gate.ts'
 import { beginHookRunRecording, endHookRunRecording } from '../hook-run-recorder.ts'
 import { getThreadMeta } from '../thread-store.ts'
 import { storageSet } from '../storage/storage.ts'
 import { parseSpineEntries, type SpineHookRunLine } from '@shared/threads/spine-schema.ts'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+
+/** A fake spawn result, the shape a dialect interpretation reads. */
+function stubSpawn(over: Partial<HookSpawnResult> = {}): HookSpawnResult {
+  return {
+    stdin: '{}',
+    stdout: '',
+    stderr: '',
+    exitCode: 0,
+    durationMs: 1,
+    timedOut: false,
+    spawnError: false,
+    sandboxed: false,
+    sandboxViolationCount: 0,
+    startedAt: 0,
+    ...over,
+  }
+}
 
 /** Fire the canonical toolGate event for a Copse tool call (the production gate path). */
 function gate(
@@ -360,6 +379,47 @@ describe('cursor-adapter', () => {
       assert.equal((await gate('write_file', { path: 'a.ts' })).permission, 'deny')
       // A `Write` matcher must not gate a shell call.
       assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'allow')
+    })
+
+    // Cursor's docs say `ask` "is accepted by the schema but not enforced for
+    // preToolUse today" — i.e. it behaves as allow. Copse *does* enforce it, as
+    // an escalation to its own approval prompt. That is a deliberate divergence
+    // in the tightening direction, consistent with the dedicated flavors (which
+    // Cursor does enforce `ask` on) and with the rule that a hook can only ever
+    // tighten the gate, never auto-approve.
+    it('escalates `ask` to the approval prompt (tighter than the vendor)', async () => {
+      const script = await writeHookScript('pre-ask.sh', '{"permission":"ask"}')
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script }] } })
+
+      assert.equal((await gate('write_file', { path: 'a.ts' })).permission, 'ask')
+    })
+  })
+
+  // Cursor's `stop` returns an optional `followup_message` that upstream
+  // auto-submits as the next user message. Copse fires `stop` detached, so there
+  // is no turn left to submit into — it routes through the pending-message queue
+  // instead (decision 4), the same channel `subagentStop`'s follow-up uses.
+  describe('stop followup_message', () => {
+    it('routes a follow-up to the queue rather than auto-submitting it', () => {
+      const interpret = cursorAdapter.interpretStop?.bind(cursorAdapter)
+      assert.ok(interpret)
+      const interp = interpret(stubSpawn({ stdout: '{"followup_message":"now run the tests"}' }), {
+        status: 'completed',
+      })
+      assert.equal(interp.outcome, null, 'a detached stop can never gate control flow')
+      assert.ok(interp.queueMessage)
+      assert.equal(interp.queueMessage.text, 'now run the tests')
+      assert.equal(interp.queueMessage.sendNow, false, 'held, never auto-sent')
+      assert.equal(interp.spineEvent, 'stop')
+    })
+
+    it('stays a clean no-op when the hook returns nothing', () => {
+      const interpret = cursorAdapter.interpretStop?.bind(cursorAdapter)
+      assert.ok(interpret)
+      const interp = interpret(stubSpawn(), { status: 'completed' })
+      assert.equal(interp.queueMessage, undefined)
+      assert.equal(interp.failed, false)
+      assert.equal(interp.parseOk, true)
     })
   })
 
