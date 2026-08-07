@@ -9,6 +9,7 @@ import {
   isMochaTimeoutError,
   installDeleteSessionSafety,
   shouldSkipAfterTestSessionTraffic,
+  wedgedSessionPatternsForTest,
   withTimeout,
 } from '../tests/e2e/helpers/after-test-safety.ts'
 
@@ -215,5 +216,35 @@ describe('installDeleteSessionSafety', () => {
     assert.ok(activeDelete)
     assert.equal(await activeDelete(), undefined)
     assert.equal(killed, 1)
+  })
+})
+
+// The e2e outage of 2026-08-07 (run 31161544796 shard 6: `0 passed, 21 failed`)
+// came from this module, not from the runner pool. `pkill -f` is unscoped, so
+// killing "chromedriver" took down the driver this worker was about to reuse —
+// and `browser.reloadSession()`, which nearly every spec calls in `before all`,
+// is a deleteSession *followed by* a newSession on that same driver. One flaky
+// teardown therefore poisoned every remaining spec on the shard.
+describe('wedged-session kill scope', () => {
+  it('never names chromedriver, whose survival the next session depends on', () => {
+    const patterns = wedgedSessionPatternsForTest()
+    assert.ok(
+      patterns.every((pattern) => !/chromedriver/i.test(pattern)),
+      'killing chromedriver mid-run breaks the newSession half of reloadSession',
+    )
+    assert.ok(
+      patterns.some((pattern) => /electron/i.test(pattern)),
+      'Electron is what actually wedges, and is still worth killing',
+    )
+  })
+
+  it('treats a socket death on deleteSession as ignorable rather than fatal', () => {
+    // The exact shape observed in run 31175526565 shard 3's wdio.log.
+    const error = new Error(
+      'WebDriverError: Request failed with error code UND_ERR_SOCKET when running ' +
+        '"http://localhost:41083/session/ccafb19078f86ad8408b410656525abc" with method "DELETE"',
+    )
+    assert.equal(isDeadSessionError(error), true)
+    assert.equal(isIgnorableDeleteSessionError(error), true)
   })
 })
