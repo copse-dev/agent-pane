@@ -126,11 +126,10 @@ export function resetWorkspaceIndexingForTest(): void {
  * execution root — a linked checkout under `~/.copse/worktrees/<project>/
  * <thread>/`, outside the primary workspace root the functions above cover.
  *
- * Deliberately skips semantic indexing: gortex scopes its shared daemon to one
- * active repo (`scopeGortexToActiveRepo`), so tracking every worktree
- * alongside the workspace would repeatedly untrack/re-track and thrash it.
- * Worktree threads fall back to regex/text search for "by meaning" queries,
- * the same posture SSH workspaces already take (see `semanticIndexBuildingNote`).
+ * Deliberately skips per-worktree semantic indexing: gortex scopes its shared
+ * daemon to one active repo, so tracking every linked checkout would thrash it.
+ * Semantic queries reuse the project checkout's index and overlay the current
+ * worktree delta in `executeSemanticSearch`.
  *
  * Safe to call repeatedly for the same root — both the file-index build and
  * the watcher registration are no-ops once already in place — so callers can
