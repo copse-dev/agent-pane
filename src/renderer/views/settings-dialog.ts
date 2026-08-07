@@ -30,6 +30,7 @@ import {
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { chevronDownIcon } from '../dom/icons.ts'
+import { outlineIcon } from '../dom/outline-icon.ts'
 import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
@@ -2573,7 +2574,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     settingsSummary.className = 'plugin-settings-summary'
     const settingsSummaryLabel = document.createElement('span')
     settingsSummaryLabel.textContent = 'Plugin settings'
-    settingsSummary.append(settingsSummaryLabel, chevronDownIcon('plugin-settings-chevron'))
+    // `ui-icon` is what carries `fill: none; stroke: currentColor` — an SVG path
+    // without it takes the SVG default (filled, unstroked), so this chevron was
+    // rendering as a solid triangle rather than the outline stroke every other
+    // disclosure in the app uses. The class is replaced, not appended, by
+    // outlineIcon, so it has to be named here.
+    settingsSummary.append(settingsSummaryLabel, chevronDownIcon('ui-icon plugin-settings-chevron'))
     settingsFold.append(settingsSummary)
 
     // Generic plugin-scoped settings fields (rendered from the manifest schema).
@@ -2836,28 +2842,34 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // runs get a heading each: with rows this tall, "why is this one dimmed"
         // is a question the list should answer before it is asked. A heading is
         // skipped when nothing falls under it.
-        const sorted = [...result.plugins].sort(
-          (a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id),
-        )
+        // One sequence, whatever installed the plugin. A Cursor plugin sorts in
+        // as `enabled: true` because it genuinely is — nothing gates
+        // `~/.cursor/plugins`, so it is contributing exactly like the rows
+        // around it, and the reader's question is "is this on", not "who
+        // packaged it". Origin is a badge on the row, not a section.
+        const entries: { id: string; enabled: boolean; render: () => HTMLElement }[] = [
+          ...result.plugins.map((plugin) => ({
+            id: plugin.id,
+            enabled: plugin.enabled,
+            render: () => makePluginRow(plugin),
+          })),
+          ...cursorPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: true,
+            render: () => makeCursorPluginRow(plugin),
+          })),
+        ].sort((a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id))
+
         let lastEnabled: boolean | null = null
-        for (const plugin of sorted) {
-          if (plugin.enabled !== lastEnabled) {
+        for (const entry of entries) {
+          if (entry.enabled !== lastEnabled) {
             const heading = document.createElement('h4')
             heading.className = 'plugins-group-heading'
-            heading.textContent = plugin.enabled ? 'Active' : 'Inactive'
+            heading.textContent = entry.enabled ? 'Active' : 'Inactive'
             listEl.append(heading)
-            lastEnabled = plugin.enabled
+            lastEnabled = entry.enabled
           }
-          listEl.append(makePluginRow(plugin))
-        }
-        if (cursorPlugins.length > 0) {
-          const heading = document.createElement('h4')
-          heading.className = 'plugins-group-heading'
-          heading.textContent = 'From Cursor'
-          listEl.append(heading)
-          for (const plugin of [...cursorPlugins].sort((a, b) => a.name.localeCompare(b.name))) {
-            listEl.append(makeCursorPluginRow(plugin))
-          }
+          listEl.append(entry.render())
         }
       }
       statusEl.textContent = ''
@@ -2867,39 +2879,111 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   /**
-   * A Cursor-installed plugin, rendered into the same list as the registry rows.
+   * Cursor's cube mark, drawn in the app's own outline style.
    *
-   * Deliberately not a `PluginSummary`: Cursor owns this plugin's lifecycle, so
-   * there is no toggle, no settings, and no trust badge to show — inventing a
-   * disabled-looking switch would imply Copse could turn it off. The row says
-   * where it came from and what it contributes, and stops there.
+   * Not the official asset — an isometric-cube approximation in `currentColor`,
+   * so it reads as an origin glyph beside the Copse mark rather than as a brand
+   * lockup we are not entitled to reproduce. Swap in the real SVG if Cursor
+   * publishes one for embedding.
+   */
+  function cursorMarkIcon(): SVGSVGElement {
+    return outlineIcon(
+      'cursor',
+      ['M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z', 'M12 12 4 7.5', 'M12 12l8-4.5', 'M12 12v9'],
+      'ui-icon plugin-icon-svg',
+    )
+  }
+
+  /**
+   * A Cursor-installed plugin, rendered as an ordinary plugin row.
+   *
+   * It gets the same shape as every other row — icon, origin badge, name,
+   * switch, contributions — because a user asking "what is extending Copse"
+   * should not have to learn that one answer lives in a differently-shaped card
+   * at the bottom of the list.
+   *
+   * **It reports Active, and that is a claim worth being sure of.** Nothing
+   * gates `~/.cursor/plugins`: `skills-registry.ts` adds every discovered
+   * plugin's skills directory unconditionally, and `mcp-registry.ts` reads
+   * every discovered plugin's MCP config the same way. So an installed Cursor
+   * plugin is always contributing, and the row says so.
+   *
+   * The switch is therefore shown **on and disabled**. Cursor owns the
+   * lifecycle, so this is the honest rendering: the state is real, and the
+   * control is visibly not ours to move. Omitting the switch entirely was worse
+   * — it left the one question the list exists to answer unanswered.
    */
   function makeCursorPluginRow(
     plugin: import('@shared/types/cursor-plugins.ts').CursorPluginSummary,
   ): HTMLElement {
     const row = document.createElement('div')
-    row.className = 'plugin-row plugin-row-external'
+    row.className = 'plugin-row'
     row.dataset['pluginId'] = plugin.name
     row.dataset['pluginOrigin'] = 'cursor'
+    row.dataset['enabled'] = 'true'
 
     const header = document.createElement('div')
     header.className = 'plugin-row-header'
 
-    const name = document.createElement('span')
-    name.className = 'plugin-name'
-    name.textContent = plugin.version ? `${plugin.name} (${plugin.version})` : plugin.name
-    header.append(name)
+    const icon = document.createElement('span')
+    icon.className = 'plugin-icon plugin-icon-cursor'
+    icon.setAttribute('aria-hidden', 'true')
+    icon.append(cursorMarkIcon())
+    header.append(icon)
 
-    const origin = document.createElement('span')
-    origin.className = 'plugin-badge plugin-badge-external'
-    origin.textContent = 'Cursor'
-    origin.title = 'Installed through Cursor — managed there, read-only here.'
-    header.append(origin)
+    const title = document.createElement('div')
+    title.className = 'plugin-row-title'
+    const originBadge = document.createElement('span')
+    originBadge.className = 'plugin-badge plugin-badge-cursor'
+    originBadge.textContent = 'Cursor'
+    originBadge.title = 'Installed through Cursor — Copse loads it, Cursor manages it.'
+    title.append(originBadge)
+
+    const nameLine = document.createElement('div')
+    nameLine.className = 'plugin-row-name-line'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'plugin-name'
+    nameEl.textContent = plugin.name
+    nameLine.append(nameEl)
+    if (plugin.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'plugin-version'
+      versionEl.textContent = plugin.version
+      nameLine.append(versionEl)
+    }
+    title.append(nameLine)
+
+    const toggleControl = document.createElement('div')
+    toggleControl.className = 'plugin-toggle-control'
+    const makeStateLabel = (side: 'off' | 'on'): HTMLElement => {
+      const stateEl = document.createElement('span')
+      stateEl.className = 'plugin-toggle-state'
+      stateEl.dataset['side'] = side
+      stateEl.textContent = side === 'on' ? 'On' : 'Off'
+      stateEl.setAttribute('aria-hidden', 'true')
+      return stateEl
+    }
+    const toggleLabel = document.createElement('label')
+    toggleLabel.className = 'toggle-switch plugin-toggle'
+    toggleLabel.title = 'Managed by Cursor — turn it off in Cursor, not here.'
+    const toggle = document.createElement('input')
+    toggle.type = 'checkbox'
+    toggle.checked = true
+    toggle.disabled = true
+    toggle.className = 'plugin-toggle-input'
+    toggle.setAttribute('aria-label', `${plugin.name} plugin enabled (managed by Cursor)`)
+    const track = document.createElement('span')
+    track.className = 'toggle-switch-track'
+    track.setAttribute('aria-hidden', 'true')
+    toggleLabel.append(toggle, track)
+    toggleControl.append(makeStateLabel('off'), toggleLabel, makeStateLabel('on'))
+
+    header.append(title, toggleControl)
     row.append(header)
 
     if (plugin.description) {
-      const desc = document.createElement('p')
-      desc.className = 'plugin-desc'
+      const desc = document.createElement('div')
+      desc.className = 'plugin-row-desc'
       desc.textContent = plugin.description
       row.append(desc)
     }

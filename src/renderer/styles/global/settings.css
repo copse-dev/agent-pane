@@ -1772,6 +1772,15 @@ dialog.settings-overlay::backdrop {
   width: 100%;
   height: 100%;
 }
+/* Cursor's mark sits on the same neutral tile a user-installed plugin gets —
+   the glyph identifies the origin, and borrowing the Copse tile's neon field
+   for someone else's plugin would read as an endorsement. */
+.plugin-icon-cursor .plugin-icon-svg {
+  width: 60%;
+  height: 60%;
+  stroke-width: 1.5;
+  color: var(--text-secondary);
+}
 .plugin-row-title {
   display: flex;
   flex-direction: column;
@@ -1822,18 +1831,15 @@ dialog.settings-overlay::backdrop {
   color: var(--warning, #d29922);
 }
 /* Cursor-installed: same eyebrow treatment as the trust badges, but muted —
-   it names an owner Copse does not control rather than a trust tier. */
-.plugin-badge-external {
+   it names an owner Copse does not control rather than a trust tier. The row
+   itself is styled identically to every other one: origin belongs in the badge,
+   not in a different-shaped card. */
+.plugin-badge-cursor {
   align-self: flex-start;
   border: none;
   padding: 0;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-}
-/* Read-only rows sit a shade back from the ones you can act on, without the
-   greying that `.plugin-row-disabled` uses to mean "switched off". */
-.plugin-row-external {
-  border-style: dashed;
 }
 .plugin-source-path {
   margin: 0;
@@ -2069,6 +2075,13 @@ dialog.settings-overlay::backdrop {
 .plugin-toggle-input:disabled + .toggle-switch-track {
   cursor: not-allowed;
   opacity: 0.5;
+}
+/* A Cursor plugin's switch is on and locked, not broken. The 0.5 above is meant
+   for a toggle you cannot use *yet* (a credential-gated plugin); dimming this
+   one that far reads as "off or failing" when the plugin is in fact running.
+   Enough fade to say "not yours to move", not enough to lose the accent. */
+.plugin-row[data-plugin-origin='cursor'] .plugin-toggle-input:disabled + .toggle-switch-track {
+  opacity: 0.8;
 }
 
 /* First-party level-3 detail for copse.automations. It lives inside the plugin

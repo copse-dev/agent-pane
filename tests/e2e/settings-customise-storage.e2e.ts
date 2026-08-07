@@ -102,8 +102,14 @@ describe('settings → Customise / MCP / Storage', function () {
     await expect(customise.$('legend=Instruction files')).toBeDisplayed()
     await expect(customise.$('legend=Skills')).toBeDisplayed()
     await expect(customise.$('legend=Plugins')).toBeDisplayed()
-    // Cursor plugins merged *into* the plugin list rather than sitting beside it.
+    // Cursor plugins merged *into* the plugin list rather than sitting beside it,
+    // and into its enabled/disabled grouping rather than a section of their own.
     assert.equal(await customise.$('legend=Cursor plugins').isExisting(), false)
+    const groupHeadings = await customise.$$('.plugins-group-heading').map((h) => h.getText())
+    assert.ok(
+      !groupHeadings.includes('From Cursor'),
+      'origin is a badge on the row, not a section of its own',
+    )
 
     // Worktrees moved out — managing disk is not customising behaviour.
     assert.equal(await customise.$('#sources-worktrees-list').isExisting(), false)
