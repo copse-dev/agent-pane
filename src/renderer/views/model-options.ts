@@ -591,7 +591,7 @@ export async function fetchModelOptions(
       options.push({
         value: current,
         label: `${modelDisplayLabel(current)} (plugin disabled)`,
-        group: 'Personal packs',
+        group: 'Personal plugins',
         disabled: true,
       })
     } else {

@@ -263,11 +263,19 @@ A rename with two real collisions to resolve first.
 renders `<legend>Plugins</legend>` under **Sources** for the Cursor plugin list.
 Renaming **Packs** → **Plugins** puts two differently-shaped things under one word.
 
-Resolution: they converge. After Stage A both are plugin directories with skills and
-MCP; the Copse-native one additionally has a `dev.copse` block and a registry row.
-**Settings → Plugins** becomes the single section, with a source column
-distinguishing shipped / installed / Cursor / selected folder. The read-only Cursor
-list stops being its own concept.
+Resolution as landed: **the registry section becomes Settings → Plugins, and the
+Sources fieldset is renamed to "Cursor plugins"** — which is what it has always
+listed. Two things sharing one word is the whole collision; naming the read-only
+one for its source dissolves it.
+
+The fuller convergence this plan first sketched — one list with a source column,
+Cursor entries appearing as rows — is **deferred, deliberately**. It is not a
+rename: Cursor plugins are not registry members, so giving them rows means
+synthesizing registry-shaped entries for a different data model, inventing
+toggle-less row states, and changing what the section _is_. Binding decision 8
+says a Stage C PR changes names and not semantics, and decision 8 wins over the
+sketch. When the convergence happens it should be its own change, judged on
+whether one list genuinely serves users better than two honestly-named ones.
 
 **Collision 2 — `plugins:list` IPC is taken.** `api.plugins.list()` already resolves
 to the Cursor summary (`preload/index.ts:904`), and `api.packs.*` is the registry
@@ -342,11 +350,20 @@ tests pass unchanged.
 | ----------------------------- | ---------------------------------------------------------------------------- |
 | `feature-pack-marketplace.md` | P1 targets AP; verify row becomes two-stage; open question 2 gains an answer |
 | `packs.md`                    | Manifest section describes the AP envelope + `dev.copse`; renamed in C       |
-| `adding-a-pack.md`            | Authoring guide becomes AP-first; renamed `adding-a-plugin.md` in C          |
+| `adding-a-plugin.md`          | Authoring guide becomes AP-first; renamed `adding-a-plugin.md` in C          |
 | `cursor-plugins.md`           | Records the narrowed env-expansion contrast and the merged Settings section  |
 | `supply-chain-security.md`    | Notes that AP defines no trust model; Copse's boundaries are unchanged       |
 | `hooks-and-feature-packs.md`  | Decisions log entry for the format adoption                                  |
 | `AGENTS.md`                   | The hooks/feature-pack pointer keeps its path accurate through C             |
+
+**Only the two reference docs are renamed and revoiced** (`packs.md` →
+`plugins.md`, `adding-a-pack.md` → `adding-a-plugin.md`). Historical plan
+documents keep their filenames and their original vocabulary on purpose: they
+record what shipped under the name it shipped under, and a sweep across them
+rewrites quoted issue comments and landed-PR titles into things nobody ever
+said. `hooks-and-feature-packs.md` and `feature-pack-marketplace.md` stay put
+for the same reason — AGENTS.md cites the first as binding, and inbound links
+from a dozen sibling plans point at both.
 
 ## Open questions
 
@@ -382,6 +399,6 @@ tests pass unchanged.
 - [#1342](https://github.com/copse-dev/agent-pane/pull/1342) — closed unmerged P1 attempt
 - [`feature-pack-marketplace.md`](feature-pack-marketplace.md) — install lifecycle this plan amends
 - [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) — binding pack/hook decisions
-- [`../packs.md`](../packs.md) — landed registry lifecycle
+- [`../plugins.md`](../plugins.md) — landed registry lifecycle
 - [`../cursor-plugins.md`](../cursor-plugins.md) — Cursor import path
 - [`../supply-chain-security.md`](../supply-chain-security.md) — trust boundaries

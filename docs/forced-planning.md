@@ -94,5 +94,5 @@ flip, restoring a byte-identical system prompt.
 
 ## Related
 
-- [`docs/packs.md`](packs.md) — the pack manifest, registry, and lifecycle
+- [`docs/plugins.md`](plugins.md) — the pack manifest, registry, and lifecycle
 - [`docs/hooks.md`](hooks.md) — the hook registry the pack's hook registers through

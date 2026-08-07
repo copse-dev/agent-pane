@@ -2122,7 +2122,7 @@
             lanes: [
               { y: 40, label: 'Execution modes' },
               { y: 234, label: 'Auxiliary model work' },
-              { y: 444, label: 'Hook and feature-pack platform' },
+              { y: 444, label: 'Hook and plugin platform' },
             ],
             nodes: [
               {
@@ -2294,20 +2294,20 @@
                 ],
               },
               {
-                id: 'packs',
+                id: 'plugins',
                 x: 18,
                 y: 478,
                 w: 100,
                 h: 60,
                 kind: 'core',
-                title: 'Pack registry',
+                title: 'Plugin registry',
                 sub: 'atomic lifecycle',
                 summary:
-                  'Feature packs group tools, hooks, prompts, UI panels, settings, and namespaced storage behind one manifest and atomic enable/disable boundary. Historical rendering never depends on live registration.',
+                  'Plugins group tools, hooks, prompts, UI panels, settings, and namespaced storage behind one manifest and atomic enable/disable boundary. Historical rendering never depends on live registration.',
                 files: [
-                  'packages/agent/src/packs/pack-manifest.ts',
-                  'packages/agent/src/packs/pack-registry.ts',
-                  'src/renderer/views/pack-panel.ts',
+                  'packages/agent/src/plugins/plugin-manifest.ts',
+                  'packages/agent/src/plugins/plugin-registry.ts',
+                  'src/renderer/views/plugin-panel.ts',
                 ],
               },
               {
@@ -2408,7 +2408,7 @@
               ['acpserver', 'native', 'hosts'],
               ['native', 'events', 'fires'],
               ['acpclient', 'events', 'lifecycle'],
-              ['packs', 'registry', 'contributes'],
+              ['plugins', 'registry', 'contributes'],
               ['registry', 'events', 'subscribes'],
               ['events', 'executor', 'dispatch'],
               ['executor', 'outcomes', 'normalize'],
@@ -2943,20 +2943,20 @@
                 ],
               },
               {
-                id: 'packs',
+                id: 'plugins',
                 x: 158,
                 y: 244,
                 w: 122,
                 h: 62,
                 kind: 'core',
-                title: 'Feature packs',
+                title: 'Plugins',
                 sub: 'manifest + panels',
                 summary:
-                  'A pack manifest and registry now atomically group tools, hooks, prompts, UI, settings, and storage; level-2 panels carry declarative list/tree updates without arbitrary renderer code.',
+                  'A plugin manifest and registry now atomically group tools, hooks, prompts, UI, settings, and storage; level-2 panels carry declarative list/tree updates without arbitrary renderer code.',
                 files: [
-                  'docs/packs.md',
-                  'packages/agent/src/packs/pack-registry.ts',
-                  'src/renderer/views/pack-panel.ts',
+                  'docs/plugins.md',
+                  'packages/agent/src/plugins/plugin-registry.ts',
+                  'src/renderer/views/plugin-panel.ts',
                 ],
               },
               {
@@ -3081,12 +3081,12 @@
             ],
             edges: [
               ['baseline', 'hooks', 'hooks'],
-              ['baseline', 'packs', 'packs'],
+              ['baseline', 'plugins', 'plugins'],
               ['baseline', 'providers', 'egress'],
               ['baseline', 'terminal', 'context'],
               ['baseline', 'advisor', 'routing'],
               ['hooks', 'ui', 'cards'],
-              ['packs', 'ui', 'panels'],
+              ['plugins', 'ui', 'panels'],
               ['providers', 'ui', 'badges'],
               ['terminal', 'ui', 'mentions'],
               ['advisor', 'knowledge', 'context'],

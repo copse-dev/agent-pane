@@ -84,7 +84,7 @@ describe('settings plugins (about:addons)', function () {
 
     const plugins = settingsSection('plugins')
     await expect(plugins).toBeDisplayed()
-    await expect(plugins.$('legend=Installed packs')).toBeDisplayed()
+    await expect(plugins.$('legend=Installed plugins')).toBeDisplayed()
 
     // Section copy must stay user-facing: no internal design-doc refs, and the
     // add-a-plugin guide must be a real link (not a bare <code> path).

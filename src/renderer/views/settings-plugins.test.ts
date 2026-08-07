@@ -228,7 +228,7 @@ describe('settings → plugins list', () => {
     const list = await openPlugins({ plugins: [] }, spy)
     const btn = document.querySelector('.settings-nav-btn[data-section="plugins"]')
     assert.ok(btn)
-    assert.match(btn.textContent, /Packs/)
+    assert.match(btn.textContent, /Plugins/)
     assert.match(list.textContent, /No plugins registered\./)
   })
 

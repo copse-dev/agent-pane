@@ -302,11 +302,11 @@ export function createPluginBrowserPanelService(win: BrowserWindow): PluginBrows
     }
     request.resolve({ tabId: ready.tabId, webContentsId: ready.webContentsId })
   }
-  ipcMain.on('packs:browser-tab-ready', onReady)
+  ipcMain.on('plugins:browser-tab-ready', onReady)
 
   const guardCleanups: Array<() => void> = []
   const dispose = (): void => {
-    ipcMain.off('packs:browser-tab-ready', onReady)
+    ipcMain.off('plugins:browser-tab-ready', onReady)
     for (const request of pending.values()) {
       clearTimeout(request.timer)
       request.reject(new Error('The browser pane closed.'))
@@ -380,7 +380,7 @@ export function createPluginBrowserPanelService(win: BrowserWindow): PluginBrows
           requestId,
           ...(preferredTabId ? { preferredTabId } : {}),
         }
-        win.webContents.send('packs:browser-tab-request', request)
+        win.webContents.send('plugins:browser-tab-request', request)
       })
     },
     contentsFromId(id): PluginBrowserContents | null {

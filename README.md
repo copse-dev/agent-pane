@@ -116,7 +116,7 @@ Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-
 - [Backup and recovery](docs/recovery.md)
 - [MCP example configuration](mcp.json.example)
 - [Custom tools](docs/custom-tools.md)
-- [Skills and feature packs](docs/packs.md)
+- [Skills and feature packs](docs/plugins.md)
 - [ACP agent setup](docs/acp-setup-guide.md)
 - [Screen recording support](docs/video-frames.md)
 - [Conversation storage format](docs/thread-store-format.md)
