@@ -291,7 +291,7 @@ export async function buildProvider(
   if (model.startsWith('gpt')) {
     return redactedRemoteProvider(
       createProvider(model, { openAiApiKey: storedOrEnvApiKey('openai') }, promptCacheKey, {
-        ...openAiServiceTierOption(),
+        ...openAiRequestOptions(),
         params,
       }),
     )
@@ -304,34 +304,44 @@ export async function buildProvider(
         openAiApiKey: storedOrEnvApiKey('openai'),
       },
       promptCacheKey,
-      { ...openAiServiceTierOption(), params },
+      { ...openAiRequestOptions(), params },
     ),
   )
 }
 
 /**
- * The configured OpenAI `service_tier`, or nothing when unset.
+ * The per-request OpenAI knobs read from settings: processing tier and
+ * transport.
  *
- * Trimmed and dropped when blank so a cleared Settings field means "standard
- * processing" (field omitted) rather than sending `service_tier: ""`, which
- * OpenAI rejects. `createProvider` only forwards it to its OpenAI branches.
+/**
+ * Per-request OpenAI options resolved from settings.
  *
- * The settings schema already pins writes to `SERVICE_TIERS`, but a value
+ * `serviceTier` is trimmed and dropped when blank, so a cleared field means
+ * "standard processing" (omitted) rather than `service_tier: ""`, which OpenAI
+ * rejects. `forceChatCompletions` pins reasoning-capable models back to
+ * /v1/chat/completions; off by default, since the Responses path is what
+ * surfaces their reasoning at all. `createProvider` forwards both only to its
+ * OpenAI branches.
+ *
+ * The settings schema already pins tier writes to `SERVICE_TIERS`, but a value
  * stored before that enum existed can still be on disk, so re-check here and
  * drop an unrecognised one with a warning. Sending it would earn a 400 on every
  * turn; dropping it silently would leave someone wondering why their tier had
  * no effect.
  */
-function openAiServiceTierOption(): { serviceTier?: ServiceTier } {
+function openAiRequestOptions(): { serviceTier?: ServiceTier; forceChatCompletions?: boolean } {
+  const forced = getSetting<boolean>('openAiForceChatCompletions', false)
+    ? { forceChatCompletions: true as const }
+    : {}
   const tier = getSetting<string>('openAiServiceTier', '').trim()
-  if (!tier) return {}
+  if (!tier) return forced
   if (!isServiceTier(tier)) {
     console.warn(
       `[providers] ignoring unrecognised openAiServiceTier ${JSON.stringify(tier)}; expected one of ${SERVICE_TIERS.join(', ')}`,
     )
-    return {}
+    return forced
   }
-  return { serviceTier: tier }
+  return { serviceTier: tier, ...forced }
 }
 
 // List the model ids an LM Studio server currently exposes (using saved URL/key).
