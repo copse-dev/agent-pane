@@ -123,9 +123,19 @@ would make every steer look effective.
 
 ## Tasks and the sandbox
 
-Tasks run in a throwaway temp workspace. `fixture` copies a directory in;
-`gitInit` creates a repo on the named default branch with an empty root commit
-and leaves the fixture **uncommitted**, so the agent has real work to commit.
+Tasks run in a throwaway temp workspace. `fixture` copies a directory in and
+`gitInit` turns it into a repo:
+
+| field            | effect                                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `defaultBranch`  | the repo's default branch name                                                                                        |
+| `stageFixture`   | default `true` — commit the fixture so the agent sees a normal project. Set `false` when the task needs a dirty tree. |
+| `checkoutBranch` | leave the run on a second, non-default branch                                                                         |
+
+`stageFixture` defaults to true on purpose: a repo where every file is untracked
+is itself a strong behavioural cue and would confound the comparison.
+`checkoutBranch` exists because "preserve an existing working branch" is
+unobservable when the only branch is also the default one.
 
 `run_shell` is restricted to `allowedCommands` (exact) plus
 `allowedCommandPatterns` (regex). Patterns exist so a model can phrase its own

@@ -196,8 +196,21 @@ export interface SteerEvalTask {
   prompt: string
   /** Directory copied into the throwaway workspace before the run. */
   fixture?: string | undefined
-  /** Initialise a git repo (and one commit) on this branch before the run. */
-  gitInit?: { defaultBranch: string } | undefined
+  /**
+   * Initialise a git repo on this branch before the run. `stageFixture`
+   * (default true) commits the fixture as the repo's history so the agent sees
+   * a normal project; set it false when the task needs a dirty tree instead.
+   * `checkoutBranch` leaves the run on a second, non-default branch — needed to
+   * test "preserve an existing working branch", which is unobservable when the
+   * only branch is also the default one.
+   */
+  gitInit?:
+    | {
+        defaultBranch: string
+        stageFixture?: boolean | undefined
+        checkoutBranch?: string | undefined
+      }
+    | undefined
   /** Exact commands `run_shell` accepts. */
   allowedCommands?: string[] | undefined
   /** Regex alternatives to `allowedCommands`, so a model can phrase its own command. */
@@ -325,7 +338,13 @@ const steerTaskSchema: z.ZodType<SteerEvalTask> = z.object({
   description: z.string().optional(),
   prompt: z.string(),
   fixture: z.string().optional(),
-  gitInit: z.object({ defaultBranch: z.string() }).optional(),
+  gitInit: z
+    .object({
+      defaultBranch: z.string(),
+      stageFixture: z.boolean().optional(),
+      checkoutBranch: z.string().optional(),
+    })
+    .optional(),
   allowedCommands: z.array(z.string()).optional(),
   allowedCommandPatterns: z.array(z.string()).optional(),
   mockOnly: z.boolean().optional(),
@@ -632,6 +651,23 @@ export function buildSteerEvalPrompt(
   return base
 }
 
+/**
+ * Parse one pack file. Exported so `npm test` can schema-validate every shipped
+ * pack without a model — a typo in a pack is otherwise only discovered when
+ * someone starts a long real-model run.
+ */
+export function loadSteerPack(path: string): SteerPack {
+  return steerPackSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown)
+}
+
+/** Absolute paths of every pack shipped in `benchmarks/steer/packs`. */
+export function steerPackPaths(packsDir = 'benchmarks/steer/packs'): string[] {
+  return readdirSync(packsDir)
+    .filter((file) => file.endsWith('.json'))
+    .sort()
+    .map((file) => join(packsDir, file))
+}
+
 function loadPacks(options: SteerEvalOptions): SteerPack[] {
   const packs = readdirSync(options.packsDir)
     .filter((file) => file.endsWith('.json'))
@@ -658,10 +694,13 @@ function prepareWorkspace(task: SteerEvalTask): string {
     git(workspace, `init -b ${task.gitInit.defaultBranch}`)
     git(workspace, 'config user.email eval@copse.dev')
     git(workspace, 'config user.name "Copse Eval"')
-    // Deliberately does NOT stage the fixture: the repo starts on its default
-    // branch with an empty root commit and a dirty tree, so the agent has real
-    // work to commit and the branch-safety check has something to observe.
+    // Staging the fixture is the default so the agent sees a normal project
+    // with history, rather than a repo where every file is untracked — which
+    // is itself a strong behavioural cue and would confound the comparison.
+    // Tasks that need a dirty tree opt out with `stageFixture: false`.
+    if (task.gitInit.stageFixture !== false) git(workspace, 'add -A')
     git(workspace, 'commit --allow-empty -m "Initial commit"')
+    if (task.gitInit.checkoutBranch) git(workspace, `checkout -b ${task.gitInit.checkoutBranch}`)
   }
   return workspace
 }

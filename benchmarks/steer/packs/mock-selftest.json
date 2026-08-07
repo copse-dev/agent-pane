@@ -8,7 +8,7 @@
       "description": "Directive drives the git_commit tool; asserts the tool ran and a second commit landed.",
       "prompt": "Commit the pending work. [[mcp:git_commit {\"message\":\"steer harness smoke\"}]]",
       "fixture": "benchmarks/steer/fixtures/pending-change",
-      "gitInit": { "defaultBranch": "main" },
+      "gitInit": { "defaultBranch": "main", "stageFixture": false },
       "mockOnly": true,
       "maxSteps": 2,
       "timeoutMs": 60000,

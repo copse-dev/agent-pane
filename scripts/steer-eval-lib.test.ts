@@ -7,12 +7,14 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   buildSteerEvalPrompt,
+  loadSteerPack,
   parseSteerEvalArgs,
+  steerPackPaths,
   renderSteerEvalMarkdown,
   runChecks,
   STEER_BLOCK_TEXTS,
@@ -300,6 +302,85 @@ describe('steer eval reporting', () => {
     })
     assert.match(markdown, /\| pack \| steer \| with \| without \| lift \| gate \|/)
     assert.match(markdown, /\+100%/)
+  })
+})
+
+describe('shipped steer packs', () => {
+  it('every pack parses against the schema', () => {
+    const paths = steerPackPaths()
+    assert.ok(paths.length > 0, 'expected at least one pack in benchmarks/steer/packs')
+    for (const path of paths) {
+      assert.doesNotThrow(() => loadSteerPack(path), `pack failed to parse: ${path}`)
+    }
+  })
+
+  it('pack ids are unique and match their filename', () => {
+    const seen = new Set<string>()
+    for (const path of steerPackPaths()) {
+      const pack = loadSteerPack(path)
+      assert.equal(
+        `${pack.id}.json`,
+        basename(path),
+        `pack id ${pack.id} does not match its filename ${basename(path)}`,
+      )
+      assert.ok(!seen.has(pack.id), `duplicate pack id: ${pack.id}`)
+      seen.add(pack.id)
+    }
+  })
+
+  it('task ids are unique within a pack and every check id is unique within a task', () => {
+    for (const path of steerPackPaths()) {
+      const pack = loadSteerPack(path)
+      const taskIds = pack.tasks.map((task) => task.id)
+      assert.equal(new Set(taskIds).size, taskIds.length, `duplicate task id in ${pack.id}`)
+      for (const task of pack.tasks) {
+        const checkIds = task.checks.map((check) => check.id)
+        assert.equal(
+          new Set(checkIds).size,
+          checkIds.length,
+          `duplicate check id in ${pack.id}/${task.id}`,
+        )
+      }
+    }
+  })
+
+  it('every regex in a check compiles', () => {
+    for (const path of steerPackPaths()) {
+      for (const task of loadSteerPack(path).tasks) {
+        for (const check of task.checks) {
+          if ('pattern' in check) {
+            assert.doesNotThrow(
+              () => new RegExp(check.pattern),
+              `bad regex in ${task.id}/${check.id}: ${check.pattern}`,
+            )
+          }
+        }
+        for (const pattern of task.allowedCommandPatterns ?? []) {
+          assert.doesNotThrow(() => new RegExp(pattern), `bad command pattern in ${task.id}`)
+        }
+      }
+    }
+  })
+
+  it('a real-model pack declares a gate — an eval with no threshold cannot fail', () => {
+    for (const path of steerPackPaths()) {
+      const pack = loadSteerPack(path)
+      const realModelTasks = pack.tasks.filter((task) => task.mockOnly !== true)
+      if (realModelTasks.length === 0) continue
+      assert.ok(
+        pack.gate?.minLift !== undefined || pack.gate?.minWithPassRate !== undefined,
+        `pack ${pack.id} has real-model tasks but declares no gate`,
+      )
+    }
+  })
+
+  it('fixtures referenced by packs exist', () => {
+    for (const path of steerPackPaths()) {
+      for (const task of loadSteerPack(path).tasks) {
+        if (task.fixture === undefined) continue
+        assert.ok(existsSync(task.fixture), `missing fixture ${task.fixture} for task ${task.id}`)
+      }
+    }
   })
 })
 
