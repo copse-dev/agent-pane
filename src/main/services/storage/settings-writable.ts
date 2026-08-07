@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
 import { REASONING_LEVELS } from '@copse/llm/model-parameters.ts'
+import { SERVICE_TIERS } from '@copse/llm/service-tier.ts'
 import {
   validateRemoteAgentBaseUrl,
   validateWebOriginPattern,
@@ -184,18 +185,20 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   modelParameters: modelParametersMapSchema,
   openRouterModel: z.string().max(256),
   // OpenAI `service_tier` for first-party gpt-* models: 'flex' for slower and
-  // cheaper, 'priority'/'fast' for quicker at a higher price. Empty (default)
-  // omits the field, leaving OpenAI on standard processing.
+  // cheaper, 'priority' for quicker at a higher price. Empty (the default) omits
+  // the field, leaving OpenAI on standard processing.
   //
-  // Deliberately a free string rather than an enum: OpenAI's tier names are
-  // model-specific and change, and an enum here would reject a valid new tier
-  // until we shipped an update. A wrong value fails visibly with a 400.
+  // Pinned to the documented tiers. `SERVICE_TIERS` matches OpenAI's set exactly
+  // — including that Priority is marketed as "Fast mode" but is never sent as
+  // `fast`. Accepting arbitrary strings here would let a plausible-looking value
+  // through to a guaranteed 400 at request time, which is a worse failure than
+  // refusing the write.
   //
   // NOTE: the usage ledger prices turns from the standard-tier catalog, so a
   // non-default tier makes those figures wrong (flex overstates, priority
-  // understates). Tier-aware pricing is a follow-up — LiteLLM already publishes
-  // `input_cost_per_token_flex` / `_priority` for these models.
-  openAiServiceTier: z.string().max(32),
+  // understates) — see #1543. Tier-aware pricing is a follow-up; LiteLLM already
+  // publishes `input_cost_per_token_flex` / `_priority` for these models.
+  openAiServiceTier: z.enum(['', ...SERVICE_TIERS]),
   // Restrict OpenRouter routing to zero-data-retention endpoints
   // (provider.zdr). Default ON; the read side (provider-selection.ts) treats
   // a missing value as true.

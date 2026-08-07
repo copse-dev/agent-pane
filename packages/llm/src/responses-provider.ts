@@ -8,7 +8,7 @@ import type {
 } from 'openai/resources/responses/responses'
 import { withAppAttribution } from './app-attribution.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
-import { serviceTierBody } from './service-tier.ts'
+import { serviceTierBody, type ServiceTier } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
@@ -33,7 +33,7 @@ export class ResponsesProvider implements LLMProvider {
   private readonly model: string
   private readonly serverTools: Tool[]
   private readonly extraBody: Record<string, unknown> | undefined
-  private readonly serviceTier: string | undefined
+  private readonly serviceTier: ServiceTier | undefined
   /** User-tuned reasoning / sampling, in this API's request shape. */
   private readonly tuned: ReturnType<typeof responsesParameterFields>
   private readonly imageDetail: ImageDetail
@@ -47,7 +47,7 @@ export class ResponsesProvider implements LLMProvider {
       serverTools?: Tool[]
       extraBody?: Record<string, unknown>
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
-      serviceTier?: string
+      serviceTier?: ServiceTier
       params?: ModelParameters
       /** Image fidelity to request. Defaults to `'auto'` — the historical behaviour. */
       imageDetail?: ImageDetail

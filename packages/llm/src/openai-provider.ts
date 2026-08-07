@@ -13,7 +13,7 @@ import {
   yieldStreamWithRetry,
 } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
-import { serviceTierBody } from './service-tier.ts'
+import { serviceTierBody, type ServiceTier } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 import { openAiParameterFields, type ModelParameters } from './model-parameters.ts'
@@ -105,7 +105,7 @@ export class OpenAIProvider implements LLMProvider {
       promptCacheKey?: string
       defaultHeaders?: Readonly<Record<string, string>>
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
-      serviceTier?: string
+      serviceTier?: ServiceTier
       params?: ModelParameters
       maxOutputTokens?: number
       /** Image fidelity to request. Defaults to `'auto'` — the historical behaviour. */
@@ -132,7 +132,7 @@ export class OpenAIProvider implements LLMProvider {
   private readonly includeUsage: boolean
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
-  private readonly serviceTier: string | undefined
+  private readonly serviceTier: ServiceTier | undefined
   private readonly tuned: ReturnType<typeof openAiParameterFields>
   /**
    * Output ceiling published by the model's own card for the reasoning level

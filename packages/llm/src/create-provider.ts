@@ -12,6 +12,7 @@ import {
   recommendedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
+import type { ServiceTier } from './service-tier.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
@@ -42,7 +43,7 @@ export function createProvider(
   model?: string,
   keys: ProviderKeys = {},
   promptCacheKey?: string,
-  opts: { serviceTier?: string; params?: ModelParameters } = {},
+  opts: { serviceTier?: ServiceTier; params?: ModelParameters } = {},
 ): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()

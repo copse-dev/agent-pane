@@ -19,6 +19,7 @@ import {
   getActiveProjectId,
   getActiveProjectSshHost,
   getProjectById,
+  getProjectRoot,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolvePathWithinRoot,
@@ -112,6 +113,12 @@ import {
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
 import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
+import { listRunningThreadIds } from '../services/agent-service.ts'
+import {
+  listWorktreeInventory,
+  measureWorktreeSize,
+  removeWorktree,
+} from '../services/worktree-inventory.ts'
 import {
   requestAcpPackageInstallApproval,
   revalidateStaleAcpModels,
@@ -1526,6 +1533,55 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     })
     return listOrphanProjectStores(projectIds)
   })
+
+  // Settings → Sources → Worktrees. Every call names the project by id and the
+  // main process resolves its root itself, so the renderer never gets to say
+  // which repository (or which directory) is operated on.
+  const worktreeInput = (
+    rawProjectId: unknown,
+  ): { projectId: string; projectRoot: string } | null => {
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const projectRoot = getProjectRoot(projectId)
+    return projectRoot === null ? null : { projectId, projectRoot }
+  }
+
+  ipcMain.handle('worktrees:list', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const target = worktreeInput(rawProjectId)
+    if (!target) return []
+    return listWorktreeInventory({
+      ...target,
+      runningThreadIds: new Set(listRunningThreadIds()),
+    })
+  })
+
+  ipcMain.handle('worktrees:size', async (event, rawProjectId: unknown, rawPath: unknown) => {
+    assertMainFrameSender(event, win)
+    const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+    const target = worktreeInput(rawProjectId)
+    if (!target) throw new IpcValidationError('That project is no longer available')
+    return measureWorktreeSize({ ...target, path })
+  })
+
+  ipcMain.handle(
+    'worktrees:remove',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawForce: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, force] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawForce,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return removeWorktree({
+        ...target,
+        path,
+        force,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
 
   ipcMain.handle('skills:list', () => listSkills())
   ipcMain.handle('plugins:list', () => listCursorPlugins())
