@@ -188,8 +188,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:suggestCommandSummary', commands),
     suggestToolTurnSummary: (actions: string[]) =>
       ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
-    suggestFollowUps: (contextJson: string) =>
-      ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
+    suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown): void => {
         handler(tid, chunk)
