@@ -25,14 +25,14 @@ not have is a Copse-owned distribution lifecycle: a signed/indexed way for users
 who never open Cursor IDE to install, pin, update, roll back, and conflict-report
 packs whose runtime unit is still a feature pack.
 
-| Surface                                    | Role today                                           | Gap versus a Copse marketplace                                     |
-| ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------ |
-| First-party packs (`FIRST_PARTY_PACKS`)    | Shipped in-app; Settings → Packs enable/disable      | Not third-party distribution                                       |
-| Pack manifest + JSON schema                | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry for **user** packs is not wired yet |
-| Cursor plugin cache (`~/.cursor/plugins/`) | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace           |
-| `skillPluginPaths` / local symlinks        | Power-user overlay                                   | Manual; no pin, signature, or update channel                       |
-| Hooks dialect files / custom `tools/*.mjs` | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass     |
-| Grok Build-style plugin install UX         | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust        |
+| Surface                                    | Role today                                           | Gap versus a Copse marketplace                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| First-party packs (`FIRST_PARTY_PACKS`)    | Shipped in-app; Settings → Packs enable/disable      | Not third-party distribution                                                                                       |
+| Pack manifest + JSON schema                | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry landed for Agent Plugins packages (P1); install records, pinning, and update remain |
+| Cursor plugin cache (`~/.cursor/plugins/`) | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace                                                           |
+| `skillPluginPaths` / local symlinks        | Power-user overlay                                   | Manual; no pin, signature, or update channel                                                                       |
+| Hooks dialect files / custom `tools/*.mjs` | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass                                                     |
+| Grok Build-style plugin install UX         | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust                                                        |
 
 #1078's ownership map assigns Copse-native distribution to #1082 and requires
 reusing feature packs as the runtime unit. This plan defines the binding
