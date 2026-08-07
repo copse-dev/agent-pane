@@ -92,7 +92,7 @@ export function mountPrPane(
   const listHeader = el('div', { class: 'git-changes-header' })
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Pull requests'),
-    panePopoutButton(api, 'prs', 'pull requests'),
+    panePopoutButton(store, api, 'prs', 'pull requests'),
     el(
       'button',
       {

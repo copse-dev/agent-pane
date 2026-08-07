@@ -145,7 +145,7 @@ export function mountGitChangesPane(
   listHeader.append(
     headerTitle,
     bulkActions,
-    panePopoutButton(api, 'changes', 'changes'),
+    panePopoutButton(store, api, 'changes', 'changes'),
     refreshBtn,
   )
 

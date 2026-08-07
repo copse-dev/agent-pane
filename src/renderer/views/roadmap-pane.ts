@@ -332,7 +332,7 @@ export function mountRoadmapPane(
   actionButtons.append(newBtn, importBtn, reviewBtn, exportBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
-    panePopoutButton(api, 'roadmap', 'roadmap'),
+    panePopoutButton(store, api, 'roadmap', 'roadmap'),
     filter,
     actionButtons,
   )

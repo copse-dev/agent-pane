@@ -98,6 +98,11 @@ jobs:
       specs: ${{ steps.plan.outputs.specs }}
       e2e_shards: ${{ steps.shards.outputs.list }}
       e2e_shard_total: ${{ steps.shards.outputs.total }}
+      # How much of the UNIT tier the `check` job below needs. Empty is read as
+      # `full` there, so a branch of the plan step that forgets to set it fails
+      # safe rather than silently thinning the suite.
+      unit_mode: ${{ steps.plan.outputs.unit_mode }}
+      unit_specs: ${{ steps.plan.outputs.unit_specs }}
     steps:
       # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
       # / previous main tip.
@@ -190,6 +195,12 @@ jobs:
       # (backend logic with no selector coupling) and broad changes fall back to
       # full. Full coverage on every push is no longer guaranteed — the nightly
       # is the net.
+      #
+      # The same call also emits a UNIT plan (`unit_mode` / `unit_specs`) that the
+      # `check` job below applies, but ONLY to a PR stacked on another PR's branch
+      # — see that job for why. Every early-exit branch here predates the oracle's
+      # analysis of the diff, so each one emits `unit_mode=full`: only the oracle
+      # path has looked at what actually changed, so only it may thin.
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
@@ -211,7 +222,7 @@ jobs:
         run: |
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Screenshot-only head commit -> skip e2e. This is the commit-screenshots
@@ -231,7 +242,7 @@ jobs:
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
             if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
               echo "HEAD commit only refreshes reference screenshots -> skip e2e"
-              { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
+              { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
@@ -242,29 +253,29 @@ jobs:
           # e2e run from its parent and must not start a render/commit loop.
           if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then
             echo "PR targets release -> full e2e suite (promotion gate)"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
             echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$CI_FULL_LABEL" = "true" ]; then
             echo "ci-full label -> full e2e suite (oracle bypassed on request)"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # No usable base (first push / forced push / branch create) -> full.
           if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "No base sha for $EVENT -> full e2e suite"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # full clone already has base history; this is belt-and-suspenders.
           git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
           node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
-          grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
+          grep -E '^(mode|specs|unit_mode|unit_specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # Advisory: annotate which reference shots a UI change will refresh. Stale
       # shots DON'T block the PR — the `e2e` job below already re-renders them as a
@@ -368,27 +379,42 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
-      - uses: ./.github/actions/setup
-      # `|| true` on eslint: a non-autofixable lint error must not abort the run —
-      # we still want the fixes ESLint did apply to land. Real lint failures stay
-      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
-      # on OOM (137); a second kill fails the job so a wedged runner is visible.
-      - name: Autofix changed files
+      # Decide whether there is anything to fix BEFORE installing. `npm ci` /
+      # cache-restore is ~2-5 min on this fleet and the autofix itself takes
+      # seconds, so on a diff with no formattable file the old order paid the
+      # whole install to print "nothing to do". Only git is needed to answer the
+      # question, and checkout has already run.
+      - id: changed
+        name: List autofixable changed files
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
           fi
-          mapfile -t files < <(
-            git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
-              | grep -E '\.(cjs|css|cts|js|json|jsx|md|mjs|mts|ts|tsx|yaml|yml)$' \
-              || true
-          )
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No autofixable files changed vs base."
-            exit 0
+          # NUL-delimited via a temp file rather than a step output: a path is
+          # allowed to contain anything but NUL, and a step output cannot carry a
+          # newline safely.
+          git diff -z --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
+            -- '*.cjs' '*.css' '*.cts' '*.js' '*.json' '*.jsx' '*.md' '*.mjs' \
+               '*.mts' '*.ts' '*.tsx' '*.yaml' '*.yml' \
+            > "${RUNNER_TEMP}/autofix-files.z" || true
+          if [ -s "${RUNNER_TEMP}/autofix-files.z" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No autofixable files changed vs base — skipping install and autofix."
+            echo "any=false" >> "$GITHUB_OUTPUT"
           fi
+      - uses: ./.github/actions/setup
+        if: steps.changed.outputs.any == 'true'
+      # `|| true` on eslint: a non-autofixable lint error must not abort the run —
+      # we still want the fixes ESLint did apply to land. Real lint failures stay
+      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
+      # on OOM (137); a second kill fails the job so a wedged runner is visible.
+      - name: Autofix changed files
+        if: steps.changed.outputs.any == 'true'
+        run: |
+          mapfile -d '' -t files < "${RUNNER_TEMP}/autofix-files.z"
           echo "Autofixing ${#files[@]} changed file(s)"
           npx eslint --fix -- "${files[@]}" || true
           set +e
@@ -401,6 +427,7 @@ jobs:
           sleep 10
           npx prettier --write -- "${files[@]}"
       - name: Commit and push fixes
+        if: steps.changed.outputs.any == 'true'
         run: |
           if git diff --quiet; then
             echo "No formatting changes to commit."
@@ -424,11 +451,52 @@ jobs:
       - uses: ./.github/actions/setup
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
-      - run: npm run coverage:ci
+      #
+      # THINNING (stacked PRs only). A PR whose base is another PR's branch
+      # cannot merge yet: the layer below it has to land first, and when it does
+      # this PR is retargeted at trunk and runs this job again under the `full`
+      # arm. So the run that actually gates a merge into `main`/`release` is
+      # always the whole suite plus the coverage ratchet — thinning never buys a
+      # green that lets unrun tests reach trunk. That is the same "lowest
+      # unmerged PR gates the merge" rule the heavy tier already applies via
+      # `base_ref`, extended to the one tier that had no diff-awareness at all.
+      #
+      # Only `subset` skips the ratchet, and it must: a partial run produces a
+      # coverage number that is not comparable to the baseline, so gating on it
+      # would fail every thinned run. `skip` (docs-only) drops both.
+      # An unset `unit_mode` is read as `full`, so a plan branch that forgets to
+      # emit one fails safe.
+      - name: Unit tests
         env:
           # c8 retains V8 coverage until the suite exits; the default ~2 GB heap
           # can OOM while finalizing a fully green run on the 6 GB check fleet.
           NODE_OPTIONS: --max-old-space-size=3072
+          UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
+          UNIT_SPECS: ${{ needs.precheck.outputs.unit_specs }}
+          # True only for a PR stacked on another PR's branch. `push`, tags and
+          # the nightly schedule have no base_ref and are never thinnable.
+          STACKED_PR: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' && github.base_ref != 'release' }}
+          # Through the environment, never `${{ }}` inside the script: a base
+          # branch name is attacker-chosen text on any PR, and interpolating it
+          # into `run:` would splice it into this shell.
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$UNIT_MODE" = "skip" ]; then
+            echo "Oracle: docs-only diff — no unit test can observe it. Skipping the unit suite."
+            exit 0
+          fi
+          if [ "$STACKED_PR" = "true" ] && [ "$UNIT_MODE" = "subset" ] && [ -n "$UNIT_SPECS" ]; then
+            n=0
+            for _ in $UNIT_SPECS; do n=$(( n + 1 )); done
+            echo "Stacked PR (base '${BASE_REF}' is not trunk) -> $n selected unit file(s)."
+            echo "The trunk-targeted run of this PR will run the full suite + coverage ratchet."
+            # Deliberately unquoted: UNIT_SPECS is a space-separated file list.
+            # shellcheck disable=SC2086
+            npm test -- $UNIT_SPECS
+            exit 0
+          fi
+          npm run coverage:ci
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).
@@ -1444,6 +1512,38 @@ jobs:
           else
             echo "superseded=false" >> "$GITHUB_OUTPUT"
           fi
+      # `update-screenshots` is a REQUEST ("refresh the shots on this PR"), and
+      # this job is where that request is served — so retire it here. Left on, it
+      # is not a request but a mode: the plan step above reads it on every
+      # subsequent push and forces mode=full, and because the label ALSO punches
+      # through the `base_ref == 'release'` guard on `e2e`, a trunk-targeted PR
+      # keeps dispatching 8 Electron shards + `build` for the rest of its life.
+      # Observed on #1569, which paid that on every push, days after the one
+      # refresh it wanted (and where 6 of the 8 shards never even got a runner).
+      #
+      # Reaching this step means `build` and `e2e` both succeeded and the render
+      # was committed, i.e. the refresh actually happened — a failed run leaves
+      # the label in place so the next push retries it. Removal is best-effort:
+      # `|| true` on a 404 (already removed by hand, or two runs raced), and a
+      # failure here must never redden a PR whose screenshots are correct.
+      - name: Retire the update-screenshots label
+        if: steps.head.outputs.exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+        run: |
+          if [ "$HAS_LABEL" != "true" ]; then
+            echo "No update-screenshots label on this PR; nothing to retire."
+            exit 0
+          fi
+          curl -sS -X DELETE \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${{ github.repository }}/issues/${PR_NUMBER}/labels/update-screenshots" \
+            -o /dev/null -w 'label removal: HTTP %{http_code}\n' || true
       - name: Comment on PR with updated screenshots
         # Always run: when there's something to report (refreshed shots, ignored
         # noise, held flapping/contested renders, or a source conflict needing a

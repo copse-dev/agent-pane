@@ -71,7 +71,7 @@ export interface IpcInvokeMap {
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {
-    args: [contextJson: string]
+    args: [projectId: string, threadId: string, contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
   }
 
