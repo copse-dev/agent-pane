@@ -15,6 +15,7 @@ import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
+import { createTerminalAfterPersist } from '../terminal/create-after-persist.ts'
 
 /* selectionInactiveBackground is set per theme rather than left to xterm: its
    default (#3A3D41) is a dark grey, so in the light theme a selection made and
@@ -267,11 +268,16 @@ export function mountTerminalsPane(
     try {
       openTerminalSurface(tab)
       fitTab(tab)
-      const created = await api.terminal.create(tab.term.cols, tab.term.rows, {
-        label: tab.label,
-        projectId: tab.scopeProjectId,
-        threadId: tab.scopeId,
-      })
+      const created = await createTerminalAfterPersist(
+        api.terminal.create.bind(api.terminal),
+        tab.term.cols,
+        tab.term.rows,
+        {
+          label: tab.label,
+          projectId: tab.scopeProjectId,
+          threadId: tab.scopeId,
+        },
+      )
       tab.sessionId = created.sessionId
       const worktreePath = currentWorktreePath(tab.scopeId)
       tab.checkoutPath = created.checkoutMode === 'worktree' ? worktreePath : null
