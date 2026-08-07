@@ -17,7 +17,8 @@
             "questionVsRequest": 1,
             "faithfulReporting": 1,
             "scopeDiscipline": 1,
-            "noNarratingComments": 1
+            "noNarratingComments": 1,
+            "followExplicitConstraints": 1
           }
         },
         "omit-tools": {
@@ -31,7 +32,8 @@
             "questionVsRequest": 1,
             "faithfulReporting": 1,
             "scopeDiscipline": 1,
-            "noNarratingComments": 1
+            "noNarratingComments": 1,
+            "followExplicitConstraints": 1
           }
         }
       }
@@ -52,7 +54,8 @@
             "questionVsRequest": 1,
             "faithfulReporting": 1,
             "scopeDiscipline": 1,
-            "noNarratingComments": 1
+            "noNarratingComments": 1,
+            "followExplicitConstraints": 1
           }
         },
         "omit-tools": {
@@ -66,7 +69,8 @@
             "questionVsRequest": 1,
             "faithfulReporting": 1,
             "scopeDiscipline": 1,
-            "noNarratingComments": 1
+            "noNarratingComments": 1,
+            "followExplicitConstraints": 1
           }
         }
       }
