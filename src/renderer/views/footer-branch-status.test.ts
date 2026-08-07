@@ -80,6 +80,37 @@ afterEach(() => {
 })
 
 describe('footer branch status', () => {
+  it('keeps a thread selectable when branch status cannot be read', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('feature/detached-worktree', true)],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: null, pr: null })
+
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async () => {
+          throw new Error('Thread worktree is on a detached HEAD')
+        },
+      },
+    })
+    await settle()
+
+    const button = qsRequired<HTMLButtonElement>(host, '.footer-branch-status')
+    assert.equal(
+      button.querySelector('.footer-branch-label')?.textContent,
+      'feature/detached-worktree',
+    )
+    assert.ok(button.classList.contains('is-copyable'))
+    assert.equal(document.querySelector('.toast-error'), null)
+  })
+
   it('copies the thread branch on click for existing chats', async () => {
     let copiedBranch: string | null = null
     installClipboard(async (text) => {

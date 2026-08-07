@@ -59,6 +59,7 @@ export function mountFooterBranchStatus(
   let branches: GitBranchInfo[] = []
   let defaultBranch: string | null = null
   let open = false
+  let refreshToken = 0
 
   function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
@@ -231,6 +232,7 @@ export function mountFooterBranchStatus(
   }
 
   async function refresh(): Promise<void> {
+    const token = ++refreshToken
     if (!store.getState().workspaceRoot) {
       status = null
       branches = []
@@ -241,9 +243,20 @@ export function mountFooterBranchStatus(
     const owner = getActiveThreadOwner(store)
     if (!owner) return
     const threadBranch = getActiveThreadBranch()
-    status = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
-    if (isPickerMode()) await loadBranches()
-    else {
+    try {
+      const nextStatus = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
+      if (token !== refreshToken) return
+      status = nextStatus
+      if (isPickerMode()) await loadBranches()
+      else {
+        branches = []
+        defaultBranch = null
+      }
+    } catch {
+      if (token !== refreshToken) return
+      // Branch status is supplementary UI. A thread with an invalid or externally
+      // modified worktree must remain selectable so the user can inspect/recover it.
+      status = null
       branches = []
       defaultBranch = null
     }
@@ -313,6 +326,7 @@ export function mountFooterBranchStatus(
   return {
     refresh: () => void refresh(),
     destroy: (): void => {
+      refreshToken += 1
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubs.forEach((u) => {
         u()
