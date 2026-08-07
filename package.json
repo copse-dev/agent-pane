@@ -75,6 +75,7 @@
     "demo:trace": "node scripts/run-build-demo-trace.mts",
     "analyze:autonomy": "node scripts/analyze-autonomy-regression.mts",
     "bench:semantic": "node scripts/semantic-search-bench.mts",
+    "report:prompt-causes": "node scripts/report-prompt-causes.mts",
     "sync:models": "node scripts/sync-model-catalog.mts",
     "sync:local-models": "node scripts/sync-local-models.mts",
     "sync:intellect": "node scripts/sync-intellect.mts",

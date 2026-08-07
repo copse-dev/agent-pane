@@ -17,6 +17,7 @@ import {
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
+  resetDefaultBranchCache,
   resolveWorkspaceRelativeGitPath,
   sumDiffNumstat,
   toGitShowPath,
@@ -626,12 +627,12 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
   const git = (...args: string[]): SpawnSyncReturns<string> =>
     spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
 
-  afterEach(() => {
+  // Each case mints its own repo, so reclaim it here rather than leaving every
+  // one but the last behind on the runner.
+  afterEach(async () => {
     restore?.()
     restore = undefined
-  })
-
-  after(async () => {
+    resetDefaultBranchCache()
     if (repo) await rm(repo, { recursive: true, force: true })
     repo = ''
   })
@@ -669,6 +670,46 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
 
     assert.equal(await getDefaultBranch(), null)
+  })
+
+  it('serves a resolved name from cache until the cache is dropped', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-cache-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('remote', 'add', 'origin', 'https://example.com/repo.git')
+    git('update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), 'develop')
+
+    // Repointing origin/HEAD is invisible to a cached read — that is the point,
+    // since the UI re-reads this on every file-watcher tick.
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    assert.equal(await getDefaultBranch(), 'develop')
+
+    resetDefaultBranchCache()
+    assert.equal(await getDefaultBranch(), 'main')
+  })
+
+  it('caches per repository root rather than globally', async () => {
+    const other = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-other-'))
+    try {
+      repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-first-'))
+      git('init', '-q', '-b', 'main')
+      git('config', 'init.defaultBranch', 'develop')
+      restore = setWorkspaceRootForTest(repo)
+      assert.equal(await getDefaultBranch(), 'develop')
+
+      spawnSync('git', ['init', '-q'], { cwd: other, encoding: 'utf8' })
+      spawnSync('git', ['config', 'init.defaultBranch', 'trunk'], { cwd: other, encoding: 'utf8' })
+      assert.equal(await getDefaultBranch(other), 'trunk')
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
   })
 })
 

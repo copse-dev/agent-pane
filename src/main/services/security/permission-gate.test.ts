@@ -25,6 +25,7 @@ import {
   ensureShellCommandPermitted,
   ensureTerminalPermitted,
   ensureToolPermitted,
+  promptUnsandboxedShell,
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -152,8 +153,10 @@ describe('ensureToolPermitted', () => {
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
+    let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
+      approvalCause = request.cause
       return { approved: false, remember: false }
     })
     try {
@@ -162,6 +165,7 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.match(approvalBody, /api\.parallel\.ai/)
+      assert.equal(approvalCause, 'web-origin')
       assert.match(approvalBody, /paid API credits/i)
       assert.match(approvalBody, /Zero Data Retention/i)
     } finally {
@@ -178,10 +182,12 @@ describe('ensureToolPermitted', () => {
     let approvalBody = ''
     let approvalSubject = ''
     let approvalFooter = ''
+    let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
       approvalSubject = request.subject ?? ''
       approvalFooter = request.bodyFooter ?? ''
+      approvalCause = request.cause
       return { approved: false, remember: false }
     })
     try {
@@ -192,6 +198,10 @@ describe('ensureToolPermitted', () => {
       assert.equal(approvalBody, 'printf hello')
       assert.match(approvalFooter, /network access is temporarily widened/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
+      // The cause is what makes this prompt countable in the D0/U0 report: an
+      // artifact of ASRT's process-global allowlist, which a per-runtime
+      // container would not produce at all.
+      assert.equal(approvalCause, 'shell-network-scope-overlap')
     } finally {
       setApprovalHandler(null)
       release()
@@ -1706,6 +1716,58 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       assert.ok(event)
       assert.equal(event.verdict, 'denied')
       assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
+    })
+  })
+
+  /**
+   * Drive the post-failure escalation the shell tool reaches when a sandboxed
+   * run hit a violation, capturing the title of whatever prompt (if any) it puts
+   * up. `readGrantApplied` is the tool saying "this run already had the read
+   * relaxation and still failed".
+   */
+  async function captureEscalation(
+    command: string,
+    readGrantApplied: boolean,
+  ): Promise<{ approved: boolean; title: string | null }> {
+    setPermissionGateForTests(null)
+    let title: string | null = null
+    setApprovalHandler(async (request) => {
+      title = request.title
+      return { approved: false, remember: false }
+    })
+    try {
+      const approved = await promptUnsandboxedShell(command, ['sandbox violation'], undefined, {
+        readGrantApplied,
+      })
+      return { approved, title }
+    } finally {
+      setApprovalHandler(null)
+    }
+  }
+
+  it('spends the read grant on containment, not also on a full sandbox escape', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-spent', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+
+      // A command the grant covers that has NOT yet been given the relaxation is
+      // still answered by the grant — that is how the read question stays a
+      // once-per-thread question.
+      const covered = await runWithActiveRunIdentity('thread-spent', () =>
+        captureEscalation('cat ~/.gitconfig', false),
+      )
+      assert.equal(covered.approved, true)
+      assert.equal(covered.title, null, 'the standing grant answers it without asking')
+
+      // But once the seatbelt has already been widened to exactly the paths the
+      // grant named and the command STILL hit the sandbox, the grant is spent: it
+      // must not silently approve the full escape it never covered.
+      const spent = await runWithActiveRunIdentity('thread-spent', () =>
+        captureEscalation('cat ~/.gitconfig', true),
+      )
+      assert.equal(spent.approved, false)
+      assert.equal(spent.title, 'Run outside sandbox?')
     })
   })
 

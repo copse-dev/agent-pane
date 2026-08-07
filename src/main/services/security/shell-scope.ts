@@ -535,6 +535,43 @@ export function analyzeShellCommand(
   return { verdict: hasHard || outsidePath !== null ? 'external' : 'ambiguous', reasons }
 }
 
+/**
+ * True when the ONLY thing pushing this command outside the sandbox is that it
+ * names a path outside the workspace — no network matcher fired, hard or fuzzy,
+ * and no opaque local execution was detected.
+ *
+ * A caller that can make the named paths readable inside the seatbelt can then
+ * contain the command instead of running it unsandboxed. Deliberately stricter
+ * than `verdict === 'external'`: a single fuzzy "may reach the network" reason
+ * is enough to disqualify, because containment would break such a command and a
+ * read relaxation is not the approval it needs.
+ */
+/**
+ * True when the command carries a reason to leave the sandbox BEYOND naming an
+ * outside path — a network matcher (hard or fuzzy) or opaque local execution.
+ *
+ * The path-independent half of {@link externalOnlyForOutsidePath}, for callers
+ * that already decided a command reads outside the workspace by their own
+ * (broader) path analysis and only need to know whether anything *else* is going
+ * on. Asking the full predicate instead would fold in this module's narrower
+ * path detection and reject spellings such as `${HOME}/…` that it does not
+ * recognise but the caller does.
+ */
+export function needsMoreThanOutsideAccess(command: string): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  const { reasons } = collectExternalReasons(trimmed)
+  return reasons.length > 0
+}
+
+export function externalOnlyForOutsidePath(command: string, workspaceRoot: string | null): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  const { reasons, hasHard } = collectExternalReasons(trimmed)
+  if (hasHard || reasons.length > 0) return false
+  return referencesOutsideWorkspace(trimmed, workspaceRoot) !== null
+}
+
 const REPLAYABLE_OPAQUE_LOCAL_REASONS: ReadonlySet<string> = new Set([
   REASON_LOCAL_EXECUTABLE,
   REASON_INTERPRETER_FILE,

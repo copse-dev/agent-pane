@@ -11,6 +11,7 @@ import { envForRendererChildProcess } from '../services/exec/child-process-env.t
 import {
   ensureWorkspaceTmpDir,
   portBindingSandboxOverlay,
+  readAllowedSandboxOverlay,
   workspaceSandboxOverlay,
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
@@ -194,6 +195,14 @@ export async function spawnShellInProjectSandbox(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     unsandboxed?: boolean
+    /**
+     * Absolute paths a user-approved read-access grant makes readable for THIS
+     * spawn only (see {@link readAllowedSandboxOverlay}). Narrower on purpose
+     * than the `sandboxConfig` escape hatch its sibling takes: the caller names
+     * paths, the spawn builds the overlay, so this option can only ever widen
+     * reads — never writes, network, or the whole profile.
+     */
+    readGrantTargets?: readonly string[]
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -221,7 +230,11 @@ export async function spawnShellInProjectSandbox(
     })
   }
 
-  const customConfig = workspaceSandboxOverlay(opts.cwd)
+  const readGrantTargets = opts.readGrantTargets ?? []
+  const customConfig =
+    readGrantTargets.length > 0
+      ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
+      : workspaceSandboxOverlay(opts.cwd)
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     shellCommandLine,
     shellForSandboxWrap(),

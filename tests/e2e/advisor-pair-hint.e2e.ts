@@ -37,6 +37,9 @@ describe('advisor pair assessment hint', () => {
     // pairing hint appended below it (settings stay editable even while the pack
     // is off). Wait for both to render from the live pack list.
     await $('#advisorModel').waitForExist({ timeout: 15_000 })
+    // Pack settings live in a closed "Pack settings" disclosure — open this
+    // pack's before asserting on anything inside it.
+    await $(`${ADVISOR_PACK_ROW} .pack-settings-summary`).click()
     await $('#advisorPairHint').waitForDisplayed({ timeout: 15_000 })
   }
 

@@ -1352,6 +1352,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
     const { approved } = await requestApproval({
       title: 'Enable Guarded YOLO for this thread?',
+      cause: 'mode-arming',
       body: [
         'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
         '',
