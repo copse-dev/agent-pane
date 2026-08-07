@@ -8,6 +8,37 @@ every published entry.
 
 ## Unreleased
 
+- The Changes panel no longer goes blank when a diff is replaced. Opening a file
+  tore the current diff down before the next one had been computed, so for the
+  length of that compute the editor held nothing at all — and any attach that was
+  abandoned partway (a store update re-selecting the same file, a fresh proposal
+  arriving, a thread or project switch) returned without putting anything back,
+  leaving the panel showing an empty editor rather than a diff or its “Select a
+  changed file” message. The outgoing diff is now released only once its
+  replacement is on screen, so an abandoned attach leaves the diff you were
+  looking at in place. Clearing the viewer also releases the view-model wrapper
+  around the models, which nothing had been disposing.
+- The worktrees Copse creates are now something you can see and clear out.
+  Every isolated thread gets its own linked checkout of the project, and until
+  now nothing in the app admitted they existed: they accumulated under
+  `~/.copse/worktrees`, one full working copy each, and the only way to find out
+  how much disk that had become was to go looking with `git worktree list` and
+  `du`. **Settings → Sources → Worktrees** lists them, most recently used first,
+  and each row says what the checkout is for and what it costs — the thread it
+  was created for, when it was last used, when it was created, and its measured
+  size on disk, with the path on hover. Rows that are safe to reclaim say so
+  rather than leaving you to work it out: a checkout whose thread is gone reads
+  “orphaned”, one whose thread has moved on reads “released”, and one Copse did
+  not create reads “external”, alongside badges for uncommitted work, unmerged
+  commits, a detached HEAD, or a lock. Each row deletes, including the dirty and
+  unmerged cases the automatic cleanup has to refuse — which are exactly the ones
+  that pile up. Deleting always asks first; if Git reports content that would go
+  with the directory, it asks a second time and lists the files, checked at the
+  moment you delete rather than when the list was drawn, so a checkout the agent
+  has dirtied since still stops you. A checkout with a turn running in it cannot
+  be deleted at all. Deleting one does not brick its thread: the thread drops the
+  worktree and carries on in the project checkout. The branch goes only if it is
+  fully merged — anything unmerged outlives the checkout that held it.
 - Switching projects no longer carries a prompt across, or leaves the app half
   moved. Two problems, both about a switch and the thing it left behind.
   Approval prompts and `ask_user` questions were checked against the focused

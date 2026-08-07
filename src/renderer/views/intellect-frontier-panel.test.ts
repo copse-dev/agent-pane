@@ -16,6 +16,8 @@ import {
   unscoredTooltipContent,
 } from './intellect-frontier-panel.ts'
 import { clearResolvedModelCards, setResolvedModelCard } from './model-card-cache.ts'
+import { TRACKED_MODELS } from '@copse/llm/model-catalog.ts'
+import { getIntellectScore } from '@copse/llm/model-intellect.ts'
 import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import type { ExtraProvider, ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
@@ -337,14 +339,22 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     const svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    // One density row (20 injected models; no tracked cloud models are unscored
-    // now), no per-model labels, count in the caption.
-    assert.match(svg.textContent, /no score yet · 20 models/)
+    // One density row, no per-model labels, count in the caption. The gutter
+    // holds the 20 injected models plus any tracked cloud model that is priced
+    // but has no *measured* Intelligence Index yet — the editorial intellect
+    // scale doesn't plot here. Derived so adding a model to the catalog ahead
+    // of its Artificial Analysis measurement doesn't break this test.
+    const unscoredTracked = TRACKED_MODELS.filter((id) => getIntellectScore(id) === null)
+    const expectedUnscored = manyPriced.length + unscoredTracked.length
+    assert.match(svg.textContent, new RegExp(`no score yet · ${String(expectedUnscored)} models`))
     assert.ok(svg.querySelector('circle.gutter-unscored.dense'))
     assert.equal(svg.querySelectorAll('text.gutter-unscored-label').length, 0)
     const details = panel.root.querySelector('details.frontier-unscored-list')
     assert.ok(details)
-    assert.match(details.textContent, /20 priced models without an intellect score/)
+    assert.match(
+      details.textContent,
+      new RegExp(`${String(expectedUnscored)} priced models without an intellect score`),
+    )
     assert.match(details.textContent, /model-19/)
   })
 

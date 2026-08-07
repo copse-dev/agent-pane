@@ -607,63 +607,6 @@ footer a:hover {
   }
 }
 
-/* Animations */
-@media (prefers-reduced-motion: no-preference) {
-  .feature,
-  .showcase-item {
-    animation: fadeInUp 0.6s ease-out;
-    animation-fill-mode: both;
-  }
-
-  .feature:nth-child(1) {
-    animation-delay: 0.05s;
-  }
-  .feature:nth-child(2) {
-    animation-delay: 0.1s;
-  }
-  .feature:nth-child(3) {
-    animation-delay: 0.15s;
-  }
-  .feature:nth-child(4) {
-    animation-delay: 0.2s;
-  }
-  .feature:nth-child(5) {
-    animation-delay: 0.25s;
-  }
-  .feature:nth-child(6) {
-    animation-delay: 0.3s;
-  }
-  .feature:nth-child(7) {
-    animation-delay: 0.35s;
-  }
-  .feature:nth-child(8) {
-    animation-delay: 0.4s;
-  }
-  .feature:nth-child(9) {
-    animation-delay: 0.45s;
-  }
-  .feature:nth-child(10) {
-    animation-delay: 0.5s;
-  }
-  .feature:nth-child(11) {
-    animation-delay: 0.55s;
-  }
-  .feature:nth-child(12) {
-    animation-delay: 0.6s;
-  }
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* Marketing page — forest/pink/neon system from the 2026 visual direction. */
 @font-face {
   font-family: 'Averia Serif Libre';
@@ -674,11 +617,11 @@ footer a:hover {
 }
 
 @font-face {
-  font-family: 'Space Grotesk';
+  font-family: 'Pliant';
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('fonts/space-grotesk-variable.ttf') format('truetype-variations');
+  src: url('fonts/pliant-variable.ttf') format('truetype-variations');
 }
 
 .marketing-root {
@@ -701,7 +644,7 @@ footer a:hover {
   color: var(--cream);
   background: var(--forest);
   font-family:
-    'Space Grotesk',
+    'Pliant',
     ui-sans-serif,
     -apple-system,
     BlinkMacSystemFont,
@@ -830,14 +773,12 @@ footer a:hover {
 
 .marketing-site .hero {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 677px) minmax(520px, 1fr);
-  align-items: start;
-  min-height: 794px;
-  padding: 204px 0 74px clamp(64px, 4.5vw, 72px);
+  display: block;
+  min-height: 0;
+  padding: 155px 0 44px;
   margin: 0;
   overflow: hidden;
-  text-align: left;
+  text-align: center;
   background: var(--forest);
   box-shadow: none;
 }
@@ -845,15 +786,17 @@ footer a:hover {
 .marketing-site .hero-copy {
   position: relative;
   z-index: 2;
-  max-width: 677px;
-  padding: 24px 34px 0 0;
+  width: min(880px, calc(100% - 96px));
+  margin: 0 auto;
+  padding: 0;
 }
 
 .marketing-site .hero-badges {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
-  margin-bottom: 39px;
+  margin-bottom: 27px;
 }
 
 .marketing-site .hero-badges > span {
@@ -896,8 +839,8 @@ footer a:hover {
 }
 
 .marketing-site .hero h1 {
-  max-width: 643px;
-  margin: -12px 0 27px;
+  max-width: 860px;
+  margin: -12px auto 42px;
   color: var(--pink);
   font-family: var(--marketing-serif);
   font-size: 80.45px;
@@ -924,23 +867,26 @@ footer a:hover {
 }
 
 .marketing-site .hero p {
-  max-width: 620px;
-  margin: 0 0 18px;
+  max-width: 800px;
+  margin: 0 auto 18px;
   color: var(--cream);
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: 1.125rem;
+  line-height: 1.72;
 }
 
 .marketing-site .hero .hero-lede {
-  font-size: 1rem;
+  max-width: 700px;
+  margin-bottom: 30px;
+  font-size: 1.5rem;
+  line-height: 1.35;
 }
 
 .marketing-site .button-row {
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
-  justify-content: flex-start;
-  margin-top: 54px;
+  justify-content: center;
+  margin-top: 30px;
 }
 
 .marketing-site .pill {
@@ -991,19 +937,23 @@ footer a:hover {
 .marketing-site .hero-visual {
   position: relative;
   z-index: 1;
-  align-self: center;
-  margin: 0;
+  width: min(1285px, calc(100% - 156px));
+  margin: 59px auto 0;
   min-width: 0;
+  text-align: left;
 }
 
 .marketing-site .hero-demo {
   position: relative;
   display: block;
   height: auto;
+  /* Must track the demo iframe's own 1280x800 viewport. Any other ratio makes
+     hero-demo.js letterbox the frame, and the resulting band of panel
+     background puts a second rounded edge above and below the app chrome. */
   aspect-ratio: 8 / 5;
   overflow: hidden;
   contain: paint;
-  border-radius: 22px 0 0 22px;
+  border-radius: 20px;
   background: #202220;
   box-shadow: none;
 }
@@ -1026,14 +976,17 @@ footer a:hover {
   pointer-events: auto;
 }
 
-.marketing-site .hero-demo-activate {
+/* :not([hidden]) is load-bearing while click-to-interact is parked — an author
+   `display` outranks the UA's [hidden] rule, so the overlay would otherwise
+   still paint over the demo with the attribute set. */
+.marketing-site .hero-demo-activate:not([hidden]) {
   position: absolute;
   z-index: 2;
   inset: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  padding: 0 20px 18px;
+  padding: 0 20px;
   border: 0;
   color: var(--cream);
   background: transparent;
@@ -1042,12 +995,12 @@ footer a:hover {
 }
 
 .marketing-site .hero-demo-activate span {
-  padding: 7px 12px;
-  border: 1px solid rgba(255, 253, 247, 0.28);
+  padding: 13px 22px;
+  border: 1px solid rgba(255, 253, 247, 0.38);
   border-radius: 999px;
-  background: rgba(0, 37, 33, 0.78);
-  font-size: 0.76rem;
-  font-weight: 600;
+  background: rgba(255, 253, 247, 0.3);
+  font-size: 0.83rem;
+  font-weight: 700;
   line-height: 1;
   backdrop-filter: blur(8px);
 }
@@ -1057,25 +1010,32 @@ footer a:hover {
 }
 
 .marketing-site .hero-demo-popout {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 28px;
-  margin: 0 16px 10px auto;
-  border: 1px solid rgba(255, 253, 247, 0.28);
-  border-radius: 6px;
-  color: rgba(255, 253, 247, 0.76);
-  background: rgba(255, 253, 247, 0.07);
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 17px;
+  color: var(--cream);
+  font-size: 0.86rem;
+  font-weight: 700;
   line-height: 1;
-  text-decoration: none;
-  backdrop-filter: blur(8px);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 .marketing-site .hero-demo-popout:hover {
-  color: var(--cream);
-  border-color: var(--green);
-  background: rgba(255, 253, 247, 0.12);
+  color: var(--green);
+}
+
+.marketing-site .hero-demo-popout-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
 }
 
 .marketing-site .line-field {
@@ -1277,7 +1237,7 @@ footer a:hover {
   content: '+';
   float: right;
   color: var(--green);
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Pliant', sans-serif;
   font-size: 1.1rem;
 }
 
@@ -1588,40 +1548,6 @@ footer a:hover {
 .marketing-site .other-features {
   position: relative;
   padding: 0 0 120px;
-  overflow: visible;
-}
-
-.marketing-site .other-features-spiral {
-  position: absolute;
-  z-index: 0;
-  top: -360px;
-  left: 72%;
-  width: min(1680px, 112vw);
-  height: auto;
-  overflow: visible;
-  pointer-events: none;
-  filter: blur(34px) drop-shadow(0 0 64px rgba(32, 253, 133, 0.24));
-  opacity: 0.18;
-  color: var(--green);
-  transform: translateX(-50%) rotate(-8deg) scale(1.06);
-  transform-origin: center;
-}
-
-.marketing-site .other-features-spiral-path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 152;
-  stroke-linecap: round;
-  stroke-dasharray: 1 1;
-  stroke-dashoffset: 1;
-  opacity: 0;
-  animation: other-features-spiral-draw 2.5s ease-in-out infinite;
-  will-change: stroke-dashoffset, opacity;
-}
-
-.marketing-site .other-features > :not(.other-features-spiral) {
-  position: relative;
-  z-index: 1;
 }
 
 .marketing-site .section-rule-left {
@@ -1702,36 +1628,6 @@ footer a:hover {
   font-size: clamp(3.5rem, 5vw, 5.5rem);
   line-height: 1;
   letter-spacing: -0.02em;
-}
-
-@keyframes other-features-spiral-draw {
-  0%,
-  1% {
-    stroke-dashoffset: 1;
-    opacity: 0;
-  }
-
-  2% {
-    stroke-dashoffset: 1;
-    opacity: 1;
-  }
-
-  46%,
-  56% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-
-  98% {
-    stroke-dashoffset: -1;
-    opacity: 1;
-  }
-
-  99%,
-  100% {
-    stroke-dashoffset: -1;
-    opacity: 0;
-  }
 }
 
 .marketing-site .download-panel p {
@@ -1819,14 +1715,12 @@ footer a:hover {
   }
 
   .marketing-site .hero {
-    grid-template-columns: 1fr;
-    gap: 64px;
     min-height: 0;
-    padding: 160px 0 90px 48px;
+    padding: 124px 0 40px;
   }
 
   .marketing-site .hero-copy {
-    padding-right: 48px;
+    width: calc(100% - 80px);
   }
 
   .marketing-site .hero h1 {
@@ -1834,13 +1728,8 @@ footer a:hover {
   }
 
   .marketing-site .hero-visual {
-    width: calc(100% - 48px);
-    margin-left: auto;
-  }
-
-  .marketing-site .hero-demo {
-    height: auto;
-    aspect-ratio: 8 / 5;
+    width: calc(100% - 80px);
+    margin-top: 52px;
   }
 
   .marketing-site .feature-stage {
@@ -1903,12 +1792,11 @@ footer a:hover {
   }
 
   .marketing-site .hero {
-    gap: 44px;
-    padding: 128px 0 72px 24px;
+    padding: 104px 0 32px;
   }
 
   .marketing-site .hero-copy {
-    padding-right: 24px;
+    width: calc(100% - 40px);
   }
 
   .marketing-site .hero-badges {
@@ -1921,8 +1809,22 @@ footer a:hover {
     letter-spacing: -1.6px;
   }
 
+  .marketing-site .hero .hero-lede {
+    margin-bottom: 22px;
+    font-size: 1.28rem;
+  }
+
+  .marketing-site .hero p {
+    font-size: 1.06rem;
+  }
+
   .marketing-site .hero-visual {
-    width: calc(100% - 24px);
+    width: calc(100% - 40px);
+    margin-top: 40px;
+  }
+
+  .marketing-site .hero-demo-popout {
+    font-size: 0.88rem;
   }
 
   .marketing-site .manifesto {
@@ -2028,11 +1930,6 @@ footer a:hover {
     animation: none !important;
     scroll-behavior: auto !important;
     transition: none !important;
-  }
-
-  .marketing-site .other-features-spiral-path {
-    stroke-dashoffset: 0;
-    opacity: 1;
   }
 }
 

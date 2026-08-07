@@ -1597,6 +1597,35 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 
+/* Worktrees: same row shape as the loaded-source lists, plus the two things
+   only this list has — a measured size that arrives after the row, and a
+   destructive per-row action. The size keeps its own colour so it reads as a
+   value rather than more of the sentence around it. */
+.sources-worktree-size {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.sources-worktree-delete-btn {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px var(--spacing-sm);
+  cursor: pointer;
+}
+.sources-worktree-delete-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--error);
+  color: var(--error);
+}
+.sources-worktree-delete-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* G2 dry-run hook tester: a per-hook "Test" button in the row header and the
    result panel it toggles (summary chips + labeled stdin/stdout/stderr). */
 .sources-hook-test-btn {
