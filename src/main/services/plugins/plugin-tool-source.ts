@@ -12,6 +12,16 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 
 export const PLUGIN_MANIFEST_FILE = 'copse-plugin.json'
 
+/**
+ * The pre-rename manifest name, still accepted.
+ *
+ * A selected directory lives on the *user's* disk, outside anything Copse can
+ * migrate — so the filename is as much a contract as a storage key is. Dropping
+ * it would make every already-selected folder silently stop loading, with the
+ * only symptom being a plugin that quietly vanished from Settings.
+ */
+export const LEGACY_PLUGIN_MANIFEST_FILE = 'copse-pack.json'
+
 const MAX_MANIFEST_BYTES = 1024 * 1024
 const MAX_HASHED_FILES = 10_000
 const MAX_HASHED_BYTES = 100 * 1024 * 1024
@@ -213,7 +223,11 @@ export async function discoverPluginToolSource(
   const rootStat = await fsp.stat(root)
   if (!rootStat.isDirectory()) throw new PluginToolSourceError('Plugin source is not a directory.')
 
-  const manifestPath = join(root, PLUGIN_MANIFEST_FILE)
+  // Prefer the current name; fall back to the one the folder may already carry.
+  const preferred = join(root, PLUGIN_MANIFEST_FILE)
+  const manifestPath = (await fsp.stat(preferred).catch(() => null))?.isFile()
+    ? preferred
+    : join(root, LEGACY_PLUGIN_MANIFEST_FILE)
   const raw = await readManifest(manifestPath)
   const entrypoint = ensureContained(root, raw.runtime.entrypoint, 'Runtime entrypoint')
   const entrypointStat = await fsp.stat(entrypoint).catch(() => null)

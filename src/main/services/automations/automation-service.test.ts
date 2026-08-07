@@ -5,7 +5,7 @@ import type { Thread } from '@shared/types'
 import { storageSet } from '../storage/storage.ts'
 import { createAutomationService } from './automation-service.ts'
 
-const STORAGE_KEY = `pack.${AUTOMATIONS_PLUGIN_ID}.storage`
+const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 
 describe('AutomationService', () => {
   beforeEach(() => {

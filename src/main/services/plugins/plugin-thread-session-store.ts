@@ -9,7 +9,7 @@ export interface PluginThreadSessionStore {
 }
 
 function sessionBagKey(pluginId: string): string {
-  return `pack.${encodeURIComponent(pluginId)}.threadSessions`
+  return `plugin.${encodeURIComponent(pluginId)}.threadSessions`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
