@@ -3,10 +3,12 @@ import assert from 'node:assert/strict'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import {
   buildSemanticSearchPromptBlock,
   executeSemanticSearch,
   semanticIndexBuildingNote,
+  setWorktreeSemanticOverlayExecutorForTest,
 } from './semantic-search.ts'
 import {
   setSemanticBackendForTest,
@@ -21,6 +23,7 @@ describe('semantic-search', () => {
     setSemanticBackendForTest(null)
     setSemanticSearchExecutorForTest(null)
     setSemanticIndexReadyForTest(null)
+    setWorktreeSemanticOverlayExecutorForTest(null)
     resetWorkspaceIndexStatusForTest()
   })
 
@@ -63,6 +66,96 @@ describe('semantic-search', () => {
       )
       assert.ok(result.status === 'ok', `expected ok, got ${result.status}`)
       assert.match(result.text, /native hit/)
+    } finally {
+      restoreWorkspace()
+    }
+  })
+
+  it('queries the shared index and overlays worktree-local changes', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest('/tmp/project')
+    setSemanticBackendForTest('gortex')
+    setSemanticIndexReadyForTest('/tmp/project')
+    let searchedRoot = ''
+    setSemanticSearchExecutorForTest(async (options) => {
+      searchedRoot = options.workspaceRoot
+      return {
+        hits: [
+          { path: 'src/changed.ts', startLine: 4, text: 'stale shared hit' },
+          { path: 'src/stable.ts', startLine: 8, text: 'stable shared hit' },
+        ],
+        backend: 'gortex',
+      }
+    })
+    setWorktreeSemanticOverlayExecutorForTest(async (options) => {
+      assert.equal(options.projectRoot, '/tmp/project')
+      assert.equal(options.worktreeRoot, '/tmp/worktree')
+      assert.equal(options.baselineHits.length, 2)
+      const stableHit = options.baselineHits[1]
+      assert.ok(stableHit)
+      return {
+        hits: [
+          { path: 'src/changed.ts', startLine: 12, text: '[worktree delta] current hit' },
+          stableHit,
+        ],
+        changedPathCount: 1,
+      }
+    })
+
+    try {
+      const result = await runWithThreadExecutionContext(
+        {
+          projectId: 'p1',
+          threadId: 't1',
+          projectRoot: '/tmp/project',
+          root: '/tmp/worktree',
+          checkoutMode: 'worktree',
+          branch: 'copse/t1',
+        },
+        () =>
+          executeSemanticSearch({ query: 'current implementation' }, new AbortController().signal),
+      )
+      assert.equal(searchedRoot, '/tmp/project')
+      assert.ok(result.status === 'ok', `expected ok, got ${result.status}`)
+      assert.match(result.text, /worktree delta.*current hit/)
+      assert.match(result.text, /stable shared hit/)
+      assert.doesNotMatch(result.text, /stale shared hit/)
+      assert.match(result.text, /overlay across 1 changed paths/)
+    } finally {
+      restoreWorkspace()
+    }
+  })
+
+  it('can query the shared snapshot without applying the worktree delta', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest('/tmp/project')
+    setSemanticBackendForTest('gortex')
+    setSemanticIndexReadyForTest('/tmp/project')
+    setSemanticSearchExecutorForTest(async () => ({
+      hits: [{ path: 'src/shared.ts', startLine: 1, text: 'shared snapshot' }],
+      backend: 'gortex',
+    }))
+    setWorktreeSemanticOverlayExecutorForTest(async () => {
+      throw new Error('overlay must not run')
+    })
+
+    try {
+      const result = await runWithThreadExecutionContext(
+        {
+          projectId: 'p1',
+          threadId: 't1',
+          projectRoot: '/tmp/project',
+          root: '/tmp/worktree',
+          checkoutMode: 'worktree',
+          branch: 'copse/t1',
+        },
+        () =>
+          executeSemanticSearch(
+            { query: 'shared implementation', includeWorktreeDelta: false },
+            new AbortController().signal,
+          ),
+      )
+      assert.ok(result.status === 'ok', `expected ok, got ${result.status}`)
+      assert.match(result.text, /shared snapshot/)
+      assert.doesNotMatch(result.text, /worktree delta overlay/)
     } finally {
       restoreWorkspace()
     }
