@@ -1005,6 +1005,22 @@ jobs:
               echo "## process counts by name"
               ps -eo comm= | sort | uniq -c | sort -rn | head -n 30 || true
               echo
+              # TEMPORARY DIAGNOSTIC — do not merge. Chromedriver's DevTools
+              # request to the app's debug port hangs for exactly 10.000s and
+              # then fails, three of which exhausts connectionRetryTimeout and
+              # aborts POST /session. 10s is glibc's default resolver budget
+              # (RES_TIMEOUT 5s x RES_DFLRETRY 2), so the leading suspect is
+              # `localhost` going to DNS rather than resolving from /etc/hosts.
+              # A closed port refuses instantly; only resolution or a filtered
+              # path hangs. These three answer it directly.
+              echo "## localhost resolution"
+              cat /etc/hosts || true
+              grep -E '^(hosts|nameserver|options)' /etc/nsswitch.conf /etc/resolv.conf || true
+              time getent ahosts localhost || true
+              echo
+              echo "## listening sockets"
+              (ss -ltnp || netstat -ltnp) 2>/dev/null | head -n 40 || true
+              echo
               echo "## e2e / sandbox process detail (orphans have ppid 1)"
               ps -eo pid,ppid,etimes,comm,args \
                 | grep -E '[s]ocat|[b]wrap|[e]lectron|[c]hromedriver|[X]vfb' \
