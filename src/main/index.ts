@@ -128,6 +128,7 @@ import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
 } from './services/thread-execution-context.ts'
+import { parkCompletedPullRequestWorktree } from './services/worktree-parking.ts'
 import { runWithActiveRunIdentity } from './services/thread-models.ts'
 import {
   prepareThreadCheckout,
@@ -468,6 +469,9 @@ app
           projectId,
           threadId,
           payload: parseAgentRunPayload(rawPrompt),
+        })
+        await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
+          console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
       },
     )
