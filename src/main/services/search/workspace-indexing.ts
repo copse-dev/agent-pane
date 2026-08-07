@@ -3,6 +3,7 @@ import { ensureSemanticIndex } from './semantic-index.ts'
 import { setSemanticIndexScaleGuarded, setSemanticIndexUnavailable } from './index-status.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { startWorkspaceIndexWatcher, stopWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
+import { stopWatchingExecutionRoot } from './execution-root-watcher.ts'
 
 /** The most recently opened renderer-selected workspace root, if any. */
 let primaryWorkspaceRoot: string | null = null
@@ -146,5 +147,13 @@ export function startExecutionRootIndexing(root: string): void {
 /** Release a worktree execution root's index/watcher once its thread's checkout is retired. */
 export function stopExecutionRootIndexing(root: string): void {
   stopWorkspaceIndexWatcher(root)
+  // The tool-result cache watches this root too (`ensureExecutionRootWatched`,
+  // via the tool registry). Nothing else stops it, and a recursive `fs.watch`
+  // left on a directory that has been removed is not inert: on a change event
+  // Node's recursive watcher scandirs the subtree it thinks is still there and
+  // the ENOENT surfaces as an uncaught exception, taking the main process with
+  // it. Retiring, pruning, and deleting a worktree all funnel through
+  // `releaseWorktreeRoot` into here, so this is where the watcher goes.
+  stopWatchingExecutionRoot(root)
   invalidateIndex(root)
 }

@@ -30,6 +30,14 @@ export interface AllocateWorktreeInput {
   projectRoot: string
   prompt: string
   baseBranch: string
+  /**
+   * Carry the project checkout's uncommitted work into the new worktree.
+   * Defaults to true; the caller sets it false when those edits belong to a
+   * different branch than `baseBranch` (see `decideThreadWorktreePolicy`).
+   * Seeding is additionally skipped when the base has moved off the project
+   * checkout's own HEAD, whatever the caller asked for.
+   */
+  seedFromDirtyProject?: boolean
 }
 
 export interface ValidateWorktreeInput {
@@ -381,12 +389,24 @@ export async function allocateThreadWorktree(
       ['rev-parse', '--verify', `${baseRef}^{commit}`],
       `Cannot resolve base branch ${input.baseBranch}`,
     )
-    const dirty = await repositoryIsDirty(projectRoot)
-    // A snapshot carries the user's uncommitted edits into the new worktree so an
-    // isolated thread continues from exactly what they're looking at. It never
-    // touches the project root either way, so when the snapshot itself can't be
-    // created, falling back to a clean worktree from `baseCommit` is safe — it
-    // just means the new worktree won't include those uncommitted edits.
+    const dirtyProject = await repositoryIsDirty(projectRoot)
+    // Seeding restores the snapshot over the worktree wholesale rather than
+    // merging it, so it only means anything when both start from the same
+    // commit. A base that moved — a fetched `origin/<default>`, or a project
+    // checkout parked on another branch — would have those edits pasted onto an
+    // unrelated tree, silently mixing two states. Start clean instead; the
+    // user's own checkout still holds the work, untouched.
+    const headCommit = (await git(projectRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+    const seedable = (input.seedFromDirtyProject ?? true) && headCommit === baseCommit
+    if (dirtyProject && !seedable) {
+      console.info(
+        `[worktree] Project checkout for thread ${input.threadId} is dirty but its base moved to ${baseCommit.slice(0, 8)}; allocating a clean worktree instead`,
+      )
+    }
+    // It never touches the project root either way, so when the snapshot itself
+    // can't be created, falling back to a clean worktree from `baseCommit` is
+    // safe — it just means the new worktree won't include those edits.
+    const dirty = dirtyProject && seedable
     const snapshotRef = dirty
       ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot)
       : null

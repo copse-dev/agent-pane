@@ -122,6 +122,16 @@ export function ensureExecutionRootWatched(root: string): boolean {
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
       handleExecutionRootEvent(root, filename)
     })
+    // A root can be removed while it is still watched — a worktree retired or
+    // deleted, a project folder moved. `stopExecutionRootIndexing` handles the
+    // paths Copse controls; this covers the rest, because an unhandled watcher
+    // error is an uncaught exception in the main process, not a logged warning.
+    // Dropping the watcher leaves the root uncacheable, which is the same
+    // degraded state as never having established one.
+    watcher.on('error', (err: unknown) => {
+      console.warn('[copse-panel] tool result cache watcher failed for', root, err)
+      stopWatchingExecutionRoot(root)
+    })
     watchers.set(root, watcher)
     return true
   } catch (err) {

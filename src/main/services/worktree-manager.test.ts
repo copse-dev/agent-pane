@@ -273,6 +273,59 @@ describe('worktree manager', () => {
     assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
   })
 
+  it('refuses to seed dirty content the caller says belongs to another branch', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, 'unstaged.txt'), 'work from another branch\n')
+    const beforeStatus = git(repo, ['status', '--porcelain=v1', '-z'])
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-no-seed',
+      projectRoot: repo,
+      prompt: 'Start clean',
+      baseBranch: 'main',
+      seedFromDirtyProject: false,
+    })
+
+    assert.equal(worktree.seededFromDirtyProject, false)
+    await assert.rejects(readFile(join(worktree.path, 'unstaged.txt'), 'utf-8'))
+    assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
+  })
+
+  it('refuses to seed dirty content onto a base that moved off the project HEAD', async () => {
+    const { temp, repo } = await setup()
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    git(repo, ['remote', 'set-head', 'origin', '-a'])
+
+    const clone = join(temp, 'clone')
+    git(temp, ['clone', '-q', remote, clone])
+    await writeFile(join(clone, 'from-remote.txt'), 'newer commit\n')
+    git(clone, ['add', '.'])
+    git(clone, ['commit', '-q', '-m', 'pushed elsewhere'])
+    git(clone, ['push', '-q', 'origin', 'main'])
+
+    // Dirty edits made against the stale local tip. The worktree is cut from
+    // the fetched remote tip, so restoring them over it would mix two trees.
+    await writeFile(join(repo, 'unstaged.txt'), 'against the old tip\n')
+    const beforeStatus = git(repo, ['status', '--porcelain=v1', '-z'])
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-moved-base',
+      projectRoot: repo,
+      prompt: 'Base moved ahead',
+      baseBranch: 'main',
+    })
+
+    assert.equal(worktree.baseCommit, git(remote, ['rev-parse', 'main']).trim())
+    assert.equal(worktree.seededFromDirtyProject, false)
+    await assert.rejects(readFile(join(worktree.path, 'unstaged.txt'), 'utf-8'))
+    assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
+  })
+
   it('fetches and bases a worktree on the latest remote default branch', async () => {
     const { temp, repo } = await setup()
     const remote = join(temp, 'remote.git')

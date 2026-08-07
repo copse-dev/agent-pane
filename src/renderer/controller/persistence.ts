@@ -164,12 +164,12 @@ export async function loadProjects(
     if (typeof value['sshHost'] === 'string') project.sshHost = value['sshHost']
     if (typeof value['missing'] === 'boolean') project.missing = value['missing']
     const worktreeMode = value['worktreeMode']
-    if (
-      worktreeMode === 'never' ||
-      worktreeMode === 'always' ||
-      worktreeMode === 'from-default-branch'
-    ) {
+    // `from-default-branch` predates cutting worktrees from the default branch
+    // unconditionally; it now means the same thing as `always`.
+    if (worktreeMode === 'never' || worktreeMode === 'always') {
       project.worktreeMode = worktreeMode
+    } else if (worktreeMode === 'from-default-branch') {
+      project.worktreeMode = 'always'
     }
     return [project]
   })
