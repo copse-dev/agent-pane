@@ -75,7 +75,7 @@ test('fleet limits workers to the number of selected tasks', () => {
   assert.deepEqual(config.profiles, ['main-legacy'])
 })
 
-test('fleet packs logical shards onto a bounded number of physical hosts', () => {
+test('fleet plugins logical shards onto a bounded number of physical hosts', () => {
   const config = runConfig({
     instances: '10',
     'max-tasks': '10',

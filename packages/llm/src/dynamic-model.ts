@@ -10,7 +10,7 @@
 //
 // Selectors live in the `auto:` namespace ({@link AUTO_MODEL_PREFIX}), alongside
 // the other reserved model-selection namespaces (`lmstudio:`, `openrouter:`,
-// `remote-agent:`, `acp:`, `pack-model:`). `auto:best-value` predates this module
+// `remote-agent:`, `acp:`, `plugin-model:`). `auto:best-value` predates this module
 // as the chat default sentinel; it is the same string, now one member of a
 // vocabulary rather than a one-off.
 //
@@ -18,7 +18,7 @@
 // list. It deliberately holds no resolution logic: resolving a selector needs
 // live provider availability, plan usage, and the loaded local-model list, all
 // of which are host-side (`src/main/services/providers/dynamic-model.ts`). That
-// split is what lets the Electron-free pack manifests and the renderer share the
+// split is what lets the Electron-free plugin manifests and the renderer share the
 // vocabulary without pulling the host in.
 
 import { AGENT_ROLES, getAgentRole, type AgentRoleId } from './agent-roles.ts'
@@ -83,7 +83,7 @@ export function isDynamicModel(value: string | null | undefined): boolean {
  * than silently resolving it as something else.
  *
  * The namespace split comes from the shared parser; what the rule body *means*
- * is this module's own grammar, the same division `pack-model.ts` draws for its
+ * is this module's own grammar, the same division `plugin-model.ts` draws for its
  * URI-encoded halves.
  */
 export function parseDynamicModel(value: string | null | undefined): DynamicModelSelector | null {

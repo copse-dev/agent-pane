@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
-import { runWithDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/types'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { runAgent, abortAgent } from './agent-service.ts'
@@ -49,10 +49,10 @@ export interface HeadlessAgentProfile {
   readonly settings: Readonly<Record<string, unknown>>
   /** Provider credentials for this run; no persisted or environment keys are inherited. */
   readonly apiKeys?: Readonly<Record<string, string>>
-  /** Exact first-party packs enabled for this run. */
-  readonly enabledPackIds: readonly string[]
-  /** Optional pack-scoped settings, keyed by pack id then manifest setting id. */
-  readonly packSettings?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
+  /** Exact first-party plugins enabled for this run. */
+  readonly enabledPluginIds: readonly string[]
+  /** Optional plugin-scoped settings, keyed by plugin id then manifest setting id. */
+  readonly pluginSettings?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
   /** Deterministic executable availability supplied by the host environment. */
   readonly toolAvailability: ExplicitToolAvailability
   /** Whether to discover/connect the product's configured MCP servers. */
@@ -136,18 +136,18 @@ export async function runHeadlessAgent(
   const workspaceRoot = await canonicalWorkspaceRoot(profile.workspaceRoot, localWorkspaceFs)
   const threadId = nonEmptyStringOr(run.threadId, `headless-${randomUUID()}`)
   const projectId = nonEmptyStringOr(run.projectId, `headless-project-${randomUUID()}`)
-  const enabledPackIds = new Set(profile.enabledPackIds)
-  const packRegistry = createFirstPartyPackRegistry()
+  const enabledPluginIds = new Set(profile.enabledPluginIds)
+  const pluginRegistry = createFirstPartyPluginRegistry()
 
-  for (const pack of packRegistry.all()) {
-    if (!enabledPackIds.has(pack.id)) packRegistry.disable(pack.id)
+  for (const plugin of pluginRegistry.all()) {
+    if (!enabledPluginIds.has(plugin.id)) pluginRegistry.disable(plugin.id)
   }
-  for (const id of enabledPackIds) {
-    if (!packRegistry.has(id)) throw new Error(`Unknown enabled pack: ${id}`)
+  for (const id of enabledPluginIds) {
+    if (!pluginRegistry.has(id)) throw new Error(`Unknown enabled plugin: ${id}`)
   }
-  for (const [packId, values] of Object.entries(profile.packSettings ?? {})) {
-    if (!packRegistry.has(packId)) throw new Error(`Unknown pack settings owner: ${packId}`)
-    const storage = packRegistry.storage(packId)
+  for (const [pluginId, values] of Object.entries(profile.pluginSettings ?? {})) {
+    if (!pluginRegistry.has(pluginId)) throw new Error(`Unknown plugin settings owner: ${pluginId}`)
+    const storage = pluginRegistry.storage(pluginId)
     for (const [key, value] of Object.entries(values)) storage.set(key, value)
   }
 
@@ -159,7 +159,7 @@ export async function runHeadlessAgent(
         () =>
           runWithWorkspaceRoot(workspaceRoot, () =>
             runWithWorkspaceTrust(workspaceRoot, profile.workspaceTrusted, () =>
-              runWithDefaultPackRegistry(packRegistry, () =>
+              runWithDefaultPluginRegistry(pluginRegistry, () =>
                 runWithToolAvailability(profile.toolAvailability, () =>
                   runWithHeadlessInteractions(profile.interaction, () =>
                     runWithDiscoveredSkills(async () => {
@@ -226,9 +226,9 @@ export async function runHeadlessAgent(
                               {
                                 ...options,
                                 model: profile.model,
-                                resolvePackSetting: (packId, key) =>
-                                  packRegistry.has(packId)
-                                    ? packRegistry.storage(packId).get(key)
+                                resolvePluginSetting: (pluginId, key) =>
+                                  pluginRegistry.has(pluginId)
+                                    ? pluginRegistry.storage(pluginId).get(key)
                                     : undefined,
                                 ...(dependencies.provider
                                   ? { provider: dependencies.provider }

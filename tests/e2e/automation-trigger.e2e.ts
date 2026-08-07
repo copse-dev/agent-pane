@@ -18,9 +18,9 @@ describe('cron automation trigger', function () {
       projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
       activeProjectId: PROJECT_ID,
       [`threads:${PROJECT_ID}`]: [],
-      packDisabled: [],
-      packMigration: { automationsEnablement: true },
-      pack: {
+      pluginDisabled: [],
+      pluginMigration: { automationsEnablement: true },
+      plugin: {
         copse: {
           automations: {
             storage: [

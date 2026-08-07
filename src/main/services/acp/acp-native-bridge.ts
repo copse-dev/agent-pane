@@ -11,7 +11,7 @@ import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import { runWithThreadExecutionOwner } from '../thread-execution-context.ts'
 import { getActiveProjectId } from '../workspace.ts'
@@ -52,7 +52,7 @@ export const BRIDGE_MCP_SERVER_NAME = 'copse'
 /**
  * Core registry tools offered over the bridge, filtered to what is actually
  * registered (e.g. browser tools only exist when enabled in Settings). Enabled
- * first-party packs extend this list explicitly through `tools.acpTools`.
+ * first-party plugins extend this list explicitly through `tools.acpTools`.
  */
 export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Workspace reads, searches, and diff-queued edits. Offering these lets an
@@ -110,7 +110,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'staged_diffs',
   'read_staged_diff',
   // The advisor strategy (docs/plans/advisor-strategy.md). Only registered
-  // when the `copse.advisor-strategy` pack is enabled, so it is only offered
+  // when the `copse.advisor-strategy` plugin is enabled, so it is only offered
   // then; the transcript context is turn-scoped by agent-service around the ACP
   // run.
   'advisor',
@@ -125,9 +125,9 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
 ]
 
-/** Core tools plus ACP-safe tools declared by currently enabled first-party packs. */
+/** Core tools plus ACP-safe tools declared by currently enabled first-party plugins. */
 export function activeBridgeToolNames(): readonly string[] {
-  return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPackRegistry().activeAcpToolNames()])]
+  return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPluginRegistry().activeAcpToolNames()])]
 }
 
 /**

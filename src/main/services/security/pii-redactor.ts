@@ -1,6 +1,6 @@
 import type { UserContent } from '@shared/types/llm.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 /**
@@ -20,13 +20,13 @@ import { isRecord } from '@shared/unknown-value.ts'
  * package/model is unavailable. Because this fails open, it is a privacy
  * best-effort, not a guarantee — see docs/pii-redaction.md.
  *
- * Enablement is the `copse.pii-redaction` first-party pack (Settings > Packs).
+ * Enablement is the `copse.pii-redaction` first-party plugin (Settings > Plugins).
  * The feature was historically gated by the top-level `piiRedactionEnabled`
- * boolean; that setting is retired and the pack toggle is the single source of
+ * boolean; that setting is retired and the plugin toggle is the single source of
  * truth — the same flag flip that registers the `reveal_pii` tool and appends
- * the steering prompt block also arms this input rewrite (decision 15). Packs
- * are enabled by default, but the enablement-migration bridge in `pack-service`
- * seeds this pack disabled for fresh installs and existing users, so redaction
+ * the steering prompt block also arms this input rewrite (decision 15). Plugins
+ * are enabled by default, but the enablement-migration bridge in `plugin-service`
+ * seeds this plugin disabled for fresh installs and existing users, so redaction
  * stays off by default.
  */
 
@@ -89,7 +89,7 @@ export function setRampartLoaderForTest(next: RampartLoader | null): void {
 }
 
 function isEnabled(): boolean {
-  return getDefaultPackRegistry().isEnabled(PII_REDACTION_PACK_ID)
+  return getDefaultPluginRegistry().isEnabled(PII_REDACTION_PLUGIN_ID)
 }
 
 function loadModule(): Promise<RampartModule | null> {

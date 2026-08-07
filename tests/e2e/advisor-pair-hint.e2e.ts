@@ -12,11 +12,11 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
  * either picker changes.
  *
  * The advisor model picker (and this hint) now live with the
- * `copse.advisor-strategy` pack in Settings → Packs — the model field the pack
- * owns — so the section navigation targets Packs and the pack row rather than the
+ * `copse.advisor-strategy` plugin in Settings → Plugins — the model field the plugin
+ * owns — so the section navigation targets Plugins and the plugin row rather than the
  * retired Experimental `#advisor-strategy-fieldset`.
  */
-const ADVISOR_PACK_ROW = '.pack-row[data-pack-id="copse.advisor-strategy"]'
+const ADVISOR_PLUGIN_ROW = '.plugin-row[data-plugin-id="copse.advisor-strategy"]'
 
 describe('advisor pair assessment hint', () => {
   before(() => {
@@ -31,15 +31,15 @@ describe('advisor pair assessment hint', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await expect($('#settings-dialog')).toBeDisplayed()
-    await $('.settings-nav-btn[data-section="packs"]').click()
-    await expect($('.settings-section[data-section="packs"]')).toBeDisplayed()
-    // The advisor pack's `model` field renders as `#advisorModel`, with the
-    // pairing hint appended below it (settings stay editable even while the pack
-    // is off). Wait for both to render from the live pack list.
+    await $('.settings-nav-btn[data-section="plugins"]').click()
+    await expect($('.settings-section[data-section="plugins"]')).toBeDisplayed()
+    // The advisor plugin's `model` field renders as `#advisorModel`, with the
+    // pairing hint appended below it (settings stay editable even while the plugin
+    // is off). Wait for both to render from the live plugin list.
     await $('#advisorModel').waitForExist({ timeout: 15_000 })
-    // Pack settings live in a closed "Pack settings" disclosure — open this
-    // pack's before asserting on anything inside it.
-    await $(`${ADVISOR_PACK_ROW} .pack-settings-summary`).click()
+    // Plugin settings live in a closed "Plugin settings" disclosure — open this
+    // plugin's before asserting on anything inside it.
+    await $(`${ADVISOR_PLUGIN_ROW} .plugin-settings-summary`).click()
     await $('#advisorPairHint').waitForDisplayed({ timeout: 15_000 })
   }
 
@@ -55,10 +55,10 @@ describe('advisor pair assessment hint', () => {
     const hint = $('#advisorPairHint')
     assert.equal(await hint.getAttribute('data-level'), 'good')
     assert.match(await hint.getText(), /Recommended pairing/i)
-    await expect($(ADVISOR_PACK_ROW).$('.model-picker-field')).toBeDisplayed()
+    await expect($(ADVISOR_PLUGIN_ROW).$('.model-picker-field')).toBeDisplayed()
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-good.png')
+    await saveElementScreenshot(ADVISOR_PLUGIN_ROW, 'advisor-pair-hint-good.png')
   })
 
   it('warns when the advisor is annotated weaker than the executor', async () => {
@@ -75,7 +75,7 @@ describe('advisor pair assessment hint', () => {
     assert.match(await hint.getText(), /annotated weaker/i)
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-warn.png')
+    await saveElementScreenshot(ADVISOR_PLUGIN_ROW, 'advisor-pair-hint-warn.png')
   })
 
   it('re-grades live when the advisor picker changes', async () => {
@@ -117,7 +117,7 @@ describe('advisor pair assessment hint', () => {
     assert.match(await hint.getText(), /any configured executor\/advisor combination works/i)
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-any.png')
+    await saveElementScreenshot(ADVISOR_PLUGIN_ROW, 'advisor-pair-hint-any.png')
   })
 
   it('explains an ACP-agent advisor without an annotation comparison', async () => {

@@ -39,9 +39,9 @@ import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
 } from '../mcp/custom-tools-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -581,29 +581,29 @@ describe('run_background permission', () => {
   })
 
   // Issue #1190: the loopback port-binding relaxation is an authority the
-  // `copse.background-tasks` pack DECLARES. The gate resolves it through the pack
-  // registry, so it is grantable ONLY while the pack declares it — disabling the
-  // pack revokes the relaxation in one flag flip.
-  it('only offers the loopback grant while the background-tasks pack declares it', async () => {
+  // `copse.background-tasks` plugin DECLARES. The gate resolves it through the plugin
+  // registry, so it is grantable ONLY while the plugin declares it — disabling the
+  // plugin revokes the relaxation in one flag flip.
+  it('only offers the loopback grant while the background-tasks plugin declares it', async () => {
     setPermissionGateForTests(null)
-    // A fresh first-party seed enables every pack (default-OFF is a pack-service
+    // A fresh first-party seed enables every plugin (default-OFF is a plugin-service
     // migration concern, not the raw seed), so background-tasks declares
     // loopback-bind here.
-    const registry = createFirstPartyPackRegistry()
-    setDefaultPackRegistry(registry)
+    const registry = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(registry)
     const restore = setWorkspaceRootForTest('/tmp/loopback-gated-project')
     setApprovalHandler(async () => ({ approved: true, remember: false }))
     try {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
-      // Pack enabled → the relaxation is declared → the grant is offered and, on
+      // Plugin enabled → the relaxation is declared → the grant is offered and, on
       // approval, the start proceeds.
       assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
 
-      // Disable the pack → `isPermissionDeclared('loopback-bind')` flips false in
+      // Disable the plugin → `isPermissionDeclared('loopback-bind')` flips false in
       // the same flag flip, so the gate refuses the relaxation (a thrown error
       // surfaces the reason to the agent). The task could still run without
       // allow_port_binding.
-      registry.disable(BACKGROUND_TASKS_PACK_ID)
+      registry.disable(BACKGROUND_TASKS_PLUGIN_ID)
       await assert.rejects(
         () =>
           ensureToolPermitted({
@@ -615,7 +615,7 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
-      setDefaultPackRegistry(null)
+      setDefaultPluginRegistry(null)
     }
   })
 })

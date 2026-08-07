@@ -4,7 +4,7 @@
 //
 // Observation-only (decision 3): the review already ran and applied its todo
 // patches, so a hook here observes the verdict (`issuesFound` + `summary`)
-// without gating the turn — useful for a Copse-native pack that reacts to what
+// without gating the turn — useful for a Copse-native plugin that reacts to what
 // the reviewer found (e.g. notifying, logging, or queuing a follow-up). Skips
 // (empty diff / spend not approved) never fire this, because no review ran.
 //

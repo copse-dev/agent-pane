@@ -146,15 +146,19 @@ import {
 } from '@shared/todos/todo-logic.ts'
 import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
-import { todosToPanelListData } from '@copse/agent/packs/pack-panel.ts'
-import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
+import { todosToPanelListData } from '@copse/agent/plugins/plugin-panel.ts'
+import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import {
-  POST_TURN_REVIEW_PACK_ID,
+  POST_TURN_REVIEW_PLUGIN_ID,
   POST_TURN_REVIEW_MAX_CYCLES_SETTING,
   resolveMaxReviewCycles,
-} from '@copse/agent/packs/post-turn-review-pack.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { getPackService, inertPackSources, packUnavailableReason } from './packs/pack-service.ts'
+} from '@copse/agent/plugins/post-turn-review-plugin.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import {
+  getPluginService,
+  inertPluginSources,
+  pluginUnavailableReason,
+} from './plugins/plugin-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -171,9 +175,9 @@ import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service
 import { offerAcpReauth } from './acp/acp-reauth.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { parsePackModelSelection } from '@shared/pack-model.ts'
-import { getPackToolRuntimeController } from './packs/pack-tool-controller.ts'
-import { buildPackModelTurn } from './packs/pack-model-turn.ts'
+import { parsePluginModelSelection } from '@shared/plugin-model.ts'
+import { getPluginToolRuntimeController } from './plugins/plugin-tool-controller.ts'
+import { buildPluginModelTurn } from './plugins/plugin-model-turn.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -194,14 +198,14 @@ export {
 
 const abortMap = new Map<string, AbortController>()
 
-function packModelResult(raw: unknown): {
+function pluginModelResult(raw: unknown): {
   text: string
   inputTokens: number
   outputTokens: number
 } {
   if (typeof raw === 'string') return { text: raw, inputTokens: 0, outputTokens: 0 }
   if (!isRecord(raw) || typeof raw['text'] !== 'string') {
-    throw new Error('Pack model route returned no text.')
+    throw new Error('Plugin model route returned no text.')
   }
   const inputTokens =
     typeof raw['inputTokens'] === 'number' && Number.isFinite(raw['inputTokens'])
@@ -594,8 +598,8 @@ export interface RunAgentOptions {
   /** Optional tighter loop bounds for benchmark profiles; product defaults remain unchanged. */
   maxSteps?: number
   maxLlmCalls?: number
-  /** Pack-scoped setting resolver owned by an explicit host profile. */
-  resolvePackSetting?: (packId: string, key: string) => unknown
+  /** Plugin-scoped setting resolver owned by an explicit host profile. */
+  resolvePluginSetting?: (pluginId: string, key: string) => unknown
   /**
    * Called with the turn's provider history as it grows, so a host can persist
    * progress a run that never returns would otherwise take with it. Fired once
@@ -629,7 +633,7 @@ export async function runAgent(
   const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
-  const packModel = parsePackModelSelection(model)
+  const pluginModel = parsePluginModelSelection(model)
 
   const sendChunk = createAgentChunkSink(threadId, host)
 
@@ -675,54 +679,54 @@ export async function runAgent(
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
   }
 
-  if (packModel) {
-    /** Append a recorded cause to a pack error, or nothing when none was captured. */
+  if (pluginModel) {
+    /** Append a recorded cause to a plugin error, or nothing when none was captured. */
     const suffixFor = (reason: string | undefined): string => (reason ? ` ${reason}` : '')
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
     beginHookRunRecording(threadId)
     try {
-      const packs = getDefaultPackRegistry()
-      const runtime = getPackToolRuntimeController()
+      const plugins = getDefaultPluginRegistry()
+      const runtime = getPluginToolRuntimeController()
       // `isEnabled` is "registered AND not disabled", so on its own it cannot
-      // tell a pack the user switched off from one that never registered at
+      // tell a plugin the user switched off from one that never registered at
       // all. Those have different causes and different fixes, and a selected
-      // pack that failed to appear is the more likely of the two: check
+      // plugin that failed to appear is the more likely of the two: check
       // registration first so the message names the real state.
       //
-      // A `packSources` entry whose discovery throws never registers; a pack
+      // A `pluginSources` entry whose discovery throws never registers; a plugin
       // whose tools fail to start is registered-then-disabled. Each state now
-      // carries the cause `refreshPackSources` recorded (pack-service.ts), so a
+      // carries the cause `refreshPluginSources` recorded (plugin-service.ts), so a
       // failure explains itself here instead of only in the main-process log —
       // which, in CI, is buried in a failure artifact.
-      if (!packs.has(packModel.packId)) {
+      if (!plugins.has(pluginModel.pluginId)) {
         throw new Error(
-          `The selected pack "${packModel.packId}" is not installed.${suffixFor(inertPackSources().join('; '))}`,
+          `The selected plugin "${pluginModel.pluginId}" is not installed.${suffixFor(inertPluginSources().join('; '))}`,
         )
       }
-      if (!packs.isEnabled(packModel.packId)) {
+      if (!plugins.isEnabled(pluginModel.pluginId)) {
         throw new Error(
-          `The selected pack "${packModel.packId}" is disabled.${suffixFor(packUnavailableReason(packModel.packId))}`,
+          `The selected plugin "${pluginModel.pluginId}" is disabled.${suffixFor(pluginUnavailableReason(pluginModel.pluginId))}`,
         )
       }
-      if (!runtime?.isRunning(packModel.packId)) {
+      if (!runtime?.isRunning(pluginModel.pluginId)) {
         // Enabled but not running: saying "disabled" here would send users to a
         // toggle that is already on.
         throw new Error(
-          `The selected pack "${packModel.packId}" is not running.${suffixFor(packUnavailableReason(packModel.packId))}`,
+          `The selected plugin "${pluginModel.pluginId}" is not running.${suffixFor(pluginUnavailableReason(pluginModel.pluginId))}`,
         )
       }
-      const route = packs
-        .get(packModel.packId)
-        ?.contributions.modelRoutes.find((candidate) => candidate.id === packModel.routeId)
-      if (!route) throw new Error(`Pack model route "${packModel.routeId}" is unavailable.`)
+      const route = plugins
+        .get(pluginModel.pluginId)
+        ?.contributions.modelRoutes.find((candidate) => candidate.id === pluginModel.routeId)
+      if (!route) throw new Error(`Plugin model route "${pluginModel.routeId}" is unavailable.`)
 
-      const result = packModelResult(
+      const result = pluginModelResult(
         await runtime.invokeModel(
-          packModel.packId,
-          packModel.routeId,
-          buildPackModelTurn({
+          pluginModel.pluginId,
+          pluginModel.routeId,
+          buildPluginModelTurn({
             threadId,
             prompt: outboundPrompt,
             priorMessages,
@@ -1078,9 +1082,9 @@ export async function runAgent(
 
   try {
     const invokedSkills = options?.invokedSkills ?? []
-    const resolvePackSetting =
-      options?.resolvePackSetting ??
-      ((packId: string, key: string): unknown => getPackService().getSetting(packId, key))
+    const resolvePluginSetting =
+      options?.resolvePluginSetting ??
+      ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
     const subagentsEnabled = getSetting<boolean>(
       SUBAGENTS_ENABLED_SETTING,
       SUBAGENTS_ENABLED_DEFAULT,
@@ -1178,7 +1182,7 @@ export async function runAgent(
         priorTodos,
         // The resolved run model + the tool list the model will actually see, so
         // a steering hook can condition on which model is running (the
-        // forced-planning pack thresholds on its measured capability) and never
+        // forced-planning plugin thresholds on its measured capability) and never
         // name a tool this turn filtered out.
         model,
         toolNames: parentLoopTools.map((tool) => tool.name),
@@ -1186,7 +1190,7 @@ export async function runAgent(
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
-        resolvePackSetting,
+        resolvePluginSetting,
         recordHookRun: recordFunctionHookRun,
       },
     )
@@ -1245,22 +1249,22 @@ export async function runAgent(
 
     resetSubagentUsage()
 
-    // P4: the todos pack owns the plan panel. When the `copse.todos` pack is
-    // enabled we emit a level-2 `panel_update` (the pack-panel data model, P2)
+    // P4: the todos plugin owns the plan panel. When the `copse.todos` plugin is
+    // enabled we emit a level-2 `panel_update` (the plugin-panel data model, P2)
     // alongside the legacy `todo_update` chunk. `todo_update` continues to
     // populate `thread.todos` so historical rendering + `compactAtTodoBoundary`
-    // keep working unchanged; new content additionally hydrates the pack panel
+    // keep working unchanged; new content additionally hydrates the plugin panel
     // slot the renderer mounts from `activePanelContributions()`. Disabling the
-    // pack skips the panel emission (the pack slot leaves the active set in
+    // plugin skips the panel emission (the plugin slot leaves the active set in
     // one atomic flag flip; the renderer stops mounting for new content, and
     // history renders from spine data / `thread.todos` regardless — decision
     // 17). The shared registry is read every emit so a live toggle from
     // Settings takes effect on the next turn's updates.
     const emitTodoPanelUpdate = (todos: TodoItem[]): void => {
-      if (!getDefaultPackRegistry().isEnabled(TODOS_PACK_ID)) return
+      if (!getDefaultPluginRegistry().isEnabled(TODOS_PLUGIN_ID)) return
       sendChunk({
         type: 'panel_update',
-        packId: TODOS_PACK_ID,
+        pluginId: TODOS_PLUGIN_ID,
         contributionId: TODOS_PANEL_CONTRIBUTION_ID,
         data: todosToPanelListData(todos),
       })
@@ -1654,14 +1658,14 @@ export async function runAgent(
     // A free / local review model runs on the full diff with no prompt. The
     // host-interactive gate resolution stays here; `runPostTurnReviewCycle` owns
     // the review/remediation *sequencing* + the shared C3 budget (decision 5).
-    // P5: the pack toggle in Settings > Packs is the atomic master switch —
+    // P5: the plugin toggle in Settings > Plugins is the atomic master switch —
     // disabling `copse.post-turn-review` drops the review trigger for new turns
-    // in one flag flip (decision 15). The pack registry replaces the standalone
+    // in one flag flip (decision 15). The plugin registry replaces the standalone
     // `postTurnReviewEnabled` setting the trigger used to consult; the
     // fine-grained `postTurnReviewMinChangedLines` threshold stays a top-level
     // setting (orthogonal to enablement) and is read below.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
-    if (turnChangedFiles && getDefaultPackRegistry().isEnabled(POST_TURN_REVIEW_PACK_ID)) {
+    if (turnChangedFiles && getDefaultPluginRegistry().isEnabled(POST_TURN_REVIEW_PLUGIN_ID)) {
       const reviewRoute = await buildReviewRoute()
       const reviewProvider = reviewRoute?.provider ?? provider
       const reviewUsageModel = reviewRoute?.usageModel ?? model
@@ -1669,10 +1673,10 @@ export async function runAgent(
       const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
       // How many review passes this turn may run. A failing verdict buys the
       // parent one remediation turn plus a re-review (the next pass), so this is
-      // the "do we do another post turn after a failed review?" knob — pack-scoped
-      // because it is meaningless with the pack off (decision 15).
+      // the "do we do another post turn after a failed review?" knob — plugin-scoped
+      // because it is meaningless with the plugin off (decision 15).
       const maxReviewCycles = resolveMaxReviewCycles(
-        resolvePackSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
+        resolvePluginSetting(POST_TURN_REVIEW_PLUGIN_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
       )
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
@@ -1747,8 +1751,8 @@ export async function runAgent(
     // Auto model comparison: when this turn changed files and the harness is set
     // to run on review, compare two models on the working diff (gated by a spend
     // approval for billable models). Usage is folded in via the emitted chunks.
-    // P5: gate on the `copse.model-comparison` pack toggle in addition to the
-    // fine-grained `modelComparisonAutoOnReview` sub-setting — the pack toggle
+    // P5: gate on the `copse.model-comparison` plugin toggle in addition to the
+    // fine-grained `modelComparisonAutoOnReview` sub-setting — the plugin toggle
     // is the atomic master switch (`isAutoComparisonEnabled()` already reads
     // both).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer

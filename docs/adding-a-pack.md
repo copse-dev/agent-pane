@@ -334,7 +334,7 @@ Electron authority from the manifest.
 | Piece                                              | Status                      |
 | -------------------------------------------------- | --------------------------- |
 | Manifest types + JSON schema                       | Landed                      |
-| `packManifestFromPluginJson()` mapper              | Landed                      |
+| `pluginManifestFromCursorJson()` mapper            | Landed                      |
 | Settings → Packs list + enable/disable             | Landed (first-party packs)  |
 | Explicit selected-pack tools and model routes      | Landed                      |
 | Isolated executable behavior                       | Landed (macOS P2/P3 slice)  |
@@ -355,17 +355,17 @@ Cursor plugin (above) and hooks in the dialect files if you need them to run.
 
 ## Contributing a first-party pack (Copse developers)
 
-Shipped packs live in `packages/agent/src/packs/`, are listed from
-`first-party-packs.ts`, and follow the pattern in `todos-pack.ts` /
+Shipped packs live in `packages/agent/src/plugins/`, are listed from
+`first-party-plugins.ts`, and follow the pattern in `todos-pack.ts` /
 `pii-redaction-pack.ts`:
 
-1. `definePack(manifest, contributions)` with typed function hooks / native
+1. `definePlugin(manifest, contributions)` with typed function hooks / native
    tool names as needed. First-party manifests must declare `stability`; use
    `experimental` for any feature whose contract or compatibility may still change.
    Add a native tool to `tools.acpTools` only when it is safe to execute without
    native-loop-only state; registration enforces that each entry is also in
    `tools.native` and has a runtime tool contribution.
-2. Register in `FIRST_PARTY_PACKS`.
+2. Register in `FIRST_PARTY_PLUGINS`.
 3. Gate any host-side tool registration on `getDefaultPackRegistry().isEnabled(id)`.
 4. Add Settings / e2e coverage for the new row and default enablement.
 5. Keep history rendering independent of live enablement (disabled packs must

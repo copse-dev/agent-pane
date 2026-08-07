@@ -90,7 +90,7 @@ describe('new project flow', () => {
 
   it('sidebar + menu offers New project / Open folder once a project already exists', async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'existing-proj', { packDisabled: [] })
+    seedEmptyProject(process.cwd(), 'existing-proj', { pluginDisabled: [] })
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

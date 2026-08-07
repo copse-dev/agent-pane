@@ -23,20 +23,20 @@ import {
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // The former `MODEL_COMPARISON_ENABLED_SETTING` (top-level
-// `modelComparisonEnabled`) was retired in P5: the pack toggle
+// `modelComparisonEnabled`) was retired in P5: the plugin toggle
 // (`copse.model-comparison`) is now the atomic master switch consulted by the
 // tool registration in `registry-bootstrap.ts` and the auto-on-review trigger
 // in `agent-service.ts` / `isAutoComparisonEnabled()`.
 //
-// The three model choices (reviewer A / reviewer B / judge) are now the pack's
-// own `model` setting fields (see `model-comparison-pack.ts`), read by
+// The three model choices (reviewer A / reviewer B / judge) are now the plugin's
+// own `model` setting fields (see `model-comparison-plugin.ts`), read by
 // `model-comparison-runner.ts`; the former top-level `comparisonModel*` store
 // keys are retired. The `modelComparisonAutoOnReview` opt-in stays top-level.
 export const MODEL_COMPARISON_AUTO_ON_REVIEW_SETTING = 'modelComparisonAutoOnReview'
 
 /**
  * Defaults when a setting is left blank — dynamic selections, not pinned ids,
- * kept equal to the constants on the Electron-free pack side. Reviewer B and the
+ * kept equal to the constants on the Electron-free plugin side. Reviewer B and the
  * judge both reach for the most capable model available; they are expanded
  * against a single candidate pool (`resolveDistinctDynamicModelIds`), which is
  * what stops one rule used twice from naming one model twice.

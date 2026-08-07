@@ -17,7 +17,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
-import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import { openRightPanel } from '../controller/panels.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showErrorToast, showToast } from './toast.ts'
@@ -778,8 +778,8 @@ export function mountBrowserPane(
     if (target) setActiveTab(target)
   }
 
-  async function ensurePackBrowserTab(
-    request: PackBrowserTabRequest,
+  async function ensurePluginBrowserTab(
+    request: PluginBrowserTabRequest,
   ): Promise<{ tabId: string; webContentsId: number }> {
     const hadTabs = tabs.size > 0
     openRightPanel(store, 'browser')
@@ -818,7 +818,7 @@ export function mountBrowserPane(
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
     api?.browser.onShareText(attachSharedText),
     api?.browser.onShareImage(attachSharedImage),
-    api?.browser.onPackTabRequest(ensurePackBrowserTab),
+    api?.browser.onPluginTabRequest(ensurePluginBrowserTab),
     (): void => {
       document.removeEventListener('click', onDocumentClick)
     },

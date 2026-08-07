@@ -18,7 +18,7 @@ import {
 // the properties that make it *safe* survive the trip through IPC and into the
 // renderer:
 //
-//   - a discovered plugin is a **user** pack, not first-party;
+//   - a discovered plugin is a **user** plugin, not first-party;
 //   - it arrives **disabled**, so a manifest appearing on disk never starts
 //     contributing before anyone looks at it;
 //   - the user can still turn it on, and that choice persists;
@@ -93,7 +93,7 @@ describe('agent plugins discovery', function () {
     resetAgentPlugins()
   })
 
-  it('lists a discovered package as a disabled user pack, and survives bad neighbours', async () => {
+  it('lists a discovered package as a disabled user plugin, and survives bad neighbours', async () => {
     // Reaching the prompt at all is the first assertion: discovery runs during
     // boot, so three malformed directories must not stop the app starting.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -101,24 +101,24 @@ describe('agent plugins discovery', function () {
 
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="packs"]').click()
+    await dialog.$('button[data-section="plugins"]').click()
 
-    const packs = settingsSection('packs')
-    await expect(packs).toBeDisplayed()
+    const plugins = settingsSection('plugins')
+    await expect(plugins).toBeDisplayed()
 
-    const row = packs.$(`.pack-row[data-pack-id="${GOOD_PLUGIN_ID}"]`)
+    const row = plugins.$(`.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`)
     await row.waitForExist({ timeout: 15_000 })
 
     // A disk manifest cannot promote itself: trust is host-assigned.
-    await expect(row.$('.pack-badge-user')).toBeDisplayed()
-    assert.equal(await row.$('.pack-badge-first-party').isExisting(), false)
+    await expect(row.$('.plugin-badge-user')).toBeDisplayed()
+    assert.equal(await row.$('.plugin-badge-first-party').isExisting(), false)
 
     // Seeded off. This is the property that makes dropping a directory into the
     // plugin root safe, and it is worth an explicit assertion rather than a
     // side effect of the default-disabled list.
     assert.equal(await row.getAttribute('data-enabled'), 'false')
     const cls = (await row.getAttribute('class')) ?? ''
-    assert.ok(cls.includes('pack-row-disabled'), 'a newly discovered plugin must render greyed')
+    assert.ok(cls.includes('plugin-row-disabled'), 'a newly discovered plugin must render greyed')
 
     // Manifest metadata reaches the row.
     const rowText = await row.getText()
@@ -128,43 +128,43 @@ describe('agent plugins discovery', function () {
     // Not one of the broken three became a row.
     for (const id of ['Not A Valid Name', 'broken.extension', 'broken-json']) {
       assert.equal(
-        await packs.$(`.pack-row[data-pack-id="${id}"]`).isExisting(),
+        await plugins.$(`.plugin-row[data-plugin-id="${id}"]`).isExisting(),
         false,
         `${id} must not register`,
       )
     }
 
-    // First-party packs still list alongside it — discovery adds rows, it does
+    // First-party plugins still list alongside it — discovery adds rows, it does
     // not replace the registry.
-    await expect(packs.$('.pack-row[data-pack-id="copse.todos"]')).toBeDisplayed()
+    await expect(plugins.$('.plugin-row[data-plugin-id="copse.todos"]')).toBeDisplayed()
 
     await row.scrollIntoView()
     await saveElementScreenshot(
-      `.pack-row[data-pack-id="${GOOD_PLUGIN_ID}"]`,
+      `.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`,
       'agent-plugin-discovered-row.png',
     )
   })
 
   it('renders the manifest-declared setting and persists an explicit enable', async () => {
-    const packs = settingsSection('packs')
-    const row = packs.$(`.pack-row[data-pack-id="${GOOD_PLUGIN_ID}"]`)
+    const plugins = settingsSection('plugins')
+    const row = plugins.$(`.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`)
 
     // The `dev.copse` settings schema renders through the same generic field
-    // machinery a first-party pack uses.
-    await row.$('.pack-settings-summary').click()
-    const strictness = row.$('input.pack-setting-number[data-setting-key="strictness"]')
+    // machinery a first-party plugin uses.
+    await row.$('.plugin-settings-summary').click()
+    const strictness = row.$('input.plugin-setting-number[data-setting-key="strictness"]')
     await expect(strictness).toBeDisplayed()
     assert.equal(await strictness.getValue(), '2')
 
     // Turning it on is the user's decision, and it has to stick — the seed-off
     // must happen exactly once, never re-applied on the next discovery pass.
-    await row.$('label.pack-toggle').click()
+    await row.$('label.plugin-toggle').click()
     await browser.waitUntil(async () => (await row.getAttribute('data-enabled')) === 'true', {
       timeout: 5_000,
       timeoutMsg: 'expected the discovered plugin to enable',
     })
 
-    await saveElementScreenshot('#settings-dialog', 'settings-packs-agent-plugin.png')
+    await saveElementScreenshot('#settings-dialog', 'settings-plugins-agent-plugin.png')
 
     await browser.keys('Escape')
     await dialogClosed()
@@ -173,9 +173,9 @@ describe('agent plugins discovery', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed()
-    await $('#settings-dialog').$('button[data-section="packs"]').click()
+    await $('#settings-dialog').$('button[data-section="plugins"]').click()
 
-    const reopened = settingsSection('packs').$(`.pack-row[data-pack-id="${GOOD_PLUGIN_ID}"]`)
+    const reopened = settingsSection('plugins').$(`.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`)
     await reopened.waitForExist({ timeout: 15_000 })
     assert.equal(
       await reopened.getAttribute('data-enabled'),

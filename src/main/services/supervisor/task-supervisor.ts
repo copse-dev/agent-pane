@@ -12,8 +12,8 @@ import {
   type TaskTrigger,
 } from '@shared/supervisor/task-schema.ts'
 import { reconcileSupervisedTasks } from '@shared/supervisor/reconcile.ts'
-import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { nextCronOccurrence, validateCronExpression } from '../automations/cron.ts'
 import {
   FileSupervisedTaskStore,
@@ -723,7 +723,7 @@ let singleton: TaskSupervisor | null = null
 
 export function getTaskSupervisor(): TaskSupervisor {
   singleton ??= new TaskSupervisor({
-    cronEnabled: (): boolean => getDefaultPackRegistry().isEnabled(AUTOMATIONS_PACK_ID),
+    cronEnabled: (): boolean => getDefaultPluginRegistry().isEnabled(AUTOMATIONS_PLUGIN_ID),
   })
   return singleton
 }

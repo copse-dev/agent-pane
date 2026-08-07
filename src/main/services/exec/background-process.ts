@@ -18,10 +18,10 @@ import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
 import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
-// pack (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
+// plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
 // relaxation (issue #1190). The former `backgroundTasksEnabled` standalone
 // setting / `BACKGROUND_TASKS_ENABLED_SETTING` constant is retired; the
-// pack-service enablement migration reads the legacy key by literal value.
+// plugin-service enablement migration reads the legacy key by literal value.
 
 /** Per-process output cap — smaller than a one-shot command so many tasks stay bounded. */
 const BACKGROUND_OUTPUT_MAX_BYTES = Math.floor(COMMAND_OUTPUT_MAX_BYTES / 2)

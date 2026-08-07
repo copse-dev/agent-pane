@@ -108,7 +108,7 @@ const nodeOpts = {
     'turndown',
     // electron-updater lazy-requires its provider backends (GitHub/S3/generic)
     // and js-yaml at runtime; bundling breaks those dynamic requires. It ships as
-    // a production dependency, so electron-builder packs it into the app's
+    // a production dependency, so electron-builder plugins it into the app's
     // node_modules where the asar-aware require resolves it at runtime.
     'electron-updater',
   ],
@@ -133,10 +133,10 @@ if (!isDemo) {
   })
   await esbuild.build({
     ...nodeOpts,
-    entryPoints: ['src/main/services/packs/pack-tool-worker.ts'],
-    outfile: 'dist/main/pack-tool-worker.js',
+    entryPoints: ['src/main/services/plugins/plugin-tool-worker.ts'],
+    outfile: 'dist/main/plugin-tool-worker.js',
   })
-  assertParses('dist/main/pack-tool-worker.js')
+  assertParses('dist/main/plugin-tool-worker.js')
   // No `banner` here: askpass-helper.ts already starts with `#!/usr/bin/env node`
   // and esbuild preserves a source hashbang verbatim. Adding the banner too put a
   // second `#!…` on line 2 of the bundle, where it is not a hashbang but a syntax
@@ -204,7 +204,7 @@ copyFileSync('src/renderer/index.html', `${rendererOutDir}/index.html`)
 copyFileSync('src/renderer/theme-boot.js', `${rendererOutDir}/theme-boot.js`)
 copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
 // The Copse mark, drawn as-is wherever the app has to stand for itself in a
-// list of other people's things (today: first-party pack rows in Settings).
+// list of other people's things (today: first-party plugin rows in Settings).
 copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
 cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
 copyMonacoWorkers(rendererOutDir)

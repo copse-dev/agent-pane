@@ -34,8 +34,8 @@ export {
  * Linux needs `bubblewrap` on PATH *and* usable unprivileged user namespaces.
  * Where either is missing (a locked-down container, say) `initialize` throws and
  * we degrade to unsandboxed exactly as before — with one consequence worth
- * knowing: executable pack behavior fails closed without a sandbox, so packs
- * stay unavailable rather than running unconfined (see pack-tool-host.ts).
+ * knowing: executable plugin behavior fails closed without a sandbox, so plugins
+ * stay unavailable rather than running unconfined (see plugin-tool-host.ts).
  */
 export async function initProjectSandbox(): Promise<void> {
   if (!isProjectSandboxPlatform()) {

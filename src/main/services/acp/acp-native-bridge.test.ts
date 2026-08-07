@@ -13,9 +13,9 @@ import {
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
 import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { at } from '@shared/array-utils.ts'
-import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
-import { definePack } from '@copse/agent/packs/pack-manifest.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { storageSet } from '../storage/storage.ts'
 import {
   requireThreadExecutionOwner,
@@ -119,7 +119,7 @@ describe('startAcpNativeBridge', () => {
 
   afterEach(async () => {
     setPermissionGateForTests(null)
-    setDefaultPackRegistry(null)
+    setDefaultPluginRegistry(null)
     await bridge?.close()
     bridge = null
   })
@@ -276,13 +276,13 @@ describe('startAcpNativeBridge', () => {
     assert.equal(contentText(call), 'Advice: do the smallest slice first.')
   })
 
-  it('offers enabled packs’ declared acpTools and removes them atomically on disable', async () => {
+  it('offers enabled plugins’ declared acpTools and removes them atomically on disable', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
-    const packs = new PackRegistry()
-    packs.register(
-      definePack(
+    const plugins = new PluginRegistry()
+    plugins.register(
+      definePlugin(
         {
-          name: 'search-pack',
+          name: 'search-plugin',
           trust: 'first-party',
           stability: 'experimental',
           tools: { native: ['pack_search'], acpTools: ['pack_search'] },
@@ -290,12 +290,12 @@ describe('startAcpNativeBridge', () => {
         { toolNames: ['pack_search'] },
       ),
     )
-    setDefaultPackRegistry(packs)
+    setDefaultPluginRegistry(plugins)
 
     const registry = testRegistry([])
     registry.register({
       name: 'pack_search',
-      description: 'Search through a pack tool',
+      description: 'Search through a plugin tool',
       parameters: z.object({ query: z.string() }),
       execute: ({ query }) => Promise.resolve(`result:${query}`),
     })
@@ -320,7 +320,7 @@ describe('startAcpNativeBridge', () => {
     })
     assert.equal(contentText(call), 'result:docs')
 
-    packs.disable('search-pack')
+    plugins.disable('search-plugin')
     const afterDisable = await rpc(bridge, LIST_TOOLS)
     assert.ok(
       !recordArrayOrEmpty(rpcResult(afterDisable)['tools']).some(

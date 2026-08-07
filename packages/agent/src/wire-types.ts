@@ -17,7 +17,7 @@ import type {
 } from '@copse/llm/wire-types.ts'
 export type { ToolResultImage } from '@copse/llm/wire-types.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
-import type { PanelData } from './packs/pack-panel.ts'
+import type { PanelData } from './plugins/plugin-panel.ts'
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
@@ -242,14 +242,14 @@ export type AgentStreamChunk =
   | { type: 'subagent_done'; parentToolCallId: string; summary: string; usage?: ModelUsage }
   | { type: 'subagent_error'; parentToolCallId: string; error: string }
   /**
-   * Level-2 declarative panel update (P2). A first-party pack emits this to
+   * Level-2 declarative panel update (P2). A first-party plugin emits this to
    * refresh the contents of its named panel slot; the host renders it with a
-   * generic list/tree component (no freeform React from a pack yet). Each
+   * generic list/tree component (no freeform React from a plugin yet). Each
    * update **replaces** the panel's contents, matching ACP `plan`'s
    * whole-list-per-update semantics — one adapter away from cross-client
-   * rendering. `contributionId` addresses the pack's UI contribution (see
-   * {@link PackUiContribution.id}); `packId` scopes it so two packs cannot
+   * rendering. `contributionId` addresses the plugin's UI contribution (see
+   * {@link PluginUiContribution.id}); `pluginId` scopes it so two plugins cannot
    * collide by declaring the same contribution id. Data model + seed transforms
-   * live in `packs/pack-panel.ts` (`PanelData`).
+   * live in `plugins/plugin-panel.ts` (`PanelData`).
    */
-  | { type: 'panel_update'; packId: string; contributionId: string; data: PanelData }
+  | { type: 'panel_update'; pluginId: string; contributionId: string; data: PanelData }

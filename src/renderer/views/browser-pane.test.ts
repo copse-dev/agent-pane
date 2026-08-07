@@ -39,7 +39,7 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
-  it('creates and reuses a visible tab for a selected-pack browser request', async () => {
+  it('creates and reuses a visible tab for a selected-plugin browser request', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
@@ -57,7 +57,7 @@ describe('browser pane requested URLs', () => {
         }>)
       | undefined
     const api = createPendingApi({
-      'browser.onPackTabRequest': (handler: typeof requestTab): (() => void) => {
+      'browser.onPluginTabRequest': (handler: typeof requestTab): (() => void) => {
         requestTab = handler
         return (): void => {}
       },

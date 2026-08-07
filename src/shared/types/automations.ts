@@ -1,4 +1,4 @@
-/** A project-owned recurring schedule persisted by the automations pack. */
+/** A project-owned recurring schedule persisted by the automations plugin. */
 export interface AutomationSchedule {
   id: string
   projectId: string

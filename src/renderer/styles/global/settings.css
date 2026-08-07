@@ -1699,11 +1699,11 @@ dialog.settings-overlay::backdrop {
   font-style: italic;
 }
 
-/* P3 Settings → Packs list ("about:addons" for feature packs). One row per
-   registered pack: name + trust badge + enable toggle in the header, then a
-   description, contribution chips enumerating what the pack contributes, and a
+/* P3 Settings → Plugins list ("about:addons" for feature plugins). One row per
+   registered plugin: name + trust badge + enable toggle in the header, then a
+   description, contribution chips enumerating what the plugin contributes, and a
    generic settings block rendered from the manifest schema. */
-.packs-group {
+.plugins-group {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -1712,22 +1712,22 @@ dialog.settings-overlay::backdrop {
 /* "Active" / "Inactive" over each run of rows. Sans and small — the section's
    <h3> and the group legend above already carry the display face, and a third
    serif tier inside the list would flatten that order. */
-.packs-group-heading {
+.plugins-group-heading {
   font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
 }
-.packs-group-heading:not(:first-child) {
+.plugins-group-heading:not(:first-child) {
   margin-top: var(--spacing-md);
 }
-.packs-empty {
+.plugins-empty {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
-/* One pack reads as a card: it is a discrete object you act on, with a title,
+/* One plugin reads as a card: it is a discrete object you act on, with a title,
    a body, and its own settings folded inside. Elevated and roomier than the
    flat groups around it, per the card convention at the top of this file. */
-.pack-row {
+.plugin-row {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -1736,18 +1736,18 @@ dialog.settings-overlay::backdrop {
   flex-direction: column;
   gap: var(--spacing-md);
 }
-.pack-row-disabled {
+.plugin-row-disabled {
   opacity: 0.65;
 }
-.pack-row-header {
+.plugin-row-header {
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-md);
 }
-/* The pack's mark. Sized to span the eyebrow + name pair beside it, with the
+/* The plugin's mark. Sized to span the eyebrow + name pair beside it, with the
    app-icon tile's corner treatment so the two read as the same family of
    object. */
-.pack-icon {
+.plugin-icon {
   flex: none;
   display: flex;
   align-items: center;
@@ -1756,46 +1756,46 @@ dialog.settings-overlay::backdrop {
   height: calc(40px * var(--ui-scale));
   border-radius: 10px;
   overflow: hidden;
-  /* Fallback tile for a user-installed pack: its initial on a neutral surface,
+  /* Fallback tile for a user-installed plugin: its initial on a neutral surface,
      deliberately unbranded. */
   background: var(--bg-muted);
   color: var(--text-secondary);
   font-size: var(--font-size-lg);
   font-weight: 600;
 }
-.pack-icon-copse {
+.plugin-icon-copse {
   /* The mark asset carries its own neon field and corner radius. */
   background: none;
 }
-.pack-icon img {
+.plugin-icon img {
   display: block;
   width: 100%;
   height: 100%;
 }
-.pack-row-title {
+.plugin-row-title {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
   min-width: 0;
 }
-.pack-row-name-line {
+.plugin-row-name-line {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
-.pack-name {
+.plugin-name {
   font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text-primary);
   word-break: break-word;
 }
-.pack-version {
+.plugin-version {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
-.pack-badge {
+.plugin-badge {
   flex: none;
   font-size: 11px;
   font-weight: 600;
@@ -1808,39 +1808,40 @@ dialog.settings-overlay::backdrop {
 }
 /* The publisher eyebrow is a caption, not a chip: no frame, wide tracking, and
    it keeps the trust colour that told first-party from user-installed. */
-.pack-badge-first-party,
-.pack-badge-user {
+.plugin-badge-first-party,
+.plugin-badge-user {
   align-self: flex-start;
   border: none;
   padding: 0;
   letter-spacing: 0.08em;
 }
-.pack-badge-first-party {
+.plugin-badge-first-party {
   color: var(--text-secondary);
 }
-.pack-badge-user {
+.plugin-badge-user {
   color: var(--warning, #d29922);
 }
 /* Off — [switch] — On. Which side is live is read off the checkbox itself, so
    there is no state to keep in sync in JS. */
-.pack-toggle-control {
+.plugin-toggle-control {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   flex: none;
 }
-.pack-toggle-state {
+.plugin-toggle-state {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
-.pack-toggle-control:has(.pack-toggle-input:checked) .pack-toggle-state[data-side='on'],
-.pack-toggle-control:not(:has(.pack-toggle-input:checked)) .pack-toggle-state[data-side='off'] {
+.plugin-toggle-control:has(.plugin-toggle-input:checked) .plugin-toggle-state[data-side='on'],
+.plugin-toggle-control:not(:has(.plugin-toggle-input:checked))
+  .plugin-toggle-state[data-side='off'] {
   color: var(--text-primary);
   font-weight: 600;
 }
-/* Inset within the pack card, so it takes the base surface — matching
+/* Inset within the plugin card, so it takes the base surface — matching
    `--bg-elevated` to the card it sits in would leave it invisible. */
-.pack-source-review {
+.plugin-source-review {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -1849,59 +1850,59 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   background: var(--bg-base);
 }
-.pack-source-status {
+.plugin-source-status {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
 }
-.pack-source-details {
+.plugin-source-details {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 3px var(--spacing-sm);
   margin: 0;
   font-size: 11px;
 }
-.pack-source-details dt {
+.plugin-source-details dt {
   color: var(--text-muted);
 }
-.pack-source-details dd {
+.plugin-source-details dd {
   margin: 0;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
-/* Stability sits next to the pack's name as a pill in sentence case — a label
-   on the thing, not a shouted status. `pack.stability` arrives lowercase, so the
+/* Stability sits next to the plugin's name as a pill in sentence case — a label
+   on the thing, not a shouted status. `plugin.stability` arrives lowercase, so the
    capital comes from CSS. */
-.pack-badge-stable,
-.pack-badge-experimental {
+.plugin-badge-stable,
+.plugin-badge-experimental {
   border-radius: var(--action-radius);
   padding: 1px var(--spacing-sm);
   text-transform: capitalize;
   letter-spacing: 0;
 }
-.pack-badge-stable {
+.plugin-badge-stable {
   color: var(--success, #3fb950);
   border-color: var(--success, #3fb950);
 }
 /* Experimental is the one thing on the card you must read before flipping the
    switch, so it takes the interaction accent rather than a status hue — the
    documented exception in docs/ui-taste.md. */
-.pack-badge-experimental {
+.plugin-badge-experimental {
   color: var(--accent);
   border-color: var(--accent);
 }
-.pack-row-desc {
+.plugin-row-desc {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   line-height: 1.5;
   word-break: break-word;
 }
-.pack-chips {
+.plugin-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
 }
-.pack-chip {
+.plugin-chip {
   font-size: 11px;
   color: var(--text-secondary);
   background: var(--bg-base);
@@ -1909,19 +1910,19 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   padding: 2px var(--spacing-sm);
 }
-.pack-chips-empty {
+.plugin-chips-empty {
   font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
 }
-/* "Pack settings ⌄" — one fold per card holding the manifest fields and any
-   first-party detail panel. Closed by default: a list of packs is for deciding
-   which ones you want, and every pack's form unrolled at once buries that. */
-.pack-settings-fold {
+/* "Plugin settings ⌄" — one fold per card holding the manifest fields and any
+   first-party detail panel. Closed by default: a list of plugins is for deciding
+   which ones you want, and every plugin's form unrolled at once buries that. */
+.plugin-settings-fold {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--spacing-sm);
 }
-.pack-settings-summary {
+.plugin-settings-summary {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -1938,22 +1939,22 @@ dialog.settings-overlay::backdrop {
      every other disclosure in the app. */
   list-style: none;
 }
-.pack-settings-summary::-webkit-details-marker {
+.plugin-settings-summary::-webkit-details-marker {
   display: none;
 }
-.pack-settings-summary:hover {
+.plugin-settings-summary:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.pack-settings-chevron {
+.plugin-settings-chevron {
   width: 16px;
   height: 16px;
   transition: transform 0.15s ease;
 }
-.pack-settings-fold[open] .pack-settings-chevron {
+.plugin-settings-fold[open] .plugin-settings-chevron {
   transform: rotate(180deg);
 }
-.pack-settings {
+.plugin-settings {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -1961,45 +1962,45 @@ dialog.settings-overlay::backdrop {
 }
 /* Names a block *inside* the fold ("Schedules", the Parallel Search key) — the
    summary already names the fold itself, so these stay captions. */
-.pack-settings-heading {
+.plugin-settings-heading {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-muted);
 }
-.pack-setting-field {
+.plugin-setting-field {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
-.pack-setting-title {
+.plugin-setting-title {
   color: var(--text-primary);
 }
-.pack-setting-desc {
+.plugin-setting-desc {
   grid-column: 1 / -1;
   font-size: 11px;
   color: var(--text-muted);
 }
 /* What the selected rule names right now — the one thing a rule hides that a
    pinned model id showed. Hidden when the stored value is already concrete. */
-.pack-setting-resolved {
+.plugin-setting-resolved {
   grid-column: 1 / -1;
   font-size: 11px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.pack-setting-input {
+.plugin-setting-input {
   justify-self: end;
 }
-.pack-setting-input.pack-setting-string,
-.pack-setting-input.pack-setting-number {
+.plugin-setting-input.plugin-setting-string,
+.plugin-setting-input.plugin-setting-number {
   min-width: 180px;
 }
 
-.parallel-search-pack-settings {
+.parallel-search-plugin-settings {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -2037,21 +2038,21 @@ dialog.settings-overlay::backdrop {
   cursor: default;
   opacity: 0.55;
 }
-/* Why a credential-gated pack's toggle is inert (or on-but-inactive). Warning
-   tinted: the pack cannot contribute its tool in this state. */
-.pack-credential-gate {
+/* Why a credential-gated plugin's toggle is inert (or on-but-inactive). Warning
+   tinted: the plugin cannot contribute its tool in this state. */
+.plugin-credential-gate {
   margin: 0;
   font-size: 11px;
   color: var(--warning, #d29922);
 }
-.pack-toggle-input:disabled + .toggle-switch-track {
+.plugin-toggle-input:disabled + .toggle-switch-track {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-/* First-party level-3 detail for copse.automations. It lives inside the pack
+/* First-party level-3 detail for copse.automations. It lives inside the plugin
    row so scope, enablement, and configuration remain one coherent surface. */
-.automation-pack-settings {
+.automation-plugin-settings {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -2059,7 +2060,7 @@ dialog.settings-overlay::backdrop {
   border-top: 1px solid var(--border);
   padding-top: var(--spacing-sm);
 }
-.automation-pack-heading,
+.automation-plugin-heading,
 .automation-row,
 .automation-row-meta,
 .automation-row-actions,
@@ -2067,7 +2068,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   align-items: center;
 }
-.automation-pack-heading {
+.automation-plugin-heading {
   justify-content: space-between;
   gap: var(--spacing-md);
 }

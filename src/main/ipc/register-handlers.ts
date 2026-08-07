@@ -137,13 +137,13 @@ import {
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { readHookRunDetail } from '../services/hooks/run-detail.ts'
-import { getPackService } from '../services/packs/pack-service.ts'
+import { getPluginService } from '../services/plugins/plugin-service.ts'
 import {
-  setPackToolRuntimeController,
-  ToolingPackToolRuntimeController,
-} from '../services/packs/pack-tool-controller.ts'
-import { createPackBrowserPanelService } from '../services/packs/pack-browser-panel.ts'
-import { setPackBrowserService } from '../services/packs/pack-browser-service.ts'
+  setPluginToolRuntimeController,
+  ToolingPluginToolRuntimeController,
+} from '../services/plugins/plugin-tool-controller.ts'
+import { createPluginBrowserPanelService } from '../services/plugins/plugin-browser-panel.ts'
+import { setPluginBrowserService } from '../services/plugins/plugin-browser-service.ts'
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -159,18 +159,18 @@ import {
   syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
-import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
-import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
-import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
-import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
-import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
-import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
-import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
+import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
+import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
+import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
+import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
+import { DEVTOOLS_SHORTCUT_PLUGIN_ID } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
+import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
+import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
@@ -356,18 +356,18 @@ you want the coding agent to follow on every turn.
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const alertUser = createElectronUserAlertSender(win, app.dock)
-  const packService = getPackService()
-  setPackBrowserService(createPackBrowserPanelService(win))
-  setPackToolRuntimeController(new ToolingPackToolRuntimeController(registry))
-  void packService.refreshPackSources().catch((error: unknown) => {
-    console.warn('[packs] selected-pack startup reconciliation failed:', error)
+  const pluginService = getPluginService()
+  setPluginBrowserService(createPluginBrowserPanelService(win))
+  setPluginToolRuntimeController(new ToolingPluginToolRuntimeController(registry))
+  void pluginService.refreshPluginSources().catch((error: unknown) => {
+    console.warn('[plugins] selected-plugin startup reconciliation failed:', error)
   })
-  void packService.refreshUserPlugins().catch((error: unknown) => {
+  void pluginService.refreshUserPlugins().catch((error: unknown) => {
     console.warn('[plugins] user-plugin discovery failed:', error)
   })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
-  // pack is enabled. The pack ships off (`defaultEnabled: false`) and
-  // getPackService() has already layered the user's explicit choices on top, so
+  // plugin is enabled. The plugin ships off (`defaultEnabled: false`) and
+  // getPluginService() has already layered the user's explicit choices on top, so
   // this is a no-op unless they opted in.
   syncDevtoolsShortcut(win)
   const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
@@ -1090,7 +1090,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       syncReadTerminalTools(registry)
     }
     // Keep the native diagnostics menu in sync with Developer mode. The
-    // Ctrl+Shift+I shortcut is owned independently by its first-party pack.
+    // Ctrl+Shift+I shortcut is owned independently by its first-party plugin.
     if (k === DEVELOPER_MODE_SETTING) {
       const win = getMainWindow()
       const enabled = typeof value === 'boolean' && value
@@ -1588,7 +1588,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle('skills:list', () => listSkills())
-  ipcMain.handle('plugins:list', () => listCursorPlugins())
+  ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
@@ -1636,14 +1636,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return readHookRunDetail(projectId, threadId, runId)
     },
   )
-  // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
-  // Settings pack list ("about:addons") calls these to enumerate every
-  // registered pack, toggle enablement atomically (P1 contract), and read /
-  // write pack-scoped settings values under the manifest's declared schema.
+  // Plugin registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
+  // Settings plugin list ("about:addons") calls these to enumerate every
+  // registered plugin, toggle enablement atomically (P1 contract), and read /
+  // write plugin-scoped settings values under the manifest's declared schema.
   ipcMain.handle('packs:list', async (event) => {
     assertMainFrameSender(event, win)
-    await getPackService().refreshPackSources()
-    return { packs: getPackService().list() }
+    await getPluginService().refreshPluginSources()
+    return { plugins: getPluginService().list() }
   })
   ipcMain.handle('supervisor:list', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
@@ -1682,80 +1682,80 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('packs:addSource', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
-      title: 'Add pack',
+      title: 'Add plugin',
       properties: ['openDirectory'],
     })
     const sourcePath = result.filePaths[0]
     if (!result.canceled && sourcePath) {
-      await getPackService().addPackSource(sourcePath)
+      await getPluginService().addPluginSource(sourcePath)
     }
-    return { packs: getPackService().list() }
+    return { plugins: getPluginService().list() }
   })
   ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
-    await getPackService().setEnabled(id, enabled)
-    // P5: toggling the model-comparison pack adds/removes its `compare_models`
-    // tool on the live registry so the atomic pack-disable also drops the tool
+    await getPluginService().setEnabled(id, enabled)
+    // P5: toggling the model-comparison plugin adds/removes its `compare_models`
+    // tool on the live registry so the atomic plugin-disable also drops the tool
     // from the model tool list without an app restart (mirrors the setting
     // toggles above for the other syncable tools).
-    if (id === MODEL_COMPARISON_PACK_ID) {
+    if (id === MODEL_COMPARISON_PLUGIN_ID) {
       syncModelComparisonTools(registry)
     }
-    // Same for the `copse.long-horizon-tasks` pack's `track_long_task` tool.
-    if (id === LONG_HORIZON_TASKS_PACK_ID) {
+    // Same for the `copse.long-horizon-tasks` plugin's `track_long_task` tool.
+    if (id === LONG_HORIZON_TASKS_PLUGIN_ID) {
       syncLongHorizonTasksTools(registry)
     }
-    // Same for the `copse.roadmap-plans` pack's `roadmap_plan` tool.
-    if (id === ROADMAP_PLANS_PACK_ID) {
+    // Same for the `copse.roadmap-plans` plugin's `roadmap_plan` tool.
+    if (id === ROADMAP_PLANS_PLUGIN_ID) {
       syncRoadmapPlanTools(registry)
     }
-    // Same for the `copse.advisor-strategy` pack's `advisor` tool.
-    if (id === ADVISOR_STRATEGY_PACK_ID) {
+    // Same for the `copse.advisor-strategy` plugin's `advisor` tool.
+    if (id === ADVISOR_STRATEGY_PLUGIN_ID) {
       syncAdvisorStrategyTools(registry)
     }
-    // Same for the `copse.okf-memories` pack's `remember`/`recall` tools — the
-    // atomic pack-disable also drops the tools from the model tool list (and
+    // Same for the `copse.okf-memories` plugin's `remember`/`recall` tools — the
+    // atomic plugin-disable also drops the tools from the model tool list (and
     // stops the memory prompt block) without an app restart.
-    if (id === OKF_MEMORIES_PACK_ID) {
+    if (id === OKF_MEMORIES_PLUGIN_ID) {
       syncOkfMemoryTools(registry)
     }
-    // Same for the `copse.ci-investigator` pack's entry and gh_run_* helper
+    // Same for the `copse.ci-investigator` plugin's entry and gh_run_* helper
     // tools; the register direction still requires `gh` availability.
-    if (id === CI_INVESTIGATOR_PACK_ID) {
+    if (id === CI_INVESTIGATOR_PLUGIN_ID) {
       syncCiInvestigatorTools(registry)
     }
-    // Same for the `copse.pii-redaction` pack's `reveal_pii` tool — toggling the
-    // pack also arms/disarms the input rewrite and steering block, which read
-    // the same pack enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
-    if (id === PII_REDACTION_PACK_ID) {
+    // Same for the `copse.pii-redaction` plugin's `reveal_pii` tool — toggling the
+    // plugin also arms/disarms the input rewrite and steering block, which read
+    // the same plugin enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
+    if (id === PII_REDACTION_PLUGIN_ID) {
       syncPiiTools(registry)
     }
-    // The `copse.devtools-shortcut` pack contributes no tool — it owns the
-    // `devtools-shortcut` capability. Toggling the pack registers/unregisters the
-    // global Ctrl+Shift+I shortcut so the atomic pack-disable turns it off
+    // The `copse.devtools-shortcut` plugin contributes no tool — it owns the
+    // `devtools-shortcut` capability. Toggling the plugin registers/unregisters the
+    // global Ctrl+Shift+I shortcut so the atomic plugin-disable turns it off
     // without an app restart (mirrors the tool syncs above).
-    if (id === DEVTOOLS_SHORTCUT_PACK_ID) {
+    if (id === DEVTOOLS_SHORTCUT_PLUGIN_ID) {
       syncDevtoolsShortcut(win)
     }
-    // Same for the `copse.background-tasks` pack's `run_background` tool — the
-    // atomic pack-disable also revokes the pack's declared `loopback-bind`
+    // Same for the `copse.background-tasks` plugin's `run_background` tool — the
+    // atomic plugin-disable also revokes the plugin's declared `loopback-bind`
     // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
-    if (id === BACKGROUND_TASKS_PACK_ID) {
+    if (id === BACKGROUND_TASKS_PLUGIN_ID) {
       syncBackgroundTasksTools(registry)
     }
-    if (id === PARALLEL_SEARCH_PACK_ID) {
+    if (id === PARALLEL_SEARCH_PLUGIN_ID) {
       syncParallelSearchTools(registry)
     }
-    if (id === DARK_FACTORY_PACK_ID) {
+    if (id === DARK_FACTORY_PLUGIN_ID) {
       syncDarkFactorySensor()
     }
-    if (id === AUTOMATIONS_PACK_ID) {
+    if (id === AUTOMATIONS_PLUGIN_ID) {
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
     }
-    return { packs: getPackService().list() }
+    return { plugins: getPluginService().list() }
   })
   ipcMain.handle(
     'packs:setSetting',
@@ -1763,15 +1763,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
       const key = parseIpcArgs(zNonEmptyString.max(128), [rawKey])
-      // Pack-scoped setting values are declaratively-shaped by the manifest;
+      // Plugin-scoped setting values are declaratively-shaped by the manifest;
       // the renderer sends the primitive it read from the form. Cap to a sane
       // upper bound so a compromised renderer can't stuff arbitrary payloads.
       const value = parseIpcArgs(
         z.union([z.boolean(), z.number(), z.string().max(8192), z.null()]),
         [rawValue],
       )
-      await getPackService().setSetting(id, key, value)
-      return { packs: getPackService().list() }
+      await getPluginService().setSetting(id, key, value)
+      return { plugins: getPluginService().list() }
     },
   )
 

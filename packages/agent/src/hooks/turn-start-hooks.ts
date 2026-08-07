@@ -7,14 +7,14 @@
 // prompt stays byte-identical.
 //
 // **P4 note.** The two *todos* hooks — `todoSteeringHook` and `todoPinHook` —
-// have moved into the `copse.todos` first-party pack
-// (`../packs/todos-pack.ts`). They are still defined and exported here (the
-// pack imports them by name) so their bodies stay next to the sibling turn-start
+// have moved into the `copse.todos` first-party plugin
+// (`../plugins/todos-plugin.ts`). They are still defined and exported here (the
+// plugin imports them by name) so their bodies stay next to the sibling turn-start
 // policies, but they are **removed from the static {@link TURN_START_HOOKS}
 // list** so `createHookRegistry` does not register them a second time when the
-// pack folds its hooks in. Only the non-todos entries
+// plugin folds its hooks in. Only the non-todos entries
 // (`github-link-steering`, `commit-steering`) survive in this list; disabling
-// the todos pack therefore drops **only** the todo hooks from new work
+// the todos plugin therefore drops **only** the todo hooks from new work
 // (decision 15 atomicity).
 import type { BlockingHook } from './canonical-events.ts'
 import { shouldSteerTodos, formatTodosForPrompt, TODO_STEERING_PROMPT } from '../todo-steering.ts'
@@ -23,7 +23,7 @@ import { shouldSteerCommit, buildCommitSteeringPrompt } from '../commit-steering
 import {
   decideForcedPlanning,
   resolveForcedPlanningConfig,
-  FORCED_PLANNING_PACK_ID,
+  FORCED_PLANNING_PLUGIN_ID,
   PLAN_TOOL_NAME,
 } from '../forced-planning.ts'
 
@@ -80,12 +80,12 @@ export const todoPinHook: BlockingHook<'turnStart'> = {
 
 /**
  * Force an explicit plan when the model running the turn measures below the
- * configured capability threshold (the `copse.forced-planning` pack). Policy and
+ * configured capability threshold (the `copse.forced-planning` plugin). Policy and
  * text live in `../forced-planning.ts`; this hook only supplies the turn facts
  * and its own configuration.
  *
- * Like the todos hooks it is **not** in {@link TURN_START_HOOKS} — the pack
- * registers it, so disabling the pack drops it from new work in one flag flip.
+ * Like the todos hooks it is **not** in {@link TURN_START_HOOKS} — the plugin
+ * registers it, so disabling the plugin drops it from new work in one flag flip.
  *
  * The tool-availability check is deliberately conservative: with no `toolNames`
  * on the payload the hook cannot know `update_todos` is offered, so it steers
@@ -96,9 +96,9 @@ export const forcedPlanningHook: BlockingHook<'turnStart'> = {
   id: 'forced-planning',
   event: 'turnStart',
   run(payload, context) {
-    const read = context.resolvePackSetting
+    const read = context.resolvePluginSetting
     const config = resolveForcedPlanningConfig(
-      read ? (key: string): unknown => read(FORCED_PLANNING_PACK_ID, key) : undefined,
+      read ? (key: string): unknown => read(FORCED_PLANNING_PLUGIN_ID, key) : undefined,
     )
     const decision = decideForcedPlanning(
       {
@@ -119,12 +119,12 @@ export const forcedPlanningHook: BlockingHook<'turnStart'> = {
  * order changes the assembled system prompt — treat it as a behavior change.
  *
  * The todos hooks used to sit at positions 0 and 3 here (`todoSteeringHook`,
- * `todoPinHook`) but now live inside the `copse.todos` pack (P4). The pack
- * registers them at the same *relative* position — first-party pack hooks fold
- * in after the static list in `createHookRegistry`, and the pack folds its two
+ * `todoPinHook`) but now live inside the `copse.todos` plugin (P4). The plugin
+ * registers them at the same *relative* position — first-party plugin hooks fold
+ * in after the static list in `createHookRegistry`, and the plugin folds its two
  * turn-start hooks in registration order (`todoSteering` before `todoPin`),
  * matching the original layout. Removing them here is what stops the static +
- * pack pair from double-registering (P4 trap).
+ * plugin pair from double-registering (P4 trap).
  */
 export const TURN_START_HOOKS: readonly BlockingHook<'turnStart'>[] = [
   githubLinkSteeringHook,

@@ -34,7 +34,7 @@ export interface ModelOptionsApi {
   remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
   lmStudio: Pick<ApiClient['lmStudio'], 'models'> &
     Partial<Pick<ApiClient['lmStudio'], 'modelInfo'>>
-  packs?: Pick<ApiClient['packs'], 'list'>
+  plugins?: Pick<ApiClient['plugins'], 'list'>
 }
 import {
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
@@ -57,7 +57,11 @@ import {
   parseAcpModel,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
-import { PACK_MODEL_PREFIX, packModelValue, parsePackModelSelection } from '@shared/pack-model.ts'
+import {
+  PLUGIN_MODEL_PREFIX,
+  pluginModelValue,
+  parsePluginModelSelection,
+} from '@shared/plugin-model.ts'
 import {
   BEST_VALUE_CHAT_MODEL,
   BEST_VALUE_CHAT_MODEL_LABEL,
@@ -92,8 +96,8 @@ export function modelDisplayLabel(model: string): string {
   const dynamic = dynamicModelLabel(model)
   if (dynamic) return dynamic
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
-  const packModel = parsePackModelSelection(model)
-  if (packModel) return packModel.routeId
+  const pluginModel = parsePluginModelSelection(model)
+  if (pluginModel) return pluginModel.routeId
   if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
   if (parseRemoteAgentModelSelection(model)) {
@@ -129,28 +133,28 @@ function agentModelIntellectHint(
   return null
 }
 
-async function packModelOptions(
+async function pluginModelOptions(
   api: ModelOptionsApi,
   includeAgentModels: boolean,
   current: string,
 ): Promise<ModelOption[]> {
   if (!includeAgentModels) return []
   try {
-    const result = await api.packs?.list()
+    const result = await api.plugins?.list()
     if (!result) return []
-    const currentSelection = parsePackModelSelection(current)
-    return result.packs.flatMap((pack) =>
-      pack.contributions.modelRoutes.flatMap((route) => {
+    const currentSelection = parsePluginModelSelection(current)
+    return result.plugins.flatMap((plugin) =>
+      plugin.contributions.modelRoutes.flatMap((route) => {
         const selectedWhileDisabled =
-          !pack.enabled &&
-          currentSelection?.packId === pack.id &&
+          !plugin.enabled &&
+          currentSelection?.pluginId === plugin.id &&
           currentSelection.routeId === route.id
-        if (!pack.enabled && !selectedWhileDisabled) return []
+        if (!plugin.enabled && !selectedWhileDisabled) return []
         return [
           {
-            value: packModelValue(pack.id, route.id),
-            label: `${route.label}${selectedWhileDisabled ? ' (pack disabled)' : ''}`,
-            group: route.group ?? `${pack.name} — personal pack`,
+            value: pluginModelValue(plugin.id, route.id),
+            label: `${route.label}${selectedWhileDisabled ? ' (plugin disabled)' : ''}`,
+            group: route.group ?? `${plugin.name} — personal plugin`,
             ...(route.supportsImages !== undefined ? { supportsImages: route.supportsImages } : {}),
             ...(selectedWhileDisabled ? { disabled: true } : {}),
           },
@@ -523,7 +527,7 @@ export async function fetchModelOptions(
     const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude)
     const acp = acpAgentOptions(acpAgents)
     options.push(...(preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]))
-    options.push(...(await packModelOptions(api, includeAgentModels, current)))
+    options.push(...(await pluginModelOptions(api, includeAgentModels, current)))
   }
 
   // Local models: only listed when a local server is reachable and exposes some.
@@ -572,10 +576,10 @@ export async function fetchModelOptions(
       }
       if (sshWorkspace) stale.disabled = true
       options.push(stale)
-    } else if (includeAgentModels && current.startsWith(PACK_MODEL_PREFIX)) {
+    } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
       options.push({
         value: current,
-        label: `${modelDisplayLabel(current)} (pack disabled)`,
+        label: `${modelDisplayLabel(current)} (plugin disabled)`,
         group: 'Personal packs',
         disabled: true,
       })
@@ -641,7 +645,7 @@ const PINNED_GROUP = 'Currently pinned'
 
 /**
  * The option list for a picker that selects *how* to choose a model rather than
- * which one — every pack-owned model setting and the Experimental worker model.
+ * which one — every plugin-owned model setting and the Experimental worker model.
  *
  * These features run unattended, often long after the picker was last opened: a
  * pinned id there quietly rots as keys, plans, and local models change, and the

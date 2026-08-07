@@ -35,7 +35,7 @@ export function isProjectSandboxPlatform(platform: NodeJS.Platform = process.pla
  * Why ASRT is not running, when init was attempted and failed.
  *
  * Everything downstream can only observe that the sandbox is *off*, and at
- * least one caller fails closed on that — executable pack behavior refuses to
+ * least one caller fails closed on that — executable plugin behavior refuses to
  * run unsandboxed. Reporting "requires an active sandbox" without saying why
  * there isn't one leaves the actual fault only in the main-process log, which
  * in CI means inside a failure artifact. Kept here so a read site can quote it.

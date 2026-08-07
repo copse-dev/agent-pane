@@ -166,7 +166,7 @@ describe('analyzeShellCommand', () => {
     const chatRoot = join(homedir(), '.copse', 'workspace')
     const threadFile = join(
       chatRoot,
-      'e2e-mermaid-project/584472db-c76e-40b0-942a-3e5358d60a0c/blobs/archives/Pack-Review/e833d1aa/agent-history.json',
+      'e2e-mermaid-project/584472db-c76e-40b0-942a-3e5358d60a0c/blobs/archives/Plugin-Review/e833d1aa/agent-history.json',
     )
 
     it('does not flag reading an absolute chat-store path', () => {

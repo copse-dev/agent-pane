@@ -9,14 +9,14 @@ import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 import { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
-import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
-import { definePack } from '@copse/agent/packs/pack-manifest.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
-  setPackToolRuntimeController,
-  type PackToolRuntimeController,
-} from './packs/pack-tool-controller.ts'
-import { packModelValue } from '@shared/pack-model.ts'
+  setPluginToolRuntimeController,
+  type PluginToolRuntimeController,
+} from './plugins/plugin-tool-controller.ts'
+import { pluginModelValue } from '@shared/plugin-model.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -93,19 +93,19 @@ describe('runAgent AgentHost decoupling', () => {
     }
   })
 
-  it('runs a selected-pack model with bounded history, current images, and usage', async () => {
+  it('runs a selected-plugin model with bounded history, current images, and usage', async () => {
     const received: StreamChunk[] = []
     const host: AgentHost<StreamChunk> = {
       emit: (_threadId, chunk) => received.push(chunk),
     }
     let invocation: unknown = null
-    const runtime: PackToolRuntimeController = {
+    const runtime: PluginToolRuntimeController = {
       enable: () => Promise.resolve(),
       disable: () => Promise.resolve(),
-      isRunning: (packId) => packId === 'personal.reference-model',
+      isRunning: (pluginId) => pluginId === 'personal.reference-model',
       registrations: () => ({ tools: [], models: [{ id: 'judge:default' }] }),
       invokeTool: () => Promise.reject(new Error('not a tool turn')),
-      invokeModel: (_packId, _routeId, input) => {
+      invokeModel: (_pluginId, _routeId, input) => {
         invocation = input
         return Promise.resolve({ text: 'Personal judge answer', inputTokens: 12, outputTokens: 4 })
       },
@@ -116,9 +116,9 @@ describe('runAgent AgentHost decoupling', () => {
       group: 'Personal models',
       supportsImages: true,
     }
-    const packs = new PackRegistry()
-    packs.register(
-      definePack(
+    const plugins = new PluginRegistry()
+    plugins.register(
+      definePlugin(
         {
           name: 'personal.reference-model',
           trust: 'user',
@@ -127,8 +127,8 @@ describe('runAgent AgentHost decoupling', () => {
         { modelRoutes: [route] },
       ),
     )
-    setDefaultPackRegistry(packs)
-    setPackToolRuntimeController(runtime)
+    setDefaultPluginRegistry(plugins)
+    setPluginToolRuntimeController(runtime)
 
     try {
       const result = await runWithThreadExecutionContext(
@@ -154,7 +154,7 @@ describe('runAgent AgentHost decoupling', () => {
               ],
               host,
               new ToolRegistry(),
-              { model: packModelValue('personal.reference-model', 'judge:default') },
+              { model: pluginModelValue('personal.reference-model', 'judge:default') },
             ),
           ),
       )
@@ -174,8 +174,8 @@ describe('runAgent AgentHost decoupling', () => {
       )
       assert.ok(received.some((chunk) => chunk.type === 'done'))
     } finally {
-      setPackToolRuntimeController(null)
-      setDefaultPackRegistry(null)
+      setPluginToolRuntimeController(null)
+      setDefaultPluginRegistry(null)
     }
   })
 

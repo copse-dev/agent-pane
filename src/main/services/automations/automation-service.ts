@@ -1,18 +1,18 @@
 import { randomUUID } from 'node:crypto'
-import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type {
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
   Thread,
 } from '@shared/types'
-import { getPackService } from '../packs/pack-service.ts'
+import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { createThread } from '../thread-store.ts'
 import { cronMatches, validateCronExpression } from './cron.ts'
 import { getTaskSupervisor } from '../supervisor/task-supervisor.ts'
 
-const STORAGE_KEY = `pack.${AUTOMATIONS_PACK_ID}.storage`
+const STORAGE_KEY = `pack.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 
 function isSchedule(value: unknown): value is AutomationSchedule {
@@ -55,7 +55,7 @@ export interface AutomationService {
 export interface AutomationServiceDependencies {
   now(): number
   createProjectThread(projectId: string, thread: Thread): Promise<void>
-  isPackEnabled(): boolean
+  isPluginEnabled(): boolean
 }
 
 export function createAutomationService(
@@ -91,7 +91,7 @@ export function createAutomationService(
           task.state !== 'failed' &&
           task.state !== 'completed',
       )
-    if (!dependencies.isPackEnabled()) {
+    if (!dependencies.isPluginEnabled()) {
       await Promise.all(existing.map((task) => supervisor.cancel(task.projectId, task.taskId)))
       return
     }
@@ -225,7 +225,7 @@ export function createAutomationService(
       if (disposeSupervisorHandler) await ensureSupervisorTask()
     },
     async runNow(projectId, scheduleId) {
-      if (!dependencies.isPackEnabled()) throw new Error('Enable the automations pack first')
+      if (!dependencies.isPluginEnabled()) throw new Error('Enable the automations plugin first')
       const schedule = service.list(projectId).find((candidate) => candidate.id === scheduleId)
       if (!schedule) throw new Error('Automation schedule not found in this project')
       return trigger(schedule, dependencies.now())
@@ -252,7 +252,7 @@ export function createAutomationService(
       notify = null
     },
     async tick() {
-      if (!dependencies.isPackEnabled()) return
+      if (!dependencies.isPluginEnabled()) return
       const now = dependencies.now()
       const date = new Date(now)
       const currentMinute = minuteStamp(now)
@@ -291,7 +291,7 @@ export function getAutomationService(): AutomationService {
   singleton ??= createAutomationService({
     now: () => Date.now(),
     createProjectThread: createThread,
-    isPackEnabled: () => getPackService().registry.isEnabled(AUTOMATIONS_PACK_ID),
+    isPluginEnabled: () => getPluginService().registry.isEnabled(AUTOMATIONS_PLUGIN_ID),
   })
   return singleton
 }

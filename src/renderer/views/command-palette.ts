@@ -24,7 +24,7 @@ import { openConversationSearch } from './conversation-search.ts'
 // jumps anywhere in the app.
 
 // A right-panel destination, kept to the always-available modes so the palette
-// never offers a panel that a disabled pack would make a no-op.
+// never offers a panel that a disabled plugin would make a no-op.
 const PANEL_ITEMS: readonly { mode: RightPanelMode; label: string }[] = [
   { mode: 'explorer', label: 'Panel (Explorer)' },
   { mode: 'terminal', label: 'Terminal' },

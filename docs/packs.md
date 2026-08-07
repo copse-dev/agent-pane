@@ -19,8 +19,8 @@ the same PR.
 The declarative manifest is a superset of the plugin.json shape, published as a
 JSON schema at [`schemas/copse-pack.schema.json`](../schemas/copse-pack.schema.json)
 (`$id` `https://copse.dev/schemas/copse-pack.schema.json`). The TypeScript
-contract is `PackManifest` in
-[`packages/agent/src/packs/pack-manifest.ts`](../packages/agent/src/packs/pack-manifest.ts).
+contract is `PluginManifest` in
+[`packages/agent/src/plugins/plugin-manifest.ts`](../packages/agent/src/plugins/plugin-manifest.ts).
 
 ```
 pack manifest
@@ -41,12 +41,12 @@ user packs share the manifest, registry, Settings surface, and disable semantics
 First-party packs additionally supply typed runtime contributions —
 `AgentStreamChunk` emission, live loop-state access, real renderer views — which
 is why the executable bits (function hooks, native tool registrations) live on
-the runtime `RegisteredPack.contributions`, not in the serializable manifest.
+the runtime `RegisteredPlugin.contributions`, not in the serializable manifest.
 The one user-code exception is an explicitly selected pack's isolated
 shared `runtime`; it never imports code into Electron main.
 
-`packManifestFromPluginJson()` maps a Cursor-shaped `plugin.json` into a
-`PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
+`pluginManifestFromCursorJson()` maps a Cursor-shaped `plugin.json` into a
+`PluginManifest` (a user pack): the existing top-level `skills` / `mcpServers`
 fields fold into the pack slots (`mcpServers` → `tools.mcpServers`). The
 Settings pack list that renders `settings` landed in the pack-list UI phase (see
 [Pack list UI](#pack-list-ui) below).
@@ -57,10 +57,10 @@ packages, per Stage A of
 directory under the Copse plugin root (`~/.copse/plugins/`, or `COPSE_PLUGINS_DIR`)
 with a root `plugin.json` registers as a user pack row:
 `parseAgentPluginManifest()`
-([`packages/agent/src/packs/agent-plugin-manifest.ts`](../packages/agent/src/packs/agent-plugin-manifest.ts))
+([`packages/agent/src/plugins/agent-plugin-manifest.ts`](../packages/agent/src/plugins/agent-plugin-manifest.ts))
 parses the envelope and the `extensions["dev.copse"]` block, and
 `discoverUserPlugins()`
-([`src/main/services/packs/discover-user-plugins.ts`](../src/main/services/packs/discover-user-plugins.ts))
+([`src/main/services/plugins/discover-user-plugins.ts`](../src/main/services/plugins/discover-user-plugins.ts))
 walks the root and feeds the registry.
 
 Discovery **validates but never activates**: a discovered plugin gets a Settings
@@ -114,8 +114,8 @@ a concrete behavior needs it rather than landing as an unused slot.
 
 ## Registry and lifecycle
 
-`PackRegistry`
-([`packages/agent/src/packs/pack-registry.ts`](../packages/agent/src/packs/pack-registry.ts))
+`PluginRegistry`
+([`packages/agent/src/plugins/plugin-registry.ts`](../packages/agent/src/plugins/plugin-registry.ts))
 groups every pack's contributions by pack id and owns the lifecycle:
 
 - **Grouping** — `all()` / `grouping()` enumerate packs (Settings, P3); the
@@ -143,8 +143,8 @@ groups every pack's contributions by pack id and owns the lifecycle:
   also feeds the Settings enumeration and the install-time review.
 - **Stability and default enablement** — every first-party manifest declares
   `stable` or `experimental`; missing user-pack values fail safe to experimental.
-  Settings shows the status before enablement. `createFirstPartyPackRegistry()`
-  seeds every pack enabled, then `EXPERIMENTAL_FIRST_PARTY_PACK_IDS` derives the
+  Settings shows the status before enablement. `createFirstPartyPluginRegistry()`
+  seeds every pack enabled, then `EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS` derives the
   off-by-default set from those declarations and writes it into `packDisabled` on
   a profile that has never had one. Once `packDisabled` exists it is the user's
   own and is never re-seeded.
@@ -160,7 +160,7 @@ groups every pack's contributions by pack id and owns the lifecycle:
   namespaced storage. The refreshed manifest is validated before registration.
 
 First-party packs are the static list in
-[`packages/agent/src/packs/first-party-packs.ts`](../packages/agent/src/packs/first-party-packs.ts).
+[`packages/agent/src/plugins/first-party-plugins.ts`](../packages/agent/src/plugins/first-party-plugins.ts).
 The initial pack phase originally shipped a skeleton `copse.noop` pack (empty contributions) to
 prove the lifecycle end-to-end before the pilot **todos** pack landed in the todos-pack phase.
 Once real first-party packs exercised the same lifecycle, the skeleton was
@@ -192,9 +192,9 @@ bridge. See
 A pack contributes a **level-2 panel** by declaring a UI contribution at
 `level: 2` with a `panel: { kind: 'list' | 'tree', header?, ariaLabel? }` slot,
 and by emitting `panel_update` chunks
-([`PanelData`](../packages/agent/src/packs/pack-panel.ts)) whose contents the
+([`PanelData`](../packages/agent/src/plugins/plugin-panel.ts)) whose contents the
 host renders with a generic list/tree component
-([`createPackPanelEl`](../src/renderer/views/pack-panel.ts)). Each `panel_update`
+([`createPackPanelEl`](../src/renderer/views/plugin-panel.ts)). Each `panel_update`
 **replaces** the panel's contents, matching ACP `plan`'s whole-list-per-update
 semantics — which is why a list panel is one adapter away from cross-client
 rendering.
@@ -215,7 +215,7 @@ rendering.
   visible regression. Cancelled todos remain in durable thread state but are
   omitted from the projection; an all-cancelled plan therefore stays hidden.
 - Registration enforces the invariant: a `level: 2` contribution _must_ declare
-  its `panel` shape. `PackRegistry.register` throws
+  its `panel` shape. `PluginRegistry.register` throws
   `InvalidPanelContributionError` on a missing decl (mechanical, not "please
   remember"). `activePanelContributions()` returns each enabled pack's level-2
   panels paired with their owning pack id; disabling the pack drops it in one
@@ -228,11 +228,11 @@ as a row with an enable/disable toggle, an enumeration of what the pack
 contributes (tools / hooks / prompt blocks / UI panels), and any pack-scoped
 settings the manifest declares. This is the `about:addons` of Copse.
 
-- **Shared registry.** The host's `PackService`
-  ([`src/main/services/packs/pack-service.ts`](../src/main/services/packs/pack-service.ts))
-  owns one `PackRegistry` and installs it as the default provider
-  (`setDefaultPackRegistry` in
-  [`packages/agent/src/packs/default-pack-registry.ts`](../packages/agent/src/packs/default-pack-registry.ts))
+- **Shared registry.** The host's `PluginService`
+  ([`src/main/services/plugins/plugin-service.ts`](../src/main/services/plugins/plugin-service.ts))
+  owns one `PluginRegistry` and installs it as the default provider
+  (`setDefaultPluginRegistry` in
+  [`packages/agent/src/plugins/default-plugin-registry.ts`](../packages/agent/src/plugins/default-plugin-registry.ts))
   so `createHookRegistry` reads through the same instance the Settings UI
   toggles. Toggling a pack in Settings flips the shared registry's flag
   **atomically** (P1 contract) — every one of the pack's contribution kinds
@@ -261,11 +261,11 @@ settings the manifest declares. This is the `about:addons` of Copse.
   editable so a user can configure a disabled pack before re-enabling it.
   Selected-directory rows additionally show their source path and content hash.
 - **Projection helper.**
-  [`packages/agent/src/packs/pack-summary.ts`](../packages/agent/src/packs/pack-summary.ts)
-  is the pure `summarizePacks(registry, readSetting)` that projects the shared
-  registry + a per-key reader into the plain-data `PackSummaryOut` snapshots
+  [`packages/agent/src/plugins/plugin-summary.ts`](../packages/agent/src/plugins/plugin-summary.ts)
+  is the pure `summarizePlugins(registry, readSetting)` that projects the shared
+  registry + a per-key reader into the plain-data `PluginSummaryOut` snapshots
   the renderer consumes (mirrored to
-  [`src/shared/types/packs.ts`](../src/shared/types/packs.ts) for the IPC
+  [`src/shared/types/plugins.ts`](../src/shared/types/plugins.ts) for the IPC
   crossing). Values are coerced to the declared kind on projection, falling
   back to the manifest default when storage is corrupt.
 
@@ -277,28 +277,28 @@ Opening an old conversation shows a disabled pack's tool calls, cards, and panel
 exactly as they ran — Copse ships the code; only _registration for new work_ is
 removed.
 
-This is mechanical, not a convention: the `PackRegistry` exposes **no** method
+This is mechanical, not a convention: the `PluginRegistry` exposes **no** method
 that maps a historical record through live enablement, and the shipped renderers
 (`hookCardFromSpineLine`, `getToolDisplayName`) take only spine data — never the
 registry. The invariant is pinned by
-`src/main/services/packs/history-never-consults-live-registration.test.ts`:
+`src/main/services/plugins/history-never-consults-live-registration.test.ts`:
 disabling a pack drops its hooks/tools from the active set while a historical
 `hook_run` card and tool-call display render byte-identically. The atomicity of
 disable is pinned by
-`packages/agent/src/packs/enable-disable-atomicity.test.ts`.
+`packages/agent/src/plugins/enable-disable-atomicity.test.ts`.
 
 ## Module layout (execution-guidance rule 4)
 
 - Pack manifest types, registry, first-party pack definitions, and the level-2
-  panel data model + seed transforms live in `packages/agent/src/packs/`
+  panel data model + seed transforms live in `packages/agent/src/plugins/`
   (Electron-free — first-party function hooks receive app services via context,
   never import them).
-- The generic list/tree panel renderer lives in `src/renderer/views/pack-panel.ts`
+- The generic list/tree panel renderer lives in `src/renderer/views/plugin-panel.ts`
   and consumes the Electron-free `PanelData` types across the package boundary.
 - Host persistence of the enable/disable set + pack-scoped settings values
   (`electron-store` under `packDisabled` and `pack.<packId>.settings`), the
-  shared `PackRegistry` singleton, and the Settings pack list UI landed in P3
-  (`src/main/services/packs/pack-service.ts` + `src/renderer/views/settings-dialog.ts`).
+  shared `PluginRegistry` singleton, and the Settings pack list UI landed in P3
+  (`src/main/services/plugins/plugin-service.ts` + `src/renderer/views/settings-dialog.ts`).
   Host disk-discovery of user packs into that registry is still outstanding.
 
 ## Related

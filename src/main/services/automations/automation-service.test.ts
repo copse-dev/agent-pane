@@ -1,11 +1,11 @@
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type { Thread } from '@shared/types'
 import { storageSet } from '../storage/storage.ts'
 import { createAutomationService } from './automation-service.ts'
 
-const STORAGE_KEY = `pack.${AUTOMATIONS_PACK_ID}.storage`
+const STORAGE_KEY = `pack.${AUTOMATIONS_PLUGIN_ID}.storage`
 
 describe('AutomationService', () => {
   beforeEach(() => {
@@ -17,7 +17,7 @@ describe('AutomationService', () => {
     const created: Array<{ projectId: string; thread: Thread }> = []
     const service = createAutomationService({
       now: () => now,
-      isPackEnabled: () => true,
+      isPluginEnabled: () => true,
       createProjectThread: (projectId, thread) => {
         created.push({ projectId, thread })
         return Promise.resolve()
@@ -48,12 +48,12 @@ describe('AutomationService', () => {
     assert.equal(created.length, 1)
   })
 
-  it('does not trigger while the pack is disabled, but keeps configuration', async () => {
-    let packEnabled = false
+  it('does not trigger while the plugin is disabled, but keeps configuration', async () => {
+    let pluginEnabled = false
     let created = 0
     const service = createAutomationService({
       now: () => new Date(2026, 6, 27, 9, 0, 0).getTime(),
-      isPackEnabled: () => packEnabled,
+      isPluginEnabled: () => pluginEnabled,
       createProjectThread: () => {
         created += 1
         return Promise.resolve()
@@ -72,7 +72,7 @@ describe('AutomationService', () => {
     assert.equal(service.list('project-a').length, 1)
     await assert.rejects(() => service.runNow('project-a', schedule.id), /Enable the automations/)
 
-    packEnabled = true
+    pluginEnabled = true
     await service.runNow('project-a', schedule.id)
     assert.equal(created, 1)
   })
@@ -80,7 +80,7 @@ describe('AutomationService', () => {
   it('rejects cross-project update and run attempts', async () => {
     const service = createAutomationService({
       now: () => 1,
-      isPackEnabled: () => true,
+      isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
     })
     const schedule = await service.upsert('project-a', {
@@ -112,7 +112,7 @@ describe('AutomationService', () => {
     let attempts = 0
     const service = createAutomationService({
       now: () => new Date(2026, 6, 27, 9, 0, 0).getTime(),
-      isPackEnabled: () => true,
+      isPluginEnabled: () => true,
       createProjectThread: () => {
         attempts += 1
         return attempts === 1 ? Promise.reject(new Error('disk unavailable')) : Promise.resolve()

@@ -1,5 +1,5 @@
 import type { StreamChunk, Thread } from '@shared/types'
-import type { PackContributionsSummary, PackSummary } from '@shared/types/packs.ts'
+import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -11,12 +11,12 @@ const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
 
 /**
- * Packs shown in the browser demo's Settings → Packs list. The real list comes
+ * Plugins shown in the browser demo's Settings → Plugins list. The real list comes
  * from the host registry, which the demo has no access to, so a small stand-in
- * covers the shapes the row has to render: a first-party pack, one that is
+ * covers the shapes the row has to render: a first-party plugin, one that is
  * experimental and carries a setting, and a user-installed one that is off.
  */
-const DEMO_PACK_CONTRIBUTIONS: PackContributionsSummary = {
+const DEMO_PLUGIN_CONTRIBUTIONS: PluginContributionsSummary = {
   toolNames: [],
   modelRoutes: [],
   browserOrigins: [],
@@ -29,7 +29,7 @@ const DEMO_PACK_CONTRIBUTIONS: PackContributionsSummary = {
   permissions: [],
 }
 
-const DEMO_PACKS: readonly PackSummary[] = [
+const DEMO_PLUGINS: readonly PluginSummary[] = [
   {
     id: 'copse.todos',
     trust: 'first-party',
@@ -39,7 +39,7 @@ const DEMO_PACKS: readonly PackSummary[] = [
     description:
       'Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.',
     enabled: true,
-    contributions: { ...DEMO_PACK_CONTRIBUTIONS, toolNames: ['todo_write', 'todo_read'] },
+    contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ['todo_write', 'todo_read'] },
     settings: [],
   },
   {
@@ -51,7 +51,7 @@ const DEMO_PACKS: readonly PackSummary[] = [
     description:
       'Pairs a second model with the executor to review strategy before long or risky work starts.',
     enabled: true,
-    contributions: { ...DEMO_PACK_CONTRIBUTIONS, toolNames: ['consult_advisor'] },
+    contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ['consult_advisor'] },
     settings: [
       {
         id: 'maxReviewCycles',
@@ -69,9 +69,9 @@ const DEMO_PACKS: readonly PackSummary[] = [
     stability: 'experimental',
     name: 'Reference tools',
     version: '0.1.0',
-    description: 'A locally installed pack from a selected directory.',
+    description: 'A locally installed plugin from a selected directory.',
     enabled: false,
-    contributions: DEMO_PACK_CONTRIBUTIONS,
+    contributions: DEMO_PLUGIN_CONTRIBUTIONS,
     settings: [],
   },
 ]
@@ -161,7 +161,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       shareScreenshot: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
-      onPackTabRequest: subscribe,
+      onPluginTabRequest: subscribe,
     },
     security: {
       getGuardedYolo: (threadId) =>
@@ -585,17 +585,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       remove: unsupported,
     },
     skills: { list: emptyArray },
-    plugins: { list: emptyArray },
+    cursorPlugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
       runDetail: () => resolved({ found: false }),
     },
-    packs: {
-      list: () => resolved({ packs: DEMO_PACKS }),
-      setEnabled: () => resolved({ packs: [] }),
-      setSetting: () => resolved({ packs: [] }),
-      addSource: () => resolved({ packs: [] }),
+    plugins: {
+      list: () => resolved({ plugins: DEMO_PLUGINS }),
+      setEnabled: () => resolved({ plugins: [] }),
+      setSetting: () => resolved({ plugins: [] }),
+      addSource: () => resolved({ plugins: [] }),
     },
     decisions: {
       list: emptyArray,

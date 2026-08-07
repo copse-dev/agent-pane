@@ -27,7 +27,7 @@ packs whose runtime unit is still a feature pack.
 
 | Surface                                    | Role today                                           | Gap versus a Copse marketplace                                                                                     |
 | ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| First-party packs (`FIRST_PARTY_PACKS`)    | Shipped in-app; Settings → Packs enable/disable      | Not third-party distribution                                                                                       |
+| First-party packs (`FIRST_PARTY_PLUGINS`)  | Shipped in-app; Settings → Packs enable/disable      | Not third-party distribution                                                                                       |
 | Pack manifest + JSON schema                | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry landed for Agent Plugins packages (P1); install records, pinning, and update remain |
 | Cursor plugin cache (`~/.cursor/plugins/`) | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace                                                           |
 | `skillPluginPaths` / local symlinks        | Power-user overlay                                   | Manual; no pin, signature, or update channel                                                                       |

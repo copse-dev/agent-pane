@@ -29,7 +29,7 @@ import {
   syncCiInvestigatorTools,
   syncGhTools,
 } from './services/registry-bootstrap.ts'
-import { getPackService } from './services/packs/pack-service.ts'
+import { getPluginService } from './services/plugins/plugin-service.ts'
 import {
   loadMcpServers,
   shutdownMcpServers,
@@ -287,12 +287,12 @@ app
     const toolAvailability = checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
-    // P5: boot the pack service before `createRegistry()` so persisted
-    // `packDisabled` state is applied to the shared registry before
+    // P5: boot the plugin service before `createRegistry()` so persisted
+    // `pluginDisabled` state is applied to the shared registry before
     // `syncModelComparisonTools` reads it — otherwise the fallback fresh
-    // first-party registry (all packs enabled) would register the tool for a
-    // pack the user turned off in a previous session.
-    getPackService()
+    // first-party registry (all plugins enabled) would register the tool for a
+    // plugin the user turned off in a previous session.
+    getPluginService()
     const registry = createRegistry()
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.

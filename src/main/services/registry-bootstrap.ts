@@ -44,23 +44,23 @@ import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
-import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
+import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
-import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
 import { delegateStepTool } from '../tools/delegate-step-tool.ts'
 import { compareModelsTool } from '../tools/compare-models-tool.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
-import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
+import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
+import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
@@ -71,9 +71,9 @@ import { runCheckupTool } from '../tools/checkup-tool.ts'
 import { videoFramesTool } from '../tools/video-frames-tool.ts'
 import { readArchiveTool } from '../tools/read-archive-tool.ts'
 import {
-  PARALLEL_SEARCH_PACK_ID,
+  PARALLEL_SEARCH_PLUGIN_ID,
   PARALLEL_SEARCH_TOOL_NAME,
-} from '@copse/agent/packs/parallel-search-pack.ts'
+} from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { parallelSearchTool } from '../tools/parallel-search-tool.ts'
 import { PARALLEL_SEARCH_PROVIDER_ID } from './parallel-search.ts'
 
@@ -101,22 +101,22 @@ export function createRegistry(): ToolRegistry {
   registry.register(runShellTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gated by the
-  // `copse.ci-investigator` first-party pack — the pack toggle in Settings >
-  // Packs is the atomic master switch. Registration also requires `gh` (the
+  // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
+  // Plugins is the atomic master switch. Registration also requires `gh` (the
   // entry tool and its deep-log gh_run_* helpers shell out to it), so the sync
-  // ANDs pack enablement with `gh` availability. Live toggles route through
-  // {@link syncCiInvestigatorTools} on `packs:setEnabled`.
+  // ANDs plugin enablement with `gh` availability. Live toggles route through
+  // {@link syncCiInvestigatorTools} on `plugins:setEnabled`.
   syncCiInvestigatorTools(registry)
   // Experimental OKF memories (off by default). Gated by the
-  // `copse.okf-memories` first-party pack — the pack toggle in Settings > Packs
+  // `copse.okf-memories` first-party plugin — the plugin toggle in Settings > Plugins
   // is the atomic master switch. Adds remember/recall tools that persist project
   // knowledge as Open Knowledge Format notes under ~/.copse. Live toggles route
-  // through {@link syncOkfMemoryTools} on `packs:setEnabled`.
+  // through {@link syncOkfMemoryTools} on `plugins:setEnabled`.
   syncOkfMemoryTools(registry)
   // Experimental long-horizon tasks (off by default, issue #558). Gated by the
-  // `copse.long-horizon-tasks` first-party pack — the pack toggle in Settings >
-  // Packs is the atomic master switch. Live toggles route through
-  // {@link syncLongHorizonTasksTools} on `packs:setEnabled`.
+  // `copse.long-horizon-tasks` first-party plugin — the plugin toggle in Settings >
+  // Plugins is the atomic master switch. Live toggles route through
+  // {@link syncLongHorizonTasksTools} on `plugins:setEnabled`.
   syncLongHorizonTasksTools(registry)
   // Experimental model classifier (off by default, issue #557). Adds a
   // suggest_model tool that recommends a capability tier for a task so work can
@@ -129,9 +129,9 @@ export function createRegistry(): ToolRegistry {
   // a larger advisor model for strategic guidance, so the executor can run on a
   // cheaper / on-device model. The no-arg call matches Claude's native advisor
   // tool contract; optional question / include_diff params only add context.
-  // Gated by the `copse.advisor-strategy` first-party pack — the pack toggle in
-  // Settings > Packs is the atomic master switch. Live toggles route through
-  // {@link syncAdvisorStrategyTools} on `packs:setEnabled`.
+  // Gated by the `copse.advisor-strategy` first-party plugin — the plugin toggle in
+  // Settings > Plugins is the atomic master switch. Live toggles route through
+  // {@link syncAdvisorStrategyTools} on `plugins:setEnabled`.
   syncAdvisorStrategyTools(registry)
   // Experimental orchestration strategy (off by default) — the advisor's
   // inverse: the chat model stays the orchestrator and a `delegate_step` tool
@@ -141,37 +141,37 @@ export function createRegistry(): ToolRegistry {
     registry.register(delegateStepTool)
   }
   // Experimental model comparison harness. P5: gated by the
-  // `copse.model-comparison` first-party pack — the pack toggle in Settings >
-  // Packs is the atomic master switch. Live toggles route through
-  // {@link syncModelComparisonTools} on `packs:setEnabled`.
+  // `copse.model-comparison` first-party plugin — the plugin toggle in Settings >
+  // Plugins is the atomic master switch. Live toggles route through
+  // {@link syncModelComparisonTools} on `plugins:setEnabled`.
   syncModelComparisonTools(registry)
   // Experimental roadmap plans (off by default, issue #556). Gated by the
-  // `copse.roadmap-plans` first-party pack — the pack toggle in Settings > Packs
+  // `copse.roadmap-plans` first-party plugin — the plugin toggle in Settings > Plugins
   // is the atomic master switch (it also gates the renderer's Roadmap pane).
-  // Live toggles route through {@link syncRoadmapPlanTools} on `packs:setEnabled`.
+  // Live toggles route through {@link syncRoadmapPlanTools} on `plugins:setEnabled`.
   syncRoadmapPlanTools(registry)
   // Experimental background tasks (off by default, issue #691). Gated by the
-  // `copse.background-tasks` first-party pack — the pack toggle in Settings >
-  // Packs is the atomic master switch. Lets the agent run a long-lived command
+  // `copse.background-tasks` first-party plugin — the plugin toggle in Settings >
+  // Plugins is the atomic master switch. Lets the agent run a long-lived command
   // (dev server, watcher, build) that stays alive across turns. A task may opt
-  // into loopback port binding, which the pack DECLARES as its `loopback-bind`
+  // into loopback port binding, which the plugin DECLARES as its `loopback-bind`
   // permission relaxation (issue #1190): the permission-gate only grants it
-  // while the pack is enabled, prompting for a per-project grant and escalating
+  // while the plugin is enabled, prompting for a per-project grant and escalating
   // the sandbox to allow binding for that process's lifetime. Live toggles route
-  // through {@link syncBackgroundTasksTools} on `packs:setEnabled`.
+  // through {@link syncBackgroundTasksTools} on `plugins:setEnabled`.
   syncBackgroundTasksTools(registry)
   // User Shells → agent read (on by default). The tool is still withheld per
   // turn when no shell is open for the chat thread (see parentTools).
   syncReadTerminalTools(registry)
   // Experimental PII redaction (off by default). Gated by the
-  // `copse.pii-redaction` first-party pack — the pack toggle in Settings > Packs
+  // `copse.pii-redaction` first-party plugin — the plugin toggle in Settings > Plugins
   // is the atomic master switch that also arms the input rewrite
   // (`pii-redactor.ts`) and the steering prompt block. Adds the reveal_pii tool
   // that turns a redacted placeholder back into its real value, gated by user
   // approval. Live toggles route through {@link syncPiiTools} on
-  // `packs:setEnabled`.
+  // `plugins:setEnabled`.
   syncPiiTools(registry)
-  // Optional hosted web search. The pack and a configured key are both needed,
+  // Optional hosted web search. The plugin and a configured key are both needed,
   // so the model never sees a tool that can only answer with setup guidance.
   syncParallelSearchTools(registry)
   // Reading a video as stills. Registered unconditionally because a video can
@@ -195,17 +195,17 @@ export function createRegistry(): ToolRegistry {
 
 /**
  * Register or unregister the experimental OKF memory tools to match the current
- * enablement of the `copse.okf-memories` first-party pack. Called at startup
- * (via createRegistry) and again whenever the pack is toggled from Settings >
- * Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so the tools appear
+ * enablement of the `copse.okf-memories` first-party plugin. Called at startup
+ * (via createRegistry) and again whenever the plugin is toggled from Settings >
+ * Plugins (see `ipc/register-handlers.ts` `plugins:setEnabled`), so the tools appear
  * or disappear live without an app restart. This keeps the registry in sync with
- * the memory system-prompt block, which is rebuilt every turn from the same pack
+ * the memory system-prompt block, which is rebuilt every turn from the same plugin
  * enablement (`agent-system-prompt.ts`) — otherwise enabling the feature
  * mid-session would advertise remember/recall in the prompt while the registry
  * still rejected the calls as "Unknown tool".
  */
 export function syncOkfMemoryTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(OKF_MEMORIES_PACK_ID)) {
+  if (getDefaultPluginRegistry().isEnabled(OKF_MEMORIES_PLUGIN_ID)) {
     if (!registry.has('remember')) registry.register(rememberTool)
     if (!registry.has('recall')) registry.register(recallTool)
   } else {
@@ -216,16 +216,16 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
 
 /**
  * Register or unregister the experimental `roadmap_plan` tool to match the
- * current enablement of the `copse.roadmap-plans` first-party pack (issue #556).
- * Called at startup (via createRegistry) and again whenever the pack is toggled
- * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
+ * current enablement of the `copse.roadmap-plans` first-party plugin (issue #556).
+ * Called at startup (via createRegistry) and again whenever the plugin is toggled
+ * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:setEnabled`), so
  * enabling the feature (e.g. to use the Roadmap pane) also gives the agent its
- * tool without an app restart — the atomic pack disable drops the tool from the
- * model tool list in the same flag flip that drops the pack's
- * `activeToolNames()` entry from the Settings pack list.
+ * tool without an app restart — the atomic plugin disable drops the tool from the
+ * model tool list in the same flag flip that drops the plugin's
+ * `activeToolNames()` entry from the Settings plugin list.
  */
 export function syncRoadmapPlanTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(ROADMAP_PLANS_PACK_ID)) {
+  if (getDefaultPluginRegistry().isEnabled(ROADMAP_PLANS_PLUGIN_ID)) {
     if (!registry.has('roadmap_plan')) registry.register(roadmapPlanTool)
   } else {
     registry.unregister('roadmap_plan')
@@ -234,16 +234,16 @@ export function syncRoadmapPlanTools(registry: ToolRegistry): void {
 
 /**
  * Register or unregister the experimental `compare_models` tool to match the
- * current enablement of the `copse.model-comparison` first-party pack (P5).
- * Called at startup (via createRegistry) and again whenever the pack is toggled
- * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
- * the tool appears or disappears live — the atomic pack disable drops the tool
+ * current enablement of the `copse.model-comparison` first-party plugin (P5).
+ * Called at startup (via createRegistry) and again whenever the plugin is toggled
+ * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:setEnabled`), so
+ * the tool appears or disappears live — the atomic plugin disable drops the tool
  * from the model tool list in the same flag flip that (a) skips the
- * auto-on-review trigger in `agent-service.ts` and (b) drops the pack's
- * `activeToolNames()` entry from the Settings pack list.
+ * auto-on-review trigger in `agent-service.ts` and (b) drops the plugin's
+ * `activeToolNames()` entry from the Settings plugin list.
  */
 export function syncModelComparisonTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(MODEL_COMPARISON_PACK_ID)) {
+  if (getDefaultPluginRegistry().isEnabled(MODEL_COMPARISON_PLUGIN_ID)) {
     if (!registry.has('compare_models')) registry.register(compareModelsTool)
   } else {
     registry.unregister('compare_models')
@@ -252,15 +252,15 @@ export function syncModelComparisonTools(registry: ToolRegistry): void {
 
 /**
  * Register or unregister the experimental `track_long_task` tool to match the
- * current enablement of the `copse.long-horizon-tasks` first-party pack (issue
- * #558). Called at startup (via createRegistry) and again whenever the pack is
- * toggled from Settings > Packs (see `ipc/register-handlers.ts`
- * `packs:setEnabled`), so the tool appears or disappears live — the atomic pack
+ * current enablement of the `copse.long-horizon-tasks` first-party plugin (issue
+ * #558). Called at startup (via createRegistry) and again whenever the plugin is
+ * toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * `plugins:setEnabled`), so the tool appears or disappears live — the atomic plugin
  * disable drops the tool from the model tool list in the same flag flip that
- * drops the pack's `activeToolNames()` entry from the Settings pack list.
+ * drops the plugin's `activeToolNames()` entry from the Settings plugin list.
  */
 export function syncLongHorizonTasksTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(LONG_HORIZON_TASKS_PACK_ID)) {
+  if (getDefaultPluginRegistry().isEnabled(LONG_HORIZON_TASKS_PLUGIN_ID)) {
     if (!registry.has('track_long_task')) registry.register(trackLongTaskTool)
   } else {
     registry.unregister('track_long_task')
@@ -269,16 +269,16 @@ export function syncLongHorizonTasksTools(registry: ToolRegistry): void {
 
 /**
  * Register or unregister the experimental `advisor` tool to match the current
- * enablement of the `copse.advisor-strategy` first-party pack (issue #566).
- * Called at startup (via createRegistry) and again whenever the pack is toggled
- * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
- * the tool appears or disappears live — the atomic pack disable drops the tool
- * from the model tool list in the same flag flip that drops the pack's
- * `activeToolNames()` entry from the Settings pack list. The orthogonal
+ * enablement of the `copse.advisor-strategy` first-party plugin (issue #566).
+ * Called at startup (via createRegistry) and again whenever the plugin is toggled
+ * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:setEnabled`), so
+ * the tool appears or disappears live — the atomic plugin disable drops the tool
+ * from the model tool list in the same flag flip that drops the plugin's
+ * `activeToolNames()` entry from the Settings plugin list. The orthogonal
  * `advisorModel` setting (which model the advisor consults) is unaffected.
  */
 export function syncAdvisorStrategyTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(ADVISOR_STRATEGY_PACK_ID)) {
+  if (getDefaultPluginRegistry().isEnabled(ADVISOR_STRATEGY_PLUGIN_ID)) {
     if (!registry.has('advisor')) registry.register(advisorTool)
   } else {
     registry.unregister('advisor')
@@ -334,20 +334,20 @@ export function syncGhTools(registry: ToolRegistry): void {
  * Register or unregister the experimental CI investigator tools — the
  * `investigate_ci` entry tool and its deep-log `gh_run_list` / `gh_run_view`
  * helpers — to match the current enablement of the `copse.ci-investigator`
- * first-party pack. Called at startup (via createRegistry) and again whenever
- * the pack is toggled from Settings > Packs (see `ipc/register-handlers.ts`
- * `packs:setEnabled`), so the tools appear or disappear live — the atomic pack
+ * first-party plugin. Called at startup (via createRegistry) and again whenever
+ * the plugin is toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * `plugins:setEnabled`), so the tools appear or disappear live — the atomic plugin
  * disable drops them from the model tool list in the same flag flip that drops
- * the pack's `activeToolNames()` entries from the Settings pack list.
+ * the plugin's `activeToolNames()` entries from the Settings plugin list.
  *
  * The register direction additionally requires `gh`: the entry tool and the
  * gh_run_* helpers shell out to it, so advertising them without a usable `gh`
  * would just surface "gh is not available" on every call. `gh` availability is
  * recomputed here via the same `isGhAvailable()` probe `createRegistry` uses, so
- * a live pack enable respects the probed environment.
+ * a live plugin enable respects the probed environment.
  */
 export function syncCiInvestigatorTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(CI_INVESTIGATOR_PACK_ID) && isGhAvailable()) {
+  if (getDefaultPluginRegistry().isEnabled(CI_INVESTIGATOR_PLUGIN_ID) && isGhAvailable()) {
     if (!registry.has('gh_run_list')) registry.register(ghRunListTool)
     if (!registry.has('gh_run_view')) registry.register(ghRunViewTool)
     if (!registry.has('investigate_ci')) registry.register(investigateCiTool)
@@ -360,17 +360,17 @@ export function syncCiInvestigatorTools(registry: ToolRegistry): void {
 
 /**
  * Register or unregister the experimental `reveal_pii` tool to match the current
- * enablement of the `copse.pii-redaction` first-party pack. Called at startup
- * (via createRegistry) and again whenever the pack is toggled from Settings >
- * Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so the tool appears
+ * enablement of the `copse.pii-redaction` first-party plugin. Called at startup
+ * (via createRegistry) and again whenever the plugin is toggled from Settings >
+ * Plugins (see `ipc/register-handlers.ts` `plugins:setEnabled`), so the tool appears
  * or disappears live — and stays in sync with the redaction system-prompt block
  * (`agent-system-prompt.ts`) and the input rewrite (`pii-redactor.ts`), which
- * are gated on the same pack enablement. The atomic pack disable drops the tool
- * from the model tool list in the same flag flip that drops the pack's
- * `activeToolNames()` entry from the Settings pack list.
+ * are gated on the same plugin enablement. The atomic plugin disable drops the tool
+ * from the model tool list in the same flag flip that drops the plugin's
+ * `activeToolNames()` entry from the Settings plugin list.
  */
 export function syncPiiTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(PII_REDACTION_PACK_ID)) {
+  if (getDefaultPluginRegistry().isEnabled(PII_REDACTION_PLUGIN_ID)) {
     if (!registry.has('reveal_pii')) registry.register(revealPiiTool)
   } else {
     registry.unregister('reveal_pii')
@@ -379,17 +379,17 @@ export function syncPiiTools(registry: ToolRegistry): void {
 
 /**
  * Register or unregister the experimental `run_background` tool to match the
- * current enablement of the `copse.background-tasks` first-party pack (issue
- * #691). Called at startup (via createRegistry) and again whenever the pack is
- * toggled from Settings > Packs (see `ipc/register-handlers.ts`
- * `packs:setEnabled`), so the tool appears or disappears live — the atomic pack
+ * current enablement of the `copse.background-tasks` first-party plugin (issue
+ * #691). Called at startup (via createRegistry) and again whenever the plugin is
+ * toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * `plugins:setEnabled`), so the tool appears or disappears live — the atomic plugin
  * disable drops the tool from the model tool list in the same flag flip that
- * drops the pack's `activeToolNames()` entry from the Settings pack list AND
- * revokes the pack's declared `loopback-bind` sandbox relaxation (the
+ * drops the plugin's `activeToolNames()` entry from the Settings plugin list AND
+ * revokes the plugin's declared `loopback-bind` sandbox relaxation (the
  * permission-gate reads `isPermissionDeclared('loopback-bind')`, issue #1190).
  */
 export function syncBackgroundTasksTools(registry: ToolRegistry): void {
-  if (getDefaultPackRegistry().isEnabled(BACKGROUND_TASKS_PACK_ID)) {
+  if (getDefaultPluginRegistry().isEnabled(BACKGROUND_TASKS_PLUGIN_ID)) {
     if (!registry.has('run_background')) registry.register(runBackgroundTool)
   } else {
     registry.unregister('run_background')
@@ -409,10 +409,10 @@ export function syncReadTerminalTools(registry: ToolRegistry): void {
   }
 }
 
-/** Keep the hosted Parallel tool aligned with pack enablement and credentials. */
+/** Keep the hosted Parallel tool aligned with plugin enablement and credentials. */
 export function syncParallelSearchTools(registry: ToolRegistry): void {
   const available =
-    getDefaultPackRegistry().isEnabled(PARALLEL_SEARCH_PACK_ID) &&
+    getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID) &&
     resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) !== null
   if (available) {
     if (!registry.has(PARALLEL_SEARCH_TOOL_NAME)) registry.register(parallelSearchTool)

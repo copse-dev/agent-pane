@@ -95,8 +95,8 @@ import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/packs/background-tasks-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { assessShellHarm } from './shell-harm.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
@@ -977,8 +977,8 @@ const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
  * same prompt-once model as browser origins and MCP servers.
  *
  * The loopback port-binding relaxation is an authority the `copse.background-tasks`
- * pack DECLARES (its `loopback-bind` permission, issue #1190). It is grantable
- * ONLY while the owning pack is enabled: disabling the pack revokes the
+ * plugin DECLARES (its `loopback-bind` permission, issue #1190). It is grantable
+ * ONLY while the owning plugin is enabled: disabling the plugin revokes the
  * relaxation in the same atomic flag flip that unregisters `run_background`.
  */
 async function checkBackgroundProcessPermission(
@@ -991,12 +991,12 @@ async function checkBackgroundProcessPermission(
 
   if (!backgroundAllowsPortBinding(args)) return true
 
-  if (!getDefaultPackRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION)) {
+  if (!getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION)) {
     throw new Error(
-      'Loopback port binding is not available: the Background tasks pack ' +
+      'Loopback port binding is not available: the Background tasks plugin ' +
         '(copse.background-tasks) is disabled, so its loopback-bind sandbox ' +
         'relaxation is revoked. Run the task without allow_port_binding, or ' +
-        'enable the pack in Settings > Packs.',
+        'enable the plugin in Settings > Plugins.',
     )
   }
 

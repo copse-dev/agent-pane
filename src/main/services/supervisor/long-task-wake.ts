@@ -1,5 +1,5 @@
-import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { createHash } from 'node:crypto'
 import type { MachineAgentDispatchRequest, MachineDispatchResult } from '../agent-dispatcher.ts'
@@ -37,7 +37,7 @@ export interface LongTaskWakeDispatcher {
 }
 
 export interface LongTaskWakeDependencies {
-  isPackEnabled: () => boolean
+  isPluginEnabled: () => boolean
   resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
   autoRunSandboxCommands: () => boolean
   projectSandboxEnabled: () => boolean
@@ -51,7 +51,7 @@ export interface LongTaskWakeDependencies {
 }
 
 const defaultDependencies: LongTaskWakeDependencies = {
-  isPackEnabled: () => getDefaultPackRegistry().isEnabled(LONG_HORIZON_TASKS_PACK_ID),
+  isPluginEnabled: () => getDefaultPluginRegistry().isEnabled(LONG_HORIZON_TASKS_PLUGIN_ID),
   resolveContext: resolveThreadExecutionContext,
   autoRunSandboxCommands: () => getSetting<boolean>('autoRunSandboxCommands', true),
   projectSandboxEnabled: isProjectSandboxEnabled,
@@ -116,8 +116,8 @@ export function installLongTaskWakeConsumer(
     LONG_TASK_CONTINUE_HANDLER,
     async (task, { signal }) => {
       signal.throwIfAborted()
-      if (!dependencies.isPackEnabled()) {
-        return { resultRef: { kind: 'handler', ref: 'pack-disabled' } }
+      if (!dependencies.isPluginEnabled()) {
+        return { resultRef: { kind: 'handler', ref: 'plugin-disabled' } }
       }
       if (!task.turnId) return { blockedReason: 'Long-task wake is missing its turn-tree epoch' }
       let context: ThreadExecutionContext

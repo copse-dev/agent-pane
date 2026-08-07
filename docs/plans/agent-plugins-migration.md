@@ -53,11 +53,11 @@ and gains portability for the two that other clients can actually load.
    top-level `dev.copse/` directory for files (spec §8). Reverse domain of
    `copse.dev`, matching the existing `copse.dev` schema `$id`.
 3. **`copse-pack.json` survives only for selected development directories.**
-   `pack-tool-source.ts` reads an explicitly chosen folder that is never
+   `plugin-tool-source.ts` reads an explicitly chosen folder that is never
    distributed, so portability buys it nothing. It stays as-is and stays outside
    discovery, exactly as the marketplace plan already scopes it.
-4. **`PackManifest` stays the internal normalized type.** Agent Plugins is a parse
-   target, not an internal representation. `PackRegistry` never learns whether a
+4. **`PluginManifest` stays the internal normalized type.** Agent Plugins is a parse
+   target, not an internal representation. `PluginRegistry` never learns whether a
    manifest came from disk, from an AP parse, or from a first-party code literal.
 5. **The spec is a packaging contract, never an authorization boundary.** Agent
    Plugins v1.0.0 defines no trust model, permissions, sandboxing, provenance, or
@@ -90,7 +90,7 @@ load-bearing in both directions:
   worst one to do twice.
 
 The cost of this order is that Stage A writes new modules into
-`packages/agent/src/packs/`, which Stage C then renames. That is a path change in a
+`packages/agent/src/plugins/`, which Stage C then renames. That is a path change in a
 mechanical rename PR — cheap, and cheaper than authoring sixteen manifests twice.
 
 Each stage is independently shippable and leaves the product working. Nothing here
@@ -188,9 +188,9 @@ of A3/A4 is listed at the end of this section.
 This is #1342's intent, re-expressed. Scope is unchanged from marketplace P1:
 discovery and Settings rows only. No install records, no network, no index.
 
-**A1 — Parse.** `agentPluginManifest()` in `packages/agent/src/packs/` parses a root
-`plugin.json` into `PackManifest`, alongside the existing
-`packManifestFromPluginJson()` (Cursor) and the selected-directory path. Enforces
+**A1 — Parse.** `agentPluginManifest()` in `packages/agent/src/plugins/` parses a root
+`plugin.json` into `PluginManifest`, alongside the existing
+`pluginManifestFromCursorJson()` (Cursor) and the selected-directory path. Enforces
 §5.5 names, §5.2 closed-schema handling, and the two-stage validation above.
 Path containment per §4.1: reject anything resolving outside the plugin root.
 
@@ -281,16 +281,16 @@ cross-references at `settings-dialog.ts:676` and `:1277`, and `model-options.ts:
 packs", and the architecture-diagram nodes in `site/architecture.html`. Visual evals
 required per AGENTS.md — Settings and the site both change what a user sees.
 
-**C2 — Identifiers.** `PackRegistry` → `PluginRegistry`, `PackManifest` →
-`PluginManifest`, `RegisteredPack` → `RegisteredPlugin`, `packages/agent/src/packs/`
-→ `plugins/`, `src/main/services/packs/` → `plugins/`. Mechanical, one PR, no
+**C2 — Identifiers.** `PluginRegistry` → `PluginRegistry`, `PluginManifest` →
+`PluginManifest`, `RegisteredPlugin` → `RegisteredPlugin`, `packages/agent/src/plugins/`
+→ `plugins/`, `src/main/services/plugins/` → `plugins/`. Mechanical, one PR, no
 behavior change.
 
 **C3 — Persisted keys, with migration.** `packDisabled` → `pluginDisabled` and
 `pack.<packId>.settings` → `plugin.<pluginId>.settings`. **This is user data.** A
 user's disable set and per-pack settings must survive the rename: read the new key,
 fall back to the old key when absent, write the new key, and leave the old one in
-place for one release. `pack-service.ts:79` already documents "once `packDisabled`
+place for one release. `plugin-service.ts:79` already documents "once `packDisabled`
 exists it is the user's own and is never re-seeded" — the migration must preserve
 that, including an _empty_ disable set, which is meaningfully different from absent.
 A user who explicitly enabled an experimental pack must not find it off after

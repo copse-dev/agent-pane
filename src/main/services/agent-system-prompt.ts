@@ -24,9 +24,9 @@ import {
 } from './agent-prompt.ts'
 import { isOpus5Model } from '@copse/llm/model-catalog.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
+import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
   READ_TERMINAL_ENABLED_SETTING,
@@ -66,14 +66,14 @@ export async function buildSystemPrompt(opts: {
     BROWSER_TOOLS_ENABLED_SETTING,
     BROWSER_TOOLS_DEFAULT_ENABLED,
   )
-  // Gated on the `copse.okf-memories` pack — the same enablement
+  // Gated on the `copse.okf-memories` plugin — the same enablement
   // `syncOkfMemoryTools` reads to register the remember/recall tools, so the
   // prompt block and the registered tools always agree.
-  const okfMemoriesEnabled = getDefaultPackRegistry().isEnabled(OKF_MEMORIES_PACK_ID)
-  // Gated by the `copse.pii-redaction` pack — the same enablement that registers
+  const okfMemoriesEnabled = getDefaultPluginRegistry().isEnabled(OKF_MEMORIES_PLUGIN_ID)
+  // Gated by the `copse.pii-redaction` plugin — the same enablement that registers
   // the reveal_pii tool and arms the input rewrite (`pii-redactor.ts`), so the
   // steering block and the tool never advertise each other out of sync.
-  const piiRedactionEnabled = getDefaultPackRegistry().isEnabled(PII_REDACTION_PACK_ID)
+  const piiRedactionEnabled = getDefaultPluginRegistry().isEnabled(PII_REDACTION_PLUGIN_ID)
   const readTerminalEnabled =
     getSetting<boolean>(READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT) &&
     (threadId ? hasTerminalSessions(threadId) : hasTerminalSessions())

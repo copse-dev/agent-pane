@@ -18,9 +18,9 @@ import {
  * store (issue #645) rather than a bespoke `items.json`: each item is an OKF
  * markdown note whose body is the prompt, with the lifecycle `status` in
  * frontmatter and any waiting-on context in a `notes` field. Off by default: the
- * `copse.roadmap-plans` first-party pack gates the `roadmap_plan` tool
+ * `copse.roadmap-plans` first-party plugin gates the `roadmap_plan` tool
  * registration (see `registry-bootstrap.ts`) and the Roadmap pane, so the
- * feature is fully inert until the user opts in via Settings → Packs.
+ * feature is fully inert until the user opts in via Settings → Plugins.
  */
 
 /** Knowledge-note type used for roadmap items. */
