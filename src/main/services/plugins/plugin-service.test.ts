@@ -469,7 +469,16 @@ describe('migratePackKeysToPlugin', () => {
 
     getPluginService()
 
-    assert.deepEqual(parseStringList(storageGet('pluginDisabled')), ['current'])
+    // Asserting membership rather than the whole array: the automations and
+    // parallel-search one-shots legitimately append their own default-off ids
+    // on a profile that has not seen them, and that is not this test's subject.
+    const after = parseStringList(storageGet('pluginDisabled'))
+    assert.equal(after.includes('current'), true, 'the existing value must survive')
+    assert.equal(
+      after.includes('stale.from.before'),
+      false,
+      'the old key must not have been copied over it',
+    )
   })
 
   it('leaves the old keys in place so a downgrade still finds them', () => {
