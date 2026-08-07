@@ -115,7 +115,7 @@ describe('settings packs (about:addons)', function () {
     await expect(longHorizonRow).toBeDisplayed()
     assert.equal(await longHorizonRow.$('.pack-name').getText(), 'Long horizon tasks')
     await expect(longHorizonRow.$('.pack-badge-first-party')).toBeDisplayed()
-    await expect(longHorizonRow.$('.pack-badge-experimental')).toHaveText('EXPERIMENTAL')
+    await expect(longHorizonRow.$('.pack-badge-experimental')).toHaveText('Experimental')
     assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
     // Roadmap plans pack (#556): listed, default-OFF (ships disabled).
     const roadmapPlansRow = packs.$('.pack-row[data-pack-id="copse.roadmap-plans"]')
@@ -186,15 +186,17 @@ describe('settings packs (about:addons)', function () {
     // re-review.
     const postTurnReviewRow = packs.$('.pack-row[data-pack-id="copse.post-turn-review"]')
     await expect(postTurnReviewRow).toBeDisplayed()
+    // A pack's fields live behind its closed "Pack settings" disclosure.
+    await postTurnReviewRow.$('.pack-settings-summary').click()
     const reviewCyclesInput = postTurnReviewRow.$(
       'input.pack-setting-number[data-setting-key="maxReviewCycles"]',
     )
     await expect(reviewCyclesInput).toBeDisplayed()
     assert.equal(await reviewCyclesInput.getValue(), '2')
 
-    // Trust tier badge is shown.
+    // Trust tier badge is shown. Stability reads as a sentence-case pill.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
-    await expect(todosRow.$('.pack-badge-stable')).toHaveText('STABLE')
+    await expect(todosRow.$('.pack-badge-stable')).toHaveText('Stable')
 
     // The toggle is a checkbox and starts enabled.
     const toggle = todosRow.$('input.pack-toggle-input')
