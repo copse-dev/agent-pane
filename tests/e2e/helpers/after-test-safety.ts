@@ -106,6 +106,35 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
   )
 }
 
+/**
+ * TEMPORARY instrumentation for the e2e driver-death investigation (#1615).
+ *
+ * Scoping the kill did not stop the drivers dying, which ruled the cross-worker
+ * cascade out. Two possibilities remain, and one measurement separates them:
+ * whether our own kill finds the driver **already dead**.
+ *
+ *   - alive when we signal it  -> we are killing our own live driver, and the
+ *     worker's next reloadSession fails because of us. The bug is the trigger.
+ *   - already dead             -> something outside this code killed it first.
+ *
+ * Gated on COPSE_E2E so unit-test output stays clean. Remove once answered.
+ */
+const KILL_DEBUG = process.env['COPSE_E2E'] === '1'
+
+function killDebug(message: string): void {
+  if (KILL_DEBUG) console.log(`[wedged-kill] ${message}`)
+}
+
+/** Signal 0 probes liveness without touching the process. */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** The processes backing one WDIO session: its driver and its Electron. */
 export type WedgedSessionPids = {
   /** chromedriver, from WDIO's `wdio:driverPID`. */
@@ -122,11 +151,22 @@ export type WedgedSessionPids = {
  * to a process that is already gone.
  */
 export function sessionPidsFromCapabilities(capabilities: unknown): WedgedSessionPids {
-  if (typeof capabilities !== 'object' || capabilities === null) return {}
+  if (typeof capabilities !== 'object' || capabilities === null) {
+    killDebug(`caps unusable: ${typeof capabilities}`)
+    return {}
+  }
   const caps = capabilities as Record<string, unknown>
   const pids: WedgedSessionPids = {}
   if (isKillablePid(caps['wdio:driverPID'])) pids.driverPid = caps['wdio:driverPID']
   if (isKillablePid(caps['goog:processID'])) pids.browserPid = caps['goog:processID']
+  if (pids.driverPid === undefined && pids.browserPid === undefined) {
+    // Which key is missing matters: absent means the kill was a silent no-op
+    // all along, so the pkill removal cannot explain anything either way.
+    killDebug(
+      `no pids resolved — raw wdio:driverPID=${String(caps['wdio:driverPID'])} ` +
+        `goog:processID=${String(caps['goog:processID'])} keys=${Object.keys(caps).join(',')}`,
+    )
+  }
   return pids
 }
 
@@ -166,8 +206,22 @@ function signalPid(pid: number, signal: NodeJS.Signals): void {
  * name costs every other worker on the host. CI's `cleanup_e2e_processes`
  * (`.github/workflows/ci.yml`) remains the between-jobs sweep for real orphans.
  */
-export function forceKillWedgedE2eSession(pids: WedgedSessionPids = {}): void {
+export function forceKillWedgedE2eSession(
+  pids: WedgedSessionPids = {},
+  reason = 'unspecified',
+): void {
   const targets = [pids.browserPid, pids.driverPid].filter(isKillablePid)
+  if (KILL_DEBUG) {
+    // "ALREADY-DEAD" here is the whole experiment: it means we are not the ones
+    // who killed it, and the search moves outside this file.
+    const state = targets
+      .map((pid) => `${String(pid)}=${isProcessAlive(pid) ? 'alive' : 'ALREADY-DEAD'}`)
+      .join(' ')
+    killDebug(
+      `fire reason=${reason} driver=${String(pids.driverPid ?? 'none')} ` +
+        `browser=${String(pids.browserPid ?? 'none')} targets=${String(targets.length)} [${state}]`,
+    )
+  }
   // TERM everything before escalating, matching the previous ordering.
   for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
     for (const pid of targets) signalPid(pid, signal)
@@ -230,7 +284,7 @@ export function installDeleteSessionSafety(
   const kill =
     options?.kill ??
     ((): void => {
-      forceKillWedgedE2eSession(sessionPidsFromCapabilities(session.capabilities))
+      forceKillWedgedE2eSession(sessionPidsFromCapabilities(session.capabilities), 'delete-session')
     })
 
   const runSafeDelete = async (invoke: () => Promise<unknown>): Promise<unknown> => {

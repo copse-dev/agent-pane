@@ -8,6 +8,7 @@ import {
   forceKillWedgedE2eSession,
   installDeleteSessionSafety,
   isIgnorableAfterTestError,
+  isProcessAlive,
   sessionPidsFromCapabilities,
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
@@ -80,6 +81,20 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: 30_000,
   },
+  beforeCommand(commandName) {
+    // TEMPORARY instrumentation (#1615). Every failing spec dies on
+    // reloadSession with "Unable to connect", so record whether this session's
+    // driver is still alive at that exact moment. Read together with the
+    // [wedged-kill] fire lines this attributes the death: a driver already gone
+    // here with no preceding fire line means nothing in this file killed it.
+    if (commandName !== 'reloadSession') return
+    const { driverPid } = sessionPidsFromCapabilities(browser.capabilities)
+    console.log(
+      `[wedged-kill] reloadSession driver=${String(driverPid ?? 'none')} alive=${
+        driverPid === undefined ? 'unknown' : String(isProcessAlive(driverPid))
+      }`,
+    )
+  },
   before() {
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
     // attempt 3 / git-changes-image; tip 2686950f / shard 4 still FAILED until
@@ -93,7 +108,7 @@ export const config: Options.Testrunner = {
     // connectionRetryTimeout (main tip a73ba769 / e2e shard 8, dff94ce5 / shard 7,
     // cdeb3abf / shard 2).
     if (shouldSkipAfterTestSessionTraffic(result?.error)) {
-      forceKillWedgedE2eSession(sessionPidsFromCapabilities(browser.capabilities))
+      forceKillWedgedE2eSession(sessionPidsFromCapabilities(browser.capabilities), 'aftertest-skip')
       return
     }
 
@@ -139,7 +154,10 @@ export const config: Options.Testrunner = {
       // the residual gap in #987 (markdown-nbsp-metadata afterTest on a green
       // spec). Real toast failures return quickly with "Unexpected error toast".
       if (isIgnorableAfterTestError(error)) {
-        forceKillWedgedE2eSession(sessionPidsFromCapabilities(browser.capabilities))
+        forceKillWedgedE2eSession(
+          sessionPidsFromCapabilities(browser.capabilities),
+          'aftertest-toast',
+        )
         return
       }
       if (result?.passed) throw error
