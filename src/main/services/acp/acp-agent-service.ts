@@ -725,6 +725,7 @@ async function respondToPermission(
     const { approved, remember } = await requestApproval(
       {
         ...presentation,
+        cause: 'acp-permission',
         allowRemember: true,
         rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
       },

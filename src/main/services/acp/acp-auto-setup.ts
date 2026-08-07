@@ -378,6 +378,7 @@ export async function requestAcpPackageInstallApproval(
     title,
     body,
     type: 'shell',
+    cause: 'acp-package-setup',
     allowRemember: false,
   })
   return approved

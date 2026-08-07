@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { getModelInfo } from '@copse/llm/model-catalog.ts'
+import { modelIntellect } from '@copse/llm/model-intellect.ts'
 import {
   BAND_CANDIDATES,
   classifyModelForTask,
@@ -12,7 +14,14 @@ describe('model-classifier', () => {
   it('routes trivial mechanical edits to the low band', () => {
     const rec = classifyModelForTask({ task: 'Rename the variable foo to bar' })
     assert.equal(rec.band, 'low')
-    assert.equal(rec.model, 'gpt-4o-mini')
+    // Derived rather than hardcoded, matching the mid/top cases below: which
+    // model is cheapest in a band is a fact about the synced catalog, not a
+    // contract of the classifier. Naming one here means every catalog addition
+    // breaks this test for no behavioural reason.
+    assert.equal(
+      rec.model,
+      pickCheapestFittingModel(BAND_CANDIDATES.low, 0, 'claude-haiku-4-5').model,
+    )
     assert.match(rec.rationale, /cost-aware pick/)
     assert.ok(rec.usdPerMTok !== null && rec.usdPerMTok > 0)
   })
@@ -37,18 +46,57 @@ describe('model-classifier', () => {
     )
   })
 
+  it('bands the catalog exactly as the retired editorial scale did', () => {
+    // Pins the behaviour-neutrality of moving banding onto the measured axis.
+    // The two scales disagreed on 10 of 12 rank *positions*, but every model
+    // lands in the same band, so routing is unchanged. If a future measurement
+    // moves a model across a band boundary this fails, which is the point —
+    // that is a routing change and should be seen, not absorbed silently.
+    assert.deepEqual([...BAND_CANDIDATES.low].sort(), [
+      'claude-haiku-4-5',
+      'claude-sonnet-4-6',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-5',
+      'gpt-5-mini',
+    ])
+    assert.deepEqual([...BAND_CANDIDATES.mid].sort(), [
+      'claude-opus-4-8',
+      'claude-sonnet-5',
+      'gpt-5.5',
+      'gpt-5.6-terra',
+    ])
+    assert.deepEqual([...BAND_CANDIDATES.top].sort(), ['claude-fable-5', 'gpt-5.6-sol'])
+  })
+
   it("reports the representative model's intellect from the shared scale", () => {
     const rec = classifyModelForTask({ task: 'Rename the variable foo to bar' })
-    assert.equal(rec.intellect, 3)
+    // The claim is that the number comes from the one shared scale for the
+    // model actually picked — not that any particular value is hardcoded here.
+    assert.equal(rec.intellect, modelIntellect(rec.model))
   })
 
   it('prefers a wider-context candidate within the same band', () => {
+    // Above the 272k window of the cheapest low-band models, so the estimate
+    // genuinely forces the pick onto a wider-context candidate.
+    const contextTokensEstimate = 300_000
     const rec = classifyModelForTask({
       task: 'Rename a symbol across the repo',
-      contextTokensEstimate: 200_000,
+      contextTokensEstimate,
     })
     assert.equal(rec.band, 'low')
-    assert.equal(rec.model, 'gpt-5-mini')
+    // Assert the property, not the identity: the pick must actually hold the
+    // estimated context. Several low-band models have a window this wide, and
+    // which of them is cheapest shifts as the catalog is synced.
+    const info = getModelInfo(rec.model)
+    assert.ok(info, `${rec.model} should be in the catalog`)
+    assert.ok(
+      info.contextWindow >= contextTokensEstimate,
+      `${rec.model} has a ${String(info.contextWindow)}-token window, too small for ${String(contextTokensEstimate)}`,
+    )
+    // ...and it must have moved off the unconstrained pick, whose window is narrower.
+    const unconstrained = classifyModelForTask({ task: 'Rename a symbol across the repo' })
+    assert.notEqual(rec.model, unconstrained.model)
   })
 
   it('flags when the estimated context exceeds the chosen model window', () => {
@@ -65,8 +113,27 @@ describe('model-classifier', () => {
 describe('pickCheapestFittingModel', () => {
   it('ranks by combined catalog USD/MTok among models that fit', () => {
     const pick = pickCheapestFittingModel(BAND_CANDIDATES.low, 0, 'claude-haiku-4-5')
+    // Named explicitly here because this test is the one asserting the ranking
+    // itself — deriving the expectation from the function under test would be
+    // circular.
     assert.equal(pick.model, 'gpt-4o-mini')
     assert.equal(pick.usdPerMTok, modelUsdPerMTok('gpt-4o-mini'))
+  })
+
+  it('will not pick a cheaper model that has no measured intellect', () => {
+    // gpt-5-nano ($0.05 + $0.40) undercuts gpt-4o-mini ($0.15 + $0.60), so on
+    // price alone it would win the low band outright. It has no Intelligence
+    // Index reading, so it is not a candidate at all — "unknown" must never be
+    // treated as "weakest", or the cheapest unmeasured model in the catalog
+    // silently becomes the default for trivial work.
+    const cheaper = modelUsdPerMTok('gpt-5-nano')
+    const picked = modelUsdPerMTok('gpt-4o-mini')
+    assert.ok(cheaper !== null && picked !== null && cheaper < picked)
+    assert.equal(modelIntellect('gpt-5-nano'), null)
+    for (const band of [BAND_CANDIDATES.low, BAND_CANDIDATES.mid, BAND_CANDIDATES.top]) {
+      assert.ok(!band.includes('gpt-5-nano'), 'unmeasured model must not be a band candidate')
+      assert.ok(!band.includes('gpt-5.6-luna'), 'unmeasured model must not be a band candidate')
+    }
   })
 })
 

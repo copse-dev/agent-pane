@@ -27,6 +27,43 @@ describe('todo-logic', () => {
     assert.ok(next.every((t) => t.id))
   })
 
+  it('applyTodoUpdate carries completed work through a full replace', () => {
+    // The replan that motivated this: an eight-item plan swapped wholesale for
+    // fresh ids, taking every finished step with it.
+    const current: TodoItem[] = [
+      { id: 't1', content: 'Consolidate reviewer feedback', status: 'completed' },
+      { id: 't2', content: 'Scaffold the crate', status: 'completed' },
+      { id: 't3', content: 'Port the runtime', status: 'in_progress' },
+    ]
+    const next = applyTodoUpdate(
+      current,
+      [
+        { id: 's1', content: 'Restore crate-root webview types', status: 'in_progress' },
+        { id: 's2', content: 'Add compat shims', status: 'pending' },
+      ],
+      false,
+    )
+
+    assert.deepEqual(
+      next.map((t) => t.id),
+      ['t1', 't2', 's1', 's2'],
+      'finished work survives, in front of the new plan',
+    )
+    assert.ok(!next.some((t) => t.id === 't3'), 'unfinished work the replan dropped is gone')
+  })
+
+  it('applyTodoUpdate lets a replan reopen completed work when it says so explicitly', () => {
+    const current: TodoItem[] = [{ id: 'a', content: 'Port the runtime', status: 'completed' }]
+    const next = applyTodoUpdate(
+      current,
+      [{ id: 'a', content: 'Port the runtime', status: 'in_progress' }],
+      false,
+    )
+
+    assert.equal(next.length, 1)
+    assert.equal(next[0]?.status, 'in_progress')
+  })
+
   it('applyTodoUpdate merges by id when merge=true', () => {
     const current: TodoItem[] = [{ id: 'a', content: 'Step 1', status: 'pending' }]
     const next = applyTodoUpdate(

@@ -16,6 +16,7 @@ import type {
   UserContent,
 } from '@copse/llm/wire-types.ts'
 export type { ToolResultImage } from '@copse/llm/wire-types.ts'
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { PanelData } from './packs/pack-panel.ts'
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
@@ -57,6 +58,12 @@ export interface AgentRunPayload {
   workingBrief?: string
   /** Per-thread model override; absent means "use the global default setting". */
   model?: string
+  /**
+   * Per-chat reasoning dial for this turn, from the composer footer. Overrides
+   * the level saved against the model in Settings; absent means that level
+   * applies.
+   */
+  reasoning?: ReasoningLevel
   /**
    * Turn-tree epoch this run belongs to (decision 16 / C3). Minted by the
    * renderer for a human submission / release and carried on every dispatch of

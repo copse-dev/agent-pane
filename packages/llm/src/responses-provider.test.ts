@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from './internal-utils.ts'
 import { ResponsesProvider, toResponsesInput } from './responses-provider.ts'
 import type { LLMMessage, ProviderStreamChunk } from './wire-types.ts'
 
@@ -16,7 +17,9 @@ type TestEvent =
   | { type: 'response.reasoning_summary_text.delta'; delta: string }
   | {
       type: 'response.output_item.done'
-      item: { type: 'function_call'; call_id: string; name: string; arguments: string }
+      // `call_id` is optional here so a test can model a third-party Responses
+      // endpoint that omits it; OpenAI itself always sends one.
+      item: { type: 'function_call'; call_id?: string; name: string; arguments: string }
     }
   | {
       type: 'response.completed'
@@ -201,5 +204,24 @@ describe('ResponsesProvider streaming', () => {
       { type: 'done', stopReason: 'tool_calls' },
     ])
     assert.deepEqual(provider.lastUsage, { inputTokens: 120, outputTokens: 18 })
+  })
+
+  it('synthesizes a tool-call id when a Responses endpoint omits call_id', async () => {
+    const provider = new ResponsesProvider('openai/gpt-test', {
+      baseURL: 'https://api.perplexity.ai/v1',
+      apiKey: 'test-key',
+    })
+    withFakeStream(provider, () => undefined, [
+      {
+        type: 'response.output_item.done',
+        item: { type: 'function_call', name: 'read_file', arguments: '{"path":"README.md"}' },
+      },
+    ])
+
+    const toolCalls = (await collect(provider)).filter(
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.equal(toolCalls.length, 1)
+    assert.match(at(toolCalls, 0).toolCall.id, /^tc_/)
   })
 })

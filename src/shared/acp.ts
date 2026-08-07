@@ -28,6 +28,7 @@ import { isRecord, recordArrayOrEmpty, stringRecordOrEmpty } from './unknown-val
 export { ACP_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 import { ACP_MODEL_PREFIX, AGENT_MODEL_SEP } from '@copse/llm/reserved-prefixes.ts'
 import { parseModelSelection } from '@copse/llm/model-selection.ts'
+import { canonicalModelLabel } from '@copse/llm/model-label.ts'
 
 /**
  * ACP agents are local stdio processes. SSH workspaces do not remount them on
@@ -278,21 +279,26 @@ export function acpModelVersionName(description: string | undefined): string | n
 
 /**
  * Picker label for one of an agent's model choices, with the version folded in
- * when the agent hides it in the description: "Sonnet" → "Sonnet 5", "Opus
- * (1M context)" → "Opus 5 (1M context)". A label that names something other
- * than the model family ("Default (recommended)") gets the resolved model
- * appended instead, and a choice whose label is already versioned is untouched.
+ * when the agent hides it in the description: "Sonnet" → "Claude Sonnet 5",
+ * "Opus (1M context)" → "Claude Opus 5 (1M context)". A label that names
+ * something other than the model family ("Default (recommended)") gets the
+ * resolved model appended instead, and a choice whose label is already
+ * versioned keeps it. The result is spelled the way the app spells the same
+ * model everywhere else — the agent's own house style ("Opus 4.8") would
+ * otherwise read as a different vendor's model next to a "Claude Opus 4.8" row.
  */
 export function acpModelChoiceLabel(choice: AcpModelChoice): string {
   const name = acpModelVersionName(choice.description)
-  if (name === null || choice.label.includes(name)) return choice.label
+  if (name === null || choice.label.includes(name)) return canonicalModelLabel(choice.label)
   const [family = ''] = name.split(/\s+/)
   const sharesFamily =
     choice.label.toLowerCase().startsWith(family.toLowerCase()) &&
     !/[a-z0-9]/i.test(choice.label.charAt(family.length))
-  if (!sharesFamily) return `${choice.label} — ${name}`
+  // The family merge runs on the agent's spelling (its label and the described
+  // name share a family there); only the finished label is renamed.
+  if (!sharesFamily) return `${choice.label} — ${canonicalModelLabel(name)}`
   const rest = choice.label.slice(family.length).trim()
-  return rest ? `${name} ${rest}` : name
+  return canonicalModelLabel(rest ? `${name} ${rest}` : name)
 }
 
 /**
@@ -307,5 +313,5 @@ export function acpModelDisplayLabel(model: string, agents: readonly AcpAgentCon
   const title = agent?.title ?? selection.id
   if (!selection.model) return title
   const choice = agent?.availableModels?.find((m) => m.value === selection.model)
-  return `${title} — ${choice ? acpModelChoiceLabel(choice) : selection.model}`
+  return `${title} — ${choice ? acpModelChoiceLabel(choice) : canonicalModelLabel(selection.model)}`
 }

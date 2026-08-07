@@ -90,3 +90,31 @@ export function maybeEnablePipefail(command: string, ctx: PipefailContext): stri
   if (!hasUnquotedPipeline(command)) return command
   return `set -o pipefail\n${command}`
 }
+
+/** True when {@link maybeEnablePipefail} added the prefix to this command. */
+export function pipefailWasInjected(command: string, executedCommand: string): boolean {
+  return executedCommand !== command
+}
+
+/** Exit status of a process killed by SIGPIPE: 128 + 13. */
+export const SIGPIPE_EXIT_CODE = 141
+
+/**
+ * True when a non-zero status is *only* pipefail reporting a producer that died
+ * of SIGPIPE because a downstream consumer closed the pipe early.
+ *
+ * `cmd | head -50` is the canonical case: once `head` has its 50 lines it exits,
+ * `cmd` gets SIGPIPE, and pipefail promotes that 141 to the pipeline's status.
+ * The output is complete and correct — `head` got exactly what it asked for —
+ * but run_shell would report the command as failed, which is worse than the
+ * masking pipefail exists to prevent (issue #787): an agent told its own
+ * diagnostic command failed will re-run it, or thrash trying to "fix" a build
+ * that was never broken.
+ *
+ * Only trusted where we injected pipefail ourselves. A command that set pipefail
+ * by hand, or a remote shell, keeps whatever status it reported — the user's own
+ * `set -o pipefail` is a deliberate choice we must not second-guess.
+ */
+export function isSigpipeOnlyFailure(exitCode: number, pipefailInjected: boolean): boolean {
+  return pipefailInjected && exitCode === SIGPIPE_EXIT_CODE
+}

@@ -57,6 +57,7 @@ import { recordReasoningCheckpoint } from './reasoning-checkpoint-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
+  resolveTurnParameters,
   buildSubagentRoute,
   buildReviewRoute,
   isBillableModel,
@@ -74,6 +75,7 @@ import {
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@copse/agent/review-subagent.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
+import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -156,6 +158,7 @@ import { getPackService, inertPackSources, packUnavailableReason } from './packs
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import { isEmptyModelParameters, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
@@ -256,6 +259,7 @@ async function ensureReviewApproved(
   const { approved, remember } = await requestApproval({
     type: 'review-spend',
     title: 'Review this diff with a paid model?',
+    cause: 'review-spend',
     body: reviewSpendApprovalBody(reviewModel),
     allowRemember: true,
     rememberLabel: 'Always review with this model in this chat',
@@ -574,6 +578,11 @@ export interface RunAgentOptions {
   priorTodos?: TodoItem[]
   workingBrief?: string
   model?: string
+  /**
+   * Reasoning depth for this turn, from the composer's per-chat dial. Overrides
+   * the level saved on the model in Settings; absent means "use that level".
+   */
+  reasoning?: ReasoningLevel
   /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
   turnTreeId?: string
   /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
@@ -587,6 +596,14 @@ export interface RunAgentOptions {
   maxLlmCalls?: number
   /** Pack-scoped setting resolver owned by an explicit host profile. */
   resolvePackSetting?: (packId: string, key: string) => unknown
+  /**
+   * Called with the turn's provider history as it grows, so a host can persist
+   * progress a run that never returns would otherwise take with it. Fired once
+   * the (redacted) prompt has been prepared and again at each LLM call, always
+   * with system messages already stripped — the same shape `runAgent` returns.
+   * Purely observational: never awaited, and a throwing sink cannot fail a turn.
+   */
+  onHistoryCheckpoint?: (messages: LLMMessage[]) => void
 }
 
 export async function runAgent(
@@ -990,6 +1007,26 @@ export async function runAgent(
   let inputTokens = 0
   let outputTokens = 0
 
+  /**
+   * The turn's history in the shape the host persists: turn-local system
+   * steering never outlives the turn that injected it.
+   */
+  const persistableHistory = (): LLMMessage[] => trimmed.filter((m) => m.role !== 'system')
+
+  /**
+   * Hand the host the turn's history so far. Observational — a sink that throws
+   * must not take the turn down with it.
+   */
+  const checkpointHistory = (): void => {
+    const sink = options?.onHistoryCheckpoint
+    if (!sink) return
+    try {
+      sink(persistableHistory())
+    } catch {
+      // A checkpoint is a best-effort durability aid, never a turn's business.
+    }
+  }
+
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
@@ -1050,7 +1087,18 @@ export async function runAgent(
     )
     const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = options?.provider ?? (await buildProvider(model, threadId))
+    const providerOptions = {
+      ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+    }
+    const provider = options?.provider ?? (await buildProvider(model, threadId, providerOptions))
+    // Stamp what this turn actually sends, not what the settings hold: the two
+    // diverge once a value is sanitized away, a dial overrides it, or a role
+    // caps it, and the settings can change afterwards. Silent for the common
+    // case of an untuned model, which sends nothing.
+    const turnParameters = resolveTurnParameters(model, providerOptions)
+    if (!isEmptyModelParameters(turnParameters)) {
+      sendChunk({ type: 'turn_parameters', model, parameters: turnParameters })
+    }
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
@@ -1160,6 +1208,13 @@ export async function runAgent(
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed
+    // The turn's history is committed by the host once this function returns, so
+    // a run that never returns — the app quits, the process is killed, the turn
+    // is abandoned — takes the whole turn with it, the user's own prompt
+    // included. Checkpoint from here on: `trimmed` already holds the redacted
+    // prompt, and the loop mutates it in place as steps land, so replaying this
+    // at each LLM call keeps the persisted history within one step of the run.
+    checkpointHistory()
     const { wasTrimmed, conversationBudget } = prepared
     const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
     const sendTrimNotice = (): void => {
@@ -1219,6 +1274,13 @@ export async function runAgent(
       },
     })
 
+    // Briefs later local todo workers with what earlier ones already found (#i2jsed):
+    // each `runTodoWorker` call starts a fresh, isolated context, so without this a
+    // plan like "mirror complexity" (todo 2) has no way to know todo 1 just built it.
+    // Keyed by todo id; deliberately just completed-item outcomes, not the rest of
+    // the plan, so a worker sees background to reuse rather than other work to drift into.
+    const localWorkerSummaries = new Map<string, { content: string; summary: string }>()
+
     setTodoToolPostProcess(async (before, after) => {
       let todos = after
       let extraMessage: string | undefined
@@ -1242,6 +1304,12 @@ export async function runAgent(
             toolSchemaReserve: subagentRoute.toolSchemaReserve,
             signal: controller.signal,
             onChunk: sendChunk,
+            parentGoal,
+            priorSummaries: localWorkerSummaries,
+          })
+          localWorkerSummaries.set(localItem.id, {
+            content: localItem.content,
+            summary: worker.summary,
           })
           inputTokens += worker.usage.inputTokens
           outputTokens += worker.usage.outputTokens
@@ -1285,7 +1353,11 @@ export async function runAgent(
       }
 
       const completed = findNewlyCompleted(before, todos)
-      if (completed && compactAtTodoBoundary(trimmed, todos)) {
+      // Measured at the boundary, not from the turn's opening snapshot: the run
+      // has been appending to `trimmed` ever since, and it is the size right now
+      // that decides whether there is any headroom to buy.
+      const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+      if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
         notifyTrimmed(sendTrimNotice)
       }
 
@@ -1461,7 +1533,12 @@ export async function runAgent(
           getOpenTodos: () => getAgentRunTodos(),
           continuationBudget,
           recordHookRun: recordFunctionHookRun,
-          onLlmCall: setHookRunStep,
+          onLlmCall: (count) => {
+            setHookRunStep(count)
+            // `messages` above is `trimmed`, mutated in place as turns land, so
+            // this persists everything the previous step produced.
+            checkpointHistory()
+          },
           recordStreamCut: (record) => {
             recordStreamCut(record, model)
           },
@@ -1542,7 +1619,10 @@ export async function runAgent(
         if (isEditTool(name)) turnChangedFiles = true
       },
       recordHookRun: recordFunctionHookRun,
-      onLlmCall: setHookRunStep,
+      onLlmCall: (count: number): void => {
+        setHookRunStep(count)
+        checkpointHistory()
+      },
       recordStreamCut: (record) => {
         recordStreamCut(record, model)
       },
@@ -1718,12 +1798,22 @@ export async function runAgent(
     abortMap.delete(threadId)
   }
 
-  const updatedHistory = trimmed.filter((m) => m.role !== 'system')
-  return { usage: { inputTokens, outputTokens }, messages: updatedHistory }
+  return { usage: { inputTokens, outputTokens }, messages: persistableHistory() }
 }
 
 export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
+}
+
+/**
+ * Thread ids with a live in-process run right now. Lets a renderer that's just
+ * (re)loaded a project's threads tell a genuinely still-running turn apart from
+ * one whose `status: 'running'` was merely the last thing persisted before a
+ * crash (#1406) — trusting the persisted flag alone flips a real run's status
+ * to idle and hides its stop control while it keeps streaming.
+ */
+export function listRunningThreadIds(): string[] {
+  return [...abortMap.keys()]
 }
 
 export interface RetryOptions {

@@ -19,6 +19,7 @@ import {
   getActiveProjectId,
   getActiveProjectSshHost,
   getProjectById,
+  getProjectRoot,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolvePathWithinRoot,
@@ -40,6 +41,7 @@ import {
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
+  zHookRunId,
   zHookTestRequest,
   zNonEmptyString,
   zPathString,
@@ -111,6 +113,12 @@ import {
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
 import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
+import { listRunningThreadIds } from '../services/agent-service.ts'
+import {
+  listWorktreeInventory,
+  measureWorktreeSize,
+  removeWorktree,
+} from '../services/worktree-inventory.ts'
 import {
   requestAcpPackageInstallApproval,
   revalidateStaleAcpModels,
@@ -128,6 +136,7 @@ import {
   listUnsandboxedProjectHooks,
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
+import { readHookRunDetail } from '../services/hooks/run-detail.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
 import {
   setPackToolRuntimeController,
@@ -1343,6 +1352,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
     const { approved } = await requestApproval({
       title: 'Enable Guarded YOLO for this thread?',
+      cause: 'mode-arming',
       body: [
         'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
         '',
@@ -1525,6 +1535,55 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listOrphanProjectStores(projectIds)
   })
 
+  // Settings → Sources → Worktrees. Every call names the project by id and the
+  // main process resolves its root itself, so the renderer never gets to say
+  // which repository (or which directory) is operated on.
+  const worktreeInput = (
+    rawProjectId: unknown,
+  ): { projectId: string; projectRoot: string } | null => {
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const projectRoot = getProjectRoot(projectId)
+    return projectRoot === null ? null : { projectId, projectRoot }
+  }
+
+  ipcMain.handle('worktrees:list', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const target = worktreeInput(rawProjectId)
+    if (!target) return []
+    return listWorktreeInventory({
+      ...target,
+      runningThreadIds: new Set(listRunningThreadIds()),
+    })
+  })
+
+  ipcMain.handle('worktrees:size', async (event, rawProjectId: unknown, rawPath: unknown) => {
+    assertMainFrameSender(event, win)
+    const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+    const target = worktreeInput(rawProjectId)
+    if (!target) throw new IpcValidationError('That project is no longer available')
+    return measureWorktreeSize({ ...target, path })
+  })
+
+  ipcMain.handle(
+    'worktrees:remove',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawForce: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, force] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawForce,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return removeWorktree({
+        ...target,
+        path,
+        force,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
+
   ipcMain.handle('skills:list', () => listSkills())
   ipcMain.handle('plugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
@@ -1559,6 +1618,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
   })
+  // Read one recorded hook execution back out of a thread's spine so the
+  // hook-card inspector can show what the hook was handed and what it returned.
+  // Read-only: it never re-runs anything (that is `hooks:test`), and the ids are
+  // validated so a compromised renderer cannot walk out of the chat store.
+  ipcMain.handle(
+    'hooks:runDetail',
+    (event, rawProjectId: unknown, rawThreadId: unknown, rawRunId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, runId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zHookRunId]),
+        [rawProjectId, rawThreadId, rawRunId],
+      )
+      return readHookRunDetail(projectId, threadId, runId)
+    },
+  )
   // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
   // Settings pack list ("about:addons") calls these to enumerate every
   // registered pack, toggle enablement atomically (P1 contract), and read /

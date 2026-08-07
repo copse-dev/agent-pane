@@ -64,6 +64,7 @@ import {
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
 import { dynamicModelChoices, dynamicModelLabel } from '@copse/llm/dynamic-model.ts'
+import { canonicalModelLabel, claudeModelIdFromLabel } from '@copse/llm/model-label.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -102,6 +103,30 @@ export function modelDisplayLabel(model: string): string {
   const acpId = parseAcpModel(model)
   if (acpId) return acpId
   return cloudModelDisplayLabel(model)
+}
+
+/**
+ * Intellect hint for a model an agent named itself. The same weights arrive
+ * spelled every which way ("Opus 4.8", "Claude 4.6 Sonnet", a bare id), so each
+ * form the agent gave us is tried against the measurement alias map first, and
+ * only then the Anthropic id a plain family + version denotes — which is how a
+ * spelling no alias covers still finds its measurement. Null when none resolve,
+ * so an unmeasured model renders without a hint rather than with a guess.
+ */
+function agentModelIntellectHint(
+  ...forms: ReadonlyArray<string | null | undefined>
+): string | null {
+  const named = forms.filter((form): form is string => Boolean(form))
+  for (const form of named) {
+    const hint = modelIntellectHint(form)
+    if (hint) return hint
+  }
+  for (const form of named) {
+    const id = claudeModelIdFromLabel(form)
+    const hint = id === null ? null : modelIntellectHint(id)
+    if (hint) return hint
+  }
+  return null
 }
 
 async function packModelOptions(
@@ -158,10 +183,7 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       for (const model of models) {
         const label = acpModelChoiceLabel(model)
         const versioned = acpModelVersionName(model.description)
-        const hint =
-          modelIntellectHint(model.value) ??
-          (versioned === null ? null : modelIntellectHint(versioned)) ??
-          modelIntellectHint(model.label)
+        const hint = agentModelIntellectHint(model.value, versioned, model.label, label)
         options.push({
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label} — ${hint}` : label,
@@ -338,10 +360,14 @@ async function remoteAgentOptions(
     // is configured, even when the live catalog is empty.
     add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), 'Default')
     for (const model of liveModels) {
-      const label = model.label || model.id
-      // Intellect-only hint (remote agents are subscription-billed, no token
-      // price), matched via the measurement alias map on id or label.
-      const hint = modelIntellectHint(model.id) ?? modelIntellectHint(label)
+      // Cursor's catalog names Claude models its own way — a bare "Opus 5", or
+      // "Claude 4.6 Sonnet (Thinking)" with the version ahead of the family.
+      // Under a heading that names the agent rather than the vendor, that reads
+      // as someone else's model, so it gets the same spelling as every other row.
+      const vendorLabel = model.label || model.id
+      const label = canonicalModelLabel(vendorLabel)
+      // Intellect-only hint (remote agents are subscription-billed, no token price).
+      const hint = agentModelIntellectHint(model.id, vendorLabel, label)
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
         hint ? `${label} — ${hint}` : label,
@@ -353,7 +379,7 @@ async function remoteAgentOptions(
       currentSelection.model &&
       !seen.has(current)
     ) {
-      add(current, currentSelection.model)
+      add(current, canonicalModelLabel(currentSelection.model))
     }
   }
 
@@ -385,7 +411,7 @@ async function remoteAgentOptions(
       currentSelection.model &&
       !seen.has(current)
     ) {
-      add(current, currentSelection.model)
+      add(current, canonicalModelLabel(currentSelection.model))
     }
     // Keep a pre-multi-model bare selection selectable until the user switches.
     if (current === remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC) && !seen.has(current)) {

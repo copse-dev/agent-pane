@@ -35,6 +35,27 @@ export function invalidatePlanUsageCache(): void {
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
 
+/**
+ * Where the `claude` CLI keeps its OAuth credentials file.
+ *
+ * `CLAUDE_CONFIG_DIR` relocates the whole config directory, so the file sits
+ * directly under it rather than under a nested `.claude` — the variable
+ * *replaces* `~/.claude`, it does not reparent it. Anthropic documents the
+ * override for Linux and Windows (macOS keeps credentials in the Keychain), but
+ * it is honoured on every platform here: on macOS the Keychain candidate is
+ * still preferred by `orderClaudeOAuthCredentials`, so respecting the override
+ * costs a miss on a file that isn't there and gains the users who relocated
+ * their config anyway. Reading the wrong path is not a harmless miss — a
+ * write-back would create a credentials file the CLI never reads while its real
+ * one keeps the superseded token.
+ */
+export function claudeCredentialsPath(home: string, env: NodeJS.ProcessEnv = process.env): string {
+  const configDir = env['CLAUDE_CONFIG_DIR']?.trim()
+  return configDir
+    ? join(configDir, '.credentials.json')
+    : join(home, '.claude', '.credentials.json')
+}
+
 /** Async `execFile` — never use Sync variants here; Keychain/sqlite probes run when
  * Settings → Usage opens and Sync would beachball the Electron main process on macOS. */
 const execFileAsync = promisify(execFile)
@@ -159,10 +180,13 @@ export async function persistRefreshedClaudeToken(
   home = homedir(),
   readKeychain: () => Promise<string | null> = readClaudeKeychainCredentialsJson,
   writeKeychain: (json: string) => Promise<void> = writeClaudeKeychainCredentialsJson,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   try {
     if (source === 'credentials.json') {
-      const path = join(home, '.claude', '.credentials.json')
+      // Must resolve the same way the read did, or a `CLAUDE_CONFIG_DIR` user
+      // gets their rotated token written to a file the CLI never reads.
+      const path = claudeCredentialsPath(home, env)
       const next = updateClaudeOAuthJson(readTextFile(path), refreshed)
       if (next) atomicWriteFile(path, next)
       return
@@ -290,7 +314,7 @@ export async function discoverPlanUsageCredentials(
 ): Promise<PlanUsageCredentials> {
   const claudeCredentials = orderClaudeOAuthCredentials({
     keychainJson: await readKeychain(),
-    credentialsJson: readJsonFile(join(home, '.claude', '.credentials.json')),
+    credentialsJson: readJsonFile(claudeCredentialsPath(home, env)),
     envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
   })
 
@@ -307,8 +331,18 @@ export async function discoverPlanUsageCredentials(
       expiresAt: c.expiresAt,
       source: c.source,
     })),
+    // `env` is threaded through so the write-back resolves `CLAUDE_CONFIG_DIR`
+    // exactly as the read above did; the Keychain writer is named explicitly
+    // only because it sits between `home` and `env` in the parameter list.
     onClaudeTokenRefreshed: (credential, refreshed) =>
-      persistRefreshedClaudeToken(credential.source, refreshed, home, readKeychain),
+      persistRefreshedClaudeToken(
+        credential.source,
+        refreshed,
+        home,
+        readKeychain,
+        writeClaudeKeychainCredentialsJson,
+        env,
+      ),
   }
   if (parsedCodex) {
     credentials.codex = {

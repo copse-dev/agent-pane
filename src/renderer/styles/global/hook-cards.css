@@ -144,6 +144,106 @@
   display: none;
 }
 
+/* Inspector: the raw record behind a card — what the hook was handed and what it
+   returned. Two levels down on purpose (card → inspect → streams): the counts in
+   the detail lines answer most questions, and only a reader debugging the hook
+   itself needs the bodies. */
+.hook-card-raw {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+}
+.hook-card:not([open]) .hook-card-raw {
+  display: none;
+}
+
+.hook-card-raw-summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-secondary);
+  width: fit-content;
+  padding: 2px 0;
+}
+.hook-card-raw-summary::-webkit-details-marker {
+  display: none;
+}
+.hook-card-raw-summary::before {
+  content: '▸ ';
+}
+.hook-card-raw[open] > .hook-card-raw-summary::before {
+  content: '▾ ';
+}
+.hook-card-raw-summary:hover {
+  color: var(--text-primary);
+}
+
+.hook-card-raw-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+
+.hook-card-raw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.hook-card-raw-chip {
+  padding: 1px var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.hook-card-raw-status {
+  color: var(--text-muted);
+}
+
+.hook-card-raw-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hook-card-raw-copy {
+  margin-left: auto;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.hook-card-raw-copy:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+/* Bodies can be long and are never wrapped mid-token: scroll inside the block so
+   a 4 KB payload cannot stretch the card past the transcript's right edge. */
+.hook-card-raw-pre {
+  margin: 2px 0 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 /* Origin marker on a hook-originated user turn: a small accent label above the
    message body so the turn never reads as human-typed (decision 10). */
 .msg-hook-origin-marker {

@@ -229,7 +229,8 @@ async function spawnInterpretResolve(
   const interpretation = applySandboxBlock(interpret(spawn), spawn)
 
   // Always-on spine recording (decision 6): one hook_run line per execution,
-  // raw stdout AND stderr as blobs, next to the normalized decision. Detached
+  // with the stdin payload plus raw stdout AND stderr as blobs, next to the
+  // normalized decision — the whole exchange, inspectable later. Detached
   // async hooks pass a `recordingSnapshot` captured at their fire site so the
   // line survives `endHookRunRecording` (decision 3); blocking hooks pass
   // `undefined` and record against the live context.
@@ -242,6 +243,7 @@ async function spawnInterpretResolve(
       exitCode: spawn.exitCode,
       parseOk: interpretation.parseOk,
       decision: interpretation.spineDecision,
+      stdin: spawn.stdin,
       stdout: spawn.stdout,
       stderr: spawn.stderr,
     },

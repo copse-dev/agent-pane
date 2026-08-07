@@ -72,7 +72,7 @@ dialog.settings-overlay::backdrop {
   overflow: hidden;
 }
 .settings-nav {
-  width: 220px;
+  width: calc(240px * var(--ui-scale));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -83,12 +83,18 @@ dialog.settings-overlay::backdrop {
   min-height: 0;
   overflow-y: auto;
 }
+/* Section rows are the dialog's primary navigation, so they get a full row of
+   target rather than a line of text: the whole 36px band is clickable, the way
+   a chat row or a file-tree row is. */
 .settings-nav-btn {
+  display: flex;
+  align-items: center;
   text-align: left;
-  padding: 10px var(--spacing-md);
+  min-height: var(--action-min-height);
+  padding: var(--spacing-sm) var(--spacing-md);
   border-radius: 0;
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 .settings-nav-btn:hover {
   background: var(--bg-hover);
@@ -100,18 +106,54 @@ dialog.settings-overlay::backdrop {
   font-weight: 600;
   box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
+/* The open section's own groups, listed under its row. A long section (General,
+   Appearance) is several screens tall, so the sidebar doubles as its table of
+   contents: what is on this page, and a way to jump straight to it. Only the
+   open section expands — the nav stays a list of sections, not a tree. */
+.settings-nav-subheadings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-xs) 0;
+}
+.settings-nav-subheading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  text-align: left;
+  min-height: calc(30px * var(--ui-scale));
+  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-xs)
+    calc(var(--spacing-xl) + var(--spacing-xs));
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+/* The turned arrow marks these as belonging to the row above rather than being
+   sections in their own right. Decorative: the label carries the meaning. */
+.settings-nav-subheading::before {
+  content: '↳';
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.settings-nav-subheading:hover {
+  color: var(--text-primary);
+}
+.settings-nav-subheading:hover::before {
+  color: var(--text-secondary);
+}
 /* Cross-section search box, pinned above the section list in the sidebar. */
 .settings-search {
-  margin-bottom: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
 }
 .settings-search-input {
   width: 100%;
-  padding: 8px var(--spacing-md);
+  min-height: var(--action-min-height);
+  padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--bg-base);
   color: var(--text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 .settings-search-input:focus {
   outline: none;
@@ -151,7 +193,7 @@ dialog.settings-overlay::backdrop {
      Scroll surface is full width of the pane (beside the nav); the form
      column self-limits via --settings-content-max, matching chat's
      .messages-list / .msg split. */
-  padding: var(--spacing-xl) var(--spacing-xl) 0;
+  padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
 .settings-search-results,
@@ -166,17 +208,33 @@ dialog.settings-overlay::backdrop {
 .settings-section.active {
   display: block;
 }
+/* Settings is a destination surface, not chrome: its section titles and group
+   headings carry the display face, sized so the page has a clear masthead and
+   an obvious second tier under it. Everything below that tier — field labels,
+   nested card titles, hints — stays in the interface family, so the serif
+   reads as structure rather than decoration. */
 .settings-section h3 {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: var(--spacing-xs);
+  font-family: var(--font-display);
+  font-size: calc(28px * var(--ui-scale));
+  /* Averia ships a single 400 weight; asking for 600 only invites Chromium's
+     synthetic bold, which smears the serifs at this size. */
+  font-weight: 400;
+  line-height: 1.2;
+  margin-bottom: var(--spacing-md);
 }
 .settings-section-desc,
 .settings-fieldset-desc {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   margin-bottom: var(--spacing-lg);
-  line-height: 1.5;
+  line-height: 1.55;
+}
+/* The section blurb answers "what is this page", so it sits a step above the
+   per-group blurbs and takes a full group-sized gap to the first heading. */
+.settings-section-desc {
+  font-size: var(--font-size-md);
+  max-width: 62ch;
+  margin-bottom: calc(var(--spacing-xl) + var(--spacing-sm));
 }
 /* A blurb under a group heading introduces the whole group, so it stays tight to
    the heading (which now carries that gap itself — hence no negative pull here
@@ -188,15 +246,15 @@ dialog.settings-overlay::backdrop {
 }
 .settings-field-label {
   display: block;
-  margin: var(--spacing-lg) 0 var(--spacing-md);
+  margin: calc(var(--spacing-lg) + var(--spacing-xs)) 0 var(--spacing-md);
   color: var(--text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 .field-hint {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 /* Live advisor-pair assessment under the advisor model picker: colour tracks
    how much lift the model annotations expect from the pairing. */
@@ -256,13 +314,46 @@ dialog.settings-overlay::backdrop {
      the sticky footer box, so the bar still reaches the scrollport bottom and
      keeps covering scrolled content — only the buttons move up. */
   padding-bottom: calc(var(--spacing-xl) + var(--spacing-lg));
-  border-top: 1px solid var(--border);
   position: sticky;
   bottom: 0;
-  background: var(--bg-base);
+  /* Frosted, not opaque: the bar is tall enough to hide a whole row of content,
+     and an opaque slab makes a long section look like it has stopped when it
+     has only scrolled under the footer. Letting content read through says
+     "there is more below" while the blur keeps Save and Cancel legible over
+     whatever passes beneath them.
+
+     The wash and the blur live on a masked pseudo-element rather than on the
+     bar itself: masking the layer that carries `backdrop-filter` ramps the blur
+     with it, so content dissolves into the bar instead of hitting a hard line
+     where a full-strength filter starts. Buttons are children of the bar, not
+     of the pseudo, so they stay perfectly sharp.
+
+     No `border-top`: a hairline across a see-through bar reads as the cut the
+     fade exists to avoid. */
+  background: none;
+}
+.settings-buttons::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--bg-base) 55%, transparent) 40%,
+    color-mix(in srgb, var(--bg-base) 88%, transparent) 100%
+  );
+  backdrop-filter: blur(10px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
 }
 .settings-buttons button {
   -webkit-app-region: no-drag;
+  /* Lift the buttons over the frosted ::before. Without this the absolutely
+     positioned pseudo paints above them — in-flow content sits below the
+     positioned layer — and Save comes out blurred along with the backdrop. */
+  position: relative;
+  z-index: 1;
 }
 .settings-buttons button[type='submit'] {
   background: var(--accent);
@@ -317,7 +408,7 @@ dialog.settings-overlay::backdrop {
      sitting inset in a frame. Gap matches .usage-section-root's. */
   background: none;
   padding: 0;
-  margin-bottom: calc(var(--spacing-xl) + var(--spacing-md));
+  margin-bottom: calc(var(--spacing-xl) * 2);
 }
 /* The group's title is a heading, one step below the section's <h3> and on the
    same left edge — not a faint caption stamped into a border. Matches the
@@ -334,11 +425,18 @@ dialog.settings-overlay::backdrop {
 .settings-section > fieldset > legend,
 .settings-section > .settings-mount > fieldset > legend,
 .settings-search-results > fieldset > legend {
-  margin-bottom: var(--spacing-sm);
+  /* A top-level group is the section's second tier, so it takes the display
+     face too — one clear step down from the <h3>. Nested card titles (provider
+     auth, hook cards) stay in the interface family via the base rule above. */
+  font-family: var(--font-display);
+  font-size: calc(20px * var(--ui-scale));
+  font-weight: 400;
+  line-height: 1.25;
+  margin-bottom: var(--spacing-md);
 }
 /* A field and its own controls stay tight; the gap belongs *between* fields. */
 .settings-content fieldset label {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: calc(var(--spacing-lg) + var(--spacing-sm));
 }
 .settings-content fieldset label:last-child {
   margin-bottom: 0;
@@ -350,6 +448,39 @@ dialog.settings-overlay::backdrop {
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
   border-top: 1px solid var(--border);
+}
+/* Generation parameters belong to the chat model picked above them, so they get
+   the same nested-inside-the-Models-card treatment as the task roles below —
+   one card, three stacked decisions, no second border box. */
+#settings-model-parameters-host {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border);
+}
+.model-parameter-note {
+  margin-bottom: var(--spacing-lg);
+}
+.model-parameter-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+/* Temperature and top-p hold two characters. A full-width box would read as a
+   text field and invite prose. */
+.model-parameter-fields input[type='number'] {
+  max-width: 10rem;
+}
+/* The vendor-recipe offer sits after the fields it fills, reading as a shortcut
+   to them rather than a fourth control. */
+.model-parameter-recommend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+.model-parameter-recommend-note {
+  margin: 0;
 }
 .model-role-heading {
   margin: 0 0 var(--spacing-xs);
@@ -376,7 +507,7 @@ dialog.settings-overlay::backdrop {
 .settings-content label + .field-hint:not(:last-child),
 .settings-content label + .settings-fieldset-desc:not(:last-child),
 .settings-content fieldset > .field-hint:not(:last-child) {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: calc(var(--spacing-lg) + var(--spacing-sm));
 }
 /* A hint continued over a second paragraph is still one hint: keep the pair
    tight, and let the last paragraph carry the gap to the next field. Tightened
@@ -390,9 +521,11 @@ dialog.settings-overlay::backdrop {
 .settings-content .checkbox-label + .settings-fieldset-desc {
   padding-left: calc(var(--spacing-lg) + var(--spacing-xs));
 }
-/* Consecutive checkboxes are one cluster — keep them snug, not double-spaced. */
+/* Consecutive checkboxes are one cluster — keep them snug, not double-spaced.
+   Pulls back the between-fields gap the label above already spent, leaving the
+   same `--spacing-sm` between rows now that gap has grown. */
 .settings-content .checkbox-label + .checkbox-label {
-  margin-top: calc(-1 * var(--spacing-sm));
+  margin-top: calc(-1 * var(--spacing-lg));
 }
 .app-icon-picker {
   /* Fixed 4 columns so the 16 variants land as a clean 4×4 grid with no
@@ -400,16 +533,17 @@ dialog.settings-overlay::backdrop {
      spread thin across the settings column. */
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 18px 16px;
+  gap: var(--spacing-xl) var(--spacing-lg);
   max-width: 560px;
 }
 .app-icon-option {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   cursor: pointer;
   color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }
 .app-icon-option input {
   position: absolute;
@@ -418,9 +552,9 @@ dialog.settings-overlay::backdrop {
 }
 .app-icon-preview {
   display: block;
-  padding: 4px;
+  padding: var(--spacing-xs);
   border: 2px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--bg-base);
   transition:
     border-color 0.15s ease,
@@ -428,9 +562,12 @@ dialog.settings-overlay::backdrop {
 }
 .app-icon-preview img {
   display: block;
-  width: 80px;
-  height: 80px;
-  border-radius: 10px;
+  /* The tile is the choice here, so it is drawn at a size you can actually
+     judge rather than at list-icon scale. The assets are 512px square, so this
+     stays a downscale on every display density. */
+  width: 88px;
+  height: 88px;
+  border-radius: 14px;
 }
 .app-icon-option:hover .app-icon-preview {
   border-color: var(--border-strong);
@@ -451,17 +588,46 @@ dialog.settings-overlay::backdrop {
 .settings-content label input[type='number'] {
   width: 100%;
   max-width: 480px;
+  /* Fields are the section's other main target. `forms.css` sizes them from
+     `--spacing-sm` alone, which lands a ~30px control; match the nav rows and
+     the action buttons so nothing in the form is fiddlier than the chrome
+     around it. */
+  min-height: var(--action-min-height);
+  padding-inline: var(--spacing-md);
 }
-/* Colour swatch (Interface tint): a compact well rather than a full-width row. */
+/* The whole checkbox line — box and its wording — is one target. Padding does
+   that without moving the row's text, and the negative inline start keeps the
+   box on the section's left edge. */
+.settings-content .checkbox-label {
+  min-height: calc(28px * var(--ui-scale));
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin-inline-start: calc(-1 * var(--spacing-sm));
+  border-radius: var(--radius);
+  font-size: var(--font-size-base);
+}
+.settings-content .checkbox-label:hover {
+  background: var(--bg-hover);
+}
+/* Accent and tint sit as a pair. The labels keep the between-fields gap for the
+   control that follows the row, but between themselves they only need enough
+   room to stay two distinct choices. */
+.settings-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+}
+/* Colour swatch (accent, interface tint): a well rather than a full-width row,
+   sized so the colour itself is legible and the target matches the other
+   controls in the section. */
 .settings-content input[type='color'] {
-  width: 52px;
-  height: 30px;
+  width: calc(88px * var(--ui-scale));
+  height: var(--action-min-height);
   padding: 2px;
   cursor: pointer;
 }
 .settings-content input[type='color']::-webkit-color-swatch {
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
 }
 .settings-content input[type='color']::-webkit-color-swatch-wrapper {
   padding: 0;
@@ -540,23 +706,30 @@ dialog.settings-overlay::backdrop {
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-lg);
 }
+/* Picking a provider is the first thing General asks of you, so the chips are
+   sized as controls — the section's standard target height and body type —
+   rather than as tags. */
 .provider-chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
+  min-height: var(--action-min-height);
   padding: var(--spacing-xs) var(--spacing-md);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--bg-base);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 .provider-chip:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+/* The chosen provider is the one whose panel is showing below, so it takes the
+   same accent wash every other selected row in the app uses. */
 .provider-chip.active {
   border-color: var(--accent);
+  background: var(--bg-selected);
   color: var(--text-primary);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
@@ -1424,6 +1597,35 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 
+/* Worktrees: same row shape as the loaded-source lists, plus the two things
+   only this list has — a measured size that arrives after the row, and a
+   destructive per-row action. The size keeps its own colour so it reads as a
+   value rather than more of the sentence around it. */
+.sources-worktree-size {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.sources-worktree-delete-btn {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px var(--spacing-sm);
+  cursor: pointer;
+}
+.sources-worktree-delete-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--error);
+  color: var(--error);
+}
+.sources-worktree-delete-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* G2 dry-run hook tester: a per-hook "Test" button in the row header and the
    result panel it toggles (summary chips + labeled stdin/stdout/stderr). */
 .sources-hook-test-btn {
@@ -1507,41 +1709,90 @@ dialog.settings-overlay::backdrop {
   gap: var(--spacing-md);
   font-size: var(--font-size-sm);
 }
+/* "Active" / "Inactive" over each run of rows. Sans and small — the section's
+   <h3> and the group legend above already carry the display face, and a third
+   serif tier inside the list would flatten that order. */
+.packs-group-heading {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.packs-group-heading:not(:first-child) {
+  margin-top: var(--spacing-md);
+}
 .packs-empty {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+/* One pack reads as a card: it is a discrete object you act on, with a title,
+   a body, and its own settings folded inside. Elevated and roomier than the
+   flat groups around it, per the card convention at the top of this file. */
 .pack-row {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
 }
 .pack-row-disabled {
   opacity: 0.65;
 }
 .pack-row-header {
   display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+}
+/* The pack's mark. Sized to span the eyebrow + name pair beside it, with the
+   app-icon tile's corner treatment so the two read as the same family of
+   object. */
+.pack-icon {
+  flex: none;
+  display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  justify-content: center;
+  width: calc(40px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
+  border-radius: 10px;
+  overflow: hidden;
+  /* Fallback tile for a user-installed pack: its initial on a neutral surface,
+     deliberately unbranded. */
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+.pack-icon-copse {
+  /* The mark asset carries its own neon field and corner radius. */
+  background: none;
+}
+.pack-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .pack-row-title {
   display: flex;
-  align-items: baseline;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
   min-width: 0;
+}
+.pack-row-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 .pack-name {
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text-primary);
   word-break: break-word;
 }
 .pack-version {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 .pack-badge {
@@ -1555,14 +1806,40 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   padding: 1px 6px;
 }
+/* The publisher eyebrow is a caption, not a chip: no frame, wide tracking, and
+   it keeps the trust colour that told first-party from user-installed. */
+.pack-badge-first-party,
+.pack-badge-user {
+  align-self: flex-start;
+  border: none;
+  padding: 0;
+  letter-spacing: 0.08em;
+}
 .pack-badge-first-party {
-  color: var(--accent, #7aa2ff);
-  border-color: var(--accent, #7aa2ff);
+  color: var(--text-secondary);
 }
 .pack-badge-user {
   color: var(--warning, #d29922);
-  border-color: var(--warning, #d29922);
 }
+/* Off — [switch] — On. Which side is live is read off the checkbox itself, so
+   there is no state to keep in sync in JS. */
+.pack-toggle-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: none;
+}
+.pack-toggle-state {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.pack-toggle-control:has(.pack-toggle-input:checked) .pack-toggle-state[data-side='on'],
+.pack-toggle-control:not(:has(.pack-toggle-input:checked)) .pack-toggle-state[data-side='off'] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+/* Inset within the pack card, so it takes the base surface — matching
+   `--bg-elevated` to the card it sits in would leave it invisible. */
 .pack-source-review {
   display: flex;
   flex-direction: column;
@@ -1570,7 +1847,7 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-elevated);
+  background: var(--bg-base);
 }
 .pack-source-status {
   font-size: 11px;
@@ -1592,17 +1869,31 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
+/* Stability sits next to the pack's name as a pill in sentence case — a label
+   on the thing, not a shouted status. `pack.stability` arrives lowercase, so the
+   capital comes from CSS. */
+.pack-badge-stable,
+.pack-badge-experimental {
+  border-radius: var(--action-radius);
+  padding: 1px var(--spacing-sm);
+  text-transform: capitalize;
+  letter-spacing: 0;
+}
 .pack-badge-stable {
   color: var(--success, #3fb950);
   border-color: var(--success, #3fb950);
 }
+/* Experimental is the one thing on the card you must read before flipping the
+   switch, so it takes the interaction accent rather than a status hue — the
+   documented exception in docs/ui-taste.md. */
 .pack-badge-experimental {
-  color: var(--warning, #d29922);
-  border-color: var(--warning, #d29922);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .pack-row-desc {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
+  line-height: 1.5;
   word-break: break-word;
 }
 .pack-chips {
@@ -1613,24 +1904,63 @@ dialog.settings-overlay::backdrop {
 .pack-chip {
   font-size: 11px;
   color: var(--text-secondary);
-  background: var(--bg-elevated);
+  background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1px 6px;
+  padding: 2px var(--spacing-sm);
 }
 .pack-chips-empty {
   font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
 }
+/* "Pack settings ⌄" — one fold per card holding the manifest fields and any
+   first-party detail panel. Closed by default: a list of packs is for deciding
+   which ones you want, and every pack's form unrolled at once buries that. */
+.pack-settings-fold {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-sm);
+}
+.pack-settings-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  /* The row is the target, so it takes padding — pulled back inline so the
+     label still starts on the card's own left edge. */
+  min-height: calc(28px * var(--ui-scale));
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin-inline: calc(-1 * var(--spacing-sm));
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  /* Drop the UA disclosure triangle; the chevron below is ours, and it matches
+     every other disclosure in the app. */
+  list-style: none;
+}
+.pack-settings-summary::-webkit-details-marker {
+  display: none;
+}
+.pack-settings-summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.pack-settings-chevron {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s ease;
+}
+.pack-settings-fold[open] .pack-settings-chevron {
+  transform: rotate(180deg);
+}
 .pack-settings {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
-  margin-top: var(--spacing-xs);
-  border-top: 1px solid var(--border);
+  gap: var(--spacing-sm);
   padding-top: var(--spacing-sm);
 }
+/* Names a block *inside* the fold ("Schedules", the Parallel Search key) — the
+   summary already names the fold itself, so these stay captions. */
 .pack-settings-heading {
   font-size: 11px;
   font-weight: 600;

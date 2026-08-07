@@ -425,6 +425,45 @@ export function mountApprovalDialog(
   }
 
   /**
+   * Pull requests that have stopped being showable back off the open prompt.
+   *
+   * `isShowable` is checked when a request is surfaced but the batch was never
+   * re-examined afterwards, so a prompt raised for one thread stayed on screen
+   * when the user moved to another thread — or to another project entirely,
+   * since a project switch swaps `activeThreadId` too. The result read as a
+   * question asked by the thread just opened, over a transcript that never asked
+   * it, and answering it approved a tool call in the project left behind.
+   *
+   * Withdrawn requests go back to the front of the queue (as the settings
+   * interrupt below re-queues them), so they surface again in arrival order when
+   * the user returns to their thread; until then they show as a sidebar bell.
+   */
+  function withdrawUnshowable(): void {
+    if (!active) return
+    const withdrawn = batch.filter((req) => !isShowable(req))
+    if (withdrawn.length === 0) return
+    batch = batch.filter((req) => isShowable(req))
+    queue.unshift(...withdrawn)
+    if (batch.length === 0) {
+      closeDialog()
+      active = false
+      readComparisonModels = null
+      clearSettle()
+      return
+    }
+    // What is left is a different prompt from the one the user was reading, so
+    // it starts collapsed exactly as show() opens one: expansion was a decision
+    // about the withdrawn request, and carrying it over would offer "approve
+    // just this one" against details the user never opened.
+    detailsExpanded = false
+    // The batch changed under the user, so the same clickjack guard an append
+    // arms applies here: a click committed against the old list must not land on
+    // the new one.
+    renderBatch()
+    startSettle()
+  }
+
+  /**
    * A request that landed while the dialog is open joins it live, and re-arms the
    * settle window so Approve can't be clicked through the change unseen.
    */
@@ -547,20 +586,27 @@ export function mountApprovalDialog(
     removeCancelled(id)
   })
 
-  // When the user switches threads, a previously-backgrounded request for the
-  // now-focused thread should surface. `threads_changed` also fires on project
-  // switches, so this covers cross-project focus changes too.
+  // When the user switches threads, the prompt on screen has to follow the
+  // focus: requests for the thread just left are withdrawn, and a
+  // previously-backgrounded request for the now-focused thread surfaces.
+  // `threads_changed` also fires on project switches, so this covers
+  // cross-project focus changes too.
   store.on('threads_changed', () => {
+    withdrawUnshowable()
     if (active) appendToOpen()
     else show()
   })
 
   // Restoring a minimized window makes deferred requests showable again; surface
   // them immediately so the user never has to switch threads to un-stick a prompt
-  // that was held back while the window was hidden. show() no-ops while hidden,
-  // so it only pops once the window is actually visible again.
+  // that was held back while the window was hidden. Going the other way, a prompt
+  // already open when the window is hidden is withdrawn for the same reason new
+  // ones are deferred: it cannot be painted, so it would read as a frozen pane.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'hidden') show()
+    if (document.visibilityState === 'hidden') {
+      withdrawUnshowable()
+      syncAttention()
+    } else show()
   })
 
   // Requests that arrived while the user was in Settings were held back by the

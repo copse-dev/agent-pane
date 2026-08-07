@@ -3,7 +3,12 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
+import type {
+  HooksListResult,
+  HookRunDetail,
+  HookTestRequest,
+  HookTestResult,
+} from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
 import type {
   AutomationSchedule,
@@ -43,6 +48,9 @@ import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
+  WorktreeInventoryEntry,
+  WorktreeRemovalResult,
+  WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
@@ -143,6 +151,7 @@ export interface ApiClient {
       payload: string,
     ) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
+    runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
@@ -715,6 +724,19 @@ export interface ApiClient {
     cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
     onChanged(callback: (projectId: string) => void): () => void
   }
+  /** Linked checkouts of the project's repository, listed and managed in Settings → Sources. */
+  worktrees: {
+    /** Every linked checkout, most recently used first. Empty for a non-Git project. */
+    list: (projectId: string) => Promise<WorktreeInventoryEntry[]>
+    /** Walk one checkout for its on-disk size — separate from `list`, which stays fast. */
+    size: (projectId: string, path: string) => Promise<WorktreeSizeResult>
+    /**
+     * Delete one checkout. Without `force` a checkout holding uncommitted,
+     * untracked, or ignored files is reported back rather than removed, so the
+     * caller can show what would be destroyed and ask again.
+     */
+    remove: (projectId: string, path: string, force: boolean) => Promise<WorktreeRemovalResult>
+  }
   skills: {
     list: () => Promise<SkillSummary[]>
   }
@@ -725,6 +747,8 @@ export interface ApiClient {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
     test: (req: HookTestRequest) => Promise<HookTestResult>
+    /** Read the raw record behind one hook card — payload, streams, applied outcome. */
+    runDetail: (projectId: string, threadId: string, runId: string) => Promise<HookRunDetail>
   }
   packs: {
     /** Enumerate every registered pack with contributions + enablement + settings values (P3). */
