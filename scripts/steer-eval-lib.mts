@@ -225,6 +225,13 @@ export interface SteerEvalTask {
    * list registered.
    */
   excludeTools?: string[] | undefined
+  /**
+   * For nudge packs, seed an exact read-only checkpoint instead of asking the
+   * model to generate an independently sampled phase 1 in each arm. Seeded
+   * calls are context, not scored calls; checks therefore measure only work
+   * performed after the injected nudge/control message.
+   */
+  seedReadFiles?: string[] | undefined
   checks: SteerCheck[]
   maxSteps?: number | undefined
   timeoutMs?: number | undefined
@@ -372,6 +379,7 @@ const steerTaskSchema: z.ZodType<SteerEvalTask> = z.object({
   allowedCommandPatterns: z.array(z.string()).optional(),
   mockOnly: z.boolean().optional(),
   excludeTools: z.array(z.string()).optional(),
+  seedReadFiles: z.array(z.string()).optional(),
   checks: z.array(steerCheckSchema).min(1),
   maxSteps: z.number().int().positive().optional(),
   timeoutMs: z.number().int().positive().optional(),
@@ -854,6 +862,26 @@ function recordArgs(args: unknown): Record<string, unknown> {
   return { ...expectRecord(args) }
 }
 
+function appendSeededReads(
+  messages: LLMMessage[],
+  workspace: string,
+  paths: readonly string[],
+): void {
+  const calls = paths.map((path, index) => ({
+    id: `seed-read-${String(index + 1)}`,
+    name: 'read_file',
+    args: { path },
+  }))
+  messages.push({ role: 'assistant', content: calls })
+  messages.push({
+    role: 'tool',
+    toolResults: paths.map((path, index) => ({
+      toolCallId: calls[index]?.id ?? `seed-read-${String(index + 1)}`,
+      result: readFileSync(jailPath(workspace, path), 'utf8'),
+    })),
+  })
+}
+
 async function runAttempt(
   pack: SteerPack,
   task: SteerEvalTask,
@@ -916,19 +944,23 @@ async function runAttempt(
   const maxSteps = task.maxSteps ?? 16
   try {
     if (pack.steer.kind === 'nudge') {
-      // Phase 1 runs both arms identically, up to the point the production
-      // guard would fire. Phase 2 is the only difference: the steered arm gets
-      // the shipping nudge, the control gets a neutral continuation.
+      // A seeded checkpoint is exactly identical across arms and leaves `calls`
+      // empty, so checks score only post-injection behavior. Packs without one
+      // retain the generated phase for nudges that need an organic setup.
       const { afterSteps } = pack.steer
-      await runAgentLoop({
-        provider,
-        messages,
-        tools,
-        executeTool: (name, args) => executeTool(workspace, task, name, args),
-        signal: controller.signal,
-        maxSteps: Math.min(afterSteps, maxSteps),
-        onChunk,
-      })
+      if (task.seedReadFiles) {
+        appendSeededReads(messages, workspace, task.seedReadFiles)
+      } else {
+        await runAgentLoop({
+          provider,
+          messages,
+          tools,
+          executeTool: (name, args) => executeTool(workspace, task, name, args),
+          signal: controller.signal,
+          maxSteps: Math.min(afterSteps, maxSteps),
+          onChunk,
+        })
+      }
       const nudge =
         armId === 'with'
           ? STEER_NUDGE_TEXTS[pack.steer.ref]
@@ -940,7 +972,7 @@ async function runAttempt(
         tools,
         executeTool: (name, args) => executeTool(workspace, task, name, args),
         signal: controller.signal,
-        maxSteps: Math.max(1, maxSteps - afterSteps),
+        maxSteps: task.seedReadFiles ? maxSteps : Math.max(1, maxSteps - afterSteps),
         onChunk,
       })
     } else {

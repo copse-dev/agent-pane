@@ -2,6 +2,6 @@
 
 A deliberately shallow project with several near-identical modules.
 
-Fixture for the `loop-nudge` and `stuck-finalize-nudge` steer eval packs: the
-files invite repeated exploration, which is the condition the loop guards fire
-on.
+Fixture for the `loop-nudge` steer eval pack: the seeded checkpoint contains
+complete evidence, while the remaining files make unnecessary exploration
+available to a model that ignores the nudge.

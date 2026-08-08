@@ -435,11 +435,26 @@ describe('shipped steer packs', () => {
     }
   })
 
-  it('fixtures referenced by packs exist', () => {
+  it('fixtures and seeded nudge reads referenced by packs exist', () => {
     for (const path of steerPackPaths()) {
-      for (const task of loadSteerPack(path).tasks) {
-        if (task.fixture === undefined) continue
+      const pack = loadSteerPack(path)
+      for (const task of pack.tasks) {
+        if (task.fixture === undefined) {
+          assert.equal(
+            task.seedReadFiles,
+            undefined,
+            `seeded reads require a fixture in ${task.id}`,
+          )
+          continue
+        }
         assert.ok(existsSync(task.fixture), `missing fixture ${task.fixture} for task ${task.id}`)
+        for (const seededPath of task.seedReadFiles ?? []) {
+          assert.equal(pack.steer.kind, 'nudge', `seeded reads require a nudge pack in ${task.id}`)
+          assert.ok(
+            existsSync(join(task.fixture, seededPath)),
+            `missing seeded read ${seededPath} for task ${task.id}`,
+          )
+        }
       }
     }
   })
