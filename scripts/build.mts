@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { copyMonacoWorkers } from './copy-monaco-workers.mts'
+import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -223,16 +223,7 @@ if (monacoBaseUrl === '') {
 } else {
   console.log(`[build] Monaco served from ${monacoBaseUrl} — not copying the vs/ tree`)
   const indexPath = `${rendererOutDir}/index.html`
-  const html = readFileSync(indexPath, 'utf8')
-  // Inline and ahead of the app bundle: setup.ts reads this the first time an
-  // editor is opened, and a separate file would be one more request to get
-  // wrong. JSON.stringify keeps a quote or backslash in the URL from breaking
-  // out of the string.
-  const inject = `<script>window.__COPSE_MONACO_BASE__=${JSON.stringify(monacoBaseUrl)}</script>`
-  if (!html.includes('</head>')) {
-    throw new Error('index.html has no </head> to inject the Monaco base into')
-  }
-  writeFileSync(indexPath, html.replace('</head>', `  ${inject}\n  </head>`))
+  writeFileSync(indexPath, pointHtmlAtMonacoBase(readFileSync(indexPath, 'utf8'), monacoBaseUrl))
 }
 cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {
   recursive: true,

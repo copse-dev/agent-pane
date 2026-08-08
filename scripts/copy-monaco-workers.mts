@@ -50,6 +50,46 @@ export function populateMonacoRoot(monacoDest: string): void {
   copyFileSync(ESM_WORKER_HOST_SRC, resolve(monacoDest, 'esm-worker-host.js'))
 }
 
+/**
+ * How `src/renderer/index.html` spells the Monaco root it expects beside itself.
+ * `monaco/setup.ts` resolves its own URLs from the injected base, but the
+ * diff editor's stylesheet is a plain `<link>` in the template — nothing reads
+ * the global on its behalf, so pointing the build at a shared tree without
+ * rewriting the markup leaves that one request aimed at a directory the demo
+ * build no longer emits (the first published preview 404'd on exactly that).
+ */
+const LOCAL_MONACO_PREFIX = './monaco/'
+
+/**
+ * Point a built `index.html` at a Monaco tree served from `baseUrl` instead of
+ * the `monaco/` directory beside it: rewrite the static asset references, then
+ * declare the base for the lazy loader in `monaco/setup.ts`.
+ *
+ * Throws when the markup has no local reference left to rewrite — that means
+ * the template moved and this function is now silently doing nothing, which is
+ * the failure it exists to prevent.
+ */
+export function pointHtmlAtMonacoBase(html: string, baseUrl: string): string {
+  const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+  if (!html.includes(LOCAL_MONACO_PREFIX)) {
+    throw new Error(
+      `index.html has no ${LOCAL_MONACO_PREFIX} reference to repoint at ${base} — ` +
+        'if the template dropped it, drop this rewrite too',
+    )
+  }
+  if (!html.includes('</head>')) {
+    throw new Error('index.html has no </head> to inject the Monaco base into')
+  }
+  const repointed = html.replaceAll(LOCAL_MONACO_PREFIX, base)
+  // A meta, not an inline script: the page ships `script-src 'self'` with no
+  // `unsafe-inline`, so a `<script>window.…=…</script>` is refused outright and
+  // the base silently never arrives. Escape the quotes rather than trusting the
+  // URL — this is markup, and JSON.stringify does not produce HTML.
+  const content = base.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
+  const inject = `<meta name="copse-monaco-base" content="${content}" />`
+  return repointed.replace('</head>', `  ${inject}\n  </head>`)
+}
+
 // `node scripts/copy-monaco-workers.mts <dir>` populates <dir> as a Monaco root.
 // Used by the demo-preview workflow to publish the shared vendor copy.
 if (process.argv[1]?.endsWith('copy-monaco-workers.mts') && process.argv[2] !== undefined) {

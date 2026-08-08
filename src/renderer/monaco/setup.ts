@@ -5,17 +5,21 @@ declare global {
   var _VSCODE_FILE_ROOT: string | undefined
 }
 
-declare global {
-  /**
-   * Where Monaco's `vs/` tree and worker host are served from, as a URL.
-   *
-   * Unset in the shipped app, which carries its own copy next to the bundle.
-   * The demo build sets it so many PR previews can share one published copy
-   * instead of each committing the 34MB ESM tree into the `demo-previews`
-   * branch — see `.github/workflows/demo-preview.yml`.
-   */
-  var __COPSE_MONACO_BASE__: string | undefined
-}
+/**
+ * Where Monaco's `vs/` tree and worker host are served from, when it is not the
+ * `monaco/` directory beside the bundle.
+ *
+ * Absent in the shipped app, which carries its own copy. The demo build emits
+ * it so many PR previews can share one published copy instead of each
+ * committing the 34MB ESM tree into the `demo-previews` branch — see
+ * `.github/workflows/demo-preview.yml`.
+ *
+ * A `<meta>` rather than an inline `<script>` assigning a global: the page's
+ * own CSP is `script-src 'self'` with no `unsafe-inline`, so the script form
+ * was silently refused and the base never arrived (caught by loading a built
+ * preview in Chromium, after CI had happily published it).
+ */
+const MONACO_BASE_META = 'copse-monaco-base'
 
 /**
  * Every Monaco asset path derives from here, so relocating the tree is a
@@ -23,7 +27,9 @@ declare global {
  * Always ends in a slash, so `new URL(relative, root)` resolves within it.
  */
 function monacoVsRoot(): string {
-  const configured = globalThis.__COPSE_MONACO_BASE__
+  const configured = document
+    .querySelector(`meta[name="${MONACO_BASE_META}"]`)
+    ?.getAttribute('content')
   if (typeof configured === 'string' && configured.length > 0) {
     return new URL(configured.endsWith('/') ? configured : `${configured}/`, window.location.href)
       .href
