@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
 import {
+  acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -213,6 +214,65 @@ describe('classifyAcpAuthFailure', () => {
       null,
     )
     assert.equal(classifyAcpAuthFailure(RequestError.authRequired()), 'required')
+  })
+
+  // A revoked token is not a first run: the agent is configured and was signed
+  // in, so it needs the login command `expired` points at, not the install
+  // guidance `required` hands out.
+  it('reads a revoked credential as an expiry, not a missing sign-in', () => {
+    assert.equal(
+      classifyAcpAuthFailure(
+        new Error('Failed to authenticate. API Error: 401 OAuth access token has been revoked.'),
+        claude,
+      ),
+      'expired',
+    )
+    assert.equal(
+      classifyAcpAuthFailure(new Error('Your revoked access token cannot be used'), claude),
+      'expired',
+    )
+  })
+})
+
+describe('acpTurnInterruptionMarker', () => {
+  const claude = 'claude-agent-acp'
+
+  // The marker's reader is the next turn's model, so the thing under test is
+  // whether it says re-running would help. Before this existed every outcome
+  // below was written into history as a transient provider error, which told
+  // the next turn to retry a dead credential.
+  it('tells the next turn that a credentials failure will not fix itself', () => {
+    const expired = acpTurnInterruptionMarker('expired', claude)
+    assert.match(expired, /Claude’s sign-in is no longer valid/)
+    assert.match(expired, /fail the same way until the user signs in again/)
+
+    const required = acpTurnInterruptionMarker('required', claude)
+    assert.match(required, /Claude is not authenticated/)
+    assert.match(required, /fail the same way until the user signs in/)
+  })
+
+  it('does not report a deliberate stop as a failure', () => {
+    const aborted = acpTurnInterruptionMarker('aborted', claude)
+    assert.match(aborted, /stopped before it completed/)
+    assert.doesNotMatch(aborted, /failed|error/i)
+  })
+
+  it('keeps a plain provider failure generic', () => {
+    assert.match(acpTurnInterruptionMarker('error', claude), /interrupted by a provider error/)
+  })
+
+  // "Transient" was the old hardcoded wording, and it is wrong for every
+  // outcome here: the retry loop is already spent by the time a marker is
+  // written, and a lapsed credential is the opposite of temporary.
+  it('never calls an outcome transient', () => {
+    for (const outcome of ['expired', 'required', 'aborted', 'error'] as const) {
+      assert.doesNotMatch(acpTurnInterruptionMarker(outcome, claude), /transient/i)
+    }
+  })
+
+  it('falls back to a readable name when the agent is unknown', () => {
+    assert.match(acpTurnInterruptionMarker('expired'), /The external agent’s sign-in/)
+    assert.match(acpTurnInterruptionMarker('required', 'some-other-agent'), /some-other-agent/)
   })
 })
 
