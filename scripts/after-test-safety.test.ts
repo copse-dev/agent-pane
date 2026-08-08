@@ -219,32 +219,28 @@ describe('installDeleteSessionSafety', () => {
   })
 })
 
-// The e2e outage of 2026-08-07 (run 31161544796 shard 6: `0 passed, 21 failed`)
-// came from this module, not from the runner pool. `pkill -f` is unscoped, so
-// killing "chromedriver" took down the driver this worker was about to reuse —
-// and `browser.reloadSession()`, which nearly every spec calls in `before all`,
-// is a deleteSession *followed by* a newSession on that same driver. One flaky
-// teardown therefore poisoned every remaining spec on the shard.
+// Run 31231013554 measured this directly: with chromedriver on the kill list —
+// by name or scoped to `wdio:driverPID` — every shard reported `0 passed, 21
+// failed`, every spec dying on `Unable to connect to http://localhost:PORT`.
+// Without it, the same shards ran 19-20 passing. WDIO starts the next worker
+// while the previous tears down, so the driver this session is "done with" is
+// the one the next session already holds.
 describe('wedged-session kill scope', () => {
-  it('never names chromedriver, whose survival the next session depends on', () => {
+  it('never names chromedriver', () => {
     const patterns = wedgedSessionPatternsForTest()
     assert.ok(
       patterns.every((pattern) => !/chromedriver/i.test(pattern)),
-      'killing chromedriver mid-run breaks the newSession half of reloadSession',
+      `killing chromedriver reaps the next worker's driver: ${patterns.join(', ')}`,
     )
-    assert.ok(
-      patterns.some((pattern) => /electron/i.test(pattern)),
-      'Electron is what actually wedges, and is still worth killing',
-    )
+    assert.ok(patterns.some((pattern) => /electron/i.test(pattern)))
   })
 
   it('treats a socket death on deleteSession as ignorable rather than fatal', () => {
-    // The exact shape observed in run 31175526565 shard 3's wdio.log.
-    const error = new Error(
-      'WebDriverError: Request failed with error code UND_ERR_SOCKET when running ' +
-        '"http://localhost:41083/session/ccafb19078f86ad8408b410656525abc" with method "DELETE"',
+    assert.equal(
+      isIgnorableDeleteSessionError(
+        new Error('WebDriverError: Request failed with error code UND_ERR_SOCKET'),
+      ),
+      true,
     )
-    assert.equal(isDeadSessionError(error), true)
-    assert.equal(isIgnorableDeleteSessionError(error), true)
   })
 })

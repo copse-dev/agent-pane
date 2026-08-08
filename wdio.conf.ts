@@ -12,10 +12,6 @@ import {
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
-import {
-  installReloadSessionPortRotation,
-  withRotatedDebugPort,
-} from './tests/e2e/helpers/session-debug-port.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
@@ -58,16 +54,7 @@ export const config: Options.Testrunner = {
       // Must match the Chromium shipped by the pinned Electron (electron ^43 →
       // Chromium 150); the session reports 150.0.7871.46 at runtime.
       browserVersion: '150.0.7871.46',
-      // `verbose` is forwarded to the driver as `--verbose` (@wdio/utils turns
-      // every chromedriverOptions key into a CLI flag). Without it the log this
-      // uploads is a three-line startup banner plus Electron's own stdout, which
-      // says the driver started and the app booted but nothing about the session
-      // handshake between them — exactly the gap that left run 31187232755
-      // unexplainable. CI-only: the verbose log is large and worthless locally.
-      'wdio:chromedriverOptions': {
-        binary: chromedriverBinary,
-        ...(process.env['CI'] ? { verbose: true } : {}),
-      },
+      'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
       // Without this chromedriver collects no browser log and `getLogs('browser')`
       // comes back empty, so the renderer-side diagnostics the failure artifacts
@@ -98,12 +85,6 @@ export const config: Options.Testrunner = {
     // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
     // Cap + swallow transport deaths.
     installDeleteSessionSafety(browser)
-    // `beforeSession` runs once per worker, so without this the Electron that
-    // `reloadSession()` starts inherits the debug port the outgoing one is still
-    // shutting down on — and chromedriver then hangs 10s per DevTools probe
-    // against that half-dead listener until connectionRetryTimeout aborts the
-    // new session. See tests/e2e/helpers/session-debug-port.ts.
-    installReloadSessionPortRotation(browser)
   },
   afterTest: async (test, _context, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
@@ -225,15 +206,16 @@ export const config: Options.Testrunner = {
       'goog:chromeOptions'?: { args?: string[] }
     }
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
-    // Only the *first* session of the worker. Nothing holds the port yet, so a
-    // random pick is fine here; it is `reloadSession` that inherits a port still
-    // in use, and installReloadSessionPortRotation handles that.
+    const debugPort = randomInt(9300, 9999)
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
-      args: withRotatedDebugPort(
-        [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
-        randomInt(9300, 9999),
-      ),
+      args: [
+        ...new Set([
+          ...(chromeOptions.args ?? []),
+          `--user-data-dir=${e2eUserDataDir}`,
+          `--remote-debugging-port=${debugPort}`,
+        ]),
+      ],
     }
   },
   onComplete() {

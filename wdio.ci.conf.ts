@@ -45,17 +45,9 @@ export const config: Options.Testrunner = {
   // deleteSession. The base 120s transport timeout then stalls teardown for two
   // minutes and consumes the shard's outer retry budget. CI already retries the
   // whole shard in a fresh process, so fail dead sessions quickly here.
-  //
-  // This is a *global* per-request timeout, though: it bounds `POST /session`
-  // as much as it bounds a wedged DELETE. At 10s every shard of run 31187232755
-  // died in `before all` about 16s in — two ~10s creation attempts — with the
-  // chromedriver logs showing the driver starting cleanly and Electron booting
-  // (~150ms) both times. Teardown does not need this to be small: deleteSession
-  // is separately capped by DELETE_SESSION_BUDGET_MS in after-test-safety, which
-  // wraps it in its own `withTimeout` and force-kills on expiry. So restore the
-  // 30s this had before, which leaves session creation room to finish while
-  // 2 x 30s still lands under the 90s mocha timeout below.
-  connectionRetryTimeout: 30_000,
+  // 10s (down from 30s) keeps mid-test transport deaths from stacking with the
+  // deleteSession budget in after-test-safety when a renderer wedges.
+  connectionRetryTimeout: 10_000,
   connectionRetryCount: 1,
   // Electron session relaunches (`browser.reloadSession()`) are slow on the
   // resource-constrained GitHub runner, so specs that reload mid-test can blow

@@ -42,9 +42,9 @@ export function isDeadSessionError(error: unknown): boolean {
     /UND_ERR_CONNECT_TIMEOUT/i.test(text) ||
     /UND_ERR_BODY_TIMEOUT/i.test(text) ||
     // The socket died mid-request rather than timing out. Observed on the
-    // deleteSession half of `reloadSession` (run 31175526565, shard 3), where
-    // it was being rethrown instead of swallowed — a teardown that fails is not
-    // a reason to fail the spec that was about to get a fresh session anyway.
+    // deleteSession half of `reloadSession` (run 31175526565, shard 3), where it
+    // was rethrown instead of swallowed — a teardown that fails is not a reason
+    // to fail the spec that was about to get a fresh session anyway.
     /UND_ERR_SOCKET/i.test(text) ||
     /operation was aborted due to timeout/i.test(text) ||
     /timed out receiving message from renderer/i.test(text) ||
@@ -117,24 +117,30 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
  * Bracketed patterns match CI's shard cleanup (`.github/workflows/ci.yml`) and
  * avoid matching the caller's own command line.
  *
- * **ChromeDriver is deliberately not in this list, and must not be re-added.**
- * `pkill -f` is unscoped: it takes down every chromedriver in the container, not
- * the one this worker is wedged on. That is survivable at the end of a run and
- * fatal in the middle of one, because `browser.reloadSession()` — which nearly
- * every spec calls in `before all` — is a deleteSession *followed by* a
- * newSession on the same driver. Killing the driver between those two halves
- * guarantees the `POST /session` that follows gets ECONNREFUSED, so the spec
- * dies in `before all` with "Unable to connect to http://localhost:PORT",
- * having never run a line of its own body. One flaky teardown then poisons
- * every remaining spec on the shard: shard 6 of run 31161544796 reported
- * `0 passed, 21 failed`, and the chromedriver logs it uploaded all say
- * "ChromeDriver was started successfully" with the app booting in ~200ms.
+ * **ChromeDriver is deliberately absent, and must not be re-added — including
+ * as a pid-scoped kill.**
  *
- * Electron is the thing that actually wedges ("Timed out receiving message from
- * renderer"), and killing it alone both unwedges the session and leaves the
- * driver able to serve the next one. Drivers that genuinely leak are reaped by
+ * WDIO starts the next spec's worker while the previous one is still tearing
+ * down. By the time this fires, the driver named by the outgoing session's
+ * `wdio:driverPID` is the driver the *incoming* worker has already adopted. So
+ * scoping the kill to "our own" pids does not help: the pid is correct and the
+ * process is still needed. Killing it by name and killing it by pid land in the
+ * same place.
+ *
+ * Measured, rather than argued (run 31231013554, eight shards, both attempts):
+ *
+ *   scoped kill (#1615)      0 passed, 21 failed   — every spec, every shard
+ *   chromedriver not killed  19-20 passed, 1-2 failed
+ *
+ * and locally, three specs in one wdio invocation: dead with the kill, all three
+ * running without it. Individually they pass either way, so a single-spec check
+ * will not show this.
+ *
+ * Electron is what actually wedges ("Timed out receiving message from
+ * renderer"), and killing it alone both frees the session and leaves the driver
+ * able to serve the next one. Drivers that genuinely leak are reaped by
  * `cleanup_e2e_processes` in ci.yml, which runs between attempts and on exit —
- * i.e. at the only times when killing them is safe.
+ * the only moments when nothing is about to need them.
  */
 const WEDGED_SESSION_PATTERNS = ['[e]lectron/dist/electron'] as const
 
@@ -145,7 +151,7 @@ export function wedgedSessionPatternsForTest(): readonly string[] {
 
 /**
  * Best-effort: TERM then KILL a wedged Electron so a subsequent deleteSession
- * fails fast (ECONNREFUSED) instead of burning connectionRetryTimeout.
+ * fails fast instead of burning connectionRetryTimeout.
  */
 export function forceKillWedgedE2eSession(): void {
   for (const signal of ['-TERM', '-KILL'] as const) {
