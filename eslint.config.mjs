@@ -24,6 +24,7 @@ export default ts.config(
       'tests/fixtures/git-changes-repo/**',
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
+      'benchmarks/steer/fixtures/**',
     ],
   },
   js.configs.recommended,

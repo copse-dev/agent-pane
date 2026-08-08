@@ -22,10 +22,9 @@
 //   aider-edit     — Aider-AI/aider → aider/website/_data/edit_leaderboard.yml
 //                    (Python Exercism; includes real `ollama/*` GGUF quantized runs)
 
-import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { execFileSync } from 'node:child_process'
 import { expectRecord, expectString } from '../src/shared/unknown-value.mts'
+import { writeGeneratedFile } from './lib/generated-file.mts'
 
 const GENERATED_PATH = resolve('packages/llm/src/local-model-benchmarks.generated.ts')
 
@@ -223,10 +222,6 @@ ${body}
 `
 }
 
-function runPrettier(): void {
-  execFileSync('npx', ['prettier', '--write', GENERATED_PATH], { stdio: 'inherit' })
-}
-
 async function main(): Promise<void> {
   const today = new Date().toISOString().slice(0, 10)
   const scoresByModel = new Map<string, Map<string, Score>>()
@@ -252,17 +247,12 @@ async function main(): Promise<void> {
   for (const [catalogId, score] of evalplus) set(catalogId, 'humaneval-plus', score)
 
   const content = renderFile(scoresByModel, today)
-  const existing = await readFile(GENERATED_PATH, 'utf8').catch(() => '')
-  const stripSyncDate = (s: string): string =>
-    s.replace(/\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/, '')
-  if (stripSyncDate(existing) === stripSyncDate(content)) {
+  if (!(await writeGeneratedFile(GENERATED_PATH, content))) {
     console.log(
       `[sync-local-models] No changes (${String(scoresByModel.size)} models with scores).`,
     )
     return
   }
-  await writeFile(GENERATED_PATH, content, 'utf8')
-  runPrettier()
   console.log(
     `[sync-local-models] Wrote scores for ${String(scoresByModel.size)} model(s) to ${GENERATED_PATH} (synced ${today}).`,
   )
