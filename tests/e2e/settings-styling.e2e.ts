@@ -312,8 +312,22 @@ describe('settings styling', function () {
         summaryHeight:
           details.querySelector<HTMLElement>('.pack-settings-summary')?.getBoundingClientRect()
             .height ?? 0,
-        // A closed <details> lays its content out at zero size.
-        fieldVisible: field.getBoundingClientRect().height > 0,
+        // `getBoundingClientRect().height > 0` used to mean "the fold is open",
+        // on the assumption that a closed <details> lays its content out at zero
+        // size. That stopped being true: Chromium now puts the content in a
+        // `::details-content` box with `content-visibility: hidden` when closed,
+        // which skips painting but still gives the element a box. Measured in
+        // Electron 43 / Chrome 150.0.7871.129, the exact engine these specs run
+        // on, `.pack-settings` reports height 21 both closed and open, so the
+        // old check could never fail and the assertion below could never pass.
+        //
+        // `checkVisibility()` understands content-visibility and reports
+        // false/true correctly across the same transition.
+        fieldVisible: field.checkVisibility({
+          contentVisibilityAuto: true,
+          opacityProperty: true,
+          visibilityProperty: true,
+        }),
         // Our own chevron, not the UA triangle.
         marker: getComputedStyle(details.querySelector('summary') ?? details).listStyleType,
         hasChevron: details.querySelector('.pack-settings-chevron') !== null,
@@ -337,7 +351,13 @@ describe('settings styling', function () {
       if (!details || !field || !chevron) return null
       return {
         open: details.open,
-        fieldVisible: field.getBoundingClientRect().height > 0,
+        // Same reason as the closed measurement above — a height check passes
+        // here for the wrong reason, since the box is 21px either way.
+        fieldVisible: field.checkVisibility({
+          contentVisibilityAuto: true,
+          opacityProperty: true,
+          visibilityProperty: true,
+        }),
         chevronTransform: getComputedStyle(chevron).transform,
       }
     })
