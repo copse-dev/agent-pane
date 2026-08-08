@@ -320,7 +320,7 @@ export function createCommandHookRunner(opts?: {
           hook,
           adapter,
           adapter.marshalToolGateRequest(hook, payload, session),
-          (spawn) => adapter.interpretToolGate(spawn, payload),
+          (spawn) => adapter.interpretToolGate(spawn, payload, hook),
           context,
           recordingSnapshot,
         )
