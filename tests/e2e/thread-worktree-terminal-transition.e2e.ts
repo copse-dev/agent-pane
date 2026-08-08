@@ -106,17 +106,35 @@ describe('terminal checkout transition', () => {
     //
     // The dialog check is a fast `isDisplayed()` rather than the helper itself,
     // so a poll that finds no prompt does not pay the helper's 10s wait.
-    await browser.waitUntil(
-      async () => {
-        if (await approvalDialogShowing()) await approveUnsandboxedTerminalIfPrompted()
-        return (await $$('.terminals-tab')).length === 2
-      },
-      {
-        timeout: 45_000,
-        interval: 500,
-        timeoutMsg: 'expected a fresh worktree shell after checkout allocation',
-      },
-    )
+    // Approving inside the wait was NOT the fix — run 31276959420 shard 8 still
+    // timed out here with the approval handled every iteration, so the second
+    // tab is not merely waiting to be let out. Rather than guess a third cause,
+    // report what is actually on screen when the wait gives up: how many tabs
+    // exist, whether the approval prompt is up at that moment, and what the
+    // checkout badges say. Those three answer "did the worktree get allocated at
+    // all" versus "it allocated but no shell followed".
+    let lastTabCount = -1
+    try {
+      await browser.waitUntil(
+        async () => {
+          if (await approvalDialogShowing()) await approveUnsandboxedTerminalIfPrompted()
+          lastTabCount = (await $$('.terminals-tab')).length
+          return lastTabCount === 2
+        },
+        { timeout: 45_000, interval: 500 },
+      )
+    } catch {
+      const dialogUp = await approvalDialogShowing()
+      const badges: string[] = []
+      for (const badge of await $$('.terminals-checkout-badge')) {
+        badges.push(await badge.getText().catch(() => '<unreadable>'))
+      }
+      throw new Error(
+        'expected a fresh worktree shell after checkout allocation — ' +
+          `${lastTabCount} terminal tab(s), approval dialog ${dialogUp ? 'IS' : 'is not'} showing, ` +
+          `checkout badges: ${badges.length > 0 ? badges.join(' | ') : 'none'}`,
+      )
+    }
     // The prompt can also arrive with the shell rather than ahead of it.
     if (await approvalDialogShowing()) await approveUnsandboxedTerminalIfPrompted()
     const tabs = await $$('.terminals-tab')

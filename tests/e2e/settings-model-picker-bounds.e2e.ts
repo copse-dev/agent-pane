@@ -113,11 +113,28 @@ describe('settings model picker bounds', function () {
 
     // The reported case: a right-aligned field (pack settings put the control
     // in a `justify-self: end` column) left the menu growing off the surface.
+    //
+    // `margin-left: auto` alone does not reproduce it. Auto only reaches the
+    // edge of the host's *parent*, and the settings pane is inset from the
+    // dialog, so the trigger stops well short of the surface edge: run
+    // 31276959420 shard 6 measured trigger [744, 1073] inside surface [0, 1200],
+    // which left the 420px menu ending at 1164 — 36px clear of the edge. No
+    // overflow, no flip, and `position-try` was right not to fire. The spec was
+    // asserting a condition it never created.
+    //
+    // So place the host explicitly: shift it until its right edge meets the
+    // surface's, which needs a real margin rather than `auto` because the host
+    // has to overhang its parent to get there.
     await browser.execute((hostSelector) => {
+      const surface = document.querySelector<HTMLElement>('#settings-dialog')
       const host = document.querySelector<HTMLElement>(hostSelector)
-      if (!host) return
+      const parent = host?.parentElement
+      if (!surface || !host || !parent) return
       host.style.width = 'max-content'
-      host.style.marginLeft = 'auto'
+      const surfaceRight = surface.getBoundingClientRect().right
+      const hostRect = host.getBoundingClientRect()
+      const parentLeft = parent.getBoundingClientRect().left
+      host.style.marginLeft = `${hostRect.left - parentLeft + (surfaceRight - hostRect.right)}px`
     }, CHAT_MODEL_HOST)
 
     // Report the geometry on failure. `expected the menu to flip to right
