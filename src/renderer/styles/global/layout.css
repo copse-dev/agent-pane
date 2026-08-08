@@ -577,7 +577,11 @@
 }
 .three-pane.is-right-panel-maximized > .pane-files {
   position: absolute;
-  inset: 0;
+  /* Chat only. The projects rail keeps its column so threads stay visible and
+     switchable while the pane is expanded — the same widths the flex and grid
+     layouts lay it out with, so dragging #resizer-projects still moves this
+     edge with it. */
+  inset: 0 0 0 calc(var(--projects-width, 240px) + var(--pane-divider-width, 1px));
   /* Above the composer footer's popovers (100), below the chat-scoped approval
      scrim (110) so a permission prompt still reaches the user. */
   z-index: 105;
