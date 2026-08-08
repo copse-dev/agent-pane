@@ -172,8 +172,8 @@ describe('steer eval prompt arms', () => {
       { kind: 'section', ref: 'gitBranchSafety' },
       'without',
     )
-    assert.match(withArm, /Git branch safety:/)
-    assert.doesNotMatch(withoutArm, /Git branch safety:/)
+    assert.match(withArm, /Git branch safety/)
+    assert.doesNotMatch(withoutArm, /Git branch safety/)
     assert.match(withoutArm, /Working style:/)
     assert.match(withoutArm, /Working directory: \/tmp\/ws/)
   })
