@@ -25,6 +25,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     stagedDiffs: [],
     filesPaneOpen: false,
     rightPanelMode: 'explorer',
+    rightPanelMaximized: false,
     layout: { ...DEFAULT_LAYOUT },
     theme: 'dark',
     themePreference: 'system',
