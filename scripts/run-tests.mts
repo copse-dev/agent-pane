@@ -78,6 +78,11 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
       // a worker bundle to assert what it links against need the real package.
       'esbuild',
+      // Prettier's ESM entry builds a `createRequire(import.meta.url)`, which has
+      // no meaning once bundled to CJS ("The argument 'filename' must be ...
+      // Received undefined"). Left external, `require('prettier')` picks up the
+      // package's own CJS build. Needed by scripts/lib/generated-file.mts.
+      'prettier',
     ],
     alias: {
       '@shared': resolve('./src/shared'),
