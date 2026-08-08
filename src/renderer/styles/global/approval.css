@@ -60,45 +60,37 @@
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+/* Default: interface font for human prompt bodies (PR targets, origins). Shell
+ * commands opt into `.approval-body-code` for monospaced commands. */
 .approval-body {
   background: var(--bg-base);
+  border: 1px solid var(--border-subtle, var(--border));
   padding: var(--spacing-md);
   border-radius: var(--radius);
   white-space: pre-wrap;
   max-height: 200px;
   overflow-y: auto;
   font-size: var(--font-size-sm);
+  font-family: var(--font-family);
+  color: var(--text-primary);
+  line-height: 1.45;
 }
+.approval-body-code {
+  font-family: var(--font-mono);
+}
+/* Button look lives on `.ui-btn*`; this host keeps layout + the once-button rail. */
 .approval-buttons {
-  display: flex;
-  gap: var(--spacing-sm);
-  justify-content: flex-end;
+  margin-top: var(--spacing-sm);
 }
-.approval-approve {
-  background: var(--success);
-  color: #000;
-  border-radius: var(--radius);
-  padding: 6px 16px;
-}
-/* Paused while an appended request settles, so it can't be clicked through an
- * unread change (see APPROVAL_SETTLE_MS). */
-.approval-approve:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-/* Secondary approve ("just this command"): deliberately quieter than the primary
- * grant so the two are never confused at a glance. */
-.approval-approve-once {
-  background: var(--bg-base);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 16px;
-  margin-right: auto;
-}
+.approval-approve:disabled,
 .approval-approve-once:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+/* Secondary approve ("just this command"): sits on the leading edge so the two
+ * approve answers are never confused at a glance. */
+.approval-approve-once {
+  margin-right: auto;
 }
 /* Inline disclosure for a collapsed command body; reads as a link, not a button. */
 .approval-details-toggle {
@@ -114,12 +106,6 @@
 }
 .approval-details-toggle:hover {
   color: var(--text-primary);
-}
-.approval-reject {
-  background: var(--error);
-  color: white;
-  border-radius: var(--radius);
-  padding: 6px 16px;
 }
 .approval-remember {
   display: flex;
@@ -150,8 +136,4 @@
 }
 .approval-comparison-label {
   color: var(--text-muted);
-}
-.approval-comparison-row .model-picker-trigger {
-  font-size: var(--font-size-sm);
-  background: var(--bg-base);
 }

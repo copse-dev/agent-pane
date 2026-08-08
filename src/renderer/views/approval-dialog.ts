@@ -7,6 +7,7 @@ import {
   createComparisonModelPickers,
   type ComparisonModelSelection,
 } from './approval-comparison-pickers.ts'
+import { uiActions } from '../ui/actions.ts'
 
 /**
  * How long the first pending request waits before the dialog pops, so a burst of
@@ -75,21 +76,32 @@ export function mountApprovalDialog(
   const heading = el('h3', { class: 'approval-heading' })
   const items = el('div', { class: 'approval-items' })
   const chatScrim = el('div', { class: 'approval-chat-scrim', 'aria-hidden': 'true', hidden: '' })
+  // Kit classes carry the look; legacy approval-* hooks stay for existing selectors/tests.
+  const approveOnceButton = el('button', {
+    type: 'button',
+    class: 'ui-btn ui-btn-secondary approval-approve-once',
+    hidden: '',
+  })
+  const approveButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-primary approval-approve' },
+    'Approve',
+  )
+  const rejectButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary approval-reject' },
+    'Reject',
+  )
   const dialog = el('dialog', { id: 'approval-dialog' })
   dialog.append(
     heading,
     items,
     rememberLabel,
     turnTreeLeaseLabel,
-    el(
-      'div',
-      { class: 'approval-buttons' },
-      // Hidden unless the open prompt offers a narrower "just this one" answer
-      // *and* the user has expanded the details that answer refers to.
-      el('button', { class: 'approval-approve-once', hidden: '' }),
-      el('button', { class: 'approval-approve' }, 'Approve'),
-      el('button', { class: 'approval-reject' }, 'Reject'),
-    ),
+    uiActions(approveOnceButton, approveButton, rejectButton, {
+      className: 'approval-buttons',
+      align: 'end',
+    }),
   )
   // Approval is intentionally owned by the chat pane rather than the window:
   // the scrim blocks the transcript/composer while the adjacent terminal and
@@ -106,9 +118,6 @@ export function mountApprovalDialog(
   const turnTreeLeaseTextNode = turnTreeLeaseLabel.childNodes[1]
   if (!turnTreeLeaseTextNode) throw new Error('approval dialog missing lease label text node')
   const turnTreeLeaseText: ChildNode = turnTreeLeaseTextNode
-  const approveButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve')
-  const approveOnceButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve-once')
-  const rejectButton = qsRequired<HTMLButtonElement>(dialog, '.approval-reject')
   const rememberLabelTextNode = rememberLabel.childNodes[1]
   if (!rememberLabelTextNode) throw new Error('approval dialog missing remember label text node')
   const rememberLabelText: ChildNode = rememberLabelTextNode
@@ -283,7 +292,11 @@ export function mountApprovalDialog(
             rowChildren.push(el('div', { class: 'approval-advice' }, req.bodyAdvice))
           }
           if (collapseDetails) rowChildren.push(detailsToggle())
-          const body = el('pre', { class: 'approval-body' }, req.body)
+          // Shell commands stay monospaced; other prompts (PR targets, origins) use the
+          // interface font so they don't read as a raw JSON dump in a <pre>.
+          const bodyClass =
+            req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body'
+          const body = el('div', { class: bodyClass }, req.body)
           if (collapseDetails && !detailsExpanded) body.hidden = true
           rowChildren.push(body)
           if (req.bodyFooter) {

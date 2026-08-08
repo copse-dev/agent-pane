@@ -1,4 +1,5 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import type { ShellHarmDecision } from './shell-harm.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
@@ -52,6 +53,42 @@ export const GITHUB_WRITE_TOOLS = new Set([
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
 ])
+
+/** User-facing question for each mutating GitHub PR tool. Keep snake_case ids out of the modal. */
+const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
+  gh_pr_rerun_failed_ci: 'Re-run failed CI?',
+  gh_pr_approve: 'Approve pull request on GitHub?',
+  gh_pr_mark_ready: 'Mark pull request ready for review?',
+  gh_pr_enable_auto_merge: 'Enable auto-merge on GitHub?',
+}
+
+export interface GithubWritePrompt {
+  title: string
+  body: string
+}
+
+/**
+ * Human prompt copy for mutating GitHub PR tools. Titles are questions; the body
+ * is a PR target (`owner/repo#N` or `PR #N`) rather than a JSON dump of args.
+ * Unrecognised args fall back to pretty-printed JSON so the user still sees what
+ * would run.
+ */
+export function formatGithubWritePrompt(toolName: string, args: unknown): GithubWritePrompt {
+  const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
+  return { title, body: formatGithubWritePromptBody(args) }
+}
+
+function formatGithubWritePromptBody(args: unknown): string {
+  if (!isRecord(args)) return JSON.stringify(args, null, 2)
+  const number = args['number']
+  if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) {
+    return JSON.stringify(args, null, 2)
+  }
+  const owner = typeof args['owner'] === 'string' && args['owner'].length > 0 ? args['owner'] : null
+  const repo = typeof args['repo'] === 'string' && args['repo'].length > 0 ? args['repo'] : null
+  if (owner && repo) return `${owner}/${repo}#${String(number)}`
+  return `PR #${String(number)}`
+}
 
 export interface PermissionCheck {
   toolName: string
