@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { dirname } from 'node:path'
+import { existsSync } from 'node:fs'
 import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
 import {
   assertWorkspaceWriteTarget,
@@ -24,9 +25,35 @@ import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 /** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
 export const SANDBOX_FS_WORKER_STDOUT_MAX_BYTES = MAX_FS_WRITE_BYTES * 2 + 4096
 
-/** Bundled next to `dist/main/index.js`. */
+let workerBundleVerified = false
+
+/**
+ * Bundled next to `dist/main/index.js`.
+ *
+ * Checked rather than assumed, because the worker is reached by path from a
+ * child process: when the bundle was missing (a `dist/` built only by
+ * `npm run dev`, which until recently never emitted it) the sole evidence was a
+ * `MODULE_NOT_FOUND` stack printed by a spawned Electron, arriving as the
+ * *message* of an `fs:listDir` rejection with nothing naming the build. Worse,
+ * every call paid for it twice — the persistent server's worker, then the
+ * one-shot fallback — so a single file-tree walk launched dozens of processes
+ * that each died on startup, stalling the main loop. Failing here costs one
+ * `existsSync` and says what to run.
+ *
+ * Only success is cached: a dev rebuild that finally emits the bundle recovers
+ * without restarting the app.
+ */
 export function sandboxFsWorkerPath(): string {
-  return join(__dirname, 'sandbox-fs-worker.js')
+  const path = join(__dirname, 'sandbox-fs-worker.js')
+  if (workerBundleVerified) return path
+  if (!existsSync(path)) {
+    throw new Error(
+      `sandbox fs worker bundle is missing at ${path} — ` +
+        'run `npm run build`, or restart `npm run dev`, to emit it',
+    )
+  }
+  workerBundleVerified = true
+  return path
 }
 
 /** Passed via spawn env when the worker is launched through a shell / ASRT wrap (paths may contain spaces). */
