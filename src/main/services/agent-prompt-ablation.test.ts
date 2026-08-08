@@ -29,7 +29,7 @@ const SECTION_MARKERS: Record<PromptSectionId, RegExp> = {
   modifyingFiles: /When modifying files:/,
   toolChoice: /Tool choice:/,
   workingStyle: /Working style:/,
-  gitBranchSafety: /Git branch safety:/,
+  gitBranchSafety: /Git branch safety/,
 }
 
 describe('agent-prompt ablation', () => {
@@ -75,6 +75,6 @@ describe('agent-prompt ablation', () => {
     assert.doesNotMatch(ablated, /Working style:/)
     assert.doesNotMatch(ablated, /Lead with the outcome/)
     assert.match(ablated, /Available tools:/)
-    assert.match(ablated, /Git branch safety:/)
+    assert.match(ablated, /Git branch safety/)
   })
 })
