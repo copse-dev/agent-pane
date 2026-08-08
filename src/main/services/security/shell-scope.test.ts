@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import {
+  analyzeShellCommand,
+  dangerousInSandboxReasons,
+  externalOnlyForOutsidePath,
+  isReplayableOpaqueLocalExecution,
+} from './shell-scope.ts'
 
 describe('analyzeShellCommand', () => {
   const root = '/Users/me/project'
@@ -154,6 +161,70 @@ describe('analyzeShellCommand', () => {
   it('allows workspace-relative paths', () => {
     const r = analyzeShellCommand('cat src/index.ts', root)
     assert.equal(r.verdict, 'sandbox')
+  })
+
+  describe('chat store (read-only seatbelt mount)', () => {
+    const chatRoot = join(homedir(), '.copse', 'workspace')
+    const threadFile = join(
+      chatRoot,
+      'e2e-mermaid-project/584472db-c76e-40b0-942a-3e5358d60a0c/blobs/archives/Pack-Review/e833d1aa/agent-history.json',
+    )
+
+    it('does not flag reading an absolute chat-store path', () => {
+      // The seatbelt overlay allowRead's the chat store, so this read is fully
+      // contained — prompting to run it OUTSIDE the sandbox would be strictly
+      // worse than letting it run inside.
+      const r = analyzeShellCommand(`cat ${threadFile}`, root)
+      assert.equal(r.verdict, 'sandbox', r.reasons.join('; '))
+    })
+
+    it('does not flag a read pipeline over the chat store', () => {
+      const r = analyzeShellCommand(`cat ${threadFile} | jq .messages`, root)
+      assert.equal(r.verdict, 'sandbox', r.reasons.join('; '))
+      assert.equal(analyzeShellCommand(`rg needle ${chatRoot}`, root).verdict, 'sandbox')
+    })
+
+    it('does not flag the tilde spelling of a chat-store read', () => {
+      const r = analyzeShellCommand('cat ~/.copse/workspace/proj/thread/agent-history.json', root)
+      assert.equal(r.verdict, 'sandbox', r.reasons.join('; '))
+    })
+
+    it('waives the ~/ rule only when every tilde token is a chat-store read', () => {
+      assert.equal(analyzeShellCommand('ls ~/', root).verdict, 'external')
+      // A bare `~` alongside a chat-store read does not qualify for the waiver.
+      assert.equal(analyzeShellCommand('cat ~/.copse/workspace/a.json ~', root).verdict, 'external')
+      assert.equal(
+        analyzeShellCommand('cat ~/.copse/workspace/a.json ~/.ssh/id_rsa', root).verdict,
+        'external',
+      )
+    })
+
+    it('still flags writes and deletes inside the chat store', () => {
+      // allowWrite deliberately excludes the chat store, so these are real
+      // escapes the sandbox would block.
+      for (const cmd of [
+        `rm ${threadFile}`,
+        `mv ${threadFile} ${chatRoot}/other.json`,
+        `echo x > ${threadFile}`,
+      ]) {
+        assert.equal(
+          analyzeShellCommand(cmd, root).verdict,
+          'external',
+          `expected external: ${cmd}`,
+        )
+      }
+    })
+
+    it('still flags a sibling dir sharing the chat-store name prefix', () => {
+      const r = analyzeShellCommand(`cat ${chatRoot}-stolen/x.json`, root)
+      assert.equal(r.verdict, 'external')
+      assert.ok(r.reasons.some((x) => x.includes('outside workspace')))
+    })
+
+    it('still flags a non-chat-store path read in the same command', () => {
+      const r = analyzeShellCommand(`cat ${threadFile} /etc/passwd`, root)
+      assert.equal(r.verdict, 'external')
+    })
   })
 
   it('flags rm -fr / variants', () => {
@@ -339,7 +410,13 @@ describe('analyzeShellCommand', () => {
   it('flags direct execution of an in-workspace file (./x, ../x, bin/tool)', () => {
     // The agent can write and `chmod +x` these; their contents are opaque here, so
     // they must not auto-run — hard-external, like `node ./x.js`.
-    for (const cmd of ['./deploy', '../tool run', 'bin/gen-thing', 'cat x | ./x']) {
+    for (const cmd of [
+      './deploy',
+      '../tool run',
+      'bin/gen-thing',
+      'MODE=release ./deploy',
+      'cat x | ./x',
+    ]) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
       assert.ok(
@@ -352,6 +429,15 @@ describe('analyzeShellCommand', () => {
   it('does not flag a relative path passed as an argument as an executable', () => {
     // `src/index.ts` here is an argument to `cat`, not the command word.
     const r = analyzeShellCommand('cat src/index.ts', root)
+    assert.equal(r.verdict, 'sandbox')
+    assert.ok(!r.reasons.some((x) => /executes an in-workspace file directly/.test(x)))
+  })
+
+  it('does not treat an environment assignment containing a path as an executable', () => {
+    const r = analyzeShellCommand(
+      'TMPDIR="$PWD/.tmp/e2e-tmp" npm run test:e2e -- --spec tests/e2e/example.e2e.ts',
+      root,
+    )
     assert.equal(r.verdict, 'sandbox')
     assert.ok(!r.reasons.some((x) => /executes an in-workspace file directly/.test(x)))
   })
@@ -462,6 +548,57 @@ describe('analyzeShellCommand', () => {
     // recognised script extension, so nothing here escalates past the ambiguous npx.
     const r = analyzeShellCommand('npx tsx scripts/build-thing.mts', root)
     assert.equal(r.verdict, 'ambiguous')
+  })
+})
+
+describe('isReplayableOpaqueLocalExecution', () => {
+  const root = '/Users/me/project'
+
+  it('accepts opaque local script execution', () => {
+    assert.equal(
+      isReplayableOpaqueLocalExecution(
+        analyzeShellCommand('node synthetic-autonomy-executor.mjs', root),
+      ),
+      true,
+    )
+  })
+
+  it('rejects network, outside-path, and mixed external authority', () => {
+    for (const command of [
+      'curl https://example.com',
+      'cat ~/.ssh/config',
+      'node script.mjs && curl https://example.com',
+    ]) {
+      assert.equal(isReplayableOpaqueLocalExecution(analyzeShellCommand(command, root)), false)
+    }
+  })
+})
+
+describe('externalOnlyForOutsidePath', () => {
+  const root = '/Users/me/project'
+
+  it('accepts a command whose only escape is the path it names', () => {
+    for (const command of ['cat ~/notes.md', 'ls -la ~/.copse', 'rg foo /etc/hosts']) {
+      assert.equal(externalOnlyForOutsidePath(command, root), true)
+    }
+  })
+
+  it('rejects a command with any network signal, hard or fuzzy', () => {
+    for (const command of [
+      'curl https://example.com',
+      'cat ~/notes.md && curl https://example.com',
+      // Fuzzy "may reach the network" is disqualifying too: containing such a
+      // command would break it, and a read relaxation is not its approval.
+      'aws s3 ls ~/manifest.txt',
+      'nc -l ~/socket',
+    ]) {
+      assert.equal(externalOnlyForOutsidePath(command, root), false)
+    }
+  })
+
+  it('rejects a command that names no outside path', () => {
+    assert.equal(externalOnlyForOutsidePath('cat src/index.ts', root), false)
+    assert.equal(externalOnlyForOutsidePath('', root), false)
   })
 })
 

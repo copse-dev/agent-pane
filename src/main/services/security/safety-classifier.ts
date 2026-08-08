@@ -50,7 +50,9 @@ export async function classifyShellScope(command: string): Promise<Classificatio
   }
 
   try {
-    const provider = await buildProvider(model)
+    // A classification, not a reasoning task: cap the depth so a deeply-tuned
+    // chat model reused here doesn't bill like the work it was tuned for.
+    const provider = await buildProvider(model, undefined, { maxReasoning: 'low' })
     const { text, usage } = await completeMessagesWithUsage(
       provider,
       [

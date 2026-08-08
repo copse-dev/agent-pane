@@ -21,10 +21,16 @@ landing page's decorative density.
 
 ### Shared foundations
 
-- **Space Grotesk** is the default interface and prose family.
-- **Averia Serif Libre** is a display face. Use it only through an explicit branded-heading class on
-  expressive or destination-level surfaces. Do not apply it globally to `h1`, `h2`, or `h3`;
-  utility headings, settings titles, field labels, and panel headings remain Space Grotesk.
+- **Pliant** is the default interface and prose family (`--font-family`, `tokens.css`). The
+  marketing site still ships Space Grotesk; the app does not use it anywhere.
+- **Averia Serif Libre** is a display face (`--font-display`). `brand.css` binds it to `h1`–`h3`
+  app-wide at weight 400 (Averia ships one weight; asking for 600 only gets Chromium's synthetic
+  bold, which smears the serifs). Treat that as the rule it implies: **`h1`–`h3` are the display
+  tier**. A heading that should not be in the serif is not an `h1`–`h3` — reach for `h4`+ or a
+  styled `<span>`, as Packs' Active/Inactive headings do. Group headings on a destination surface
+  may opt in explicitly (Settings' top-level `<legend>`s), but utility headings, field labels, and
+  nested card titles stay in Pliant, so the serif marks the top two tiers of a page rather than
+  every heading on it.
 - Code, commands, paths, hashes, and terminal content use `--font-mono`.
 - Use the exact Copse glyph and wordmark assets rather than approximating them with text or
   redrawing the mark.
@@ -41,6 +47,11 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
   optional so the workbench stays low-fatigue.
 - Pink is the default interaction emphasis, not a product status colour. Do not use it for errors,
   warnings, success, or routine headings; those keep their semantic/text tokens.
+  - **Exception — "experimental".** Where a surface asks you to opt into something unfinished, the
+    experimental marker takes the accent (`.pack-badge-experimental` in Settings → Packs). It is not
+    reporting that anything has gone wrong; it is the one thing on the card you must read before
+    flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
+    owns "this needs your attention because something is off".
 - Error, warning, success, and danger continue to use their semantic tokens.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
@@ -84,6 +95,21 @@ Only add a new kit primitive once **two product call sites** need it and it does
 class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
+
+### Agent-authored dialog copy and secrets
+
+- Agent-authored prose in a dialog follows the same sanitized Markdown contract as transcript
+  prose. Render commands and paths as inline code; never show raw backtick delimiters as UI copy.
+  Suggested-answer buttons may render sanitized, phrasing-only Markdown (`code`, emphasis, and
+  strong text); block or interactive Markdown remains literal because buttons are controls, not
+  document containers.
+- Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
+  provider/ACP wording in a visually subordinate technical-details block so it remains copyable
+  without competing with the fix.
+- Password inputs retain native `type="password"` semantics and use Chromium’s filled-disc mask
+  (`-webkit-text-security: disc`). At compact UI sizes, use a large enough system-font mask that the
+  glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
+  text-field overlay.
 
 ## Design tokens, not magic numbers
 
@@ -227,6 +253,38 @@ copied. The contract test
 the policy: body defaults to non-selectable, the content regions opt back in, and the permission
 prompt stays non-selectable.
 
+### Every highlight declares both halves
+
+A highlight that sets only a background inherits whatever colour the text already had — which is how
+selected prose went invisible: with no author `::selection`, Chromium paints an **unfocused** window's
+selection as a flat light grey and leaves `--text-primary` on top of it. The rule holds for the
+native selection, the CSS Custom Highlight API (`::highlight(chat-search-current)`), and the
+terminal's xterm theme (`selectionInactiveBackground` — its default is a dark grey that swallows
+light-theme text). So:
+
+- Declare `background` **and** `color` together, from `--selection-bg` / `--selection-text` or
+  `--highlight-current-bg` / `--highlight-current-text`. The one exception is a deliberately
+  translucent wash (`::highlight(chat-search)`), where `color: inherit` keeps the underlying text's
+  own contrast.
+- Don't build a highlight from `var(--accent)` + `var(--text-on-accent)`. `--text-on-accent` is
+  computed from the raw accent the user picked, while the light theme darkens `--accent` by 30% — the
+  pair collapses to dark-on-dark. It was an accent-derived selection that made this unreadable the
+  first time (#1423).
+- Keep every pair at 4.5:1 or better. `text-selection.test.ts` computes the WCAG ratio from the
+  token hexes in both themes and fails below AA, and `tests/e2e/selection-highlight.e2e.ts` captures
+  a live selection in each theme.
+
+## Responsive titlebar chrome
+
+Titlebar compactness follows the space its rendered contents actually need, not the window's aspect
+ratio or a fixed viewport breakpoint. Workspace names, branches, enabled panel packs, editor labels,
+and UI scale all change that width. Measure the full label state and collapse secondary labels only
+when it would overflow; expand them again when room returns.
+
+The flexible `.titlebar-drag` region always keeps at least `--spacing-lg` of width. Interactive
+controls must not consume that last draggable strip, even when every optional panel mode is visible.
+The regression state lives in [`tests/e2e/titlebar-compact.e2e.ts`](../tests/e2e/titlebar-compact.e2e.ts).
+
 ## Sticky footers inside scroll containers (gotcha)
 
 A `position: sticky; bottom: 0` element **cannot extend past its containing block's content box**.
@@ -237,8 +295,15 @@ Rules of thumb:
 
 - Put the scroll container's bottom breathing room **inside the sticky footer** (as the footer's own
   `padding-bottom`), not as `padding-bottom` on the scroll container.
-- The sticky footer needs an opaque `background` (`var(--bg-base)`) so content scrolling beneath it is
-  actually covered.
+- The sticky footer must **cover** the content scrolling beneath it — but covering is not the same as
+  hiding. A tall opaque slab makes a long page look like it has ended when it has only scrolled
+  under the bar. Prefer a frosted panel: a gradient wash plus `backdrop-filter`, both carried on a
+  masked `::before` so the effect ramps in rather than starting at a hard line, and no `border-top`
+  (a hairline across a see-through bar reads as the cut the fade exists to avoid). See
+  `.settings-buttons` in `settings.css`.
+- An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
+  in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
+  along with the backdrop.
 - Alternatively, mirror the onboarding pattern: make the footer a non-scrolling flex sibling
   (`flex-shrink: 0`) _outside_ the scroll region (see `onboarding.css` / `onboarding-dialog.ts`).
   Prefer this when the footer doesn't need to live inside a `<form>` for submit semantics.
@@ -267,6 +332,37 @@ At large interface scales or short window heights, the Settings sidebar can also
 Keep the native dialog itself `overflow: hidden` and give `.settings-nav` its own vertical overflow
 with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole sidebar moves upward,
 then ends above the window bottom and exposes a large blank surface beneath it.
+
+## Settings is a destination, not a dialog's worth of chrome
+
+It fills the window and its sections run several screens, so it is typed and spaced like a page:
+
+- **Two heading tiers in the display face** — the section `<h3>` and its top-level group `<legend>`s
+  (`--font-display`, weight 400: Averia ships one weight and synthetic bold smears it). Everything
+  below that — field labels, nested card titles inside a group, list headings such as Packs'
+  Active / Inactive — stays in the interface family, so the serif marks structure and not decoration.
+- **Group gaps are the page's punctuation.** Top-level groups clear `calc(var(--spacing-xl) * 2)`;
+  a field and its own hint stay tight while the gap lives _between_ fields.
+- **Controls are targets, not text.** Nav rows, the search box, selects, text/number inputs, colour
+  wells, and the provider chips all take `--action-min-height`; a checkbox's whole line is
+  clickable (padding on `.checkbox-label`, pulled back with a negative `margin-inline-start` so the
+  box still sits on the section's left edge).
+- **The sidebar doubles as the open section's contents.** `renderNavSubheadings()` reads the active
+  section's top-level legends straight off the DOM on every section change and lists them under
+  that nav row; clicking one scrolls to its group. Reading the DOM rather than a registry means a
+  group that is hidden (developer-only) or mounted by a panel needs no second place to be declared.
+  Search clears the list — its results are lifted out of their sections, so the contents no longer
+  describe what is on screen.
+- **A pack row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): its mark, then
+  the publisher as a tracked-caps eyebrow over the name, and the switch flanked by Off / On whose
+  live side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
+  Everything configurable folds into one closed `Pack settings` disclosure, so a list of packs stays
+  a list of packs; the credential gate stays outside it, because it explains a switch you can see is
+  locked. Only **first-party** packs wear the Copse mark (`assets/brand-mark.svg`, copied to the
+  renderer by `build.mts`) — a user-installed pack gets a neutral initial tile, or a sideloaded pack
+  would be wearing our badge of trust.
+
+Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
 
 ## Markdown prose spacing in chat
 
@@ -393,11 +489,23 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `reasoning` field / provider events.
 - **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
   `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
-  into the live disclosure title so the transcript never shows two reasoning labels. The animated
-  spiral sits immediately beside the live label; settled disclosures return to a static chevron.
-- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
-  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
-  place so the existing past-tense label does not jump horizontally; do not keep animating it.
+  into the live disclosure title so the transcript never shows two reasoning labels. Settled
+  reasoning disclosures return to a static chevron.
+- **The activity spiral never sits ahead of a label in the text column.** Nothing in flow may
+  precede a live label, or the row reads at a different indent than its settled self and the hover
+  pill stretches past the text. Two placements, by where the row's label sits:
+  - **On the prose column → the gutter.** Top-level tool rows and the standalone activity row put
+    the spiral out of flow in the message's own padding column (`.tool-activity-icon-slot`,
+    `.agent-activity > .reasoning-activity-icon`). `.msg` clips horizontally, so that gutter is
+    `--spacing-md` wide — size the spiral to fit it, do not reach further left.
+  - **Indented under a rule → trailing its own line.** Rows inside `.tool-rollup-body` or
+    `.subagent-timeline` keep the slot in flow but `order` it after the label and stats, sized to
+    the status glyph beside it. A far-left gutter spiral would strand itself a column away from the
+    label it belongs to. Collapse the empty slot when such a row settles: with nothing ahead of the
+    label there is no indent to preserve, only a gap to avoid.
+
+  When a tool settles, drop the icon; do not keep animating it.
+
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on

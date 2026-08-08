@@ -13,6 +13,10 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import {
+  supervisedTaskMetaSchema,
+  type SupervisedTaskMeta,
+} from '../../../src/shared/supervisor/task-schema.ts'
 import type { AcpAgentConfig } from '../../../src/shared/types/acp.ts'
 import { explodeThread } from '../../../src/shared/threads/fold.ts'
 import {
@@ -47,9 +51,11 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
  */
 const DEFAULT_DISABLED_PACK_IDS = [
   'copse.advisor-strategy',
+  'copse.automations',
   'copse.background-tasks',
   'copse.ci-investigator',
   'copse.devtools-shortcut',
+  'copse.dark-factory',
   'copse.long-horizon-tasks',
   'copse.mcp-ui-canvas',
   'copse.model-comparison',
@@ -57,6 +63,13 @@ const DEFAULT_DISABLED_PACK_IDS = [
   'copse.pii-redaction',
   'copse.roadmap-plans',
 ] as const
+
+export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
+  const validated = supervisedTaskMetaSchema.parse(task)
+  const dir = join(e2eWorkspaceDir(), validated.projectId, 'tasks', validated.taskId)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(validated, null, 2)}\n`, 'utf8')
+}
 
 /** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
 function packDisabledSeed(enabled: readonly string[]): string[] {
@@ -132,6 +145,24 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
  * `threads:<projectId>` array in the config is routed to the filesystem-native
  * thread store the app now reads; everything else stays in `config.json`.
  */
+/**
+ * Pin seeded projects to the shared checkout unless the fixture asked for
+ * isolation. Specs point projects at real Git repositories — usually
+ * `process.cwd()`, this repo — and assert against files, Changes, terminals,
+ * and diffs in that checkout. Under the product default (`always`) a blank
+ * thread would cut a full worktree of it on the first message, moving the very
+ * files the spec inspects. A spec exercising isolation seeds `worktreeMode`
+ * explicitly and this leaves it alone.
+ */
+function pinSeededProjectCheckouts(projects: unknown): void {
+  if (!Array.isArray(projects)) return
+  for (const project of projects) {
+    if (project && typeof project === 'object' && !('worktreeMode' in project)) {
+      ;(project as Record<string, unknown>)['worktreeMode'] = 'never'
+    }
+  }
+}
+
 export function writeSeedConfig(config: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
@@ -144,6 +175,7 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
         seedThreadDir(match[1], thread as Record<string, unknown>)
       }
     } else {
+      if (key === 'projects') pinSeededProjectCheckouts(value)
       remaining[key] = value
     }
   }
@@ -336,6 +368,8 @@ export function seedEmptyProject(
     safetyModel?: string
     reviewModel?: string
     roleModels?: Record<string, string>
+    /** Per-model generation parameters, keyed by model selection. */
+    modelParameters?: Record<string, { reasoning?: string; temperature?: number; topP?: number }>
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
@@ -352,6 +386,8 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    /** Opt into the session-scoped `run_background` tool. */
+    backgroundTasksEnabled?: boolean
     developerMode?: boolean
     /**
      * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
@@ -363,6 +399,15 @@ export function seedEmptyProject(
     autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
+    /**
+     * Store a Parallel API key. The `copse.parallel-search` pack is
+     * credential-gated in both directions — the host only registers
+     * `parallel_search` when a key resolves, and Settings only lets the toggle
+     * be turned on once one is saved — so a spec exercising the enabled pack
+     * has to seed one. Same base64-plaintext record shape as
+     * {@link seedOpenRouterFixture}.
+     */
+    parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
@@ -378,6 +423,11 @@ export function seedEmptyProject(
      * the comparison approval flow must lift it out of `packDisabled`.
      */
     modelComparisonEnabled?: boolean
+    /**
+     * Per-project checkout isolation. Left unset, `writeSeedConfig` pins the
+     * project to the shared checkout; pass `always` to exercise isolation.
+     */
+    worktreeMode?: 'always' | 'never'
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -386,6 +436,7 @@ export function seedEmptyProject(
     path: workspaceRoot,
     name: 'workspace',
   }
+  if (options?.worktreeMode) project.worktreeMode = options.worktreeMode
   if (options?.sshHost) project.sshHost = options.sshHost
   const seedConfig: Record<string, unknown> = {
     projects: [project],
@@ -400,6 +451,7 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
+  if (options?.backgroundTasksEnabled) enabledPacks.push('copse.background-tasks')
   seedConfig.packDisabled =
     options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
   if (options?.packSources) {
@@ -440,6 +492,9 @@ export function seedEmptyProject(
   if (options?.roleModels !== undefined) {
     settings.roleModels = options.roleModels
   }
+  if (options?.modelParameters !== undefined) {
+    settings.modelParameters = options.modelParameters
+  }
   if (options?.localSubagentsEnabled !== undefined) {
     settings.localSubagentsEnabled = options.localSubagentsEnabled
   }
@@ -460,6 +515,15 @@ export function seedEmptyProject(
   }
   if (options?.windowBounds !== undefined) {
     settings.windowBounds = options.windowBounds
+  }
+  if (options?.parallelApiKey !== undefined) {
+    settings.apiKey = {
+      parallel: {
+        v: 1,
+        enc: Buffer.from(options.parallelApiKey, 'utf8').toString('base64'),
+        plain: true,
+      },
+    }
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
@@ -1373,11 +1437,56 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
     ...overrides,
   })
 
+  // Captured bodies behind the cards (decision 6), so the inspector has real
+  // blobs to read back through `hooks:runDetail` rather than a stub.
+  const capture = (ref: string, contents: string): { ref: string; contents: string } => ({
+    ref,
+    contents,
+  })
+  const denyStdin = JSON.stringify({
+    hook_event_name: 'beforeShellExecution',
+    command: 'kubectl delete deploy api --context prod',
+  })
+  const denyStdout = JSON.stringify({ permission: 'deny', agent_message: 'Not against prod.' })
+  const closeoutOutcome = JSON.stringify(
+    { injectContext: 'You still have open todos — finish them before stopping.' },
+    null,
+    2,
+  )
+  const blobs = [
+    capture('blobs/hr-deny.payload.json', denyStdin),
+    capture('blobs/hr-deny.stdout.txt', denyStdout),
+    capture('blobs/hr-deny.stderr.txt', ''),
+    capture('blobs/hr-context.outcome.json', closeoutOutcome),
+  ]
+
   // hook_run lines anchor to the message that precedes them in the spine.
   const runsByAnchor: Record<string, SpineHookRunLine[]> = {
     'msg-assistant-hook': [
       hookRun({ id: 'hr-allow', decision: { permission: 'allow' } }),
-      hookRun({ id: 'hr-deny', hookId: 'block-prod.sh', decision: { permission: 'deny' } }),
+      hookRun({
+        id: 'hr-deny',
+        hookId: 'block-prod.sh',
+        decision: { permission: 'deny' },
+        payload: { ref: 'blobs/hr-deny.payload.json', sha256: sha256(denyStdin) },
+        stdout: { ref: 'blobs/hr-deny.stdout.txt', sha256: sha256(denyStdout) },
+        stderr: { ref: 'blobs/hr-deny.stderr.txt', sha256: sha256('') },
+      }),
+      // A function hook: no process, so no exit code — its whole story is the
+      // context it injected, which only the inspector can show.
+      {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'hook_run',
+        id: 'hr-context',
+        event: 'beforeFinalize',
+        hookId: 'todo-finalize-closeout',
+        executor: 'function',
+        startedAt: now,
+        durationMs: 2,
+        parseOk: true,
+        decision: { injectContextChars: 57 },
+        outcome: { ref: 'blobs/hr-context.outcome.json', sha256: sha256(closeoutOutcome) },
+      },
     ],
     'msg-assistant-hook-2': [
       hookRun({
@@ -1392,6 +1501,20 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
 
   const { spine, files } = explodeThread(messages, sha256)
   const lines: string[] = []
+  // The first turn's `sessionStart` hooks fire detached before any message has
+  // been written, so their spine records precede the first message and fold onto
+  // it (an orphan attach). Emit them before the first message line to reproduce
+  // that first-turn layout.
+  for (const run of [
+    hookRun({ id: 'hr-session-start', event: 'sessionStart', hookId: 'session-start.sh' }),
+    hookRun({
+      id: 'hr-session-start-2',
+      event: 'sessionStart',
+      hookId: 'second-dialect.sh',
+    }),
+  ]) {
+    lines.push(serializeSpineLine(run))
+  }
   for (const line of spine) {
     lines.push(serializeSpineLine(line))
     for (const run of runsByAnchor[line.id] ?? []) lines.push(serializeSpineLine(run))
@@ -1400,7 +1523,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
   const dir = join(e2eWorkspaceDir(), projectId, threadId)
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
-  for (const file of files) {
+  for (const file of [...files, ...blobs]) {
     const full = join(dir, file.ref)
     mkdirSync(dirname(full), { recursive: true })
     writeFileSync(full, file.contents)
@@ -1641,6 +1764,144 @@ export function seedAcpUsageUpdateFixture(workspaceRoot: string): void {
           source: 'agent-reported',
           updatedAt: now + 1,
         },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
+/**
+ * Thread with provider-reported usage (cache split + two models) so the footer
+ * token counter has a full in/out/cost hover tooltip to render.
+ */
+export function seedFooterUsageFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-footer-usage-project'
+  const threadId = 'e2e-footer-usage-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Footer usage tooltip',
+        status: 'idle',
+        model: 'claude-sonnet-4-6',
+        messages: [
+          {
+            id: 'msg-user-footer-usage',
+            role: 'user',
+            content: 'Summarise the repository.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-footer-usage',
+            role: 'assistant',
+            content: 'Here is a summary of the repository layout.',
+            // Carries its own usage record, which the tooltip aggregates into
+            // the "Subagents" line.
+            toolCalls: [
+              {
+                id: 'tool-explore-footer-usage',
+                name: 'explore',
+                args: { prompt: 'Map the renderer views' },
+                status: 'done',
+                result: 'Mapped the renderer views.',
+                subagent: {
+                  id: 'subagent-footer-usage',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Map the renderer views',
+                  summary: 'Mapped the renderer views.',
+                  messages: [],
+                  model: 'claude-haiku-4-5',
+                  usage: { inputTokens: 800_000, outputTokens: 15_000 },
+                },
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: {
+          inputTokens: 12_900_000,
+          outputTokens: 211_000,
+          cacheReadTokens: 11_400_000,
+          cacheCreationTokens: 480_000,
+          byModel: {
+            'claude-sonnet-4-6': {
+              inputTokens: 12_100_000,
+              outputTokens: 196_000,
+              cacheReadTokens: 11_400_000,
+              cacheCreationTokens: 480_000,
+            },
+            'claude-haiku-4-5': { inputTokens: 800_000, outputTokens: 15_000 },
+          },
+        },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
+/** Action-first ACP authentication failure rendered as structured Markdown. */
+export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-auth-error-project'
+  const threadId = 'e2e-acp-auth-error-thread'
+  const now = Date.now()
+  const content = [
+    '> [!WARNING]',
+    '> **Claude sign-in expired**',
+    '>',
+    '> This turn couldn’t run because Claude’s saved credentials are no longer valid.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `claude /login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    'Alternatively, set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
+    'Details: {"errorKind":"authentication_failed"}',
+    '```',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP authentication failure',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-auth',
+            role: 'user',
+            content: 'Inspect the MDN reference for this API.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-auth',
+            role: 'assistant',
+            content,
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 1,
       },

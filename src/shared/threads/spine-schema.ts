@@ -1,3 +1,4 @@
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type {
   ModelUsage,
   QueuedMessageOrigin,
@@ -100,6 +101,12 @@ export interface SpineMessageLine {
    * legacy spines written before per-message provenance existed.
    */
   model?: string
+  /**
+   * Resolved generation parameters the turn ran with — see `Message.parameters`.
+   * Absent for a turn that sent none (the common case) and for spines written
+   * before they were recorded.
+   */
+  parameters?: ModelParameters
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
   /**
@@ -110,6 +117,15 @@ export interface SpineMessageLine {
    */
   origin?: QueuedMessageOrigin
   editedByUser?: boolean
+  /**
+   * Repository state this prompt started from (user messages only), captured at
+   * send time. `startingCommit` is the HEAD SHA the turn began on; `dirty`
+   * records whether the working tree had uncommitted changes at that moment.
+   * Absent outside a git repo or for messages sent through a path that doesn't
+   * capture it (e.g. resend).
+   */
+  startingCommit?: string
+  dirty?: boolean
   toolCalls: SpineToolCall[]
 }
 
@@ -216,6 +232,21 @@ export interface SpineHookRunLine {
   /** Raw stream captures (command hooks; absent for function hooks). */
   stdout?: ContentRef
   stderr?: ContentRef
+  /**
+   * What the hook was *handed*: the exact stdin bytes for a command hook, the
+   * serialized dispatch payload for a function hook. Bounded at capture time —
+   * an oversized payload is truncated with a visible marker, never dropped
+   * silently. Absent when the payload could not be serialized.
+   */
+  payload?: ContentRef
+  /**
+   * What a function hook *returned*, in full: the injected context, agent /
+   * user messages, rewritten tool input and halt reason the compact
+   * {@link SpineHookRunDecision} only counts characters of. Command hooks have
+   * no such blob — their raw response is already the stdout capture. Absent for
+   * a run that abstained (nothing to show beyond the counts).
+   */
+  outcome?: ContentRef
   /** Content-addressed toolset fingerprint hash (see {@link toolsetBlobRef}). */
   toolset?: string
 }
@@ -270,9 +301,35 @@ export interface SpinePermissionDecisionLine {
   userResponse: 'approved' | 'declined' | 'not-required'
 }
 
+export const MACHINE_CONTINUATION_RESULTS = [
+  'completed',
+  'duplicate',
+  'stale',
+  'budget-exhausted',
+  'failed',
+] as const
+export type MachineContinuationResult = (typeof MACHINE_CONTINUATION_RESULTS)[number]
+
+/** Compact machine-continuation audit record; prompts and outputs stay in their existing stores. */
+export type SpineMachineContinuationLine = {
+  v: number
+  type: 'machine_continuation'
+  id: string
+  operationId: string
+  turnTreeId: string
+  recordedAt: number
+  budgetUsed?: number
+} & (
+  { phase: 'started'; result?: never } | { phase: 'finished'; result: MachineContinuationResult }
+)
+
 /** Discriminated union of every line type this schema version can write. */
 export type SpineLine =
-  SpineMessageLine | SpineHookRunLine | SpinePlanLine | SpinePermissionDecisionLine
+  | SpineMessageLine
+  | SpineHookRunLine
+  | SpinePlanLine
+  | SpinePermissionDecisionLine
+  | SpineMachineContinuationLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -284,6 +341,8 @@ export function hookRunBlobRefs(line: SpineHookRunLine): string[] {
   const refs: string[] = []
   if (line.stdout) refs.push(line.stdout.ref)
   if (line.stderr) refs.push(line.stderr.ref)
+  if (line.payload) refs.push(line.payload.ref)
+  if (line.outcome) refs.push(line.outcome.ref)
   if (line.toolset) refs.push(toolsetBlobRef(line.toolset))
   return refs
 }
@@ -352,6 +411,36 @@ function isSpinePermissionDecisionLine(value: unknown): value is SpinePermission
   )
 }
 
+function isMachineContinuationResult(value: unknown): value is MachineContinuationResult {
+  return (
+    value === 'completed' ||
+    value === 'duplicate' ||
+    value === 'stale' ||
+    value === 'budget-exhausted' ||
+    value === 'failed'
+  )
+}
+
+function isSpineMachineContinuationLine(value: unknown): value is SpineMachineContinuationLine {
+  if (!isRecord(value)) return false
+  const phase = value['phase']
+  const result = value['result']
+  return (
+    value['type'] === 'machine_continuation' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['operationId'] === 'string' &&
+    typeof value['turnTreeId'] === 'string' &&
+    typeof value['recordedAt'] === 'number' &&
+    (value['budgetUsed'] === undefined ||
+      (typeof value['budgetUsed'] === 'number' &&
+        Number.isInteger(value['budgetUsed']) &&
+        value['budgetUsed'] >= 0)) &&
+    ((phase === 'started' && result === undefined) ||
+      (phase === 'finished' && isMachineContinuationResult(result)))
+  )
+}
+
 function isPlanSpineAction(value: unknown): value is PlanSpineAction {
   return (
     value === 'create' ||
@@ -399,6 +488,7 @@ export function parseSpineLine(raw: string): SpineLine | null {
 
   if (type === 'hook_run' && isSpineHookRunLine(parsed)) return parsed
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
+  if (type === 'machine_continuation' && isSpineMachineContinuationLine(parsed)) return parsed
 
   return null
 }

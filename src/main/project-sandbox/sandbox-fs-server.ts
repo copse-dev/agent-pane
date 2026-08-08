@@ -61,15 +61,19 @@ interface SpawnedWorkerProcess {
   releaseSandbox: () => void
 }
 
-let live: Worker | null = null
-let spawning: { root: string; promise: Promise<Worker> } | null = null
+// One worker per workspace root, not a single global slot (#i2jsed): threads in
+// separate git worktrees have different roots and must be able to browse/preview
+// files concurrently without tearing down each other's worker just because the
+// renderer's active-thread focus moved.
+const liveByRoot = new Map<string, Worker>()
+const spawningByRoot = new Map<string, Promise<Worker>>()
 
 function retire(w: Worker): void {
   failWorker(w, new SandboxFsServerUnavailable('worker retired'))
 }
 
 function failWorker(w: Worker, err: Error): void {
-  if (live === w) live = null
+  if (liveByRoot.get(w.root) === w) liveByRoot.delete(w.root)
   if (!w.alive) return
   w.alive = false
   for (const pending of w.pending.values()) {
@@ -185,24 +189,21 @@ async function spawnWorker(root: string): Promise<Worker> {
 }
 
 function getOrSpawn(root: string): Promise<Worker> {
-  if (live && live.alive && live.root === root) return Promise.resolve(live)
-  if (live && live.root !== root) retire(live)
-  if (spawning) {
-    if (spawning.root === root) return spawning.promise
-    void spawning.promise.then(retire).catch(() => {})
-    spawning = null
-  }
+  const existing = liveByRoot.get(root)
+  if (existing && existing.alive) return Promise.resolve(existing)
+  const inFlight = spawningByRoot.get(root)
+  if (inFlight) return inFlight
   const promise = spawnWorker(root)
     .then((w) => {
-      live = w
-      spawning = null
+      liveByRoot.set(root, w)
+      spawningByRoot.delete(root)
       return w
     })
     .catch((err: unknown) => {
-      spawning = null
+      spawningByRoot.delete(root)
       throw err instanceof Error ? err : new SandboxFsServerUnavailable(String(err))
     })
-  spawning = { root, promise }
+  spawningByRoot.set(root, promise)
   return promise
 }
 
@@ -254,16 +255,17 @@ export async function requestViaServer(
   return sendToWorker(worker, request)
 }
 
-/** Tear the worker down (app shutdown / sandbox reset). */
+/** Tear all workers down, across every root (app shutdown / sandbox reset). */
 export function shutdownSandboxFsServer(): void {
-  if (live) retire(live)
-  if (spawning) {
-    void spawning.promise.then(retire).catch(() => {})
-    spawning = null
+  for (const w of [...liveByRoot.values()]) retire(w)
+  for (const promise of [...spawningByRoot.values()]) {
+    void promise.then(retire).catch(() => {})
   }
+  spawningByRoot.clear()
 }
 
-/** Test hook — report whether a worker is currently live. */
+/** Test hook — report whether any worker is currently live. */
 export function isSandboxFsServerLive(): boolean {
-  return live !== null && live.alive
+  for (const w of liveByRoot.values()) if (w.alive) return true
+  return false
 }

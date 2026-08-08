@@ -8,7 +8,10 @@ import {
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
-import { shellRunsOutsideSandbox } from '../services/security/command-routing-config.ts'
+import {
+  shellReadGrantTargets,
+  shellRunsOutsideSandbox,
+} from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import {
   promptExpectedSandboxBlock,
@@ -20,7 +23,11 @@ import {
   shellSandboxFailureShouldOfferUnsandboxedRetry,
 } from '../services/security/permission-policy.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
-import { maybeEnablePipefail } from '../services/exec/shell-pipeline.ts'
+import {
+  isSigpipeOnlyFailure,
+  maybeEnablePipefail,
+  pipefailWasInjected,
+} from '../services/exec/shell-pipeline.ts'
 import { leaseGitSshEnv } from '../services/ssh-workspace/git-ssh-env.ts'
 import {
   isActiveSshWorkspace,
@@ -41,6 +48,9 @@ import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/
 import { emitShellOutput } from '../services/exec/shell-output-context.ts'
 import { getActiveRunThread } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
+import { recordDecision } from '../services/security/decision-log-store.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
+import { recordCreatedPullRequest } from '../services/worktree-parking.ts'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -76,6 +86,7 @@ async function runShellOnce(
   signal: AbortSignal,
   unsandboxed: boolean,
   env: NodeJS.ProcessEnv,
+  readGrantTargets: readonly string[] = [],
 ): Promise<ShellRunResult> {
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
@@ -87,6 +98,7 @@ async function runShellOnce(
           stdio: 'pipe',
           signal,
           unsandboxed,
+          readGrantTargets,
         })
       } catch (err) {
         // Wrapping the command in the sandbox failed (runner-side, not command
@@ -187,6 +199,7 @@ async function maybeRetryUnsandboxed(
   result: ShellRunResult,
   env: NodeJS.ProcessEnv,
   guardedYolo: boolean,
+  readGrantApplied: boolean,
 ): Promise<ShellRunResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
   if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd)) {
@@ -200,7 +213,9 @@ async function maybeRetryUnsandboxed(
     spawnFailed: result.spawnFailed ?? false,
   })
   if (!detection.likely) return null
-  const approved = guardedYolo || (await promptUnsandboxedShell(command, detection.reasons, signal))
+  const approved =
+    guardedYolo ||
+    (await promptUnsandboxedShell(command, detection.reasons, signal, { readGrantApplied }))
   if (!approved) return 'declined'
   return runShellOnce(command, cwd, timeout_ms, signal, true, env)
 }
@@ -269,7 +284,15 @@ function formatShellFailure(result: ShellRunResult): Error {
 export const runShellTool = defineTool({
   name: 'run_shell',
   description:
-    "Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. A foreground command may run up to 30 minutes (timeout_ms); for dev servers, watchers, or intentionally unbounded processes use run_background instead of a long timeout. Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, but when trimming long logs prefer redirecting to a file and reading a slice.",
+    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). ' +
+    'Output is streamed to the conversation. ' +
+    'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
+    'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +
+    'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
+    'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
+    'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. ' +
+    'A foreground command may run up to 30 minutes (timeout_ms); for dev servers, watchers, or intentionally unbounded processes use run_background instead of a long timeout. ' +
+    "Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, while a producer that only stopped because `head` closed the pipe early still counts as success.",
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z
@@ -317,6 +340,7 @@ export const runShellTool = defineTool({
       platform: process.platform,
       isRemote,
     })
+    const pipefailInjected = pipefailWasInjected(finalCommand, executedCommand)
 
     // Decide sandbox vs unsandboxed from the RAW command (not the sfw-wrapped
     // finalCommand) so this matches the permission gate's decision exactly: a
@@ -326,6 +350,31 @@ export const runShellTool = defineTool({
     const sandboxEnabled = isProjectSandboxEnabled()
     const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
     let outsideSandbox = shellRunsOutsideSandbox(command)
+
+    // A command that leaves the sandbox ONLY because it reads accountable paths
+    // outside the project is contained instead, with just those paths readable
+    // (issue: the read-access grant answered the prompt but the run still went
+    // fully unsandboxed, handing it the writes and network the prompt said it was
+    // not granting). Same RAW command as the routing decision above and as the
+    // permission gate's read-access question, so the approval the user answered
+    // and the seatbelt the command gets can never describe different paths.
+    const readGrantTargets = outsideSandbox ? shellReadGrantTargets(command, cwd) : null
+    if (readGrantTargets) {
+      outsideSandbox = false
+      // Audit parity with the grant itself: the gate's `external-read` line says
+      // the user widened read access, this one says which paths the seatbelt was
+      // actually opened to for this command — and, by existing at all, that the
+      // command stayed contained rather than escaping.
+      recordDecision({
+        kind: 'shell',
+        actor: 'system',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'external-read',
+        reasons: [`sandbox read access widened to: ${readGrantTargets.join(', ')}`],
+        source: 'read-outside-sandbox-relaxation',
+      })
+    }
 
     // If the agent declared up front that it expects the sandbox to block this
     // command, pull the escalation prompt forward instead of running inside the
@@ -382,10 +431,21 @@ export const runShellTool = defineTool({
         signal,
         outsideSandbox,
         childEnv,
+        readGrantTargets ?? [],
       )
 
-      if (result.exitCode === 0)
+      // A pipeline whose only non-zero status is a SIGPIPE'd producer succeeded:
+      // the downstream `head`/`grep -m` closed the pipe because it already had
+      // everything it asked for. Reporting that as a failure is the mirror-image
+      // of the masking pipefail was added to prevent (issue #787), and costs more
+      // — it teaches the agent that its own working diagnostics are broken.
+      const succeeded = (r: ShellRunResult): boolean =>
+        r.exitCode === 0 || isSigpipeOnlyFailure(r.exitCode, pipefailInjected)
+
+      if (succeeded(result)) {
+        recordCreatedPullRequest(command, result.output)
         return `${containmentBanner}${withBanner(formatShellSuccess(result))}`
+      }
 
       if (!suppressUnsandboxedRetry) {
         const retry = await maybeRetryUnsandboxed(
@@ -396,10 +456,12 @@ export const runShellTool = defineTool({
           result,
           childEnv,
           guardedYolo,
+          readGrantTargets !== null,
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
-          if (retry.exitCode === 0) {
+          if (succeeded(retry)) {
+            recordCreatedPullRequest(command, retry.output)
             const retryBanner = guardedYolo ? '[Guarded YOLO · unsandboxed retry]\n' : ''
             return `${retryBanner}${withBanner(formatShellSuccess(retry))}`
           }

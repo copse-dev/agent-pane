@@ -9,14 +9,15 @@
 // `haltRun`, which we surface as a blocked submit (the turn never starts) and
 // carry the hook's `user_message` for surfacing.
 //
-// Cursor + Copse (F1) declare a `beforeSubmitPrompt` hook (wired here); Claude
-// has no compose-path equivalent, so no Claude hooks participate — matching the
-// vendor audit in docs/plans/hooks-and-feature-packs.md.
+// Cursor + Copse (F1) declare a `beforeSubmitPrompt` hook and Claude the
+// equivalent `UserPromptSubmit`; all are wired here, per the vendor audit in
+// docs/plans/hooks-and-feature-packs.md.
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { buildInjectedContextBlock } from '@copse/agent/hooks/inject-context.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorBeforeSubmitPromptHooks } from './cursor-adapter.ts'
+import { claudeBeforeSubmitPromptHooks } from './claude-adapter.ts'
 import { copseBeforeSubmitPromptHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { withRunDeadlinePaused } from './run-deadline.ts'
@@ -58,12 +59,14 @@ export async function runBeforeSubmitPromptHooks(
     ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
-  // Cursor + Copse declare a compose-path hook; Claude has none.
-  const [cursorHooks, copseHooks] = await Promise.all([
+  // All three dialects declare a compose-path hook: Cursor's `beforeSubmitPrompt`,
+  // Claude's `UserPromptSubmit`, and Copse's native event (F1).
+  const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
     cursorBeforeSubmitPromptHooks(payload, discoverOpts),
+    claudeBeforeSubmitPromptHooks(payload, discoverOpts),
     copseBeforeSubmitPromptHooks(payload, discoverOpts),
   ])
-  const hooks = [...cursorHooks, ...copseHooks]
+  const hooks = [...cursorHooks, ...claudeHooks, ...copseHooks]
   if (hooks.length === 0) return { blocked: false }
 
   const registry = new HookRegistry()

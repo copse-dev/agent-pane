@@ -137,6 +137,17 @@ if (!isDemo) {
     outfile: 'dist/main/pack-tool-worker.js',
   })
   assertParses('dist/main/pack-tool-worker.js')
+  // Runs the ACP model/mode probe under its OWN SandboxManager so a background
+  // probe cannot widen the app's process-global network allowlist (see
+  // docs/plans/sandbox-network-scope-isolation.md). Must bundle free of electron
+  // and node-pty, which `assertParses` alone would not catch — the natives fail
+  // at require time, not parse time.
+  await esbuild.build({
+    ...nodeOpts,
+    entryPoints: ['src/main/services/acp/acp-probe-worker.ts'],
+    outfile: 'dist/main/acp-probe-worker.js',
+  })
+  assertParses('dist/main/acp-probe-worker.js')
   // No `banner` here: askpass-helper.ts already starts with `#!/usr/bin/env node`
   // and esbuild preserves a source hashbang verbatim. Adding the banner too put a
   // second `#!…` on line 2 of the bundle, where it is not a hashbang but a syntax
@@ -203,6 +214,9 @@ if (!isDemo) {
 copyFileSync('src/renderer/index.html', `${rendererOutDir}/index.html`)
 copyFileSync('src/renderer/theme-boot.js', `${rendererOutDir}/theme-boot.js`)
 copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
+// The Copse mark, drawn as-is wherever the app has to stand for itself in a
+// list of other people's things (today: first-party pack rows in Settings).
+copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
 cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
 copyMonacoWorkers(rendererOutDir)
 cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {

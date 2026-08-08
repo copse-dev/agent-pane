@@ -47,12 +47,25 @@ describe('shared UI polish', () => {
       const statusRect = status.getBoundingClientRect()
       const iconPath = status.querySelector('.reasoning-activity-path')
       const activityIcon = status.querySelector('.reasoning-activity-icon')
+      const iconRect = activityIcon?.getBoundingClientRect()
+      const label = status.querySelector<HTMLElement>('.agent-activity-label')
+      const labelRect = label?.getBoundingClientRect()
       const submitButton = document.querySelector<HTMLElement>('.submit-btn')
       return {
         statusIsInsideComposer: input.contains(status),
         statusIsInsideTranscript: messages.contains(status),
         leftEdge: statusRect.left - messagesRect.left,
         rightEdge: messagesRect.right - statusRect.right,
+        // The spiral rides in the row's own padding gutter, so the live label
+        // starts on the prose column instead of being indented by the icon.
+        labelIndent: labelRect ? labelRect.left - statusRect.left : null,
+        rowPaddingLeft: parseFloat(getComputedStyle(status).paddingLeft),
+        iconInsideGutter: Boolean(
+          iconRect &&
+          labelRect &&
+          iconRect.left >= statusRect.left &&
+          iconRect.right <= labelRect.left,
+        ),
         hasAnimatedIcon: Boolean(status.querySelector('[data-icon="reasoning-activity"]')),
         iconAnimation: iconPath ? getComputedStyle(iconPath).animationName : '',
         iconColor: activityIcon ? getComputedStyle(activityIcon).color : '',
@@ -71,6 +84,8 @@ describe('shared UI polish', () => {
     )
     assert.ok(composerGeometry.leftEdge >= 0)
     assert.ok(composerGeometry.rightEdge >= 0)
+    assert.equal(composerGeometry.labelIndent, composerGeometry.rowPaddingLeft)
+    assert.equal(composerGeometry.iconInsideGutter, true)
 
     const reasoning = $('.message-reasoning-live')
     await reasoning.waitForDisplayed({ timeout: 10_000 })

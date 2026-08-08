@@ -29,9 +29,18 @@ import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { chevronDownIcon } from '../dom/icons.ts'
+import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
+import { formatByteSize } from '@shared/file-bytes.ts'
+import { showConfirmDialog } from './confirm-dialog.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
-import { fetchModelOptions, fetchSmallTasksModelOptions } from './model-options.ts'
+import {
+  fetchDynamicModelOptions,
+  fetchModelOptions,
+  fetchSmallTasksModelOptions,
+  modelDisplayLabel,
+} from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createProvidersPanel } from './setup/providers-section.ts'
@@ -39,6 +48,7 @@ import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
+import { createModelParametersSection } from './setup/model-parameters-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
@@ -92,11 +102,19 @@ function isSettingsSection(value: unknown): value is SettingsSection {
 }
 
 /**
+ * Segments of a pack id that are acronyms, and must stay uppercase rather than
+ * being sentence-cased. Without this `copse.pii-redaction` reads "Pii
+ * redaction" — a machine transformation showing through as user-facing copy.
+ */
+const PACK_NAME_ACRONYMS = new Set(['acp', 'api', 'ci', 'llm', 'mcp', 'okf', 'pii', 'ui'])
+
+/**
  * Friendly display name for a pack row. First-party packs ship with a
  * `copse.<kebab>` id; rather than showing that machine id verbatim, strip the
- * `copse.` prefix and present the rest dash-separated and sentence-cased
- * (e.g. `copse.post-turn-review` → "Post turn review"). User packs with their
- * own human name keep it as-is.
+ * `copse.` prefix and present the rest space-separated and sentence-cased —
+ * only the first word capitalised (e.g. `copse.post-turn-review` → "Post turn
+ * review"), with known acronyms left uppercase (`copse.pii-redaction` → "PII
+ * redaction"). User packs with their own human name keep it as-is.
  */
 function packDisplayName(pack: import('@shared/types/packs.ts').PackSummary): string {
   const raw = pack.name || pack.id
@@ -109,7 +127,15 @@ function packDisplayName(pack: import('@shared/types/packs.ts').PackSummary): st
       .filter(Boolean)
     if (words.length === 0) return raw
     const sentence = words
-      .map((word) => (word.length ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+      .map((word, index) => {
+        const lower = word.toLowerCase()
+        if (PACK_NAME_ACRONYMS.has(lower)) return lower.toUpperCase()
+        // Sentence case: lead word capitalised, the rest lowercase. Pack ids are
+        // kebab-lowercase already, so the lowercasing only matters for ids that
+        // arrive mixed-case.
+        if (index === 0) return lower.charAt(0).toUpperCase() + lower.slice(1)
+        return lower
+      })
       .join(' ')
     return sentence
   }
@@ -521,6 +547,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
 
@@ -858,8 +885,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Use the switch on each server to turn it off without editing your MCP config files.
                 Off servers are not started on reload.
               </p>
-              <div class="lmstudio-test-row">
-                <button type="button" id="mcp-reload-btn">Reload servers</button>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
+                  Reload servers
+                </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
             </fieldset>
@@ -898,11 +927,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="sources">
             <h3>Sources</h3>
             <p class="settings-section-desc">
-              Everything Copse loads for this project. This list is read-only: edit the files
-              themselves to change what is loaded.
+              Everything Copse loads for this project, and the worktrees it keeps on disk. The
+              loaded lists are read-only: edit the files themselves to change what is loaded.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="sources-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="sources-reload-status"></span>
             </div>
 
@@ -980,6 +1011,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <span class="sources-empty">Loading…</span>
               </div>
             </fieldset>
+
+            <fieldset>
+              <legend>Worktrees</legend>
+              <p class="settings-fieldset-desc">
+                Linked Git checkouts of this project. Copse creates one per isolated thread so
+                agents can work without touching your checkout; each row shows the thread it was
+                created for, when it was last used, and what it costs on disk. Deleting one removes
+                the directory and, when the branch is fully merged, the branch with it.
+              </p>
+              <div id="sources-worktrees-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+              <span class="lmstudio-test-status" id="sources-worktrees-status"></span>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="packs">
@@ -992,9 +1037,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
               for authoring and install steps.
             </p>
-            <div class="lmstudio-test-row">
-              <button type="button" id="packs-add-btn">Add pack…</button>
-              <button type="button" id="packs-reload-btn">Reload</button>
+            <div class="settings-action-row">
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-add-btn">
+                Add pack…
+              </button>
+              <button type="button" class="ui-btn ui-btn-secondary" id="packs-reload-btn">
+                Reload
+              </button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
 
@@ -1107,14 +1156,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   <option value="light">Light</option>
                 </select>
               </label>
-              <label>
-                Accent colour
-                <input type="color" name="uiAccentColor" />
-              </label>
-              <label>
-                Interface tint colour
-                <input type="color" name="uiTintColor" />
-              </label>
+              <!-- Two swatches, one decision each, read side by side: they are
+                   the section's only colour choices and comparing them is the
+                   whole task. -->
+              <div class="settings-swatch-row">
+                <label>
+                  Accent colour
+                  <input type="color" name="uiAccentColor" />
+                </label>
+                <label>
+                  Interface tint colour
+                  <input type="color" name="uiTintColor" />
+                </label>
+              </div>
               <label>
                 Interface tint strength
                 <span class="slider-row">
@@ -1148,7 +1202,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <label class="app-icon-option">
                   <input type="radio" name="appIconVariant" value="${variant}" />
                   <span class="app-icon-preview">
-                    <img src="./icon-previews/${variant}.png" alt="" width="80" height="80" />
+                    <img src="./icon-previews/${variant}.png" alt="" width="88" height="88" />
                   </span>
                   <span class="app-icon-label">${APP_ICON_VARIANT_LABELS[variant]}</span>
                 </label>`,
@@ -1216,8 +1270,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                The model that carries out the delegated steps. Pick something cheaper and faster
-                than your chat model.
+                How to choose the model that carries out the delegated steps — resolved against
+                your configured providers each time a step is handed off. Prefer a rule that lands
+                cheaper and faster than your chat model.
               </p>
             </fieldset>
 
@@ -1226,8 +1281,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 Reviews your current changes through two models independently, then has a third
                 compare their verdicts. Turn it on under <strong>Packs</strong>, where you also
-                choose the three models. A run makes up to three model calls, so it asks before
-                spending on a paid model.
+                choose how the three models are picked — they always resolve to different models,
+                so there is something to compare. A run makes up to three model calls, so it asks
+                before spending on a paid model.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelComparisonAutoOnReview" />
@@ -1351,6 +1407,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
+  // Sits directly under the chat-model picker and follows it: the parameters
+  // belong to the selected model, so switching models re-renders the controls.
+  const modelParametersSection = createModelParametersSection(api.settings)
+  qsRequired(overlay, '#settings-model-parameters-host').append(modelParametersSection.root)
+
   const settingsModelPickers = {
     model: mountModelSelectPicker(qsRequired<HTMLSelectElement>(overlay, 'select[name="model"]'), {
       loadOptions: (current) => fetchModelOptions(api, current, { includeBestValue: true }),
@@ -1365,10 +1426,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         loadOnMount: false,
       },
     ),
+    // Like the pack model fields, the delegated-step worker selects a rule
+    // rather than a model — the delegation happens mid-task, not now.
     orchestrationWorkerModel: mountModelSelectPicker(
       qsRequired(overlay, '#orchestrationWorkerModel'),
       {
-        loadOptions: (current) => fetchModelOptions(api, current),
+        loadOptions: (current) => fetchDynamicModelOptions(current),
         ariaLabel: 'Worker model',
         loadOnMount: false,
       },
@@ -1529,6 +1592,45 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     activeSection = id
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
+    renderNavSubheadings(id)
+  }
+
+  // The open section's group headings, mirrored into the sidebar under its row.
+  // General and Appearance are several screens tall, so the nav doubles as that
+  // section's contents: what is on this page, and a click to jump to it. Only
+  // the open section expands, and the list is read back off the DOM each time —
+  // so a group that is hidden (developer-only) or mounted by a panel never has
+  // to be registered in a second place to show up here.
+  let navSubheadings: HTMLElement | null = null
+
+  function clearNavSubheadings(): void {
+    navSubheadings?.remove()
+    navSubheadings = null
+  }
+
+  function renderNavSubheadings(id: SettingsSection): void {
+    clearNavSubheadings()
+    const navBtn = Array.from(navBtns).find((btn) => btn.dataset['section'] === id)
+    const section = Array.from(sections).find((sec) => sec.dataset['section'] === id)
+    if (!navBtn || !section) return
+    const list = document.createElement('div')
+    list.className = 'settings-nav-subheadings'
+    for (const block of topLevelBlocks(section)) {
+      if (block.hidden) continue
+      const label = block.querySelector('legend')?.textContent.trim()
+      if (!label) continue
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'settings-nav-subheading'
+      btn.textContent = label
+      btn.addEventListener('click', () => {
+        block.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+      list.append(btn)
+    }
+    if (list.childElementCount === 0) return
+    navBtn.after(list)
+    navSubheadings = list
   }
 
   // A settings "block" is a top-level fieldset — one not nested inside another
@@ -1586,6 +1688,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     contentEl.classList.add('settings-searching')
+    // Results are lifted out of their sections, so the open section's contents
+    // list no longer describes what is on screen. Drop it until search clears.
+    clearNavSubheadings()
     const matches: { node: HTMLElement; rank: number }[] = []
     sections.forEach((sec) => {
       for (const block of topLevelBlocks(sec)) {
@@ -1875,9 +1980,227 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     for (const row of rows) el.append(row)
   }
 
+  /** Coarse "when", accurate enough for a list that is scanned, not audited. */
+  function relativeTime(value: number): string {
+    const elapsed = Date.now() - value
+    const minute = 60_000
+    const hour = 60 * minute
+    const day = 24 * hour
+    if (elapsed < 0) return 'just now'
+    if (elapsed < minute) return 'just now'
+    if (elapsed < hour) return `${String(Math.floor(elapsed / minute))}m ago`
+    if (elapsed < day) return `${String(Math.floor(elapsed / hour))}h ago`
+    if (elapsed < 30 * day) return `${String(Math.floor(elapsed / day))}d ago`
+    return new Date(value).toLocaleDateString()
+  }
+
+  /**
+   * What a worktree is *for*, in one word. A checkout with a live turn in it
+   * cannot be deleted at all; one whose thread has gone (or stopped pointing at
+   * it) is the case worth reclaiming, so both are said plainly rather than left
+   * for the user to infer from the detail line.
+   */
+  function worktreeBadge(entry: WorktreeInventoryEntry): {
+    text: string
+    className: string | undefined
+  } {
+    if (entry.usage?.running) return { text: 'in use', className: 'sources-badge-project' }
+    if (!entry.managed) return { text: 'external', className: undefined }
+    if (!entry.usage) return { text: 'orphaned', className: 'sources-badge-warning' }
+    if (!entry.usage.linked) return { text: 'released', className: 'sources-badge-warning' }
+    if (entry.usage.archived) return { text: 'archived thread', className: undefined }
+    return { text: 'thread', className: undefined }
+  }
+
+  function worktreeDetail(entry: WorktreeInventoryEntry): string {
+    const bits: string[] = []
+    if (entry.usage) bits.push(`Thread “${entry.usage.title}”`)
+    else if (entry.managed) bits.push('No thread on record')
+    else bits.push('Created outside Copse')
+    if (entry.lastUsedAt !== null) bits.push(`last used ${relativeTime(entry.lastUsedAt)}`)
+    if (entry.createdAt !== null) bits.push(`created ${relativeTime(entry.createdAt)}`)
+    return bits.join(' · ')
+  }
+
+  /** The row, plus the slot its measured size lands in once `worktrees:size` answers. */
+  function makeWorktreeRow(entry: WorktreeInventoryEntry): {
+    row: HTMLElement
+    size: HTMLElement
+  } {
+    const badge = worktreeBadge(entry)
+    const extraBadges: Array<{ text: string; className: string }> = []
+    if (entry.changedCount !== null && entry.changedCount > 0) {
+      extraBadges.push({
+        text: `${String(entry.changedCount)} uncommitted`,
+        className: 'sources-badge-warning',
+      })
+    }
+    if (entry.merged === false) {
+      extraBadges.push({ text: 'unmerged', className: 'sources-badge-warning' })
+    }
+    if (entry.detached) {
+      extraBadges.push({ text: 'detached HEAD', className: 'sources-badge-unsupported' })
+    }
+    if (entry.locked !== null) {
+      extraBadges.push({ text: 'locked', className: 'sources-badge-unsupported' })
+    }
+
+    const row = makeSourceRow(entry.branch ?? entry.path, badge.text, worktreeDetail(entry), {
+      ...(badge.className ? { badgeClass: badge.className } : {}),
+      extraBadges,
+      titleAttr: entry.path,
+      hoverDetail: entry.path,
+    })
+    row.dataset['worktreePath'] = entry.path
+
+    // Size arrives from a second call per row (`worktrees:size` walks the whole
+    // checkout), so the row reserves its slot rather than reflowing later.
+    const size = document.createElement('span')
+    size.className = 'sources-worktree-size'
+    size.textContent = 'sizing…'
+    row.querySelector('.sources-row-detail')?.append(' · ', size)
+
+    const removeBtn = document.createElement('button')
+    removeBtn.type = 'button'
+    removeBtn.className = 'sources-worktree-delete-btn'
+    removeBtn.textContent = 'Delete'
+    if (entry.usage?.running) {
+      removeBtn.disabled = true
+      removeBtn.title = 'An agent turn is running in this worktree'
+    } else {
+      removeBtn.title = 'Remove this linked checkout from disk'
+    }
+    removeBtn.addEventListener('click', () => {
+      void removeWorktree(entry, removeBtn)
+    })
+    row.querySelector('.sources-row-header')?.append(removeBtn)
+    return { row, size }
+  }
+
+  /** Fill in each row's on-disk size, one checkout at a time so the walks don't pile up. */
+  async function fillWorktreeSizes(
+    projectId: string,
+    targets: Array<{ entry: WorktreeInventoryEntry; size: HTMLElement }>,
+  ): Promise<void> {
+    for (const target of targets) {
+      // A refresh mid-walk detaches the row it was measuring; dropping the
+      // answer is right, and cheaper than cancelling the call.
+      if (!target.size.isConnected) continue
+      try {
+        const size = await api.worktrees.size(projectId, target.entry.path)
+        target.size.textContent = size.truncated
+          ? `over ${formatByteSize(size.bytes)}`
+          : formatByteSize(size.bytes)
+      } catch {
+        target.size.textContent = 'size unavailable'
+      }
+    }
+  }
+
+  /**
+   * Delete one checkout. The first confirmation covers the directory; a second
+   * one appears only when Git reports content that would be destroyed with it,
+   * and lists what that content is — the state is re-read at delete time, so a
+   * checkout the agent dirtied since the list rendered still stops here.
+   */
+  async function removeWorktree(
+    entry: WorktreeInventoryEntry,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    const projectId = store.getState().activeProjectId
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    if (!projectId) return
+    const name = entry.branch ?? entry.path
+    const consequences = [entry.path]
+    if (entry.usage?.linked) {
+      consequences.push(`Thread “${entry.usage.title}” will continue in the project checkout.`)
+    }
+    if (entry.merged === false && entry.branch) {
+      consequences.push(`Branch ${entry.branch} has unmerged commits and will be kept.`)
+    }
+    const confirmed = await showConfirmDialog({
+      message: `Delete worktree ${name}?`,
+      detail: consequences.join('\n'),
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!confirmed) return
+
+    button.disabled = true
+    statusEl.textContent = 'Deleting…'
+    try {
+      let result = await api.worktrees.remove(projectId, entry.path, false)
+      if (result.status === 'blocked-dirty') {
+        const shown = result.changed.slice(0, 10)
+        const rest = result.changed.length - shown.length
+        const forced = await showConfirmDialog({
+          message: `Discard ${String(result.changed.length)} uncommitted file${
+            result.changed.length === 1 ? '' : 's'
+          }?`,
+          detail: [...shown, ...(rest > 0 ? [`…and ${String(rest)} more`] : [])].join('\n'),
+          confirmLabel: 'Delete anyway',
+          danger: true,
+        })
+        if (!forced) {
+          statusEl.textContent = 'Kept.'
+          button.disabled = false
+          return
+        }
+        result = await api.worktrees.remove(projectId, entry.path, true)
+      }
+      if (result.status === 'blocked-running') {
+        statusEl.textContent = 'That worktree has an agent turn running in it.'
+        button.disabled = false
+        return
+      }
+      if (result.status === 'blocked-dirty') {
+        statusEl.textContent = 'Git still reports uncommitted work in that worktree.'
+        button.disabled = false
+        return
+      }
+      await refreshWorktrees(
+        result.branchDeleted ? `Deleted ${name} and its branch.` : `Deleted ${name}.`,
+      )
+    } catch (error) {
+      statusEl.textContent = errorMessage(error)
+      button.disabled = false
+    }
+  }
+
+  /**
+   * `status` survives the reload that follows a delete — the list re-renders
+   * without the row, and the line saying what happened to it has to outlive
+   * that, or the only feedback for a destructive action flashes and is gone.
+   */
+  async function refreshWorktrees(status = ''): Promise<void> {
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    const projectId = store.getState().activeProjectId
+    if (!projectId) {
+      fillSourceList('#sources-worktrees-list', [], 'Open a project to see its worktrees.')
+      return
+    }
+    try {
+      const entries = await api.worktrees.list(projectId)
+      const rendered = entries.map((entry) => ({ entry, ...makeWorktreeRow(entry) }))
+      fillSourceList(
+        '#sources-worktrees-list',
+        rendered.map((item) => item.row),
+        'No worktrees. Copse creates one when a thread runs in its own checkout.',
+      )
+      statusEl.textContent = status
+      await fillWorktreeSizes(projectId, rendered)
+    } catch (error) {
+      fillSourceList('#sources-worktrees-list', [], 'Could not list worktrees.')
+      statusEl.textContent = errorMessage(error)
+    }
+  }
+
   async function refreshSources(): Promise<void> {
     const statusEl = qsRequired(overlay, '#sources-reload-status')
     statusEl.textContent = 'Loading…'
+    // Worktrees load on their own: they shell out to Git per checkout, and a
+    // repository problem there must not blank the file-based lists beside them.
+    void refreshWorktrees()
     try {
       const [instructions, cursorRules, skills, hooks, plugins] = await Promise.all([
         api.instructions.list(),
@@ -1993,6 +2316,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const header = document.createElement('div')
     header.className = 'pack-row-header'
 
+    // A pack is a thing you install, so it gets a mark like one. First-party
+    // packs carry the Copse glyph itself (the real asset, not a redraw); a
+    // user-installed pack must not, or a sideloaded pack would wear our badge
+    // of trust — it gets a neutral tile with its own initial instead.
+    const icon = document.createElement('span')
+    icon.className = 'pack-icon'
+    icon.setAttribute('aria-hidden', 'true')
+    if (pack.trust === 'first-party') {
+      icon.classList.add('pack-icon-copse')
+      const mark = document.createElement('img')
+      mark.src = './brand-mark.svg'
+      mark.alt = ''
+      mark.width = 40
+      mark.height = 40
+      icon.append(mark)
+    } else {
+      icon.textContent = (packDisplayName(pack).trim()[0] ?? '?').toUpperCase()
+    }
+    header.append(icon)
+
     const toggleLabel = document.createElement('label')
     toggleLabel.className = 'toggle-switch pack-toggle'
     toggleLabel.title = pack.enabled ? 'Turn off this pack' : 'Turn on this pack'
@@ -2004,6 +2347,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const track = document.createElement('span')
     track.className = 'toggle-switch-track'
     track.setAttribute('aria-hidden', 'true')
+    // Set by a credential-gated pack (below) once it knows no key is stored, so
+    // the change handler's `finally` re-arms the lock instead of clearing it.
+    let credentialLocked = false
     toggle.addEventListener('change', () => {
       toggle.disabled = true
       void api.packs
@@ -2021,23 +2367,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           toggle.checked = !toggle.checked
         })
         .finally(() => {
-          toggle.disabled = false
+          toggle.disabled = credentialLocked && !toggle.checked
         })
     })
     toggleLabel.append(toggle, track)
 
+    // Who published the pack is the first thing to know about it and the same
+    // answer for every row, so it reads as an eyebrow over the name rather than
+    // as one more chip competing with it.
     const title = document.createElement('div')
     title.className = 'pack-row-title'
-    const nameEl = document.createElement('span')
-    nameEl.className = 'pack-name'
-    nameEl.textContent = packDisplayName(pack)
-    title.append(nameEl)
-    if (pack.version) {
-      const versionEl = document.createElement('span')
-      versionEl.className = 'pack-version'
-      versionEl.textContent = pack.version
-      title.append(versionEl)
-    }
     const trustBadge = document.createElement('span')
     trustBadge.className =
       pack.trust === 'first-party'
@@ -2045,6 +2384,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : 'pack-badge pack-badge-user'
     trustBadge.textContent = pack.trust === 'first-party' ? 'Copse' : 'User'
     title.append(trustBadge)
+
+    const nameLine = document.createElement('div')
+    nameLine.className = 'pack-row-name-line'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'pack-name'
+    nameEl.textContent = packDisplayName(pack)
+    nameLine.append(nameEl)
+    if (pack.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'pack-version'
+      versionEl.textContent = pack.version
+      nameLine.append(versionEl)
+    }
     const stabilityBadge = document.createElement('span')
     stabilityBadge.className = `pack-badge pack-badge-${pack.stability}`
     stabilityBadge.textContent = pack.stability
@@ -2052,9 +2404,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       pack.stability === 'experimental'
         ? 'Experimental: behavior and compatibility may change.'
         : 'Stable: supported as part of the current pack contract.'
-    title.append(stabilityBadge)
+    nameLine.append(stabilityBadge)
+    title.append(nameLine)
 
-    header.append(toggleLabel, title)
+    // A bare switch never says which way is on. The flanking words do, and CSS
+    // emphasises whichever side is live off `:checked` — so there is no second
+    // copy of the state to keep in sync. They restate the checkbox's own label,
+    // hence hidden from assistive tech.
+    const toggleControl = document.createElement('div')
+    toggleControl.className = 'pack-toggle-control'
+    const makeStateLabel = (side: 'off' | 'on'): HTMLElement => {
+      const stateEl = document.createElement('span')
+      stateEl.className = 'pack-toggle-state'
+      stateEl.dataset['side'] = side
+      stateEl.textContent = side === 'on' ? 'On' : 'Off'
+      stateEl.setAttribute('aria-hidden', 'true')
+      return stateEl
+    }
+    toggleControl.append(makeStateLabel('off'), toggleLabel, makeStateLabel('on'))
+
+    header.append(title, toggleControl)
     row.append(header)
 
     if (pack.description) {
@@ -2186,18 +2555,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(emptyChips)
     }
 
+    // Everything configurable about a pack folds into one disclosure. The card
+    // leads with what the pack *is* and what it contributes — the decision you
+    // make from a list of packs — and keeps its knobs one click away rather than
+    // stacking every pack's form on top of the next pack's name. Appended to the
+    // row at the end, and only if something landed inside it.
+    const settingsFold = document.createElement('details')
+    settingsFold.className = 'pack-settings-fold'
+    const settingsSummary = document.createElement('summary')
+    settingsSummary.className = 'pack-settings-summary'
+    const settingsSummaryLabel = document.createElement('span')
+    settingsSummaryLabel.textContent = 'Pack settings'
+    settingsSummary.append(settingsSummaryLabel, chevronDownIcon('pack-settings-chevron'))
+    settingsFold.append(settingsSummary)
+
     // Generic pack-scoped settings fields (rendered from the manifest schema).
     if (pack.settings.length > 0) {
       const settingsBox = document.createElement('div')
       settingsBox.className = 'pack-settings'
-      const heading = document.createElement('div')
-      heading.className = 'pack-settings-heading'
-      heading.textContent = 'Settings'
-      settingsBox.append(heading)
       for (const field of pack.settings) {
         settingsBox.append(makePackSettingField(pack.id, field))
       }
-      row.append(settingsBox)
+      settingsFold.append(settingsBox)
       // The advisor model field owns the live executor/advisor pairing hint (it
       // moved here from the Experimental section with the model itself). Wire the
       // advisor select + a hint element into the shared refs, keep the `#advisorModel`
@@ -2242,7 +2621,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
       )
     ) {
-      row.append(createAutomationPackSettings(store, api, pack.enabled))
+      settingsFold.append(createAutomationPackSettings(store, api, pack.enabled))
     }
     if (
       pack.id === PARALLEL_SEARCH_PACK_ID &&
@@ -2250,8 +2629,37 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
       )
     ) {
-      row.append(createParallelSearchPackSettings(api))
+      // Parallel Search is credential-gated end to end: `syncParallelSearchTools`
+      // registers `parallel_search` only when the pack is on AND a key resolves.
+      // Without this the switch flips on with no key and nothing happens — an
+      // on-looking pack contributing no tool. Block the on-direction until a key
+      // is stored (never the off-direction, or a user who clears their key would
+      // be stuck with the pack showing enabled), and say why in a hint.
+      // The gate explains a switch you can see is locked, so it stays on the
+      // face of the card — folding the reason away under "Pack settings" would
+      // leave a dead toggle with no explanation next to it.
+      const gate = document.createElement('p')
+      gate.className = 'field-hint pack-credential-gate'
+      gate.hidden = true
+      row.append(gate)
+      settingsFold.append(
+        createParallelSearchPackSettings(api, {
+          onKeyPresence: (hasKey) => {
+            credentialLocked = !hasKey
+            toggle.disabled = credentialLocked && !toggle.checked
+            gate.hidden = hasKey
+            gate.textContent = toggle.checked
+              ? 'No Parallel API key saved — parallel_search stays unavailable to the model until you add one.'
+              : 'Add a Parallel API key to turn this pack on.'
+            if (toggle.disabled) toggleLabel.title = 'Add a Parallel API key to turn this pack on'
+          },
+        }),
+      )
     }
+
+    // A pack with nothing to configure shows no fold — an empty disclosure is
+    // worse than none, because it invites a click that reveals nothing.
+    if (settingsFold.childElementCount > 1) row.append(settingsFold)
 
     // Disabling greys the whole row so the effect of the toggle is immediately
     // visible; individual pack-scoped settings stay editable so users can
@@ -2336,8 +2744,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
     label.append(input)
     if (modelSelectInput) {
+      // A pack's model field selects a *rule*, not a model: packs run
+      // unattended long after this dialog was last open, so the picker offers
+      // dynamic selections only (see `dynamicModelOptions`). A field the
+      // manifest gave no default has a meaningful blank state — the owning
+      // feature's own fallback — so that stays selectable.
+      const autoLabel =
+        field.default === undefined ? '(unset — use this feature’s own fallback)' : undefined
       const picker = mountModelSelectPicker(modelSelectInput, {
-        loadOptions: (current) => fetchModelOptions(api, current),
+        loadOptions: (current) => fetchDynamicModelOptions(current, autoLabel),
         ariaLabel: field.title,
         loadOnMount: false,
       })
@@ -2349,7 +2764,42 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       hint.textContent = field.description
       label.append(hint)
     }
+    if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput))
     return label
+  }
+
+  /**
+   * Live "→ currently <model>" line under a dynamic model picker. The rule is
+   * what gets stored, but the user still deserves to see which model it names
+   * today — that is the one thing a selector hides that a pinned id showed.
+   */
+  function mountResolvedModelHint(select: HTMLSelectElement): HTMLElement {
+    const hint = document.createElement('span')
+    hint.className = 'pack-setting-resolved'
+    hint.hidden = true
+    let generation = 0
+    const update = (): void => {
+      const value = select.value
+      const mine = ++generation
+      if (!value) {
+        hint.hidden = true
+        return
+      }
+      void api.models
+        .resolveDynamic(value)
+        .then((resolved) => {
+          // Ignore a slow answer for a selection the user has already changed.
+          if (mine !== generation) return
+          hint.hidden = !resolved || resolved === value
+          hint.textContent = `Currently resolves to ${modelDisplayLabel(resolved)}`
+        })
+        .catch(() => {
+          if (mine === generation) hint.hidden = true
+        })
+    }
+    select.addEventListener('change', update)
+    update()
+    return hint
   }
 
   async function refreshPacks(): Promise<void> {
@@ -2366,11 +2816,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         listEl.append(empty)
       } else {
         // Enabled packs first, disabled packs after — so a scrapped pack moves
-        // out of the way instead of sitting in the middle of the list.
+        // out of the way instead of sitting in the middle of the list. The two
+        // runs get a heading each: with rows this tall, "why is this one dimmed"
+        // is a question the list should answer before it is asked. A heading is
+        // skipped when nothing falls under it.
         const sorted = [...result.packs].sort(
           (a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id),
         )
-        for (const pack of sorted) listEl.append(makePackRow(pack))
+        let lastEnabled: boolean | null = null
+        for (const pack of sorted) {
+          if (pack.enabled !== lastEnabled) {
+            const heading = document.createElement('h4')
+            heading.className = 'packs-group-heading'
+            heading.textContent = pack.enabled ? 'Active' : 'Inactive'
+            listEl.append(heading)
+            lastEnabled = pack.enabled
+          }
+          listEl.append(makePackRow(pack))
+        }
       }
       statusEl.textContent = ''
     } catch {
@@ -2672,7 +3135,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
   // learns up front whether the advisor is actually stronger than the executor.
-  //
+  // Either side may be a dynamic selection, so both are resolved first — this
+  // counter drops a slow answer for a pairing the user has already changed.
+  let advisorPairGeneration = 0
+
   function updateAdvisorPairHint(): void {
     const hint = advisorPairHintEl
     const advisorSelect = advisorModelSelectEl
@@ -2680,14 +3146,35 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const form = qsRequired<HTMLFormElement>(overlay, 'form')
     const executor = selectControl(form, 'model').value
     const advisor = advisorSelect.value
+    const mine = ++advisorPairGeneration
     if (!executor || !advisor) {
       hint.hidden = true
       return
     }
-    const assessment = validateAdvisorPair(executor, advisor)
-    hint.textContent = assessment.reason
-    hint.setAttribute('data-level', assessment.level)
-    hint.hidden = false
+    // Both sides may be rules rather than model ids. Grade the models they name
+    // right now — a hint about `auto:best-intellect` would say nothing useful,
+    // and the whole point of the pairing hint is a concrete capability
+    // comparison. `resolveDynamic` returns a pinned id unchanged.
+    void Promise.all([api.models.resolveDynamic(executor), api.models.resolveDynamic(advisor)])
+      .then(([resolvedExecutor, resolvedAdvisor]) => {
+        if (mine !== advisorPairGeneration) return
+        const assessment = validateAdvisorPair(resolvedExecutor, resolvedAdvisor)
+        const dynamic = resolvedAdvisor !== advisor || resolvedExecutor !== executor
+        hint.textContent = dynamic
+          ? `${assessment.reason} (currently ${modelDisplayLabel(resolvedExecutor)} → ${modelDisplayLabel(resolvedAdvisor)})`
+          : assessment.reason
+        hint.setAttribute('data-level', assessment.level)
+        hint.hidden = false
+      })
+      .catch(() => {
+        if (mine !== advisorPairGeneration) return
+        // Resolution unavailable: grade what is stored. A selector lands on the
+        // dynamic branch of `validateAdvisorPair`, which says exactly that.
+        const assessment = validateAdvisorPair(executor, advisor)
+        hint.textContent = assessment.reason
+        hint.setAttribute('data-level', assessment.level)
+        hint.hidden = false
+      })
   }
 
   overlay.addEventListener('settings-open', () => {
@@ -2736,6 +3223,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await refreshStage('model-pickers', async () => {
         const model = storedString(await api.settings.get('model'))
         await settingsModelPickers.model.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
+        // Parameters are per model, so the section renders against whichever
+        // chat model just settled.
+        await modelParametersSection.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
         // The executor (chat) model just settled — re-grade the advisor pairing
         // hint, which lives with the advisor pack in the Packs section. No-op until
         // that pack row has rendered (its select/hint refs are still null); pairs
@@ -2883,6 +3373,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // which now lives with the advisor pack's model field (Settings → Packs).
     if (target instanceof HTMLSelectElement && target.name === 'model') {
       updateAdvisorPairHint()
+      modelParametersSection.setModel(target.value)
     }
   })
   settingsForm.addEventListener('submit', (e) => {
@@ -2894,6 +3385,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (claudeAgentKeysDirty) await claudeAgentKeySection.saveKeys()
       if (aaKeysDirty) await aaKeySection.saveKeys()
       if (providersDirty) await providersPanel.saveKeys()
+      await modelParametersSection.save()
       if (lmStudioDirty) await lmStudioSection.saveApiKey()
       const routingValues = modelRoutingSection.readValues()
 

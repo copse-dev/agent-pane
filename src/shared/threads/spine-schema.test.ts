@@ -12,6 +12,7 @@ import {
   serializeSpineLine,
   toolsetBlobRef,
   type SpineHookRunLine,
+  type SpineMachineContinuationLine,
   type SpineMessageLine,
   type SpinePermissionDecisionLine,
 } from './spine-schema.ts'
@@ -68,6 +69,20 @@ function permissionDecisionLine(id: string): SpinePermissionDecisionLine {
   }
 }
 
+function machineContinuationLine(id: string): SpineMachineContinuationLine {
+  return {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'machine_continuation',
+    id,
+    operationId: 'operation-1',
+    turnTreeId: 'turn-1',
+    recordedAt: 130,
+    budgetUsed: 2,
+    phase: 'finished',
+    result: 'completed',
+  }
+}
+
 describe('spine-schema hook_run union (decision 6)', () => {
   it('round-trips a hook_run line through serialize/parse', () => {
     const line = hookRunLine('h1', { toolset: 'ts-hash' })
@@ -94,6 +109,25 @@ describe('spine-schema hook_run union (decision 6)', () => {
     )
   })
 
+  it('round-trips machine continuation audit lines without exposing them as messages', () => {
+    const line = machineContinuationLine('c1')
+    assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
+    assert.deepEqual(parseSpine(serializeSpine([messageLine('m1'), line])), [messageLine('m1')])
+  })
+
+  it('rejects malformed machine continuation audit lines', () => {
+    assert.equal(
+      parseSpineLine(
+        JSON.stringify({
+          ...machineContinuationLine('c1'),
+          phase: 'started',
+          result: 'completed',
+        }),
+      ),
+      null,
+    )
+  })
+
   it('parseSpineEntries preserves unknown line types verbatim', () => {
     const unknown = '{"v":1,"type":"future_thing","id":"f1","payload":{"x":1}}'
     const body = `${serializeSpineLine(messageLine('m1'))}\n${unknown}\n`
@@ -109,6 +143,20 @@ describe('spine-schema hook_run union (decision 6)', () => {
   it('hookRunBlobRefs collects stdout, stderr, and the toolset blob', () => {
     const refs = hookRunBlobRefs(hookRunLine('h1', { toolset: 'cafe01' }))
     assert.deepEqual(refs, ['blobs/h1.stdout.txt', 'blobs/h1.stderr.txt', toolsetBlobRef('cafe01')])
+  })
+
+  // The inspector's bodies are only as durable as this list: a ref missing here
+  // is a blob the next full save stops preserving, so the card would degrade to
+  // "no longer stored" after an unrelated edit to the thread.
+  it('hookRunBlobRefs keeps the payload and outcome captures alive', () => {
+    const refs = hookRunBlobRefs(
+      hookRunLine('h2', {
+        payload: { ref: 'blobs/h2.payload.json', sha256: 'in' },
+        outcome: { ref: 'blobs/h2.outcome.json', sha256: 'res' },
+      }),
+    )
+    assert.ok(refs.includes('blobs/h2.payload.json'))
+    assert.ok(refs.includes('blobs/h2.outcome.json'))
   })
 })
 

@@ -1,15 +1,25 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
+import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
+import {
+  captureBrowserPageText,
+  captureBrowserScreenshot,
+} from '../services/browser/browser-share.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
   getActiveProjectId,
   getActiveProjectSshHost,
   getProjectById,
+  getProjectRoot,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolvePathWithinRoot,
@@ -27,9 +37,11 @@ import {
   assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
+  modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
+  zHookRunId,
   zHookTestRequest,
   zNonEmptyString,
   zPathString,
@@ -69,9 +81,10 @@ import {
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
+import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
-import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
+import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
@@ -100,12 +113,19 @@ import {
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
 import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
+import { listRunningThreadIds } from '../services/agent-service.ts'
+import {
+  listWorktreeInventory,
+  measureWorktreeSize,
+  removeWorktree,
+} from '../services/worktree-inventory.ts'
 import {
   requestAcpPackageInstallApproval,
   revalidateStaleAcpModels,
   runAcpAutoSetup,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
+import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -116,6 +136,7 @@ import {
   listUnsandboxedProjectHooks,
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
+import { readHookRunDetail } from '../services/hooks/run-detail.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
 import {
   setPackToolRuntimeController,
@@ -148,7 +169,12 @@ import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
+import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
+import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -180,6 +206,7 @@ import {
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
+  getGitPromptState,
   getGitStatus,
   getGitWorkingFileDiff,
   getGithubRepoSlug,
@@ -256,6 +283,10 @@ import {
   invalidateLiveIntellectCache,
 } from '../services/providers/aa-live-intellect.ts'
 import {
+  resolveModelCard,
+  type ResolvedModelCard,
+} from '../services/providers/model-card-resolver.ts'
+import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
@@ -304,6 +335,25 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
   })
 }
 
+// Starter guidance written to a newly-created project's AGENT.md. Kept in the
+// main process (not the renderer) so the file is written at the trust boundary
+// alongside the folder itself; the text steers the agent to plan and ask before
+// acting in a codebase it has never seen.
+const STARTER_AGENT_MD = `# Project guide
+
+This is a new project scaffolded in Copse. Add project-specific context here that
+you want the coding agent to follow on every turn.
+
+## Working style
+
+- This project is new and may have no existing conventions yet. Before making
+  changes, explore the codebase, then propose a plan and ask clarifying questions.
+- Prefer plan mode: lay out what you intend to do and confirm the approach before
+  writing code or running destructive commands.
+- Keep changes small and reviewable; prefer to ask rather than assume when an
+  intent is ambiguous.
+`
+
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const alertUser = createElectronUserAlertSender(win, app.dock)
   const packService = getPackService()
@@ -350,7 +400,88 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return root
   })
 
+  // Create a brand-new project folder under a user-chosen parent directory:
+  // mkdir the folder, write starter AGENT.md + README.md, `git init` it, and
+  // register it through the same allowed-root trust boundary as Open Folder.
+  // Returns the canonical new path, or null if the parent was cancelled.
+  // The user's home directory, used to default the New project dialog's parent
+  // when no prior local project gives a better guess. Treated as a data value
+  // (not a workspace root), so it is never registered as allowed.
+  ipcMain.handle('workspace:getHomeDirectory', (event) => {
+    assertMainFrameSender(event, win)
+    return homedir()
+  })
+
+  // Parent-directory picker for the "New project" dialog's Browse button. This
+  // is a bare pick — it does NOT register the chosen folder as a workspace root
+  // (the project folder created under it is registered by `workspace:createProject`).
+  ipcMain.handle('workspace:pickParentDirectory', async (event) => {
+    assertMainFrameSender(event, win)
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose a parent directory for the new project',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
+  })
+
+  // Create a brand-new project folder under a caller-chosen parent directory:
+  // mkdir the folder, write starter AGENT.md + README.md, `git init` it, and
+  // register it through the same allowed-root trust boundary as Open Folder.
+  ipcMain.handle('workspace:createProject', async (event, rawName: unknown, rawParent: unknown) => {
+    assertMainFrameSender(event, win)
+    const name = parseIpcArgs(z.string().trim().min(1).max(200), [rawName])
+    const parentDir = parseIpcArgs(zPathString, [rawParent])
+    const projectPath = join(parentDir, name)
+    // Never escape the chosen parent (a crafted name like `..` must not climb).
+    if (resolve(parentDir, name) !== projectPath || basename(projectPath) !== name) {
+      throw new IpcValidationError('Invalid project name')
+    }
+    let projectMissing = false
+    try {
+      const existing = await stat(projectPath)
+      if (!existing.isDirectory()) throw new IpcValidationError('Target exists and is not a folder')
+      const entries = await readdir(projectPath)
+      if (entries.length > 0) throw new IpcValidationError('Folder already exists and is not empty')
+    } catch (err) {
+      // ENOENT means the folder does not exist yet — scaffolding proceeds below.
+      if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      projectMissing = true
+    }
+    if (projectMissing) await mkdir(projectPath, { recursive: true })
+    await writeFile(join(projectPath, 'AGENT.md'), STARTER_AGENT_MD, 'utf8')
+    await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
+    // git init -b main keeps the initial branch name stable regardless of the
+    // user's global init.defaultBranch / git template config.
+    await runCommand('git', ['init', '-b', 'main'], { cwd: projectPath, timeout_ms: 0 })
+    const root = await registerAllowedWorkspaceRoot(projectPath)
+    return root
+  })
+
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
+
+  function interactiveBrowserContents(
+    event: Electron.IpcMainInvokeEvent,
+    rawId: unknown,
+  ): WebContents {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(z.number().int().positive(), [rawId])
+    const contents = webContents.fromId(id)
+    if (!contents || contents.isDestroyed() || contents.session !== getInAppBrowserSession()) {
+      throw new IpcValidationError('Browser sharing rejected: unknown interactive browser tab')
+    }
+    return contents
+  }
+
+  ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
+    const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
+    if (!win.isDestroyed()) win.webContents.send('browser:share-text', share)
+  })
+
+  ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
+    const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
+    if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+  })
 
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
@@ -984,6 +1115,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return fetchLiveIntellectModels()
   })
+  // Model-card links for the value map. Batched because the panel warms every
+  // plotted model at once; the resolver's URL cache makes repeat calls free.
+  ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
+    assertMainFrameSender(event, win)
+    const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
+    const out: Record<string, ResolvedModelCard | null> = {}
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          out[id] = await resolveModelCard(id)
+        } catch {
+          // A probe failure is "no link", never a broken settings panel.
+          out[id] = null
+        }
+      }),
+    )
+    return out
+  })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
   // plaintext-at-rest condition instead of leaving it to a console.warn.
@@ -1079,9 +1228,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { imported, skipped }
   })
-  ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
+  // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
+  // to show the concrete model behind a rule; a pinned id round-trips unchanged.
+  ipcMain.handle('models:resolveDynamic', (_event, rawValue: unknown) => {
+    const value = parseIpcArgs(z.string().trim().max(256), [rawValue])
+    return resolveDynamicModelId(value)
+  })
   ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
+  ipcMain.handle('settings:modelPricing', () => resolveModelPricing())
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
@@ -1197,6 +1352,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
     const { approved } = await requestApproval({
       title: 'Enable Guarded YOLO for this thread?',
+      cause: 'mode-arming',
       body: [
         'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
         '',
@@ -1221,7 +1377,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
-    return loadProjectThreads(id)
+    // Archived threads are hidden from every renderer surface (sidebar and
+    // `@`-catalog both filter them), so folding their history into the store
+    // only grew the heap. They stay on disk and in the whole-history readers.
+    return loadProjectThreads(id, { includeArchived: false })
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -1376,6 +1535,55 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listOrphanProjectStores(projectIds)
   })
 
+  // Settings → Sources → Worktrees. Every call names the project by id and the
+  // main process resolves its root itself, so the renderer never gets to say
+  // which repository (or which directory) is operated on.
+  const worktreeInput = (
+    rawProjectId: unknown,
+  ): { projectId: string; projectRoot: string } | null => {
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const projectRoot = getProjectRoot(projectId)
+    return projectRoot === null ? null : { projectId, projectRoot }
+  }
+
+  ipcMain.handle('worktrees:list', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const target = worktreeInput(rawProjectId)
+    if (!target) return []
+    return listWorktreeInventory({
+      ...target,
+      runningThreadIds: new Set(listRunningThreadIds()),
+    })
+  })
+
+  ipcMain.handle('worktrees:size', async (event, rawProjectId: unknown, rawPath: unknown) => {
+    assertMainFrameSender(event, win)
+    const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+    const target = worktreeInput(rawProjectId)
+    if (!target) throw new IpcValidationError('That project is no longer available')
+    return measureWorktreeSize({ ...target, path })
+  })
+
+  ipcMain.handle(
+    'worktrees:remove',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawForce: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, force] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawForce,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return removeWorktree({
+        ...target,
+        path,
+        force,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
+
   ipcMain.handle('skills:list', () => listSkills())
   ipcMain.handle('plugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
@@ -1410,6 +1618,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
   })
+  // Read one recorded hook execution back out of a thread's spine so the
+  // hook-card inspector can show what the hook was handed and what it returned.
+  // Read-only: it never re-runs anything (that is `hooks:test`), and the ids are
+  // validated so a compromised renderer cannot walk out of the chat store.
+  ipcMain.handle(
+    'hooks:runDetail',
+    (event, rawProjectId: unknown, rawThreadId: unknown, rawRunId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, runId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zHookRunId]),
+        [rawProjectId, rawThreadId, rawRunId],
+      )
+      return readHookRunDetail(projectId, threadId, runId)
+    },
+  )
   // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
   // Settings pack list ("about:addons") calls these to enumerate every
   // registered pack, toggle enablement atomically (P1 contract), and read /
@@ -1418,6 +1641,40 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     await getPackService().refreshPackSources()
     return { packs: getPackService().list() }
+  })
+  ipcMain.handle('supervisor:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+    const activeStates = new Set(['queued', 'running', 'waiting', 'blocked'])
+    const tasks: SupervisedTaskSummary[] = getTaskSupervisor()
+      .list(projectId)
+      .filter((task) => activeStates.has(task.state))
+      .map((task) => ({
+        taskId: task.taskId,
+        projectId: task.projectId,
+        threadId: task.threadId,
+        handler: task.handler,
+        state: task.state,
+        updatedAt: task.updatedAt,
+      }))
+    return { tasks }
+  })
+  ipcMain.handle('supervisor:cancel', async (event, rawProjectId: unknown, rawTaskId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+    const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
+    const task = await getTaskSupervisor().cancel(projectId, taskId)
+    const summary: SupervisedTaskSummary | null = task
+      ? {
+          taskId: task.taskId,
+          projectId: task.projectId,
+          threadId: task.threadId,
+          handler: task.handler,
+          state: task.state,
+          updatedAt: task.updatedAt,
+        }
+      : null
+    return { task: summary }
   })
   ipcMain.handle('packs:addSource', async (event) => {
     assertMainFrameSender(event, win)
@@ -1487,6 +1744,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     if (id === PARALLEL_SEARCH_PACK_ID) {
       syncParallelSearchTools(registry)
+    }
+    if (id === DARK_FACTORY_PACK_ID) {
+      syncDarkFactorySensor()
+    }
+    if (id === AUTOMATIONS_PACK_ID) {
+      getTaskSupervisor().syncCronTasks()
+      await getAutomationService().sync()
     }
     return { packs: getPackService().list() }
   })
@@ -1625,6 +1889,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     )
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
     return getGitBranchStatus(branch, root)
+  })
+  ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getGitPromptState((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
   ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -1930,6 +2199,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [prompt, kind],
       )
       return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
+    })
+    // Drives the real main→renderer close question without actually quitting —
+    // an e2e that closed the app would take its own session down with it.
+    ipcMain.handle('test:requestCloseConfirm', (event) => {
+      assertMainFrameSender(event, win)
+      return requestCloseConfirmation()
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)

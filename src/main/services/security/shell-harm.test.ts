@@ -11,6 +11,16 @@ function action(command: string, overrides: Partial<ShellHarmContext> = {}): str
   return assessShellHarm(command, { ...context, ...overrides }).action
 }
 
+/** Reasons that blame something the gate could not read, which is where the noise lands. */
+function uninspectableReasons(
+  command: string,
+  overrides: Partial<ShellHarmContext> = {},
+): string[] {
+  return assessShellHarm(command, { ...context, ...overrides }).reasons.filter((reason) =>
+    reason.includes('could not be inspected'),
+  )
+}
+
 describe('Guarded YOLO shell harm gate', () => {
   it('allows routine local and external commands', () => {
     for (const command of [
@@ -386,5 +396,82 @@ describe('Guarded YOLO shell harm gate', () => {
     // Nor an argument that merely looks script-shaped.
     assert.equal(action('/usr/bin/git add build.sh'), 'allow')
     assert.equal(action('/bin/ls scripts/build.sh'), 'allow')
+  })
+
+  it('does not lex interpreter source as a shell command line', () => {
+    // One Guarded YOLO prompt for a single lint run carried forty "script
+    // contents could not be inspected safely" lines and pushed the command
+    // itself out of view. The gate had read the plugin's JavaScript, split it on
+    // `(`, `;` and newlines as if it were a command line, and taken every module
+    // specifier, docs URL, glob, rule id and comment terminator that carried a
+    // slash for a workspace-relative script it was about to execute.
+    const source = [
+      '"use strict";',
+      'const config = require("./config");',
+      'const rules = require("./rules");',
+      '/*',
+      ' * https://eslint.style/rules/array-bracket-newline',
+      ' */',
+      'const ignores = ["dist/", "tests/e2e/**"];',
+      'const off = { "@typescript-eslint/no-unused-vars": "off" };',
+      'function messages(error) {',
+      '  return require(`../messages/${error.messageTemplate}.js`);',
+      '}',
+      'module.exports = { config, rules, ignores, off, messages };',
+    ].join('\n')
+    const readScript = (path: string): string | null =>
+      path === '/work/project/eslint.config.mjs' ? source : null
+
+    assert.equal(action('node eslint.config.mjs', { readScript }), 'allow')
+    assert.deepEqual(uninspectableReasons('node eslint.config.mjs', { readScript }), [])
+  })
+
+  it('still reads destructive calls out of interpreter source', () => {
+    // Declining to lex JavaScript as shell must not blind the gate to what the
+    // JavaScript does. The text-level inspectors carry that signal in any
+    // language, and a string handed to exec/system is still assessed as shell.
+    const scripts = new Map([
+      ['/work/project/cleanup.js', "require('fs').rmSync('/', { recursive: true })\n"],
+      ['/work/project/cleanup.py', 'import os\nos.system("rm -rf /")\n'],
+      ['/work/project/report.js', "console.log('https://example.com/docs/rm-rf.md')\n"],
+    ])
+    const readScript = (path: string): string | null => scripts.get(path) ?? null
+
+    assert.equal(action('node cleanup.js', { readScript }), 'deny')
+    assert.equal(action('python3 cleanup.py', { readScript }), 'deny')
+    assert.equal(action('node report.js', { readScript }), 'allow')
+  })
+
+  it('takes a script language from the shebang before the suffix', () => {
+    // An extensionless `bin/` entry point says what it is on its first line, and
+    // that is what the kernel obeys.
+    const scripts = new Map([
+      ['/work/project/bin/tool', '#!/usr/bin/env node\nfetch("https://example.com/api/v1/x")\n'],
+      ['/work/project/bin/clean', '#!/bin/sh\nrm -rf /\n'],
+    ])
+    const readScript = (path: string): string | null => scripts.get(path) ?? null
+
+    assert.equal(action('./bin/tool', { readScript }), 'allow')
+    assert.deepEqual(uninspectableReasons('./bin/tool', { readScript }), [])
+    assert.equal(action('./bin/clean', { readScript }), 'deny')
+  })
+
+  it('does not mistake a URL, package id, glob, or directory for a script', () => {
+    // A wrapped shell line puts whatever follows the backslash at the head of a
+    // segment, so each of these was read as a relative executable and cost the
+    // prompt a line of its own — in shell, before any script was ever read.
+    const command = [
+      'npx \\',
+      '  @scope/tool --check',
+      'prettier --write \\',
+      "  'src/**/*.ts'",
+      'ls \\',
+      '  dist/',
+      'echo \\',
+      '  https://example.com/install.sh',
+    ].join('\n')
+
+    assert.equal(action(command), 'allow')
+    assert.deepEqual(uninspectableReasons(command), [])
   })
 })

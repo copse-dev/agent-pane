@@ -2,7 +2,8 @@
 // namespacing vocabulary; re-exported here so remote-agent consumers keep their
 // existing import path and the literal never drifts between the two.
 export { REMOTE_AGENT_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
-import { REMOTE_AGENT_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
+import { AGENT_MODEL_SEP, REMOTE_AGENT_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
+import { parseModelSelection } from '@copse/llm/model-selection.ts'
 import {
   TRACKED_MODELS,
   cloudModelDisplayLabel,
@@ -35,11 +36,10 @@ export const DEFAULT_ANTHROPIC_AGENT_BASE_URL = 'https://api.anthropic.com'
 export const CURSOR_AGENTS_WEB_URL = 'https://cursor.com/agents'
 
 /**
- * Optional model half of a remote-agent selection, encoded after `#` the same way
- * ACP does (`acp:<id>#<model>`). The model id may contain most characters but not
- * `#`, so a first-`#` split is unambiguous.
+ * Optional model half of a remote-agent selection, encoded after `#` the same
+ * way ACP does (`acp:<id>#<model>`) — hence the shared separator.
  */
-const REMOTE_AGENT_MODEL_SEP = '#'
+const REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP
 
 export interface RemoteAgentModelOption {
   provider: RemoteAgentProvider
@@ -98,13 +98,11 @@ export function remoteAgentModelValue(provider: RemoteAgentProvider, model?: str
  * non-remote models / unknown providers / empty provider (`remote-agent:`).
  */
 export function parseRemoteAgentModelSelection(model: string): RemoteAgentModelSelection | null {
-  if (!model.startsWith(REMOTE_AGENT_MODEL_PREFIX)) return null
-  const rest = model.slice(REMOTE_AGENT_MODEL_PREFIX.length)
-  const sep = rest.indexOf(REMOTE_AGENT_MODEL_SEP)
-  const provider = sep === -1 ? rest : rest.slice(0, sep)
+  const selection = parseModelSelection(model)
+  if (selection.namespace !== 'remote-agent') return null
+  const provider = selection.agent
   if (!isRemoteAgentProvider(provider)) return null
-  const chosen = sep === -1 ? '' : rest.slice(sep + 1)
-  return chosen ? { provider, model: chosen } : { provider }
+  return selection.id ? { provider, model: selection.id } : { provider }
 }
 
 export function isRemoteAgentModel(model: string): boolean {

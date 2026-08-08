@@ -14,10 +14,8 @@ interface RootWatchState {
   rebuildQueued: boolean
   /**
    * Whether a rebuild for this root also refreshes the semantic index. True
-   * for the primary workspace root; worktree execution roots opt out — gortex
-   * scopes its daemon to one active repo at a time (`scopeGortexToActiveRepo`),
-   * so tracking every worktree alongside the workspace would thrash it. Those
-   * roots fall back to regex/text search instead (#1400).
+   * for the primary workspace root; worktree execution roots opt out because
+   * they reuse that shared semantic snapshot with a local delta overlay.
    */
   withSemantic: boolean
 }

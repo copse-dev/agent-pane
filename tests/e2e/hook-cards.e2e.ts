@@ -40,6 +40,14 @@ describe('hook cards in the transcript', function () {
     const host = await $('[data-hook-cards-for="msg-assistant-hook"]')
     await expect(host).toBeExisting()
 
+    // The first turn's `sessionStart` hooks fire detached before any message
+    // exists and fold onto the first message, so its host leads the transcript.
+    // The shared host margin is tuned for assistant-message bulk; the first
+    // host must not be pulled flush against the sticky user prompt, or the
+    // first-turn cards read as a cramped "no gap" next to later turns.
+    const firstHost = await $('[data-hook-cards-for="msg-user-hook-open"]')
+    await expect(firstHost).toBeExisting()
+
     // Multi-card turns always collapse into one summary group by default. The
     // summary leads with the outcome instead of merely reporting that hooks ran.
     const group = await host.$('.hook-card-group')
@@ -48,7 +56,7 @@ describe('hook cards in the transcript', function () {
     await expect(group).toHaveAttribute('data-status', 'deny')
     const summary = await group.$(':scope > .hook-card-header .hook-card-status')
     await expect(summary).toHaveText(expect.stringMatching(/^1 blocked/))
-    await expect(summary).toHaveText(expect.stringMatching(/2 ran/))
+    await expect(summary).toHaveText(expect.stringMatching(/3 ran/))
 
     // Once the user expands the group, allow-only/no-op hooks remain contracted
     // while a hook that applied a deny is already open with its effect first.
@@ -69,5 +77,29 @@ describe('hook cards in the transcript', function () {
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'hook-cards.png'))
+
+    // The inspector reads the recorded bodies back through `hooks:runDetail` —
+    // the real main-process path over the seeded thread's blobs, not a stub. A
+    // card that only counts characters ("Injected 57 chars of context") opens to
+    // the context the model actually received.
+    const contextCard = await group.$('.hook-card[data-hook-run="hr-context"]')
+    await expect(contextCard).toBeExisting()
+    await contextCard.$('.hook-card-raw-summary').click()
+    const injected = await contextCard.$('[data-section="injected context"] pre')
+    await injected.waitForExist({ timeout: 10_000 })
+    await expect(injected).toHaveText(expect.stringMatching(/You still have open todos/))
+
+    // A command hook shows the whole exchange — the payload it was handed and
+    // the response it printed.
+    const denyCard = await group.$('.hook-card[data-hook-run="hr-deny"]')
+    await denyCard.$('.hook-card-raw-summary').click()
+    const stdin = await denyCard.$('[data-section="stdin"] pre')
+    await stdin.waitForExist({ timeout: 10_000 })
+    await expect(stdin).toHaveText(expect.stringMatching(/kubectl delete deploy/))
+    await expect(denyCard.$('[data-section="stdout"] pre')).toHaveText(
+      expect.stringMatching(/"permission": "deny"|"permission":"deny"/),
+    )
+
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'hook-card-inspector.png'))
   })
 })

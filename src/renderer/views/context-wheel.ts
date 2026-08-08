@@ -197,8 +197,8 @@ export function createContextWheel(): {
     clearSegments()
   }
 
-  /** Build an aggregate-only popover for an agent-reported live snapshot. */
-  function renderSnapshotPopover(snapshot: ContextSnapshot, source: string): void {
+  /** Build an aggregate-only popover from a live snapshot, with an optional source note. */
+  function renderSnapshotPopover(snapshot: ContextSnapshot, source?: string | null): void {
     const pct = pctOf(snapshot.conversationTokens, snapshot.conversationBudget)
     clearPopover()
     const header = document.createElement('div')
@@ -206,10 +206,12 @@ export function createContextWheel(): {
     header.textContent = `Context · ${formatTokenCount(
       snapshot.conversationTokens,
     )} / ${formatTokenCount(snapshot.conversationBudget)} (${String(pct)}%)`
+    popover.append(header)
+    if (!source) return
     const note = document.createElement('div')
     note.className = 'context-wheel-popover-note'
     note.textContent = source
-    popover.append(header, note)
+    popover.append(note)
   }
 
   function renderSnapshot(
@@ -238,20 +240,21 @@ export function createContextWheel(): {
     )
 
     // Existing (already-run) chats keep the measured live-fill ring, but still
-    // expose the part-by-part breakdown on hover when one is available. Subagent
-    // and remote-agent windows don't report a breakdown or source label, so
-    // they fall through here with no popover. ACP snapshots carry a source label
-    // and get an aggregate-only popover instead.
+    // expose the part-by-part breakdown on hover when one is available.
+    popoverActive = true
+    root.tabIndex = 0
     const breakdown = options?.breakdown
     if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
-      popoverActive = true
-      root.tabIndex = 0
       renderPopover(breakdown)
-    } else if (options?.snapshotSource) {
-      popoverActive = true
-      root.tabIndex = 0
-      renderSnapshotPopover(snapshot, options.snapshotSource)
+      return
     }
+    // No breakdown to show: the caller suppresses the pre-send estimate while a
+    // run is in flight (the live snapshot is authoritative then), and subagent /
+    // remote-agent windows never produce one. Fall back to the aggregate the
+    // ring is already drawing rather than leaving the wheel inert on hover — it
+    // reads state we already hold, so it costs no estimate and no IPC. ACP
+    // snapshots additionally name their source.
+    renderSnapshotPopover(snapshot, options?.snapshotSource)
   }
 
   function update(

@@ -215,9 +215,19 @@ contract-tested, waiting for the drain-path wiring.
 | negative / non-integer      | ignored (parse-time warning; no field carried) — Copse dialect only                                                              |
 
 The `null`-is-refused warning already surfaces at parse time in Settings → Sources (the
-Copse adapter emits it while parsing `.copse/hooks.json`). Only the **Copse** dialect
-exposes `loop_limit` on disk today; the field and its reserved status are documented
-per-dialect in [`docs/copse-hooks.md`](./copse-hooks.md#copse-native-fields).
+Copse adapter emits it while parsing `.copse/hooks.json`). The field and its reserved
+status are documented per-dialect in
+[`docs/copse-hooks.md`](./copse-hooks.md#copse-native-fields).
+
+**Cursor also exposes `loop_limit` on disk** (a per-script option in its published hook
+config, defaulting to 5 for Cursor hooks and `null` for imported Claude Code hooks), but
+**Copse's Cursor adapter does not parse it** — in a `.cursor/hooks.json` the field is
+dropped silently, without even the reserved-field warning the Copse adapter emits. Nothing
+is unbounded by that today, because Copse holds Cursor's `stop` / `subagentStop`
+follow-ups rather than auto-submitting them (see
+[`docs/cursor-hooks.md`](./cursor-hooks.md#two-deliberate-divergences)), so no Cursor
+script can spend the continuation budget without a human. The per-script loop-limit wiring
+needs to close this on the Cursor side too, not just the Copse one.
 
 ## Spine recording (always-on)
 
@@ -225,7 +235,18 @@ Every hook execution writes a `hook_run` line to the thread spine (the [always-o
 hook id, emitting step, wall-clock duration, exit code, `parse_ok`, the normalized decision,
 plus raw stdout **and stderr** as blobs. stderr matters because hook stdout is the response
 channel — a script's stray debug print corrupts its own response into a fail-open `allow`,
-and `parse_ok: false` next to the captured bytes is what makes that visible. Recording is
+and `parse_ok: false` next to the captured bytes is what makes that visible.
+
+Both halves of the exchange are captured, for both executors. A command hook records the
+**exact stdin bytes** it was handed (serialized once in `hook-spawn.ts` and reused for the
+child write and the blob, so the record cannot drift from what the process read). A function
+hook has no streams at all, so it records its **dispatch payload** plus the full text of
+every channel it applied — `injectContext`, `agentMessage`, `userMessage`, `updatedInput`,
+halt reason — which the compact `decision` summary otherwise only counts characters of.
+Function capture is scoped to runs that acted or threw: an abstaining steering hook fires
+every turn and has nothing to explain, so capturing it would multiply a thread's blob count
+for no answer. Captures are bounded with a visible truncation marker, never a silent cut.
+This is what the hook-card **inspector** reads back (below). Recording is
 always-on and survives full thread saves (`writeThread` regenerates `events.jsonl` from
 messages, so appended non-message lines must round-trip — [foundations phase](./plans/hooks-and-feature-packs.md#phase-a--foundations)). The spine also records
 content-addressed **toolset fingerprints** referenced by hash from assistant lines and
@@ -279,6 +300,17 @@ Security section for the full model.
   note (the [hook-card attribution decision](./plans/hooks-and-feature-packs.md#decisions-log)). The card model is `src/shared/hooks/hook-card.ts`; styling is
   `src/renderer/styles/global/hook-cards.css`. Conventions are in
   [`docs/ui-taste.md`](./ui-taste.md).
+- **Hook-card inspector ([validation & tooling phase](./plans/hooks-and-feature-packs.md#phase-g--validation--tooling)).** Every card carries an **Inspect run** disclosure:
+  what the hook was handed and what it returned, in full. A card summarizes an effect
+  (“Added context · Injected 307 chars”); the inspector shows the 307 chars. It reads the
+  execution's captured blobs on demand through the read-only `hooks:runDetail` IPC
+  (`src/main/services/hooks/run-detail.ts`), lazily on first open and never re-fetched — a
+  hook run is immutable once recorded, and the transcript never holds a second copy of a
+  hook's output. A function hook's outcome blob is re-split into one labeled block per
+  channel so injected context reads with real newlines instead of JSON escapes; a command
+  hook shows `stdin` / `stdout` / `stderr`. The presentation model is pure and unit-tested
+  (`src/shared/hooks/hook-run-detail.ts`). Distinct from the dry-run tester below: this shows
+  what **actually ran**, the tester re-runs a hook against a synthetic payload.
 - **Sources panel ([foundations phase](./plans/hooks-and-feature-packs.md#phase-a--foundations)).** Settings → Sources → Hooks lists every discovered hook across all
   three dialects, per-entry validation warnings, unsupported-event badges, the
   "outside sandbox" badge ([Copse-dialect phase](./plans/hooks-and-feature-packs.md#phase-f--copse-dialect-native-events-sandbox)), and per-hook runtime error state (first failure per session).
@@ -334,8 +366,8 @@ The boundary is fixed (execution-guidance rule 4):
   (`command-hook-runner.ts`), each canonical event's host orchestrator (`tool-gate.ts`,
   `before-submit-prompt.ts`, `after-file-edit.ts`, `stop.ts`, `after-tool-use.ts`,
   `subagent.ts`, `session-start.ts`, `diff-apply.ts`, `permission-decision.ts`,
-  `post-turn-review.ts`), the dry-run tester (`dry-run.ts`), and the spine/drift/snapshot
-  tests.
+  `post-turn-review.ts`), the dry-run tester (`dry-run.ts`), the hook-card inspector's read
+  path (`run-detail.ts`), and the spine/drift/snapshot tests.
 - **`src/renderer/`**: hook cards + held-queue UI.
 
 ## Related

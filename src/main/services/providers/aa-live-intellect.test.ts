@@ -158,33 +158,33 @@ describe('requestLiveIntellectModels', () => {
     assert.deepEqual(result.models, [{ id: 'nullable-pricing', intellect: 42 }])
   })
 
-  it('falls back to the legacy score feed when the richer response fails validation', async () => {
-    const urls: string[] = []
-    const fetch: typeof globalThis.fetch = async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      urls.push(url)
-      if (url.includes('/language/models/free')) {
-        return new Response('[{"code":"invalid_type"', {
+  it('never calls a retired /api/v2/data/* path, on any failure', async () => {
+    // AA retires the legacy data endpoints on 2026-11-04 (410 Gone after that),
+    // and their documented replacement for /data/llms/models is the free
+    // language feed we already call first — so there is no second endpoint to
+    // try, whatever goes wrong.
+    const responses: Array<() => Response> = [
+      (): Response =>
+        new Response('[{"code":"invalid_type"', {
           headers: { 'content-type': 'application/json' },
-        })
-      }
-      return new Response(
-        JSON.stringify({
-          intelligence_index_version: 4.1,
-          data: [AA_MODEL('legacy-score', 41, 2)],
         }),
-        { headers: { 'content-type': 'application/json' } },
-      )
+      (): Response => jsonResponse({}, 500, 'Server Error'),
+      (): Response => jsonResponse({}, 503, 'Service Unavailable'),
+    ]
+    for (const response of responses) {
+      const urls: string[] = []
+      const fetch = (async (input: string | URL | Request) => {
+        urls.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+        return response()
+      }) as typeof globalThis.fetch
+      const result = await requestLiveIntellectModels('key', fetch)
+      assert.equal(result.ok, false)
+      assert.equal(urls.length, 1, 'a failed fetch must not retry against another endpoint')
+      assert.doesNotMatch(urls[0] ?? '', /\/api\/v2\/data\//)
     }
-
-    const result = await requestLiveIntellectModels('key', fetch)
-    assert.equal(result.ok, true)
-    assert.equal(result.models[0]?.id, 'legacy-score')
-    assert.match(urls[0] ?? '', /\/language\/models\/free\?page=1$/)
-    assert.match(urls[1] ?? '', /\/data\/llms\/models$/)
   })
 
-  it('keeps response-validator details out of the visible error when both feeds fail', async () => {
+  it('keeps response-validator details out of the visible error', async () => {
     const fetch: typeof globalThis.fetch = async () =>
       new Response('[{"code":"invalid_type"', {
         headers: { 'content-type': 'application/json' },
@@ -195,6 +195,15 @@ describe('requestLiveIntellectModels', () => {
       result.error,
       'Artificial Analysis returned model data that does not match its published schema.',
     )
+  })
+
+  it('reports a retired endpoint (410) as needing an app update, not a bad key', async () => {
+    const { fetch } = fakeFetch({ status: 410, statusText: 'Gone' })
+    const result = await requestLiveIntellectModels('key', fetch)
+    assert.equal(result.ok, false)
+    assert.match(result.error ?? '', /HTTP 410/)
+    assert.match(result.error ?? '', /retired/)
+    assert.doesNotMatch(result.error ?? '', /key was rejected/)
   })
 
   it('surfaces a rejected key (403) with an actionable message', async () => {

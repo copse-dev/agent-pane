@@ -1,4 +1,5 @@
 import type { StreamChunk, Thread } from '@shared/types'
+import type { PackContributionsSummary, PackSummary } from '@shared/types/packs.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -8,6 +9,72 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
+
+/**
+ * Packs shown in the browser demo's Settings → Packs list. The real list comes
+ * from the host registry, which the demo has no access to, so a small stand-in
+ * covers the shapes the row has to render: a first-party pack, one that is
+ * experimental and carries a setting, and a user-installed one that is off.
+ */
+const DEMO_PACK_CONTRIBUTIONS: PackContributionsSummary = {
+  toolNames: [],
+  modelRoutes: [],
+  browserOrigins: [],
+  blockingHooks: [],
+  asyncHooks: [],
+  commandHooks: [],
+  promptBlocks: [],
+  ui: [],
+  capabilities: [],
+  permissions: [],
+}
+
+const DEMO_PACKS: readonly PackSummary[] = [
+  {
+    id: 'copse.todos',
+    trust: 'first-party',
+    stability: 'stable',
+    name: 'Todos',
+    version: '1.0.0',
+    description:
+      'Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.',
+    enabled: true,
+    contributions: { ...DEMO_PACK_CONTRIBUTIONS, toolNames: ['todo_write', 'todo_read'] },
+    settings: [],
+  },
+  {
+    id: 'copse.advisor-strategy',
+    trust: 'first-party',
+    stability: 'experimental',
+    name: 'Advisor strategy',
+    version: '0.3.1',
+    description:
+      'Pairs a second model with the executor to review strategy before long or risky work starts.',
+    enabled: true,
+    contributions: { ...DEMO_PACK_CONTRIBUTIONS, toolNames: ['consult_advisor'] },
+    settings: [
+      {
+        id: 'maxReviewCycles',
+        kind: 'number',
+        title: 'Max review cycles',
+        description: 'How many times a failing review may buy the agent another turn.',
+        default: 2,
+        value: 2,
+      },
+    ],
+  },
+  {
+    id: 'personal.reference-tools',
+    trust: 'user',
+    stability: 'experimental',
+    name: 'Reference tools',
+    version: '0.1.0',
+    description: 'A locally installed pack from a selected directory.',
+    enabled: false,
+    contributions: DEMO_PACK_CONTRIBUTIONS,
+    settings: [],
+  },
+]
 
 /**
  * Provider slug for a model id, matching the conventions used elsewhere:
@@ -80,10 +147,20 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       isTrusted: () => resolved(true),
       setTrusted: emptyArray,
       unsandboxedProjectHooks: emptyArray,
+      // The demo bundle is browser-targeted (no `node:path`), and demo paths are
+      // display-only POSIX strings, so join by hand rather than importing path.
+      createNewProject: (name: string, parentDir: string) =>
+        resolved(`${parentDir.replace(/\/+$/, '')}/${name}`),
+      pickParentDirectory: () => resolved(null),
+      getHomeDirectory: () => resolved(''),
       onOpened: subscribe,
     },
     browser: {
       onOpenTab: subscribe,
+      sharePageText: unsupported,
+      shareScreenshot: unsupported,
+      onShareText: subscribe,
+      onShareImage: subscribe,
       onPackTabRequest: subscribe,
     },
     security: {
@@ -168,6 +245,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         replay?.abort()
         return resolvedVoid()
       },
+      runningThreadIds: emptyArray,
       retryReview: resolvedVoid,
       retryComparison: resolvedVoid,
       clearHistory: resolvedVoid,
@@ -211,6 +289,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       respond: resolvedVoid,
       onRequest: subscribe,
       onDevNotice: subscribe,
+    },
+    closeConfirm: {
+      respond: resolvedVoid,
+      onRequest: subscribe,
     },
     sshWorkspace: {
       listHosts: emptyArray,
@@ -282,16 +364,18 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     openRouter: { models: emptyArray },
     models: {
-      chatDefaultContextHealth: () =>
-        resolved({
-          hasDecentChatDefault: true,
-          minimum: 100_000,
-          bestAvailableContext: 200_000,
-        }),
       bestValueDefault: () => resolved('lmstudio:qwen/qwen3.6-35b-a3b'),
+      resolveDynamic: (value: string) =>
+        resolved(value.startsWith('auto:') ? 'lmstudio:qwen/qwen3.6-35b-a3b' : value),
     },
     intellect: {
       liveModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),
+    },
+    // No network in the demo, so nothing resolves and the value map shows no
+    // card links — the same state as a probe that found nothing.
+    modelCards: {
+      resolve: (modelIds: string[]) =>
+        resolved(Object.fromEntries(modelIds.map((id) => [id, null]))),
     },
     lmStudio: {
       test: () => resolved({ ok: false, error: 'Unavailable in demo' }),
@@ -373,6 +457,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       scanEnvKeys: emptyArray,
       importEnvKeys: () => resolved({ imported: [], skipped: [] }),
       extraProviders: emptyArray,
+      // The demo's scenario models are all in the static cloud catalog, so the
+      // footer prices them without any fetched rates.
+      modelPricing: () => resolved({}),
       saveExtraProvider: emptyArray,
       deleteExtraProvider: emptyArray,
       fetchProviderModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),
@@ -484,14 +571,28 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onChanged: subscribe,
       setThread: () => resolved(null),
     },
+    supervisor: {
+      list: () => resolved({ tasks: [] }),
+      cancel: () => resolved({ task: null }),
+      onChanged: subscribe,
+    },
+    // The browser demo has no repository behind it, so it owns no checkouts to
+    // list and nothing that could be measured or deleted.
+    worktrees: {
+      list: emptyArray,
+      size: (_projectId: string, path: string) =>
+        resolved({ path, bytes: 0, fileCount: 0, truncated: false }),
+      remove: unsupported,
+    },
     skills: { list: emptyArray },
     plugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
+      runDetail: () => resolved({ found: false }),
     },
     packs: {
-      list: () => resolved({ packs: [] }),
+      list: () => resolved({ packs: DEMO_PACKS }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
       addSource: () => resolved({ packs: [] }),
@@ -510,7 +611,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     instructions: { list: emptyArray },
     cursorRules: { list: emptyArray },
     terminal: {
-      create: () => resolved('demo-terminal'),
+      create: () =>
+        resolved<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>({
+          sessionId: 'demo-terminal',
+          checkoutMode: 'shared',
+        }),
       write: resolvedVoid,
       resize: resolvedVoid,
       destroy: resolvedVoid,
@@ -535,6 +640,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           currentBranch: forBranch ?? currentBranch,
           pr: null,
         }),
+      promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId: string, _threadId: string, branch: string) => {
         currentBranch = branch
         return resolvedVoid()

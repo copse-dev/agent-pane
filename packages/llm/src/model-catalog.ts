@@ -14,6 +14,10 @@
 //   3. Run `npm run sync:models`.
 
 import { MODEL_CATALOG } from './model-catalog.generated.ts'
+import { canonicalModelLabel } from './model-label.ts'
+// A leaf module — safe here, where importing `extra-providers.ts` for the same
+// parsing (→ pareto-frontier.ts → this module) would cycle.
+import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
 
 export interface ModelInfo {
   /** USD per million input tokens. */
@@ -46,9 +50,11 @@ export const TRACKED_MODELS = [
   'claude-haiku-4-5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5.5',
   'gpt-5',
   'gpt-5-mini',
+  'gpt-5-nano',
   'gpt-4o',
   'gpt-4o-mini',
 ] as const
@@ -85,17 +91,24 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
   'claude-haiku-4-5': 'Claude Haiku 4.5',
   'gpt-5.6-sol': 'GPT-5.6 Sol',
   'gpt-5.6-terra': 'GPT-5.6 Terra',
+  'gpt-5.6-luna': 'GPT-5.6 Luna',
   'gpt-5.5': 'GPT-5.5',
   'gpt-5': 'GPT-5',
   'gpt-5-mini': 'GPT-5 mini',
+  'gpt-5-nano': 'GPT-5 nano',
   'gpt-4o': 'GPT-4o',
   'gpt-4o-mini': 'GPT-4o mini',
 }
 
-/** Friendly label for a tracked cloud id; unknown ids fall back to themselves. */
+/**
+ * Friendly label for a tracked cloud id. An untracked id gets the same house
+ * spelling when its name says enough to give it one (`claude-opus-4-7` →
+ * "Claude Opus 4.7" — the picker lists agent-supplied ids we don't track), and
+ * otherwise falls back to itself.
+ */
 export function cloudModelDisplayLabel(model: string): string {
   const tracked = TRACKED_MODELS.find((candidate) => candidate === model)
-  return tracked === undefined ? model : CLOUD_MODEL_LABELS[tracked]
+  return tracked === undefined ? canonicalModelLabel(model) : CLOUD_MODEL_LABELS[tracked]
 }
 
 /** Model picker entries derived from {@link TRACKED_MODELS}. */
@@ -129,4 +142,34 @@ const MID_CONVERSATION_SYSTEM_PREFIXES = [
 /** Whether `model` accepts mid-conversation `{ role: 'system' }` messages. */
 export function supportsMidConversationSystem(model: string): boolean {
   return MID_CONVERSATION_SYSTEM_PREFIXES.some((prefix) => model.startsWith(prefix))
+}
+
+/**
+ * Namespaces that put a first-party cloud model id on the wire, so a family
+ * check against that id means something.
+ *
+ * The rest cannot: `lmstudio` serves local weights, where a GGUF may be named
+ * after a model it is merely distilled from, and `remote-agent` / `acp` /
+ * `pack-model` hand the turn to something that owns its own prompt.
+ */
+const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter', 'extra-provider'])
+
+/**
+ * Whether `model` resolves to the Claude Opus 5 family.
+ *
+ * Opus 5's default user-facing responses run longer than other models', and
+ * effort tunes how much it thinks rather than how much it says — so the fix is
+ * a prompt-side conciseness instruction, not a parameter. Callers use this to
+ * gate that instruction to the one family that needs it; everything else keeps
+ * the model-agnostic prompt unchanged.
+ *
+ * Takes a stored model selection, not a bare id: the same Opus 5 reaches this
+ * as `claude-opus-5` or `openrouter:anthropic/claude-opus-5` depending on how
+ * it was picked, and both must steer the same. Prefix match on the resolved id,
+ * so dated snapshots (`claude-opus-5-…`) and an aggregator's variant suffixes
+ * (`…claude-opus-5:beta`) resolve too.
+ */
+export function isOpus5Model(model: string): boolean {
+  const selection = parseModelSelection(model)
+  return CLOUD_ROUTED.has(selection.namespace) && selection.modelId.startsWith('claude-opus-5')
 }

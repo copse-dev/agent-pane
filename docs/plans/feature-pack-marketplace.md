@@ -120,13 +120,13 @@ not a separate trust class.
 
 ### Verification policy (v1)
 
-| Check                 | v1 expectation                                                                                                                                            |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Manifest schema       | Must validate against `copse-pack.schema.json`                                                                                                            |
-| Content hash          | Required for every install/update                                                                                                                         |
-| Signature             | Required once a first-party or community signing key is configured; until then, UI must label installs **unsigned** and require an explicit trust confirm |
-| Network fetch         | Prompt / Settings-gated; no background fetch when marketplace unused                                                                                      |
-| Dependency resolution | v1: no transitive code deps; declare conflicts only (duplicate ids / slots)                                                                               |
+| Check                 | v1 expectation                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manifest schema       | Two-stage once P1 lands: the Agent Plugins envelope, then `extensions["dev.copse"]` against a Copse extension schema (see [`agent-plugins-migration.md`](agent-plugins-migration.md)) |
+| Content hash          | Required for every install/update                                                                                                                                                     |
+| Signature             | Required once a first-party or community signing key is configured; until then, UI must label installs **unsigned** and require an explicit trust confirm                             |
+| Network fetch         | Prompt / Settings-gated; no background fetch when marketplace unused                                                                                                                  |
+| Dependency resolution | v1: no transitive code deps; declare conflicts only (duplicate ids / slots)                                                                                                           |
 
 ### Conflict reporting
 
@@ -154,9 +154,17 @@ client, Settings marketplace browser, and changes to Cursor plugin discovery.
 
 ### P1 — Local user-pack discovery (prerequisite)
 
-- Wire host disk discovery so a `plugin.json` / pack manifest on a configured
-  local root registers as a **user** pack row in Settings → Packs (closes the gap
-  documented in [`../adding-a-pack.md`](../adding-a-pack.md)).
+**Format superseded by [`agent-plugins-migration.md`](agent-plugins-migration.md).**
+P1's scope is unchanged, but the manifest it discovers is now an
+[Agent Plugins v1.0.0](https://agent-plugins.org/specification) root `plugin.json`
+with Copse contribution kinds under `extensions["dev.copse"]`, not a bare pack
+manifest. The first attempt ([#1342](https://github.com/copse-dev/agent-pane/pull/1342))
+was closed unmerged; its follow-up is preserved on
+[#1082](https://github.com/copse-dev/agent-pane/issues/1082#issuecomment-5105765166).
+
+- Wire host disk discovery so an Agent Plugins manifest on a configured local root
+  registers as a **user** pack row in Settings → Packs (closes the gap documented
+  in [`../adding-a-pack.md`](../adding-a-pack.md)).
 - Exit gate: unit/integration test registers a fixture user pack, enable/disable
   is atomic, prompt trust forced untrusted; no network.
 

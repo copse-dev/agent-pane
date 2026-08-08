@@ -1,5 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { AppStore } from '@shared/store/store.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { capturePopoutSeed } from '../popout/pane-popout-seed.ts'
 
@@ -9,6 +10,7 @@ import { capturePopoutSeed } from '../popout/pane-popout-seed.ts'
  * content it detaches; popout.css hides it inside an already-detached window.
  */
 export function panePopoutButton(
+  store: AppStore,
   api: ApiClient,
   mode: RightPanelMode,
   paneLabel: string,
@@ -24,7 +26,7 @@ export function panePopoutButton(
     '⧉',
   )
   btn.addEventListener('click', () => {
-    const seed = capturePopoutSeed(mode)
+    const seed = capturePopoutSeed(mode, store)
     void api.panes.popout(mode, seed ?? undefined)
   })
   return btn

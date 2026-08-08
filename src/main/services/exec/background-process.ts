@@ -16,6 +16,7 @@ import {
 } from '../thread-execution-context.ts'
 import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
 import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
+import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // pack (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
@@ -46,6 +47,11 @@ interface BackgroundProcess {
   urlRemote: boolean
   exited: boolean
   exitCode: number | null
+  timedOut: boolean
+  cancelled: boolean
+  completionNotified: boolean
+  completionTimer: ReturnType<typeof setTimeout> | null
+  onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
   /** True when the process runs without the local project sandbox. */
   unsandboxed: boolean
   owner: ThreadExecutionOwner
@@ -62,6 +68,7 @@ export interface BackgroundProcessInfo {
   urlRemote: boolean
   running: boolean
   exitCode: number | null
+  timedOut: boolean
   /** True when the process runs without the local project sandbox. */
   unsandboxed: boolean
   projectId: string
@@ -120,6 +127,7 @@ function toInfo(entry: BackgroundProcess): BackgroundProcessInfo {
     urlRemote: entry.urlRemote,
     running: !entry.exited,
     exitCode: entry.exitCode,
+    timedOut: entry.timedOut,
     unsandboxed: entry.unsandboxed,
     projectId: entry.owner.projectId,
     threadId: entry.owner.threadId,
@@ -160,6 +168,30 @@ export interface StartBackgroundProcessOptions {
   waitMs?: number
   /** Explicit owner for non-agent callers and tests; agent tools use the run context. */
   owner?: ThreadExecutionOwner
+  /** Hard deadline for a bounded task. Omit for ordinary dev servers/watchers. */
+  timeoutMs?: number
+  /** Called once after a natural exit or deadline, never after explicit cancellation. */
+  onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+}
+
+export interface BackgroundProcessCompletion {
+  info: BackgroundProcessInfo
+  logs: string
+}
+
+function notifyCompletion(entry: BackgroundProcess): void {
+  if (entry.completionNotified || entry.cancelled || !entry.exited) return
+  entry.completionNotified = true
+  if (entry.completionTimer) {
+    clearTimeout(entry.completionTimer)
+    entry.completionTimer = null
+  }
+  if (!entry.onCompletion) return
+  void Promise.resolve(
+    entry.onCompletion({ info: toInfo(entry), logs: entry.output.toString() }),
+  ).catch((error: unknown) => {
+    console.warn('[background-process] completion callback failed:', error)
+  })
 }
 
 /**
@@ -173,6 +205,9 @@ export async function startBackgroundProcess(
 ): Promise<BackgroundProcessInfo> {
   const command = opts.command.trim()
   if (!command) throw new Error('A command is required to start a background process.')
+  if (opts.timeoutMs !== undefined && (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs <= 0)) {
+    throw new Error('Background process timeout must be a positive number of milliseconds.')
+  }
   const cwd = opts.cwd ?? getAgentExecutionRoot()
   if (!cwd) throw new Error('No workspace open.')
   const portBinding = opts.allowPortBinding === true
@@ -201,9 +236,22 @@ export async function startBackgroundProcess(
     urlRemote: false,
     exited: false,
     exitCode: null,
+    timedOut: false,
+    cancelled: false,
+    completionNotified: false,
+    completionTimer: null,
+    ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
     owner,
   }
   processes.set(entry.id, entry)
+
+  if (opts.timeoutMs !== undefined) {
+    entry.completionTimer = setTimeout(() => {
+      if (entry.exited || entry.cancelled) return
+      entry.timedOut = true
+      terminateProcessTree(entry.proc)
+    }, opts.timeoutMs)
+  }
 
   const waitMs = opts.waitMs ?? (portBinding ? DEFAULT_URL_WAIT_MS : DEFAULT_SETTLE_MS)
   await new Promise<void>((resolve) => {
@@ -227,11 +275,15 @@ export async function startBackgroundProcess(
     proc.on('exit', (code) => {
       entry.exited = true
       entry.exitCode = code
+      notifyCompletion(entry)
       done()
+      notifyThreadResourceFinished(entry.owner.threadId)
     })
     proc.on('error', () => {
       entry.exited = true
+      notifyCompletion(entry)
       done()
+      notifyThreadResourceFinished(entry.owner.threadId)
     })
   })
 
@@ -260,8 +312,11 @@ export function stopBackgroundProcess(
 ): boolean {
   const entry = ownedProcess(id, owner)
   if (!entry) return false
+  entry.cancelled = true
+  if (entry.completionTimer) clearTimeout(entry.completionTimer)
   terminateProcessTree(entry.proc)
   processes.delete(id)
+  notifyThreadResourceFinished(entry.owner.threadId)
   return true
 }
 
@@ -290,6 +345,8 @@ export async function stopBackgroundProcessesForThread(
           }
           entry.proc.once('exit', finish)
           entry.proc.once('close', finish)
+          entry.cancelled = true
+          if (entry.completionTimer) clearTimeout(entry.completionTimer)
           cancelEscalation = terminateProcessTree(entry.proc)
           const timeout = setTimeout(finish, SUBPROCESS_KILL_GRACE_MS + 250)
           processes.delete(entry.id)
@@ -301,9 +358,15 @@ export async function stopBackgroundProcessesForThread(
   return entries.map((entry) => entry.id)
 }
 
+export function hasBackgroundProcessesForThread(owner: ThreadExecutionOwner): boolean {
+  return [...processes.values()].some((entry) => !entry.exited && sameOwner(entry.owner, owner))
+}
+
 /** Kill every tracked process — called on app shutdown. */
 export function stopAllBackgroundProcesses(): void {
   for (const entry of processes.values()) {
+    entry.cancelled = true
+    if (entry.completionTimer) clearTimeout(entry.completionTimer)
     terminateProcessTree(entry.proc)
   }
   processes.clear()

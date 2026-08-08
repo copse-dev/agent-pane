@@ -1,12 +1,15 @@
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
+import { chatStoreDir } from '../storage/copse-paths.ts'
 import {
   CODE_INTERPRETERS,
   INLINE_CODE_FLAGS,
   SCRIPT_EXTENSIONS,
   SCRIPT_EXTENSION_ALTERNATION,
   commandName,
+  isStructurallyReadOnlyShellCommand,
   shellSegments,
+  unwrapWrappers,
 } from './shell-argv.ts'
 
 export type ScopeVerdict = 'sandbox' | 'external' | 'ambiguous'
@@ -205,9 +208,12 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
   { re: /\bmkfs\b|\bfdisk\b|\bdd\s+if=/i, reason: 'disk/system modification' },
 ]
 
+/** Shared so the chat-store waiver below can name the rule it may waive. */
+const REASON_HOME_PATH = 'home directory path (~/)'
+
 // Paths that indicate access outside the workspace.
 const OUTSIDE_PATH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
-  { re: /(?:^|[\s|])~(?:\/|\b)/, reason: 'home directory path (~/)' },
+  { re: /(?:^|[\s|])~(?:\/|\b)/, reason: REASON_HOME_PATH },
   { re: /\$HOME\b/, reason: '$HOME reference' },
   { re: /(?:^|[\s|])\/etc\//, reason: 'system path (/etc/)' },
   { re: /(?:^|[\s|])\/usr\//, reason: 'system path (/usr/)' },
@@ -300,7 +306,8 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
   }
 
   for (const segment of shellSegments(command)) {
-    const exe0 = segment[0]
+    const argv = unwrapWrappers(segment)
+    const exe0 = argv[0]
     if (exe0 === undefined) continue
     // argv[0] is a workspace-relative path (`./x`, `../x`, `bin/tool`) — the shell
     // executes the file directly from the cwd. Absolute paths are left to the
@@ -312,7 +319,7 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
       hasHard = true
     }
     const exe = commandName(exe0)
-    const args = segment.slice(1)
+    const args = argv.slice(1)
     if (isHostDependentBuildDriver(exe, args)) {
       addReason(REASON_BUILD_DRIVER)
     }
@@ -367,26 +374,86 @@ function collectExternalReasons(command: string): { reasons: string[]; hasHard: 
   return { reasons, hasHard }
 }
 
+/**
+ * Tilde path tokens (`~`, `~/x`), matched at an argument boundary so `foo~bar`
+ * doesn't count. `$HOME` needs no equivalent: the read-only check that gates the
+ * chat-store waiver rejects any command containing `$`, so a `$HOME` reference
+ * is never waived and always keeps its reason.
+ */
+const TILDE_PATH_TOKENS = /(?:^|[\s'"=|])(~(?:\/[^\s'"|;&]*)?)/g
+
+/**
+ * The chat store's read-only mount inside the project seatbelt.
+ *
+ * `workspaceSandboxOverlay` re-allows reads under the chat-store root (#644) so
+ * seatbelt-confined tools can open past-thread files, but leaves it out of
+ * `allowWrite`. This classifier has to model the same asymmetry: a *read* of a
+ * chat-store path is contained by the sandbox and must not be flagged as an
+ * escape, while a write is genuinely blocked and must still prompt.
+ *
+ * Without this, every `cat ~/.copse/workspace/<project>/<thread>/…` — the exact
+ * absolute paths the `@`-thread steering preamble hands the agent — was
+ * classified `external`, so the user got a "Run outside sandbox?" prompt whose
+ * approval ran the command **fully unsandboxed with network access**. That is
+ * strictly worse than the truth, which is that the read would have succeeded
+ * inside the sandbox untouched.
+ *
+ * Resolved through the shared {@link chatStoreDir} so the classifier and the
+ * seatbelt overlay agree on where the store lives. The overlay additionally
+ * realpaths that root; if the store were reached through a symlink the two would
+ * differ, but only in the safe direction — the command auto-runs inside seatbelt,
+ * the kernel denies it against the canonical path, and the existing
+ * sandbox-failure escalation offers the unsandboxed retry.
+ */
+function chatStoreReadRoot(command: string): string | null {
+  if (!isStructurallyReadOnlyShellCommand(command)) return null
+  return resolve(chatStoreDir())
+}
+
+function isInsideRoot(absPath: string, root: string): boolean {
+  return absPath === root || absPath.startsWith(root + sep)
+}
+
 function referencesOutsideWorkspace(command: string, workspaceRoot: string | null): string | null {
+  const home = homedir()
+  // Non-null only for a structurally read-only command — see chatStoreReadRoot.
+  const chatRoot = chatStoreReadRoot(command)
+  const isChatStoreRead = (absPath: string): boolean =>
+    chatRoot !== null && isInsideRoot(absPath, chatRoot)
+
   for (const { re, reason } of OUTSIDE_PATH_PATTERNS) {
-    if (re.test(command)) return reason
+    if (!re.test(command)) continue
+    // The `~/` rule fires on any home reference, including the chat store.
+    // Waive it only when EVERY tilde token in the command is a chat-store read;
+    // a bare `~` (no path) never qualifies.
+    if (reason === REASON_HOME_PATH) {
+      const tokens = [...command.matchAll(TILDE_PATH_TOKENS)].map((m) => m[1] ?? '')
+      const allChatStore =
+        tokens.length > 0 &&
+        tokens.every((token) => {
+          const rest = token.slice(1)
+          return rest.startsWith('/') && isChatStoreRead(resolve(home, `.${rest}`))
+        })
+      if (allChatStore) continue
+    }
+    return reason
   }
 
   if (!workspaceRoot) return null
 
   const root = resolve(workspaceRoot)
-  const home = homedir()
   // Absolute paths in the command that aren't under the workspace root.
   const absPaths = command.match(/(?:^|[\s'"=])(\/[^\s'"|;&]+)/g) ?? []
   for (const raw of absPaths) {
     const p = raw.trim().replace(/^[\s'"=]+/, '')
     if (p.startsWith('/dev/') || p.startsWith('/proc/')) continue
     const resolved = resolve(p)
-    if (resolved.startsWith(root + '/') || resolved === root) continue
-    if (resolved.startsWith(home + '/') && !resolved.startsWith(root + '/')) {
+    if (isInsideRoot(resolved, root)) continue
+    if (isChatStoreRead(resolved)) continue
+    if (resolved.startsWith(home + '/')) {
       return `absolute path outside workspace: ${p}`
     }
-    if (resolved !== root && !resolved.startsWith(root + '/')) {
+    if (resolved !== root) {
       return `absolute path outside workspace: ${p}`
     }
   }
@@ -468,4 +535,59 @@ export function analyzeShellCommand(
   // Only fuzzy "may reach" matchers fired → ambiguous: safe to auto-run inside an
   // OS sandbox (it contains any real escape) but still prompt without one.
   return { verdict: hasHard || outsidePath !== null ? 'external' : 'ambiguous', reasons }
+}
+
+/**
+ * True when the ONLY thing pushing this command outside the sandbox is that it
+ * names a path outside the workspace — no network matcher fired, hard or fuzzy,
+ * and no opaque local execution was detected.
+ *
+ * A caller that can make the named paths readable inside the seatbelt can then
+ * contain the command instead of running it unsandboxed. Deliberately stricter
+ * than `verdict === 'external'`: a single fuzzy "may reach the network" reason
+ * is enough to disqualify, because containment would break such a command and a
+ * read relaxation is not the approval it needs.
+ */
+/**
+ * True when the command carries a reason to leave the sandbox BEYOND naming an
+ * outside path — a network matcher (hard or fuzzy) or opaque local execution.
+ *
+ * The path-independent half of {@link externalOnlyForOutsidePath}, for callers
+ * that already decided a command reads outside the workspace by their own
+ * (broader) path analysis and only need to know whether anything *else* is going
+ * on. Asking the full predicate instead would fold in this module's narrower
+ * path detection and reject spellings such as `${HOME}/…` that it does not
+ * recognise but the caller does.
+ */
+export function needsMoreThanOutsideAccess(command: string): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  const { reasons } = collectExternalReasons(trimmed)
+  return reasons.length > 0
+}
+
+export function externalOnlyForOutsidePath(command: string, workspaceRoot: string | null): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  const { reasons, hasHard } = collectExternalReasons(trimmed)
+  if (hasHard || reasons.length > 0) return false
+  return referencesOutsideWorkspace(trimmed, workspaceRoot) !== null
+}
+
+const REPLAYABLE_OPAQUE_LOCAL_REASONS: ReadonlySet<string> = new Set([
+  REASON_LOCAL_EXECUTABLE,
+  REASON_INTERPRETER_FILE,
+])
+
+/**
+ * True only when a command prompts because it executes opaque local code—not
+ * because it requests network or outside-workspace access. Callers may offer an
+ * explicit bounded replay grant for this shape.
+ */
+export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): boolean {
+  return (
+    analysis.verdict === 'external' &&
+    analysis.reasons.length > 0 &&
+    analysis.reasons.every((reason) => REPLAYABLE_OPAQUE_LOCAL_REASONS.has(reason))
+  )
 }

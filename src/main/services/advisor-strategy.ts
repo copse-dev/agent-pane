@@ -3,6 +3,7 @@ import { isAcpModel, parseAcpModelSelection } from '@shared/acp.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm/model-intellect.ts'
+import { BEST_INTELLECT_MODEL_SELECTOR, isDynamicModel } from '@copse/llm/dynamic-model.ts'
 
 /**
  * Experimental, opt-in "advisor strategy" feature (tracked in
@@ -32,9 +33,10 @@ import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm
  * reads it (a `roleModels` `advisor` assignment still wins first).
  */
 
-/** Default advisor model when nothing is configured (a frontier Claude). Kept
- *  equal to `DEFAULT_ADVISOR_MODEL_ID` on the Electron-free pack side. */
-export const DEFAULT_ADVISOR_MODEL = 'claude-opus-4-8'
+/** Default advisor selection when nothing is configured — the most capable
+ *  reachable model, chosen at consult time. Kept equal to
+ *  `DEFAULT_ADVISOR_MODEL_ID` on the Electron-free pack side. */
+export const DEFAULT_ADVISOR_MODEL = BEST_INTELLECT_MODEL_SELECTOR
 
 /**
  * Advisor sub-inference output cap. Mirrors the native tool's recommended
@@ -186,6 +188,29 @@ type CapabilityAnnotation =
   | { kind: 'local'; paramsB: number | null }
   | { kind: 'unknown' }
 
+/**
+ * How far apart two intellect values must be before one model counts as
+ * genuinely stronger than the other.
+ *
+ * The scale this reads used to be a 3-12 ordinal, where integer granularity
+ * acted as an implicit tolerance — two models a fraction apart in capability
+ * shared a rank and were treated as equals. The canonical Index scale is
+ * continuous, so without an explicit band a 0.3-point gap would be reported as
+ * "stronger", overselling noise as a capability difference. Two points is a few
+ * percent of the catalog's span: comfortably inside measurement noise, well
+ * below a real generational step.
+ */
+const INTELLECT_PARITY = 2
+
+/**
+ * Intellect for display. The canonical scale is continuous, so a value can
+ * carry float noise from cross-version equating; one decimal is the precision
+ * the Index itself publishes.
+ */
+function formatIntellect(value: number): string {
+  return String(Math.round(value * 10) / 10)
+}
+
 function annotationFor(model: string): CapabilityAnnotation {
   if (isLocalModel(model)) {
     const bareId = model.startsWith('lmstudio:') ? model.slice('lmstudio:'.length) : model
@@ -217,7 +242,7 @@ export function advisorAddsLift(executorModel: string, advisorModel: string): bo
   const executor = annotationFor(executorModel)
   const advisor = annotationFor(advisorModel)
   if (executor.kind === 'cloud' && advisor.kind === 'cloud') {
-    return advisor.intellect >= executor.intellect
+    return advisor.intellect >= executor.intellect - INTELLECT_PARITY
   }
   if (
     executor.kind === 'local' &&
@@ -261,6 +286,19 @@ export function validateAdvisorPair(
       reason: 'Native-compatible pairing: also valid for Claude’s server-side advisor tool.',
     }
   }
+  // A dynamic selection names a *rule*, not a model, so there is nothing to
+  // grade until it resolves. Settings expands both sides through
+  // `models:resolveDynamic` before calling this; the branch covers callers that
+  // cannot (and a selector nobody has resolved yet).
+  if (isDynamicModel(advisorModel) || isDynamicModel(executorModel)) {
+    return {
+      ok: true,
+      native,
+      level: 'info',
+      reason:
+        'One side of this pairing is chosen dynamically, so the model is picked when the advisor actually runs — the strength comparison happens then.',
+    }
+  }
   if (isAcpModel(advisorModel)) {
     // Advice routed through an external ACP agent (acp-advisor.ts). The agent
     // owns its own model, so there is no annotation to compare against.
@@ -295,33 +333,33 @@ export function validateAdvisorPair(
       ok: true,
       native,
       level: band === 'low' ? 'warn' : 'info',
-      reason: `On-device executor with a cloud advisor annotated intellect ${String(advisor.intellect)} of ${String(topAnnotatedIntellect())} — a stronger advisor gives more lift.`,
+      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())} — a stronger advisor gives more lift.`,
     }
   }
 
   if (advisor.kind === 'cloud' && executor.kind === 'cloud') {
     const diff = advisor.intellect - executor.intellect
-    if (diff > 0) {
+    if (diff > INTELLECT_PARITY) {
       return {
         ok: true,
         native,
         level: 'good',
-        reason: `Advisor is annotated stronger than the executor (intellect ${String(advisor.intellect)} vs ${String(executor.intellect)}).`,
+        reason: `Advisor is stronger than the executor (intellect ${formatIntellect(advisor.intellect)} vs ${formatIntellect(executor.intellect)}).`,
       }
     }
-    if (diff === 0) {
+    if (Math.abs(diff) <= INTELLECT_PARITY) {
       return {
         ok: true,
         native,
         level: 'info',
-        reason: `Advisor and executor are annotated at the same intellect (${String(advisor.intellect)}) — expect a second opinion rather than stronger guidance.`,
+        reason: `Advisor and executor are at the same intellect (${formatIntellect(advisor.intellect)}) — expect a second opinion rather than stronger guidance.`,
       }
     }
     return {
       ok: true,
       native,
       level: 'warn',
-      reason: `Advisor is annotated weaker than the executor (intellect ${String(advisor.intellect)} vs ${String(executor.intellect)}) — its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`,
+      reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisor.intellect)} vs ${formatIntellect(executor.intellect)}) — its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`,
     }
   }
 
@@ -331,7 +369,7 @@ export function validateAdvisorPair(
       ok: true,
       native,
       level: 'info',
-      reason: `Cloud advisor annotated intellect ${String(advisor.intellect)} of ${String(topAnnotatedIntellect())}; the executor isn’t in the capability annotations, so no strength comparison is possible.`,
+      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor isn’t in the capability annotations, so no strength comparison is possible.`,
     }
   }
 

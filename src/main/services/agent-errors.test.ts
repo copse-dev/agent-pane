@@ -7,6 +7,7 @@ import {
   classifyProviderAccessFailure,
 } from './agent-errors.ts'
 import { AcpTurnFailure } from './acp/acp-agent-service.ts'
+import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
 
 describe('classifyAgentError', () => {
   it('maps 401 to API key guidance', () => {
@@ -18,11 +19,13 @@ describe('classifyAgentError', () => {
     const auth = RequestError.authRequired({ reason: 'token missing' })
     const out = classifyAgentError(auth, { acpAgentId: 'claude-agent-acp' })
     assert.match(out, /ACP error -32000 \(Authentication required\)/)
-    assert.match(out, /Claude requires authentication/)
+    assert.match(out, /Claude needs authentication/)
     assert.match(out, /claude setup-token/)
     assert.match(out, /ANTHROPIC_API_KEY/)
     assert.match(out, /Details:.*token missing/)
-    assert.match(out, /not passed to external agents/)
+    assert.match(out, /not automatically shared with external agents/)
+    assert.match(out, /> \[!WARNING\]/)
+    assert.match(out, /```text/)
     assert.doesNotMatch(out, /^An error occurred:/)
   })
 
@@ -66,11 +69,11 @@ describe('classifyAgentError', () => {
       { errorKind: 'authentication_failed' },
     )
     const out = classifyAgentError(err, { acpAgentId: 'claude-agent-acp' })
-    assert.match(out, /Claude’s saved sign-in has expired/)
+    assert.match(out, /Claude sign-in expired/)
     assert.match(out, /claude \/login/)
     assert.match(out, /re-send your message/)
     // The agent's own words stay available, below the actionable guidance.
-    assert.match(out, /Agent reported: ACP error -32603 \(Internal error\)/)
+    assert.match(out, /Technical details[\s\S]*ACP error -32603 \(Internal error\)/)
     assert.match(out, /authentication_failed/)
     assert.doesNotMatch(out, /^An error occurred:/)
     // First-run guidance would send the user the wrong way here.
@@ -79,7 +82,7 @@ describe('classifyAgentError', () => {
 
   it('keeps first-run guidance for an agent that was never signed in', () => {
     const out = classifyAgentError(RequestError.authRequired(), { acpAgentId: 'claude-agent-acp' })
-    assert.match(out, /requires authentication before it can run/)
+    assert.match(out, /needs authentication/)
     assert.match(out, /claude setup-token/)
     assert.doesNotMatch(out, /has expired/)
   })
@@ -143,6 +146,16 @@ describe('classifyAgentError', () => {
 
   it('maps jinja / missing user query failures', () => {
     assert.match(classifyAgentError('No user query found in messages'), /jinja|chat template/i)
+  })
+
+  it('turns a detached thread worktree into actionable recovery guidance', () => {
+    const result = classifyAgentError(new ThreadWorktreeDetachedError('copse/thread-branch'))
+
+    assert.equal(
+      result,
+      "This thread's checkout is detached from its branch. Your files are preserved. Reattach it to `copse/thread-branch`, then retry.",
+    )
+    assert.doesNotMatch(result, /^An error occurred:/)
   })
 
   it('falls back to error message', () => {

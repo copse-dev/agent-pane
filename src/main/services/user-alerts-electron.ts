@@ -18,6 +18,12 @@ export interface WindowAttention {
   isDestroyed(): boolean
 }
 
+export function shouldSendSystemNotification(
+  win: Pick<BrowserWindow, 'isDestroyed' | 'isVisible'>,
+): boolean {
+  return !win.isDestroyed() && !win.isVisible()
+}
+
 /** Start the native attention animation and stop it on focus or explicit settlement. */
 export function startWindowAttention(
   win: WindowAttention,
@@ -52,7 +58,7 @@ export function createElectronUserAlertSender(
   return (kind, body) =>
     dispatchUserAlert(readUserAlertPreferences(), kind, body, {
       notification: (title, notificationBody) => {
-        if (!Notification.isSupported()) return
+        if (!shouldSendSystemNotification(win) || !Notification.isSupported()) return
         const notification = new Notification({ title, body: notificationBody, silent: true })
         notification.on('click', () => {
           if (win.isDestroyed()) return

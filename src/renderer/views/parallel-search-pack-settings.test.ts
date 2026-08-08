@@ -11,14 +11,18 @@ function tick(): Promise<void> {
 
 function stubApi(saved: boolean, writes: string[]): ApiClient {
   const base = createFakeApi()
+  // Mutable so a save/clear through the view flips what `getKey` reports next,
+  // the way the host store does — the key-presence callback reads it again.
+  let hasKey = saved
   return {
     ...base,
     settings: {
       ...base.settings,
-      getKey: async (provider): Promise<boolean> => provider === 'parallel' && saved,
-      getKeyEncrypted: async (): Promise<boolean | null> => (saved ? true : null),
+      getKey: async (provider): Promise<boolean> => provider === 'parallel' && hasKey,
+      getKeyEncrypted: async (): Promise<boolean | null> => (hasKey ? true : null),
       setKey: async (provider, key): Promise<{ ok: true }> => {
         writes.push(`${provider}:${key}`)
+        if (provider === 'parallel') hasKey = key !== ''
         return { ok: true }
       },
     },
@@ -63,5 +67,36 @@ describe('Parallel Search pack settings', () => {
     root.querySelector<HTMLButtonElement>('.parallel-search-clear-btn')?.click()
     await tick()
     assert.deepEqual(writes, ['parallel:'])
+  })
+
+  it('reports key presence on load so the pack toggle can gate on it', async () => {
+    const seen: boolean[] = []
+    document.body.append(
+      createParallelSearchPackSettings(stubApi(false, []), {
+        onKeyPresence: (hasKey) => seen.push(hasKey),
+      }),
+    )
+    await tick()
+    assert.deepEqual(seen, [false])
+  })
+
+  it('re-reports presence after a save and after a clear', async () => {
+    const seen: boolean[] = []
+    const root = createParallelSearchPackSettings(stubApi(false, []), {
+      onKeyPresence: (hasKey) => seen.push(hasKey),
+    })
+    document.body.append(root)
+    await tick()
+
+    const input = root.querySelector<HTMLInputElement>('input[name="parallelKey"]')
+    assert.ok(input)
+    input.value = 'parallel-test-key'
+    root.querySelector<HTMLButtonElement>('.parallel-search-save-btn')?.click()
+    await tick()
+    assert.deepEqual(seen, [false, true])
+
+    root.querySelector<HTMLButtonElement>('.parallel-search-clear-btn')?.click()
+    await tick()
+    assert.deepEqual(seen, [false, true, false])
   })
 })

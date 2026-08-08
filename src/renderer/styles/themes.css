@@ -56,11 +56,21 @@
   --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f7f7f7);
   --bg-active: #0060c0;
   --bg-selected: color-mix(in srgb, var(--accent) 13%, var(--bg-elevated));
+  /* The dark highlight fills invert on white: a light wash carrying near-black
+     text. --highlight-current-bg cannot follow --warning here (light's warning
+     is a dark brown, which would bury the match text). */
+  --selection-bg: #b0d3ff;
+  --selection-text: #10243b;
+  --highlight-current-bg: #ffcc33;
+  --highlight-current-text: #241a00;
   /* The dark-theme greys read as low-contrast smudges on white — every text
      tier and the status colours need their own light values. */
   --text-primary: #333333;
   --text-secondary: #5f5f5f;
   --text-muted: #767676;
+  /* Same chevron as :root (tokens.css), restated because its stroke is baked
+     into the data URI and the dark grey would smudge out on a light field. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23707070'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
   --border: #d4d4d4;
   --border-subtle: #e4e4e4;
   --border-strong: #ababab;

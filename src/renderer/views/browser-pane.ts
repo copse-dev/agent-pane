@@ -3,6 +3,8 @@ import {
   arrowLeftIcon,
   arrowRightIcon,
   externalLinkIcon,
+  fileTextIcon,
+  imageIcon,
   moreHorizontalIcon,
   refreshIcon,
   searchIcon,
@@ -17,6 +19,9 @@ import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
 import { openRightPanel } from '../controller/panels.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { showErrorToast, showToast } from './toast.ts'
+import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -94,6 +99,17 @@ function webviewTitle(tab: BrowserTab): string | undefined {
   }
 }
 
+function shareableWebContentsId(tab: BrowserTab): number | null {
+  if (!tab.webview || !tab.webviewReady) return null
+  const url = webviewUrl(tab)
+  if ((!url || url === 'about:blank') && !tab.artefactTitle) return null
+  try {
+    return tab.webview.getWebContentsId()
+  } catch {
+    return null
+  }
+}
+
 const WEBVIEW_PREFS = 'contextIsolation=true'
 
 interface BrowserPopoutSeed {
@@ -141,7 +157,7 @@ export function mountBrowserPane(
     },
     '+',
   )
-  if (api) listHeader.append(panePopoutButton(api, 'browser', 'browser'))
+  if (api) listHeader.append(panePopoutButton(store, api, 'browser', 'browser'))
   listHeader.append(newBtn)
 
   const tabsWrap = el('div', { class: 'browser-tabs-list' })
@@ -156,6 +172,28 @@ export function mountBrowserPane(
 
   function closeAllMenus(): void {
     for (const tab of tabs.values()) tab.closeMenu()
+  }
+
+  function attachSharedText(share: BrowserTextShare): void {
+    const handlers = getPromptAttachmentHandlers()
+    if (!handlers) {
+      showToast('Open a thread before sharing browser text.', { variant: 'error' })
+      return
+    }
+    handlers.attachTextBlock(share.content, share.label)
+    handlers.focusComposer?.()
+    showToast('Added browser text to the thread.', { durationMs: 2_000 })
+  }
+
+  function attachSharedImage(share: BrowserImageShare): void {
+    const handlers = getPromptAttachmentHandlers()
+    if (!handlers) {
+      showToast('Open a thread before sharing a browser screenshot.', { variant: 'error' })
+      return
+    }
+    handlers.attachImage(share.dataUrl, share.mimeType)
+    handlers.focusComposer?.()
+    showToast('Added browser screenshot to the thread.', { durationMs: 2_000 })
   }
 
   function updateNavButtons(tab: BrowserTab): void {
@@ -256,6 +294,10 @@ export function mountBrowserPane(
     webview.addEventListener('did-navigate', onNavigate)
     webview.addEventListener('did-navigate-in-page', onNavigate)
     webview.addEventListener('page-title-updated', onNavigate)
+    // Guest-page pointer events do not bubble into the embedder document. The
+    // webview does receive focus after the overflow button had it, which gives
+    // the toolbar a reliable outside-interaction signal.
+    webview.addEventListener('focus', closeAllMenus)
     webview.addEventListener('dom-ready', () => {
       tab.webviewReady = true
       syncAddressBar(tab)
@@ -464,6 +506,18 @@ export function mountBrowserPane(
       },
       moreHorizontalIcon('ui-icon ui-icon-sm'),
     )
+    const shareTextItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      fileTextIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Share page text'),
+    )
+    const shareScreenshotItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      imageIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Share screenshot'),
+    )
     const openExternalItem = el(
       'button',
       { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
@@ -479,6 +533,9 @@ export function mountBrowserPane(
     const menu = el(
       'div',
       { class: 'browser-menu', role: 'menu', hidden: '' },
+      shareTextItem,
+      shareScreenshotItem,
+      el('div', { class: 'browser-menu-separator', role: 'separator' }),
       openExternalItem,
       inspectorItem,
     )
@@ -523,6 +580,9 @@ export function mountBrowserPane(
       menuOpen = next
       menuBtn.setAttribute('aria-expanded', String(next))
       if (next) {
+        const shareableId = shareableWebContentsId(tab)
+        shareTextItem.disabled = shareableId === null || !api
+        shareScreenshotItem.disabled = shareableId === null || !api
         // "Open in default browser" only makes sense for a real web page.
         openExternalItem.disabled = !currentHttpUrl(tab) || !api?.shell
         inspectorItem.disabled = !tab.webview
@@ -540,6 +600,22 @@ export function mountBrowserPane(
     // Clicks inside the menu shouldn't reach the document dismiss handler.
     menu.addEventListener('click', (e) => {
       e.stopPropagation()
+    })
+    shareTextItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      const id = shareableWebContentsId(tab)
+      if (id === null || !api) return
+      void api.browser.sharePageText(id).catch((error: unknown) => {
+        showErrorToast('Could not share browser text', error)
+      })
+    })
+    shareScreenshotItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      const id = shareableWebContentsId(tab)
+      if (id === null || !api) return
+      void api.browser.shareScreenshot(id).catch((error: unknown) => {
+        showErrorToast('Could not share browser screenshot', error)
+      })
     })
     openExternalItem.addEventListener('click', () => {
       setMenuOpen(false)
@@ -740,6 +816,8 @@ export function mountBrowserPane(
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
+    api?.browser.onShareText(attachSharedText),
+    api?.browser.onShareImage(attachSharedImage),
     api?.browser.onPackTabRequest(ensurePackBrowserTab),
     (): void => {
       document.removeEventListener('click', onDocumentClick)

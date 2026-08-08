@@ -7,6 +7,7 @@ import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
+import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -64,6 +65,10 @@ function createApi(options: {
   openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
   lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
   onDescribeImages?: ApiClient['agent']['describeImages']
+  estimateContext?: ApiClient['agent']['estimateContext']
+  promptState?: { startingCommit: string | null; dirty: boolean }
+  onExportArchive?: (projectId: string, threadId: string) => void
+  onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -74,6 +79,7 @@ function createApi(options: {
         abort: options.onAbort ?? (async (): Promise<void> => {}),
         run: options.onRun ?? (async (): Promise<void> => {}),
         describeImages: options.onDescribeImages ?? base['agent'].describeImages,
+        estimateContext: options.estimateContext ?? base['agent'].estimateContext,
         clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
         prepareCheckout:
           options.onPrepareCheckout ??
@@ -118,6 +124,7 @@ function createApi(options: {
       git: {
         ...base['git'],
         branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+        promptState: async () => options.promptState ?? { startingCommit: null, dirty: false },
         checkoutBranch: async (
           _projectId: string,
           _threadId: string,
@@ -175,15 +182,31 @@ function createApi(options: {
       threads: {
         ...base['threads'],
         listOrphans: async () => [],
+        // A zip magic number is enough: nothing here unpacks it, and the bytes
+        // are only ever asserted on as the payload handed to `archive:attach`.
+        exportArchive: async (
+          projectId: string,
+          threadId: string,
+        ): Promise<Uint8Array<ArrayBuffer>> => {
+          options.onExportArchive?.(projectId, threadId)
+          return new Uint8Array([80, 75, 3, 4])
+        },
       },
       archive: {
         // Mirrors storeArchiveAttachment: the stored path is under whichever
         // thread was active at attach time.
-        attach: async (_projectId: string, threadId: string, archive: { name: string }) => ({
-          path: `/store/${threadId}/blobs/media/uuid-${archive.name}`,
-          name: archive.name,
-          sizeBytes: 8,
-        }),
+        attach: async (
+          projectId: string,
+          threadId: string,
+          archive: { name: string; bytes?: Uint8Array },
+        ): Promise<ArchiveAttachmentRef> => {
+          options.onAttachArchive?.(projectId, threadId, archive.name, archive.bytes)
+          return {
+            path: `/store/${threadId}/blobs/media/uuid-${archive.name}`,
+            name: archive.name,
+            sizeBytes: 8,
+          }
+        },
       },
     } satisfies ApiClient
   })()
@@ -378,6 +401,76 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepared.gitBranch, 'copse/first-message')
     assert.equal(prepared.messages[0]?.content, 'Start in isolation')
     assert.equal(composer.textContent, '')
+  })
+})
+
+describe('input bar prompt git-state capture', () => {
+  it('stamps the sent message with the fetched startingCommit and dirty flag', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'What changed?'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal(message.startingCommit, 'a'.repeat(40))
+    assert.equal(message.dirty, true)
+  })
+
+  it('omits startingCommit and leaves dirty false outside a git repository', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: null, dirty: false },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Hello'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal('startingCommit' in message, false)
+    assert.equal(message.dirty, false)
   })
 })
 
@@ -615,18 +708,24 @@ describe('input bar model recents', () => {
   })
 })
 
+/** A thread with one persisted message, which is what makes it exportable. */
+function exportableThread(): Thread {
+  const populated = thread()
+  populated.messages = [
+    {
+      id: 'message-1',
+      role: 'user',
+      content: 'A persisted message makes this thread exportable.',
+      toolCalls: [],
+      createdAt: 1,
+    },
+  ]
+  return populated
+}
+
 describe('input bar developer diagnostics', () => {
   it('hides diagnostics by default and reveals them in Developer mode', async () => {
-    const populated = thread()
-    populated.messages = [
-      {
-        id: 'message-1',
-        role: 'user',
-        content: 'A persisted message makes this thread exportable.',
-        toolCalls: [],
-        createdAt: 1,
-      },
-    ]
+    const populated = exportableThread()
     const store = createStore({
       workspaceRoot: '/repo',
       projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
@@ -645,11 +744,13 @@ describe('input bar developer diagnostics', () => {
     assert.ok(trigger)
     assert.equal(overflow.hidden, false)
     trigger.click()
+    // The two trace exits stay out in the open: someone whose thread just went
+    // wrong is not going to have found a developer setting first.
     assert.deepEqual(
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO'],
+      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
     )
 
     store.setState({ developerMode: true })
@@ -665,6 +766,7 @@ describe('input bar developer diagnostics', () => {
         'Copy thread ID',
         'Export conversation (JSONL)',
         'Export thread folder (ZIP)',
+        'Debug trace',
         'Share trace',
       ],
     )
@@ -677,8 +779,113 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO'],
+      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
     )
+  })
+})
+
+describe('input bar debug trace', () => {
+  function clickOverflowItem(host: HTMLElement, label: string): void {
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(trigger)
+    trigger.click()
+    const item = Array.from(host.querySelectorAll<HTMLButtonElement>('.footer-overflow-item')).find(
+      (candidate) => candidate.textContent.trim() === label,
+    )
+    assert.ok(item, `overflow menu offers "${label}"`)
+    item.click()
+  }
+
+  it('opens a new thread holding the zipped trace and an unsent diagnosis prompt', async () => {
+    const populated = exportableThread()
+    const exported: string[] = []
+    const attached: { threadId: string; name: string; bytes: number }[] = []
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: populated.id,
+      threads: [populated],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async (): Promise<void> => {
+          runs += 1
+        },
+        onExportArchive: (_projectId, threadId) => exported.push(threadId),
+        onAttachArchive: (_projectId, threadId, name, bytes) => {
+          attached.push({ threadId, name, bytes: bytes?.byteLength ?? 0 })
+        },
+      }),
+    )
+    await settle()
+
+    clickOverflowItem(host, 'Debug trace')
+    await flush()
+
+    // The trace zipped is the thread the user was reading.
+    assert.deepEqual(exported, [populated.id])
+
+    const { activeThreadId, threads } = store.getState()
+    assert.notEqual(activeThreadId, populated.id, 'the debug thread is a new, active thread')
+    const debugThread = threads.find((candidate) => candidate.id === activeThreadId)
+    assert.ok(debugThread)
+    assert.equal(debugThread.title, 'Debug: Test thread')
+    assert.equal(debugThread.messages.length, 0, 'nothing is sent on the user’s behalf')
+    assert.equal(runs, 0, 'no agent run is dispatched')
+    assert.match(debugThread.draftPrompt ?? '', /thread-1/)
+
+    // The prompt is sitting in the composer, waiting to be added to and sent.
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.match(composer.textContent, /Something went wrong in another Copse thread/)
+    assert.match(composer.textContent, /What I saw:/)
+
+    // ...with the archive stored under the *new* thread, so it lives as long as
+    // the conversation about it does, and survives deleting the original.
+    assert.equal(attached.length, 1)
+    const [stored] = attached
+    assert.ok(stored)
+    assert.equal(stored.threadId, debugThread.id)
+    assert.match(stored.name, /\.zip$/)
+    assert.equal(stored.bytes, 4, 'the exported bytes reach the store intact')
+    const chip = host.querySelector<HTMLElement>('.attachment-chips .archive-chip')
+    assert.ok(chip, 'the trace shows as an archive chip on the new thread')
+    assert.match(chip.textContent, /\.zip/)
+  })
+
+  it('leaves the user where they were when the export fails', async () => {
+    const populated = exportableThread()
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: populated.id,
+      threads: [populated],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: 'main' })
+    mountInputBar(host, store, {
+      ...base,
+      threads: {
+        ...base.threads,
+        exportArchive: () => Promise.reject(new Error('store is gone')),
+      },
+    })
+    await settle()
+
+    clickOverflowItem(host, 'Debug trace')
+    await flush()
+
+    assert.equal(store.getState().activeThreadId, populated.id)
+    assert.equal(store.getState().threads.length, 1, 'no empty thread is left behind')
   })
 })
 
@@ -1238,5 +1445,151 @@ describe('input bar footer overflow menu', () => {
     // Developer diagnostics are disabled for this fixture, so only the ordinary
     // thread action remains visible.
     assert.deepEqual(labels, ['Enable Guarded YOLO'])
+  })
+})
+
+describe('input bar footer usage counter', () => {
+  function usageThread(): Thread {
+    return {
+      ...thread(),
+      model: 'claude-sonnet-4-6',
+      usage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+    }
+  }
+
+  async function mountWithUsage(): Promise<HTMLElement> {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [usageThread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+    return host
+  }
+
+  it('shows the total on the counter and the in/out/cost split on hover', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    assert.equal(counter.textContent, '13.1M tokens')
+
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.ok(popover)
+    assert.equal(popover.hidden, true)
+
+    counter.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Usage · 13\.1M tokens/)
+    assert.match(popover.textContent, /Input\s*12\.9M/)
+    assert.match(popover.textContent, /Output\s*211\.0k/)
+    assert.match(popover.textContent, /Cost/)
+
+    counter.dispatchEvent(new Event('mouseleave'))
+    assert.equal(popover.hidden, true)
+  })
+
+  it('no longer toggles the breakdown on click', async () => {
+    const host = await mountWithUsage()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    counter.click()
+    await settle()
+
+    assert.equal(counter.textContent, '13.1M tokens')
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.equal(popover?.hidden, true)
+  })
+})
+
+describe('input bar context fit warning', () => {
+  function contextFitStore(model: string): ReturnType<typeof createStore> {
+    return createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread(), model }],
+    })
+  }
+
+  function estimate(
+    totalTokens: number,
+    contextWindow: number,
+  ): ApiClient['agent']['estimateContext'] {
+    return async () => ({
+      segments: [{ key: 'history' as const, label: 'Conversation', tokens: totalTokens }],
+      totalTokens,
+      contextWindow,
+    })
+  }
+
+  async function mountWithEstimate(
+    model: string,
+    totalTokens: number,
+    contextWindow: number,
+  ): Promise<HTMLElement> {
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      contextFitStore(model),
+      createApi({ currentBranch: 'main', estimateContext: estimate(totalTokens, contextWindow) }),
+    )
+    await settle()
+    await flush()
+    return host
+  }
+
+  it('explains an overflowing thread and offers the model picker', async () => {
+    const host = await mountWithEstimate('gpt-4o-mini', 240_000, 128_000)
+
+    const warning = host.querySelector<HTMLElement>('.composer-context-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /no longer fits “GPT-4o mini”/)
+    assert.match(warning.textContent, /240K tokens/)
+    assert.match(warning.textContent, /context window holds 128K/)
+    assert.match(warning.textContent, /Pick a model with a larger context window/)
+    assert.ok(warning.classList.contains('is-over'))
+
+    const menu = host.querySelector<HTMLElement>('.model-picker-menu')
+    assert.ok(menu)
+    assert.equal(menu.hidden, true)
+    host.querySelector<HTMLButtonElement>('.composer-context-model-btn')?.click()
+    await flush()
+    assert.equal(menu.hidden, false, 'the action opens the model picker rather than just advising')
+  })
+
+  it('warns before the window is full, without the overflow styling', async () => {
+    const host = await mountWithEstimate('gpt-4o-mini', 121_600, 128_000)
+
+    const warning = host.querySelector<HTMLElement>('.composer-context-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /already fills 95% of the 128K context window/)
+    assert.equal(warning.classList.contains('is-over'), false)
+  })
+
+  it('points local models at their load-time context length', async () => {
+    const host = await mountWithEstimate('lmstudio:qwen3-4b', 12_000, 8000)
+
+    const warning = host.querySelector<HTMLElement>('.composer-context-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /qwen3-4b/)
+    assert.match(warning.textContent, /“Context Length” in LM Studio/)
+  })
+
+  it('stays hidden while the thread fits', async () => {
+    const host = await mountWithEstimate('gpt-4o-mini', 12_000, 128_000)
+
+    assert.equal(host.querySelector<HTMLElement>('.composer-context-warning')?.hidden, true)
   })
 })

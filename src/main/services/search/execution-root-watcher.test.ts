@@ -11,6 +11,7 @@ import {
   stopAllExecutionRootWatchers,
   watchedExecutionRootsForTest,
 } from './execution-root-watcher.ts'
+import { stopExecutionRootIndexing } from './workspace-indexing.ts'
 import {
   getCachedToolResult,
   setCachedToolResult,
@@ -99,6 +100,17 @@ describe('execution-root-watcher', () => {
     it('drops the watcher once the root is unwatched', () => {
       ensureExecutionRootWatched(root)
       stopWatchingExecutionRoot(root)
+      assert.deepEqual(watchedExecutionRootsForTest(), [])
+    })
+
+    // Retiring, pruning, and deleting a worktree all reach this through
+    // `releaseWorktreeRoot`. Leaving the watcher behind is not inert: Node's
+    // recursive watcher scandirs a subtree that has been removed and the ENOENT
+    // arrives as an uncaught exception in the main process.
+    it('releases the watcher when a retired execution root stops being indexed', () => {
+      ensureExecutionRootWatched(root)
+      assert.deepEqual(watchedExecutionRootsForTest(), [root])
+      stopExecutionRootIndexing(root)
       assert.deepEqual(watchedExecutionRootsForTest(), [])
     })
 

@@ -10,9 +10,9 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { createStore } from '@shared/store/store.ts'
+import { createStore, type AppStore } from '@shared/store/store.ts'
 import { mountAskUserDialog } from './ask-user-dialog.ts'
-import { resetAttention } from '../controller/attention.ts'
+import { isThreadAwaitingAttention, resetAttention } from '../controller/attention.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface AskUserRequest {
@@ -145,6 +145,31 @@ describe('ask_user dialog (component)', () => {
     assert.deepEqual(harness.responses, [{ id: 'q2', answers: ['SQLite'] }])
   })
 
+  it('renders commands as sanitized Markdown in questions and quick picks', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-markdown',
+      questions: [
+        {
+          question: 'Run `claude /login`, then try again.',
+          options: ['Run `claude /login`'],
+        },
+      ],
+    })
+
+    const question = document.querySelector<HTMLElement>('.ask-user-question')
+    const option = document.querySelector<HTMLButtonElement>('.ask-user-option')
+    assert.ok(question)
+    assert.ok(option)
+    assert.equal(question.querySelector('code')?.textContent, 'claude /login')
+    assert.equal(question.textContent.includes('`'), false)
+    assert.equal(option.querySelector('code')?.textContent, 'claude /login')
+    assert.equal(option.textContent.includes('`'), false)
+    option.click()
+    assert.equal(at(inputs(), 0).value, 'Run claude /login')
+  })
+
   it('collects one answer per question for a multi-question ask', () => {
     const { api, harness } = stubApi()
     mount(api)
@@ -198,5 +223,74 @@ describe('ask_user dialog (component)', () => {
       { id: 'a', answers: ['1'] },
       { id: 'b', answers: ['2'] },
     ])
+  })
+})
+
+// A question belongs to the thread whose run asked it. The dialog is modal, so
+// one left hanging over a thread the user has moved to — including via a project
+// switch, which swaps activeThreadId the same way — blocks the window on a
+// question that thread never asked.
+describe('ask_user dialog thread scoping', () => {
+  let store: AppStore
+
+  function mountScoped(api: ApiClient): void {
+    store = createStore({ activeThreadId: 'focused' })
+    mountAskUserDialog(api, store)
+    shimModal(dialog())
+  }
+
+  function focusThread(threadId: string): void {
+    store.setState({ activeThreadId: threadId })
+    store.emit('threads_changed')
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    resetAttention()
+  })
+
+  it('withdraws the open question when the user switches away from its thread', () => {
+    const { api, harness } = stubApi()
+    mountScoped(api)
+    harness.emit({ id: 'q', threadId: 'focused', questions: [{ question: 'Which DB?' }] })
+    assert.equal(dialog().open, true)
+
+    focusThread('other')
+
+    assert.equal(dialog().open, false)
+    // Withdrawn, not answered — the agent is still waiting.
+    assert.deepEqual(harness.responses, [])
+    assert.equal(isThreadAwaitingAttention('focused'), true)
+  })
+
+  it('brings a withdrawn question back when its thread is focused again', () => {
+    const { api, harness } = stubApi()
+    mountScoped(api)
+    harness.emit({ id: 'q', threadId: 'focused', questions: [{ question: 'Which DB?' }] })
+    focusThread('other')
+
+    focusThread('focused')
+
+    assert.equal(dialog().open, true)
+    assert.equal(isThreadAwaitingAttention('focused'), false)
+    at(inputs(), 0).value = 'Postgres'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'q', answers: ['Postgres'] }])
+  })
+
+  it('swaps in the newly-focused thread’s question on a switch', () => {
+    const { api, harness } = stubApi()
+    mountScoped(api)
+    harness.emit({ id: 'q-focused', threadId: 'focused', questions: [{ question: 'First?' }] })
+    harness.emit({ id: 'q-other', threadId: 'other', questions: [{ question: 'Second?' }] })
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'First?')
+
+    focusThread('other')
+
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'Second?')
+    at(inputs(), 0).value = '2'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'q-other', answers: ['2'] }])
   })
 })

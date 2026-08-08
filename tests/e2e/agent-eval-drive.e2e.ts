@@ -1,95 +1,36 @@
 import { execFileSync } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
 import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
-import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '../../src/shared/lm-studio-defaults.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import {
+  loadEvalScenario,
+  resolvePromptAttachment,
+  selectedEvalPrompts,
+  type EvalPrompt,
+  type EvalScenario,
+  type PromptAttachment,
+} from './helpers/agent-eval-scenario.ts'
+import {
+  decodeAutonomyScenario,
+  decodeAutonomyTrace,
+  scoreAutonomyRegression,
+  terminalReportFromAssistantText,
+  type AutonomyTrace,
+} from '../../scripts/lib/autonomy-regression.mts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
 
-type PromptAttachment = {
-  path: string
-  content?: string
-  fixture?: string
-}
-
-type EvalPrompt =
-  | string
-  | {
-      text: string
-      attachments?: PromptAttachment[]
-    }
-
-interface EvalScenario {
-  id: string
-  description?: string
-  workspace?: {
-    type: 'current' | 'tempProject'
-    prefix?: string
-  }
-  prompts: EvalPrompt[]
-  assertWorkspace?: {
-    git?: {
-      minCommits?: number
-    }
-    homePage?: {
-      path?: string
-      contains?: string[]
-      linksTo?: string
-    }
-    menuPage?: {
-      path?: string
-      contains?: string[]
-    }
-    filesContain?: Array<{
-      glob?: string
-      contains: string[]
-    }>
-  }
-}
+let approvalCount = 0
 
 function loadScenario(): EvalScenario {
-  const path = process.env.COPSE_EVAL_SCENARIO?.trim() || DEFAULT_SCENARIO
-  return JSON.parse(readFileSync(path, 'utf8')) as EvalScenario
-}
-
-function scenarioProjectRoot(scenario: EvalScenario): { root: string; cleanup?: () => void } {
-  if (scenario.workspace?.type !== 'tempProject') return { root: process.cwd() }
-  const prefix = scenario.workspace.prefix ?? `${scenario.id}-`
-  const root = mkdtempSync(join(tmpdir(), prefix))
-  return {
-    root,
-    cleanup: () => {
-      if (process.env.COPSE_EVAL_KEEP_WORKSPACE === '1') return
-      rmSync(root, { recursive: true, force: true })
-    },
-  }
-}
-
-function resolveAttachment(attachment: PromptAttachment): { path: string; content: string } {
-  if (attachment.content !== undefined)
-    return { path: attachment.path, content: attachment.content }
-  if (!attachment.fixture) {
-    throw new Error(`Attachment ${attachment.path} must define either content or fixture`)
-  }
-  const fixturePath = resolve(process.cwd(), attachment.fixture)
-  return { path: attachment.path, content: readFileSync(fixturePath, 'utf8') }
+  const path = process.env['COPSE_EVAL_SCENARIO']?.trim() || DEFAULT_SCENARIO
+  return loadEvalScenario(path)
 }
 
 /** macOS seatbelt prompts before `gh`, network, etc. Auto-approve so evals don't hang. */
@@ -101,6 +42,7 @@ async function approvePendingApprovalDialogs(): Promise<void> {
     })
     if (!open) return
     await $('.approval-approve').click()
+    approvalCount++
     await browser.pause(100)
   }
 }
@@ -136,8 +78,36 @@ async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
   await assertNoErrorToasts('agent eval idle')
 }
 
+async function waitForBackgroundWake(
+  expectation: NonNullable<EvalScenario['backgroundWake']>,
+): Promise<void> {
+  if (expectation.reloadRenderer === true) {
+    await browser.execute(() => window.location.reload())
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  }
+  const timeoutMs = expectation.timeoutMs ?? 5 * 60_000
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      await approvePendingDiffs()
+      const texts = await $$('.msg-assistant .message-text').map((element) => element.getText())
+      const completed = texts.some((text) => text.includes(expectation.finalAssistantContains))
+      const stop = $('.stop-btn')
+      const idle = (await stop.isExisting()) && (await stop.getProperty('hidden')) === true
+      return completed && idle
+    },
+    {
+      timeout: timeoutMs,
+      interval: 250,
+      timeoutMsg: `Background wake did not finish with ${expectation.finalAssistantContains}`,
+    },
+  )
+  await browser.pause(500)
+  await assertNoErrorToasts('background wake eval idle')
+}
+
 async function attachPromptFiles(attachments: PromptAttachment[]): Promise<void> {
-  const files = attachments.map(resolveAttachment)
+  const files = attachments.map(resolvePromptAttachment)
   if (files.length === 0) return
   await browser.execute(async (dropFiles) => {
     const inputBar = document.getElementById('input-bar')
@@ -303,58 +273,75 @@ function assertExploreSubagentCompleted(thread: Thread): void {
   assert.ok(completed.length > 0, 'expected explore to complete with a non-empty summary result')
 }
 
+function readJsonValue(path: string): unknown {
+  const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
+  return value
+}
+
+function autonomyTraceForRun(
+  scenario: EvalScenario,
+  workspaceRoot: string,
+  prompts: EvalPrompt[],
+  assistantText: string,
+): AutonomyTrace {
+  const autonomy = scenario.autonomy
+  assert.ok(autonomy, 'autonomy trace requested without scenario.autonomy')
+  const tracePath = resolve(workspaceRoot, autonomy.tracePath)
+  let trace: AutonomyTrace
+  if (existsSync(tracePath)) {
+    trace = decodeAutonomyTrace(readJsonValue(tracePath))
+  } else {
+    trace = { scenarioId: scenario.id, events: [] }
+  }
+
+  const harnessEvents: AutonomyTrace['events'] = Array.from({ length: approvalCount }, () => ({
+    type: 'approval_requested',
+    capability: 'synthetic-matrix-execution',
+  }))
+  for (const prompt of prompts.slice(1)) {
+    const text = typeof prompt === 'string' ? prompt : prompt.text
+    if (/^(?:continue|go on|keep going)\b/i.test(text.trim())) {
+      harnessEvents.push({ type: 'human_continuation' })
+    }
+  }
+  if (!trace.events.some((event) => event.type === 'report')) {
+    trace.events.push(
+      terminalReportFromAssistantText(decodeAutonomyScenario(scenario), trace, assistantText),
+    )
+  }
+  return {
+    scenarioId: trace.scenarioId,
+    events: [...harnessEvents, ...trace.events],
+  }
+}
+
 describe('agent eval drive', () => {
   let scenario: EvalScenario
   let workspaceRoot = process.cwd()
-  let cleanupWorkspace: (() => void) | undefined
 
-  before(async () => {
+  before(() => {
     mkdirSync(ARTIFACTS, { recursive: true })
-    resetUserData()
+    approvalCount = 0
     scenario = loadScenario()
-    const project = scenarioProjectRoot(scenario)
-    workspaceRoot = project.root
-    cleanupWorkspace = project.cleanup
-    const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
-    const localServerUrl =
-      process.env.COPSE_EVAL_LOCAL_SERVER_URL?.trim() ||
-      process.env.COPSE_EVAL_LM_STUDIO_URL?.trim() ||
-      'http://localhost:1234/v1'
-    const subagentsEnabled =
-      process.env.COPSE_EVAL_SUBAGENTS === '0'
-        ? false
-        : process.env.COPSE_EVAL_SUBAGENTS === '1'
-          ? true
-          : !useMock
-    seedEmptyProject(workspaceRoot, `${scenario.id}-project`, {
-      subagentsEnabled,
-      ...(useMock
-        ? { model: 'claude-sonnet-4-6' }
-        : {
-            model: DEFAULT_APP_CHAT_MODEL,
-            localServerUrl,
-            localDefaultModel: LM_STUDIO_MODEL_IDS.chat,
-            subagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
-            localSubagentsEnabled: true,
-          }),
-    })
-    await browser.reloadSession()
-  })
-
-  after(() => {
-    resetUserData()
-    cleanupWorkspace?.()
+    const preparedWorkspace = process.env['COPSE_EVAL_WORKSPACE_ROOT']?.trim()
+    assert.ok(preparedWorkspace, 'WDIO must prepare COPSE_EVAL_WORKSPACE_ROOT before launch')
+    workspaceRoot = preparedWorkspace
   })
 
   it('runs scenario prompts against the real agent and writes JSONL artifact', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const idleTimeout = Number(process.env.COPSE_EVAL_IDLE_MS ?? 15 * 60_000)
+    const prompts = selectedEvalPrompts(scenario)
 
-    for (const prompt of scenario.prompts) {
+    for (const prompt of prompts) {
       await typePrompt(prompt)
       await $('.submit-btn').click()
       await waitForEvalAgentIdle(idleTimeout)
+    }
+    if (scenario.backgroundWake) {
+      assert.equal(prompts.length, 1, 'background wake eval requires exactly one human prompt')
+      await waitForBackgroundWake(scenario.backgroundWake)
     }
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
@@ -365,7 +352,8 @@ describe('agent eval drive', () => {
       scenario.id === 'working-brief-eval-lmstudio' ||
       scenario.id === 'working-brief-subagent-eval'
     ) {
-      const firstPrompt = scenario.prompts[0]
+      const firstPrompt = prompts[0]
+      assert.ok(firstPrompt, 'working-brief eval requires a first prompt')
       assert.equal(
         thread.workingBrief,
         typeof firstPrompt === 'string' ? firstPrompt : firstPrompt.text,
@@ -375,8 +363,36 @@ describe('agent eval drive', () => {
       assertExploreSubagentCompleted(thread)
     }
     const body = threadToJsonl(thread)
-    const outPath = join(ARTIFACTS, `${scenario.id}-${Date.now()}.jsonl`)
+    const timestamp = Date.now()
+    const outPath = join(ARTIFACTS, `${scenario.id}-${String(timestamp)}.jsonl`)
     writeFileSync(outPath, body, 'utf8')
     process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
+
+    if (scenario.autonomy) {
+      const contract = decodeAutonomyScenario(scenario)
+      const assistantText =
+        thread.messages
+          .filter((message) => message.role === 'assistant')
+          .at(-1)
+          ?.content.trim() ?? ''
+      const trace = autonomyTraceForRun(scenario, workspaceRoot, prompts, assistantText)
+      const report = scoreAutonomyRegression(contract, trace)
+      const traceOutPath = join(
+        ARTIFACTS,
+        `${scenario.id}-${String(timestamp)}-autonomy-trace.json`,
+      )
+      const reportOutPath = join(
+        ARTIFACTS,
+        `${scenario.id}-${String(timestamp)}-autonomy-report.json`,
+      )
+      writeFileSync(traceOutPath, `${JSON.stringify(trace, null, 2)}\n`, 'utf8')
+      writeFileSync(reportOutPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+      process.stdout.write(`COPSE_AUTONOMY_TRACE=${traceOutPath}\n`)
+      process.stdout.write(`COPSE_AUTONOMY_REPORT=${reportOutPath}\n`)
+      process.stdout.write(`COPSE_AUTONOMY_PASS=${String(report.pass)}\n`)
+      if (process.env.COPSE_EVAL_ENFORCE === '1') {
+        assert.equal(report.pass, true, report.violations.join('\n'))
+      }
+    }
   })
 })

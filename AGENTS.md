@@ -176,6 +176,33 @@ up-front prompt is worded as the agent's _expectation_ (not a confirmed block) s
 the user can apply the appropriate scrutiny. Declining runs the command inside the
 sandbox without re-prompting on failure.
 
+#### Reads outside the project
+
+A command that only _reads_ paths outside the project, and whose every path we
+can account for, gets a narrower question than the generic escape hatch:
+**"Allow read access outside of the project?"** with the command behind a
+_Show details_ disclosure. Its primary button grants the shape for the rest of
+the **thread** (in-memory, never persisted — `read-outside-grant.ts`); expanding
+the details also offers **"Approve this command"**, which approves that one call
+and grants nothing.
+
+The grant authorises no command by itself: every later command is re-analysed by
+`read-outside-project.ts` and must independently prove it is a plain read. That
+analysis is an allow-list of shapes and fails closed — one unrecognised head,
+write flag, redirect, `$VAR`, or privilege wrapper (`sudo`, `env`) drops the
+command back to the ordinary prompt. Credential targets (`.env*`, `*.pem`,
+`~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, …) and targets as broad as `~` or `/`
+are refused outright, so they always ask even in a granted thread. This path runs
+on every platform: off macOS `outsideSandbox` is false (there is no seatbelt to
+leave) but the read is just as external.
+
+The grant lives in memory, but the decision to make it is durable: the answered
+prompt writes a `decisions.jsonl` line at `scope: external-read` naming the paths
+at stake, with `remembered: true` for a thread grant and `false` for a
+one-command approval, and every later command the grant covers writes its own
+`verdict: allowed` line sourced to `read-outside-grant`. A restart drops the
+grant; it never drops the record of it.
+
 Key components:
 
 - `permission-policy.ts` — `decideShellPermission` (pure; the table above),
@@ -185,6 +212,8 @@ Key components:
   `ambiguous`, or `external`), with human-readable `reasons`. Fuzzy "may reach"
   matchers are tagged `ambiguous: true`; a command is only `external` when a
   definite escape (hard pattern or outside-workspace path) fires.
+- `read-outside-project.ts` / `read-outside-grant.ts` — the read-only-escape
+  shape above, its credential/breadth refusals, and the thread-scoped grant.
 - `safety-classifier.ts` — optional LM Studio classifier (`classifyShellScope`),
   used **only** when the OS sandbox is unavailable; returns `null` when disabled
   or unreachable.
@@ -214,6 +243,31 @@ For _which tier a test belongs in_ — favour unit/component tests, reserve e2e 
 and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) — read
 [`docs/testing-strategy.md`](docs/testing-strategy.md). The per-spec e2e→component migration backlog
 is in [`docs/e2e-component-migration.md`](docs/e2e-component-migration.md).
+
+### Don't add product API for tests
+
+An option, field, or flag whose only writer is a test is not configuration — it is a backdoor with a
+type. It costs the same as real API: everyone reading the code takes it for a supported knob, every
+policy that consults it has to keep handling it, and its default silently becomes product behaviour.
+
+`project.worktreeMode` is the standing example. No shipped code path has ever written it — there is
+no UI, no IPC, no setting — and its only writer is `tests/e2e/helpers/seed-config.ts`, which stamps
+`'never'` on every seeded project so specs keep asserting against the shared checkout instead of a
+fresh worktree. Because nothing else wrote it, `projectMode ?? 'never'` meant the automatic choice
+could never isolate, and every automatic thread quietly took the shared checkout — the user-visible
+bug #1568 had to fix by changing the default rather than the design.
+
+When a test needs a state the product cannot express:
+
+- **Reach it through the surface a user would.** Here the per-thread `worktreeChoice` already says
+  `'shared'`; the harness can seed that instead of inventing a project-level mode.
+- **Or make the option real** — give it a UI or a setting, and it stops being test-only.
+- **Or move the seam.** Inject the dependency, or take the fixture in at the boundary. A helper that
+  builds state is fine; a _product type_ that exists to be built by helpers is not.
+
+The tell is a grep: if every writer is under `tests/` or ends in `.test.ts`, the option is not
+earning its place. Check the whole repo before concluding an option is unused, too — `src/` alone
+will tell you a test-only field has no writer at all.
 
 ### Run the smallest set of tests
 

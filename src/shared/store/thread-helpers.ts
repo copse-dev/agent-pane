@@ -1,5 +1,6 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = (): string => globalThis.crypto.randomUUID()
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type { AppStore } from './store.ts'
 import { at } from '@shared/array-utils.ts'
 import type {
@@ -275,7 +276,12 @@ export function addMessage(
   content = '',
   images?: string[],
   attachments?: TranscriptAttachment[],
-  opts?: { model?: string },
+  opts?: {
+    model?: string
+    parameters?: ModelParameters
+    startingCommit?: string
+    dirty?: boolean
+  },
 ): string {
   const id = randomUUID()
   const { threads } = store.getState()
@@ -293,6 +299,11 @@ export function addMessage(
               ...(images?.length ? { images } : {}),
               ...(attachments?.length ? { attachments } : {}),
               ...(opts?.model !== undefined ? { model: opts.model } : {}),
+              ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
+              ...(opts?.startingCommit !== undefined
+                ? { startingCommit: opts.startingCommit }
+                : {}),
+              ...(opts?.dirty !== undefined ? { dirty: opts.dirty } : {}),
               toolCalls: [],
               createdAt: Date.now(),
             },
@@ -738,6 +749,7 @@ export function applyPreparedThreadCheckout(
   prepared: PreparedThreadCheckout,
 ): void {
   const { threads } = store.getState()
+  const previousWorktreePath = threads.find((thread) => thread.id === threadId)?.worktree?.path
   const updated = threads.map((thread) => {
     if (thread.id !== threadId) return thread
     return {
@@ -750,5 +762,8 @@ export function applyPreparedThreadCheckout(
   })
   store.setState({ threads: updated })
   store.emit('threads_changed')
+  if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
+    store.emit('thread_checkout_changed', threadId)
+  }
   store.emit('git_branch_changed')
 }

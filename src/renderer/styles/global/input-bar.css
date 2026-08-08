@@ -168,6 +168,66 @@
   opacity: 0.65;
   cursor: progress;
 }
+/* The thread no longer fits the model picked for it. Shares the image warning's
+   shape (icon · message · action) so composer warnings read as one family; the
+   `is-over` variant escalates from warning to danger once the prompt cannot be
+   sent without trimming. */
+.composer-context-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+  padding: 8px var(--spacing-md);
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.composer-context-warning.is-over {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-base));
+}
+.composer-context-warning[hidden] {
+  display: none;
+}
+.composer-context-warning-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: var(--bg-base);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.composer-context-warning.is-over .composer-context-warning-icon {
+  background: var(--danger);
+}
+.composer-context-warning-text {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.35;
+}
+.composer-context-model-btn {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.composer-context-model-btn:hover {
+  border-color: var(--warning);
+}
+.composer-context-warning.is-over .composer-context-model-btn {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+}
+.composer-context-warning.is-over .composer-context-model-btn:hover {
+  border-color: var(--danger);
+}
 .composer-checkout-error {
   display: flex;
   align-items: center;
@@ -575,6 +635,29 @@
   flex-shrink: 1;
   max-width: min(200px, 30vw);
 }
+/* Per-chat reasoning dial. Sits next to the model it applies to and stays
+   quiet — the model name is the headline; effort is the qualifier. */
+.footer-reasoning-host {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+.footer-reasoning-select {
+  max-width: min(140px, 30vw);
+  padding: 2px var(--spacing-md) 2px var(--spacing-xs);
+  border: none;
+  background-color: transparent;
+  background-position: right 0 center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.footer-reasoning-select:hover {
+  color: var(--text-primary);
+}
+/* Set apart only while it actually overrides the model's own level, so a glance
+   says whether this chat is running hotter than the model's default. */
+.footer-reasoning.is-set .footer-reasoning-select {
+  color: var(--text-secondary);
+}
 .footer-checkout-host {
   position: relative;
   flex: 0 0 auto;
@@ -833,6 +916,13 @@
 .context-wheel {
   --footer-popup-anchor: --footer-context-trigger;
 }
+/* The usage counter and its tooltip are siblings, so both name the anchor
+   themselves rather than inheriting it from `.footer-usage-group` (which also
+   wraps the context wheel and its own popover). */
+.footer-usage,
+.footer-usage-popover {
+  --footer-popup-anchor: --footer-usage-trigger;
+}
 .footer-model-host .model-picker,
 .footer-checkout-host,
 .footer-branch-host .branch-picker,
@@ -844,6 +934,7 @@
 .footer-checkout-btn,
 .footer-branch-host .branch-picker-trigger,
 .footer-overflow-trigger,
+.footer-usage,
 .context-wheel {
   anchor-name: var(--footer-popup-anchor);
 }
@@ -860,6 +951,7 @@
 .footer-checkout-menu,
 .footer-branch-host .branch-picker-menu,
 .footer-overflow-menu,
+.footer-usage-popover,
 .context-wheel-popover {
   position: absolute;
   z-index: 100;
@@ -878,6 +970,7 @@
   position-try-fallbacks: --footer-popup-clamp-right;
 }
 .footer-overflow-menu,
+.footer-usage-popover,
 .context-wheel-popover {
   left: auto;
   right: anchor(right);
@@ -895,6 +988,10 @@
   left: auto;
   right: 0;
   position-try-fallbacks: none;
+}
+/* Compact hides the counter itself, so its tooltip goes with it. */
+.input-footer.is-compact .footer-usage-popover {
+  display: none;
 }
 .footer-model-host .model-picker-menu {
   --footer-popup-min-width: 220px;
@@ -955,8 +1052,10 @@
   color: var(--text-muted);
   min-width: 2.5ch;
 }
+/* Compact footer: the wheel carries the usage line in its title. Hover-only —
+   it stopped toggling a cost label when the usage counter dropped its click. */
 .context-wheel.is-interactive {
-  cursor: pointer;
+  cursor: help;
 }
 .context-wheel.has-breakdown {
   cursor: pointer;
@@ -972,6 +1071,58 @@
   text-underline-offset: 2px;
   padding: 0;
   flex-shrink: 0;
+  cursor: help;
+}
+.footer-usage:hover,
+.footer-usage:focus-visible {
+  color: var(--text-secondary);
+}
+.footer-usage-popover {
+  --footer-popup-min-width: 210px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  box-shadow: var(--shadow-md);
+  font-size: 11px;
+  color: var(--text-primary);
+  pointer-events: none;
+}
+.footer-usage-popover[hidden] {
+  display: none;
+}
+.footer-usage-popover-header {
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+.footer-usage-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+.footer-usage-popover-row.is-model .footer-usage-popover-name,
+.footer-usage-popover-row.is-subagents .footer-usage-popover-name {
+  color: var(--text-secondary);
+}
+.footer-usage-popover-name {
+  flex: 1;
+}
+.footer-usage-popover-value {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.footer-usage-popover-divider {
+  border-top: 1px solid var(--border);
+  margin: 6px 0;
+}
+.footer-usage-popover-note {
+  color: var(--text-muted);
+  margin-top: 6px;
+  white-space: nowrap;
 }
 .footer-model-select {
   font-size: 11px;

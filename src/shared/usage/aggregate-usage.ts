@@ -1,5 +1,6 @@
 import type { ModelUsage, Thread } from '@shared/types'
-import { isLocalModel, costForModelUsage, type ExtraPricing } from '@copse/llm/estimate-cost.ts'
+import { isLocalModel, costForModelUsage } from '@copse/llm/estimate-cost.ts'
+import type { ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import type { UsageEvent } from './usage-event.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
@@ -104,7 +105,7 @@ export function aggregateThreadUsage(threads: Thread[]): Record<string, ModelUsa
 function toBreakdown(
   model: string,
   usage: ModelUsage,
-  extra?: ExtraPricing,
+  pricing?: ModelPricingMap,
   estimatedTokens = false,
 ): ModelUsageBreakdown {
   const isLocal = isLocalModel(model)
@@ -116,7 +117,7 @@ function toBreakdown(
     ...(usage.cacheCreationTokens !== undefined
       ? { cacheCreationTokens: usage.cacheCreationTokens }
       : {}),
-    estimatedCostUsd: isLocal ? 0 : costForModelUsage(model, usage, extra),
+    estimatedCostUsd: isLocal ? 0 : costForModelUsage(model, usage, pricing),
     isLocal,
     ...(estimatedTokens ? { estimatedTokens: true } : {}),
   }
@@ -124,7 +125,7 @@ function toBreakdown(
 
 function summarizeByModel(
   byModel: Record<string, ModelUsage>,
-  extra?: ExtraPricing,
+  pricing?: ModelPricingMap,
   estimatedModels?: ReadonlySet<string>,
 ): UsagePeriodSummary {
   const cloudModels: ModelUsageBreakdown[] = []
@@ -135,7 +136,7 @@ function summarizeByModel(
 
   for (const [model, usage] of Object.entries(byModel)) {
     if (!usage.inputTokens && !usage.outputTokens) continue
-    const row = toBreakdown(model, usage, extra, estimatedModels?.has(model) ?? false)
+    const row = toBreakdown(model, usage, pricing, estimatedModels?.has(model) ?? false)
     totalInputTokens += usage.inputTokens
     totalOutputTokens += usage.outputTokens
     totalCostUsd += row.estimatedCostUsd
@@ -154,16 +155,16 @@ function summarizeByModel(
 
 export function summarizeUsageByModel(
   byModel: Record<string, ModelUsage>,
-  extra?: ExtraPricing,
+  pricing?: ModelPricingMap,
 ): UsagePeriodSummary {
-  return summarizeByModel(byModel, extra)
+  return summarizeByModel(byModel, pricing)
 }
 
 export function buildUsageSummary(
   events: UsageEvent[],
   threads: Thread[],
   now = Date.now(),
-  extra?: ExtraPricing,
+  pricing?: ModelPricingMap,
 ): UsageSummary {
   const trackingStartedAt =
     events.length > 0 ? events.reduce((min, e) => Math.min(min, e.at), Infinity) : null
@@ -171,21 +172,21 @@ export function buildUsageSummary(
   return {
     day: summarizeByModel(
       aggregateEventsByModel(events, DAY_MS, now),
-      extra,
+      pricing,
       estimatedModelsSince(events, DAY_MS, now),
     ),
     month: summarizeByModel(
       aggregateEventsByModel(events, MONTH_MS, now),
-      extra,
+      pricing,
       estimatedModelsSince(events, MONTH_MS, now),
     ),
     period90d: summarizeByModel(
       aggregateEventsByModel(events, PERIOD_90D_MS, now),
-      extra,
+      pricing,
       estimatedModelsSince(events, PERIOD_90D_MS, now),
     ),
     // All-time is derived from saved thread usage, which carries no estimated flag.
-    allTime: summarizeByModel(aggregateThreadUsage(threads), extra),
+    allTime: summarizeByModel(aggregateThreadUsage(threads), pricing),
     trackingStartedAt,
     ledgerEventCount: events.length,
   }

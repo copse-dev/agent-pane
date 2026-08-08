@@ -4,17 +4,36 @@ import { mkdtemp, mkdir, writeFile, rm, chmod, readFile, realpath } from 'node:f
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  cursorAdapter,
   listCursorHooks,
   userHooksConfigPath,
   projectHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
 } from './cursor-adapter.ts'
+import type { HookSpawnResult } from './hook-spawn.ts'
 import { runToolGateHooks } from './tool-gate.ts'
 import { beginHookRunRecording, endHookRunRecording } from '../hook-run-recorder.ts'
 import { getThreadMeta } from '../thread-store.ts'
 import { storageSet } from '../storage/storage.ts'
 import { parseSpineEntries, type SpineHookRunLine } from '@shared/threads/spine-schema.ts'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+
+/** A fake spawn result, the shape a dialect interpretation reads. */
+function stubSpawn(over: Partial<HookSpawnResult> = {}): HookSpawnResult {
+  return {
+    stdin: '{}',
+    stdout: '',
+    stderr: '',
+    exitCode: 0,
+    durationMs: 1,
+    timedOut: false,
+    spawnError: false,
+    sandboxed: false,
+    sandboxViolationCount: 0,
+    startedAt: 0,
+    ...over,
+  }
+}
 
 /** Fire the canonical toolGate event for a Copse tool call (the production gate path). */
 function gate(
@@ -102,6 +121,40 @@ describe('cursor-adapter', () => {
       assert.match(warning.message, /notARealEvent/)
       assert.equal(warning.source, userHooksConfigPath())
       assert.equal(warning.scope, 'user')
+    })
+
+    it('distinguishes a recognised-but-unwired Cursor event from a typo', async () => {
+      await writeUserHooks({
+        version: 1,
+        hooks: {
+          // A real Cursor event Copse has no fire site for.
+          sessionEnd: [{ command: './teardown.sh' }],
+          // A Cursor Tab event — out of scope by construction (no inline-tab surface).
+          afterTabFileEdit: [{ command: './tab.sh' }],
+          // Not a Cursor event at all.
+          beforeShellExecutionn: [{ command: './typo.sh' }],
+          // The valid hook still loads — the lint is warn-only, never a gate.
+          beforeShellExecution: [{ command: './ok.sh' }],
+        },
+      })
+
+      const { hooks, warnings } = await listCursorHooks({
+        workspaceRoot: null,
+        projectTrusted: false,
+      })
+      assert.equal(hooks.length, 1)
+      assert.equal(hooks[0]?.event, 'beforeShellExecution')
+
+      const recognised = warnings.filter((w) =>
+        /recognised by Cursor but not supported/.test(w.message),
+      )
+      assert.equal(recognised.length, 2, 'sessionEnd + afterTabFileEdit should read as recognised')
+      assert.ok(recognised.some((w) => w.message.includes('sessionEnd')))
+      assert.ok(recognised.some((w) => w.message.includes('afterTabFileEdit')))
+
+      const unknown = warnings.filter((w) => /Unknown hook event/.test(w.message))
+      assert.equal(unknown.length, 1)
+      assert.ok(unknown[0]?.message.includes('beforeShellExecutionn'))
     })
 
     it('marks every declared Cursor event supported (stop is wired in B3)', async () => {
@@ -270,6 +323,103 @@ describe('cursor-adapter', () => {
       // A read-file hook must not gate a shell command.
       assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'allow')
       assert.equal((await gate('read_file', { path: 'x' })).permission, 'deny')
+    })
+  })
+
+  // Cursor's generic pre-tool gate — the pre-side twin of `postToolUse`. Unlike
+  // the dedicated flavors it covers *every* tool, so it is the only way a Cursor
+  // hook can gate a write / search / subagent call.
+  describe('generic preToolUse gate', () => {
+    it('gates a tool no dedicated flavor covers (write_file)', async () => {
+      const script = await writeHookScript(
+        'pre-deny.sh',
+        '{"permission":"deny","agentMessage":"no writes today"}',
+      )
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script }] } })
+
+      const decision = await gate('write_file', { path: 'a.ts', contents: 'x' })
+      assert.equal(decision.permission, 'deny')
+      assert.equal(decision.agentMessage, 'no writes today')
+    })
+
+    it('fires alongside the dedicated flavor for a shell call', async () => {
+      const generic = await writeHookScript('pre-generic.sh', '{"permission":"deny"}')
+      const dedicated = await writeHookScript('pre-shell.sh', '{"permission":"allow"}')
+      await writeUserHooks({
+        hooks: {
+          preToolUse: [{ command: generic }],
+          beforeShellExecution: [{ command: dedicated }],
+        },
+      })
+
+      // Both ran; deny wins, which is only possible if the generic hook fired
+      // even though a dedicated flavor also matched.
+      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'deny')
+    })
+
+    it('receives the Cursor tool-type token, not the canonical tool id', async () => {
+      const stdinPath = join(tempHome, 'pre-stdin.json')
+      const script = join(tempHome, 'capture-pre.sh')
+      await writeFile(script, `#!/bin/sh\ncat > '${stdinPath}'\nexit 0\n`, 'utf-8')
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script }] } })
+
+      await gate('search_code', { query: 'needle' })
+
+      const stdin = expectRecord(parseJsonUnknown(await readFile(stdinPath, 'utf-8')))
+      assert.equal(stdin['hook_event_name'], 'preToolUse')
+      assert.equal(stdin['tool_name'], 'Grep')
+      assert.deepEqual(stdin['tool_input'], { query: 'needle' })
+    })
+
+    it('matches on the tool-type token (D3 matcher subject)', async () => {
+      const script = await writeHookScript('pre-writes.sh', '{"permission":"deny"}')
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script, matcher: 'Write' }] } })
+
+      assert.equal((await gate('write_file', { path: 'a.ts' })).permission, 'deny')
+      // A `Write` matcher must not gate a shell call.
+      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'allow')
+    })
+
+    // Cursor's docs say `ask` "is accepted by the schema but not enforced for
+    // preToolUse today" — i.e. it behaves as allow. Copse *does* enforce it, as
+    // an escalation to its own approval prompt. That is a deliberate divergence
+    // in the tightening direction, consistent with the dedicated flavors (which
+    // Cursor does enforce `ask` on) and with the rule that a hook can only ever
+    // tighten the gate, never auto-approve.
+    it('escalates `ask` to the approval prompt (tighter than the vendor)', async () => {
+      const script = await writeHookScript('pre-ask.sh', '{"permission":"ask"}')
+      await writeUserHooks({ hooks: { preToolUse: [{ command: script }] } })
+
+      assert.equal((await gate('write_file', { path: 'a.ts' })).permission, 'ask')
+    })
+  })
+
+  // Cursor's `stop` returns an optional `followup_message` that upstream
+  // auto-submits as the next user message. Copse fires `stop` detached, so there
+  // is no turn left to submit into — it routes through the pending-message queue
+  // instead (decision 4), the same channel `subagentStop`'s follow-up uses.
+  describe('stop followup_message', () => {
+    it('routes a follow-up to the queue rather than auto-submitting it', () => {
+      const interpret = cursorAdapter.interpretStop?.bind(cursorAdapter)
+      assert.ok(interpret)
+      const interp = interpret(stubSpawn({ stdout: '{"followup_message":"now run the tests"}' }), {
+        status: 'completed',
+      })
+      assert.equal(interp.outcome, null, 'a detached stop can never gate control flow')
+      assert.ok(interp.queueMessage)
+      assert.equal(interp.queueMessage.text, 'now run the tests')
+      assert.equal(interp.queueMessage.sendNow, false, 'held, never auto-sent')
+      assert.equal(interp.spineEvent, 'stop')
+    })
+
+    it('stays a clean no-op when the hook returns nothing', () => {
+      const interpret = cursorAdapter.interpretStop?.bind(cursorAdapter)
+      assert.ok(interpret)
+      const interp = interpret(stubSpawn(), { status: 'completed' })
+      assert.equal(interp.queueMessage, undefined)
+      assert.equal(interp.failed, false)
+      assert.equal(interp.parseOk, true)
     })
   })
 

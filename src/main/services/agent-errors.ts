@@ -3,6 +3,7 @@ import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
+import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -187,19 +188,61 @@ export function classifyAcpAuthFailure(
  */
 function acpEnvHint(known: { title: string; envHints?: string[] } | undefined): string {
   if (!known?.envHints || known.envHints.length === 0) return ''
-  return ` Alternatively, set ${known.envHints.join(' or ')} for ${known.title} in Settings → General → Providers.`
+  const variables = known.envHints.map((name) => `\`${name}\``).join(' or ')
+  return `Alternatively, set ${variables} for ${known.title} in Settings → General → Providers.`
 }
 
-/** The agent's own words, kept verbatim under the guidance rather than leading with it. */
-function acpAgentReport(rpc: JsonRpcError | null): string[] {
-  if (!rpc) return []
+/** The agent's own words, kept verbatim below the guidance rather than leading with it. */
+function acpAgentReport(rpc: JsonRpcError | null): string | null {
+  if (!rpc) return null
   const dataDetail = formatErrorData(rpc.data)
-  const report = `Agent reported: ${formatJsonRpcErrorCode(rpc.code, rpc.message)}`
-  return [dataDetail ? `${report}\nDetails: ${dataDetail}` : report]
+  const report = formatJsonRpcErrorCode(rpc.code, rpc.message)
+  return dataDetail ? `${report}\nDetails: ${dataDetail}` : report
+}
+
+/** Fence opaque agent diagnostics without trusting them to be Markdown. */
+function markdownCodeBlock(value: string): string {
+  const backtickRuns = value.match(/`+/g) ?? []
+  const longestRun = backtickRuns.reduce((longest, run) => Math.max(longest, run.length), 2)
+  const fence = '`'.repeat(longestRun + 1)
+  return `${fence}text\n${value}\n${fence}`
+}
+
+function acpAuthNotice(agentName: string, kind: AcpAuthFailureKind): string {
+  const title =
+    kind === 'expired' ? `${agentName} sign-in expired` : `${agentName} needs authentication`
+  const explanation =
+    kind === 'expired'
+      ? `This turn couldn’t run because ${agentName}’s saved credentials are no longer valid.`
+      : `This turn couldn’t run because ${agentName} is not signed in.`
+  return `> [!WARNING]\n> **${title}**\n>\n> ${explanation}`
+}
+
+function acpAuthSteps(command: string | null): string {
+  if (!command) {
+    return [
+      '**To continue**',
+      '',
+      '1. Run the agent’s login command.',
+      '2. Finish signing in, then re-send your message.',
+    ].join('\n')
+  }
+  return [
+    '**To continue**',
+    '',
+    `1. Run \`${command}\` in a terminal.`,
+    '2. Finish signing in, then re-send your message.',
+  ].join('\n')
+}
+
+function acpTechnicalDetails(rpc: JsonRpcError | null): string | null {
+  const report = acpAgentReport(rpc)
+  if (!report) return null
+  return `**Technical details**\n\n${markdownCodeBlock(report)}`
 }
 
 const ACP_KEYS_NOT_FORWARDED =
-  'Copse’s built-in provider keys (Settings → Providers) are not passed to external agents — configure auth on the agent itself.'
+  '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.'
 
 function formatAcpAuthError(
   rpc: JsonRpcError | null,
@@ -216,31 +259,25 @@ function formatAcpAuthError(
   if (kind === 'expired') {
     const reauth = acpReauthCommand(known)
     return [
-      `${agentName}’s saved sign-in has expired, so this turn could not run.`,
-      reauth
-        ? `Sign in again with \`${reauth}\`, then re-send your message.${acpEnvHint(known)}`
-        : `Run the agent’s login command again, then re-send your message.${acpEnvHint(known)}`,
-      ...acpAgentReport(rpc),
+      acpAuthNotice(agentName, kind),
+      acpAuthSteps(reauth),
+      acpEnvHint(known),
       ACP_KEYS_NOT_FORWARDED,
-    ].join('\n\n')
+      acpTechnicalDetails(rpc),
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join('\n\n')
   }
 
-  const code = rpc?.code ?? -32000
-  const message = rpc?.message ?? 'Authentication required'
-  const lines = [
-    `${agentName} requires authentication before it can run (${formatJsonRpcErrorCode(code, message)}).`,
+  return [
+    acpAuthNotice(agentName, kind),
+    acpAuthSteps(known?.setup ?? null),
+    acpEnvHint(known),
+    ACP_KEYS_NOT_FORWARDED,
+    acpTechnicalDetails(rpc ?? { code: -32000, message: 'Authentication required' }),
   ]
-  const dataDetail = rpc ? formatErrorData(rpc.data) : null
-  if (dataDetail) lines.push(`Details: ${dataDetail}`)
-  if (known?.setup) {
-    lines.push(`Sign in with \`${known.setup}\`.${acpEnvHint(known)}`)
-  } else {
-    lines.push(
-      'Run the agent’s login command, or add its required API keys to that agent’s environment in Settings → General → Providers.',
-    )
-  }
-  lines.push(ACP_KEYS_NOT_FORWARDED)
-  return lines.join('\n\n')
+    .filter((part): part is string => Boolean(part))
+    .join('\n\n')
 }
 
 /** Why a provider refused a request, when the cause is credentials or billing. */
@@ -285,6 +322,10 @@ export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailu
 
 /** Map provider / local-model failures to user-facing chat text. */
 export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
+  if (err instanceof ThreadWorktreeDetachedError) {
+    return `This thread's checkout is detached from its branch. Your files are preserved. Reattach it to \`${err.branch}\`, then retry.`
+  }
+
   const rpc = findJsonRpcError(err)
   const { status, type, code, message } = parseProviderError(err)
   const raw = errorMessage(err)

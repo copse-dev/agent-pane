@@ -51,6 +51,10 @@ export interface StoreEvents {
   hook_card_added: [threadId: string, messageId: string]
   comparison_changed: [threadId: string]
   git_branch_changed: []
+  // A blank thread committed its checkout decision. Shells created before an
+  // isolated worktree existed use this to stop presenting the shared checkout
+  // as though it were the thread's current execution root.
+  thread_checkout_changed: [threadId: string]
   composer_draft_flush: []
   /**
    * Prefer a checkout mode on the active blank thread (e.g. PR viewer "New

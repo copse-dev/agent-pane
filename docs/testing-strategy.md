@@ -157,6 +157,20 @@ new tests should keep that trend:
 - The **cheap static gate** (`lint`/typecheck/format/dead-code) short-circuits
   the pipeline before any build or e2e shard burns minutes. Put fast, broad
   checks here.
+- The same oracle call also emits a **unit plan** (`unit_mode` / `unit_specs`),
+  which the `check` job applies **only to a PR stacked on another PR's branch**.
+  Such a layer cannot merge — the layer below has to land first, and when it
+  does the PR is retargeted at trunk and re-runs the whole suite under the
+  coverage ratchet. So the run that actually gates a merge is never a thinned
+  one. Two properties keep this honest, and both are pinned by
+  `npm run check:oracle`:
+  - **An empty selection means `full`, never `skip`.** A fixture, JSON snapshot
+    or config a test _reads_ is invisible to the import graph, so "no unit test
+    selected" is evidence of a blind spot, not of safety. Only a docs-only diff
+    skips outright.
+  - **`subset` skips the coverage ratchet**, because a partial run's coverage
+    number isn't comparable to `coverage-baseline.json`. The trunk-targeted run
+    is where the ratchet applies.
 - **Remote e2e for the local loop** (`npm run e2e:remote`) runs the same
   oracle-selected / CI-shaped suite on a cloud container from the working tree
   so agents and humans can keep iterating. Prefer it over local `test:e2e`
@@ -204,6 +218,12 @@ loops driven by an actual local model rather than the mock:
   / `LM_API_TOKEN` and talking to a local OpenAI-compatible endpoint
   (`createLMStudioProvider`, default `http://localhost:1234/v1`).
 - `npm run validate:local-agent` exercises the agent loop headlessly.
+- `npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools`
+  holds a fixed task/model/tool set constant and compares the full system prompt
+  with one named section omitted. It writes solve-rate, doctrine-pass-rate,
+  per-rule, and token deltas under `bench-results/doctrine/`. CI runs its mock
+  smoke arm in the normal bench job; the real model matrix runs nightly or with
+  the `bench-doctrine` label when `LM_EVAL_RUNNER` is configured.
 
 These are deliberately **out of the per-PR critical path** (they need a model
 host and are slow/non-deterministic), but they remain a supported avenue: a
@@ -253,31 +273,31 @@ branch's committed version stands, and the PR comment shows a base-vs-branch
 comparison instead. Add the `update-screenshots` label to explicitly regenerate
 and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
 
-## Where each tier runs: `develop` and `main`
+## Where each tier runs: `main` and `release`
 
-`develop` is the default branch and the integration target. `main` only ever
-receives promotion PRs from `develop`, so it stays in a state a release can be
+`main` is the default branch and the integration target. `release` only ever
+receives promotion PRs from `main`, so it stays in a state a release can be
 cut from.
 
 | Event                                     | Tier                                          |
 | ----------------------------------------- | --------------------------------------------- |
-| PR into `develop` (the normal case)       | light — precheck, check, build (no e2e/bench) |
-| Push to `develop` (a merge landed)        | light                                         |
-| PR from `develop` into `main` (promotion) | **full** — adds e2e (8 shards) and bench      |
-| Push to `main` (a promotion landed)       | **full**                                      |
+| PR into `main` (the normal case)          | light — precheck, check, build (no e2e/bench) |
+| Push to `main` (a merge landed)           | light                                         |
+| PR from `main` into `release` (promotion) | **full** — adds e2e (8 shards) and bench      |
+| Push to `release` (a promotion landed)    | **full**                                      |
 | Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners            |
 
 The point is that e2e and bench are paid once per _promotion_ rather than once
 per PR. At ~20 merges a day that is the difference between ~20 heavy runs and a
 handful.
 
-Two escape hatches on a `develop`-targeted PR, both labels:
+Two escape hatches on a `main`-targeted PR, both labels:
 
 - `ci-full` — run the whole heavy tier now, for a change that genuinely needs
   the signal before it merges (also forces the tier on a draft).
 - `update-screenshots` — run e2e specifically, because the screenshot commit is
   produced by the e2e run. Without this the label would be inert on a
-  `develop` PR.
+  `main` PR.
 
 **What this costs.** GitHub's merge queue would bisect a failing batch
 automatically; a red promotion names a batch, not a commit. Keep promotions
@@ -286,8 +306,8 @@ first — it usually identifies its own owner. There is no merge queue to fall
 back on: it requires GitHub Enterprise Cloud for private repositories and this
 org is on Team.
 
-**Hotfixes.** A commit pushed straight to `main` must be merged back into
-`develop` immediately, or the branches drift and the next promotion carries a
+**Hotfixes.** A commit pushed straight to `release` must be merged back into
+`main` immediately, or the branches drift and the next promotion carries a
 spurious conflict.
 
 ## Quick rule of thumb

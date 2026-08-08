@@ -28,6 +28,12 @@ let e2eUserDataDir: string | null = null
 
 export const config: Options.Testrunner = {
   runner: 'local',
+  // Keep the runner + chromedriver logs instead of discarding them. When a spec
+  // dies with "Unable to connect to http://localhost:PORT", that message is the
+  // symptom; the driver's own log is the only place the cause is written down.
+  // Landing them under e2e-failure-artifacts/ puts them in the directory CI
+  // already uploads and prints on a failing shard.
+  outputDir: join(process.cwd(), 'e2e-failure-artifacts', 'wdio-logs'),
   specs: ['./tests/e2e/**/*.e2e.ts'],
   exclude: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
@@ -151,6 +157,10 @@ export const config: Options.Testrunner = {
       // Deterministic Artificial Analysis live cohort (incl. costPerTask) for the
       // Settings → Usage model value map — no AA API key required in e2e.
       COPSE_AA_INTELLECT_MOCK: process.env.COPSE_AA_INTELLECT_MOCK?.trim() || '1',
+      // Resolve every model-card candidate without touching a vendor site, so
+      // the value map's card links render deterministically and e2e makes no
+      // outbound requests. '0' would resolve none.
+      COPSE_MODEL_CARD_PROBE_MOCK: process.env.COPSE_MODEL_CARD_PROBE_MOCK?.trim() || '1',
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,

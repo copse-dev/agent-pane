@@ -1,5 +1,13 @@
 import type { BrowserWindow, IpcMain } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import {
+  abortAllAcpPermissions,
+  cancelApprovalsForAcpToolCall,
+  trackAcpPermissionToolCall,
+} from './acp/acp-permission-registry.ts'
+
+// Re-exported so existing importers keep using `approval.ts` as the entry point.
+export { cancelApprovalsForAcpToolCall, trackAcpPermissionToolCall }
 import { randomUUID } from 'node:crypto'
 import {
   approvalRespondSchema,
@@ -10,6 +18,13 @@ import {
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
+import type { PromptCause } from '@shared/threads/prompt-cause.ts'
+import {
+  DeferredApprovalError,
+  deferredApprovalMessage,
+} from '@shared/threads/deferred-approval.ts'
+import { isDeferralModeActive } from './security/deferral-mode.ts'
+import { deferApproval } from './security/deferred-approval-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
@@ -29,19 +44,72 @@ export interface ApprovalRequest {
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
+  /**
+   * Hide the body behind a "Show details" disclosure, so the prompt leads with
+   * the decision rather than the command. Honoured only for a single-request
+   * prompt; a coalesced batch always shows every body.
+   */
+  collapseDetails?: boolean
+  /**
+   * Label for a secondary approve button that approves *only this request*
+   * (`remember: false`), leaving the primary button to carry the broader grant
+   * (`remember: true`) with no checkbox. Like {@link collapseDetails} it is
+   * honoured only for a single-request prompt: in a mixed batch the primary
+   * button falls back to the checkbox, so an unrelated request can never be
+   * swept into a grant the user answered for something else.
+   */
+  approveOnceLabel?: string
   /** Intentional Settings-owned flow that must prompt above the open Settings dialog. */
   showWhileSettingsOpen?: boolean
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
   comparisonModels?: ComparisonModelSelection
+  /** Offer a bounded main-process lease for exact retries in this turn tree. */
+  allowTurnTreeLease?: boolean
+  /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
+  turnTreeLeaseLabel?: string
+  /** Whether approving also grants the bounded task lease without another user action. */
+  turnTreeLeaseDefault?: boolean
+  /**
+   * What the offered lease would actually cover — the exact command, not the
+   * display label. Required whenever `allowTurnTreeLease` is true.
+   *
+   * The label is a fixed string shared by every shell prompt, so it cannot tell
+   * two batched requests apart. A batch settles with ONE tick box but issues one
+   * lease per request, so without a per-request identity a single tick would
+   * grant leases for unrelated commands under a label reading "this task". The
+   * renderer hides the box unless every batched request shares this subject —
+   * the same coherence rule `rememberLabel` gets, on a value that discriminates.
+   */
+  turnTreeLeaseSubject?: string
   /** Secret-free operation or tool name stored in the durable decision log. */
   subject?: string
   /** Scope the decision applies at, such as `sandbox` or `external`. */
   scope?: string
+  /**
+   * Why this prompt is interrupting the user, recorded to the durable decision
+   * log so interruptions can be counted by cause rather than estimated. Every
+   * interactive gate path should set it; see `@shared/threads/prompt-cause.ts`.
+   *
+   * Distinct from `reasons` below: this is the fixed taxonomy slug the report
+   * aggregates on, while `reasons` is the free-text detail of *this* request.
+   */
+  cause?: PromptCause
+  /**
+   * Why the prompt was raised, recorded verbatim on the decision-log line this
+   * answer produces. Durable shell decisions omit the command itself
+   * (`SHELL_DECISION_SUBJECT`), so a gate that can name *what* it is asking
+   * about — the paths a read touches, the origin a fetch reaches — passes it
+   * here to leave the answer legible in the log. Redacted at record time; keep
+   * it secret-free at the call site anyway.
+   */
+  reasons?: string[]
 }
 
 export interface ApprovalResponse {
   approved: boolean
   remember: boolean
+  /** Scope selected for this approval; absent is the backwards-compatible one-shot grant. */
+  grantScope?: 'once' | 'turn-tree'
   /**
    * How the prompt settled; omitted by external handlers means a user decision.
    * There is no wall-clock timeout — `timeout` remains in the union for older
@@ -68,8 +136,17 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    collapseDetails: req.collapseDetails ?? false,
+    approveOnceLabel: req.approveOnceLabel ?? '',
+    // Part of the key so two prompts that read alike but are *about* different
+    // things can never share one answer — and one recorded line.
+    reasons: req.reasons ?? [],
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
     comparisonModels: req.comparisonModels ?? null,
+    allowTurnTreeLease: req.allowTurnTreeLease ?? false,
+    turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
+    turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
+    turnTreeLeaseSubject: req.turnTreeLeaseSubject ?? '',
   })
 }
 
@@ -119,14 +196,6 @@ interface InflightWaiter {
 
 const inflight = new Map<string, InflightApproval>()
 
-/**
- * ACP `session/request_permission` toolCallIds currently blocked in the approval
- * dialog. When the agent later marks that tool call completed/failed/cancelled
- * without waiting for our answer, we abort the matching waiter so the modal
- * dismisses at the tool boundary — not only at turn end.
- */
-const acpPermissionByToolCallId = new Map<string, AbortController>()
-
 /** Best-effort: persistence never blocks the approval flow it describes. */
 function recordApprovalDecision(
   req: ApprovalRequest,
@@ -144,9 +213,13 @@ function recordApprovalDecision(
           : 'denied'
         : resolution === 'timeout'
           ? 'timeout'
-          : 'cancelled',
+          : resolution === 'deferred'
+            ? 'deferred'
+            : 'cancelled',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
+    ...(req.cause ? { cause: req.cause } : {}),
+    ...(req.reasons?.length ? { reasons: req.reasons } : {}),
     remembered: response.remember,
     ...(resolution === 'user' ? {} : { source: resolution }),
   })
@@ -165,8 +238,7 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
       }
     }
     inflight.clear()
-    for (const controller of acpPermissionByToolCallId.values()) controller.abort()
-    acpPermissionByToolCallId.clear()
+    abortAllAcpPermissions()
   }
 }
 
@@ -221,41 +293,6 @@ export function pendingApprovalCountForThread(threadId: string): number {
 }
 
 /**
- * Register that an ACP permission prompt is open for `toolCallId`. Returns a
- * signal aborted when {@link cancelApprovalsForAcpToolCall} runs, and an
- * unregister function for the normal settle path.
- */
-export function trackAcpPermissionToolCall(toolCallId: string): {
-  signal: AbortSignal
-  unregister: () => void
-} {
-  // Replace any stale registration for the same id (agent retried the call).
-  acpPermissionByToolCallId.get(toolCallId)?.abort()
-  const controller = new AbortController()
-  acpPermissionByToolCallId.set(toolCallId, controller)
-  return {
-    signal: controller.signal,
-    unregister: (): void => {
-      if (acpPermissionByToolCallId.get(toolCallId) === controller) {
-        acpPermissionByToolCallId.delete(toolCallId)
-      }
-    },
-  }
-}
-
-/**
- * Dismiss the approval tied to an ACP tool call that reached a terminal status
- * (or was abandoned) before the user answered.
- */
-export function cancelApprovalsForAcpToolCall(toolCallId: string): boolean {
-  const controller = acpPermissionByToolCallId.get(toolCallId)
-  if (!controller) return false
-  acpPermissionByToolCallId.delete(toolCallId)
-  controller.abort()
-  return true
-}
-
-/**
  * Ask the user (or registered handler) for approval. Identical in-flight requests
  * share one underlying prompt — the first call opens it; later duplicates wait on
  * the same answer. The prompt stays open until the user responds, the window
@@ -270,11 +307,85 @@ export function cancelApprovalsForAcpToolCall(toolCallId: string): boolean {
  *
  * Settled outcomes are appended to the durable decision log (best-effort).
  */
+/**
+ * Queue this request instead of prompting, when the thread is running
+ * unattended. Returns null for the ordinary interactive case so the caller falls
+ * through to the normal handler.
+ *
+ * Always rejects — never resolves — because every gate caller reads
+ * `approved === false` as "the user declined" and carries on quietly. A resolved
+ * denial would drop the request on the floor after telling nobody; the thrown
+ * {@link DeferredApprovalError} is what makes a deferral impossible to swallow
+ * (plan Decision 3).
+ *
+ * If the queue write fails we return null and let the modal happen. Blocking an
+ * unattended run is bad; telling the agent something was queued when it was not
+ * is worse, because the request would then exist nowhere at all.
+ */
+/**
+ * Queue the request and tell the agent, instead of opening a modal nobody is
+ * there to answer.
+ *
+ * Always throws on the happy path — never resolves — because every gate caller
+ * reads `approved === false` as "the user declined" and carries on quietly. A
+ * resolved denial would drop the request on the floor after telling nobody; the
+ * thrown {@link DeferredApprovalError} is what makes a deferral impossible to
+ * swallow by accident (plan Decision 3).
+ *
+ * If the queue write fails, fall back to prompting. Blocking an unattended run
+ * is bad, but telling the agent something was queued when it was not is worse:
+ * the request would then exist nowhere at all.
+ */
+async function deferInsteadOfPrompting(
+  req: ApprovalRequest,
+  threadId: string,
+  prompt: () => Promise<ApprovalResponse>,
+): Promise<ApprovalResponse> {
+  let entryId: string
+  try {
+    const entry = await deferApproval({
+      threadId,
+      kind: req.type,
+      title: req.title,
+      subject: req.subject ?? req.title,
+      ...(req.cause !== undefined ? { cause: req.cause } : {}),
+      ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+      ...(req.scope !== undefined ? { scope: req.scope } : {}),
+    })
+    entryId = entry.id
+  } catch (error) {
+    console.warn('[approval] could not queue a deferral; prompting instead:', error)
+    return prompt()
+  }
+  recordApprovalDecision(req, DENIED, 'deferred')
+  throw new DeferredApprovalError(
+    entryId,
+    deferredApprovalMessage({ title: req.title, reasons: req.reasons }),
+  )
+}
+
 export function requestApproval(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
+  // Unattended runs never open a modal (deferred-approvals.md Decision 6). This
+  // is the one choke point every gate already funnels through, so intercepting
+  // here covers shell, MCP, web, browser, PII, ACP and the rest without any of
+  // them growing a second code path — and without a gate being able to forget.
+  const deferringThread = getActiveRunThread()
+  if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
+    return deferInsteadOfPrompting(req, deferringThread, () =>
+      requestApprovalInteractive(req, signal),
+    )
+  }
+  return requestApprovalInteractive(req, signal)
+}
+
+function requestApprovalInteractive(
+  req: ApprovalRequest,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
   const scoped = scopedHandler.getStore()
   const activeHandler = scoped?.handler ?? handler
   if (!activeHandler) {
@@ -387,7 +498,7 @@ export function initApproval(
       // assertMainFrameSender rejects any frame other than the window's main
       // frame, so a compromised/embedded frame can't answer an approval.
       assertMainFrameSender(event, win)
-      const [id, approved, remember, comparisonModels] = parseIpcArgs(
+      const [id, approved, remember, comparisonModels, grantScope] = parseIpcArgs(
         approvalRespondSchema,
         rawArgs,
       )
@@ -396,6 +507,7 @@ export function initApproval(
         remember: remember === true,
         resolution: 'user',
         ...(comparisonModels ? { comparisonModels } : {}),
+        ...(grantScope ? { grantScope } : {}),
       })
     } catch (err) {
       if (err instanceof IpcValidationError) return

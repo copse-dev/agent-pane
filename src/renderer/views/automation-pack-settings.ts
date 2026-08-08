@@ -2,9 +2,13 @@ import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import type { AutomationSchedule, AutomationScheduleInput } from '@shared/types'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { isBestValueChatModel } from '@shared/lm-studio-defaults.ts'
+import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { el, clear } from '../dom/helpers.ts'
-import { fetchModelOptions, modelDisplayLabel, type ModelOptionsApi } from './model-options.ts'
+import {
+  fetchDynamicModelOptions,
+  modelDisplayLabel,
+  type ModelOptionsApi,
+} from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 
@@ -62,7 +66,7 @@ export function createAutomationPackSettings(
     'p',
     { class: 'automation-notice' },
     packEnabled
-      ? 'A match starts a model-pinned task. Normal tool permission prompts still apply.'
+      ? 'A match starts a task on whichever model the schedule’s rule picks at that moment. Normal tool permission prompts still apply.'
       : 'Enable this pack to arm schedules. Existing schedules remain editable while disabled.',
   )
   const status = el('div', { class: 'automation-status', hidden: true })
@@ -112,8 +116,12 @@ export function createAutomationPackSettings(
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
   root.append(heading, scope, notice, status, list, form)
+  // A schedule fires unattended, potentially months after it was written, so it
+  // stores a rule rather than a model id — the same treatment every pack-owned
+  // model setting gets. The rule resolves when the task is created, against the
+  // providers and plan windows that exist then.
   const modelPicker = mountModelSelectPicker(modelSelect, {
-    loadOptions: (current) => fetchModelOptions(api, current),
+    loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: 'Automation model',
     loadOnMount: false,
   })
@@ -145,12 +153,13 @@ export function createAutomationPackSettings(
     cronInput.value = schedule?.cron ?? '0 9 * * 1-5'
     promptInput.value = schedule?.prompt ?? ''
     enabledInput.checked = schedule?.enabled ?? true
-    const configuredModel = schedule?.model ?? store.getState().settings?.model ?? ''
-    // Schedules promise a stable model choice, so do not carry the chat-only
-    // best-value sentinel into a delayed task where its eventual resolution
-    // could change between configuration and trigger time.
-    const defaultModel = isBestValueChatModel(configuredModel) ? '' : configuredModel
-    const options = await fetchModelOptions(api, defaultModel)
+    // An existing schedule keeps whatever it stored (including a model pinned
+    // before schedules moved to dynamic selection — the picker surfaces it as a
+    // pinned row). A new one starts from best value rather than inheriting the
+    // chat model, since the chat model is a choice about right now.
+    const configuredModel = schedule?.model.trim() ?? ''
+    const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL
+    const options = await fetchDynamicModelOptions(defaultModel)
     const selectedModel =
       options.find((option) => option.value === defaultModel && !option.disabled)?.value ??
       options.find((option) => option.value && !option.disabled)?.value ??

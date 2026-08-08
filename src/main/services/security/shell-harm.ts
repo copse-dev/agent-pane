@@ -2,6 +2,7 @@ import { dirname, isAbsolute, parse as parsePath, resolve, sep, win32 } from 'no
 import {
   CODE_INTERPRETERS,
   SCRIPT_EXTENSIONS,
+  SHELL_LANGUAGE_INTERPRETERS,
   commandName,
   inlineCodeBody,
   shellRedirects,
@@ -868,6 +869,34 @@ function interpreterScriptOperand(argv: string[]): string | null {
   return null
 }
 
+/** `https://…`, `file://…` — a locator, not a path this host can execute. */
+const URI_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//
+
+/**
+ * Characters that mark a token as a pattern or a fragment of code rather than a
+ * filename: glob and brace metacharacters, interpolation, and the punctuation a
+ * lexer leaves attached when it runs over source it does not understand.
+ */
+const NON_PATH_CHARACTERS = /[*?[\]{}$`()<>|;&=,'"]/
+
+/**
+ * Whether a token could name a script on disk. Carrying a slash is not enough —
+ * `https://eslint.style/rules/indent`, `@typescript-eslint/no-unused-vars`,
+ * `tests/e2e/**`, `dist/`, and `` `../messages/${name}.js` `` all carry one, and
+ * every one of them was being read as "a workspace-relative script the shell
+ * executes". Each miss cost a `script contents could not be inspected safely`
+ * line, so a single prompt could carry dozens of them and bury the command the
+ * user was actually being asked to approve.
+ */
+function isExecutablePathShape(token: string): boolean {
+  if (URI_SCHEME.test(token)) return false
+  // A scoped package or a lint-rule id. No executable path starts with `@`.
+  if (token.startsWith('@')) return false
+  // A directory cannot be executed, and the shell does not try.
+  if (token.endsWith('/')) return false
+  return !NON_PATH_CHARACTERS.test(token)
+}
+
 /**
  * The workspace-relative file argv[0] itself names, when the shell executes it
  * directly (`./deploy.sh`, `bin/build`). Absolute paths are excluded: they are
@@ -875,8 +904,40 @@ function interpreterScriptOperand(argv: string[]): string | null {
  */
 function directExecutionOperand(argv: string[]): string | null {
   const head = argv[0]
-  if (head && head.includes('/') && !isAbsolute(head)) return head
+  if (head && head.includes('/') && !isAbsolute(head) && isExecutablePathShape(head)) return head
   return null
+}
+
+/**
+ * How a piece of inspected text should be read. {@link assess} lexes its input
+ * as a shell command line, which is right for a command, a `sh -c` body, or a
+ * shell script — and wrong for the contents of `cleanup.js`, where the lexer
+ * splits JavaScript on `(`, `;`, `|`, and newlines and hands every clause to the
+ * argv inspectors as a command nobody wrote.
+ */
+type SourceLanguage = 'shell' | 'code'
+
+/** A shebang naming one of the shells whose command language we can lex. */
+const SHELL_SHEBANG = new RegExp(
+  String.raw`^#![^\r\n]*\b(?:${[...SHELL_LANGUAGE_INTERPRETERS].join('|')})\b`,
+)
+
+const SHEBANG_LINE = /^#![^\r\n]*/
+
+/** Suffixes that name a source language which is not shell. */
+const CODE_SCRIPT_EXTENSION = /\.(?:js|cjs|mjs|ts|mts|cts|py|rb|pl)$/i
+
+/**
+ * How to read a script file the gate has just loaded, when no interpreter on the
+ * command line already answered it. The shebang wins because it is what the
+ * kernel obeys; the suffix decides the rest. An unrecognised file is read as
+ * shell — that is what a shell does with a file that has no shebang, and it is
+ * the stricter of the two readings.
+ */
+function scriptLanguage(contents: string, operand: string): SourceLanguage {
+  const shebang = SHEBANG_LINE.exec(contents)?.[0]
+  if (shebang !== undefined) return SHELL_SHEBANG.test(shebang) ? 'shell' : 'code'
+  return CODE_SCRIPT_EXTENSION.test(operand) ? 'code' : 'shell'
 }
 
 function inspectInterpreter(
@@ -886,7 +947,8 @@ function inspectInterpreter(
   depth: number,
   seenScripts: Set<string>,
 ): void {
-  const isInterpreter = CODE_INTERPRETERS.has(commandName(argv[0]))
+  const head = commandName(argv[0])
+  const isInterpreter = CODE_INTERPRETERS.has(head)
   const directExecution = directExecutionOperand(argv)
   // Only an interpreter's *arguments* can name a script. Scanning every command's
   // arguments meant any absolute-path invocation with a script-shaped argument
@@ -894,13 +956,19 @@ function inspectInterpreter(
   // could not be inspected safely: build.sh".
   if (!isInterpreter && directExecution === null) return
 
+  // `bash -c '…'` and `bash deploy.sh` hand over shell; `node -e '…'` and
+  // `node cleanup.js` hand over JavaScript. Same shape, different language.
+  const interpreterLanguage: SourceLanguage = SHELL_LANGUAGE_INTERPRETERS.has(head)
+    ? 'shell'
+    : 'code'
+
   const inline = isInterpreter ? inlineCodeBody(argv) : null
   if (inline !== null) {
     if (depth >= MAX_SCRIPT_DEPTH) {
       addUnique(out.prompt, 'nested inline interpreter code could not be fully inspected')
       return
     }
-    mergeDecision(out, assess(inline, context, depth + 1, seenScripts))
+    mergeDecision(out, assess(inline, context, depth + 1, seenScripts, interpreterLanguage))
     return
   }
 
@@ -918,7 +986,13 @@ function inspectInterpreter(
   }
   mergeDecision(
     out,
-    assess(contents, { ...context, workspaceRoot: dirname(resolved) }, depth + 1, seenScripts),
+    assess(
+      contents,
+      { ...context, workspaceRoot: dirname(resolved) },
+      depth + 1,
+      seenScripts,
+      isInterpreter ? interpreterLanguage : scriptLanguage(contents, operand),
+    ),
   )
 }
 
@@ -991,25 +1065,25 @@ function mergeDecision(out: MutableDecision, decision: ShellHarmDecision): void 
   for (const reason of decision.reasons) addUnique(target, reason)
 }
 
-function assess(
+/**
+ * Everything that depends on the text being a shell command line: redirects,
+ * per-segment argv inspection, and the payloads shell syntax carries (`find
+ * -exec`, `eval`, `$(…)`, backticks).
+ *
+ * Runs only over shell. Over JavaScript or Python the lexer produces a stream of
+ * invented commands — a `require()` call becomes a segment whose head is the
+ * module specifier, a template literal becomes a command substitution — and
+ * every one of them is noise, because source code keeps its real commands inside
+ * string literals, where the text-level inspectors read them instead.
+ */
+function inspectCommandLine(
   command: string,
   context: ShellHarmContext,
+  out: MutableDecision,
   depth: number,
   seenScripts: Set<string>,
-): ShellHarmDecision {
-  const out: MutableDecision = { deny: [], prompt: [] }
-  const inspectableCommand = command.replace(/^#![^\r\n]*(?:\r?\n|$)/, '')
-  const normalized = normalizeShellCommandForAnalysis(inspectableCommand)
-
-  inspectRawDevice(normalized, out)
-  inspectDeviceDestruction(normalized, out)
-  inspectProtectionRemoval(normalized, out)
-  inspectPermissionBypass(inspectableCommand, normalized, out)
-  inspectLanguageDeletion(inspectableCommand, context, out)
-  inspectObviousCatastrophe(normalized, out)
-  inspectDestructiveVcs(normalized, out)
-
-  const expanded = substitutePathVariables(inspectableCommand, context)
+): void {
+  const expanded = substitutePathVariables(command, context)
   inspectRedirects(expanded, context, out)
 
   const nestedCommands: string[][] = []
@@ -1037,22 +1111,53 @@ function assess(
       addUnique(out.prompt, 'nested command payload could not be fully inspected')
       break
     }
-    mergeDecision(out, assess(nested.join(' '), context, depth + 1, seenScripts))
+    mergeDecision(out, assess(nested.join(' '), context, depth + 1, seenScripts, 'shell'))
   }
 
-  for (const body of substitutionBodies(inspectableCommand)) {
+  for (const body of substitutionBodies(command)) {
     if (depth >= MAX_SCRIPT_DEPTH) {
       addUnique(out.prompt, 'nested command substitution could not be fully inspected')
       break
     }
-    mergeDecision(out, assess(body, context, depth + 1, seenScripts))
+    mergeDecision(out, assess(body, context, depth + 1, seenScripts, 'shell'))
   }
+}
+
+function assess(
+  command: string,
+  context: ShellHarmContext,
+  depth: number,
+  seenScripts: Set<string>,
+  language: SourceLanguage,
+): ShellHarmDecision {
+  const out: MutableDecision = { deny: [], prompt: [] }
+  const inspectableCommand = command.replace(/^#![^\r\n]*(?:\r?\n|$)/, '')
+  const normalized = normalizeShellCommandForAnalysis(inspectableCommand)
+
+  // Text-level inspectors. These are regex matchers over the source, not shell
+  // lexing, so they read a raw-device write or a recursive delete the same in
+  // JavaScript as in sh — which is what lets the gate stop lexing code as shell
+  // without losing the signal that mattered.
+  inspectRawDevice(normalized, out)
+  inspectDeviceDestruction(normalized, out)
+  inspectProtectionRemoval(normalized, out)
+  inspectPermissionBypass(inspectableCommand, normalized, out)
+  inspectLanguageDeletion(inspectableCommand, context, out)
+  inspectObviousCatastrophe(normalized, out)
+  inspectDestructiveVcs(normalized, out)
+
+  if (language === 'shell') {
+    inspectCommandLine(inspectableCommand, context, out, depth, seenScripts)
+  }
+
+  // `exec`/`system`/`popen` take a shell string whatever language calls them, so
+  // their bodies are re-assessed as shell even inside code.
   for (const body of embeddedProcessBodies(inspectableCommand)) {
     if (depth >= MAX_SCRIPT_DEPTH) {
       addUnique(out.prompt, 'nested child-process code could not be fully inspected')
       break
     }
-    mergeDecision(out, assess(body, context, depth + 1, seenScripts))
+    mergeDecision(out, assess(body, context, depth + 1, seenScripts, 'shell'))
   }
 
   // The fuzzy regex net shared with standard mode. It overlaps the token-based
@@ -1080,5 +1185,5 @@ function assess(
  * hint cannot downgrade its prompt/deny result.
  */
 export function assessShellHarm(command: string, context: ShellHarmContext): ShellHarmDecision {
-  return assess(command, context, 0, new Set<string>())
+  return assess(command, context, 0, new Set<string>(), 'shell')
 }

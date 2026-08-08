@@ -1,6 +1,6 @@
 import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig, AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
-import { probeAcpAgent } from './acp-client.ts'
+import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { probeAcpAgentForSettings } from './acp-agent-service.ts'
 import { resolveOnPath } from './acp-detect.ts'
@@ -378,6 +378,7 @@ export async function requestAcpPackageInstallApproval(
     title,
     body,
     type: 'shell',
+    cause: 'acp-package-setup',
     allowRemember: false,
   })
   return approved
@@ -406,7 +407,7 @@ async function probeSelectors(
 ): Promise<ProbedSelectorFields> {
   if (!cwd) return {}
   try {
-    const probe = await probeAcpAgent({
+    const probe = await probeAcpAgentIsolated({
       command: known.command,
       cwd,
       ...(known.args.length ? { args: known.args } : {}),

@@ -12,17 +12,30 @@ without sharing HEAD, the index, or tracked files. The existing project checkout
 remains the user's checkout. A thread either uses that shared checkout or owns one
 linked worktree for its lifetime.
 
-Allocation is lazy at the first message. The eventual default is:
+Allocation is lazy at the first message. The shipped default is:
 
-- project checkout on its resolved default branch: create an isolated worktree;
-- project checkout on any other branch: share the project checkout;
+- supported local Git repository: create an isolated worktree, cut from the resolved
+  default branch (`origin/<default>` when it can be fetched);
 - unsupported or ambiguous repository state: share the project checkout and explain
   why;
+- `worktreeMode: never` on the project: share the project checkout;
 - an explicit supported user choice: use it.
 
-Do not enable that default until isolation, active-thread UI re-rooting, safe cleanup,
-and a clear route for bringing work back have all shipped. Early phases remain behind
-`worktreeMode: never`.
+The project checkout's own branch deliberately does not steer this. An earlier draft
+isolated only while the user sat on the default branch and shared otherwise, with the
+worktree cut from live `HEAD`. Both halves of that leaked the previous thread's state
+into the next one: Copse leaves the project checkout on the branch a thread created,
+so the second thread of a session shared that checkout, and even an explicitly
+isolated thread branched off the first thread's tip. Cutting from the default branch
+removes the dependency on mutable checkout state entirely, which is what made
+`from-default-branch` and `always` collapse into one mode.
+
+Dirty seeding is correspondingly narrower. Restoring a snapshot of the project
+checkout over a worktree is only coherent when both start from the same commit, so it
+is skipped when the project checkout is on another branch, and skipped again in the
+manager when the resolved base has moved off the checkout's `HEAD` (a fetched
+`origin/<default>`). The thread starts clean; the user's own checkout still holds the
+work, untouched.
 
 ## Why this is not a `git worktree add` feature
 
@@ -185,7 +198,8 @@ interface Thread {
 
 interface Project {
   // Existing fields omitted.
-  worktreeMode?: 'from-default-branch' | 'always' | 'never'
+  // Defaults to 'always'. A stored 'from-default-branch' migrates to 'always'.
+  worktreeMode?: 'always' | 'never'
 }
 ```
 
@@ -411,6 +425,18 @@ Automatically prune only provably clean, merged, ownerless entries. Surface ever
 orphan with retain/reconnect/remove actions. Retention count/age may limit suggestions,
 but never overrides the dirty/unmerged rule.
 
+The surface for "every other orphan" is **Settings → Sources → Worktrees**
+(`src/main/services/worktree-inventory.ts`, `worktrees:list|size|remove`). It lists every
+linked checkout of the project with the thread it was allocated for, whether that thread
+still points at it, when it was last used, and its measured size; removal is the manual
+counterpart to `pruneSafeOrphans`, so it can delete the dirty and unmerged cases the
+automatic path must refuse. Three rules hold there and must not be relaxed: a checkout with
+a running turn is never removable; uncommitted, untracked, or ignored content is reported
+back and deleted only under an explicit second confirmation; and a removed checkout's owning
+thread has its `worktree` metadata cleared (`clearThreadWorktree`) so it reverts to the
+shared project checkout rather than failing validation on its next message. Branch deletion
+stays at `git branch -d`, so unmerged commits outlive the checkout that held them.
+
 ## Environment bootstrap
 
 Linked worktrees do not inherit ignored dependencies or secrets. Add optional project
@@ -475,7 +501,9 @@ Scope:
 - move first-message checkout decision to a main-process transaction;
 - add the pre-send shared/isolated chip and retryable allocation state;
 - persist metadata before dispatch and bind existing branch UI;
-- ship behind `worktreeMode: never`, with explicit opt-in enabled for testing.
+- shipped behind `worktreeMode: never`, with explicit opt-in enabled for testing;
+  the default has since flipped to `always` (see Outcome). E2E fixtures still seed
+  `never` so specs keep asserting against the project checkout they point at.
 
 Exit gate: opt-in first send creates exactly one worktree, failures never send the
 prompt, and old/shared threads remain unchanged.

@@ -19,6 +19,12 @@ clearing the key and toggling the pack synchronizes the registry immediately,
 without restarting Copse. Disabling the pack removes the tool from new turns but
 does not erase the saved key or historical tool cards.
 
+Settings enforces the same order. The pack's enable toggle stays inert until a
+key is stored, so the switch can never be turned on into a state where the pack
+looks enabled but contributes no tool; a hint next to the toggle says what is
+missing. The off direction is never blocked — clearing the key on an enabled
+pack unregisters the tool and shows the hint, leaving the toggle usable.
+
 The manifest also lists `parallel_search` in `tools.acpTools`. External ACP
 agents that advertise HTTP MCP support receive it through Copse's authenticated
 localhost native-tool bridge. That bridge is only the ACP client-tool transport:

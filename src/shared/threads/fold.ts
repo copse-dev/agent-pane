@@ -1,3 +1,4 @@
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type {
   Message,
   ModelUsage,
@@ -51,9 +52,12 @@ interface MessageLike {
   toolSummary?: string
   attachments?: TranscriptAttachment[]
   model?: string
+  parameters?: ModelParameters
   review?: ThreadReview
   origin?: QueuedMessageOrigin
   editedByUser?: boolean
+  startingCommit?: string
+  dirty?: boolean
 }
 
 export interface ExplodedMessage {
@@ -178,9 +182,12 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
     })
   }
   if (msg.model !== undefined) line.model = msg.model
+  if (msg.parameters !== undefined) line.parameters = msg.parameters
   if (msg.review !== undefined) line.review = msg.review
   if (msg.origin !== undefined) line.origin = msg.origin
   if (msg.editedByUser !== undefined) line.editedByUser = msg.editedByUser
+  if (msg.startingCommit !== undefined) line.startingCommit = msg.startingCommit
+  if (msg.dirty !== undefined) line.dirty = msg.dirty
 
   for (const tc of msg.toolCalls) {
     const { spine, files: tcFiles } = explodeToolCall(tc, hash)
@@ -366,9 +373,12 @@ function foldOne(
     })
   }
   if (line.model !== undefined) msg.model = line.model
+  if (line.parameters !== undefined) msg.parameters = line.parameters
   if (line.review !== undefined) msg.review = line.review
   if (line.origin !== undefined) msg.origin = line.origin
   if (line.editedByUser !== undefined) msg.editedByUser = line.editedByUser
+  if (line.startingCommit !== undefined) msg.startingCommit = line.startingCommit
+  if (line.dirty !== undefined) msg.dirty = line.dirty
   return msg
 }
 
@@ -394,6 +404,8 @@ export function foldMessage(
     ...(m.review !== undefined ? { review: m.review } : {}),
     ...(m.origin !== undefined ? { origin: m.origin } : {}),
     ...(m.editedByUser !== undefined ? { editedByUser: m.editedByUser } : {}),
+    ...(m.startingCommit !== undefined ? { startingCommit: m.startingCommit } : {}),
+    ...(m.dirty !== undefined ? { dirty: m.dirty } : {}),
   }
 }
 

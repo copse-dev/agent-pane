@@ -11,7 +11,13 @@ import {
   positionFrontierTooltip,
   renderCompositeStrip,
   renderFrontierSvg,
+  TOOLTIP_HIDE_GRACE_MS,
+  unpricedTooltipContent,
+  unscoredTooltipContent,
 } from './intellect-frontier-panel.ts'
+import { clearResolvedModelCards, setResolvedModelCard } from './model-card-cache.ts'
+import { TRACKED_MODELS } from '@copse/llm/model-catalog.ts'
+import { getIntellectScore } from '@copse/llm/model-intellect.ts'
 import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import type { ExtraProvider, ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
@@ -333,14 +339,22 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     const svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    // One density row (20 injected models; no tracked cloud models are unscored
-    // now), no per-model labels, count in the caption.
-    assert.match(svg.textContent, /no score yet · 20 models/)
+    // One density row, no per-model labels, count in the caption. The gutter
+    // holds the 20 injected models plus any tracked cloud model that is priced
+    // but has no *measured* Intelligence Index yet — the editorial intellect
+    // scale doesn't plot here. Derived so adding a model to the catalog ahead
+    // of its Artificial Analysis measurement doesn't break this test.
+    const unscoredTracked = TRACKED_MODELS.filter((id) => getIntellectScore(id) === null)
+    const expectedUnscored = manyPriced.length + unscoredTracked.length
+    assert.match(svg.textContent, new RegExp(`no score yet · ${String(expectedUnscored)} models`))
     assert.ok(svg.querySelector('circle.gutter-unscored.dense'))
     assert.equal(svg.querySelectorAll('text.gutter-unscored-label').length, 0)
     const details = panel.root.querySelector('details.frontier-unscored-list')
     assert.ok(details)
-    assert.match(details.textContent, /20 priced models without an intellect score/)
+    assert.match(
+      details.textContent,
+      new RegExp(`${String(expectedUnscored)} priced models without an intellect score`),
+    )
     assert.match(details.textContent, /model-19/)
   })
 
@@ -760,6 +774,75 @@ describe('plan coverage on the map', () => {
     assert.match(card.textContent, /Weekly Fable plan limit reached/)
     assert.match(card.textContent, /plotted at its off-plan price/)
   })
+
+  it('tooltip links the vendor-published card, opening outside the app', () => {
+    // Only a RESOLVED card renders — the panel probes the URL before showing it.
+    clearResolvedModelCards()
+    setResolvedModelCard('claude-fable-5', {
+      url: 'https://www.anthropic.com/transparency',
+      title: 'Anthropic transparency hub',
+      publisher: 'Anthropic',
+      kind: 'index',
+      origin: 'curated',
+    })
+    const p: FrontierPoint = {
+      id: 'claude-fable-5',
+      intellect: 60,
+      costPerMTok: 12,
+      onFrontier: true,
+    }
+    const link = pointTooltipContent(p).querySelector('a.tt-card-link')
+    assert.ok(link, 'expected a model-card link in the hover card')
+    assert.equal(link.getAttribute('href'), 'https://www.anthropic.com/transparency')
+    // target=_blank is what routes the click through the web-contents lockdown
+    // to shell.openExternal instead of navigating the renderer.
+    assert.equal(link.getAttribute('target'), '_blank')
+    assert.equal(link.getAttribute('rel'), 'noopener noreferrer')
+  })
+
+  it('tooltip shows no card row while a card is still unresolved', () => {
+    clearResolvedModelCards()
+    const p: FrontierPoint = {
+      id: 'claude-fable-5',
+      intellect: 60,
+      costPerMTok: 12,
+      onFrontier: true,
+    }
+    // Nothing resolved yet: no link, rather than one that might 404.
+    assert.equal(pointTooltipContent(p).querySelector('a.tt-card-link'), null)
+  })
+
+  it('tooltip shows no card row for a model with no sourced card', () => {
+    const p: FrontierPoint = {
+      id: 'lmstudio:some-unsourced-local-model',
+      intellect: 30,
+      costPerMTok: 0,
+      onFrontier: true,
+      local: true,
+    }
+    const content = pointTooltipContent(p)
+    assert.equal(content.querySelector('a.tt-card-link'), null)
+    assert.doesNotMatch(content.textContent, /Card/)
+  })
+
+  it('gutter tooltips carry the card link too', () => {
+    clearResolvedModelCards()
+    setResolvedModelCard('claude-opus-4-8', {
+      url: 'https://www.anthropic.com/transparency',
+      title: 'Anthropic transparency hub',
+      publisher: 'Anthropic',
+      kind: 'index',
+      origin: 'curated',
+    })
+    const unpriced = unpricedTooltipContent({
+      id: 'claude-opus-4-8',
+      intellect: 56,
+      estimated: false,
+    })
+    assert.ok(unpriced.querySelector('a.tt-card-link'))
+    const unscored = unscoredTooltipContent({ id: 'claude-opus-4-8', costPerMTok: 9 })
+    assert.ok(unscored.querySelector('a.tt-card-link'))
+  })
 })
 
 describe('positionFrontierTooltip', () => {
@@ -800,6 +883,52 @@ describe('positionFrontierTooltip', () => {
     tooltip.show(content, new MouseEvent('mouseenter', { clientX: 390, clientY: 120 }))
     assert.equal(tipEl.hidden, false)
     assert.equal(tipEl.style.left, '98px')
+
+    container.remove()
+  })
+
+  it('keeps the hover card up long enough to reach its model-card link', async () => {
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: (): DOMRect => new DOMRect(0, 0, 400, 300),
+    })
+    document.body.append(container)
+    const tooltip = createTooltipLayer(container)
+    const tipEl = container.querySelector('.frontier-tooltip')
+    assert.ok(tipEl instanceof HTMLElement)
+
+    tooltip.show(document.createElement('div'), new MouseEvent('mouseenter'))
+    // Leaving the point starts the grace period rather than hiding outright —
+    // otherwise the pointer could never cross the gap to click the link.
+    tooltip.hide()
+    assert.equal(tipEl.hidden, false)
+
+    // Pointer lands on the card within the grace period: it stays open.
+    tipEl.dispatchEvent(new MouseEvent('mouseenter'))
+    await new Promise((r) => setTimeout(r, TOOLTIP_HIDE_GRACE_MS + 30))
+    assert.equal(tipEl.hidden, false)
+
+    // Leaving the card itself closes immediately — no lingering overlay.
+    tipEl.dispatchEvent(new MouseEvent('mouseleave'))
+    assert.equal(tipEl.hidden, true)
+
+    container.remove()
+  })
+
+  it('hides the hover card when the grace period lapses untouched', async () => {
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: (): DOMRect => new DOMRect(0, 0, 400, 300),
+    })
+    document.body.append(container)
+    const tooltip = createTooltipLayer(container)
+    const tipEl = container.querySelector('.frontier-tooltip')
+    assert.ok(tipEl instanceof HTMLElement)
+
+    tooltip.show(document.createElement('div'), new MouseEvent('mouseenter'))
+    tooltip.hide()
+    await new Promise((r) => setTimeout(r, TOOLTIP_HIDE_GRACE_MS + 30))
+    assert.equal(tipEl.hidden, true)
 
     container.remove()
   })

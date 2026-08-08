@@ -15,6 +15,7 @@ import { detectLanguage } from '../language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
+import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import {
   DEFAULT_GIT_BRANCH,
@@ -22,6 +23,7 @@ import {
   type GitChange,
   type GitChangeStatus,
   type GitFileDiff,
+  type GitPromptState,
   type GitStatusResult,
 } from '@shared/types/git.ts'
 
@@ -585,10 +587,28 @@ export function countDiffChangedLines(diff: string): number {
 }
 
 /**
- * Live add/delete line totals across the working tree (staged + unstaged), or
- * null when there is nothing to show. Cheap enough to call on every filesystem
- * change so the "Changes" follow-up chip stays current instead of freezing on a
- * per-turn snapshot.
+ * Count lines in untracked text files. `git diff --numstat` omits them entirely
+ * (#584), which left the Changes chip stuck at tiny tracked-only totals (often
+ * `+1 -1`) while a worktree was full of new agent-authored files.
+ */
+async function sumUntrackedAdditions(root: string): Promise<number> {
+  const status = await getGitStatus(root)
+  let additions = 0
+  for (const change of status?.unstaged ?? []) {
+    if (change.status !== 'untracked') continue
+    if (imageMimeType(change.path)) continue
+    const text = await readWorkingTree(change.path, root)
+    if (text.includes('\0')) continue
+    additions += computeLineDiffStats('', text).additions
+  }
+  return additions
+}
+
+/**
+ * Live add/delete line totals across the working tree (staged + unstaged +
+ * untracked text files), or null when there is nothing to show. Cheap enough to
+ * call on every filesystem change so the "Changes" follow-up chip stays current
+ * instead of freezing on a per-turn snapshot.
  */
 export async function getGitChangeStats(root: string | null = getAgentExecutionRoot()): Promise<{
   additions: number
@@ -599,7 +619,8 @@ export async function getGitChangeStats(root: string | null = getAgentExecutionR
   const staged = await runGit(['diff', '--cached', '--numstat'], root)
   const u = unstaged.code === 0 ? sumDiffNumstat(unstaged.stdout) : { additions: 0, deletions: 0 }
   const s = staged.code === 0 ? sumDiffNumstat(staged.stdout) : { additions: 0, deletions: 0 }
-  const additions = u.additions + s.additions
+  const untrackedAdditions = await sumUntrackedAdditions(root)
+  const additions = u.additions + s.additions + untrackedAdditions
   const deletions = u.deletions + s.deletions
   return additions + deletions > 0 ? { additions, deletions } : null
 }
@@ -720,6 +741,35 @@ export async function getCurrentBranchName(
   return branch && branch !== 'HEAD' ? branch : null
 }
 
+/** Full SHA of the current `HEAD` commit, or null when unavailable / no commits yet. */
+export async function getCurrentCommitHash(
+  root: string | null = getAgentExecutionRoot(),
+): Promise<string | null> {
+  if (!root) return null
+  const { stdout, code } = await runGit(['rev-parse', 'HEAD'], root)
+  if (code !== 0) return null
+  const hash = stdout.trim()
+  return hash || null
+}
+
+/**
+ * Snapshot the repository state a prompt is about to be sent against: the HEAD
+ * commit it starts from and whether the working tree is dirty. Captured once per
+ * submit so the spine can record what state a turn started from.
+ */
+export async function getGitPromptState(
+  root: string | null = getAgentExecutionRoot(),
+): Promise<GitPromptState> {
+  const [startingCommit, status] = await Promise.all([
+    getCurrentCommitHash(root),
+    getGitStatus(root),
+  ])
+  return {
+    startingCommit,
+    dirty: Boolean(status && (status.staged.length > 0 || status.unstaged.length > 0)),
+  }
+}
+
 const ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
 
 /** Parse `git symbolic-ref refs/remotes/origin/HEAD` into a branch name. */
@@ -730,12 +780,52 @@ export function parseOriginHeadSymbolicRef(ref: string): string | null {
   return branch || null
 }
 
+/**
+ * Cache of resolved default branches, keyed by repository root. Callers on a UI
+ * refresh path (the footer branch status re-reads it on every `message_added`
+ * and file-watcher tick) would otherwise spawn up to three `git` processes a
+ * second for a value that changes about once in a repository's lifetime.
+ */
+const defaultBranchCache = new Map<string, { branch: string | null; checkedAt: number }>()
+
+/**
+ * A resolved name is effectively immutable: `refs/remotes/origin/HEAD` is a local
+ * ref that `git fetch` does not update, so it only moves on an explicit
+ * `git remote set-head` (or a re-clone). The TTL exists so a rename still
+ * surfaces without an app restart, not because we expect churn.
+ */
+export const DEFAULT_BRANCH_TTL_MS = 5 * 60 * 1000
+
+/**
+ * A `null` result means no remote and no `init.defaultBranch` — the state a
+ * freshly `git init`ed project sits in until the user adds a remote, which they
+ * usually do within minutes. Re-check that case far sooner than a resolved name.
+ */
+export const DEFAULT_BRANCH_MISS_TTL_MS = 30 * 1000
+
+/** Test hook — drop every cached default branch. */
+export function resetDefaultBranchCache(): void {
+  defaultBranchCache.clear()
+}
+
 /** Return the default branch name for the current repository. */
 export async function getDefaultBranch(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<string | null> {
   if (!root) return null
 
+  const cached = defaultBranchCache.get(root)
+  if (cached) {
+    const ttl = cached.branch === null ? DEFAULT_BRANCH_MISS_TTL_MS : DEFAULT_BRANCH_TTL_MS
+    if (Date.now() - cached.checkedAt < ttl) return cached.branch
+  }
+
+  const branch = await resolveDefaultBranch(root)
+  defaultBranchCache.set(root, { branch, checkedAt: Date.now() })
+  return branch
+}
+
+async function resolveDefaultBranch(root: string): Promise<string | null> {
   const { stdout: originHeadStdout, code: originHeadCode } = await runGit(
     ['symbolic-ref', 'refs/remotes/origin/HEAD'],
     root,

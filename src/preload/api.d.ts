@@ -3,7 +3,12 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
+import type {
+  HooksListResult,
+  HookRunDetail,
+  HookTestRequest,
+  HookTestResult,
+} from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
 import type {
   AutomationSchedule,
@@ -11,11 +16,13 @@ import type {
   AutomationTriggerEvent,
 } from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  GitPromptState,
   GitBranchInfo,
   SessionBackup,
   GhCliStatus,
@@ -41,9 +48,13 @@ import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
+  WorktreeInventoryEntry,
+  WorktreeRemovalResult,
+  WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 export type { DetectedAcpAgent }
 
@@ -75,10 +86,17 @@ export interface ApiClient {
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
+    createNewProject: (name: string, parentDir: string) => Promise<string>
+    pickParentDirectory: () => Promise<string | null>
+    getHomeDirectory: () => Promise<string>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    sharePageText: (webContentsId: number) => Promise<void>
+    shareScreenshot: (webContentsId: number) => Promise<void>
+    onShareText: (handler: (share: BrowserTextShare) => void) => () => void
+    onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPackTabRequest: (
       handler: (
         request: PackBrowserTabRequest,
@@ -133,6 +151,7 @@ export interface ApiClient {
       payload: string,
     ) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
+    runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
@@ -141,7 +160,11 @@ export interface ApiClient {
     suggestTerminalTitle: (text: string) => Promise<string | null>
     suggestCommandSummary: (commands: string[]) => Promise<string | null>
     suggestToolTurnSummary: (actions: string[]) => Promise<string | null>
-    suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
+    suggestFollowUps: (
+      projectId: string,
+      threadId: string,
+      contextJson: string,
+    ) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {
@@ -154,8 +177,14 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
+        allowTurnTreeLease?: boolean
+        turnTreeLeaseLabel?: string
+        turnTreeLeaseDefault?: boolean
+        turnTreeLeaseSubject?: string
       }) => void,
     ) => () => void
     onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -210,6 +239,7 @@ export interface ApiClient {
       approved: boolean,
       remember?: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
+      grantScope?: 'once' | 'turn-tree',
     ) => Promise<void>
   }
   ask: {
@@ -237,6 +267,10 @@ export interface ApiClient {
       }) => void,
     ) => () => void
     onDevNotice: (handler: () => void) => () => void
+  }
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) => Promise<void>
+    onRequest: (handler: (req: { id: string }) => void) => () => void
   }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
@@ -357,17 +391,16 @@ export interface ApiClient {
     >
   }
   models: {
-    /** Whether any available chat model reaches the recommended context window. */
-    chatDefaultContextHealth: () => Promise<{
-      hasDecentChatDefault: boolean
-      minimum: number
-      bestAvailableContext: number | null
-    }>
     /**
      * Concrete model id for the plan/price Pareto best-value default
      * (`auto:best-value` setting expands to this on new chats / agent runs).
      */
     bestValueDefault: () => Promise<string>
+    /**
+     * Concrete model id a dynamic selection (`auto:…`) resolves to right now.
+     * A pinned id is returned unchanged, so callers can pass whatever is stored.
+     */
+    resolveDynamic: (value: string) => Promise<string>
   }
   intellect: {
     /** Live Artificial Analysis model feed; empty models when no key stored. */
@@ -382,6 +415,18 @@ export interface ApiClient {
       indexVersion?: string | number
       error?: string
     }>
+  }
+  modelCards: {
+    /**
+     * The first card URL that resolves for each model id, or null where none
+     * does. Probe results are cached in the main process, so calling this for
+     * models already looked up costs no network.
+     */
+    resolve: (
+      modelIds: string[],
+    ) => Promise<
+      Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
+    >
   }
   lmStudio: {
     test: (
@@ -532,6 +577,12 @@ export interface ApiClient {
     }>
     /** Effective extra-provider list: shipped presets merged with stored overrides/customs. */
     extraProviders: () => Promise<ExtraProvider[]>
+    /**
+     * Every known per-MTok rate outside the static cloud catalog (cached
+     * OpenRouter catalog rates merged with extra-provider rates), keyed by the
+     * model selection string. Feeds the footer cost estimate.
+     */
+    modelPricing: () => Promise<import('@copse/llm/model-pricing.ts').ModelPricingMap>
     /** Insert/replace a preset override or custom provider; returns the resolved list. */
     saveExtraProvider: (
       record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
@@ -672,6 +723,24 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
   }
+  supervisor: {
+    list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
+    cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
+    onChanged(callback: (projectId: string) => void): () => void
+  }
+  /** Linked checkouts of the project's repository, listed and managed in Settings → Sources. */
+  worktrees: {
+    /** Every linked checkout, most recently used first. Empty for a non-Git project. */
+    list: (projectId: string) => Promise<WorktreeInventoryEntry[]>
+    /** Walk one checkout for its on-disk size — separate from `list`, which stays fast. */
+    size: (projectId: string, path: string) => Promise<WorktreeSizeResult>
+    /**
+     * Delete one checkout. Without `force` a checkout holding uncommitted,
+     * untracked, or ignored files is reported back rather than removed, so the
+     * caller can show what would be destroyed and ask again.
+     */
+    remove: (projectId: string, path: string, force: boolean) => Promise<WorktreeRemovalResult>
+  }
   skills: {
     list: () => Promise<SkillSummary[]>
   }
@@ -682,6 +751,8 @@ export interface ApiClient {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
     test: (req: HookTestRequest) => Promise<HookTestResult>
+    /** Read the raw record behind one hook card — payload, streams, applied outcome. */
+    runDetail: (projectId: string, threadId: string, runId: string) => Promise<HookRunDetail>
   }
   packs: {
     /** Enumerate every registered pack with contributions + enablement + settings values (P3). */
@@ -711,7 +782,7 @@ export interface ApiClient {
       cols: number,
       rows: number,
       meta: { label?: string; projectId: string; threadId: string | null },
-    ) => Promise<string>
+    ) => Promise<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
     destroy: (sessionId: string) => Promise<void>
@@ -750,6 +821,8 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
+    promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
     listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
     getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>

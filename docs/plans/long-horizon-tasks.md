@@ -27,28 +27,40 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
   seeds the pack into the persisted disabled set (default OFF).
 - **Store** `src/main/services/storage/long-task-tracker.ts` — per-project JSON persistence
   under `~/.copse/long-tasks/<workspace>/tasks.json`, zod-validated. A task has a `goal`
-  (its terminal condition), an ordered `steps` checklist, and a `taskProgress()` helper that
-  reports done/total, completeness, and the next step.
+  (its terminal condition), an ordered `steps` checklist, a `taskProgress()` helper that
+  reports done/total, completeness, and the next step, and the `threadId` that created it.
+  The file is namespaced per workspace root, so ownership is what keeps one thread's
+  checklist out of another's (`isOwnedByThread`); tasks written before the field existed
+  belong to no thread.
 - **Tool** `track_long_task` (`src/main/tools/long-task-tool.ts`) — `create` / `check` /
-  `status` / `list`, registered via `syncLongHorizonTasksTools` in `registry-bootstrap.ts`
-  (boot + live `packs:setEnabled`).
+  `status` / `list` plus an explicit one-shot `continue`, registered via
+  `syncLongHorizonTasksTools` in `registry-bootstrap.ts` (boot + live
+  `packs:setEnabled`). `continue` schedules a durable supervisor wake bound to the
+  current project, thread, turn-tree epoch, and permission snapshot. The wake dispatches
+  one bounded machine turn and asks that turn to schedule another only if checklist work
+  remains.
 - **Tests** `long-task-tracker.test.ts`, `long-horizon-tasks-pack.test.ts` (registration +
   atomic disable), `pack-service.test.ts` (default-OFF migration),
   `settings-packs.e2e.ts` (pack row defaults off), and `settings-experimental.e2e.ts`
   (retired `longHorizonTasksEnabled` fieldset gone). Pack toggles emit `settings_changed`.
 
-While the pack is disabled the tool is not registered and nothing reads or writes the store.
+While the pack is disabled the tool is not registered. Any already-persisted wake
+completes without dispatching an agent turn.
 
 ## Relationship to existing state
 
-- **`Thread.todos` (#530)** is scoped to a single thread; a long task here is durable and
-  outlives the thread/session. A follow-up could let a thread's todos seed or sync with a
-  long task.
+- **`Thread.todos` (#530)** is scoped to a single turn's plan; a long task here is durable
+  and outlives the turn and the session, but still belongs to the thread that opened it. A
+  follow-up could let a thread's todos seed or sync with a long task.
+- **`list` is thread-scoped.** It used to return every task in the workspace, so a turn that
+  had lost its provider history read another thread's checklist as its own plan and resumed
+  whatever was unfinished. `list` now shows only the calling thread's tasks and reports the
+  rest as a count; `scope: 'workspace'` still shows everything, labelled by owner. Lookups by
+  explicit id (`status` / `check` / `continue`) stay workspace-wide, since the supervised
+  wake path resolves tasks that way.
 
 ## Not yet built (follow-ups on the issue)
 
-- **Self-paced loop** — drive the agent to keep going until the task's terminal condition
-  (lint count zero / `npm run check` green / research answered) instead of stopping early.
 - **Chunked commit cadence** — batch the grind (per-file / per-rule) with commits as it
   goes, so a long run stays resumable and reviewable.
 - **Status surfacing** — show progress in the UI without spamming the user.

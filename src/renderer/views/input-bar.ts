@@ -10,9 +10,11 @@ import {
   recordThreadVideos,
   recordThreadArchives,
   applyPreparedThreadCheckout,
+  createThread,
   getThreadById,
   getActiveThread,
   setThreadDraftPrompt,
+  setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import {
   dispatchAgentRun,
@@ -49,6 +51,7 @@ import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { mountFooterReasoningDial } from './footer-reasoning-dial.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
@@ -56,12 +59,22 @@ import { mountFooterOverflow } from './footer-overflow.ts'
 import {
   downloadThreadArchive,
   downloadThreadJsonl,
+  threadExportBaseName,
   threadHasExportableContent,
 } from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
-import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
-import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
-import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
+import { buildDebugTracePrompt, debugTraceThreadTitle } from '@shared/threads/debug-trace-prompt.ts'
+import {
+  formatFooterUsageDetail,
+  formatFooterUsageSummary,
+  resolveFooterUsage,
+} from '@shared/usage/footer-usage-summary.ts'
+import {
+  buildFooterUsageTooltip,
+  type FooterUsageTooltipModel,
+} from '@shared/usage/footer-usage-tooltip.ts'
+import { createFooterUsagePopover } from './footer-usage-popover.ts'
+import { type ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
   FALLBACK_APP_CHAT_MODEL,
@@ -84,7 +97,9 @@ import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
-import { fetchModelOptions, type ModelOption } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { contextFitAdvice } from '@shared/context-window-advice.ts'
+import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 
 interface MountInputBarOptions {
   /**
@@ -193,12 +208,34 @@ export function mountInputBar(
     describeImagesBtn,
     sendWithoutImagesBtn,
   )
+  // Sits beside the model picker it talks about: the thread no longer fits (or
+  // barely fits) the model selected for it. Recomputed from the same pre-send
+  // estimate that drives the context wheel, so picking a model updates it at once.
+  const contextFitText = el('span', { class: 'composer-context-warning-text' })
+  const contextFitModelBtn = el(
+    'button',
+    { type: 'button', class: 'composer-context-model-btn' },
+    'Choose another model',
+  )
+  const contextFitWarning = el(
+    'div',
+    {
+      class: 'composer-context-warning',
+      role: 'status',
+      'aria-live': 'polite',
+      hidden: '',
+    },
+    el('span', { class: 'composer-context-warning-icon', 'aria-hidden': 'true' }, '!'),
+    contextFitText,
+    contextFitModelBtn,
+  )
   let footerOverflow: ReturnType<typeof mountFooterOverflow> | null = null
   const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
     footerOverflow?.update()
   })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const reasoningHost = el('div', { class: 'footer-reasoning-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
   const checkoutBtn = el('button', {
     type: 'button',
@@ -220,16 +257,22 @@ export function mountInputBar(
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
   checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
-  // Token usage — always shown once a thread has used tokens; click to expand
-  // into the in/out breakdown and cost.
-  const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
+  // Token usage — always shown once a thread has used tokens; hover (or focus)
+  // for the in/out breakdown and cost, like the context wheel next to it.
+  const usageBtn = el('span', {
+    class: 'footer-usage',
+    tabindex: '0',
+    role: 'note',
+    'aria-label': 'Token usage',
+  })
+  const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
-  footer.append(modelHost, checkoutHost, branchHost)
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
+  footer.append(modelHost, reasoningHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
       label: guardedYolo.menuLabel,
@@ -258,10 +301,20 @@ export function mountInputBar(
         !threadHasExportableContent(getActiveThread(store)),
       onClick: exportThreadArchive,
     },
+    // Debug trace and Share trace are the two "something went wrong here" exits,
+    // so unlike the diagnostics above them they are not behind Developer mode —
+    // the user who needs them is by definition not the one who went looking for
+    // a developer setting first.
+    {
+      label: 'Debug trace',
+      hidden: (): boolean =>
+        store.getState().activeProjectId === null ||
+        !threadHasExportableContent(getActiveThread(store)),
+      onClick: debugTrace,
+    },
     {
       label: 'Share trace',
-      hidden: (): boolean =>
-        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
       onClick: shareTrace,
     },
   ])
@@ -279,8 +332,6 @@ export function mountInputBar(
     alwaysShowLabels: 'all',
     enableOverflow: true,
   })
-  let costVisible = false
-
   /** Concrete model for footer chrome — never the Settings-only best-value sentinel. */
   function footerChatModel(): string {
     const thread = getActiveThread(store)
@@ -309,6 +360,8 @@ export function mountInputBar(
       .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
     store.setState({ threads })
     modelPicker.refresh()
+    // The new model may offer a different ladder — or none at all.
+    reasoningDial.sync()
     updateFooter()
     // The context window depends on the model, so re-estimate the footer wheel
     // against the newly selected model rather than waiting for the next keystroke.
@@ -316,6 +369,36 @@ export function mountInputBar(
     void refreshAutomaticCheckoutPreview()
     void refreshImageCompatibilityWarning()
   }
+
+  // Per-chat effort, beside the model it applies to. Writes to the thread, so
+  // it lasts as long as the conversation and never re-tunes the model itself.
+  const reasoningDial = mountFooterReasoningDial(
+    reasoningHost,
+    footerChatModel,
+    () => getActiveThread(store)?.reasoning,
+    (reasoning) => {
+      const thread = getActiveThread(store)
+      if (!thread) return
+      const threads = store.getState().threads.map((t) =>
+        t.id !== thread.id
+          ? t
+          : {
+              ...t,
+              ...(reasoning === undefined ? {} : { reasoning }),
+              updatedAt: Date.now(),
+            },
+      )
+      // Clearing the dial has to delete the field rather than write undefined,
+      // or the thread keeps a key that reads as "set" on the next sync.
+      if (reasoning === undefined) {
+        const target = threads.find((t) => t.id === thread.id)
+        if (target) Reflect.deleteProperty(target, 'reasoning')
+      }
+      store.setState({ threads })
+      reasoningDial.sync()
+      composer.focus()
+    },
+  )
 
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     isSshWorkspace: (): boolean => {
@@ -333,6 +416,7 @@ export function mountInputBar(
   // the project changes so ACP options hide/show with SSH workspaces.
   store.on('threads_changed', () => {
     modelPicker.refresh()
+    reasoningDial.sync()
     void refreshAutomaticCheckoutPreview()
   })
   store.on('projects_changed', () => {
@@ -369,15 +453,50 @@ export function mountInputBar(
       showErrorToast('Share trace failed', error)
     })
   }
-  usageBtn.addEventListener('click', () => {
-    costVisible = !costVisible
-    updateFooter()
-  })
-  contextWheel.root.addEventListener('click', () => {
-    if (!footerCompact.isCompact() || contextWheel.root.hidden || !usageSummaryText()) return
-    costVisible = !costVisible
-    updateFooter()
-  })
+
+  /**
+   * Hand this thread's trace to a fresh thread and ask what went wrong in it.
+   *
+   * Everything the model needs is the zip — the same archive "Export thread
+   * folder (ZIP)" downloads — attached to a new conversation rather than saved to
+   * disk, so the diagnosis happens where the user already is. The draft prompt is
+   * deliberately left unsent: only the person who watched the run knows which
+   * part of it looked wrong, and the draft ends on a line for them to say so.
+   */
+  async function startDebugTrace(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (projectId === null || !threadHasExportableContent(thread)) return
+    // Zip before switching away: a failed export should leave the user on the
+    // thread they were reading, not on an empty one with nothing attached.
+    const bytes = await api.threads.exportArchive(projectId, thread.id)
+    const name = `${threadExportBaseName(thread)}.zip`
+    // Persist whatever is in the composer to its own thread before switching.
+    store.emit('composer_draft_flush')
+    const debugThreadId = createThread(store, buildDebugTracePrompt(thread, name))
+    // A title now, rather than one auto-suggested from the first message later:
+    // the sidebar should say which thread this is about before it is ever sent.
+    setThreadTitle(store, debugThreadId, debugTraceThreadTitle(thread))
+    // `threads_changed` has already switched the composer to the new thread, so
+    // the archive is stored under *its* blobs and lives as long as it does.
+    // `.slice` narrows the transferred view to exactly its own bytes, which is
+    // what the attach path re-wraps.
+    await addArchiveChip({
+      name,
+      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    })
+    composer.focus()
+  }
+
+  function debugTrace(): void {
+    void startDebugTrace().catch((error: unknown) => {
+      showErrorToast('Debug trace failed', error)
+    })
+  }
+  usageBtn.addEventListener('mouseenter', usagePopover.show)
+  usageBtn.addEventListener('mouseleave', usagePopover.hide)
+  usageBtn.addEventListener('focus', usagePopover.show)
+  usageBtn.addEventListener('blur', usagePopover.hide)
 
   const checkoutErrorText = el('span', { class: 'composer-checkout-error-text' })
   const checkoutRetryBtn = el(
@@ -397,6 +516,7 @@ export function mountInputBar(
     branchWarning,
     checkoutError,
     imageCompatibilityWarning,
+    contextFitWarning,
     inputRow,
     footer,
   )
@@ -532,6 +652,14 @@ export function mountInputBar(
     if (!recommendedImageModel) return
     selectChatModel(recommendedImageModel.value)
     composer.focus()
+  })
+
+  contextFitModelBtn.addEventListener('click', (event) => {
+    // The picker closes on any document click outside its own subtree, and this
+    // button is outside it — without stopping propagation the menu would shut in
+    // the same dispatch that opened it.
+    event.stopPropagation()
+    modelPicker.openMenu()
   })
 
   function removeAttachedImages(): void {
@@ -693,17 +821,23 @@ export function mountInputBar(
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
-  // Pricing for extra-provider models (e.g. HF), keyed by `<slug>:<id>` selection.
-  // The static cloud catalog has no entry for these, so the footer cost reads here.
-  let extraPricing: ExtraPricing = {}
-  function refreshExtraPricing(): void {
-    // Best-effort: a missing/failed provider list just leaves the footer cost
+  // Model the last estimate was computed for. The context-fit warning quotes a
+  // window and a model name together, so it must not pair a fresh selection with
+  // the previous model's window while the new estimate is still in flight.
+  let breakdownModel: string | null = null
+  // Rates for every model outside the static cloud catalog — OpenRouter routes
+  // and extra providers alike — keyed by model selection. Resolved in the main
+  // process (see model-pricing-store.ts) so the footer and the usage ledger
+  // price an identical thread identically.
+  let modelPricing: ModelPricingMap = {}
+  function refreshModelPricing(): void {
+    // Best-effort: a missing/failed pricing map just leaves the footer cost
     // resting on the static cloud catalog, so never let it throw.
     try {
       void api.settings
-        .extraProviders()
-        .then((providers) => {
-          extraPricing = extraProviderPricingMap(providers)
+        .modelPricing()
+        .then((pricing) => {
+          modelPricing = pricing
           updateFooter()
         })
         .catch(() => {})
@@ -765,6 +899,7 @@ export function mountInputBar(
     hideCheckoutError()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
+    breakdownModel = null
     scheduleContextEstimate(0)
   }
 
@@ -850,7 +985,12 @@ export function mountInputBar(
     queueIndicator.textContent = count === 1 ? '1 queued' : `${String(count)} queued`
   }
 
-  function usageSummaryText(): string | null {
+  /** Footer label, the one-line detail (compact fallback) and the hover tooltip. */
+  function usageViews(): {
+    label: string
+    detail: string
+    tooltip: FooterUsageTooltipModel
+  } | null {
     const thread = getActiveThread(store)
     if (!thread) return null
     // Price against the concrete footer model so cost matches what the run uses.
@@ -863,19 +1003,45 @@ export function mountInputBar(
       breakdown: lastBreakdown,
     })
     if (!display) return null
-    return formatFooterUsageSummary(display, {
-      costVisible,
-      model,
-      measuredUsage: thread.usage,
-      extra: extraPricing,
-    })
+    // #1483 moved footer pricing onto the persisted catalog snapshot; all three
+    // views price from that same map.
+    const priced = { model, measuredUsage: thread.usage, pricing: modelPricing }
+    const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages })
+    return {
+      label: formatFooterUsageSummary(display),
+      detail: formatFooterUsageDetail(display, priced),
+      tooltip,
+    }
+  }
+
+  /**
+   * Warn when the thread has outgrown (or nearly outgrown) the model chosen for
+   * it. Silent until an estimate for the *current* model lands, so a model the
+   * user just picked is never described with the previous model's window.
+   */
+  function updateContextFitWarning(): void {
+    const model = footerChatModel()
+    const advice =
+      breakdownModel === model
+        ? contextFitAdvice(lastBreakdown, {
+            modelLabel: modelDisplayLabel(model),
+            lmStudioModel: isLocalModel(model),
+          })
+        : null
+    if (!advice) {
+      contextFitWarning.hidden = true
+      return
+    }
+    contextFitText.textContent = advice.message
+    contextFitWarning.classList.toggle('is-over', advice.level === 'over')
+    contextFitWarning.hidden = false
   }
 
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
     const acpContext = isAcpModel(footerChatModel())
-    const usageText = usageSummaryText()
+    const usage = usageViews()
     const compact = footerCompact.isCompact()
     const snapshot = thread?.contextSnapshot
     const snapshotVisible =
@@ -906,20 +1072,26 @@ export function mountInputBar(
     // source then, and subagent/remote windows never produce a breakdown here.
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? usageText : null,
+      usageLine: tuckUsageIntoWheel ? (usage?.detail ?? null) : null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:
         acpContext && snapshot?.source === 'agent-reported' ? 'Reported by ACP agent' : null,
     })
     contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
-    if (!usageText) {
+    if (!usage) {
       usageBtn.hidden = true
+      usagePopover.render(null)
     } else {
       usageBtn.hidden = tuckUsageIntoWheel
-      usageBtn.textContent = usageText
+      usageBtn.textContent = usage.label
+      usageBtn.setAttribute('aria-label', usage.detail)
+      // Compact mode hides the counter and tucks usage into the wheel title —
+      // nothing left to hover, so drop the popover with it.
+      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip)
     }
     footerOverflow?.update()
+    updateContextFitWarning()
     updateCheckoutControl()
     updateState()
     updateQueueIndicator()
@@ -969,6 +1141,7 @@ export function mountInputBar(
     if (isAcpModel(footerChatModel())) {
       if (lastBreakdown !== null) {
         lastBreakdown = null
+        breakdownModel = null
         updateFooter()
       }
       return
@@ -977,6 +1150,7 @@ export function mountInputBar(
     if (!id) {
       if (lastBreakdown !== null) {
         lastBreakdown = null
+        breakdownModel = null
         updateFooter()
       }
       return
@@ -984,6 +1158,7 @@ export function mountInputBar(
     const projectId = store.getState().activeProjectId
     if (!projectId) return
     const seq = ++estimateSeq
+    const estimatedModel = footerChatModel()
     const payload = composeEstimatePayload()
     let breakdown: ContextBreakdown
     try {
@@ -994,6 +1169,7 @@ export function mountInputBar(
     // Drop results that arrived after a newer request or a thread switch.
     if (seq !== estimateSeq || getActiveThreadId() !== id) return
     lastBreakdown = breakdown
+    breakdownModel = estimatedModel
     updateFooter()
   }
 
@@ -1159,7 +1335,10 @@ export function mountInputBar(
         return
       }
     }
-    const branchStatus = await api.git.branchStatus(projectId, id)
+    const [branchStatus, promptState] = await Promise.all([
+      api.git.branchStatus(projectId, id),
+      api.git.promptState(projectId, id),
+    ])
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
@@ -1332,6 +1511,12 @@ export function mountInputBar(
       visibleText,
       imageUrls.length ? imageUrls : undefined,
       attachments.length ? attachments : undefined,
+      {
+        ...(promptState.startingCommit !== null
+          ? { startingCommit: promptState.startingCommit }
+          : {}),
+        dirty: promptState.dirty,
+      },
     )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
     // Durable record of the attachment: the reference block in this message can
@@ -1722,7 +1907,7 @@ export function mountInputBar(
     store.on('settings_changed', () => {
       modelPicker.refresh()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
-      refreshExtraPricing()
+      refreshModelPricing()
       updateFooter()
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
@@ -1745,7 +1930,7 @@ export function mountInputBar(
 
   updateFooter()
   void refreshAutomaticCheckoutPreview()
-  refreshExtraPricing()
+  refreshModelPricing()
   syncComposerThread()
   scheduleContextEstimate(0)
   window.addEventListener('beforeunload', stopContextEstimates)

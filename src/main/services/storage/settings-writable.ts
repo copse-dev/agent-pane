@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
+import { REASONING_LEVELS } from '@copse/llm/model-parameters.ts'
+import { SERVICE_TIERS } from '@copse/llm/service-tier.ts'
 import {
   validateRemoteAgentBaseUrl,
   validateWebOriginPattern,
@@ -33,7 +35,14 @@ export const acpAgentConfigSchema = z.object({
   env: z.record(z.string().max(256), z.string().max(8192)).optional(),
   model: z.string().min(1).max(512).optional(),
   availableModels: z
-    .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
+    .array(
+      z.object({
+        value: z.string().min(1).max(512),
+        label: z.string().min(1).max(256),
+        // Agents that label models by family alone put the version here.
+        description: z.string().max(1024).optional(),
+      }),
+    )
     .max(256)
     .optional(),
   // Epoch-ms timestamp of the probe that produced `availableModels`, used by the
@@ -92,6 +101,26 @@ export const acpAgentConfigSchema = z.object({
 
 export const registeredAcpAgentsSchema = z.array(acpAgentConfigSchema).max(64)
 
+/**
+ * Generation parameters the user tuned for one model selection. Mirrors
+ * `ModelParameters` in `@copse/llm/model-parameters.ts`; the bounds here are
+ * the loosest any family accepts (Anthropic caps temperature at 1, but the
+ * read side clamps per model, so a value saved against one model and later
+ * read for a stricter one degrades rather than 400s).
+ */
+export const modelParametersSchema = z.object({
+  reasoning: z.enum(REASONING_LEVELS).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  topP: z.number().min(0).max(1).optional(),
+  topK: z.number().int().min(0).max(500).optional(),
+  minP: z.number().min(0).max(1).optional(),
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  repetitionPenalty: z.number().min(0).max(2).optional(),
+})
+
+/** Model selection → its tuned parameters. Keys are picker values, not bare ids. */
+export const modelParametersMapSchema = z.record(z.string().max(512), modelParametersSchema)
+
 export const webAllowedOriginsSchema = z
   .array(
     z
@@ -148,7 +177,36 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // roles (safety, review) are NOT routed here so they stay on the guarded
   // security IPC.
   roleModels: z.record(z.string().max(64), z.string().max(256)),
+  // Per-model generation parameters (reasoning depth and the sampling knobs),
+  // keyed by the model selection they were tuned for so they travel with the
+  // model rather than with a feature. Sanitized per model on read — see
+  // `resolveModelParameters` — so an entry saved against one model cannot be
+  // sent to another that rejects it.
+  modelParameters: modelParametersMapSchema,
   openRouterModel: z.string().max(256),
+  // OpenAI `service_tier` for first-party gpt-* models: 'flex' for slower and
+  // cheaper, 'priority' for quicker at a higher price. Empty (the default) omits
+  // the field, leaving OpenAI on standard processing.
+  //
+  // Pinned to the documented tiers. `SERVICE_TIERS` matches OpenAI's set exactly
+  // — including that Priority is marketed as "Fast mode" but is never sent as
+  // `fast`. Accepting arbitrary strings here would let a plausible-looking value
+  // through to a guaranteed 400 at request time, which is a worse failure than
+  // refusing the write.
+  //
+  // NOTE: the usage ledger prices turns from the standard-tier catalog, so a
+  // non-default tier makes those figures wrong (flex overstates, priority
+  // understates) — see #1543. Tier-aware pricing is a follow-up; LiteLLM already
+  // publishes `input_cost_per_token_flex` / `_priority` for these models.
+  openAiServiceTier: z.enum(['', ...SERVICE_TIERS]),
+  // Pin reasoning-capable OpenAI models (gpt-5*, o-series) back to
+  // /v1/chat/completions instead of /v1/responses. Default OFF.
+  //
+  // The Responses path is what makes their thinking visible and lets reasoning
+  // carry across a tool-calling chain, so this is an escape hatch, not a
+  // preference: it exists for the case where a Responses-specific problem needs
+  // a way out without downgrading. Mirrors llm's `-o chat_completions 1`.
+  openAiForceChatCompletions: z.boolean(),
   // Restrict OpenRouter routing to zero-data-retention endpoints
   // (provider.zdr). Default ON; the read side (provider-selection.ts) treats
   // a missing value as true.

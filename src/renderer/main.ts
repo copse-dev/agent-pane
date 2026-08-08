@@ -20,6 +20,7 @@ import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountAgentTasks } from './views/agent-tasks.ts'
+import { mountSupervisedTasks } from './views/supervised-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
@@ -49,7 +50,6 @@ import {
   openOnboardingDialog,
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
-import { mountContextWarningBanner } from './views/context-warning-banner.ts'
 import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
@@ -57,6 +57,7 @@ import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { registerUiKit } from './ui/index.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
+import { mountCloseConfirm } from './views/close-confirm.ts'
 
 registerUiKit()
 import {
@@ -211,11 +212,12 @@ async function boot(): Promise<void> {
   mountSshPromptDialog(api)
   mountUpdatePromptDialog(api)
   mountConfirmDialog()
+  // Mounted after the confirm dialog it prompts through, so a close arriving
+  // during boot has somewhere to render.
+  mountCloseConfirm(api, store)
   mountFileSearchDialog(store, api)
   mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
-  // Mounted after settings (it subscribes to the settings-close event to re-check).
-  const contextWarningBanner = mountContextWarningBanner(api)
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -407,14 +409,7 @@ async function boot(): Promise<void> {
     return
   }
 
-  if (await shouldShowOnboarding(api)) {
-    openOnboardingDialog()
-  } else {
-    // Onboarding walks the user through model setup, so only nudge established
-    // users here: warn when no configured chat model has a usable context window
-    // (e.g. LM Studio reloaded everything at a tiny default after a reboot).
-    void contextWarningBanner.refresh()
-  }
+  if (await shouldShowOnboarding(api)) openOnboardingDialog()
 }
 
 function ensureLayout(): void {
@@ -440,7 +435,7 @@ async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
   openRightPanel(store, mode)
   document.documentElement.setAttribute('data-popout-mode', mode)
   const seed = await api.panes.takePopoutSeed(mode)
-  await applyPopoutSeed(mode, seed)
+  await applyPopoutSeed(mode, seed, store)
 }
 
 if (popoutMode) {
@@ -482,6 +477,7 @@ function mountFullLayout(): void {
     store,
     api,
   )
+  mountSupervisedTasks(requireElement('terminals-list-host'), store, api)
   mountBrowserPane(
     requireElement('browser-tabs-host'),
     requireElement('browser-viewer-host'),

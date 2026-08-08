@@ -64,6 +64,12 @@ export function mountApprovalDialog(
     el('input', { type: 'checkbox', class: 'approval-remember-input' }),
     'Always allow this tool',
   )
+  const turnTreeLeaseLabel = el(
+    'label',
+    { class: 'approval-remember approval-turn-tree' },
+    el('input', { type: 'checkbox', class: 'approval-turn-tree-input' }),
+    'Allow retries for this task (up to 10, for 15 minutes)',
+  )
   // One heading for the whole prompt (fixed); the items scroll under it so a big
   // batch doesn't push the buttons off screen.
   const heading = el('h3', { class: 'approval-heading' })
@@ -74,9 +80,13 @@ export function mountApprovalDialog(
     heading,
     items,
     rememberLabel,
+    turnTreeLeaseLabel,
     el(
       'div',
       { class: 'approval-buttons' },
+      // Hidden unless the open prompt offers a narrower "just this one" answer
+      // *and* the user has expanded the details that answer refers to.
+      el('button', { class: 'approval-approve-once', hidden: '' }),
       el('button', { class: 'approval-approve' }, 'Approve'),
       el('button', { class: 'approval-reject' }, 'Reject'),
     ),
@@ -89,7 +99,15 @@ export function mountApprovalDialog(
   chatPane.append(chatScrim, dialog)
 
   const rememberInput = qsRequired<HTMLInputElement>(rememberLabel, '.approval-remember-input')
+  const turnTreeLeaseInput = qsRequired<HTMLInputElement>(
+    turnTreeLeaseLabel,
+    '.approval-turn-tree-input',
+  )
+  const turnTreeLeaseTextNode = turnTreeLeaseLabel.childNodes[1]
+  if (!turnTreeLeaseTextNode) throw new Error('approval dialog missing lease label text node')
+  const turnTreeLeaseText: ChildNode = turnTreeLeaseTextNode
   const approveButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve')
+  const approveOnceButton = qsRequired<HTMLButtonElement>(dialog, '.approval-approve-once')
   const rejectButton = qsRequired<HTMLButtonElement>(dialog, '.approval-reject')
   const rememberLabelTextNode = rememberLabel.childNodes[1]
   if (!rememberLabelTextNode) throw new Error('approval dialog missing remember label text node')
@@ -106,8 +124,14 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    collapseDetails: boolean | undefined
+    approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
     comparisonModels?: ComparisonModelSelection
+    allowTurnTreeLease: boolean | undefined
+    turnTreeLeaseLabel: string | undefined
+    turnTreeLeaseDefault: boolean | undefined
+    turnTreeLeaseSubject: string | undefined
   }
 
   // Requests waiting for their turn (background threads, or arrived before the
@@ -125,6 +149,8 @@ export function mountApprovalDialog(
   let cancelSettle: (() => void) | null = null
   /** Live reader for model-compare pickers on the open prompt (single-item batch). */
   let readComparisonModels: (() => ComparisonModelSelection) | null = null
+  /** Whether the user expanded a collapsed body on the open prompt. */
+  let detailsExpanded = false
   function closeDialog(): void {
     dialog.close()
     chatScrim.hidden = true
@@ -193,9 +219,44 @@ export function mountApprovalDialog(
     return label
   }
 
+  /**
+   * The prompt's two-tier approve (primary grants, secondary approves once) and
+   * its collapsed body are only coherent for a lone request: in a mixed batch a
+   * grant answered for one command would be sent for every other one too. So
+   * both features require a batch of exactly one, and anything appended to an
+   * open prompt drops it back to the plain checkbox rendering.
+   */
+  function soloRequest(): PendingApproval | null {
+    return batch.length === 1 ? (batch[0] ?? null) : null
+  }
+
+  /** Label for the secondary approve button, or '' when this prompt has none. */
+  function approveOnceGrant(): string {
+    return soloRequest()?.approveOnceLabel ?? ''
+  }
+
+  /** Disclosure control for a collapsed body; re-renders so the buttons follow it. */
+  function detailsToggle(): HTMLElement {
+    const toggle = el(
+      'button',
+      {
+        class: 'approval-details-toggle',
+        type: 'button',
+        'aria-expanded': detailsExpanded ? 'true' : 'false',
+      },
+      detailsExpanded ? 'Hide details' : 'Show details',
+    )
+    toggle.addEventListener('click', () => {
+      detailsExpanded = !detailsExpanded
+      renderBatch()
+    })
+    return toggle
+  }
+
   function renderBatch(): void {
     readComparisonModels = null
     const count = batch.length
+    const collapseDetails = soloRequest()?.collapseDetails === true
     const singleModelCompare =
       count === 1 && batch[0]?.type === 'model-compare' && batch[0].comparisonModels !== undefined
     // Collapse the per-request title into one heading when the whole batch asks
@@ -221,7 +282,10 @@ export function mountApprovalDialog(
           if (req.bodyAdvice) {
             rowChildren.push(el('div', { class: 'approval-advice' }, req.bodyAdvice))
           }
-          rowChildren.push(el('pre', { class: 'approval-body' }, req.body))
+          if (collapseDetails) rowChildren.push(detailsToggle())
+          const body = el('pre', { class: 'approval-body' }, req.body)
+          if (collapseDetails && !detailsExpanded) body.hidden = true
+          rowChildren.push(body)
           if (req.bodyFooter) {
             rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
           }
@@ -233,19 +297,58 @@ export function mountApprovalDialog(
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
 
-    const grant = rememberGrant()
+    // The narrower answer is offered alongside the details it refers to: with the
+    // command still collapsed there is nothing on screen for "this command" to
+    // point at, so the button waits for the disclosure.
+    const onceLabel = approveOnceGrant()
+    const showOnce = onceLabel !== '' && (!collapseDetails || detailsExpanded)
+    approveOnceButton.hidden = !showOnce
+    if (showOnce) approveOnceButton.textContent = onceLabel
+
+    // A two-tier prompt owns the remember channel through its buttons, so the
+    // checkbox stays out of the way rather than offering a second, conflicting
+    // way to answer the same question.
+    const grant = onceLabel !== '' ? null : rememberGrant()
     rememberLabel.hidden = grant === null
     if (grant === null) rememberInput.checked = false
     else rememberLabelText.textContent = grant
+
+    // One tick box settles the whole batch, but the main process issues a lease
+    // per request — so the offer is only coherent when every batched request
+    // would lease the SAME command. The label alone can't establish that: it's a
+    // fixed string shared by every shell prompt, so unrelated commands compare
+    // equal on it. Match on the subject too, and hide the box otherwise, exactly
+    // as rememberGrant() does rather than applying one grant to unrelated calls.
+    const leaseLabel = batch[0]?.turnTreeLeaseLabel
+    const leaseSubject = batch[0]?.turnTreeLeaseSubject
+    const offersTurnTreeLease =
+      batch.length > 0 &&
+      leaseLabel !== undefined &&
+      leaseSubject !== undefined &&
+      batch.every(
+        (request) =>
+          request.allowTurnTreeLease === true &&
+          request.turnTreeLeaseLabel === leaseLabel &&
+          request.turnTreeLeaseSubject === leaseSubject,
+      )
+    turnTreeLeaseLabel.hidden = !offersTurnTreeLease
+    if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false
+    else {
+      turnTreeLeaseText.textContent = leaseLabel
+      // Sandboxed approval includes bounded retries by default. Outside-sandbox
+      // retries remain explicit, and mixed-command batches hide the grant above.
+      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true)
+    }
   }
 
-  /** Cancel any pending settle window and re-enable Approve. */
+  /** Cancel any pending settle window and re-enable both approve buttons. */
   function clearSettle(): void {
     if (cancelSettle) {
       cancelSettle()
       cancelSettle = null
     }
     approveButton.disabled = false
+    approveOnceButton.disabled = false
   }
 
   /**
@@ -256,12 +359,14 @@ export function mountApprovalDialog(
   function startSettle(): void {
     clearSettle()
     approveButton.disabled = true
+    approveOnceButton.disabled = true
     // A synchronous timer (tests) runs the callback before this assignment,
     // leaving `cancelSettle` holding a spent handle — harmless, since cancelling a
     // fired timer is a no-op and the enabled/disabled state is set by the callback.
     cancelSettle = setTimer(() => {
       cancelSettle = null
       approveButton.disabled = false
+      approveOnceButton.disabled = false
     }, settleMs)
   }
 
@@ -284,6 +389,8 @@ export function mountApprovalDialog(
     // settle guard only applies to appends onto an already-open prompt.
     clearSettle()
     rememberInput.checked = false
+    // Each prompt starts collapsed; expanding is a per-prompt decision.
+    detailsExpanded = false
     renderBatch()
     // A Settings-owned provider-host prompt is the one deliberate modal
     // exception: Settings already makes the document inert, so an inline prompt
@@ -315,6 +422,45 @@ export function mountApprovalDialog(
       cancelCoalesce = null
       show()
     }, coalesceMs)
+  }
+
+  /**
+   * Pull requests that have stopped being showable back off the open prompt.
+   *
+   * `isShowable` is checked when a request is surfaced but the batch was never
+   * re-examined afterwards, so a prompt raised for one thread stayed on screen
+   * when the user moved to another thread — or to another project entirely,
+   * since a project switch swaps `activeThreadId` too. The result read as a
+   * question asked by the thread just opened, over a transcript that never asked
+   * it, and answering it approved a tool call in the project left behind.
+   *
+   * Withdrawn requests go back to the front of the queue (as the settings
+   * interrupt below re-queues them), so they surface again in arrival order when
+   * the user returns to their thread; until then they show as a sidebar bell.
+   */
+  function withdrawUnshowable(): void {
+    if (!active) return
+    const withdrawn = batch.filter((req) => !isShowable(req))
+    if (withdrawn.length === 0) return
+    batch = batch.filter((req) => isShowable(req))
+    queue.unshift(...withdrawn)
+    if (batch.length === 0) {
+      closeDialog()
+      active = false
+      readComparisonModels = null
+      clearSettle()
+      return
+    }
+    // What is left is a different prompt from the one the user was reading, so
+    // it starts collapsed exactly as show() opens one: expansion was a decision
+    // about the withdrawn request, and carrying it over would offer "approve
+    // just this one" against details the user never opened.
+    detailsExpanded = false
+    // The batch changed under the user, so the same clickjack guard an append
+    // arms applies here: a click committed against the old list must not land on
+    // the new one.
+    renderBatch()
+    startSettle()
   }
 
   /**
@@ -353,10 +499,13 @@ export function mountApprovalDialog(
     if (!active || batch.length === 0) return
     const answered = batch
     const comparisonModels = approved && readComparisonModels ? readComparisonModels() : undefined
+    const grantScope =
+      approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? 'turn-tree' : 'once'
     closeDialog()
     batch = []
     active = false
     readComparisonModels = null
+    turnTreeLeaseInput.checked = false
     clearSettle()
     for (const req of answered) {
       void api.approval.respond(
@@ -364,6 +513,7 @@ export function mountApprovalDialog(
         approved,
         remember,
         req.type === 'model-compare' ? comparisonModels : undefined,
+        grantScope,
       )
     }
     // Surface anything that was waiting behind this batch immediately — it has
@@ -382,8 +532,14 @@ export function mountApprovalDialog(
       type,
       allowRemember,
       rememberLabel,
+      collapseDetails,
+      approveOnceLabel,
       showWhileSettingsOpen,
       comparisonModels,
+      allowTurnTreeLease,
+      turnTreeLeaseLabel,
+      turnTreeLeaseDefault,
+      turnTreeLeaseSubject,
     }) => {
       const pending: PendingApproval = {
         id,
@@ -395,7 +551,13 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        collapseDetails,
+        approveOnceLabel,
         showWhileSettingsOpen,
+        allowTurnTreeLease,
+        turnTreeLeaseLabel,
+        turnTreeLeaseDefault,
+        turnTreeLeaseSubject,
       }
       if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)
@@ -424,20 +586,27 @@ export function mountApprovalDialog(
     removeCancelled(id)
   })
 
-  // When the user switches threads, a previously-backgrounded request for the
-  // now-focused thread should surface. `threads_changed` also fires on project
-  // switches, so this covers cross-project focus changes too.
+  // When the user switches threads, the prompt on screen has to follow the
+  // focus: requests for the thread just left are withdrawn, and a
+  // previously-backgrounded request for the now-focused thread surfaces.
+  // `threads_changed` also fires on project switches, so this covers
+  // cross-project focus changes too.
   store.on('threads_changed', () => {
+    withdrawUnshowable()
     if (active) appendToOpen()
     else show()
   })
 
   // Restoring a minimized window makes deferred requests showable again; surface
   // them immediately so the user never has to switch threads to un-stick a prompt
-  // that was held back while the window was hidden. show() no-ops while hidden,
-  // so it only pops once the window is actually visible again.
+  // that was held back while the window was hidden. Going the other way, a prompt
+  // already open when the window is hidden is withdrawn for the same reason new
+  // ones are deferred: it cannot be painted, so it would read as a frozen pane.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'hidden') show()
+    if (document.visibilityState === 'hidden') {
+      withdrawUnshowable()
+      syncAttention()
+    } else show()
   })
 
   // Requests that arrived while the user was in Settings were held back by the
@@ -450,7 +619,13 @@ export function mountApprovalDialog(
     // The settle guard disables the button, but honour it defensively in case a
     // click is dispatched anyway (e.g. keyboard activation during the window).
     if (approveButton.disabled) return
-    resolve(true, rememberInput.checked)
+    // On a two-tier prompt the primary button IS the grant — the checkbox is
+    // hidden there, and the secondary button carries the once-only answer.
+    resolve(true, approveOnceGrant() !== '' ? true : rememberInput.checked)
+  })
+  approveOnceButton.addEventListener('click', () => {
+    if (approveOnceButton.disabled) return
+    resolve(true, false)
   })
   rejectButton.addEventListener('click', () => {
     resolve(false, false)
