@@ -176,6 +176,7 @@ export type SteerCheck =
   | { id: string; kind: 'first-tool-is'; tool: string }
   | { id: string; kind: 'tool-arg-matches'; tool: string; arg: string; pattern: string }
   | { id: string; kind: 'tool-arg-not-matches'; tool: string; arg: string; pattern: string }
+  | { id: string; kind: 'before-tool-matches'; tools: string[]; pattern: string }
   | { id: string; kind: 'final-matches'; pattern: string }
   | { id: string; kind: 'final-not-matches'; pattern: string }
   | { id: string; kind: 'final-max-chars'; max: number }
@@ -339,6 +340,12 @@ const steerCheckSchema: z.ZodType<SteerCheck> = z.discriminatedUnion('kind', [
     kind: z.literal('tool-arg-not-matches'),
     tool: z.string(),
     arg: z.string(),
+    pattern: z.string(),
+  }),
+  z.object({
+    id: z.string(),
+    kind: z.literal('before-tool-matches'),
+    tools: z.array(z.string()).min(1),
     pattern: z.string(),
   }),
   z.object({ id: z.string(), kind: z.literal('final-matches'), pattern: z.string() }),
@@ -736,6 +743,7 @@ function finalAssistantText(messages: readonly LLMMessage[]): string {
 interface RecordedCall {
   name: string
   args: Record<string, unknown>
+  textBeforeCall?: string | undefined
 }
 
 function argText(call: RecordedCall, arg: string): string {
@@ -746,7 +754,11 @@ function argText(call: RecordedCall, arg: string): string {
 /** Score one finished attempt against the pack's checks. All must pass. */
 export function runChecks(
   checks: readonly SteerCheck[],
-  context: { calls: readonly RecordedCall[]; finalMessage: string; workspace: string },
+  context: {
+    calls: readonly RecordedCall[]
+    finalMessage: string
+    workspace: string
+  },
 ): SteerCheckResult[] {
   const { calls, finalMessage, workspace } = context
   return checks.map((check): SteerCheckResult => {
@@ -785,6 +797,19 @@ export function runChecks(
         offender
           ? `matched ${check.pattern}: ${argText(offender, check.arg).slice(0, 120)}`
           : 'no match',
+      )
+    }
+    if (check.kind === 'before-tool-matches') {
+      const firstTargetCall = calls.find((call) => check.tools.includes(call.name))
+      const textBeforeCall = firstTargetCall?.textBeforeCall ?? ''
+      const pass = new RegExp(check.pattern, 'i').test(textBeforeCall)
+      return result(
+        pass,
+        firstTargetCall === undefined
+          ? `none of these tools were called: ${check.tools.join(', ')}`
+          : pass
+            ? `text before first ${firstTargetCall.name} call matched`
+            : `text before first ${firstTargetCall.name} call missing ${check.pattern}`,
       )
     }
     if (check.kind === 'final-matches') {
@@ -842,6 +867,7 @@ async function runAttempt(
   const tracePath = join(outDir, `${pack.id}--${task.id}--${armId}--${String(attempt)}.jsonl`)
   const traceLines: string[] = []
   const calls: RecordedCall[] = []
+  let assistantText = ''
   const usage = { inputTokens: 0, outputTokens: 0, chunks: 0 }
   const messages: LLMMessage[] = [
     { role: 'system', content: buildSteerEvalPrompt(workspace, pack.steer, armId) },
@@ -865,8 +891,18 @@ async function runAttempt(
     ) {
       traceLines.push(JSON.stringify(chunk))
     }
+    if (chunk.type === 'text') {
+      assistantText += chunk.text
+    }
+    if (chunk.type === 'text_replace') {
+      assistantText += `\n${chunk.text}`
+    }
     if (chunk.type === 'tool_call') {
-      calls.push({ name: chunk.toolCall.name, args: recordArgs(chunk.toolCall.args) })
+      calls.push({
+        name: chunk.toolCall.name,
+        args: recordArgs(chunk.toolCall.args),
+        textBeforeCall: assistantText,
+      })
     }
     if (chunk.type === 'usage') {
       usage.chunks += 1
@@ -930,7 +966,11 @@ async function runAttempt(
     usage.inputTokens = Math.round(JSON.stringify(messages.slice(0, 2)).length / 4)
     usage.outputTokens = Math.round(finalMessage.length / 4)
   }
-  const checks = runChecks(task.checks, { calls, finalMessage, workspace })
+  const checks = runChecks(task.checks, {
+    calls,
+    finalMessage,
+    workspace,
+  })
   writeFileSync(tracePath, `${traceLines.join('\n')}\n`, 'utf8')
   if (!keepWorkspace) rmSync(workspace, { recursive: true, force: true })
 

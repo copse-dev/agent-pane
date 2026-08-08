@@ -116,6 +116,7 @@ isolates the wording rather than the existence of an extra turn.
 | `tool-used` / `tool-not-used`               | the tool was / was not called                 |
 | `first-tool-is`                             | the first tool call is this tool              |
 | `tool-arg-matches` / `tool-arg-not-matches` | some / no call's arg matches the regex        |
+| `before-tool-matches`                       | text before the first selected tool matches   |
 | `final-matches` / `final-not-matches`       | the final message matches the regex           |
 | `final-max-chars` / `final-min-chars`       | the final message is within bounds            |
 | `max-tool-calls`                            | the run stayed under a tool-call budget       |
