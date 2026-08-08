@@ -99,7 +99,11 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          version="$(node -p "require('monaco-editor/package.json').version")"
+          # Read the file, don't `require('monaco-editor/package.json')`: monaco's
+          # `exports` map has no "./package.json" entry, so Node resolves the
+          # specifier through the map and fails with
+          # "Cannot find module .../esm/vs/package.json.js".
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/monaco-editor/package.json','utf8')).version")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "base=/${REPO#*/}/demo/vendor/monaco/${version}/" >> "$GITHUB_OUTPUT"
       - if: steps.target.outputs.found == 'true'
