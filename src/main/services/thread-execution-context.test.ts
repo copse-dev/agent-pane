@@ -224,7 +224,7 @@ describe('thread execution context', () => {
   it('rejects a thread that is not persisted under the selected project', async () => {
     await assert.rejects(
       resolver({ getThreadMeta: async () => null }),
-      /does not belong to project/,
+      /is not persisted yet under project/,
     )
   })
 
@@ -248,7 +248,7 @@ describe('thread execution context', () => {
     assert.equal(emitted.length, 2)
     assert.equal(emitted[0]?.threadId, 'thread-1')
     assert.deepEqual(emitted[1]?.chunk, { type: 'done' })
-    assert.match(JSON.stringify(emitted[0].chunk), /does not belong to project/)
+    assert.match(JSON.stringify(emitted[0].chunk), /is not persisted yet under project/)
   })
 
   it('keeps simultaneous thread roots isolated across awaits', async () => {

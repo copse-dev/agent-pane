@@ -24,6 +24,29 @@ It folds three changes into one image:
    target repo's branch at build time** and bakes its deps — so the image can
    live in its own repo and be pointed at any consumer.
 
+4. **Host-local dependency store (`deps-cache` volume).** The baked layer above
+   is keyed by the lockfile hash _at image-build time_, so any dependency bump
+   makes it stale fleet-wide until the images are rebuilt. Runners are ephemeral
+   (one job each), so before this volume existed a stale bake meant every job
+   independently restored ~590 MB from the Actions cache service — 2.5–3.5 min
+   apiece, ~16 jobs per CI run, all in parallel and contending for the same
+   egress (which is what pinned the observed transfer rate near 1 MB/s).
+
+   The volume is a persistent, host-local store keyed by the **current**
+   lockfile hash and shared by every runner container on the host.
+   `.github/actions/setup` reads it before falling back to the network, and
+   republishes into it on a miss — so after a lockfile bump the first job on a
+   host still pays the network restore and every job after it copies from local
+   disk. Entries are published via an atomic rename (concurrent shards racing on
+   the same hash is normal and safe) and pruned to the 3 most recent hashes, so
+   budget roughly 3× the installed tree (~5 GB) per host.
+
+   It is pure cache: `docker volume rm ci-runners_deps-cache` is always safe and
+   it rebuilds itself on the next job. Only first-party code ever writes to it —
+   `ci.yml` guards every self-hosted job on
+   `pull_request.head.repo.full_name == github.repository`, so fork PRs run on
+   GitHub-hosted runners and never touch a host that mounts this.
+
 > **Status: prototype — not yet live.** This directory replaces the two old
 > runner dirs (`.github/runner`, `.github/runner-checks`), which are **removed in
 > this branch**; `make runners*` now drives this unified fleet. But the pool has

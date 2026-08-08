@@ -1,0 +1,84 @@
+name: Demo previews compaction
+
+# `demo-previews` is machine-managed build output, and it only ever grows.
+#
+# Every push to every open PR copies a fresh demo bundle into it, and
+# `demo-preview-cleanup.yml` removes a closed PR's directory with `git rm` —
+# which drops it from the tip while leaving every historical copy in the object
+# store. Nothing reclaims that. Clone time for the publish job, and the payload
+# Pages deploys, both climb with the total number of pushes ever made rather
+# than with the number of previews currently live.
+#
+# So periodically discard the history and keep only the current tree: check out
+# an orphan, commit the tip's contents as a single root commit, and replace the
+# branch with it. The published site is byte-identical before and after —
+# only the path that got there is thrown away.
+
+on:
+  schedule:
+    # Sundays 04:00 UTC — outside the working week, when a lost race with a
+    # preview publish costs the least.
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: demo-previews-compact
+  cancel-in-progress: false
+
+jobs:
+  compact:
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+
+          # Full clone, deliberately: the point is to measure and discard the
+          # history, which a shallow clone does not have.
+          if ! git clone --branch demo-previews "$remote" previews-branch 2>/dev/null; then
+            echo "No demo-previews branch — nothing to compact."
+            exit 0
+          fi
+          cd previews-branch
+
+          old_sha="$(git rev-parse HEAD)"
+          commits="$(git rev-list --count HEAD)"
+          before="$(du -sh .git | cut -f1)"
+          previews="$(find . -maxdepth 1 -type d -name 'pr-*' | wc -l | tr -d ' ')"
+          echo "before: ${commits} commits, .git ${before}, ${previews} preview directories"
+
+          if [ "$commits" -le 1 ]; then
+            echo "Already a single commit — nothing to compact."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Orphan, so the new commit has no parent and the old chain becomes
+          # unreachable. The working tree is untouched, so the published content
+          # is exactly what was there a moment ago.
+          git checkout --orphan compacted
+          git add -A
+          git commit -q -m "demo previews: compact history ($(date -u +%Y-%m-%d), was ${commits} commits)"
+
+          # --force-with-lease, not --force. `demo-preview.yml` keys its
+          # concurrency on github.ref, so two branches publish to this same
+          # branch without being serialised and a compaction can genuinely race
+          # a publish. Leasing turns that race into a failed push we retry next
+          # week, rather than a preview silently dropped from the site.
+          if git push --force-with-lease="refs/heads/demo-previews:${old_sha}" \
+               origin "compacted:demo-previews"; then
+            after="$(du -sh .git | cut -f1)"
+            echo "after: 1 commit, .git ${after}"
+          else
+            echo "Push rejected — a preview publish landed while this ran."
+            echo "Nothing was changed; the next scheduled compaction will pick it up."
+            exit 0
+          fi

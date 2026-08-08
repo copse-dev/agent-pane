@@ -35,20 +35,26 @@
 .welcome-sub {
   color: var(--text-secondary);
 }
+.welcome-new-btn,
+.welcome-open-btn {
+  /* Local baseline matches the brand action recipe so peer CTAs cannot diverge
+     if a selector is later dropped from brand.css. brand.css still owns fill. */
+  height: var(--action-min-height);
+  min-height: var(--action-min-height);
+  padding: var(--action-padding-block) var(--action-padding-inline);
+  border-radius: var(--action-radius);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.6;
+}
 .welcome-new-btn {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
-  padding: var(--spacing-sm) var(--spacing-xl);
-  border-radius: var(--radius);
-  font-size: var(--font-size-lg);
 }
 .welcome-open-btn {
   background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border);
-  padding: var(--spacing-sm) var(--spacing-xl);
-  border-radius: var(--radius);
-  font-size: var(--font-size-lg);
 }
 .welcome-open-btn:hover {
   border-color: var(--accent);

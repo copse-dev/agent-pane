@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { copyMonacoWorkers } from './copy-monaco-workers.mts'
+import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -137,6 +137,17 @@ if (!isDemo) {
     outfile: 'dist/main/pack-tool-worker.js',
   })
   assertParses('dist/main/pack-tool-worker.js')
+  // Runs the ACP model/mode probe under its OWN SandboxManager so a background
+  // probe cannot widen the app's process-global network allowlist (see
+  // docs/plans/sandbox-network-scope-isolation.md). Must bundle free of electron
+  // and node-pty, which `assertParses` alone would not catch — the natives fail
+  // at require time, not parse time.
+  await esbuild.build({
+    ...nodeOpts,
+    entryPoints: ['src/main/services/acp/acp-probe-worker.ts'],
+    outfile: 'dist/main/acp-probe-worker.js',
+  })
+  assertParses('dist/main/acp-probe-worker.js')
   // No `banner` here: askpass-helper.ts already starts with `#!/usr/bin/env node`
   // and esbuild preserves a source hashbang verbatim. Adding the banner too put a
   // second `#!…` on line 2 of the bundle, where it is not a hashbang but a syntax
@@ -207,7 +218,24 @@ copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
 // list of other people's things (today: first-party pack rows in Settings).
 copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
 cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
-copyMonacoWorkers(rendererOutDir)
+
+// Monaco's ESM `vs/` tree is ~34MB of small files, and it is identical for every
+// build pinned to the same monaco-editor version. The shipped app carries its
+// own copy; demo previews do not, because each one is committed to the
+// `demo-previews` branch and a per-PR copy made that branch grow by 34MB per
+// preview per push, forever (git keeps the history even after the preview is
+// removed). Point them at one published copy instead.
+//
+// Only ever set for the demo build. An unset MONACO_BASE_URL leaves the app's
+// packaging byte-identical.
+const monacoBaseUrl = isDemo ? (process.env['MONACO_BASE_URL'] ?? '').trim() : ''
+if (monacoBaseUrl === '') {
+  copyMonacoWorkers(rendererOutDir)
+} else {
+  console.log(`[build] Monaco served from ${monacoBaseUrl} — not copying the vs/ tree`)
+  const indexPath = `${rendererOutDir}/index.html`
+  writeFileSync(indexPath, pointHtmlAtMonacoBase(readFileSync(indexPath, 'utf8'), monacoBaseUrl))
+}
 cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {
   recursive: true,
 })

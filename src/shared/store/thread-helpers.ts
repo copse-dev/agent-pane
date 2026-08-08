@@ -749,6 +749,7 @@ export function applyPreparedThreadCheckout(
   prepared: PreparedThreadCheckout,
 ): void {
   const { threads } = store.getState()
+  const previousWorktreePath = threads.find((thread) => thread.id === threadId)?.worktree?.path
   const updated = threads.map((thread) => {
     if (thread.id !== threadId) return thread
     return {
@@ -761,5 +762,8 @@ export function applyPreparedThreadCheckout(
   })
   store.setState({ threads: updated })
   store.emit('threads_changed')
+  if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
+    store.emit('thread_checkout_changed', threadId)
+  }
   store.emit('git_branch_changed')
 }

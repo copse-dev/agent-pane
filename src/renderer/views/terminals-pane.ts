@@ -15,6 +15,7 @@ import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
+import { createTerminalAfterPersist } from '../terminal/create-after-persist.ts'
 
 /* selectionInactiveBackground is set per theme rather than left to xterm: its
    default (#3A3D41) is a dark grey, so in the light theme a selection made and
@@ -43,8 +44,11 @@ interface TerminalTab {
   scopeProjectId: string | null
   /** Thread this shell belongs to; only the active thread's tabs are shown. */
   scopeId: string | null
+  /** Worktree present when this shell was created; null means the shared checkout. */
+  checkoutPath: string | null
   label: string
   labelSpan: HTMLElement
+  checkoutBadge: HTMLElement
   panel: HTMLElement
   container: HTMLElement
   tabBtn: HTMLButtonElement
@@ -264,13 +268,25 @@ export function mountTerminalsPane(
     try {
       openTerminalSurface(tab)
       fitTab(tab)
-      tab.sessionId = await api.terminal.create(tab.term.cols, tab.term.rows, {
-        label: tab.label,
-        projectId: tab.scopeProjectId,
-        threadId: tab.scopeId,
-      })
+      const created = await createTerminalAfterPersist(
+        api.terminal.create.bind(api.terminal),
+        tab.term.cols,
+        tab.term.rows,
+        {
+          label: tab.label,
+          projectId: tab.scopeProjectId,
+          threadId: tab.scopeId,
+        },
+      )
+      tab.sessionId = created.sessionId
+      const worktreePath = currentWorktreePath(tab.scopeId)
+      tab.checkoutPath = created.checkoutMode === 'worktree' ? worktreePath : null
+      tab.checkoutBadge.hidden = true
       publishActive(tab)
       await flushPendingInput(tab)
+      if (created.checkoutMode === 'shared' && worktreePath) {
+        preserveSharedShell(tab, worktreePath)
+      }
     } catch (err) {
       tab.term.writeln(`\x1b[31mFailed to start terminal: ${String(err)}\x1b[0m`)
     } finally {
@@ -348,6 +364,11 @@ export function mountTerminalsPane(
     return store.getState().activeThreadId
   }
 
+  function currentWorktreePath(threadId: string | null): string | null {
+    if (!threadId) return null
+    return store.getState().threads.find((thread) => thread.id === threadId)?.worktree?.path ?? null
+  }
+
   function visibleTabs(): TerminalTab[] {
     return tabsForScope(tabs.values(), currentThreadId())
   }
@@ -357,7 +378,12 @@ export function mountTerminalsPane(
     if (!visible) tab.panel.classList.remove('is-active')
   }
 
-  function addTab(options?: { activate?: boolean; initialInput?: string }): string {
+  function addTab(options?: {
+    activate?: boolean
+    initialInput?: string
+    scopeProjectId?: string
+    scopeId?: string
+  }): string {
     tabCounter += 1
     const id = crypto.randomUUID()
     const label = `Terminal ${String(tabCounter)}`
@@ -372,10 +398,20 @@ export function mountTerminalsPane(
       '×',
     )
     const labelSpan = el('span', { class: 'terminals-tab-label' }, label)
+    const checkoutBadge = el(
+      'span',
+      {
+        class: 'terminals-checkout-badge',
+        title: 'This shell remains in the shared project checkout',
+        hidden: '',
+      },
+      'Shared checkout',
+    )
     const tabBtn = el(
       'button',
       { type: 'button', class: 'terminals-tab', 'data-tab-id': id, title: label },
       labelSpan,
+      checkoutBadge,
       closeBtn,
     )
 
@@ -385,12 +421,16 @@ export function mountTerminalsPane(
 
     const { term, fitAddon } = createXterm()
     const fileLinks = installTerminalFileLinks(term, store, api)
+    const scopeProjectId = options?.scopeProjectId ?? store.getState().activeProjectId
+    const scopeId = options?.scopeId ?? currentThreadId()
     const tab: TerminalTab = {
       id,
-      scopeProjectId: store.getState().activeProjectId,
-      scopeId: currentThreadId(),
+      scopeProjectId,
+      scopeId,
+      checkoutPath: currentWorktreePath(scopeId),
       label,
       labelSpan,
+      checkoutBadge,
       panel,
       container,
       tabBtn,
@@ -457,8 +497,10 @@ export function mountTerminalsPane(
     tabsWrap.append(tabBtn)
     body.append(panel)
 
-    if (options?.activate !== false || !activeTabId) setActiveTab(id)
-    if (terminalModeActive(store)) void ensureSession(tab)
+    const visible = scopeId === currentThreadId()
+    setTabVisible(tab, visible)
+    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id)
+    if (visible && terminalModeActive(store)) void ensureSession(tab)
     return id
   }
 
@@ -590,6 +632,40 @@ export function mountTerminalsPane(
     onScopeSwitch()
   }
 
+  function preserveSharedShell(tab: TerminalTab, worktreePath: string): void {
+    if (!tab.checkoutBadge.hidden) return
+    tab.checkoutBadge.hidden = false
+    tab.term.writeln(
+      '\r\n\x1b[90mThis shell remains in the shared checkout. A new shell opened in the thread worktree.\x1b[0m',
+    )
+    const replacementExists = [...tabs.values()].some(
+      (candidate) => candidate.scopeId === tab.scopeId && candidate.checkoutPath === worktreePath,
+    )
+    if (!replacementExists && tab.scopeId && tab.scopeProjectId) {
+      addTab({
+        activate: tab.scopeId === currentThreadId(),
+        scopeProjectId: tab.scopeProjectId,
+        scopeId: tab.scopeId,
+      })
+    }
+  }
+
+  function onThreadCheckoutChanged(threadId: string): void {
+    const worktreePath = currentWorktreePath(threadId)
+    if (!worktreePath) return
+
+    for (const tab of tabs.values()) {
+      if (tab.scopeId !== threadId || tab.checkoutPath !== null) continue
+      // A shell that has not spawned yet can simply follow the newly committed
+      // checkout. An in-flight create resolves its authoritative mode itself.
+      if (!tab.sessionId) {
+        if (!tab.creating) tab.checkoutPath = worktreePath
+        continue
+      }
+      preserveSharedShell(tab, worktreePath)
+    }
+  }
+
   const unsubs = [
     store.on('right_panel_mode_changed', onTerminalModeChange),
     store.on('files_pane_changed', onTerminalModeChange),
@@ -597,6 +673,7 @@ export function mountTerminalsPane(
     store.on('theme_changed', onThemeChange),
     store.on('settings_changed', onFontSizeChange),
     store.on('threads_changed', onThreadMaybeChanged),
+    store.on('thread_checkout_changed', onThreadCheckoutChanged),
     store.on('workspace_changed', onThreadMaybeChanged),
     store.on('request_terminal_command', runCommandInNewShell),
   ]
