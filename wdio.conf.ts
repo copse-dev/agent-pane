@@ -1,7 +1,6 @@
 import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
-import { randomInt } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -12,6 +11,7 @@ import {
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
@@ -202,21 +202,28 @@ export const config: Options.Testrunner = {
     }
     writeFileSync(e2eEnvFile, JSON.stringify(e2eEnv), 'utf8')
 
-    const cap = capabilities as WebdriverIO.Capabilities & {
-      'goog:chromeOptions'?: { args?: string[] }
-    }
+    const cap = capabilities as ChromeCapabilities
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
-    const debugPort = randomInt(9300, 9999)
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
-      args: [
-        ...new Set([
-          ...(chromeOptions.args ?? []),
-          `--user-data-dir=${e2eUserDataDir}`,
-          `--remote-debugging-port=${debugPort}`,
-        ]),
-      ],
+      args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
     }
+    assignDebugPort(cap)
+  },
+  beforeCommand(commandName) {
+    // beforeSession runs once per worker, but every spec calls
+    // browser.reloadSession() (196 call sites) and reloadSession re-launches
+    // Electron from the capabilities captured back then — so without this the
+    // whole shard rebinds one fixed devtools port ~25 times in a row, each time
+    // onto the port the process it is replacing has only just released. Rotate
+    // it first; see helpers/debug-port.ts for why reuse is what breaks.
+    if (commandName !== 'reloadSession') return
+    const requested = browser.requestedCapabilities as
+      (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities }) | undefined
+    if (!requested) return
+    // W3C sessions may hand back the alwaysMatch/firstMatch shape rather than
+    // the flat capabilities object; reloadSession re-sends whichever it holds.
+    assignDebugPort(requested.alwaysMatch ?? requested)
   },
   onComplete() {
     try {
