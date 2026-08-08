@@ -30,10 +30,10 @@
 // behind bot protection and are commonly blocked from sandboxes. Both flags are
 // opt-in for exactly that reason — a plain run is offline and deterministic.
 
-import { execFileSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import { formatGenerated, writeGeneratedFile } from './lib/generated-file.mts'
 
 const DATA_PATH = resolve('scripts/data/model-cards.json')
 const GENERATED_PATH = resolve('packages/llm/src/model-cards.generated.ts')
@@ -405,10 +405,6 @@ ${body}
 // entry point
 // ---------------------------------------------------------------------------
 
-function runPrettier(): void {
-  execFileSync('npx', ['prettier', '--write', GENERATED_PATH, DATA_PATH], { stdio: 'inherit' })
-}
-
 async function discover(data: CardDataFile, delayMs: number): Promise<number> {
   const byModel = new Map(data.cards.map((c) => [c.modelId, c]))
   const wanted = data.wanted ?? []
@@ -497,7 +493,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   if (dataChanged > 0) {
     // Rewrite the reviewed file in place, keeping its `$comment` (the sourcing
     // rules) at the top where the next reviewer will read it.
-    await writeFile(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+    const json = await formatGenerated(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`)
+    await writeFile(DATA_PATH, json, 'utf8')
     console.log(`[sync-model-cards] Discovery updated ${String(dataChanged)} card(s).`)
   }
 
@@ -505,15 +502,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   const content = renderFile(data.cards, today)
   // Ignore the header date when deciding whether anything changed, so a re-run
   // on a quiet day is a true no-op for the sync workflow's `git diff --quiet`.
-  const stripSyncDate = (s: string): string =>
-    s.replace(/\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/, '')
-  const before = await readFile(GENERATED_PATH, 'utf8').catch(() => '')
-  if (stripSyncDate(before) === stripSyncDate(content) && dataChanged === 0) {
+  // Discovery may still have updated the reviewed JSON above without moving any
+  // emitted field — that write already happened and already logged.
+  if (!(await writeGeneratedFile(GENERATED_PATH, content))) {
     console.log(`[sync-model-cards] No changes for ${String(data.cards.length)} cards.`)
     return
   }
-  await writeFile(GENERATED_PATH, content, 'utf8')
-  runPrettier()
   console.log(
     `[sync-model-cards] Wrote ${String(data.cards.length)} cards to ${GENERATED_PATH} (synced ${today}).`,
   )

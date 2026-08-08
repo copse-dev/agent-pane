@@ -41,8 +41,8 @@
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { execFileSync } from 'node:child_process'
 import { z } from 'zod'
+import { writeGeneratedFile } from './lib/generated-file.mts'
 import {
   MIN_RECOMMENDED_ANCHORS,
   fitLinearEquating,
@@ -572,15 +572,10 @@ async function main(): Promise<void> {
   }
 
   const content = renderFile(data, maps, today)
-  const existing = await readFile(GENERATED_PATH, 'utf8').catch(() => '')
-  const stripSyncDate = (s: string): string =>
-    s.replace(/\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/, '')
-  if (stripSyncDate(existing) === stripSyncDate(content)) {
+  if (!(await writeGeneratedFile(GENERATED_PATH, content))) {
     console.log(`[sync-intellect] No changes (${String(data.scores.length)} measurements).`)
     return
   }
-  await writeFile(GENERATED_PATH, content, 'utf8')
-  execFileSync('npx', ['prettier', '--write', GENERATED_PATH], { stdio: 'inherit' })
   console.log(
     `[sync-intellect] Wrote ${String(data.scores.length)} measurement(s), ` +
       `${String(maps.length)} equating map(s) to ${GENERATED_PATH} (synced ${today}).`,
