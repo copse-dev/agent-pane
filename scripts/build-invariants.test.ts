@@ -3,18 +3,37 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
+import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 
 /**
  * Structural pins for `scripts/build.mts`. Unit tests never run the build, and
- * the askpass helper is exec'd as a standalone script rather than required by
- * another bundle, so a malformed emit has no other place to surface.
+ * these bundles are exec'd as standalone scripts rather than required by another
+ * bundle, so a malformed emit has no other place to surface.
+ *
+ * The bundles used to be a run of hand-written `esbuild.build` calls and these
+ * pins matched one of them textually. They are emitted from
+ * `STANDALONE_MAIN_BUNDLES` in a loop now — shared with `dev.mts`, which built
+ * none of them and shipped a `dist/` with no `sandbox-fs-worker.js` — so the
+ * same invariants are asserted against the loop that emits every one of them.
  */
 describe('build.mts bundle invariants', () => {
   const build = readFileSync(resolve('scripts/build.mts'), 'utf8')
 
-  const askpassEntry = build.match(
-    /await esbuild\.build\(\{[^}]*?askpass-helper\.ts[\s\S]*?\n {2}\}\)/,
+  /** The `for (…of STANDALONE_MAIN_BUNDLES)` body — everything the emit sees. */
+  const standaloneLoop = build.match(
+    /for \(const \{ entry, outfile \} of STANDALONE_MAIN_BUNDLES\) \{[\s\S]*?\n {2}\}/,
   )?.[0]
+  /** The shared options the loop spreads; a banner here would reach every bundle. */
+  const nodeOpts = build.match(/const nodeOpts = \{[\s\S]*?\n\}/)?.[0]
+
+  it('emits the askpass helper from the shared list', () => {
+    const askpass = STANDALONE_MAIN_BUNDLES.find((bundle) =>
+      bundle.entry.endsWith('ssh-workspace/askpass-helper.ts'),
+    )
+    assert.ok(askpass, 'askpass-helper.ts must stay in STANDALONE_MAIN_BUNDLES')
+    assert.equal(askpass.outfile, 'dist/main/ssh-askpass-helper.js')
+    assert.ok(standaloneLoop, 'expected build.mts to build STANDALONE_MAIN_BUNDLES in a loop')
+  })
 
   it('never adds a hashbang banner to a helper that already has one', () => {
     // esbuild preserves a source hashbang verbatim, so a `#!…` banner on top of
@@ -26,19 +45,26 @@ describe('build.mts bundle invariants', () => {
       'utf8',
     )
     assert.ok(helper.startsWith('#!'), 'askpass-helper.ts should carry its own hashbang')
-    assert.ok(askpassEntry, 'expected an esbuild.build call for askpass-helper.ts')
-    assert.doesNotMatch(
-      askpassEntry,
-      /banner/,
-      'askpass-helper.ts already has a hashbang; a banner would duplicate it onto line 2',
-    )
+    assert.ok(standaloneLoop, 'expected build.mts to build STANDALONE_MAIN_BUNDLES in a loop')
+    assert.ok(nodeOpts, 'expected a shared nodeOpts object in build.mts')
+    for (const [what, source] of [
+      ['the standalone-bundle loop', standaloneLoop],
+      ['the shared nodeOpts', nodeOpts],
+    ] as const) {
+      assert.doesNotMatch(
+        source,
+        /banner/,
+        `askpass-helper.ts already has a hashbang; a banner in ${what} would duplicate it onto line 2`,
+      )
+    }
   })
 
-  it('syntax-checks the askpass helper bundle after emitting it', () => {
+  it('syntax-checks every standalone bundle after emitting it', () => {
+    assert.ok(standaloneLoop, 'expected build.mts to build STANDALONE_MAIN_BUNDLES in a loop')
     assert.match(
-      build,
-      /assertParses\('dist\/main\/ssh-askpass-helper\.js'\)/,
-      "the askpass bundle is only ever exec'd, so the build must verify it parses",
+      standaloneLoop,
+      /assertParses\(outfile\)/,
+      "these bundles are only ever exec'd, so the build must verify each one parses",
     )
   })
 })

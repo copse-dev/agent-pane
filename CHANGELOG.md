@@ -21,6 +21,13 @@ every published entry.
   scroll position and the composer its draft, and restoring puts both back
   exactly as they were — the agent carries on underneath either way. Closing the
   panel gives chat its column back.
+- The file tree and file previews work in a `npm run dev` build again. `dev.mts`
+  never emitted `dist/main/sandbox-fs-worker.js` (nor the pack-tool, ACP-probe
+  and SSH-askpass bundles) — only `npm run build` did. A `dist/` filled purely by
+  `npm run dev`, as in a fresh worktree, therefore failed every sandboxed `fs:*`
+  call with a `MODULE_NOT_FOUND` from a child process, spawning two doomed
+  Electron processes per call. Both builders now emit the same list, and a
+  missing worker bundle reports itself by name instead of spawning anything.
 - Opening a new thread with the Terminal pane already visible no longer fails
   to spawn a shell. Autosave already flushed `threads:create` immediately on a
   new id, but `terminal:create` did not wait for that write — main's ownership
