@@ -6,13 +6,35 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 async function openPacksSection(): Promise<WebdriverIO.Element> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  await $('[aria-label="Settings"]').click()
   const dialog = $('#settings-dialog')
-  await expect(dialog).toBeDisplayed()
+  // Idempotent: clicking the trigger while the dialog is already up lands on the
+  // settings nav instead ("element click intercepted: … <nav class='settings-nav'>
+  // would receive the click"), so a case that leaves the dialog open takes the
+  // next one down with it.
+  if (!(await dialog.isDisplayed())) {
+    await $('[aria-label="Settings"]').click()
+    await expect(dialog).toBeDisplayed()
+  }
   await dialog.$('button[data-section="packs"]').click()
   const row = dialog.$('.pack-row[data-pack-id="copse.parallel-search"]')
   await row.waitForExist({ timeout: 15_000 })
   await row.scrollIntoView({ block: 'center' })
+
+  // Everything configurable about a pack folds into a `<details>` that starts
+  // closed (settings-dialog.ts, "Pack settings"). Its contents still *exist*
+  // while it is shut, so `toBeExisting()` on the mode select and the key input
+  // passes either way — only `getText()`, which returns rendered text, notices.
+  // That is why this spec failed on the copy assertions alone, with the observed
+  // text ending at the fold's own summary label.
+  const fold = row.$('details.pack-settings-fold')
+  await fold.waitForExist({ timeout: 15_000 })
+  if (!(await fold.getProperty('open'))) {
+    await fold.$('summary.pack-settings-summary').click()
+  }
+  await browser.waitUntil(async () => Boolean(await fold.getProperty('open')), {
+    timeout: 10_000,
+    timeoutMsg: 'the pack settings fold never opened',
+  })
   return row
 }
 
