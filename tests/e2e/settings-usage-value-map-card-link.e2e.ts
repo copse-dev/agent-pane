@@ -27,12 +27,34 @@ describe('settings usage value map model card link', () => {
 
     // Claude models carry a curated card entry; hover the point for one. Under
     // COPSE_MODEL_CARD_PROBE_MOCK the resolver answers without a vendor request.
-    const point = fieldset.$('circle.frontier-hit[data-model-id="claude-opus-4-8"]')
-    await expect(point).toExist()
-    await point.moveTo()
+    await expect(fieldset.$('circle.frontier-hit[data-model-id="claude-opus-4-8"]')).toExist()
 
+    // Re-hover until the card opens, re-resolving the point each time.
+    //
+    // A single `moveTo()` is not enough here. `wireTooltip` opens the card from
+    // `mouseenter` on the point, and that one event has two ways to be lost: a
+    // pointer move onto an SVG child does not always deliver it, and the panel
+    // re-renders when the model-card resolver lands — which replaces both the
+    // point and the tooltip layer, leaving the element handle stale and the new
+    // layer hidden.
+    //
+    // This still tests the real hover path (the product decides whether the card
+    // opens); it only stops one dropped event from failing the run. The unit
+    // suite already pins the handler itself: dispatching `mouseenter` on
+    // `circle.frontier-hit` renders `.frontier-tooltip-content`
+    // (intellect-frontier-panel.test.ts).
     const tooltip = fieldset.$('.frontier-tooltip')
-    await expect(tooltip).toBeDisplayed()
+    await browser.waitUntil(
+      async () => {
+        await fieldset.$('circle.frontier-hit[data-model-id="claude-opus-4-8"]').moveTo()
+        return await tooltip.isDisplayed()
+      },
+      {
+        timeout: 20_000,
+        interval: 500,
+        timeoutMsg: 'hovering the claude-opus-4-8 point never opened the value-map card',
+      },
+    )
     // The card section arrives with the resolver's answer, one round-trip after
     // the hover card itself opens.
     const link = tooltip.$('a.tt-card-link')
