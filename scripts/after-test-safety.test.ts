@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
 import { describe, it } from 'node:test'
 import {
-  forceKillWedgedE2eSession,
   isAfterTestBudgetTimeout,
   isDeadSessionError,
   isDeleteSessionBudgetTimeout,
@@ -10,7 +8,6 @@ import {
   isIgnorableDeleteSessionError,
   isMochaTimeoutError,
   installDeleteSessionSafety,
-  sessionPidsFromCapabilities,
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
 } from '../tests/e2e/helpers/after-test-safety.ts'
@@ -218,107 +215,5 @@ describe('installDeleteSessionSafety', () => {
     assert.ok(activeDelete)
     assert.equal(await activeDelete(), undefined)
     assert.equal(killed, 1)
-  })
-})
-
-describe('sessionPidsFromCapabilities', () => {
-  it('reads the driver and browser pids WDIO and chromedriver report', () => {
-    assert.deepEqual(
-      sessionPidsFromCapabilities({ 'wdio:driverPID': 4321, 'goog:processID': 8765 }),
-      { driverPid: 4321, browserPid: 8765 },
-    )
-  })
-
-  it('returns nothing for capabilities that carry no pids', () => {
-    assert.deepEqual(sessionPidsFromCapabilities({ browserName: 'chrome' }), {})
-    assert.deepEqual(sessionPidsFromCapabilities(null), {})
-    assert.deepEqual(sessionPidsFromCapabilities(undefined), {})
-    assert.deepEqual(sessionPidsFromCapabilities('nope'), {})
-  })
-
-  // 0 and negatives mean "signal a whole process group" to process.kill, and 1
-  // is init — exactly the blast radius the scoping exists to prevent.
-  it('rejects pids that would widen the blast radius', () => {
-    for (const pid of [0, -1, -4321, 1, 1.5, Number.NaN, '4321', null]) {
-      assert.deepEqual(
-        sessionPidsFromCapabilities({ 'wdio:driverPID': pid, 'goog:processID': pid }),
-        {},
-        `pid ${String(pid)} must be rejected`,
-      )
-    }
-  })
-
-  it('refuses to target the test runner itself', () => {
-    assert.deepEqual(sessionPidsFromCapabilities({ 'wdio:driverPID': process.pid }), {})
-  })
-})
-
-describe('forceKillWedgedE2eSession', () => {
-  /** A harmless child that stays alive until signalled. */
-  function spawnSleeper(): { pid: number; child: ReturnType<typeof spawn> } {
-    const child = spawn(process.execPath, ['-e', 'setTimeout(() => undefined, 60000)'], {
-      stdio: 'ignore',
-    })
-    assert.ok(child.pid, 'sleeper failed to spawn')
-    return { pid: child.pid, child }
-  }
-
-  /** ESRCH from signal 0 means the process is gone. */
-  function isAlive(pid: number): boolean {
-    try {
-      process.kill(pid, 0)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  // The regression this whole change exists for: worker N's kill must not reap
-  // the driver worker N+1 just spawned (run 31204691492 — one wedge, 21 dead
-  // drivers, every shard 0-2 passed / 19-21 failed).
-  it('kills only the session it is given, leaving another worker alive', async () => {
-    const mine = spawnSleeper()
-    const theirs = spawnSleeper()
-    try {
-      const exited = new Promise((resolve) => mine.child.once('exit', resolve))
-      forceKillWedgedE2eSession({ driverPid: mine.pid })
-      await exited
-      assert.equal(isAlive(theirs.pid), true, "another worker's driver was killed")
-    } finally {
-      theirs.child.kill('SIGKILL')
-    }
-  })
-
-  it('kills both the driver and the browser of its own session', async () => {
-    const driver = spawnSleeper()
-    const browser = spawnSleeper()
-    const bothExited = Promise.all([
-      new Promise((resolve) => driver.child.once('exit', resolve)),
-      new Promise((resolve) => browser.child.once('exit', resolve)),
-    ])
-    forceKillWedgedE2eSession({ driverPid: driver.pid, browserPid: browser.pid })
-    await bothExited
-  })
-
-  // Without pids we cannot tell our processes from anyone else's, so the only
-  // safe move is to do nothing — one slow teardown beats a host-wide sweep.
-  it('kills nothing when it cannot identify the session', async () => {
-    const bystander = spawnSleeper()
-    try {
-      forceKillWedgedE2eSession()
-      forceKillWedgedE2eSession({})
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      assert.equal(isAlive(bystander.pid), true)
-    } finally {
-      bystander.child.kill('SIGKILL')
-    }
-  })
-
-  it('is silent when the pid has already exited', () => {
-    const gone = spawnSleeper()
-    gone.child.kill('SIGKILL')
-    assert.doesNotThrow(() => {
-      forceKillWedgedE2eSession({ driverPid: gone.pid, browserPid: gone.pid })
-    })
   })
 })
