@@ -203,9 +203,15 @@ Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch”
 
 For primary/secondary action buttons (Save / Cancel style):
 
-- Pill geometry is reserved for clear, high-value actions such as Save, Continue, Build, or the
-  primary onboarding action. Routine toolbar controls, row actions, icon buttons, filters, and
-  status indicators retain the normal UI-kit radius.
+- **Primary CTAs are never square.** High-value actions — welcome empty-state buttons, dialog
+  Save / Continue / Confirm, onboarding primary, composer Submit — use the shared action recipe
+  (`--action-radius: 999px`, `--action-min-height`, `--action-padding-*`). Do not leave a primary
+  CTA on `--radius` / `--radius-lg`; a 6–8px corner next to a pill reads as two control systems.
+- Pill geometry is reserved for those clear, high-value actions. Routine toolbar controls, row
+  actions, icon buttons, filters, and status indicators retain the normal UI-kit radius.
+- Paired peer CTAs on the same surface (e.g. welcome **New Project** + **Open Folder**) must share
+  the same action geometry even when fill vs outline differs. Register the whole peer set together
+  in `brand.css` / local baselines — omitting one button is how square-vs-pill mismatches ship.
 - Paired secondary actions may use the matching outline treatment, but should not compete with the
   primary fill.
 - Define action geometry through shared `--action-*` tokens and a UI-kit variant. Do not maintain a
