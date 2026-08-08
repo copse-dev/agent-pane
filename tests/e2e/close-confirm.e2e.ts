@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -42,8 +42,19 @@ async function closeAnswers(): Promise<boolean[]> {
   )
 }
 
+/**
+ * Displayed, not merely present. `input-bar.ts` creates the stop button once at
+ * mount with `hidden` and toggles `stopBtn.hidden = !running`, so it is in the
+ * DOM from app start and `$$('.stop-btn').length > 0` is true before any turn
+ * has begun.
+ *
+ * That made `ensureRunning()` return immediately without ever submitting a
+ * prompt, so no thread was ever `running`, `confirmClose()` correctly declined
+ * to prompt, and the two guarded cases below failed waiting 30s for a dialog
+ * that was right not to appear.
+ */
 async function isRunning(): Promise<boolean> {
-  return (await $$('.stop-btn')).length > 0
+  return await $('.stop-btn').isDisplayed()
 }
 
 /** Hold a turn open so the thread reports `status === 'running'`. */
