@@ -24,6 +24,22 @@ import { parse as parseShellCommand } from 'shell-quote'
 export const SHELL_INTERPRETERS: ReadonlySet<string> = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh'])
 
 /**
+ * Interpreters whose input is a *shell command language*: the POSIX shells plus
+ * PowerShell, whose command lines the argv inspectors also model (`Remove-Item`,
+ * `takeown`, `reg delete`).
+ *
+ * The complement of this set within {@link CODE_INTERPRETERS} — `node`,
+ * `python`, `ruby`, `perl` — takes source in a language that is not shell at
+ * all. Lexing that source as a command line invents commands nobody wrote, so
+ * the harm gate uses this set to decide how to read a body it is handed.
+ */
+export const SHELL_LANGUAGE_INTERPRETERS: ReadonlySet<string> = new Set([
+  ...SHELL_INTERPRETERS,
+  'pwsh',
+  'powershell',
+])
+
+/**
  * Executables whose first operand (or `-c`/`-e` body) is code this analysis
  * cannot see through without reading it. A superset of {@link SHELL_INTERPRETERS}.
  */

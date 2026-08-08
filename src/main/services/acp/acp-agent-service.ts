@@ -26,7 +26,6 @@ import {
 } from '@copse/llm/stream-retry.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import {
-  probeAcpAgent,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
   type AcpAgentProbe,
@@ -34,6 +33,7 @@ import {
   type AcpClientHandlers,
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
+import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
@@ -573,7 +573,7 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
-  return probeAcpAgent({
+  return probeAcpAgentIsolated({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),

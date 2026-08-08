@@ -22,7 +22,10 @@ import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
-import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
+import {
+  activeSandboxNetworkScopeLabels,
+  isSandboxNetworkScopeActive,
+} from '../../project-sandbox/network-scope.ts'
 import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
@@ -54,6 +57,7 @@ import {
   GITHUB_READONLY_CI_TOOLS,
   GITHUB_WRITE_TOOLS,
   isReadOnlySimpleCommand,
+  isStructurallyReadOnlyShellCommand,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
 import {
@@ -720,12 +724,29 @@ export async function ensureShellCommandPermitted(
   // Exception: the sandboxed ACP agent's own bridged `run_shell` / direct
   // execute path opts in via `networkScopeAlreadyApplies` (or the bridge ALS) —
   // that scope exists *for* those calls, so they must not see the overlap prompt.
+  //
+  // Second exception: a structurally read-only command opens no sockets, so the
+  // widened allowlist is unreachable from it and the overlap is no reason to
+  // interrupt. Gating on the *window* rather than on what the command can do is
+  // what made an unrelated pane prompt on every `cat`/`rg` for as long as some
+  // background probe held a scope. This narrows the gate to commands that could
+  // actually inherit the egress; it does not weaken containment for those.
   const shareActiveNetworkScope =
     opts.networkScopeAlreadyApplies === true || acpBridgeNetworkScopeAlreadyApplies()
-  if (!guardedYolo && isSandboxNetworkScopeActive() && !shareActiveNetworkScope) {
+  if (
+    !guardedYolo &&
+    isSandboxNetworkScopeActive() &&
+    !shareActiveNetworkScope &&
+    !isStructurallyReadOnlyShellCommand(command)
+  ) {
+    const holders = activeSandboxNetworkScopeLabels()
     return promptShell(
       command,
-      ['sandbox network access is temporarily widened for another process'],
+      [
+        holders.length > 0
+          ? `sandbox network access is temporarily widened for ${holders.join(', ')}`
+          : 'sandbox network access is temporarily widened for another process',
+      ],
       false,
       'shell-network-scope-overlap',
       opts.signal,

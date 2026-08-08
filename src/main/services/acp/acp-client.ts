@@ -36,19 +36,21 @@ import type {
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
-import { cancelApprovalsForAcpToolCall } from '../approval.ts'
+import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
-import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
+  detachForGroupKill,
   formatArgvForShell,
-  isProjectSandboxEnabled,
   resolveSandboxShellExecutable,
   shellForSandboxWrap,
   withSandboxShellPath,
-} from '../../project-sandbox/spawn.ts'
+} from '../../project-sandbox/sandbox-argv.ts'
+import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -287,6 +289,7 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
     const release = acquireSandboxNetworkScope({
       domains: overlay.network?.allowedDomains ?? [],
       allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
+      label: `ACP agent: ${config.command}`,
     })
     try {
       const command = formatArgvForShell(config.command, config.args ?? [])
@@ -302,7 +305,16 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
         cwd: config.cwd,
         env: withSandboxShellPath({ ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }),
         stdio,
+        // Lead a process group so `terminateAcpChild` can reap the real agent,
+        // which the sandbox wrapper shell spawns as a grandchild.
+        detached: detachForGroupKill,
       })
+      // Release on BOTH events. `close` waits for every inherited stdio pipe to
+      // shut, so a grandchild that outlives the wrapper holds it open forever and
+      // the scope stays widened for the rest of the app's run — every pane then
+      // prompts on every shell command, blamed on a process that already exited.
+      // `exit` fires on the wrapper's own exit regardless. Release is idempotent.
+      child.once('exit', release)
       child.once('close', release)
       child.once('error', release)
       return child
@@ -311,7 +323,27 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
       throw err
     }
   }
-  return spawn(config.command, config.args ?? [], { cwd: config.cwd, env, stdio })
+  return spawn(config.command, config.args ?? [], {
+    cwd: config.cwd,
+    env,
+    stdio,
+    detached: detachForGroupKill,
+  })
+}
+
+/**
+ * Tear down an ACP agent child and everything it spawned.
+ *
+ * A bare `child.kill()` only signals the direct child — for a sandboxed agent
+ * that is the wrapper shell, leaving the real agent running as a grandchild. The
+ * group kill needs `detached: true` at spawn (see {@link spawnAcpAgentProcess});
+ * `signalProcessTree` falls back to a direct kill when the child leads no group,
+ * so this stays correct for the unsandboxed and remote paths too.
+ */
+function terminateAcpChild(child: ChildProcess): void {
+  const cancelEscalation = terminateProcessTree(child)
+  child.once('close', cancelEscalation)
+  child.once('exit', cancelEscalation)
 }
 
 /**
@@ -476,7 +508,7 @@ function acpChildStdoutStream(
   const stdout = child.stdout
   if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
   let cancelRead = (): void => {
-    child.kill()
+    terminateAcpChild(child)
   }
   return new ReadableStream<Uint8Array>({
     start(controller): void {
@@ -522,7 +554,7 @@ function acpChildStdoutStream(
           settled = true
           cleanup()
         }
-        child.kill()
+        terminateAcpChild(child)
       }
       stdout.on('data', onData)
       stdout.on('error', onStdoutError)
@@ -561,7 +593,7 @@ async function spawnTransport(
   return {
     stream: ndJsonStream(writable, readable),
     dispose: (): void => {
-      child.kill()
+      terminateAcpChild(child)
     },
   }
 }
@@ -931,7 +963,9 @@ export async function probeAcpAgent(
     .onRequest(methods.client.fs.readTextFile, UNSUPPORTED('fs/read_text_file'))
     .onRequest(methods.client.fs.writeTextFile, UNSUPPORTED('fs/write_text_file'))
 
-  const timer = setTimeout(() => child.kill(), timeoutMs)
+  const timer = setTimeout(() => {
+    terminateAcpChild(child)
+  }, timeoutMs)
   try {
     return await app.connectWith(stream, async (ctx) => {
       await ctx.request(methods.agent.initialize, {
@@ -949,6 +983,6 @@ export async function probeAcpAgent(
     })
   } finally {
     clearTimeout(timer)
-    child.kill()
+    terminateAcpChild(child)
   }
 }
