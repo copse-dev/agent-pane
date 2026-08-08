@@ -88,7 +88,27 @@ jobs:
             core.setOutput('pr', pr);
       - if: steps.target.outputs.found == 'true'
         uses: ./.github/actions/setup
+      # Point the demo at the shared Monaco tree rather than bundling its own.
+      # Root-relative so it resolves the same from `pr-<n>/` and from the deeper
+      # `pr-<n>-preview/demo/main/`, and so it survives a host change. Versioned,
+      # so a monaco-editor bump publishes a new tree beside the old one instead
+      # of breaking every preview built against the previous version.
+      - id: monaco
+        if: steps.target.outputs.found == 'true'
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Read the file, don't `require('monaco-editor/package.json')`: monaco's
+          # `exports` map has no "./package.json" entry, so Node resolves the
+          # specifier through the map and fails with
+          # "Cannot find module .../esm/vs/package.json.js".
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/monaco-editor/package.json','utf8')).version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "base=/${REPO#*/}/demo/vendor/monaco/${version}/" >> "$GITHUB_OUTPUT"
       - if: steps.target.outputs.found == 'true'
+        env:
+          MONACO_BASE_URL: ${{ steps.monaco.outputs.base }}
         run: npm run build:demo
       - id: scenarios
         if: steps.target.outputs.found == 'true'
@@ -107,6 +127,7 @@ jobs:
           TARGET: ${{ steps.target.outputs.path }}
           LABEL: ${{ steps.target.outputs.label }}
           SHA: ${{ github.sha }}
+          MONACO_VERSION: ${{ steps.monaco.outputs.version }}
         run: |
           set -euo pipefail
           if [[ "$TARGET" != "release" && "$TARGET" != "main" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
@@ -149,6 +170,17 @@ jobs:
                 git -C previews-branch reset --hard FETCH_HEAD
                 git -C previews-branch clean -fdx
               fi
+            fi
+            # Publish the shared Monaco tree once per version. Every preview
+            # points at this instead of carrying its own 34MB copy — which is
+            # what made this branch grow by 34MB per preview per push, forever,
+            # since removing a closed PR's directory leaves the history behind.
+            monaco_dir="previews-branch/vendor/monaco/${MONACO_VERSION}"
+            if [ ! -d "$monaco_dir" ]; then
+              echo "Publishing shared Monaco ${MONACO_VERSION}"
+              mkdir -p "$monaco_dir"
+              node scripts/copy-monaco-workers.mts "$monaco_dir"
+              git -C previews-branch add "vendor/monaco/${MONACO_VERSION}"
             fi
             rm -rf "previews-branch/${TARGET}"
             mkdir -p "previews-branch/${TARGET}"

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
 
 /**
  * Structural pins for `scripts/build.mts`. Unit tests never run the build, and
@@ -38,6 +39,65 @@ describe('build.mts bundle invariants', () => {
       build,
       /assertParses\('dist\/main\/ssh-askpass-helper\.js'\)/,
       "the askpass bundle is only ever exec'd, so the build must verify it parses",
+    )
+  })
+})
+
+/**
+ * The demo build points previews at one published Monaco tree instead of
+ * committing 34MB per preview. Run against the real template, because the bug
+ * this covers was a reference the template had and the rewrite did not know
+ * about: `monaco/setup.ts` resolves its own URLs, but the diff editor's
+ * stylesheet is a plain `<link>` that reads nothing, so the first published
+ * preview asked for a `monaco/` directory the demo build no longer emits.
+ */
+describe('pointHtmlAtMonacoBase', () => {
+  const template = readFileSync(resolve('src/renderer/index.html'), 'utf8')
+  const base = 'https://example.test/agent-pane/demo/vendor/monaco/0.56.0/'
+
+  it('leaves no local monaco/ reference behind in the real template', () => {
+    assert.ok(template.includes('./monaco/'), 'template should still reference a local Monaco root')
+    const rewritten = pointHtmlAtMonacoBase(template, base)
+    assert.ok(
+      !rewritten.includes('./monaco/'),
+      'every ./monaco/ asset must be repointed; anything left behind 404s on the preview',
+    )
+    assert.ok(rewritten.includes(`${base}vs/editor/browser/widget/diffEditor/style.css`))
+  })
+
+  it('declares the base for the lazy loader, with a trailing slash', () => {
+    const rewritten = pointHtmlAtMonacoBase(template, base.slice(0, -1))
+    assert.ok(rewritten.includes(`<meta name="copse-monaco-base" content="${base}" />`))
+    assert.ok(rewritten.indexOf('copse-monaco-base') < rewritten.indexOf('</head>'))
+  })
+
+  it('never declares the base as an inline script', () => {
+    // The template's own CSP is `script-src 'self'` with no `unsafe-inline`, so
+    // an inline script carrying the base is refused and the loader silently
+    // falls back to the `monaco/` directory the demo build does not emit.
+    const csp = template.match(
+      /http-equiv="Content-Security-Policy"\s*\n?\s*content="([^"]*)"/,
+    )?.[1]
+    assert.ok(csp, 'expected a Content-Security-Policy meta in the template')
+    const scriptSrc = csp
+      .split(';')
+      .map((directive) => directive.trim())
+      .find((directive) => directive.startsWith('script-src'))
+    assert.equal(scriptSrc, "script-src 'self'")
+
+    const inlineScripts = (html: string): number =>
+      html.match(/<script(?![^>]*\ssrc=)/g)?.length ?? 0
+    assert.equal(
+      inlineScripts(pointHtmlAtMonacoBase(template, base)),
+      inlineScripts(template),
+      'the base must travel as markup the CSP allows, not as a new inline script',
+    )
+  })
+
+  it('refuses to silently do nothing when the template has moved on', () => {
+    assert.throws(
+      () => pointHtmlAtMonacoBase('<html><head></head><body></body></html>', base),
+      /no \.\/monaco\/ reference to repoint/,
     )
   })
 })
