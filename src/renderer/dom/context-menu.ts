@@ -1,9 +1,23 @@
 import { el } from './helpers.ts'
+import { checkIcon } from './icons.ts'
 
 export interface ContextMenuItem {
   label: string
   onSelect: () => void
   disabled?: boolean
+  /** Renders a check and marks the row current — for menus that pick a value. */
+  checked?: boolean
+}
+
+/** A non-interactive label that groups the items under it. */
+export interface ContextMenuHeading {
+  heading: string
+}
+
+export type ContextMenuEntry = ContextMenuItem | ContextMenuHeading
+
+function isHeading(entry: ContextMenuEntry): entry is ContextMenuHeading {
+  return 'heading' in entry
 }
 
 /** Dismiss any open context menu (and its dismiss listeners). */
@@ -16,17 +30,28 @@ let dismissOpenContextMenu: (() => void) | null = null
 export function showContextMenu(
   clientX: number,
   clientY: number,
-  items: readonly ContextMenuItem[],
+  items: readonly ContextMenuEntry[],
 ): void {
   dismissOpenContextMenu?.()
-  if (items.length === 0) return
+  if (items.every(isHeading)) return
 
-  const buttons = items.map((item) => {
+  const buttons = items.map((entry) => {
+    if (isHeading(entry)) {
+      return el('div', { class: 'context-menu-heading', role: 'presentation' }, entry.heading)
+    }
+    const item = entry
     const btn = el(
       'button',
-      { type: 'button', class: 'context-menu-item', role: 'menuitem' },
-      item.label,
+      {
+        type: 'button',
+        class: 'context-menu-item',
+        role: item.checked === undefined ? 'menuitem' : 'menuitemradio',
+        ...(item.checked === undefined ? {} : { 'aria-checked': String(item.checked) }),
+      },
+      el('span', { class: 'context-menu-item-label' }, item.label),
+      ...(item.checked === true ? [checkIcon('ui-icon ui-icon-sm context-menu-item-check')] : []),
     )
+    if (item.checked === true) btn.classList.add('is-checked')
     if (item.disabled) btn.disabled = true
     // Prefer mousedown + preventDefault (same pattern as the skill picker) so
     // selecting an item that mounts a focused rename input does not lose that
