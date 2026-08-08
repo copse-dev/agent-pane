@@ -128,19 +128,23 @@ function formatErrorData(data: unknown): string | null {
 /**
  * Why an ACP turn could not authenticate. `required` is "this agent has never
  * been signed in / its key was refused"; `expired` is "it *was* signed in and
- * the stored credential lapsed" — a different user fix (sign in again) and the
- * only one that says so, which is why the two are not collapsed.
+ * the stored credential is no longer good" — a different user fix (sign in
+ * again) and the only one that says so, which is why the two are not collapsed.
  */
 export type AcpAuthFailureKind = 'required' | 'expired'
 
 /**
- * A lapsed credential, however the agent words it. Agents rarely use the ACP
- * `auth_required` code for this — Claude's adapter reports an expired OAuth
- * token as a generic `-32603 Internal error` whose *message* carries the real
- * cause — so the text is the signal.
+ * A credential that was working and no longer is, however the agent words it.
+ * Agents rarely use the ACP `auth_required` code for this — Claude's adapter
+ * reports an expired OAuth token as a generic `-32603 Internal error` whose
+ * *message* carries the real cause — so the text is the signal.
+ *
+ * Revocation counts as an expiry rather than a first-run failure: the agent is
+ * configured and was signed in, so the fix is its login command, not the
+ * install-and-set-up guidance `required` hands out.
  */
 const EXPIRED_AUTH_RE =
-  /re-?authenticat|(?:token|session|login|credentials?|subscription)\s+(?:has\s+|have\s+)?expired|expired\s+(?:oauth\s+|access\s+|refresh\s+|api\s+)?(?:token|session|credentials?)/i
+  /re-?authenticat|(?:token|session|login|credentials?|subscription)\s+(?:has\s+|have\s+)?(?:expired|been\s+revoked)|(?:expired|revoked)\s+(?:oauth\s+|access\s+|refresh\s+|api\s+)?(?:token|session|credentials?)/i
 
 /** Auth failures that are not specifically an expiry (never signed in, key refused). */
 const AUTH_FAILURE_RE =
@@ -178,6 +182,42 @@ export function classifyAcpAuthFailure(
   if (status === 401 || type === 'authentication_error' || text.includes('Unauthorized'))
     return 'required'
   return null
+}
+
+/** What to call the agent in prose, falling back through id to a generic noun. */
+function acpAgentDisplayName(agentId?: string): string {
+  const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
+  return known?.title ?? agentId ?? 'The external agent'
+}
+
+/**
+ * How an ACP turn ended when it did not end normally. `error` is the residual
+ * case — a provider failure that outlived the retry loop — and the rest are the
+ * outcomes that were previously indistinguishable from it once written down.
+ */
+export type AcpTurnInterruption = AcpAuthFailureKind | 'aborted' | 'error'
+
+/**
+ * The note appended to a failed turn's persisted assistant message.
+ *
+ * Its reader is the *next* turn's model rather than the user, who already
+ * watched the full diagnosis stream past. So each variant says whether
+ * re-running would help: a credentials failure fails identically until someone
+ * signs in, and calling that "transient" sends the next turn off retrying a
+ * dead token instead of reporting the one action that fixes it.
+ */
+export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?: string): string {
+  const agentName = acpAgentDisplayName(agentId)
+  switch (outcome) {
+    case 'aborted':
+      return '[This turn was stopped before it completed.]'
+    case 'expired':
+      return `[This turn failed: ${agentName}’s sign-in is no longer valid. Re-running it will fail the same way until the user signs in again.]`
+    case 'required':
+      return `[This turn failed: ${agentName} is not authenticated. Re-running it will fail the same way until the user signs in.]`
+    case 'error':
+      return '[This turn was interrupted by a provider error before it completed.]'
+  }
 }
 
 /**
@@ -250,7 +290,7 @@ function formatAcpAuthError(
   agentId?: string,
 ): string {
   const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
-  const agentName = known?.title ?? agentId ?? 'The external agent'
+  const agentName = acpAgentDisplayName(agentId)
 
   // An expired credential is a *different* message: the agent is configured and
   // was working, so install/first-run guidance would send the user the wrong
