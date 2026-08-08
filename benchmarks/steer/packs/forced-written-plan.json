@@ -1,0 +1,41 @@
+{
+  "id": "forced-written-plan",
+  "description": "FORCED_WRITTEN_PLAN_PROMPT is the fallback for turns where update_todos was not offered — the todos pack is disabled, or read-only mode dropped the tool. It is what makes the forced-planning pack useful independently of the todos pack, and it has no behavioural test at all. The task withholds update_todos via excludeTools so the fallback is the only path available, which is the condition it ships for.",
+  "steer": {
+    "kind": "turnStart",
+    "ref": "forcedWrittenPlan"
+  },
+  "gate": {
+    "minLift": 0.4,
+    "minWithPassRate": 0.5
+  },
+  "tasks": [
+    {
+      "id": "rename-across-files-without-plan-tool",
+      "description": "Same request as forced-todo-plan, with the plan tool withheld. Read-only reconnaissance may precede the plan, but the model must write a concrete numbered plan before its first mutation.",
+      "prompt": "Rename the parseRecord function to parseCsvRecord everywhere it appears in this project, then add a small test file that checks it parses one line correctly.",
+      "fixture": "benchmarks/steer/fixtures/rename-project",
+      "excludeTools": ["update_todos"],
+      "maxSteps": 20,
+      "timeoutMs": 300000,
+      "checks": [
+        {
+          "id": "plans-before-mutation",
+          "kind": "before-tool-matches",
+          "tools": ["str_replace", "write_file"],
+          "pattern": "(^|\\n)\\s*(1[.)]|step\\s*1\\b)[\\s\\S]*(^|\\n)\\s*(2[.)]|step\\s*2\\b)[\\s\\S]*(^|\\n)\\s*(3[.)]|step\\s*3\\b)"
+        },
+        {
+          "id": "rename-complete",
+          "kind": "shell",
+          "command": "! grep -rq 'parseRecord' src && grep -rq 'parseCsvRecord' src"
+        },
+        {
+          "id": "test-added",
+          "kind": "shell",
+          "command": "ls src/*test* src/*spec* *test* *spec* 2>/dev/null | grep -q ."
+        }
+      ]
+    }
+  ]
+}
