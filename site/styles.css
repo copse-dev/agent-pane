@@ -1353,10 +1353,6 @@ footer a:hover {
   border-radius: 40px 14px 14px 14px;
 }
 
-.marketing-site .spotlight-card-zoomed-top-left figure::after {
-  border-radius: 0;
-}
-
 .marketing-site .spotlight-card h3 {
   margin: 0 0 22px;
   color: var(--pink);
