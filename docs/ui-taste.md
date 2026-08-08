@@ -605,10 +605,12 @@ Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.
 
 Settings → Sources rows already carry a coarse source badge (`bundled`, `project`, …). When the
 useful origin is a long filesystem path, keep it out of the resting list: put it in
-`.sources-row-hover-detail` inside the header gutter (between title and badge), revealed on
-`:hover` / `:focus-within` without growing the row. Truncate with left-elision
-(`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so the leaf
-stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
+`.sources-row-hover-detail` inside `.sources-row-primary` (the title slot between name and badge),
+revealed on `:hover` / `:focus-within` without growing the row or widening the settings column.
+The row / primary slot set `min-width: 0` + `overflow: hidden`, and the path uses `width: 0` with
+`flex: 1 1 0`, so intrinsic path length cannot blow out the flex min-content. Truncate with
+left-elision (`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so
+the leaf stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
 [`tests/e2e/settings-sources-skills.e2e.ts`](../tests/e2e/settings-sources-skills.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval
