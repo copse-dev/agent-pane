@@ -13,6 +13,7 @@ import {
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
+import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -126,39 +127,12 @@ if (!isDemo) {
     entryPoints: ['src/main/index.ts'],
     outfile: 'dist/main/index.js',
   })
-  await esbuild.build({
-    ...nodeOpts,
-    entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
-    outfile: 'dist/main/sandbox-fs-worker.js',
-  })
-  await esbuild.build({
-    ...nodeOpts,
-    entryPoints: ['src/main/services/packs/pack-tool-worker.ts'],
-    outfile: 'dist/main/pack-tool-worker.js',
-  })
-  assertParses('dist/main/pack-tool-worker.js')
-  // Runs the ACP model/mode probe under its OWN SandboxManager so a background
-  // probe cannot widen the app's process-global network allowlist (see
-  // docs/plans/sandbox-network-scope-isolation.md). Must bundle free of electron
-  // and node-pty, which `assertParses` alone would not catch — the natives fail
-  // at require time, not parse time.
-  await esbuild.build({
-    ...nodeOpts,
-    entryPoints: ['src/main/services/acp/acp-probe-worker.ts'],
-    outfile: 'dist/main/acp-probe-worker.js',
-  })
-  assertParses('dist/main/acp-probe-worker.js')
-  // No `banner` here: askpass-helper.ts already starts with `#!/usr/bin/env node`
-  // and esbuild preserves a source hashbang verbatim. Adding the banner too put a
-  // second `#!…` on line 2 of the bundle, where it is not a hashbang but a syntax
-  // error — every SSH password/passphrase/host-key prompt died in the helper, so
-  // OpenSSH silently skipped the prompt and burned through auth attempts instead.
-  await esbuild.build({
-    ...nodeOpts,
-    entryPoints: ['src/main/services/ssh-workspace/askpass-helper.ts'],
-    outfile: 'dist/main/ssh-askpass-helper.js',
-  })
-  assertParses('dist/main/ssh-askpass-helper.js')
+  // Every standalone main-process bundle, from the list `dev.mts` also builds
+  // (see main-bundles.mts for why they are enumerated in one place).
+  for (const { entry, outfile } of STANDALONE_MAIN_BUNDLES) {
+    await esbuild.build({ ...nodeOpts, entryPoints: [entry], outfile })
+    assertParses(outfile)
+  }
   await esbuild.build({
     ...nodeOpts,
     entryPoints: ['src/preload/index.ts'],

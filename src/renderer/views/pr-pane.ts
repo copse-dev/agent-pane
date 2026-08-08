@@ -1,6 +1,7 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -93,6 +94,7 @@ export function mountPrPane(
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Pull requests'),
     panePopoutButton(store, api, 'prs', 'pull requests'),
+    paneMaximizeButton(store, 'pull requests'),
     el(
       'button',
       {

@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -92,7 +93,11 @@ export function mountTerminalsPane(
     },
     '+',
   )
-  listHeader.append(panePopoutButton(store, api, 'terminal', 'terminal'), newBtn)
+  listHeader.append(
+    panePopoutButton(store, api, 'terminal', 'terminal'),
+    paneMaximizeButton(store, 'terminal'),
+    newBtn,
+  )
 
   const tabsWrap = el('div', { class: 'terminals-list' })
   listRoot.append(listHeader, tabsWrap)

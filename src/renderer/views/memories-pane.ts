@@ -1,5 +1,6 @@
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -45,6 +46,7 @@ export function mountMemoriesPane(
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Memories'),
     panePopoutButton(store, api, 'memories', 'memories'),
+    paneMaximizeButton(store, 'memories'),
     el(
       'button',
       {

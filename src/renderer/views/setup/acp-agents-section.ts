@@ -434,6 +434,9 @@ export function createAcpAgentsSection(
               ...saved,
               ...(probe.models ? { availableModels: probe.models.choices } : {}),
               ...(probe.modes ? { availablePermissionModes: probe.modes.choices } : {}),
+              // Every other selector the agent advertised (reasoning level, …),
+              // cached so the composer picker can offer them without a re-probe.
+              ...(probe.configOptions ? { availableConfigOptions: probe.configOptions } : {}),
               modelsProbedAt: detectedModelsAt,
             })
             void api.settings.set('registeredAcpAgents', agents)

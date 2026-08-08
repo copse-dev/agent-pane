@@ -210,6 +210,25 @@
 .context-menu-item:hover {
   background: var(--bg-hover);
 }
+.context-menu-item-label {
+  flex: 1 1 auto;
+}
+.context-menu-item-check {
+  flex: 0 0 auto;
+  color: var(--accent, var(--text-primary));
+}
+.context-menu-heading {
+  padding: 6px 8px 2px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.context-menu-heading:not(:first-child) {
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
 .project-twisty {
   width: 12px;
   height: 12px;
@@ -564,6 +583,37 @@
      heavy two-pixel rule instead of the shared single-width line. */
   border-top: 0;
 }
+/* ---- expanded right panel ---- */
+/* "Expand" lifts the pane over chat instead of collapsing the chat column: chat
+   keeps its geometry, so the transcript's scroll position, the composer height
+   and any live editors survive the round trip and restoring is instant.
+   `isolation` scopes the overlay's stacking to #body — it covers the chat pane's
+   own popovers (footer menus at z-index 100) while the titlebar and its menus,
+   siblings of #body, keep painting above it. */
+.three-pane.is-right-panel-maximized {
+  position: relative;
+  isolation: isolate;
+}
+.three-pane.is-right-panel-maximized > .pane-files {
+  position: absolute;
+  /* Chat only. The projects rail keeps its column so threads stay visible and
+     switchable while the pane is expanded — the same widths the flex and grid
+     layouts lay it out with, so dragging #resizer-projects still moves this
+     edge with it. */
+  inset: 0 0 0 calc(var(--projects-width, 240px) + var(--pane-divider-width, 1px));
+  /* Above the composer footer's popovers (100), below the chat-scoped approval
+     scrim (110) so a permission prompt still reaches the user. */
+  z-index: 105;
+  width: auto;
+  height: auto;
+  /* In the stacked (portrait) layout #body is a grid, and an absolutely
+     positioned grid child resolves `inset` against its own grid area — so claim
+     the whole grid before covering it. */
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  /* Chat is only hidden by being underneath, so the cover must be opaque. */
+  background: var(--bg-base);
+}
 .pane-files-body {
   flex: 1;
   display: flex;
@@ -758,6 +808,25 @@
 .pane-popout-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+}
+/* Expand-over-chat toggle, immediately after the pop-out control. It takes no
+   auto margin of its own: the pop-out button's already pushes the whole trailing
+   cluster right, and a second one would split them apart. */
+.pane-maximize-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.pane-maximize-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.pane-maximize-btn[aria-pressed='true'] {
+  color: var(--accent);
 }
 /* "Restore pre-session changes" banner (#699): appears above the change list
    when Copse applied edits over the user's uncommitted work this session. */

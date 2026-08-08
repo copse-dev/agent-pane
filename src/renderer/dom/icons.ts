@@ -62,6 +62,16 @@ export function closeIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('close', ['M18 6 6 18', 'm6 6 12 12'], className)
 }
 
+/** Arrows pushing into opposite corners — expand a pane to fill its window. */
+export function maximizeIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('maximize', ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'], className)
+}
+
+/** The same arrows pulled back inward — restore an expanded pane. */
+export function minimizeIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('minimize', ['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7'], className)
+}
+
 /** Three horizontal dots (overflow / "more"). Relies on round line caps. */
 export function moreHorizontalIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('more-horizontal', ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'], className)
