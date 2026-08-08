@@ -11,12 +11,44 @@ export function syncFilesPaneDom(store: AppStore): void {
   if (pane) pane.hidden = !store.getState().filesPaneOpen
 }
 
+/**
+ * Expand the open pane over chat, or restore the split view. Purely a layout
+ * state: the pane keeps its mode and selection either way.
+ */
+export function setRightPanelMaximized(store: AppStore, maximized: boolean): void {
+  if (store.getState().rightPanelMaximized === maximized) return
+  store.setState({ rightPanelMaximized: maximized })
+  store.emit('right_panel_maximized_changed')
+}
+
+export function toggleRightPanelMaximized(store: AppStore): void {
+  setRightPanelMaximized(store, !store.getState().rightPanelMaximized)
+}
+
+/** Whether a pane is actually covering chat — only an open panel can. */
+export function isRightPanelMaximized(store: AppStore): boolean {
+  const { filesPaneOpen, rightPanelMaximized } = store.getState()
+  return filesPaneOpen && rightPanelMaximized
+}
+
+/**
+ * Closing the panel gives chat the window back, so the expanded state has
+ * nothing left to apply to. Clearing it here also means reopening the panel
+ * lands on the ordinary split rather than silently covering chat again.
+ */
+function clearMaximizedOnClose(store: AppStore): void {
+  if (!store.getState().rightPanelMaximized) return
+  store.setState({ rightPanelMaximized: false })
+  store.emit('right_panel_maximized_changed')
+}
+
 export function toggleFilesPane(store: AppStore): void {
   const open = !store.getState().filesPaneOpen
   store.setState({
     filesPaneOpen: open,
     ...(open ? { rightPanelMode: 'explorer' as const } : {}),
   })
+  if (!open) clearMaximizedOnClose(store)
   syncFilesPaneDom(store)
   store.emit('files_pane_changed')
   if (open) store.emit('right_panel_mode_changed')
@@ -69,6 +101,7 @@ export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {
   const { filesPaneOpen, rightPanelMode } = store.getState()
   if (filesPaneOpen && rightPanelMode === mode) {
     store.setState({ filesPaneOpen: false })
+    clearMaximizedOnClose(store)
     syncFilesPaneDom(store)
     store.emit('files_pane_changed')
     return

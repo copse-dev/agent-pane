@@ -8,6 +8,18 @@ every published entry.
 
 ## Unreleased
 
+- The side panel can now take the whole window. Every pane header — Explorer,
+  Shells, Changes, PRs, Memories, Roadmap, Browser — carries an **expand**
+  control next to its pop-out button, and pressing it gives that pane the full
+  width of the window, over chat; the same control, now pointing inward,
+  restores the split. It is the in-window half of pop out: a wide diff, a real
+  browser viewport or a full-width terminal without detaching a second window
+  to get one. Expanding covers chat rather than collapsing it, so the
+  transcript keeps its scroll position and the composer its draft, and
+  restoring puts both back exactly as they were — the agent carries on
+  underneath either way. The titlebar stays reachable, so switching panes while
+  expanded swaps the content and stays expanded; closing the panel gives chat
+  the window back.
 - Opening a new thread with the Terminal pane already visible no longer fails
   to spawn a shell. Autosave already flushed `threads:create` immediately on a
   new id, but `terminal:create` did not wait for that write — main's ownership

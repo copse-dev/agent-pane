@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { chevronRightIcon, refreshIcon } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import {
   materialFileIconUrl,
@@ -28,6 +29,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     'div',
     { class: 'sidebar-header sidebar-header-compact' },
     panePopoutButton(store, api, 'explorer', 'explorer'),
+    paneMaximizeButton(store, 'explorer'),
     refreshBtn,
   )
   const treeEl = el('div', { class: 'file-tree', role: 'tree' })
