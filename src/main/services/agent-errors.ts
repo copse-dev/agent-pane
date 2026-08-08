@@ -3,6 +3,7 @@ import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
+import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -321,6 +322,10 @@ export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailu
 
 /** Map provider / local-model failures to user-facing chat text. */
 export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
+  if (err instanceof ThreadWorktreeDetachedError) {
+    return `This thread's checkout is detached from its branch. Your files are preserved. Reattach it to \`${err.branch}\`, then retry.`
+  }
+
   const rpc = findJsonRpcError(err)
   const { status, type, code, message } = parseProviderError(err)
   const raw = errorMessage(err)

@@ -17,13 +17,9 @@ import { runWithThreadExecutionOwner } from '../thread-execution-context.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
-/**
- * The MCP server name Copse assigns its native-tool bridge when handing it to
- * the external agent in `session/new` `mcpServers`. The agent prefixes bridged
- * tool calls with it (e.g. Cursor titles a call `copse-gh_pr_list: gh_pr_list`),
- * which is how the client recognises its own tools in a permission request.
- */
-export const BRIDGE_MCP_SERVER_NAME = 'copse'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+
+export { BRIDGE_MCP_SERVER_NAME }
 
 /**
  * Native-tool MCP bridge for ACP client mode (issue #602, tier 2): expose a

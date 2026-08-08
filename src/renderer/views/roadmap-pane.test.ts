@@ -738,6 +738,13 @@ describe('roadmap pane', () => {
       assert.deepEqual(calls.update, [
         { id: 'a', prompt: 'New prompt', notes: undefined, status: 'done', issue: undefined },
       ])
+      // Done is hidden by default; reveal it through the status facet.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const doneOption = [
+        ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
+      ].find((option) => option.textContent === 'done')
+      doneOption?.querySelector<HTMLInputElement>('input')?.click()
+      await flush()
       assert.ok(list.querySelector('.roadmap-row.is-done'), 'done is a row class, not a chip')
       assert.equal(list.querySelectorAll('.roadmap-status-badge').length, 0)
     } finally {
@@ -762,6 +769,14 @@ describe('roadmap pane', () => {
       assert.equal(calls.update.length, 0, 'status-only IPC, not a full update')
       // The toggle click must not select the row into the editor.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
+      // Done is hidden by default, so reveal it through the status facet to
+      // confirm the toggle now flips the row back to ready.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const doneOption = [
+        ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
+      ].find((option) => option.textContent === 'done')
+      doneOption?.querySelector<HTMLInputElement>('input')?.click()
+      await flush()
       assert.equal(
         list.querySelector<HTMLElement>('.roadmap-done-toggle')?.title,
         'Reopen (set ready)',
@@ -771,7 +786,7 @@ describe('roadmap pane', () => {
     }
   })
 
-  it('shows done items by default and filters them through the status facet', async () => {
+  it('hides done items by default and reveals them through the status facet', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([
       makeItem('a', 'Open work', 'ready'),
@@ -783,13 +798,19 @@ describe('roadmap pane', () => {
       await flush()
       assert.equal(list.querySelector('.roadmap-show-done-btn'), null)
       let titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
-      assert.deepEqual(titles, ['Open work', 'Shipped already'])
+      assert.deepEqual(titles, ['Open work'], 'done is hidden by default')
       list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
       const doneOption = [
         ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
       ].find((option) => option.textContent === 'done')
       assert.ok(doneOption)
-      doneOption.querySelector<HTMLInputElement>('input')?.click()
+      const doneCheckbox = doneOption.querySelector<HTMLInputElement>('input')
+      assert.ok(doneCheckbox)
+      assert.equal(doneCheckbox.checked, false, 'done starts unchecked')
+      doneCheckbox.click()
+      titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
+      assert.deepEqual(titles, ['Open work', 'Shipped already'])
+      doneCheckbox.click()
       titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
       assert.deepEqual(titles, ['Open work'])
     } finally {
@@ -803,6 +824,13 @@ describe('roadmap pane', () => {
     const { list, viewer } = mountHosts()
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
+      await flush()
+      // Done is hidden by default; reveal it through the status facet first.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const doneOption = [
+        ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
+      ].find((option) => option.textContent === 'done')
+      doneOption?.querySelector<HTMLInputElement>('input')?.click()
       await flush()
       list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
       await flush()
@@ -820,6 +848,13 @@ describe('roadmap pane', () => {
     const { list, viewer } = mountHosts()
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
+      await flush()
+      // Archived is hidden by default; reveal it through the status facet.
+      list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')?.click()
+      const archivedOption = [
+        ...list.querySelectorAll<HTMLLabelElement>('.roadmap-filter-option'),
+      ].find((option) => option.textContent === 'archived')
+      archivedOption?.querySelector<HTMLInputElement>('input')?.click()
       await flush()
       assert.equal(list.querySelector('.roadmap-done-toggle'), null)
       assert.ok(list.querySelector('.roadmap-row.is-archived'))

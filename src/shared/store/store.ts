@@ -73,6 +73,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     hook_card_added: new Set(),
     comparison_changed: new Set(),
     git_branch_changed: new Set(),
+    thread_checkout_changed: new Set(),
     composer_draft_flush: new Set(),
     composer_checkout_preferred: new Set(),
     agent_task_selected: new Set(),
