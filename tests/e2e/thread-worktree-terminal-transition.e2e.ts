@@ -4,7 +4,10 @@ import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
+import {
+  approvalDialogShowing,
+  approveUnsandboxedTerminalIfPrompted,
+} from './helpers/terminal-approval.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-worktree-terminal-transition-project'
@@ -93,11 +96,29 @@ describe('terminal checkout transition', () => {
     await setComposerValue('Create an isolated checkout')
     await $('.submit-btn').click()
 
-    await browser.waitUntil(async () => (await $$('.terminals-tab')).length === 2, {
-      timeout: 30_000,
-      timeoutMsg: 'expected a fresh worktree shell after checkout allocation',
-    })
-    await approveUnsandboxedTerminalIfPrompted()
+    // Approve *inside* the wait. The worktree shell can be gated on "Open
+    // unsandboxed terminal?", and while that dialog is up the second tab cannot
+    // appear — so waiting for the tab first and approving afterwards is a wait
+    // that can never succeed, and the approval line below it is never reached.
+    // That is what `expected a fresh worktree shell after checkout allocation`
+    // was reporting: not a shell that came up wrong, but one still waiting to be
+    // let out.
+    //
+    // The dialog check is a fast `isDisplayed()` rather than the helper itself,
+    // so a poll that finds no prompt does not pay the helper's 10s wait.
+    await browser.waitUntil(
+      async () => {
+        if (await approvalDialogShowing()) await approveUnsandboxedTerminalIfPrompted()
+        return (await $$('.terminals-tab')).length === 2
+      },
+      {
+        timeout: 45_000,
+        interval: 500,
+        timeoutMsg: 'expected a fresh worktree shell after checkout allocation',
+      },
+    )
+    // The prompt can also arrive with the shell rather than ahead of it.
+    if (await approvalDialogShowing()) await approveUnsandboxedTerminalIfPrompted()
     const tabs = await $$('.terminals-tab')
     const sharedTab = tabs[0]
     const worktreeTab = tabs[1]
