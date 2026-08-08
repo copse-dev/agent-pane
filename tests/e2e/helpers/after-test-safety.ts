@@ -41,6 +41,11 @@ export function isDeadSessionError(error: unknown): boolean {
     /UND_ERR_HEADERS_TIMEOUT/i.test(text) ||
     /UND_ERR_CONNECT_TIMEOUT/i.test(text) ||
     /UND_ERR_BODY_TIMEOUT/i.test(text) ||
+    // The socket died mid-request rather than timing out. Observed on the
+    // deleteSession half of `reloadSession` (run 31175526565, shard 3), where it
+    // was rethrown instead of swallowed — a teardown that fails is not a reason
+    // to fail the spec that was about to get a fresh session anyway.
+    /UND_ERR_SOCKET/i.test(text) ||
     /operation was aborted due to timeout/i.test(text) ||
     /timed out receiving message from renderer/i.test(text) ||
     /ECONNRESET|ECONNREFUSED|EPIPE/i.test(text) ||
@@ -111,16 +116,42 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
 /**
  * Bracketed patterns match CI's shard cleanup (`.github/workflows/ci.yml`) and
  * avoid matching the caller's own command line.
+ *
+ * **ChromeDriver is deliberately absent, and must not be re-added — including
+ * as a pid-scoped kill.**
+ *
+ * WDIO starts the next spec's worker while the previous one is still tearing
+ * down. By the time this fires, the driver named by the outgoing session's
+ * `wdio:driverPID` is the driver the *incoming* worker has already adopted. So
+ * scoping the kill to "our own" pids does not help: the pid is correct and the
+ * process is still needed. Killing it by name and killing it by pid land in the
+ * same place.
+ *
+ * Measured, rather than argued (run 31231013554, eight shards, both attempts):
+ *
+ *   scoped kill (#1615)      0 passed, 21 failed   — every spec, every shard
+ *   chromedriver not killed  19-20 passed, 1-2 failed
+ *
+ * and locally, three specs in one wdio invocation: dead with the kill, all three
+ * running without it. Individually they pass either way, so a single-spec check
+ * will not show this.
+ *
+ * Electron is what actually wedges ("Timed out receiving message from
+ * renderer"), and killing it alone both frees the session and leaves the driver
+ * able to serve the next one. Drivers that genuinely leak are reaped by
+ * `cleanup_e2e_processes` in ci.yml, which runs between attempts and on exit —
+ * the only moments when nothing is about to need them.
  */
-const WEDGED_SESSION_PATTERNS = [
-  '[e]lectron/dist/electron',
-  '[e]lectron-chromedriver/bin/chromedriver',
-] as const
+const WEDGED_SESSION_PATTERNS = ['[e]lectron/dist/electron'] as const
+
+/** The kill list, so a test can hold the chromedriver exclusion above. */
+export function wedgedSessionPatternsForTest(): readonly string[] {
+  return WEDGED_SESSION_PATTERNS
+}
 
 /**
- * Best-effort: TERM then KILL wedged Electron + chromedriver so a subsequent
- * deleteSession fails fast (ECONNREFUSED) instead of burning
- * connectionRetryTimeout.
+ * Best-effort: TERM then KILL a wedged Electron so a subsequent deleteSession
+ * fails fast instead of burning connectionRetryTimeout.
  */
 export function forceKillWedgedE2eSession(): void {
   for (const signal of ['-TERM', '-KILL'] as const) {
