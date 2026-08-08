@@ -15,6 +15,16 @@ interface CloseConfirmBridge {
 /** Long enough that the thread stays `running` across all three cases. */
 const RUN_HOLD_MS = 90_000
 
+/**
+ * Waiting for the confirm dialog to come back from main.
+ *
+ * This was 10s, an outlier: every other wait in this file uses 15-30s and the
+ * suite default `waitforTimeout` is 30s. It is a wait for a main-process round
+ * trip, not an assertion that the dialog is *fast*, so the tighter budget bought
+ * nothing and cost a failure whenever eight co-located shards loaded the host.
+ */
+const CONFIRM_DIALOG_WAIT_MS = 30_000
+
 async function requestClose(): Promise<void> {
   await browser.execute(() => {
     const bridge = (window as unknown as { __copseE2e?: CloseConfirmBridge }).__copseE2e
@@ -86,7 +96,7 @@ describe('close confirmation while a thread is working', function () {
     await requestClose()
 
     const dialog = await $('#confirm-dialog')
-    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await dialog.waitForDisplayed({ timeout: CONFIRM_DIALOG_WAIT_MS })
     await expect(dialog.$('.confirm-dialog-message')).toHaveText(
       'Close Copse while the agent is still working?',
     )
@@ -110,7 +120,7 @@ describe('close confirmation while a thread is working', function () {
     await requestClose()
 
     const dialog = await $('#confirm-dialog')
-    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await dialog.waitForDisplayed({ timeout: CONFIRM_DIALOG_WAIT_MS })
     await dialog.$('.confirm-dialog-confirm').click()
 
     await waitForAnswers(3)
