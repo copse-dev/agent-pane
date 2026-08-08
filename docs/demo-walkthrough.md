@@ -14,15 +14,16 @@ in the app.
 
 ## The moving parts
 
-| File                                | Role                                                         |
-| ----------------------------------- | ------------------------------------------------------------ |
-| `src/shared/demo-traces.ts`         | `DemoTrace` — a recorded turn: one prompt plus its chunks    |
-| `src/shared/demo-traces/<id>.ts`    | Generated trace data (do not hand-edit)                      |
-| `src/shared/demo-scenarios.ts`      | `landing` scenario: an empty thread plus the trace to replay |
-| `src/renderer/demo/trace-player.ts` | Paces the chunks; slices prose into token-sized pieces       |
-| `src/renderer/demo/autoplay.ts`     | Types the prompt into the real composer and presses Send     |
-| `scripts/build-demo-trace.mts`      | Thread JSONL export → trace module                           |
-| `site/hero-demo.js`                 | Swaps the homepage screenshot for an iframe of the demo      |
+| File                                | Role                                                          |
+| ----------------------------------- | ------------------------------------------------------------- |
+| `src/shared/demo-traces.ts`         | `DemoTrace` — a recorded turn: one prompt plus its chunks     |
+| `src/shared/demo-traces/<id>.ts`    | Generated trace data (do not hand-edit)                       |
+| `src/shared/demo-scenarios.ts`      | `landing` scenario: an empty thread plus the trace to replay  |
+| `src/renderer/demo/demo-api.ts`     | Fakes the main process; turns replayed edits into diff events |
+| `src/renderer/demo/trace-player.ts` | Paces the chunks; slices prose into token-sized pieces        |
+| `src/renderer/demo/autoplay.ts`     | Types the prompt into the real composer and presses Send      |
+| `scripts/build-demo-trace.mts`      | Thread JSONL export → trace module                            |
+| `site/hero-demo.js`                 | Swaps the homepage screenshot for an iframe of the demo       |
 
 ## Recording a new trace
 
@@ -55,6 +56,45 @@ Two things the export cannot give back, both visible in the generated module:
   act" turn and wrong for one that narrated between tool calls.
 - **Token usage.** Usage is recorded per thread, so a usage chunk is only
   emitted when the export holds a single user turn.
+
+## Panels the walkthrough can reach
+
+A replayed turn is not limited to the transcript. Two of the right-hand panels
+open by themselves, because the demo feeds the same events the main process
+sends rather than driving the panel directly.
+
+**Changes.** Any `write_file` or `str_replace` in a trace is turned into the
+`diff:queued` + `agent:show_diff` pair a real edit produces (`demo/demo-api.ts`),
+which is what opens the Changes panel and reveals the file — see
+`controller/agent.ts` and `views/git-changes-pane.ts`. Nothing in the demo
+touches `rightPanelMode`. A file the same turn wrote earlier is the base for its
+next edit, so a write-then-amend sequence diffs against the write rather than
+against an empty buffer; the demo has no disk, so the turn's own writes are the
+only history there is.
+
+Record a turn that **creates** files if you want a clean diff: a first write
+shows as a whole new file, which reads better at hero size than a hunk in the
+middle of something the visitor has never seen.
+
+**Browser.** Outside Electron there is no `<webview>`, so `views/browser-pane.ts`
+falls back to an `<iframe>` wearing the same interface. Pages load and render;
+back/forward stay disabled and the address bar echoes the URL that was
+requested, because an iframe cannot report a cross-origin document's history,
+URL, or title. Any `http(s)://` link in the agent's answer already routes into
+this panel when clicked (`markdown/browser-links.ts`), so a turn that finishes
+with a preview link needs nothing extra to be clickable.
+
+Two limits come with the fallback. The frame is sandboxed without
+`allow-same-origin`, so the page inside gets an opaque origin and no cookies or
+storage — fine for a static page, not for a logged-in site. And a site that
+refuses framing (`X-Frame-Options`, `frame-ancestors`) just shows blank: an
+iframe gives no cross-origin failure signal, so there is no `did-fail-load` to
+turn into an error the way the Electron guest does.
+
+What the demo does _not_ have is a server to answer that link. A recorded
+`http://localhost:…` preview URL will open the panel and then fail to load, so
+decide where the previewed page comes from before recording a turn that ends in
+one.
 
 ## Query flags
 
