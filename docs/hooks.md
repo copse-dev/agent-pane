@@ -215,9 +215,19 @@ contract-tested, waiting for the drain-path wiring.
 | negative / non-integer      | ignored (parse-time warning; no field carried) — Copse dialect only                                                              |
 
 The `null`-is-refused warning already surfaces at parse time in Settings → Sources (the
-Copse adapter emits it while parsing `.copse/hooks.json`). Only the **Copse** dialect
-exposes `loop_limit` on disk today; the field and its reserved status are documented
-per-dialect in [`docs/copse-hooks.md`](./copse-hooks.md#copse-native-fields).
+Copse adapter emits it while parsing `.copse/hooks.json`). The field and its reserved
+status are documented per-dialect in
+[`docs/copse-hooks.md`](./copse-hooks.md#copse-native-fields).
+
+**Cursor also exposes `loop_limit` on disk** (a per-script option in its published hook
+config, defaulting to 5 for Cursor hooks and `null` for imported Claude Code hooks), but
+**Copse's Cursor adapter does not parse it** — in a `.cursor/hooks.json` the field is
+dropped silently, without even the reserved-field warning the Copse adapter emits. Nothing
+is unbounded by that today, because Copse holds Cursor's `stop` / `subagentStop`
+follow-ups rather than auto-submitting them (see
+[`docs/cursor-hooks.md`](./cursor-hooks.md#two-deliberate-divergences)), so no Cursor
+script can spend the continuation budget without a human. The per-script loop-limit wiring
+needs to close this on the Cursor side too, not just the Copse one.
 
 ## Spine recording (always-on)
 

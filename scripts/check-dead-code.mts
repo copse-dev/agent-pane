@@ -57,6 +57,7 @@ const roots = [
   'src/main/index.ts',
   'src/main/services/packs/pack-tool-worker.ts',
   'src/main/project-sandbox/sandbox-fs-worker.ts',
+  'src/main/services/acp/acp-probe-worker.ts',
   'src/main/services/ssh-workspace/askpass-helper.ts',
   'src/preload/index.ts',
   'src/preload/video-decoder.ts',

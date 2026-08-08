@@ -7,6 +7,7 @@ import {
   classifyProviderAccessFailure,
 } from './agent-errors.ts'
 import { AcpTurnFailure } from './acp/acp-agent-service.ts'
+import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
 
 describe('classifyAgentError', () => {
   it('maps 401 to API key guidance', () => {
@@ -145,6 +146,16 @@ describe('classifyAgentError', () => {
 
   it('maps jinja / missing user query failures', () => {
     assert.match(classifyAgentError('No user query found in messages'), /jinja|chat template/i)
+  })
+
+  it('turns a detached thread worktree into actionable recovery guidance', () => {
+    const result = classifyAgentError(new ThreadWorktreeDetachedError('copse/thread-branch'))
+
+    assert.equal(
+      result,
+      "This thread's checkout is detached from its branch. Your files are preserved. Reattach it to `copse/thread-branch`, then retry.",
+    )
+    assert.doesNotMatch(result, /^An error occurred:/)
   })
 
   it('falls back to error message', () => {

@@ -53,13 +53,14 @@ function normalizeMeta(meta: {
 async function resolveTerminalRoot(meta: {
   projectId: string
   threadId: string | null
-}): Promise<string> {
+}): Promise<{ root: string; checkoutMode: 'shared' | 'worktree' }> {
   if (meta.threadId) {
-    return (await resolveThreadExecutionContext(meta.projectId, meta.threadId)).root
+    const context = await resolveThreadExecutionContext(meta.projectId, meta.threadId)
+    return { root: context.root, checkoutMode: context.checkoutMode }
   }
   const projectRoot = getProjectRoot(meta.projectId)
   if (!projectRoot) throw new Error(`Cannot resolve root for project "${meta.projectId}"`)
-  return projectRoot
+  return { root: projectRoot, checkoutMode: 'shared' }
 }
 
 export function initTerminal(win: BrowserWindow): () => void {
@@ -68,15 +69,16 @@ export function initTerminal(win: BrowserWindow): () => void {
     const [cols, rows, meta] = parseIpcArgs(terminalCreateSchema, rawArgs)
     const permitted = await ensureTerminalPermitted()
     if (!permitted) throw new Error('Terminal access was not approved')
-    const executionRoot = await resolveTerminalRoot(meta)
-    return createTerminalSession(
+    const execution = await resolveTerminalRoot(meta)
+    const sessionId = await createTerminalSession(
       win,
       event.sender.id,
       cols,
       rows,
       normalizeMeta(meta),
-      executionRoot,
+      execution.root,
     )
+    return { sessionId, checkoutMode: execution.checkoutMode }
   })
 
   ipcMain.handle('terminal:write', (event, sessionId: unknown, data: unknown) => {

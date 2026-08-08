@@ -74,6 +74,10 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       'turndown',
       'mermaid',
       '@anthropic-ai/sandbox-runtime',
+      // esbuild locates its native binary by a path relative to its own JS API,
+      // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
+      // a worker bundle to assert what it links against need the real package.
+      'esbuild',
     ],
     alias: {
       '@shared': resolve('./src/shared'),
