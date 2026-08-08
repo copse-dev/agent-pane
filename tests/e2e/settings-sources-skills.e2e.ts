@@ -69,6 +69,9 @@ describe('settings sources skills origin hover', () => {
           hoverPath: hover?.textContent ?? '',
           hoverDisplay: hover ? getComputedStyle(hover).display : 'missing',
           hoverInHeader: Boolean(header && hover && header.contains(hover)),
+          hoverInPrimary: Boolean(
+            row.querySelector('.sources-row-primary')?.contains(hover ?? null),
+          ),
           restingHeight: row.getBoundingClientRect().height,
         }
       }
@@ -82,6 +85,7 @@ describe('settings sources skills origin hover', () => {
     assert.equal(rowInfo.hoverPath, skillPath)
     assert.equal(rowInfo.hoverDisplay, 'none', 'path stays hidden until hover')
     assert.equal(rowInfo.hoverInHeader, true, 'path lives in the header gutter')
+    assert.equal(rowInfo.hoverInPrimary, true, 'path lives in the primary title slot')
 
     // Resting list: path chrome stays out of the way.
     await browser.execute((name: string) => {
@@ -100,15 +104,22 @@ describe('settings sources skills origin hover', () => {
     )
 
     // Hover: reveal the on-disk path in the title→badge gutter (same row height).
-    await browser.execute((name: string) => {
-      const list = document.querySelector('#sources-skills-list')
-      for (const row of list?.querySelectorAll<HTMLElement>('.sources-row') ?? []) {
-        if (row.querySelector('.sources-row-title')?.textContent !== name) continue
-        row.removeAttribute('data-e2e-skill-origin')
-        row.setAttribute('data-e2e-skill-origin', 'hover')
-        row.classList.add('sources-row-hover-force')
-        const style = document.createElement('style')
-        style.textContent = `
+    // Use a long synthetic path so intrinsic min-content would blow the column
+    // without the primary-slot containment.
+    await browser.execute(
+      (name: string, longPath: string) => {
+        const list = document.querySelector('#sources-skills-list')
+        for (const row of list?.querySelectorAll<HTMLElement>('.sources-row') ?? []) {
+          if (row.querySelector('.sources-row-title')?.textContent !== name) continue
+          row.removeAttribute('data-e2e-skill-origin')
+          row.setAttribute('data-e2e-skill-origin', 'hover')
+          row.classList.add('sources-row-hover-force')
+          const hover = row.querySelector<HTMLElement>('.sources-row-hover-detail')
+          const bdi = hover?.querySelector('bdi')
+          if (bdi) bdi.textContent = longPath
+          if (hover && !hover.querySelector('bdi')) hover.textContent = longPath
+          const style = document.createElement('style')
+          style.textContent = `
           .sources-row-hover-force .sources-row-hover-detail { display: block !important; }
           .sources-row-hover-force .sources-row-title {
             flex: 0 1 auto;
@@ -118,11 +129,14 @@ describe('settings sources skills origin hover', () => {
             word-break: normal;
           }
         `
-        document.head.append(style)
-        row.scrollIntoView({ block: 'center' })
-        return
-      }
-    }, SKILL_NAME)
+          document.head.append(style)
+          row.scrollIntoView({ block: 'center' })
+          return
+        }
+      },
+      SKILL_NAME,
+      '/Users/jonathankingston/.cursor/plugins/cache/cursor-public/long-plugin-id-aaaaaaaa/skills/ai-writing-signs-report/SKILL.md',
+    )
 
     const hoverMetrics = await browser.execute((name: string) => {
       const list = document.querySelector('#sources-skills-list')
@@ -138,6 +152,8 @@ describe('settings sources skills origin hover', () => {
           overflow: style.overflow,
           textOverflow: style.textOverflow,
           direction: style.direction,
+          rowOverflows: row.scrollWidth > row.clientWidth + 1,
+          width: style.width,
         }
       }
       return null
@@ -152,19 +168,20 @@ describe('settings sources skills origin hover', () => {
     assert.equal(hoverMetrics.overflow, 'hidden')
     assert.equal(hoverMetrics.textOverflow, 'ellipsis')
     assert.equal(hoverMetrics.direction, 'rtl', 'left-elide long paths')
+    assert.equal(hoverMetrics.rowOverflows, false, 'long path must not widen the row')
+    assert.equal(hoverMetrics.truncated, true, 'long path ellipsizes in the primary gutter')
 
-    // Narrow the row so the path must ellipsize — proves truncation in the
-    // reference shot (full-width settings often fit short /tmp paths).
-    const truncated = await browser.execute(() => {
+    // Also prove truncation under an explicitly tight width (reference shot).
+    const truncatedTight = await browser.execute(() => {
       const row = document.querySelector<HTMLElement>(
         '#sources-skills-list .sources-row[data-e2e-skill-origin="hover"]',
       )
       const hover = row?.querySelector<HTMLElement>('.sources-row-hover-detail')
       if (!row || !hover) return false
       row.style.maxWidth = '420px'
-      return hover.scrollWidth > hover.clientWidth + 1
+      return hover.scrollWidth > hover.clientWidth + 1 && row.scrollWidth <= row.clientWidth + 1
     })
-    assert.equal(truncated, true, 'path ellipsizes when the header gutter is tight')
+    assert.equal(truncatedTight, true, 'path ellipsizes when the header gutter is tight')
 
     await browser.pause(100)
     await saveElementScreenshot(
