@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
@@ -146,6 +147,7 @@ export function mountGitChangesPane(
     headerTitle,
     bulkActions,
     panePopoutButton(store, api, 'changes', 'changes'),
+    paneMaximizeButton(store, 'changes'),
     refreshBtn,
   )
 

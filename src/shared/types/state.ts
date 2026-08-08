@@ -83,6 +83,9 @@ export interface AppState {
   stagedDiffs: StagedDiffEntry[] // multi-file queue (see spec 10)
   filesPaneOpen: boolean // right pane (explorer + file viewer) visibility
   rightPanelMode: RightPanelMode // explorer tree vs terminal column in right pane
+  // The open pane fills the window over chat. Session-only (never persisted):
+  // a window that reopened with chat already covered would read as broken.
+  rightPanelMaximized: boolean
   layout: LayoutState
   theme: Theme // Resolved effective theme (never `system`); what panes render.
   themePreference: ThemePreference // The user's choice; `system` tracks the OS.

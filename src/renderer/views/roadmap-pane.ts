@@ -1,6 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import {
   ROADMAP_EXPORT_FORMATS,
@@ -335,6 +336,7 @@ export function mountRoadmapPane(
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(store, api, 'roadmap', 'roadmap'),
+    paneMaximizeButton(store, 'roadmap'),
     filter,
     actionButtons,
   )

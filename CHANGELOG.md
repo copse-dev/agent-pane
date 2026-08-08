@@ -8,6 +8,19 @@ every published entry.
 
 ## Unreleased
 
+- The side panel can now take the whole chat column. Every pane header —
+  Explorer, Shells, Changes, PRs, Memories, Roadmap, Browser — carries an
+  **expand** control next to its pop-out button, and pressing it gives that pane
+  everything from the thread list to the right edge of the window; the same
+  control, now pointing inward, restores the split. It is the in-window half of
+  pop out: a wide diff, a real browser viewport or a full-width terminal without
+  detaching a second window to get one. The projects rail stays where it is, so
+  threads remain visible and switchable with the pane expanded, and the titlebar
+  stays reachable, so switching panes swaps the content and stays expanded.
+  Expanding covers chat rather than collapsing it, so the transcript keeps its
+  scroll position and the composer its draft, and restoring puts both back
+  exactly as they were — the agent carries on underneath either way. Closing the
+  panel gives chat its column back.
 - The file tree and file previews work in a `npm run dev` build again. `dev.mts`
   never emitted `dist/main/sandbox-fs-worker.js` (nor the pack-tool, ACP-probe
   and SSH-askpass bundles) — only `npm run build` did. A `dist/` filled purely by
