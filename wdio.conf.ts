@@ -12,6 +12,7 @@ import {
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
+import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
@@ -54,7 +55,15 @@ export const config: Options.Testrunner = {
       // Must match the Chromium shipped by the pinned Electron (electron ^43 →
       // Chromium 150); the session reports 150.0.7871.46 at runtime.
       browserVersion: '150.0.7871.46',
-      'wdio:chromedriverOptions': { binary: chromedriverBinary },
+      // `verbose` is forwarded to the driver as `--verbose` (@wdio/utils turns
+      // every chromedriverOptions key into a CLI flag). On by default in CI,
+      // because the session-handshake evidence that diagnosed #1606 was only
+      // there because verbose was already on when the failure happened.
+      // See tests/e2e/helpers/driver-verbose.ts for the override.
+      'wdio:chromedriverOptions': {
+        binary: chromedriverBinary,
+        ...driverVerboseOptions(),
+      },
       'wdio:enforceWebDriverClassic': true,
       // Without this chromedriver collects no browser log and `getLogs('browser')`
       // comes back empty, so the renderer-side diagnostics the failure artifacts
