@@ -9,6 +9,7 @@ import {
   refreshIcon,
   searchIcon,
 } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -158,7 +159,7 @@ export function mountBrowserPane(
     '+',
   )
   if (api) listHeader.append(panePopoutButton(store, api, 'browser', 'browser'))
-  listHeader.append(newBtn)
+  listHeader.append(paneMaximizeButton(store, 'browser'), newBtn)
 
   const tabsWrap = el('div', { class: 'browser-tabs-list' })
   listRoot.append(listHeader, tabsWrap)
