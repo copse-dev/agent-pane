@@ -108,6 +108,39 @@ describe('steer eval checks', () => {
     assert.equal(checkPass(results, 'no-shell-push'), true)
   })
 
+  it('matches assistant text emitted before the first selected tool call', () => {
+    const numberedPlan = 'Plan:\n1. Read src/parse.js\n2. Rename the function\n3. Add a test'
+    const calls = [
+      { name: 'list_dir', args: {}, textBeforeCall: 'I will inspect the project first.' },
+      { name: 'read_file', args: {}, textBeforeCall: 'I will inspect the project first.' },
+      { name: 'str_replace', args: {}, textBeforeCall: numberedPlan },
+      { name: 'write_file', args: {}, textBeforeCall: `${numberedPlan}\nStep 2 is in progress.` },
+    ]
+    const results = runChecks(
+      [
+        {
+          id: 'numbered-plan-before-mutation',
+          kind: 'before-tool-matches',
+          tools: ['str_replace', 'write_file'],
+          pattern: '(^|\\n)\\s*1[.)][\\s\\S]*(^|\\n)\\s*2[.)][\\s\\S]*(^|\\n)\\s*3[.)]',
+        },
+        {
+          id: 'missing-plan-before-read',
+          kind: 'before-tool-matches',
+          tools: ['read_file'],
+          pattern: '4[.)]',
+        },
+      ],
+      {
+        calls,
+        finalMessage: 'Done.',
+        workspace: '/tmp',
+      },
+    )
+    assert.equal(checkPass(results, 'numbered-plan-before-mutation'), true)
+    assert.equal(checkPass(results, 'missing-plan-before-read'), false)
+  })
+
   it('final-message checks cover match, absence, and length bounds', () => {
     const results = runChecks(
       [
