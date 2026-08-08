@@ -582,7 +582,19 @@ async function main(): Promise<void> {
   )
 }
 
-main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err))
-  process.exit(1)
-})
+// Only when this file IS the process entry — `sync-intellect.test.ts` imports
+// from here, and at module scope this ran the whole sync on every unit run:
+// a network fetch to Artificial Analysis, then a rewrite of two tracked files
+// (`data/intellect.json` and `model-intellect.generated.ts`, the latter through
+// `prettier --write`). A green `npm run check` therefore left the working tree
+// dirty, and the bumped `// Last synced:` line went on to collide with the
+// scheduled sync in a real merge conflict.
+//
+// Same guard idiom as `copy-monaco-workers.mts`, which is also both a module
+// and a CLI.
+if (process.argv[1]?.endsWith('sync-intellect.mts')) {
+  main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err))
+    process.exit(1)
+  })
+}
