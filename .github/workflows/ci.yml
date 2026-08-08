@@ -497,6 +497,17 @@ jobs:
             exit 0
           fi
           npm run coverage:ci
+      # The console gets the `dot` reporter (see scripts/run-tests.mts) so a
+      # failure is reachable through the job-log API's ~5000-line tail. This is
+      # the full TAP for the same run, for when you want the passing detail too.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: unit-tests-tap
+          path: unit-tests.tap
+          if-no-files-found: ignore
+          retention-days: 7
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).
