@@ -9,6 +9,7 @@ import {
   isMochaTimeoutError,
   installDeleteSessionSafety,
   shouldSkipAfterTestSessionTraffic,
+  wedgedSessionPatternsForTest,
   withTimeout,
 } from '../tests/e2e/helpers/after-test-safety.ts'
 
@@ -215,5 +216,31 @@ describe('installDeleteSessionSafety', () => {
     assert.ok(activeDelete)
     assert.equal(await activeDelete(), undefined)
     assert.equal(killed, 1)
+  })
+})
+
+// Run 31231013554 measured this directly: with chromedriver on the kill list —
+// by name or scoped to `wdio:driverPID` — every shard reported `0 passed, 21
+// failed`, every spec dying on `Unable to connect to http://localhost:PORT`.
+// Without it, the same shards ran 19-20 passing. WDIO starts the next worker
+// while the previous tears down, so the driver this session is "done with" is
+// the one the next session already holds.
+describe('wedged-session kill scope', () => {
+  it('never names chromedriver', () => {
+    const patterns = wedgedSessionPatternsForTest()
+    assert.ok(
+      patterns.every((pattern) => !/chromedriver/i.test(pattern)),
+      `killing chromedriver reaps the next worker's driver: ${patterns.join(', ')}`,
+    )
+    assert.ok(patterns.some((pattern) => /electron/i.test(pattern)))
+  })
+
+  it('treats a socket death on deleteSession as ignorable rather than fatal', () => {
+    assert.equal(
+      isIgnorableDeleteSessionError(
+        new Error('WebDriverError: Request failed with error code UND_ERR_SOCKET'),
+      ),
+      true,
+    )
   })
 })
