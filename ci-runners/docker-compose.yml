@@ -42,6 +42,17 @@ services:
     env_file: .env
     environment:
       EPHEMERAL: 'true'
+      # Host-local dependency store (see the `deps-cache` volume at the bottom of
+      # this file and .github/actions/setup). Set here rather than in the
+      # Dockerfile so the variable and the volume that backs it cannot drift: a
+      # container started without the mount leaves this unset and the setup
+      # action's store path simply no-ops.
+      COPSE_DEPS_CACHE: /opt/deps-cache
+    volumes:
+      # Shared by every runner container on this host and persisted across the
+      # ephemeral restarts, so a dependency tree is fetched from the Actions
+      # cache service AT MOST ONCE per host per lockfile — not once per job.
+      - deps-cache:/opt/deps-cache
     init: true # PID 1 reaps stray electron/chromedriver children
     # bubblewrap — ASRT's Linux backend — builds its confinement from a user
     # namespace. Without both entries below it cannot start at all, the app
@@ -112,11 +123,36 @@ services:
       # Service-level environment beats env_file, so this replaces the unified
       # RUNNER_LABELS from .env with the checks-only set.
       RUNNER_LABELS: ${RUNNER_CHECKS_LABELS:-self-hosted,linux,docker,copse-checks,burst}
+      COPSE_DEPS_CACHE: /opt/deps-cache
+    volumes:
+      # Same store as `runner` above — in the split-tier layout the e2e slot and
+      # the checks slots share one host, so whichever tier lands first warms the
+      # tree for the other.
+      - deps-cache:/opt/deps-cache
     init: true
     # Check-tier jobs are lighter, but this is the same superset image; keep the
     # same guardrails so a misrouted heavy job can't take the host down.
     mem_limit: 6g
     shm_size: '2gb'
+
+volumes:
+  # Host-local dependency store, keyed by package-lock.json hash. The runner
+  # containers are ephemeral (one job each), so without somewhere persistent to
+  # put an installed tree every job re-restored ~590 MB from the Actions cache
+  # service — 2.5-3.5 min apiece, times ~16 jobs per CI run, all in parallel and
+  # contending for the same egress. The setup action reads this store before
+  # falling back to the network and republishes into it on a miss, so the cost
+  # is paid once per host per lockfile.
+  #
+  # Safe to delete at any time (`docker volume rm ci-runners_deps-cache`); it
+  # rebuilds itself on the next job. The setup action prunes to the 3 most recent
+  # lockfile hashes, so budget ~3x the installed tree size (~5 GB) per host.
+  #
+  # Only ever written by first-party code: CI routes fork PRs to GitHub-hosted
+  # runners (every self-hosted job in ci.yml is guarded on
+  # `pull_request.head.repo.full_name == github.repository`), so untrusted PR
+  # code never runs on a host that has this mounted.
+  deps-cache:
 
 # The build-time clone token, sourced from the BUILD_GH_TOKEN env var in .env.
 secrets:
