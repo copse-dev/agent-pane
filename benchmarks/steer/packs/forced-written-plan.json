@@ -12,7 +12,7 @@
   "tasks": [
     {
       "id": "rename-across-files-without-plan-tool",
-      "description": "Same request as forced-todo-plan, with the plan tool withheld. The prompt's fourth instruction is to restate the plan before reporting the task finished, so the numbered plan must survive into the final message.",
+      "description": "Same request as forced-todo-plan, with the plan tool withheld. Read-only reconnaissance may precede the plan, but the model must write a concrete numbered plan before its first mutation.",
       "prompt": "Rename the parseRecord function to parseCsvRecord everywhere it appears in this project, then add a small test file that checks it parses one line correctly.",
       "fixture": "benchmarks/steer/fixtures/rename-project",
       "excludeTools": ["update_todos"],
@@ -20,8 +20,9 @@
       "timeoutMs": 300000,
       "checks": [
         {
-          "id": "final-restates-a-numbered-plan",
-          "kind": "final-matches",
+          "id": "plans-before-mutation",
+          "kind": "before-tool-matches",
+          "tools": ["str_replace", "write_file"],
           "pattern": "(^|\\n)\\s*(1[.)]|step\\s*1\\b)[\\s\\S]*(^|\\n)\\s*(2[.)]|step\\s*2\\b)[\\s\\S]*(^|\\n)\\s*(3[.)]|step\\s*3\\b)"
         },
         {
