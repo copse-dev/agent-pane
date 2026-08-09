@@ -198,6 +198,30 @@ search stops being optional at that size. Either way the portable idea is the **
 sidebar config decoupled from the file tree** — adopt that on day one regardless of generator,
 because it is what lets pages be grouped by job while the files stay flat and greppable.
 
+### The direction-of-truth conflict with `site/*.md`
+
+[#1670](https://github.com/copse-dev/agent-pane/pull/1670) landed after this plan was drafted
+and settles a convention that points the other way. `scripts/sync-site-markdown.mts` generates
+`site/index.md`, `site/architecture.md`, `site/privacy.md` and an `llms.txt` index **from the
+HTML**, so an agent fetching the site gets the copy without the chrome. Its stated contract is
+that "the HTML is the only source of truth," and `npm run site:md:check` enforces it inside
+`npm run check`.
+
+A docs site inverts that: Markdown is authored and HTML is generated. Both directions can
+coexist — the marketing pages are hand-built HTML, the docs would be authored prose — but the
+plan should not leave two opposite conventions in one tree unremarked. Two consequences:
+
+- **Pick the boundary explicitly.** `site/*.html` stays HTML-source with generated `.md` twins;
+  `docs/` pages are Markdown-source with generated HTML. Anything ambiguous (a docs landing
+  page that is really marketing) belongs on the marketing side of that line.
+- **Docs pages should join `llms.txt`.** The index exists so an agent can find the site's prose;
+  a 45-page manual that is not in it is the largest thing missing from the one file built to
+  answer that question. Whichever generator wins needs to emit into it.
+
+This also shifts the trade-off table slightly toward extending `scripts/build.mts`: there is now
+precedent, machinery, and a `check` gate for site content transformation in `scripts/`, which
+did not exist when the two options above were weighed.
+
 ## Phasing
 
 - **P1 — Prove the shape.** Generator decision plus five pages: Overview, Install, Quickstart,
