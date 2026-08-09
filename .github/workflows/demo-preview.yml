@@ -20,8 +20,7 @@ name: Demo preview
 # workflows, so untrusted code never reaches the write token or the deploy. Each
 # qualifying push rebuilds the demo and, ONLY IF the built bytes differ from
 # what is already published, releases it into the machine-managed demo-previews
-# branch. That push is what deploys — pages.yml watches the branch rather than
-# being called from here. Feature branches without an open PR build nothing.
+# branch and redeploys Pages. Feature branches without an open PR build nothing.
 #
 # The build reads the renderer, shared, preload and site trees, so the common
 # case on this repo — a docs, test, benchmark or main-process commit — rebuilds
@@ -38,11 +37,13 @@ on:
       - demo-previews
   workflow_dispatch:
 
-# No pages/id-token scopes: this workflow publishes and comments, it no longer
-# deploys. The comment job narrows to what it actually needs.
+# pages/id-token are for the called pages.yml deploy: a reusable workflow's token
+# can narrow the caller's scopes but never widen them.
 permissions:
   contents: write
   pull-requests: write
+  pages: write
+  id-token: write
 
 # A newer push to the same branch supersedes an in-flight preview build.
 concurrency:
@@ -237,15 +238,18 @@ jobs:
           fi
           echo "published=${published}" >> "$GITHUB_OUTPUT"
 
-  # There is deliberately no deploy job here. Pushing to `demo-previews` above is
-  # itself the deploy trigger (see pages.yml), which decouples publishing from
-  # deploying in two ways that matter:
-  #   • Deploys coalesce. pages.yml assembles whatever is on the demo-previews
-  #     tip, so concurrent publishes collapse into one full-tree upload instead
-  #     of each queueing its own behind the others.
-  #   • The comment below no longer waits on that queue. It used to sit behind
-  #     `needs: deploy`, so on a busy day the PR link arrived hours after the
-  #     push that produced it.
+  deploy:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    uses: ./.github/workflows/pages.yml
+    secrets: inherit
+
+  # Deliberately NOT `needs: deploy`. The deploy serializes on the shared `pages`
+  # concurrency group, so gating the comment on it meant the preview link arrived
+  # whenever that queue got around to this run — measured at seven hours after
+  # the push on a busy day. The comment describes URLs that the deploy will serve
+  # shortly, so it does not need to wait for it, and it survives a deploy that
+  # gets superseded by a newer one.
   comment:
     needs: publish
     if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
@@ -301,7 +305,7 @@ jobs:
               links ? 'Interactive, with a mocked backend — jump to a scenario:' : '',
               links,
               '',
-              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Rebuilt whenever a push changes the demo bundle, and live a few minutes after this comment once the deploy lands; removed when the PR closes.</sub>',
+              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Rebuilt whenever a push changes the demo bundle; these links go live once the queued deploy lands, shortly after this comment. Removed when the PR closes.</sub>',
             ]
               .filter((line) => line !== '')
               .join('\n');

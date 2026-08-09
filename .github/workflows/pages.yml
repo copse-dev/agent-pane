@@ -15,17 +15,17 @@ name: Deploy site
 
 on:
   push:
-    # `demo-previews` is the machine-managed preview store. demo-preview.yml and
-    # demo-preview-cleanup.yml mutate it, and that push is the deploy trigger —
-    # they used to call this workflow directly, which is what made deploys queue
-    # (see the concurrency note below). `release` covers marketing-site changes.
-    #
-    # No `paths` filter: GitHub applies it to every branch in the trigger, and
-    # every demo-previews push is by construction a content change worth
-    # deploying. The cost is that a release push with no site change also
-    # deploys, which at one promotion a day is noise next to what this saves.
-    branches: [release, demo-previews]
+    branches: [release]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
+  # Invoked by demo-preview.yml and demo-preview-cleanup.yml after they mutate
+  # the previews branch. NOT a `push:` trigger on demo-previews: that branch is
+  # an orphan holding preview content only, with no .github/ of its own, and a
+  # push event runs the workflow definitions from the pushed branch — so such a
+  # trigger would silently never fire and previews would stop deploying.
+  workflow_call:
 
 permissions:
   contents: read
@@ -36,18 +36,20 @@ permissions:
 # publishes and site pushes share this group and therefore serialize.
 #
 # Deliberately NOT `queue: max`. This job assembles whatever is on the
-# demo-previews tip, not the content of whichever run scheduled it, so two
-# queued deploys publish the same tree twice and only the last one can matter.
-# Keeping every one of them meant a burst of preview publishes became a backlog
-# that drained no faster than an ~11-minute full-tree upload — deploys were
-# observed starting six and a half hours after they were created, and the PR
-# comment that waited on them landed seven hours after the push.
+# demo-previews tip, not the content of whichever run called it, so two queued
+# deploys publish the same tree twice and only the last one can matter. Keeping
+# every one of them meant a burst of preview publishes became a backlog that
+# drained no faster than an ~11-minute full-tree upload — deploys were observed
+# starting six and a half hours after they were created, and the PR comment that
+# waited on them landed seven hours after the push.
 #
-# GitHub's default single pending slot is the behaviour we want: a newer pending
-# deploy supersedes an older one. That was previously rejected because it
-# cancelled a job the PR was waiting on and painted the PR red — no longer true,
-# now that publishing triggers this by pushing to demo-previews instead of
-# calling it, so no PR check waits on this run.
+# GitHub's default single pending slot is what we want instead: a newer pending
+# deploy supersedes an older one. That was previously rejected for marking the
+# caller's run cancelled and painting the PR red. It still does — but the cost is
+# now cosmetic rather than a lost preview link, because demo-preview.yml's sticky
+# comment no longer sits behind `needs: deploy`, and because the superseding
+# deploy publishes this target anyway. Publishes are also far rarer since the
+# no-change guard there started working, so pending collisions are the exception.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -63,7 +65,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       # Always publish the marketing site from `main`, even when this deploy was
-      # triggered by a preview publish landing on demo-previews. A preview
+      # invoked (workflow_call) by a preview push on another branch. A preview
       # can therefore only ever add or change its own /demo/ subtree — never the
       # site — so pre-merge preview deploys can't ship unreviewed site changes.
       - uses: actions/checkout@v7.0.1

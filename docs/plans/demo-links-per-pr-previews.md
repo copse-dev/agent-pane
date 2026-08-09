@@ -22,18 +22,18 @@ before it serves untrusted PR builds from the live domain.
   testable on the PR that introduces it, before merge. It resolves the branch's open PR,
   builds the demo, commits the flat demo under `pr-<n>/` and the branch's self-contained
   site+demo bundle under `pr-<n>-preview/` on the machine-managed `demo-previews`
-  branch, and posts/updates the sticky `<!-- copse-demo-preview -->` comment. Branches
-  without an open PR build nothing, and a build whose bytes match what is already
-  published commits nothing — see "Publish only on change" below.
+  branch, calls `pages.yml` to redeploy, and posts/updates the sticky
+  `<!-- copse-demo-preview -->` comment — in parallel with that deploy, not behind it.
+  Branches without an open PR build nothing, and a build whose bytes match what is
+  already published commits nothing — see "Publish only on change" below.
 - **`.github/workflows/pages.yml`** — the deploy job is the single assembler: it lays
   down the production `site/` **from `main`** and overlays every machine-managed target
-  below `/demo/`. It triggers on pushes to `demo-previews`, so publishing and cleanup
-  deploy by writing to the store rather than by calling this workflow. Keeping
+  below `/demo/`. It exposes a `workflow_call` entrypoint. Keeping
   both PR artifacts as ordinary targets makes them compatible with older branch-local
   copies of this workflow, so a queued older deploy cannot omit or remap them. Pinning
   the root site to `main` means a preview push never changes the production homepage.
 - **`.github/workflows/demo-preview-cleanup.yml`** — on PR close, prunes both
-  `pr-<n>/` and `pr-<n>-preview/` from `demo-previews`; that push redeploys.
+  `pr-<n>/` and `pr-<n>-preview/` from `demo-previews` and redeploys.
 
 ## What already exists (don't rebuild it)
 
@@ -136,20 +136,25 @@ preview publish redeploys the whole site, so deploys serialize behind an ~11-min
 full-tree upload. This _did_ become the bottleneck this section originally anticipated,
 and the fix was cheaper than the external-host escape hatch below.
 
-Two things were wrong. Publishing called `pages.yml` via `workflow_call`, which made the
-deploy a job of the PR's own run; to stop a superseded deploy painting a PR red, the
-group carried `queue: max`, which kept **every** queued deploy. But the assembler reads
-whatever is on the `demo-previews` tip rather than the calling run's content, so queued
-deploys are identical re-assemblies where only the last can matter. Arrivals ran at
-roughly the drain rate, and the queue became a standing backlog — deploys observed
-starting 6h26m after creation, with the sticky comment (behind `needs: deploy`) landing
-seven hours after the push.
+To stop a superseded deploy painting a PR red, the group carried `queue: max`, which kept
+**every** queued deploy. But the assembler reads whatever is on the `demo-previews` tip
+rather than the calling run's content, so queued deploys are identical re-assemblies
+where only the last can matter. Arrivals ran at roughly the drain rate, and the queue
+became a standing backlog — deploys observed starting 6h26m after creation, with the
+sticky comment (behind `needs: deploy`) landing seven hours after the push.
 
-Now publishing and cleanup deploy by _pushing to `demo-previews`_, and `pages.yml`
-triggers on that push. The deploy is no longer a PR check, so GitHub's default single
-pending slot is safe: a newer pending deploy supersedes an older one, bursts coalesce
-into one upload, and nothing a PR waits on gets cancelled. The comment posts straight
-from the publish job, resolving the base URL from the Pages API.
+`queue: max` is gone, so GitHub's default single pending slot coalesces a burst into one
+upload. That still marks a superseded caller's run cancelled, but the cost is now
+cosmetic: the comment no longer sits behind `needs: deploy`, so the preview link survives
+and posts within minutes, and the superseding deploy publishes that target anyway. Fixing
+the no-change guard (above) also removed most of the load that made the queue pathological
+in the first place.
+
+The deploy stays a `workflow_call` from the publishing workflows. A `push:` trigger on
+`demo-previews` looks tempting and is a trap: that branch is an orphan holding preview
+content with no `.github/` of its own, and a push event runs the workflow definitions
+from the pushed branch — so the trigger would silently never fire and previews would stop
+deploying entirely.
 
 If deploy volume ever bites again, the remaining escape hatch is a dedicated external
 preview host (Cloudflare Pages/Netlify give native per-PR URLs), explicitly _not_ chosen
