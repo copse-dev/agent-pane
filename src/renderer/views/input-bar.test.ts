@@ -1,5 +1,5 @@
 import '../../../tests/setup-dom.ts'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
@@ -12,6 +12,8 @@ import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/type
 import type { SkillSummary } from '@shared/types/skills.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
+import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -1130,6 +1132,100 @@ describe('input bar browse button', () => {
     assert.deepEqual(store.getState().threads[0]?.messages[0]?.attachments, [
       { kind: 'file', label: 'notes.txt', content: 'hello world' },
     ])
+  })
+})
+
+describe('input bar attachment previews', () => {
+  before(patchPreviewDialog)
+
+  /**
+   * A chip is the only thing standing between "I attached something" and a sent
+   * prompt, so its snapshot has to be inspectable before send — not only after,
+   * from the transcript. The affordance rides the label because the pill itself
+   * already holds the ✕ button.
+   */
+  it('opens an attached file in the preview modal from the composer', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    handlers.attachFile({ path: '/repo/src/notes.txt', content: 'release checklist' })
+    await flush()
+
+    const label = host.querySelector<HTMLElement>('.attachment-chip .attachment-chip-label')
+    assert.ok(label, 'the file chip renders its label')
+    assert.equal(label.getAttribute('role'), 'button')
+    assert.equal(label.getAttribute('aria-label'), 'Preview notes.txt')
+    label.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.querySelector('.attachment-preview-title')?.textContent, 'notes.txt')
+    assert.equal(dialog.querySelector('.attachment-preview-text')?.textContent, 'release checklist')
+    dialog.close()
+  })
+
+  it('opens an attached terminal selection in the preview modal', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const unregister = registerShellCatalog(
+      () => [
+        {
+          tabId: 'tab-1',
+          sessionId: 'sess-1',
+          label: 'npm test',
+          scopeId: 'thread-1',
+          active: true,
+        },
+      ],
+      () => 'PASS\n2 tests',
+    )
+    try {
+      const composer = host.querySelector<HTMLElement>('.prompt-input')
+      assert.ok(composer)
+      composer.textContent = '@shell'
+      composer.dispatchEvent(new Event('input', { bubbles: true }))
+      await flush()
+
+      const shellRow = host.querySelector<HTMLElement>('.mention-item-shell')
+      assert.ok(shellRow, 'the @shell mention lists the open tab')
+      shellRow.dispatchEvent(new Event('mousedown', { bubbles: true }))
+      await flush()
+
+      const label = host.querySelector<HTMLElement>('.shell-chip .attachment-chip-label')
+      assert.ok(label, 'the shell chip renders its label')
+      assert.equal(label.getAttribute('aria-label'), 'Preview npm test')
+      label.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+      const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+      assert.ok(dialog)
+      assert.equal(dialog.open, true)
+      assert.equal(dialog.querySelector('.attachment-preview-text')?.textContent, 'PASS\n2 tests')
+      dialog.close()
+    } finally {
+      unregister()
+    }
   })
 })
 
