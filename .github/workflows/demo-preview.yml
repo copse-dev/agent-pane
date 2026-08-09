@@ -1,17 +1,17 @@
 name: Demo preview
 
-# Publishes browser demos and self-contained site+demo bundles under the Pages
-# /demo/ namespace:
+# Publishes browser demos and marketing-site bundles under the Pages /demo/
+# namespace:
 #   /demo/main/ and /demo/release/ are persistent branch builds.
-#   /demo/main/preview/ is the trunk marketing site, with its matching
-#   browser demo nested at /demo/main/preview/demo/main/.
-#   /demo/pr-<n>/ remains the direct ephemeral demo URL.
-#   /demo/pr-<n>-preview/ is the PR's marketing site, with its matching browser
-#   demo nested at /demo/pr-<n>-preview/demo/main/.
+#   /demo/main/preview/ is the trunk marketing site.
+#   /demo/pr-<n>/ is the ephemeral demo URL for a PR.
+#   /demo/pr-<n>-preview/ is that PR's marketing site.
 #
-# NOTE: the trailing `demo/main/` in the nested URLs is a FIXED bundle directory
-# baked into the built site, not a branch name — it does not move with a branch
-# rename. Only the leading slot segment tracks the branch.
+# Each bundle links the demo published beside it (../pr-<n>/ or ../) rather than
+# carrying its own nested copy, so there is exactly one build of the demo per
+# target instead of two identical ones. That is also why there is no longer a
+# /demo/pr-<n>-preview/demo/main/ URL. A bundle is therefore NOT self-contained:
+# it needs the sibling flat build, which is published and pruned with it.
 #
 # Triggered on push (not workflow_run) so the workflow runs from the pushed
 # branch's own definition — which makes the whole flow testable on the PR that
@@ -96,10 +96,9 @@ jobs:
       - if: steps.target.outputs.found == 'true'
         uses: ./.github/actions/setup
       # Point the demo at the shared Monaco tree rather than bundling its own.
-      # Root-relative so it resolves the same from `pr-<n>/` and from the deeper
-      # `pr-<n>-preview/demo/main/`, and so it survives a host change. Versioned,
-      # so a monaco-editor bump publishes a new tree beside the old one instead
-      # of breaking every preview built against the previous version.
+      # Root-relative so it survives a host change. Versioned, so a monaco-editor
+      # bump publishes a new tree beside the old one instead of breaking every
+      # preview built against the previous version.
       - id: monaco
         if: steps.target.outputs.found == 'true'
         env:
@@ -192,16 +191,34 @@ jobs:
             rm -rf "previews-branch/${TARGET}"
             mkdir -p "previews-branch/${TARGET}"
             cp -R dist/demo/. "previews-branch/${TARGET}/"
+            # site/index.html links the demo relatively, as `demo/main/`, which is
+            # correct from the site root. A bundle served from a subdirectory used
+            # to satisfy that by nesting a second, identical copy of the whole
+            # demo inside itself — doubling every preview's size and producing the
+            # /demo/pr-<n>-preview/demo/main/ URL. Point those links at the flat
+            # build published beside it instead. Relative rather than
+            # root-relative, so it holds whether Pages serves from the custom
+            # domain root or from an <owner>.github.io/<repo>/ prefix.
+            point_site_at_demo() {
+              local file="previews-branch/$1/index.html"
+              if ! grep -q '"demo/main/' "$file"; then
+                echo "site/index.html no longer links \"demo/main/\" — update this rewrite" >&2
+                exit 1
+              fi
+              sed -i "s|\"demo/main/|\"$2|g" "$file"
+            }
             if [[ "$TARGET" == "main" ]]; then
-              mkdir -p "previews-branch/${TARGET}/preview/demo/main"
+              mkdir -p "previews-branch/${TARGET}/preview"
               cp -R site/. "previews-branch/${TARGET}/preview/"
-              cp -R dist/demo/. "previews-branch/${TARGET}/preview/demo/main/"
+              # ../ from /demo/main/preview/ is /demo/main/, the flat build above.
+              point_site_at_demo "${TARGET}/preview" "../"
             elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
               bundle_target="${TARGET}-preview"
               rm -rf "previews-branch/${bundle_target}"
-              mkdir -p "previews-branch/${bundle_target}/demo/main"
+              mkdir -p "previews-branch/${bundle_target}"
               cp -R site/. "previews-branch/${bundle_target}/"
-              cp -R dist/demo/. "previews-branch/${bundle_target}/demo/main/"
+              # ../pr-<n>/ from /demo/pr-<n>-preview/ is the flat build above.
+              point_site_at_demo "$bundle_target" "../${TARGET}/"
               find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
               git -C previews-branch add "$bundle_target"
             fi
@@ -290,7 +307,9 @@ jobs:
             }
             const base = root.replace(/\/*$/, '/');
             const previewUrl = `${base}demo/pr-${pr}-preview/`;
-            const demoUrl = `${previewUrl}demo/main/`;
+            // The flat build, not a path inside the bundle: the bundle links this
+            // one rather than nesting its own copy.
+            const demoUrl = `${base}demo/pr-${pr}/`;
             let scenarios = [];
             try {
               scenarios = JSON.parse(process.env.SCENARIOS || '[]');
