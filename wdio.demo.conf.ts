@@ -11,6 +11,9 @@ const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
 const DEMO_PORT = 4173
 const DEMO_ROOT = resolve('dist/demo')
+const MARKETING_ROOT = resolve('site')
+const MARKETING_MOUNT = '/marketing'
+const MARKETING_DEMO_MOUNT = `${MARKETING_MOUNT}/demo/main`
 let server: Server | undefined
 
 const contentTypes: Readonly<Record<string, string>> = {
@@ -26,11 +29,13 @@ const contentTypes: Readonly<Record<string, string>> = {
 function startDemoServer(): Promise<void> {
   server = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${String(DEMO_PORT)}`)
-    const relativePath = decodeURIComponent(
-      requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname,
-    )
-    const path = resolve(DEMO_ROOT, `.${relativePath}`)
-    if (path !== DEMO_ROOT && !path.startsWith(`${DEMO_ROOT}${sep}`)) {
+    const pathname = decodeURIComponent(requestUrl.pathname)
+    const marketingDemoPath = mountedPath(pathname, MARKETING_DEMO_MOUNT)
+    const marketingPath = mountedPath(pathname, MARKETING_MOUNT)
+    const root = marketingDemoPath ? DEMO_ROOT : marketingPath ? MARKETING_ROOT : DEMO_ROOT
+    const relativePath = marketingDemoPath ?? marketingPath ?? normalizedPath(pathname)
+    const path = resolve(root, `.${relativePath}`)
+    if (path !== root && !path.startsWith(`${root}${sep}`)) {
       response.writeHead(403).end('Forbidden')
       return
     }
@@ -48,6 +53,15 @@ function startDemoServer(): Promise<void> {
     server?.once('error', reject)
     server?.listen(DEMO_PORT, '127.0.0.1', resolveStarted)
   })
+}
+
+function normalizedPath(pathname: string): string {
+  return pathname === '/' || pathname === '' ? '/index.html' : pathname
+}
+
+function mountedPath(pathname: string, mount: string): string | null {
+  if (pathname !== mount && !pathname.startsWith(`${mount}/`)) return null
+  return normalizedPath(pathname.slice(mount.length))
 }
 
 function stopDemoServer(): Promise<void> {

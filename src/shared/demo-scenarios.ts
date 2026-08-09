@@ -1,10 +1,19 @@
 import type { Project, Thread } from './types/index.ts'
+import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
 const FOOTER_OUTPUT_TOKENS = 1_800
+
+const DEMO_CODEX_ACP_AGENT = {
+  id: 'codex',
+  title: 'Codex',
+  command: 'codex-acp',
+  args: [],
+  enabled: true,
+} satisfies AcpAgentConfig
 
 export interface DemoScenario {
   id: string
@@ -19,6 +28,11 @@ export interface DemoScenario {
    * through the ordinary chunk path.
    */
   trace?: DemoTrace
+  /**
+   * Queue replayed edits without forcing Changes open on every write. Visitors
+   * can still open Changes and inspect the complete diffs after the turn.
+   */
+  deferProposedDiffPreview?: boolean
   /**
    * Published directory containing the files produced by the trace. The static
    * Browser panel prefers this checked-in copy, while the replayed writes still
@@ -36,6 +50,11 @@ export interface DemoScenario {
 export const FOOTER_COMPACT_EXPECTATIONS = {
   tokenLabel: `${((FOOTER_INPUT_TOKENS + FOOTER_OUTPUT_TOKENS) / 1000).toFixed(1)}k tokens`,
 } as const
+
+/** Prompt a walkthrough submits: exactly the user text captured in its source trace. */
+export function demoScenarioPrompt(scenario: DemoScenario): string {
+  return scenario.trace?.prompt ?? ''
+}
 
 const markdownContent = [
   '### ⚠️ Known Failures',
@@ -178,6 +197,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       theme: 'dark',
       uiTintStrength: 'off',
       model: LANDING_TRACE.source?.model ?? 'claude-opus-5',
+      registeredAcpAgents: [DEMO_CODEX_ACP_AGENT],
       layout: {
         projectsPaneWidth: 240,
         filesPaneWidth: 640,
@@ -190,7 +210,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         // Empty on purpose: the walkthrough types the prompt into the composer,
         // so the transcript builds from nothing while you watch.
         id: 'demo-landing-thread',
-        title: LANDING_TRACE.source?.title ?? LANDING_TRACE.label,
+        title: 'Crumb & Bloom coming soon',
         status: 'idle',
         gitBranch: 'main',
         messages: [],
@@ -200,6 +220,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: LANDING_TRACE,
+    deferProposedDiffPreview: true,
     staticSite: 'sites/cupcakes',
     revealFinalPreview: true,
   },

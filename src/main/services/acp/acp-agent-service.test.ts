@@ -18,6 +18,7 @@ import {
   mergeAcpPermissionAbortSignals,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
+  shouldAutoApproveSandboxedCodexCodeMode,
   runWithAcpRetry,
   sliceLines,
 } from './acp-agent-service.ts'
@@ -61,6 +62,48 @@ describe('shouldAutoApproveLowRiskAcpPermission', () => {
       shouldAutoApproveLowRiskAcpPermission(
         permissionRequest({ kind: 'execute', rawInput: { command: 'rg TODO src | head -20' } }),
         { sandboxed: true },
+      ),
+      false,
+    )
+  })
+})
+
+describe('shouldAutoApproveSandboxedCodexCodeMode', () => {
+  const opaqueCodexExec: RequestPermissionRequest = {
+    ...permissionRequest({ kind: 'execute' }),
+    _meta: { codex: { params: { itemId: 'exec-1' } } },
+  }
+
+  it('auto-approves only an opaque Codex code-mode cell inside the native sandbox', () => {
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode({ id: 'codex', sandboxed: true }, opaqueCodexExec),
+      true,
+    )
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode({ id: 'codex', sandboxed: false }, opaqueCodexExec),
+      false,
+    )
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode({ id: 'custom', sandboxed: true }, opaqueCodexExec),
+      false,
+    )
+  })
+
+  it('does not waive a concrete command or an unproven adapter request', () => {
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode(
+        { id: 'codex', sandboxed: true },
+        {
+          ...opaqueCodexExec,
+          toolCall: { ...opaqueCodexExec.toolCall, rawInput: { command: 'npm publish' } },
+        },
+      ),
+      false,
+    )
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode(
+        { id: 'codex', sandboxed: true },
+        permissionRequest({ kind: 'execute' }),
       ),
       false,
     )
@@ -432,6 +475,43 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /The user invoked \/demo\./)
     assert.match(prompt, /## Invoked skills/)
     assert.match(prompt, /do the thing<\/skill_content>$/)
+  })
+
+  it('keeps the user message verbatim and frames trusted Copse guidance separately', () => {
+    const user = 'Build a polished coming-soon site for Crumb & Bloom. Include an email signup.'
+    const guidance = 'Inspect the project, choose a coherent visual direction, then verify it.'
+    const prompt = buildAcpPrompt(user, [], {
+      includeNotes: false,
+      operatorInstructions: guidance,
+    })
+    assert.equal(
+      prompt,
+      `${user}\n\n---\n\n## Copse guidance\n\n${guidance}`,
+      'product steering must be an explicit adjacent block, never a rewrite of the visible prompt',
+    )
+  })
+
+  it('places product guidance before explicitly invoked skills', () => {
+    const prompt = buildAcpPrompt('Build the website', [], {
+      includeNotes: false,
+      operatorInstructions: 'Follow the site-building workflow.',
+      skills: '\n\n---\n\n## Invoked skills\n\nUSER-SELECTED-SKILL',
+    })
+    const guidanceIndex = prompt.indexOf('## Copse guidance')
+    const skillIndex = prompt.indexOf('## Invoked skills')
+    assert.ok(guidanceIndex > 0)
+    assert.ok(skillIndex > guidanceIndex)
+    assert.match(prompt, /USER-SELECTED-SKILL$/)
+  })
+
+  it('sends current-turn guidance on a reused ACP session without replay notes', () => {
+    const prompt = buildAcpPrompt('Polish the landing page', [], {
+      includeNotes: false,
+      operatorInstructions: 'Verify responsive behavior.',
+    })
+    assert.doesNotMatch(prompt, /^Session notes:/)
+    assert.match(prompt, /^Polish the landing page/)
+    assert.match(prompt, /## Copse guidance\n\nVerify responsive behavior\.$/)
   })
 
   it('keeps the invoked-skills block with the new message when replaying a transcript', () => {

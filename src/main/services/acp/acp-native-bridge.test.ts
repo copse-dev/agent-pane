@@ -8,6 +8,7 @@ import {
   activeBridgeToolNames,
   BRIDGE_TOOL_NAMES,
   BRIDGE_MCP_SERVER_NAME,
+  bridgedWorkspaceWritePaths,
   isBridgedNativeToolTitle,
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
@@ -28,6 +29,20 @@ import {
  * drive it as a real MCP client would: JSON-RPC over stateless streamable
  * HTTP, bearer-token gated.
  */
+
+describe('bridgedWorkspaceWritePaths', () => {
+  it('attributes successful native file edits to the ACP workspace audit', () => {
+    assert.deepEqual(bridgedWorkspaceWritePaths('write_file', { path: './index.html' }), [
+      './index.html',
+    ])
+    assert.deepEqual(
+      bridgedWorkspaceWritePaths('rename_file', { from: 'old.css', to: 'styles.css' }),
+      ['old.css', 'styles.css'],
+    )
+    assert.deepEqual(bridgedWorkspaceWritePaths('read_file', { path: 'index.html' }), [])
+    assert.deepEqual(bridgedWorkspaceWritePaths('delete_file', { path: 42 }), [])
+  })
+})
 
 function testRegistry(executed: string[]): ToolRegistry {
   const registry = new ToolRegistry()
@@ -168,6 +183,37 @@ describe('startAcpNativeBridge', () => {
     assert.equal(contentText(shellCall), 'ran npm test')
     assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
+  })
+
+  it('attributes successful bridged writes to the current turn', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'write_file',
+      description: 'Write a workspace file',
+      parameters: z.object({ path: z.string(), content: z.string() }),
+      execute: () => Promise.resolve('written'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    const writes: string[] = []
+    bridge.setWorkspaceWriteObserver((path) => writes.push(path))
+    for (const init of initialized()) await rpc(bridge, init)
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'write_file',
+        arguments: { path: 'index.html', content: '<h1>Cupcakes</h1>' },
+      },
+    })
+
+    assert.equal(contentText(call), 'written')
+    assert.deepEqual(writes, ['index.html'])
   })
 
   it('forwards tool images as MCP image content, not just the manifest text', async () => {
