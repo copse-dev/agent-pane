@@ -54,6 +54,7 @@ import {
 } from '../../project-sandbox/sandbox-argv.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -336,8 +337,11 @@ async function applyConfigOptions(
  * model loop and must not inherit Copse's cloud API keys); `config.env` is the
  * explicit allowlist of vars that agent is meant to receive and is overlaid last.
  */
-export function buildAcpAgentEnv(config: AcpAgentSpawnConfig): Record<string, string> {
-  return { ...envForRendererChildProcess(), ...(config.env ?? {}) }
+export function buildAcpAgentEnv(
+  config: AcpAgentSpawnConfig,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  return { ...envForRendererChildProcess(baseEnv), ...(config.env ?? {}) }
 }
 
 /**
@@ -391,12 +395,19 @@ function acpProcessSpawnError(command: string, err: Error, stderr: string): Erro
   )
 }
 
-async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildProcess> {
-  const env = buildAcpAgentEnv(config)
+export async function spawnAcpAgentProcess(
+  config: AcpAgentSpawnConfig,
+  options: {
+    detached?: boolean
+    allowLocalhost?: boolean
+    baseEnv?: NodeJS.ProcessEnv
+  } = {},
+): Promise<ChildProcess> {
+  const env = buildAcpAgentEnv(config, options.baseEnv)
   const stdio: 'pipe'[] = ['pipe', 'pipe', 'pipe']
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
-      allowLocalhost: Boolean(config.nativeBridge),
+      allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for
@@ -423,7 +434,7 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
         stdio,
         // Lead a process group so `terminateAcpChild` can reap the real agent,
         // which the sandbox wrapper shell spawns as a grandchild.
-        detached: detachForGroupKill,
+        detached: options.detached ?? detachForGroupKill,
       })
       // Release on BOTH events. `close` waits for every inherited stdio pipe to
       // shut, so a grandchild that outlives the wrapper holds it open forever and
@@ -443,7 +454,7 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
     cwd: config.cwd,
     env,
     stdio,
-    detached: detachForGroupKill,
+    detached: options.detached ?? detachForGroupKill,
   })
 }
 
@@ -456,7 +467,7 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
  * `signalProcessTree` falls back to a direct kill when the child leads no group,
  * so this stays correct for the unsandboxed and remote paths too.
  */
-function terminateAcpChild(child: ChildProcess): void {
+export function terminateAcpChild(child: ChildProcess): void {
   const cancelEscalation = terminateProcessTree(child)
   child.once('close', cancelEscalation)
   child.once('exit', cancelEscalation)
@@ -710,7 +721,22 @@ async function spawnTransport(
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
   const sshTarget = acpSshTarget(config.cwd)
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget)
-  const child = await spawnAcpAgentProcess(config)
+  let child: ChildProcess
+  if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
+    try {
+      child = await spawnSandboxedAcpSessionHost(config)
+    } catch (err) {
+      // Preserve containment if the standalone host cannot start. This is the
+      // pre-phase-5 path: it widens the main process's ASRT network singleton,
+      // so the overlap gate remains necessary as a bounded fallback.
+      console.warn(
+        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${err instanceof Error ? err.message : String(err)}`,
+      )
+      child = await spawnAcpAgentProcess(config)
+    }
+  } else {
+    child = await spawnAcpAgentProcess(config)
+  }
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
   const stderrTail = captureAcpChildStderr(child, config.command)
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
