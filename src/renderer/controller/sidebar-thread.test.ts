@@ -27,12 +27,22 @@ test('a live Thread is readable as a SidebarThread', () => {
 })
 
 test('compacting keeps the row fields and drops the transcript', () => {
-  const compacted = compactSidebarThread(thread({ messages: [message('m1', 'x'.repeat(100_000))] }))
+  const compacted = compactSidebarThread(
+    thread({
+      messages: [message('m1', 'x'.repeat(100_000))],
+      automation: {
+        scheduleId: 'health',
+        scheduleName: 'Project health',
+        triggeredAt: 10,
+      },
+    }),
+  )
 
   assert.equal(compacted.id, 't1')
   assert.equal(compacted.title, 'Fix the thing')
   assert.equal(compacted.status, 'running')
   assert.equal(compacted.messages, undefined)
+  assert.equal(compacted.automation?.scheduleId, 'health')
 })
 
 test('compacting carries the PR scrape over, so the status chip survives it', () => {

@@ -2211,6 +2211,7 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 .automation-label:has(.automation-prompt-input),
+.automation-worktree-limit-label,
 .automation-enabled-label,
 .automation-form-actions {
   grid-column: 1 / -1;

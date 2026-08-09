@@ -6,7 +6,7 @@ import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { findThreadOwners, getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
-import { parkThreadWorktree } from './worktree-manager.ts'
+import { parkThreadWorktree, retireThreadWorktree } from './worktree-manager.ts'
 import { registerWorktreeParkingRecheck } from './worktree-parking-events.ts'
 
 const createdPrByThread = new Map<string, string>()
@@ -63,6 +63,48 @@ export async function parkCompletedPullRequestWorktree(
       upstreamRef: result.upstreamRef,
     },
   })
+}
+
+/**
+ * Make a completed automation checkout eligible for its next fresh run.
+ * Read-only runs disappear immediately; a dirty or unmerged checkout is kept
+ * and blocks replacement so a schedule can never leak an unbounded trail of
+ * worktrees behind work that still needs a human decision.
+ */
+export async function releaseCompletedAutomationWorktree(
+  projectId: string,
+  threadId: string,
+): Promise<boolean> {
+  const projectRoot = getProjectRoot(projectId)
+  const meta = await getThreadMeta(projectId, threadId)
+  if (!projectRoot || !meta?.automation) return false
+  const worktree = meta.worktree
+  if (!worktree || worktree.retiredAt !== undefined) return true
+
+  const owner = { projectId, threadId }
+  if (hasTerminalSessions(threadId) || hasBackgroundProcessesForThread(owner)) return false
+
+  await disposeAcpSession(threadId)
+  if (worktree.pullRequestUrl) {
+    const result = await parkThreadWorktree({ projectId, threadId, projectRoot, worktree })
+    if (result.status !== 'removed') return false
+    await updateMeta(projectId, threadId, {
+      worktree: {
+        ...worktree,
+        retiredAt: Date.now(),
+        retiredHead: result.head,
+        upstreamRef: result.upstreamRef,
+      },
+    })
+    return true
+  }
+
+  const result = await retireThreadWorktree({ projectId, threadId, projectRoot, worktree })
+  if (result.status !== 'removed') return false
+  await updateMeta(projectId, threadId, {
+    worktree: { ...worktree, retiredAt: Date.now() },
+  })
+  return true
 }
 
 const scheduledRechecks = new Map<string, NodeJS.Timeout>()

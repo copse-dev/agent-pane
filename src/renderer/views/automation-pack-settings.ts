@@ -1,5 +1,9 @@
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
-import type { AutomationSchedule, AutomationScheduleInput } from '@shared/types'
+import type {
+  AutomationLiveWorktreeLimit,
+  AutomationSchedule,
+  AutomationScheduleInput,
+} from '@shared/types'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -19,7 +23,13 @@ function cleanIpcError(error: unknown): string {
 
 function lastRunLabel(timestamp: number | undefined): string {
   if (timestamp === undefined) return 'Never run'
-  return `Last created ${new Date(timestamp).toLocaleString()}`
+  return `Last started ${new Date(timestamp).toLocaleString()}`
+}
+
+function liveWorktreeLimit(value: string): AutomationLiveWorktreeLimit {
+  if (value === '2') return 2
+  if (value === '3') return 3
+  return 1
 }
 
 /**
@@ -66,7 +76,7 @@ export function createAutomationPackSettings(
     'p',
     { class: 'automation-notice' },
     packEnabled
-      ? 'A match starts a task on whichever model the schedule’s rule picks at that moment. Normal tool permission prompts still apply.'
+      ? 'Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply.'
       : 'Enable this pack to arm schedules. Existing schedules remain editable while disabled.',
   )
   const status = el('div', { class: 'automation-status', hidden: true })
@@ -99,6 +109,13 @@ export function createAutomationPackSettings(
     required: true,
   })
   const enabledInput = el('input', { type: 'checkbox', class: 'automation-enabled-input' })
+  const worktreeLimitSelect = el(
+    'select',
+    { class: 'automation-input automation-worktree-limit-select' },
+    el('option', { value: '1' }, '1 — wait for prior work'),
+    el('option', { value: '2' }, '2 — allow one retained checkout'),
+    el('option', { value: '3' }, '3 — allow two retained checkouts'),
+  )
   const saveButton = el('button', { type: 'submit', class: 'automation-save-btn' }, 'Save schedule')
   const cancelButton = el('button', { type: 'button', class: 'automation-cancel-btn' }, 'Cancel')
   form.append(
@@ -112,6 +129,17 @@ export function createAutomationPackSettings(
     ),
     el('label', { class: 'automation-label' }, 'Model', modelSelect),
     el('label', { class: 'automation-label' }, 'Prompt', promptInput),
+    el(
+      'label',
+      { class: 'automation-label automation-worktree-limit-label' },
+      'Maximum live worktrees',
+      worktreeLimitSelect,
+      el(
+        'span',
+        { class: 'automation-hint' },
+        'Higher limits let fresh runs start while older changes wait for review.',
+      ),
+    ),
     el('label', { class: 'automation-enabled-label' }, enabledInput, 'Schedule enabled'),
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
@@ -153,6 +181,7 @@ export function createAutomationPackSettings(
     cronInput.value = schedule?.cron ?? '0 9 * * 1-5'
     promptInput.value = schedule?.prompt ?? ''
     enabledInput.checked = schedule?.enabled ?? true
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1)
     // An existing schedule keeps whatever it stored (including a model pinned
     // before schedules moved to dynamic selection — the picker surfaces it as a
     // pinned row). A new one starts from best value rather than inheriting the
@@ -190,6 +219,11 @@ export function createAutomationPackSettings(
           el('code', {}, schedule.cron),
           el('span', {}, modelDisplayLabel(schedule.model)),
           el('span', {}, schedule.enabled ? 'Armed' : 'Paused'),
+          el(
+            'span',
+            {},
+            `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? '' : 's'} max`,
+          ),
         ),
         el('div', { class: 'automation-row-last-run' }, lastRunLabel(schedule.lastRunAt)),
       )
@@ -214,8 +248,14 @@ export function createAutomationPackSettings(
       run.addEventListener('click', () => {
         run.disabled = true
         void api.automations.runNow(projectId, schedule.id).then(
-          () => {
-            showStatus(`Started “${schedule.name}”.`)
+          (event) => {
+            showStatus(
+              event.disposition === 'started'
+                ? `Started “${schedule.name}”.`
+                : event.coalescedReason === 'worktree-limit'
+                  ? `“${schedule.name}” has reached its live worktree limit.`
+                  : `“${schedule.name}” is already pending or running.`,
+            )
             void refresh()
           },
           (error: unknown) => {
@@ -267,6 +307,7 @@ export function createAutomationPackSettings(
       prompt: promptInput.value,
       model: modelSelect.value,
       enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value),
     }
     void api.automations
       .upsert(projectId, input)

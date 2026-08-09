@@ -729,6 +729,28 @@ without that margin — the label drifts left of the titles above it.
 Settings nav (`.settings-nav-btn.active`) keeps a **leading** accent rail — that list sits on the
 dialog's left edge, so the marker belongs there, not on the trailing side.
 
+### Automation threads
+
+Recurring work must not turn the main conversation list into a run log. Automation
+threads live under one collapsed **Automations** disclosure per project; the header
+shows only a schedule count and exceptional running/attention indicators. Multiple
+runs coalesce under one schedule-name disclosure with a compact run count and
+timestamped children; a schedule with one run stays a single row. Opening an
+automation thread reveals both owning disclosures so the selected row is never
+hidden. Keep run rows visually identical to ordinary threads apart from their extra
+indent — the same full-bleed selected state, PR lifecycle icon, attention bell, and
+row actions still apply.
+
+Attention is the exception to the collapsed default. A waiting run automatically
+reveals its **Automations** and schedule ancestors, but the bell appears only on
+the actionable run. While the older history is filtered out, the schedule keeps
+the right-facing chevron; the first deliberate click rotates it and expands the
+complete run list.
+
+Do not create a second permanent pane or one sidebar section per schedule. The
+schedule editor owns configuration; the collapsed project disclosure owns task
+history.
+
 ## Settings → Usage worth-it card
 
 The plan worth-it block sits between subscription bars and the local ledger: one short verdict, one
