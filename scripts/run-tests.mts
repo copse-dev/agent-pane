@@ -78,6 +78,11 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
       // a worker bundle to assert what it links against need the real package.
       'esbuild',
+      // Prettier's ESM entry builds a `createRequire(import.meta.url)`, which has
+      // no meaning once bundled to CJS ("The argument 'filename' must be ...
+      // Received undefined"). Left external, `require('prettier')` picks up the
+      // package's own CJS build. Needed by scripts/lib/generated-file.mts.
+      'prettier',
     ],
     alias: {
       '@shared': resolve('./src/shared'),
@@ -170,13 +175,39 @@ async function buildBatch(options: esbuild.BuildOptions): Promise<void> {
   }
 }
 
+/**
+ * Reporters for the run, as `node --test` arguments.
+ *
+ * Off CI, nothing: node picks `spec` on a TTY, which is what you want when you
+ * are reading it live.
+ *
+ * On CI it defaults to `tap`, and 6000+ tests of TAP is ~49k lines. GitHub's
+ * job-log API only returns the last ~5000, so a failure early in a green-ish
+ * run is not reachable through the API at all — the `headless-agent-host`
+ * failure in this repo had to be read off a screenshot of the web UI. Print the
+ * `dot` reporter instead (one character per test, failures re-listed in full at
+ * the end) and keep the machine-readable TAP in a file the job uploads.
+ */
+function reporterArgs(): string[] {
+  if (!process.env['CI']) return []
+  return [
+    '--test-reporter=dot',
+    '--test-reporter-destination=stdout',
+    '--test-reporter=tap',
+    `--test-reporter-destination=${UNIT_TAP_LOG}`,
+  ]
+}
+
+/** Full TAP for the run, kept for artifact upload rather than the console. */
+const UNIT_TAP_LOG = 'unit-tests.tap'
+
 function runTests(testFiles: string[]): void {
   // Unfiltered: hand node the glob so it picks up whatever is in dist-test.
   // Filtered: hand it the exact bundles, so leftovers from an earlier run
   // (dist-test is not wiped for a subset) can never sneak into the results.
   const specs =
     filters.length === 0 ? ['dist-test/**/*.test.js'] : testFiles.map((f) => testOutputPath(f))
-  const result = spawnSync('node', ['--test', ...specs], { stdio: 'inherit' })
+  const result = spawnSync('node', ['--test', ...reporterArgs(), ...specs], { stdio: 'inherit' })
   process.exit(result.status ?? 1)
 }
 

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { cpSync, copyFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
+import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { expectString } from '../src/shared/unknown-value.mts'
 
 const require = createRequire(import.meta.url)
@@ -111,14 +112,20 @@ const mainCtx = await esbuild.context({
   plugins: [onEndPlugin(startElectron)],
 })
 buildContexts.push(mainCtx)
-const packToolWorkerCtx = await esbuild.context({
-  ...nodeOpts,
-  entryPoints: ['src/main/services/packs/pack-tool-worker.ts'],
-  outfile: 'dist/main/pack-tool-worker.js',
-  alias: sharedAlias,
-  plugins: [onEndPlugin(startElectron)],
-})
-buildContexts.push(packToolWorkerCtx)
+// The workers/helpers the main process spawns by path. `esbuild.context()` only
+// prepares a build — nothing lands in `dist/` until `rebuild()` — so these are
+// rebuilt and watched alongside the bundles above, not merely constructed.
+//
+// No restart hook: the main process resolves each of these per use and execs it
+// fresh, so a rebuilt worker is picked up by the next call. Relaunching Electron
+// for them would only add startup churn (`watch()` runs its own initial build,
+// which would fire the hook again once restarts are armed).
+const standaloneCtxs = await Promise.all(
+  STANDALONE_MAIN_BUNDLES.map(({ entry, outfile }) =>
+    esbuild.context({ ...nodeOpts, entryPoints: [entry], outfile, alias: sharedAlias }),
+  ),
+)
+buildContexts.push(...standaloneCtxs)
 const preloadCtx = await esbuild.context({
   ...nodeOpts,
   entryPoints: ['src/preload/index.ts'],
@@ -159,12 +166,16 @@ const rendererCtx = await esbuild.context({
 })
 buildContexts.push(rendererCtx)
 
+// Every context is built before the first launch — Electron must not start
+// against a `dist/` that is missing a bundle it spawns by path (the missing
+// `sandbox-fs-worker.js` broke every sandboxed `fs:*` call, see main-bundles.mts).
 await Promise.all([
   mainCtx.rebuild(),
   preloadCtx.rebuild(),
   videoPreloadCtx.rebuild(),
   rendererCtx.rebuild(),
   videoDecoderCtx.rebuild(),
+  ...standaloneCtxs.map((ctx) => ctx.rebuild()),
 ])
 copyFileSync('src/renderer/video/decoder.html', 'dist/renderer/video/decoder.html')
 startElectron()
@@ -176,6 +187,7 @@ await preloadCtx.watch()
 await videoPreloadCtx.watch()
 await rendererCtx.watch()
 await videoDecoderCtx.watch()
+for (const ctx of standaloneCtxs) await ctx.watch()
 
 process.on('SIGINT', () => void shutdown('SIGINT'))
 process.on('SIGTERM', () => void shutdown('SIGTERM'))

@@ -24,6 +24,7 @@ import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import {
+  acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -839,6 +840,15 @@ export async function runAgent(
       // its estimated usage is reported instead of a silent zero. The error
       // text is separated from any streamed text so the bubble stays readable.
       const partial = err instanceof AcpTurnFailure ? err.partial : null
+      // Classified before anything is streamed so the live diagnosis and the
+      // line written into history are two readings of one verdict, not two
+      // verdicts that can disagree. `aborted` is sampled once for the same
+      // reason: an abort landing mid-catch must not offer a re-auth and then
+      // record the turn as merely stopped.
+      const aborted = controller.signal.aborted
+      const authFailure = aborted
+        ? null
+        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
@@ -847,9 +857,6 @@ export async function runAgent(
       // with its explanation already on screen. The idle deadline is paused for
       // the wait, exactly as it is around approval dialogs, so a user thinking
       // it over can't have the turn aborted underneath the modal.
-      const authFailure = controller.signal.aborted
-        ? null
-        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
       if (authFailure) {
         // Best-effort: the turn has already reported its failure, and a broken
         // offer must not escalate a handled error into an unhandled one.
@@ -864,19 +871,24 @@ export async function runAgent(
         }
       }
       sendChunk({ type: 'done' })
+      // The diagnosis is persisted, not just streamed: a bubble the user can
+      // still see and a history entry that has forgotten why the turn died
+      // would disagree about the same moment. It is also the only assistant
+      // content when the agent failed before emitting a token — an auth failure
+      // at connect time — which used to persist nothing at all.
+      const content = [
+        partial?.assistantText,
+        msg,
+        acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join('\n\n')
       return {
         usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },
         messages: [
           ...priorMessages,
           { role: 'user' as const, content: outboundPrompt },
-          ...(partial?.assistantText
-            ? [
-                {
-                  role: 'assistant' as const,
-                  content: `${partial.assistantText}\n\n[This turn was interrupted by a transient provider error before it completed.]`,
-                },
-              ]
-            : []),
+          { role: 'assistant' as const, content },
         ],
       }
     } finally {

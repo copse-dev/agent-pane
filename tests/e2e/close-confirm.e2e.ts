@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -14,6 +14,16 @@ interface CloseConfirmBridge {
 
 /** Long enough that the thread stays `running` across all three cases. */
 const RUN_HOLD_MS = 90_000
+
+/**
+ * Waiting for the confirm dialog to come back from main.
+ *
+ * This was 10s, an outlier: every other wait in this file uses 15-30s and the
+ * suite default `waitforTimeout` is 30s. It is a wait for a main-process round
+ * trip, not an assertion that the dialog is *fast*, so the tighter budget bought
+ * nothing and cost a failure whenever eight co-located shards loaded the host.
+ */
+const CONFIRM_DIALOG_WAIT_MS = 30_000
 
 async function requestClose(): Promise<void> {
   await browser.execute(() => {
@@ -32,8 +42,19 @@ async function closeAnswers(): Promise<boolean[]> {
   )
 }
 
+/**
+ * Displayed, not merely present. `input-bar.ts` creates the stop button once at
+ * mount with `hidden` and toggles `stopBtn.hidden = !running`, so it is in the
+ * DOM from app start and `$$('.stop-btn').length > 0` is true before any turn
+ * has begun.
+ *
+ * That made `ensureRunning()` return immediately without ever submitting a
+ * prompt, so no thread was ever `running`, `confirmClose()` correctly declined
+ * to prompt, and the two guarded cases below failed waiting 30s for a dialog
+ * that was right not to appear.
+ */
 async function isRunning(): Promise<boolean> {
-  return (await $$('.stop-btn')).length > 0
+  return await $('.stop-btn').isDisplayed()
 }
 
 /** Hold a turn open so the thread reports `status === 'running'`. */
@@ -86,7 +107,7 @@ describe('close confirmation while a thread is working', function () {
     await requestClose()
 
     const dialog = await $('#confirm-dialog')
-    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await dialog.waitForDisplayed({ timeout: CONFIRM_DIALOG_WAIT_MS })
     await expect(dialog.$('.confirm-dialog-message')).toHaveText(
       'Close Copse while the agent is still working?',
     )
@@ -110,7 +131,7 @@ describe('close confirmation while a thread is working', function () {
     await requestClose()
 
     const dialog = await $('#confirm-dialog')
-    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await dialog.waitForDisplayed({ timeout: CONFIRM_DIALOG_WAIT_MS })
     await dialog.$('.confirm-dialog-confirm').click()
 
     await waitForAnswers(3)

@@ -201,6 +201,42 @@ silently degrades to the agent's default rather than failing the turn.
 > the seatbelt: a sandboxed agent that asks to touch a genuinely denied path
 > (system `/tmp`, network) still fails with `EPERM` even after you approve it.
 
+### Reasoning level and the agent's other selectors (experimental)
+
+Beyond the model, ACP lets an agent advertise arbitrary **session config
+options** on `session/new` — each a labelled list of values with an optional
+`category`. The spec reserves `model`, `model_config`, `mode`, and
+`thought_level` (reasoning/thinking effort), and is explicit that the category
+is a UX hint: _"It MUST NOT be required for correctness. Clients MUST handle
+missing or unknown categories gracefully."_
+
+Copse therefore surfaces **every** `select` option the agent advertises, whatever
+its category, in the composer's model picker:
+
+- Open the picker and the agent's selectors are listed under the models —
+  `Thinking effort · Medium`, `Mode · Default` — each drilling into its choices.
+- **Right-click the model picker** for the same choices on one flat menu,
+  without opening the model list.
+- An option Copse has no label for still appears, using the agent's own `name`.
+
+Choices are stored per agent: config options under their `configId` in
+`configOptions`, and a session mode in `permissionMode` (see above). Values are
+validated against what the agent advertises before anything is sent — a level
+that disappears with a model switch is logged and skipped, not forced.
+
+Reasoning level applies with `session/set_config_option` and switches **live**:
+picking a new one takes effect on the next turn of the same session, with no
+respawn and no lost context (the same treatment as the model). A session **mode**
+still needs a fresh session, so it is part of the pool fingerprint.
+
+The list comes from **Detect models** in Settings, which caches what the agent
+advertised. An agent that has never been probed shows no selectors.
+
+> Agents differ in what they expose. In ACP v1 many surface permission modes via
+> `modes`/`session/set_mode` rather than as a `mode` config option, and some
+> encode reasoning effort as separate _models_ instead of a `thought_level`
+> option — in which case it stays in the model list where it already was.
+
 ### A note on secrets
 
 The spawned agent runs its own model loop, so Copse **scrubs its own cloud LLM
