@@ -45,9 +45,20 @@ export const config: Options.Testrunner = {
   // deleteSession. The base 120s transport timeout then stalls teardown for two
   // minutes and consumes the shard's outer retry budget. CI already retries the
   // whole shard in a fresh process, so fail dead sessions quickly here.
-  // 10s (down from 30s) keeps mid-test transport deaths from stacking with the
-  // deleteSession budget in after-test-safety when a renderer wedges.
-  connectionRetryTimeout: 10_000,
+  //
+  // This is a single global cap on every WebDriver request, and wdio has no
+  // separate budget for session creation, so it also bounds `POST /session`.
+  // At 10s that was aborting sessions the runner was merely slow to start, not
+  // ones that had died: run 31301555451 shard 1 failed advisor-pair-hint with
+  // `The operation was aborted due to timeout when running ".../session"`, and
+  // sibling shards showed the same cap landing mid-session as `invalid session
+  // id` on the following command.
+  //
+  // 20s is the compromise the two failure modes force. It roughly doubles the
+  // headroom for starting a session on a contended runner while keeping a
+  // wedged teardown far below the 120s default that this value exists to avoid
+  // — teardown can now stall 20s rather than 10s, which is the accepted cost.
+  connectionRetryTimeout: 20_000,
   connectionRetryCount: 1,
   // Electron session relaunches (`browser.reloadSession()`) are slow on the
   // resource-constrained GitHub runner, so specs that reload mid-test can blow
