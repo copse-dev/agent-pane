@@ -59,7 +59,10 @@ export const config: Options.Testrunner = {
   runner: 'local',
   specs: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
-  logLevel: 'info',
+  // Agent evals poll the running-state controls frequently while inference is
+  // active. Info logging turns that into hundreds of thousands of WebDriver
+  // lines and hides the agent evidence we actually need on failure.
+  logLevel: 'warn',
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   autoXvfb: !process.env.DISPLAY,
