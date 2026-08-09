@@ -25,14 +25,37 @@ import {
   FORCED_PLANNING_PACK_ID,
   PLAN_TOOL_NAME,
 } from '../forced-planning.ts'
+import {
+  shouldSteerSiteBuilding,
+  SITE_BUILDING_STEERING_PROMPT,
+} from '../site-building-steering.ts'
 
 /** Todo multi-step steering block when the user message looks plan-worthy. */
 export const todoSteeringHook: BlockingHook<'turnStart'> = {
   id: 'todo-steering',
   event: 'turnStart',
   run(payload) {
+    // ACP owns its own orchestration loop and Copse deliberately does not
+    // bridge update_todos. Preserve the pre-ACP-hook behavior instead of
+    // instructing that executor to call a tool it cannot see.
+    if (payload.executor === 'acp') return undefined
     if (!shouldSteerTodos(payload.userText)) return undefined
     return { injectContext: TODO_STEERING_PROMPT }
+  },
+}
+
+/**
+ * Product-quality steering for requests that ask Copse to build a website.
+ * The detector and prompt are intentionally brand-agnostic: the user's brief
+ * owns the visual direction; the pack supplies a reliable design/build/verify
+ * workflow to both local and ACP executors.
+ */
+export const siteBuildingSteeringHook: BlockingHook<'turnStart'> = {
+  id: 'site-building-steering',
+  event: 'turnStart',
+  run(payload) {
+    if (!shouldSteerSiteBuilding(payload.userText)) return undefined
+    return { injectContext: SITE_BUILDING_STEERING_PROMPT }
   },
 }
 

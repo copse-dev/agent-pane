@@ -14,6 +14,8 @@ import {
   LM_STUDIO_MODEL_IDS,
   resolveLocalServerUrl,
 } from './src/shared/lm-studio-defaults.ts'
+import { parseAcpModelSelection } from './src/shared/acp.ts'
+import { KNOWN_ACP_AGENTS } from './src/shared/acp-known-agents.ts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -104,6 +106,14 @@ export const config: Options.Testrunner = {
     process.env.COPSE_EVAL_WORKSPACE_ROOT = project.root
 
     const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
+    const evalModel = process.env.COPSE_EVAL_MODEL?.trim()
+    const acpSelection = evalModel ? parseAcpModelSelection(evalModel) : null
+    const acpPreset = acpSelection
+      ? KNOWN_ACP_AGENTS.find((candidate) => candidate.id === acpSelection.id)
+      : undefined
+    if (acpSelection && !acpPreset) {
+      throw new Error(`COPSE_EVAL_MODEL selected unknown ACP agent "${acpSelection.id}"`)
+    }
     const subagentsEnabled =
       process.env.COPSE_EVAL_SUBAGENTS === '0'
         ? false
@@ -118,7 +128,7 @@ export const config: Options.Testrunner = {
       ...(useMock
         ? { model: 'claude-sonnet-4-6' }
         : {
-            model: DEFAULT_APP_CHAT_MODEL,
+            model: evalModel ?? DEFAULT_APP_CHAT_MODEL,
             localServerUrl: resolveLocalServerUrl(undefined, {
               COPSE_EVAL_LM_STUDIO_URL:
                 process.env.COPSE_EVAL_LOCAL_SERVER_URL ?? process.env.COPSE_EVAL_LM_STUDIO_URL,
@@ -126,6 +136,19 @@ export const config: Options.Testrunner = {
             localDefaultModel: LM_STUDIO_MODEL_IDS.chat,
             subagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
             localSubagentsEnabled: true,
+            ...(acpPreset
+              ? {
+                  registeredAcpAgents: [
+                    {
+                      id: acpPreset.id,
+                      title: acpPreset.title,
+                      command: acpPreset.command,
+                      args: acpPreset.args,
+                      enabled: true,
+                    },
+                  ],
+                }
+              : {}),
           }),
     })
 

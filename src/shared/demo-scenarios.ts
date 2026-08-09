@@ -234,7 +234,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
     trace: LANDING_TRACE,
     presentedPrompt: {
-      text: 'Build a beautiful coming-soon website for my cupcake business, Crumb & Bloom. Include an email waitlist, make it feel warm and memorable, and preview it when you’re done.',
+      text: 'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
       tracePromptRole: 'nudge',
       nudgeLabel: 'Cupcake landing-page art direction and recording constraints',
     },

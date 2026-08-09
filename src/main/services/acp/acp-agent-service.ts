@@ -121,6 +121,12 @@ export interface RunAcpAgentOptions {
    */
   invokedSkills?: string[]
   /**
+   * Trusted, current-turn guidance assembled by Copse's canonical `turnStart`
+   * hooks. The user's prompt remains verbatim; this block is separately framed
+   * as product guidance and is sent on every turn, including pooled sessions.
+   */
+  operatorInstructions?: string
+  /**
    * Aborted when the Copse turn ends (success, error, or Stop). Merged into
    * bridged tool execution so an agent that abandons an MCP call and finishes
    * the prompt cannot leave Copse's approval modal orphaned underneath a
@@ -481,6 +487,9 @@ export async function runAcpAgentFromSettings(
         sandboxed,
         includeNotes: fresh,
         includeImages,
+        ...(options.operatorInstructions
+          ? { operatorInstructions: options.operatorInstructions }
+          : {}),
         ...(skillsBlock ? { skills: skillsBlock } : {}),
       },
     )
@@ -986,16 +995,25 @@ export const ACP_SANDBOX_PROMPT_NOTE =
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  opts?: { sandboxed?: boolean; includeNotes?: boolean; skills?: string },
+  opts?: {
+    sandboxed?: boolean
+    includeNotes?: boolean
+    operatorInstructions?: string
+    skills?: string
+  },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
   const note = includeNotes
     ? ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') + '\n\n'
     : ''
-  // `opts.skills` carries the invoked skills' instructions (already prefixed with
-  // its own `---` separator by buildInvokedSkillsBlock). Attach it to the current
-  // message so the agent reads the instructions alongside the invocation.
-  const current = promptPayloadFromUserContent(userPrompt).text + (opts?.skills ?? '')
+  const operatorBlock = opts?.operatorInstructions
+    ? `\n\n---\n\n## Copse guidance\n\n${opts.operatorInstructions}`
+    : ''
+  // Explicitly invoked skills remain closest to the current message and after
+  // first-party guidance: invoking one is a direct user action and should be the
+  // final instruction block the external executor reads.
+  const current =
+    promptPayloadFromUserContent(userPrompt).text + operatorBlock + (opts?.skills ?? '')
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
   if (!transcript) return `${note}${current}`
   return (
@@ -1020,6 +1038,7 @@ export function buildAcpPromptContent(
   opts?: {
     sandboxed?: boolean
     includeNotes?: boolean
+    operatorInstructions?: string
     skills?: string
     includeImages?: boolean
   },
@@ -1027,6 +1046,9 @@ export function buildAcpPromptContent(
   const text = buildAcpPrompt(userPrompt, priorMessages, {
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
+    ...(opts?.operatorInstructions !== undefined
+      ? { operatorInstructions: opts.operatorInstructions }
+      : {}),
     ...(opts?.skills !== undefined ? { skills: opts.skills } : {}),
   })
   const blocks: ContentBlock[] = [{ type: 'text', text }]

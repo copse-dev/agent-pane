@@ -233,6 +233,17 @@ revisiting this document, not silently diverging in an implementation PR.
     per-project grant at use time. Stability never changes
     decision 17: disabling removes contributions from new work while stored data and
     historical rendering remain available.
+20. **`turnStart` assembly is executor-neutral.** The canonical event fires once
+    for the built-in loop and once for an external ACP turn, before either executor
+    receives its prompt. ACP receives the merged trusted outcome in a separately
+    delimited `Copse guidance` block; the raw user message stays byte-for-byte intact,
+    and an explicitly invoked skill remains the last instruction block because it is
+    a direct user action. `TurnStartPayload.executor` lets hooks abstain from
+    executor-private mechanisms, while `toolNames` contains only tools the host can
+    prove it offers on that path (the filtered local list or Copse's active ACP bridge
+    list). A hook must not name a tool absent from that list. Disabling a pack removes
+    its guidance from both executors on the next turn and leaves prior history intact
+    (decision 17).
 
 ## Target architecture
 
@@ -309,23 +320,23 @@ Terms invented by this design — use them exactly; do not coin synonyms in code
 The registry's event names and firing sites. A1 implements the type; each event lands in
 the phase listed. Names are final — changing one is a decisions-log edit, not a refactor.
 
-| Event                                | Kind                   | Fires at (site)                                                                                  | Phase |
-| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------ | ----- |
-| `turnStart`                          | blocking, assembly     | `runAgent` after system prompt build, before loop (steering, pins)                               | M0    |
-| `beforeFinalize`                     | blocking, assembly     | `runAgentLoop` finalize checks (open-todos closeout nudges only)                                 | M0    |
-| `stepBoundary`                       | blocking, assembly     | `runAgentLoop` step boundaries: pre-stream escalation + post-stream stop-reason (in-loop nudges) | E1    |
-| `beforeSubmitPrompt`                 | blocking, decision     | Compose path, before `agent:run`                                                                 | B1    |
-| `toolGate`                           | blocking, decision     | `ensureToolPermitted` (maps beforeShell/MCP/ReadFile + `PreToolUse`)                             | A2    |
-| `afterFileEdit`                      | blocking or async      | Diff-queue / write tools                                                                         | B2    |
-| `stop`                               | async (detached)       | Turn end or abort, after agent work halts                                                        | B3    |
-| `afterToolUse`                       | async, observation     | After each tool result (generic; shell/MCP variants are payload flavors)                         | D2    |
-| `subagentStart`                      | blocking, decision     | `runSubagent` before spawn                                                                       | D1    |
-| `subagentStop`                       | async (detached)       | `runSubagent` completion                                                                         | D1    |
-| `sessionStart`                       | async, fire-and-forget | New thread / first turn (sets `sessionEnv`)                                                      | H4    |
-| `compaction`                         | async, observation     | History trim / todo-boundary compaction                                                          | later |
-| `permissionDecision`                 | async, observation     | After `decideShellPermission` verdict (feeds #840's audit trail)                                 | F2    |
-| `beforeDiffApply` / `afterDiffApply` | blocking / async       | Diff-queue approval flow (Copse-native)                                                          | F2    |
-| `postTurnReview`                     | async, observation     | After a post-turn review cycle verdict (E3 `runPostTurnReviewCycle`; Copse-native)               | F2    |
+| Event                                | Kind                   | Fires at (site)                                                                                    | Phase |
+| ------------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------- | ----- |
+| `turnStart`                          | blocking, assembly     | `runAgent` before executor dispatch: local system assembly or ACP prompt assembly (steering, pins) | M0    |
+| `beforeFinalize`                     | blocking, assembly     | `runAgentLoop` finalize checks (open-todos closeout nudges only)                                   | M0    |
+| `stepBoundary`                       | blocking, assembly     | `runAgentLoop` step boundaries: pre-stream escalation + post-stream stop-reason (in-loop nudges)   | E1    |
+| `beforeSubmitPrompt`                 | blocking, decision     | Compose path, before `agent:run`                                                                   | B1    |
+| `toolGate`                           | blocking, decision     | `ensureToolPermitted` (maps beforeShell/MCP/ReadFile + `PreToolUse`)                               | A2    |
+| `afterFileEdit`                      | blocking or async      | Diff-queue / write tools                                                                           | B2    |
+| `stop`                               | async (detached)       | Turn end or abort, after agent work halts                                                          | B3    |
+| `afterToolUse`                       | async, observation     | After each tool result (generic; shell/MCP variants are payload flavors)                           | D2    |
+| `subagentStart`                      | blocking, decision     | `runSubagent` before spawn                                                                         | D1    |
+| `subagentStop`                       | async (detached)       | `runSubagent` completion                                                                           | D1    |
+| `sessionStart`                       | async, fire-and-forget | New thread / first turn (sets `sessionEnv`)                                                        | H4    |
+| `compaction`                         | async, observation     | History trim / todo-boundary compaction                                                            | later |
+| `permissionDecision`                 | async, observation     | After `decideShellPermission` verdict (feeds #840's audit trail)                                   | F2    |
+| `beforeDiffApply` / `afterDiffApply` | blocking / async       | Diff-queue approval flow (Copse-native)                                                            | F2    |
+| `postTurnReview`                     | async, observation     | After a post-turn review cycle verdict (E3 `runPostTurnReviewCycle`; Copse-native)                 | F2    |
 
 **A1 landed** the whole table as typed, registered canonical events (`HOOK_EVENT_NAMES`
 / `HOOK_EVENT_SPECS` / `HookEventPayloads` in `packages/agent/src/hooks/canonical-events.ts`);
@@ -435,7 +446,10 @@ Packs are not only extractions. A feature whose whole surface is a bundle of
 contributions can be _born_ as a pack — `copse.forced-planning` (P12) is the first:
 one turn-start hook plus its own settings schema, which measures the capability of
 the model running the turn and forces an explicit plan below the configured
-threshold. Nothing inline is deleted because nothing inline existed; the acceptance
+threshold. `copse.site-building` (P16) is a stable, default-on example: one
+conditional turn-start hook supplies a brand-agnostic creative-engineering workflow
+to local and ACP executors without changing the user's visible brief.
+Nothing inline is deleted because nothing inline existed; the acceptance
 criterion that replaces "old inline mechanism deleted" is that **disabling the pack
 restores a byte-identical system prompt**.
 
@@ -584,6 +598,7 @@ client-tool transport and the actual provider call remains the direct Parallel
 Search API.
 
 | P15 🚧 | Selected-pack executable behavior — P1/P3 | **Draft milestone (#1336):** P1 discovers an explicitly selected folder, validates and hashes its manifest/tree, and registers an ordinary user pack. P2 revalidates a content-addressed snapshot and runs its shared API-v1 runtime only inside the active macOS OS sandbox, with direct network and filesystem writes denied; declared tools register atomically. P3 adds declared whole-thread model routes to the thread picker, validates registered model ids, passes bounded current-turn images plus a bounded text-only conversation handoff, and exposes only durable session get/set/delete operations bound by the host to pack + Copse thread identity. Selecting/enabling the pack is the current opt-in; invocations do not prompt again per turn. P4 browser, origin, and renderer behaviors remain future work and expose no placeholder declarations or generic host gateway yet. |
+| P16 🚧 | New pack: site-building steering across local + ACP | `copse.site-building` is a stable, default-on first-party pack with one conditional `turnStart` hook. Intent detection requires both an implementation action and a website surface; explanation/review prompts abstain. The injected text is brand-agnostic and covers project inspection, coherent art direction, accessibility, responsiveness, and browser verification. The raw user message remains unchanged. Decision 20 wires the same canonical assembly into Codex/other ACP prompts through a separately delimited trusted block, using only the active Copse bridge tool list; the ACP todo hook abstains because `update_todos` is not bridged. Disabling the pack restores the prior prompt for both executors. Contract coverage includes detector negatives, pack atomicity, ACP ordering (guidance before explicitly invoked skills), and a focused Settings visual eval; the acceptance eval is a fresh one-turn Codex ACP run from a natural visible brand brief, not a hidden cupcake-specific nudge. |
 
 P15 P4 amendment (supersedes the P15 status row above): the selected-pack
 milestone now covers P1–P4. `browser.origins` is a concrete model behavior backed by

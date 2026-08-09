@@ -14,7 +14,10 @@ describe('demo scenarios', () => {
     assert.ok(scenario)
     assert.ok(scenario.trace, 'the walkthrough needs a trace to replay')
     assert.notEqual(scenario.trace.prompt.trim(), '')
-    assert.match(demoScenarioPrompt(scenario), /cupcake business, Crumb & Bloom/)
+    assert.equal(
+      demoScenarioPrompt(scenario),
+      'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
+    )
     assert.equal(scenario.presentedPrompt?.tracePromptRole, 'nudge')
     assert.ok(
       scenario.trace.prompt.length > demoScenarioPrompt(scenario).length,

@@ -434,6 +434,43 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /do the thing<\/skill_content>$/)
   })
 
+  it('keeps the user message verbatim and frames trusted Copse guidance separately', () => {
+    const user = 'Build a polished coming-soon site for Crumb & Bloom. Include an email signup.'
+    const guidance = 'Inspect the project, choose a coherent visual direction, then verify it.'
+    const prompt = buildAcpPrompt(user, [], {
+      includeNotes: false,
+      operatorInstructions: guidance,
+    })
+    assert.equal(
+      prompt,
+      `${user}\n\n---\n\n## Copse guidance\n\n${guidance}`,
+      'product steering must be an explicit adjacent block, never a rewrite of the visible prompt',
+    )
+  })
+
+  it('places product guidance before explicitly invoked skills', () => {
+    const prompt = buildAcpPrompt('Build the website', [], {
+      includeNotes: false,
+      operatorInstructions: 'Follow the site-building workflow.',
+      skills: '\n\n---\n\n## Invoked skills\n\nUSER-SELECTED-SKILL',
+    })
+    const guidanceIndex = prompt.indexOf('## Copse guidance')
+    const skillIndex = prompt.indexOf('## Invoked skills')
+    assert.ok(guidanceIndex > 0)
+    assert.ok(skillIndex > guidanceIndex)
+    assert.match(prompt, /USER-SELECTED-SKILL$/)
+  })
+
+  it('sends current-turn guidance on a reused ACP session without replay notes', () => {
+    const prompt = buildAcpPrompt('Polish the landing page', [], {
+      includeNotes: false,
+      operatorInstructions: 'Verify responsive behavior.',
+    })
+    assert.doesNotMatch(prompt, /^Session notes:/)
+    assert.match(prompt, /^Polish the landing page/)
+    assert.match(prompt, /## Copse guidance\n\nVerify responsive behavior\.$/)
+  })
+
   it('keeps the invoked-skills block with the new message when replaying a transcript', () => {
     const prompt = buildAcpPrompt('go', [{ role: 'user', content: 'earlier' }], {
       skills: '\n\n## Invoked skills\n\nBODY',
