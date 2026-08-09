@@ -39,7 +39,7 @@ export function isDuplicateExploreCall(
 }
 
 export const LOOP_NUDGE_USER_MESSAGE =
-  'You already explored this workspace. Use the tool results above — run the requested command with run_shell or write your final answer. Do not list the root directory again or re-read the same files.'
+  'Exploration is over. Do not call read, list, or search tools, and do not use run_shell or edit tools to inspect files. Use the results already gathered. If the user asked only for analysis, answer now. Otherwise perform only the requested command or edit, then answer.'
 
 export const STUCK_FINALIZE_NUDGE =
   'Stop calling tools. Write a clear final answer for the user based on the conversation so far.'
