@@ -111,6 +111,21 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
   glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
   text-field overlay.
 
+### Permission / approval prompts
+
+Approval is a workbench decision surface, not a debug dump:
+
+- Titles are **questions in plain language** (`Mark pull request ready for review?`, `Run package
+install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
+- Bodies lead with the **thing at stake** (PR target, command, origin). Pretty-printed JSON args
+  are a last-resort fallback when the gate cannot summarize, not the default.
+- Buttons use `.ui-btn*` via `uiActions` (Approve = primary, Reject = secondary). Do not paint
+  Approve in `--success` and Reject in `--error`; those tokens are for status, not yes/no chrome.
+- Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
+  one-line PR target does not look like a `<pre>` of JSON.
+
+Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
