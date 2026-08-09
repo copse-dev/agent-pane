@@ -386,3 +386,34 @@ describe('gitleaks workflow invariants', () => {
     assert.match(gitleaksWorkflow, /^ {4}runs-on: ubuntu-latest$/m)
   })
 })
+
+// Demos stopped carrying their own 34MB copy of Monaco and now share one
+// published tree. That only works if both halves agree, and neither half fails
+// on its own: the build succeeds, the publish succeeds, the deploy succeeds, and
+// the tree is present on the branch. Only loading a published preview shows it,
+// and only the editor is affected — so assert the pairing here instead.
+describe('shared Monaco publishing invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+  const pages = readFileSync(resolve('.github/workflows/pages.yml'), 'utf8')
+
+  it('deploys the shared tree the demos are pointed at', () => {
+    const assemble = pages.match(/for dir in [^\n]*/)?.[0]
+    assert.ok(assemble, 'expected the assemble loop that mounts demo-previews targets')
+    assert.match(
+      assemble,
+      /_previews\/vendor\//,
+      'vendor/ is committed to demo-previews but only what this loop mounts is served',
+    )
+  })
+
+  it('addresses it relatively, never through a repository-name prefix', () => {
+    assert.match(demoPreview, /echo "base=\.\.\/vendor\/monaco\/\$\{version\}\/"/)
+    // The site publishes under the site/CNAME custom domain, whose root is `/`.
+    // An <owner>.github.io/<repo>/ style prefix 404s there — the original bug.
+    assert.doesNotMatch(
+      demoPreview,
+      /base=\/\$\{?REPO|base=\/agent-pane\//,
+      'copse.dev has no /agent-pane prefix; adding one makes every Monaco worker 404',
+    )
+  })
+})

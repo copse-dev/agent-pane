@@ -56,4 +56,8 @@ jobs:
     needs: cleanup
     if: needs.cleanup.outputs.removed == 'true'
     uses: ./.github/workflows/pages.yml
+    with:
+      # The preview is already removed from demo-previews by this point; a failed
+      # deploy only delays it disappearing from the site, so don't fail the run.
+      tolerate-deploy-failure: true
     secrets: inherit

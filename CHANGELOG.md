@@ -8,6 +8,18 @@ every published entry.
 
 ## Unreleased
 
+- A thread working in its own isolated worktree no longer asks you to approve
+  every delete, rename, and new folder. Writes have applied straight to disk
+  since the session backup landed, but the three non-content ops still staged
+  unconditionally — so an isolated thread was queueing up approvals for files
+  only the agent had ever written, in a checkout you do not share, on a branch
+  that is not yours. They now take the same path writes do, and the same
+  fallbacks: an op still stages if git cannot be read, if uncommitted work could
+  not be backed up first, or if the file changed underneath the agent since it
+  read it. Threads on the shared checkout are unchanged — those are your files.
+  **Settings → Permissions → File edits** carries the toggle
+  (_Skip approval for deletes, renames, and new folders in an isolated
+  worktree_), on by default.
 - The side panel can now take the whole chat column. Every pane header —
   Explorer, Shells, Changes, PRs, Memories, Roadmap, Browser — carries an
   **expand** control next to its pop-out button, and pressing it gives that pane

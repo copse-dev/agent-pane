@@ -262,7 +262,12 @@ import {
   type MockScriptStep,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+import {
+  createMainWindow,
+  getFocusedMainWindow,
+  getMainWindow,
+  syncDevtoolsShortcut,
+} from '../windows/create-main-window.ts'
 import { buildAppMenu } from '../windows/app-menu.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
@@ -366,7 +371,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
   // getPackService() has already layered the user's explicit choices on top, so
   // this is a no-op unless they opted in.
-  syncDevtoolsShortcut(win)
+  syncDevtoolsShortcut()
   const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
     if (!win.isDestroyed()) {
       win.webContents.send('security:guardedYoloChanged', getGuardedYoloState(threadId))
@@ -1091,7 +1096,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (k === DEVELOPER_MODE_SETTING) {
       const win = getMainWindow()
       const enabled = typeof value === 'boolean' && value
-      if (win) buildAppMenu(win, enabled)
+      if (win) {
+        buildAppMenu(
+          {
+            getFocusedWindow: getFocusedMainWindow,
+            createWindow: createMainWindow,
+          },
+          enabled,
+        )
+      }
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
@@ -1734,7 +1747,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // global Ctrl+Shift+I shortcut so the atomic pack-disable turns it off
     // without an app restart (mirrors the tool syncs above).
     if (id === DEVTOOLS_SHORTCUT_PACK_ID) {
-      syncDevtoolsShortcut(win)
+      syncDevtoolsShortcut()
     }
     // Same for the `copse.background-tasks` pack's `run_background` tool — the
     // atomic pack-disable also revokes the pack's declared `loopback-bind`
@@ -2205,6 +2218,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:requestCloseConfirm', (event) => {
       assertMainFrameSender(event, win)
       return requestCloseConfirmation()
+    })
+
+    ipcMain.handle('test:createMainWindow', (event) => {
+      assertMainFrameSender(event, win)
+      createMainWindow()
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)

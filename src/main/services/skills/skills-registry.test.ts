@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   refreshSkillsRegistry,
@@ -163,6 +163,19 @@ description: Run a Copse setup health check
     assert.equal(skill.source, 'bundled')
 
     await rm(builtinRoot, { recursive: true, force: true })
+  })
+
+  it('ships reconcile-worktrees with its readable audit helper', async () => {
+    setBuiltinSkillsRootForTest(resolve('assets/skills'))
+    await refreshSkillsRegistry()
+
+    const skill = listSkills().find((candidate) => candidate.name === 'reconcile-worktrees')
+    assert.ok(skill, 'expected reconcile-worktrees in the checked-in built-in catalog')
+    assert.equal(skill.source, 'bundled')
+
+    const helper = await readSkill('reconcile-worktrees', 'scripts/audit-worktrees.mjs')
+    assert.equal(helper.relativePath, 'scripts/audit-worktrees.mjs')
+    assert.match(helper.body, /Read-only JSON audit of registered Git worktrees/)
   })
 
   it('omits disable-model-invocation skills from listModelInvocableSkills but keeps them in listSkills', async () => {
