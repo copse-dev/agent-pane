@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from 'node:net'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -35,6 +35,29 @@ function askpassDir(): string {
   const dir = join(userDataDir(), 'ssh-askpass')
   mkdirSync(dir, { recursive: true })
   return dir
+}
+
+/**
+ * Unix-domain socket paths have a small platform limit (104 bytes on macOS).
+ * A userData directory can legitimately exceed it — named Electron profiles,
+ * e2e profiles, and external-volume checkouts all do. Keep the executable
+ * wrapper with the profile, but bind the socket in a short private temp dir.
+ */
+function askpassSocketPath(): string {
+  const identity = createHash('sha256').update(userDataDir()).digest('hex').slice(0, 16)
+  if (process.platform === 'win32') {
+    return `\\\\.\\pipe\\copse-ssh-askpass-${identity}`
+  }
+
+  const uid = typeof process.getuid === 'function' ? String(process.getuid()) : 'user'
+  // macOS exposes a long per-user tmpdir under /var/folders. /private/tmp is
+  // the canonical short local temp root and keeps the complete socket path
+  // comfortably below sockaddr_un.sun_path even for long named profiles.
+  const tempRoot = process.platform === 'darwin' ? '/private/tmp' : tmpdir()
+  const dir = join(tempRoot, `csa-${uid}`)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  chmodSync(dir, 0o700)
+  return join(dir, `${identity}.sock`)
 }
 
 let userDataDirOverride: string | null = null
@@ -138,7 +161,7 @@ export function initSshAskpassServer(userDataDirectory?: string): void {
   if (userDataDirectory) configuredUserDataDir = userDataDirectory
   if (server) return
   ensureAskpassWrapper()
-  socketPath = join(askpassDir(), 'askpass.sock')
+  socketPath = askpassSocketPath()
   try {
     unlinkSync(socketPath)
   } catch {
@@ -147,7 +170,10 @@ export function initSshAskpassServer(userDataDirectory?: string): void {
   server = createServer((socket) => {
     handleAskpassConnection(socket)
   })
-  server.listen(socketPath)
+  const boundSocketPath = socketPath
+  server.listen(boundSocketPath, () => {
+    if (process.platform !== 'win32') chmodSync(boundSocketPath, 0o600)
+  })
   server.unref()
 }
 
