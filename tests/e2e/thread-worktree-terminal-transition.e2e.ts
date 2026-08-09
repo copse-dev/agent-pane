@@ -46,6 +46,24 @@ describe('terminal checkout transition', () => {
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
+    // A worktree is always cut from the *default* branch, so `worktreeMode:
+    // 'always'` below only allocates one if the repository can name it.
+    // `resolveDefaultBranch` (git-service.ts) tries `refs/remotes/origin/HEAD`,
+    // then `remote show origin -n`, then `init.defaultBranch` — and this fixture
+    // has no remote, so the first two find nothing and the third decides it.
+    // Left unset, `getDefaultBranch` returns null, `unsupportedReason` reports
+    // `default-branch-unresolved`, and because this thread expresses no explicit
+    // choice the policy degrades to `checkoutMode: 'shared'` *silently*: no
+    // worktree, so no second terminal tab and no shared-checkout badge, with
+    // nothing raised to say why.
+    //
+    // Setting it makes that precondition explicit rather than inherited, which
+    // is worth having on its own. It is NOT the fix for this spec: run
+    // 31287859028 shard 8 failed with byte-identical diagnostics afterwards. The
+    // CI runner supplies a global gitconfig, so the fixture could most likely
+    // already resolve a default branch and this line changed nothing there. Why
+    // the worktree is never allocated is still open — see the wait below.
+    git(projectRoot, ['config', 'init.defaultBranch', 'main'])
     writeFileSync(join(projectRoot, 'README.md'), 'terminal transition fixture\n')
     git(projectRoot, ['add', 'README.md'])
     git(projectRoot, ['commit', '-qm', 'seed'])
@@ -106,13 +124,28 @@ describe('terminal checkout transition', () => {
     //
     // The dialog check is a fast `isDisplayed()` rather than the helper itself,
     // so a poll that finds no prompt does not pay the helper's 10s wait.
-    // Approving inside the wait was NOT the fix — run 31276959420 shard 8 still
-    // timed out here with the approval handled every iteration, so the second
-    // tab is not merely waiting to be let out. Rather than guess a third cause,
-    // report what is actually on screen when the wait gives up: how many tabs
-    // exist, whether the approval prompt is up at that moment, and what the
-    // checkout badges say. Those three answer "did the worktree get allocated at
-    // all" versus "it allocated but no shell followed".
+    //
+    // Approving inside the wait was NOT the fix either — run 31276959420 shard 8
+    // still timed out with the approval handled every iteration. The diagnostics
+    // below were added rather than a third guess, and run 31283433113 shard 8
+    // answered it: `1 terminal tab(s), approval dialog is not showing, checkout
+    // badges:` (empty). No dialog, so nothing was gated; a badge element present
+    // but blank, because one is built hidden per tab (terminals-pane.ts) and
+    // `getText()` returns rendered text. So the worktree is never allocated at
+    // all — this fails upstream of the terminal, not in it.
+    //
+    // Why it is not allocated is STILL UNKNOWN. Giving the fixture a resolvable
+    // default branch (above) was the third guess and it failed too: run
+    // 31287859028 shard 8 reported the same three values unchanged. The next
+    // step is not a fourth guess but instrumentation — have
+    // `decideThreadWorktreePolicy` (src/shared/git/worktree-policy.ts) and
+    // `prepareThreadCheckout` report the `reason` / `checkoutMode` they settle
+    // on, so a run states *why* it chose shared instead of leaving it to be
+    // inferred.
+    //
+    // The diagnostics stay: they cost nothing on success, and they are what
+    // distinguishes "never allocated" from "allocated but no shell followed" if
+    // this regresses.
     let lastTabCount = -1
     try {
       await browser.waitUntil(
