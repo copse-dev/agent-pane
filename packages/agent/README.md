@@ -36,9 +36,9 @@ schemas). The package imports **nothing** from the host app.
   app files importing them from `@shared/types` are unchanged.
 - **Hooks platform** (`hooks/`) — canonical events, function-executor registry,
   and first-party turn-start hooks (`todo-steering`, `todo-pin`,
-  `github-link-steering`, `commit-steering`). Pure steering helpers live beside
-  them (`todo-steering.ts`, `github-link-steering.ts`, `commit-steering.ts`);
-  `@shared` re-exports for existing app imports.
+  `github-link-steering`). Pure steering helpers live beside them
+  (`todo-steering.ts`, `github-link-steering.ts`); `@shared` re-exports for
+  existing app imports.
 - **`internal-utils.ts`** — vendored copies of the app's `at` / `errorMessage`
   helpers, so the package pulls nothing from `@shared/*`.
 

@@ -39,6 +39,7 @@ export interface EvalScenario {
   assertWorkspace?: {
     git?: {
       minCommits?: number
+      allCommitMessagesContain?: string[]
     }
     homePage?: {
       path?: string
@@ -98,7 +99,12 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
     .optional(),
   assertWorkspace: z
     .object({
-      git: z.object({ minCommits: z.number().optional() }).optional(),
+      git: z
+        .object({
+          minCommits: z.number().optional(),
+          allCommitMessagesContain: z.array(z.string()).optional(),
+        })
+        .optional(),
       homePage: z
         .object({
           path: z.string().optional(),

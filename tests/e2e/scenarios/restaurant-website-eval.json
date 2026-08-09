@@ -21,7 +21,8 @@
   ],
   "expect": {
     "shouldSteerTodos": true,
-    "requireUpdateTodos": true
+    "requireUpdateTodos": true,
+    "requireTools": ["git_commit"]
   },
   "assertWorkspace": {
     "git": {
