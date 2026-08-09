@@ -50,6 +50,23 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   native loop's transcript or orchestration state (ask_user, explore subagents,
   todos, memories) stay private; `advisor` is the exception, scoped to the whole
   ACP turn by agent-service.
+- **How a tool call gets its name differs per agent**, and no agent fills in
+  every field. Wire traces of three (captured with the `COPSE_DEBUG_ACP_UPDATES`
+  flag from #1659):
+  Claude sends the qualified name (`mcp__copse__run_shell`) everywhere; Cursor
+  titles the call `MCP: tool` with empty arguments and reveals the real name
+  **only** on the permission request; Codex sends no title on permission
+  requests but does send the arguments. Copse treats the permission request as a
+  patch over the display notification, so each agent's missing half is filled
+  from whichever channel carries it. A consequence worth knowing: under Cursor,
+  a bridged or MCP call that is auto-approved never produces a permission
+  request, so it can keep the generic `MCP: tool` label.
+- Because that title is also how Copse recognises **its own** bridged tools to
+  skip a duplicate approval prompt, the same per-agent spread applies: Cursor's
+  `copse-gh_pr_list: gh_pr_list` and Claude's `mcp__copse__gh_pr_view` are both
+  recognised. Codex sends no title at all, so its bridged calls still prompt
+  twice — the bridge's own gate still enforces them, so this is noise, not a
+  hole.
 - Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
   under the workspace seatbelt** on macOS when the project sandbox is active
   (issue #590): writes confined to the workspace, home denied except the agent's

@@ -446,6 +446,24 @@ describe('isBridgedNativeToolTitle', () => {
     assert.ok(isBridgedNativeToolTitle('`copse-gh_pr_list`'))
   })
 
+  // Claude infixes the server name under the conventional `mcp__` prefix rather
+  // than leading with it, so `^copse` never matched and every bridged call
+  // double-prompted. Found by a wire trace (#1659), not by the probe.
+  it("matches the observed Claude title 'mcp__<server>__<tool>'", () => {
+    assert.ok(isBridgedNativeToolTitle('mcp__copse__gh_pr_view'))
+    assert.ok(isBridgedNativeToolTitle('mcp__copse__run_shell'))
+    assert.ok(isBridgedNativeToolTitle('mcp.copse.staged_diffs'))
+    assert.ok(isBridgedNativeToolTitle('MCP__COPSE__GH_PR_LIST'))
+  })
+
+  // The `mcp` prefix is deliberately the *only* thing allowed to lead. Admitting
+  // an arbitrary leading word would re-admit the prose titles below.
+  it('does not let the optional prefix become "any leading word"', () => {
+    assert.ok(!isBridgedNativeToolTitle('Run copse gh_pr_list now'))
+    assert.ok(!isBridgedNativeToolTitle('mcpserver-copse-gh_pr_list'))
+    assert.ok(!isBridgedNativeToolTitle('Edit mcp__copse__gh_pr_list-notes.md'))
+  })
+
   it('only matches at the start, so prose that merely mentions copse is safe', () => {
     // `copse` is a common token in this repo; a description that happens to
     // contain a bridged tool name must not be taken for a bridged call.
