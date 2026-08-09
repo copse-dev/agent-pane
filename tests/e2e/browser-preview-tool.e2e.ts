@@ -56,6 +56,7 @@ describe('browser preview tool', () => {
       },
     )
     await expect($('.approval-dialog')).not.toExist()
-    await saveThreePaneScreenshot('browser-preview-tool-visible.png')
+    await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
+    await saveThreePaneScreenshot('browser-preview-tool-visible.png', { filesPaneWidth: 1_040 })
   })
 })
