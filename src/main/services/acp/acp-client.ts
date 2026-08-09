@@ -812,15 +812,36 @@ export async function openAcpSession(
     })
     .onRequest(methods.client.session.requestPermission, async (ctx) => {
       const { sessionId, toolCall } = ctx.params
-      // Some ACP agents omit rawInput from their display notifications while
-      // still supplying it on the permission request. Feed that authoritative
-      // payload through the same ordered update queue so terminal tasks,
-      // transcript cards, and restart persistence receive the arguments.
-      if (toolCall.rawInput !== undefined) {
+      // Agents split a tool call's identity across the display notification and
+      // the permission request differently, and no agent fills in both. Wire
+      // traces (#1659) of three:
+      //
+      //   Cursor  session/update says `title: "MCP: tool"` with `rawInput: {}`;
+      //           the permission request carries the real
+      //           `copse-git_status: git_status` but no rawInput.
+      //   Codex   permission request has no `title` key at all, but a populated
+      //           rawInput — the case the rawInput back-fill below was written
+      //           for.
+      //   Claude  sends both, in both places.
+      //
+      // So treat the permission request as a patch over whatever the display
+      // notification said, and feed it through the same ordered update queue
+      // that `session/update` uses. That keeps terminal tasks, transcript
+      // cards, and restart persistence on one path, and it is why Cursor's MCP
+      // calls can be labelled at all: its `tool_call_update` never carries a
+      // title, so the permission request is the only channel that ever names
+      // the tool.
+      const patch = {
+        ...(toolCall.rawInput !== undefined ? { rawInput: toolCall.rawInput } : {}),
+        ...(typeof toolCall.title === 'string' && toolCall.title.trim() !== ''
+          ? { title: toolCall.title }
+          : {}),
+      }
+      if (Object.keys(patch).length > 0) {
         enqueueUpdate(sessionId, {
           sessionUpdate: 'tool_call_update',
           toolCallId: toolCall.toolCallId,
-          rawInput: toolCall.rawInput,
+          ...patch,
         })
       }
       const current = handlers.current
