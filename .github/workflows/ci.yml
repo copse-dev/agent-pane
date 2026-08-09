@@ -50,6 +50,22 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
+  # Job timeouts: every job below sets `timeout-minutes`, and
+  # scripts/ci-workflow-invariants.test.ts fails the build if a new one forgets.
+  # GitHub's default is 360 minutes, which is survivable on hosted runners (you
+  # pay for it) and is not on this fleet: runners are EPHEMERAL and serve both
+  # tiers, so one wedged job parks a whole runner — a sizeable slice of total
+  # capacity — for six hours while every other PR queues behind it. Observed on
+  # a `main` push that sat at 167 minutes with no job-level cap to stop it.
+  #
+  # The caps are leak-stoppers, NOT latency SLAs. Each is roughly 3-5x the
+  # observed duration so that a slow-but-healthy run (cold dependency cache, a
+  # lint OOM retry, a saturated box) never goes red on the clock — a false red
+  # costs more than the leak it would prevent. Queue time is excluded: Actions
+  # starts this clock when the job begins executing, not when it is dispatched.
+  # Tighten only with data (a run record showing the real p99), and raise
+  # rather than let a genuinely-slower job flake.
+  #
   # Check-tier runner routing: every `runs-on` below (except e2e, which routes
   # by label with its own nightly-hosted exception, and release-mac in its own
   # workflow) reads the CHECKS_RUNNER Actions variable and falls back to
@@ -89,6 +105,7 @@ jobs:
     # under load (exit 137). If that recurs, add fleet headroom rather than
     # re-pinning the static gate to hosted.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
     permissions:
       contents: read
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
@@ -371,6 +388,7 @@ jobs:
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. Watch for 6 GB self-hosted OOM on eslint/prettier (see precheck).
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
@@ -446,6 +464,7 @@ jobs:
     # the 6 GB self-hosted fleet under load (same class as precheck OOM) — add
     # headroom if it recurs.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -558,6 +577,7 @@ jobs:
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. No Electron/display need.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -621,6 +641,7 @@ jobs:
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-agent'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -652,6 +673,7 @@ jobs:
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-doctrine'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -688,6 +710,7 @@ jobs:
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. Produces the dist artifact consumed by the e2e shards below.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
@@ -799,6 +822,7 @@ jobs:
            && (vars.E2E_RUNNER == 'ubuntu-latest'
                && fromJSON('["ubuntu-latest"]')
                || fromJSON('["self-hosted", "copse-e2e"]'))) }}
+    timeout-minutes: 45
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
@@ -1275,6 +1299,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
@@ -1849,6 +1874,7 @@ jobs:
     # is saturated this stays pending (never green), so it can't wave a run
     # through without its required status check.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
