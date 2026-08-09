@@ -1,5 +1,12 @@
 <!doctype html>
-<html class="marketing-root" lang="en">
+<!-- Pre-launch mode. `data-site-mode="coming-soon"` is the whole switch: every
+     rule it drives lives in one block at the end of styles.css, and no marketing
+     markup was deleted to get here. Elements that only make sense once we ship
+     carry `mode-live-only`; the stand-in copy carries `mode-coming-soon-only`
+     plus `hidden`, so removing either the attribute or the CSS block restores
+     the launch site and leaves the stand-ins inert. Same idiom as the parked
+     demo overlay below. See the coming-soon block in styles.css. -->
+<html class="marketing-root" lang="en" data-site-mode="coming-soon">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,7 +14,7 @@
     <link rel="icon" href="brand-mark.svg" />
     <meta
       name="description"
-      content="Download Copse, the free and open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support."
+      content="Copse is a free and open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support."
     />
     <meta property="og:title" content="Copse — AI coding that stays on your machine" />
     <meta
@@ -53,7 +60,7 @@
           <a href="#capabilities">Capabilities</a>
           <a href="#providers">Models &amp; agents</a>
         </div>
-        <a class="nav-cta" href="#download">Download</a>
+        <a class="nav-cta mode-live-only" href="#download">Download</a>
       </nav>
     </header>
 
@@ -95,14 +102,20 @@
               Follow its work, shape how much autonomy it has, and keep the whole project on your
               machine.
             </p>
-            <div class="button-row">
+            <div class="button-row mode-live-only">
               <a class="pill pill-primary" href="#download">Download for macOS</a>
               <a class="pill pill-outline" href="https://github.com/copse-dev/agent-pane"
                 >View repo</a
               >
             </div>
+            <p class="hero-coming-soon mode-coming-soon-only" hidden>Coming soon</p>
           </div>
           <figure class="hero-visual">
+            <!-- Deliberately not mode-live-only: /demo/main/ is published by
+                 pages.yml from the demo-previews branch, so it resolves today.
+                 It's also the only route that lets anyone drive the demo (see
+                 hero-demo.js), which is worth more on a pre-launch page than a
+                 download button we can't honour. -->
             <a
               class="hero-demo-popout"
               href="demo/main/?scenario=landing"
@@ -255,7 +268,9 @@
             </div>
           </div>
 
-          <a class="pill pill-outline pill-centered" href="#download">Download for macOS</a>
+          <a class="pill pill-outline pill-centered mode-live-only" href="#download"
+            >Download for macOS</a
+          >
 
           <div class="spotlight-grid" aria-label="Control and privacy">
             <article
@@ -483,7 +498,7 @@
 
         <section class="download-panel" id="download">
           <div class="download-lines" aria-hidden="true"></div>
-          <div>
+          <div class="mode-live-only">
             <p class="download-kicker">Free, open source, and built in public</p>
             <h2>Download Copse</h2>
             <p>
@@ -495,9 +510,19 @@
               <a href="https://github.com/copse-dev/agent-pane/releases">Release notes</a>
             </div>
           </div>
-          <a class="pill pill-pink" href="https://github.com/copse-dev/agent-pane/releases"
+          <a
+            class="pill pill-pink mode-live-only"
+            href="https://github.com/copse-dev/agent-pane/releases"
             >Download for macOS</a
           >
+          <div class="download-pending mode-coming-soon-only" hidden>
+            <p class="download-kicker">Free, open source, and built in public</p>
+            <h2>Coming soon</h2>
+            <p>
+              Copse is still in development. The macOS build and the source repository aren’t public
+              yet — this page is a preview of what we’re making.
+            </p>
+          </div>
         </section>
       </main>
 
@@ -507,7 +532,7 @@
         </a>
         <p>Free &amp; open source · Made for developers who pair with agents every day</p>
         <div>
-          <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
+          <a class="mode-live-only" href="https://github.com/copse-dev/agent-pane">GitHub</a>
           <a href="architecture.html">Architecture</a>
           <a href="privacy.html">Privacy</a>
         </div>
