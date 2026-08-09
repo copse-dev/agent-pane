@@ -85,6 +85,30 @@ const REWRITE_TRACE: DemoTrace = {
   ],
 }
 
+/** A read-only turn must never disturb whichever right-hand panel is open. */
+const READ_TRACE: DemoTrace = {
+  id: 'read',
+  label: 'Reads one file',
+  prompt: 'read the package manifest',
+  steps: [
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: { id: 'tc-read', name: 'read_file', args: { path: 'package.json' } },
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'tc-read',
+        result: '{ "name": "copse-panel" }',
+        isError: false,
+      },
+    },
+    { chunk: { type: 'done', stopReason: 'end_turn' } },
+  ],
+}
+
 function scenarioFor(id: string, trace: DemoTrace): DemoScenario {
   return {
     id,
@@ -98,6 +122,7 @@ function scenarioFor(id: string, trace: DemoTrace): DemoScenario {
 
 const editScenario = scenarioFor('edit', EDIT_TRACE)
 const rewriteScenario = scenarioFor('rewrite', REWRITE_TRACE)
+const readScenario = scenarioFor('read', READ_TRACE)
 
 describe('createDemoApi decisions surface', () => {
   it('exposes list/export stubs so ApiClient stays complete for the browser demo', async () => {
@@ -156,6 +181,14 @@ describe('createDemoApi trace replay', () => {
       { path: 'site/index.html', language: 'html' },
       { path: 'site/styles.css', language: 'css' },
     ])
+    assert.equal(
+      await api.fs.readFile('demo-edit-project', 't', 'site/index.html'),
+      '<h1>Cupcakes</h1>\n',
+    )
+    assert.equal(
+      await api.fs.readFile('demo-edit-project', 't', 'site/styles.css'),
+      'h1 {\n  color: pink;\n}\n',
+    )
   })
 
   it('diffs a second edit against what the same turn already wrote', async () => {
@@ -172,12 +205,11 @@ describe('createDemoApi trace replay', () => {
   })
 
   it('leaves the panel alone for a turn that only reads', async () => {
-    assert.ok(tracedScenario?.trace, 'expected a scenario carrying a trace')
-    const api = createDemoApi(tracedScenario, { trace: { instant: true } })
+    const api = createDemoApi(readScenario, { trace: { instant: true } })
     let shown = 0
     api.diff.onShowDiff(() => (shown += 1))
 
-    await runAndCollect(api, tracedScenario.trace.prompt)
+    await runAndCollect(api, READ_TRACE.prompt)
 
     assert.equal(shown, 0)
   })

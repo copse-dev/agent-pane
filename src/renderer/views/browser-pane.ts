@@ -130,6 +130,94 @@ function browserModeActive(store: AppStore): boolean {
   return filesPaneOpen && rightPanelMode === 'browser'
 }
 
+function loopbackWorkspacePath(rawUrl: string): string | null {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+  if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1' && url.hostname !== '[::1]') {
+    return null
+  }
+  let path: string
+  try {
+    path = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+  } catch {
+    return null
+  }
+  return !path || path.endsWith('/') ? `${path}index.html` : path
+}
+
+function workspaceAssetPath(reference: string, previewUrl: string): string | null {
+  let resolved: URL
+  let base: URL
+  try {
+    base = new URL(previewUrl)
+    resolved = new URL(reference, base)
+  } catch {
+    return null
+  }
+  if (resolved.origin !== base.origin) return null
+  try {
+    return decodeURIComponent(resolved.pathname).replace(/^\/+/, '')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A localhost URL in the static browser demo has no server behind it. The demo
+ * API does have the replayed turn's proposed files, though, so assemble the
+ * entry document and its local CSS/JS into one isolated iframe document. A
+ * missing entry falls through to ordinary navigation, preserving honest local
+ * server behaviour for other browser hosts.
+ */
+async function workspacePreviewHtml(
+  rawUrl: string,
+  store: AppStore,
+  api: ApiClient,
+): Promise<string | null> {
+  const entryPath = loopbackWorkspacePath(rawUrl)
+  const { activeProjectId, activeThreadId } = store.getState()
+  if (!entryPath || !activeProjectId || !activeThreadId) return null
+
+  const read = (path: string): Promise<string> =>
+    api.fs.readFile(activeProjectId, activeThreadId, path)
+  const html = await read(entryPath)
+  if (!html) return null
+
+  const document = new DOMParser().parseFromString(html, 'text/html')
+  await Promise.all(
+    [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]')].map(
+      async (link) => {
+        const path = workspaceAssetPath(link.getAttribute('href') ?? '', rawUrl)
+        if (!path) return
+        const css = await read(path)
+        if (!css) return
+        const style = document.createElement('style')
+        style.dataset['workspacePath'] = path
+        style.textContent = css
+        link.replaceWith(style)
+      },
+    ),
+  )
+  await Promise.all(
+    [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map(async (script) => {
+      const path = workspaceAssetPath(script.getAttribute('src') ?? '', rawUrl)
+      if (!path) return
+      const source = await read(path)
+      if (!source) return
+      const inline = document.createElement('script')
+      inline.dataset['workspacePath'] = path
+      inline.textContent = source.replace(/<\/script/gi, '<\\/script')
+      script.replaceWith(inline)
+    }),
+  )
+  return `<!doctype html>\n${document.documentElement.outerHTML}`
+}
+
 /**
  * Electron's `<webview>` is a registered custom element, so its methods are on
  * the instance the moment it is created. Outside Electron — the browser demo —
@@ -150,7 +238,9 @@ function supportsElectronWebview(element: HTMLElement): boolean {
  * better than a Back button that lies. `getWebContentsId` throws, which is what
  * callers already treat as "this page cannot be shared".
  */
-function createIframeWebview(): BrowserWebviewElement {
+function createIframeWebview(
+  resolveWorkspacePreview?: (url: string) => Promise<string | null>,
+): BrowserWebviewElement {
   const frame = document.createElement('iframe')
   frame.className = 'browser-webview'
   // Same intent as the guest's `contextIsolation`: scripts may run, but the
@@ -159,9 +249,37 @@ function createIframeWebview(): BrowserWebviewElement {
   frame.setAttribute('referrerpolicy', 'no-referrer')
 
   let requested = 'about:blank'
+  let navigationId = 0
+  let workspacePreviewActive = false
+
+  const navigateRemote = (url: string): void => {
+    workspacePreviewActive = false
+    delete frame.dataset['workspacePreview']
+    frame.removeAttribute('srcdoc')
+    frame.setAttribute('src', url)
+  }
   const navigate = (url: string): void => {
     requested = url
-    frame.setAttribute('src', url)
+    const id = ++navigationId
+    if (!resolveWorkspacePreview) {
+      navigateRemote(url)
+      return
+    }
+    void resolveWorkspacePreview(url)
+      .then((html) => {
+        if (id !== navigationId) return
+        if (html === null) {
+          navigateRemote(url)
+          return
+        }
+        workspacePreviewActive = true
+        frame.dataset['workspacePreview'] = 'loading'
+        frame.removeAttribute('src')
+        frame.srcdoc = html
+      })
+      .catch(() => {
+        if (id === navigationId) navigateRemote(url)
+      })
   }
   // `src` has to record what it was handed before delegating: it is the only
   // place the requested URL is ever seen, and `getURL` has no other source.
@@ -172,6 +290,7 @@ function createIframeWebview(): BrowserWebviewElement {
   })
   // The pane gates every navigation on `dom-ready`; an iframe says `load`.
   frame.addEventListener('load', () => {
+    if (workspacePreviewActive) frame.dataset['workspacePreview'] = 'ready'
     frame.dispatchEvent(new Event('dom-ready'))
     frame.dispatchEvent(new Event('did-navigate'))
   })
@@ -191,9 +310,9 @@ function createIframeWebview(): BrowserWebviewElement {
     // renavigate, so blank the frame first and restore on the next task.
     reload: (): void => {
       const url = requested
-      frame.setAttribute('src', 'about:blank')
+      navigate('about:blank')
       setTimeout(() => {
-        frame.setAttribute('src', url)
+        navigate(url)
       }, 0)
     },
     // Nothing can halt a cross-origin load from out here. Blanking the frame
@@ -213,9 +332,11 @@ function createIframeWebview(): BrowserWebviewElement {
   })
 }
 
-function createWebview(): BrowserWebviewElement {
+function createWebview(
+  resolveWorkspacePreview?: (url: string) => Promise<string | null>,
+): BrowserWebviewElement {
   const webview = document.createElement('webview')
-  if (!supportsElectronWebview(webview)) return createIframeWebview()
+  if (!supportsElectronWebview(webview)) return createIframeWebview(resolveWorkspacePreview)
   const guest = webview as BrowserWebviewElement
   guest.setAttribute('partition', BROWSER_SESSION_PARTITION)
   guest.setAttribute('webpreferences', WEBVIEW_PREFS)
@@ -253,6 +374,9 @@ export function mountBrowserPane(
   viewerRoot.append(body)
 
   const tabs = new Map<string, BrowserTab>()
+  const resolveWorkspacePreview = api
+    ? (url: string): Promise<string | null> => workspacePreviewHtml(url, store, api)
+    : undefined
   let activeTabId: string | null = null
   let resizeObserver: ResizeObserver | null = null
 
@@ -369,7 +493,7 @@ export function mountBrowserPane(
   function ensureWebview(tab: BrowserTab): BrowserWebviewElement {
     if (tab.webview) return tab.webview
 
-    const webview = createWebview()
+    const webview = createWebview(resolveWorkspacePreview)
     tab.webviewHost.append(webview)
     tab.webview = webview
 

@@ -261,7 +261,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onGuardedYoloChanged: subscribe,
     },
     fs: {
-      readFile: () => resolved(''),
+      readFile: (_projectId: string, _threadId: string, path: string) =>
+        resolved(writtenFiles.get(path) ?? ''),
       writeFile: resolvedVoid,
       readdir: () => resolved(['src', 'tests', 'package.json']),
       listDir: () =>
@@ -781,7 +782,25 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       open: resolvedVoid,
     },
     panes: {
-      popout: resolvedVoid,
+      popout: (mode) => {
+        const root = document.documentElement
+        const expanded = root.dataset['demoExpandedPane'] === mode
+        if (expanded) {
+          root.classList.remove('is-demo-pane-expanded')
+          delete root.dataset['demoExpandedPane']
+        } else {
+          root.classList.add('is-demo-pane-expanded')
+          root.dataset['demoExpandedPane'] = mode
+        }
+        for (const button of document.querySelectorAll<HTMLButtonElement>(
+          `.pane-popout-btn[data-pane-mode="${mode}"]`,
+        )) {
+          button.textContent = expanded ? '⛶' : '↙'
+          button.setAttribute('aria-label', `${expanded ? 'Expand' : 'Restore'} ${mode}`)
+          button.title = expanded ? 'Expand pane' : 'Restore app layout'
+        }
+        return resolvedVoid()
+      },
       takePopoutSeed: () => Promise.resolve(null),
       onSwitchMode: () => () => {},
     },

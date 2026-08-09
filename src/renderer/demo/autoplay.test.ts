@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { typeIntoComposer } from './autoplay.ts'
+import { revealFinalPreview, typeIntoComposer } from './autoplay.ts'
 
 function composer(): HTMLElement {
   const el = document.createElement('div')
@@ -80,5 +80,63 @@ describe('typeIntoComposer', () => {
     await typeIntoComposer(el, 'abcdef', { charsPerSecond: 10_000, signal: controller.signal })
 
     assert.equal(el.textContent, 'ab')
+  })
+})
+
+describe('revealFinalPreview', () => {
+  it('opens the final assistant link, waits for its preview, then expands Browser', async () => {
+    document.body.innerHTML = `
+      <article class="msg-assistant"><a href="http://localhost:4173">Preview</a></article>
+      <section id="browser-viewer-host"></section>
+      <section id="browser-tabs-host">
+        <button class="pane-popout-btn" aria-label="Expand browser">Expand</button>
+      </section>
+    `
+    const link = document.querySelector<HTMLAnchorElement>('a')
+    const expand = document.querySelector<HTMLButtonElement>('.pane-popout-btn')
+    assert.ok(link)
+    assert.ok(expand)
+    let linkClicked = false
+    let expandClicked = false
+    link.addEventListener('click', (event) => {
+      event.preventDefault()
+      linkClicked = true
+      const preview = document.createElement('iframe')
+      preview.className = 'browser-webview'
+      preview.dataset['workspacePreview'] = 'ready'
+      document.getElementById('browser-viewer-host')?.append(preview)
+    })
+    expand.addEventListener('click', () => {
+      expandClicked = true
+      document.documentElement.dataset['demoExpandedPane'] = 'browser'
+    })
+
+    assert.equal(await revealFinalPreview(document, { timeoutMs: 100 }), true)
+    assert.equal(linkClicked, true)
+    assert.equal(expandClicked, true)
+  })
+
+  it('does not expand before a preview is ready', async () => {
+    document.body.innerHTML = `
+      <article class="msg-assistant"><a href="http://localhost:4173">Preview</a></article>
+      <section id="browser-viewer-host"></section>
+      <section id="browser-tabs-host">
+        <button class="pane-popout-btn" aria-label="Expand browser">Expand</button>
+      </section>
+    `
+    const link = document.querySelector<HTMLAnchorElement>('a')
+    const expand = document.querySelector<HTMLButtonElement>('.pane-popout-btn')
+    assert.ok(link)
+    assert.ok(expand)
+    link.addEventListener('click', (event) => {
+      event.preventDefault()
+    })
+    let expandClicked = false
+    expand.addEventListener('click', () => {
+      expandClicked = true
+    })
+
+    assert.equal(await revealFinalPreview(document, { timeoutMs: 1 }), false)
+    assert.equal(expandClicked, false)
   })
 })

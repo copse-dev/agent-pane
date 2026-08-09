@@ -39,6 +39,65 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
+  it('renders proposed workspace files for a localhost URL in the browser demo', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const files = new Map([
+      [
+        'index.html',
+        '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Cupcakes</h1><script src="script.js"></script></body></html>',
+      ],
+      ['styles.css', 'h1 { color: hotpink; }'],
+      ['script.js', "document.body.dataset.ready = 'true'"],
+    ])
+    const reads: string[] = []
+    const api = createPendingApi({
+      'fs.readFile': async (_projectId: string, _threadId: string, path: string) => {
+        reads.push(path)
+        return files.get(path) ?? ''
+      },
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      openBrowserUrl(store, 'http://localhost:4173')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const frame = qsRequired<HTMLIFrameElement>(viewer, 'iframe.browser-webview')
+      assert.deepEqual(new Set(reads), new Set(['index.html', 'styles.css', 'script.js']))
+      const srcdoc = frame.getAttribute('srcdoc') ?? ''
+      assert.match(srcdoc, /<h1>Cupcakes<\/h1>/)
+      assert.match(srcdoc, /<style data-workspace-path="styles.css">/)
+      assert.match(srcdoc, /h1 \{ color: hotpink; \}/)
+      assert.match(srcdoc, /<script data-workspace-path="script.js">/)
+      assert.match(srcdoc, /document\.body\.dataset\.ready/)
+      assert.equal(frame.src, 'http://localhost:4173/')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('creates and reuses a visible tab for a selected-pack browser request', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver

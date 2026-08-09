@@ -40,5 +40,6 @@ void import('../main.ts').then(() => {
     loop: flag(params, 'loop', false),
     instant: reducedMotion,
     focusComposer: !embedded,
+    revealFinalPreview: scenario.revealFinalPreview === true,
   })
 })

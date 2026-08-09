@@ -19,6 +19,12 @@ export interface DemoScenario {
    * through the ordinary chunk path.
    */
   trace?: DemoTrace
+  /**
+   * After a walkthrough finishes, follow its final browser link and expand the
+   * loaded preview in place. This is the static demo equivalent of a visitor
+   * clicking the URL and then the pane's Expand control.
+   */
+  revealFinalPreview?: boolean
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -42,7 +48,11 @@ const markdownContent = [
   '- Persistence — filesystem-native threads and project settings',
 ].join('\n')
 
-const project = (id: string): Project => ({ id, path: '/demo/copse', name: 'copse-demo' })
+const project = (id: string, name = 'copse-demo', path = '/demo/copse'): Project => ({
+  id,
+  path,
+  name,
+})
 
 const semanticSearchSummary = [
   'Here is the complete summary of how semantic search is classified, routed, and executed:',
@@ -155,13 +165,19 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
     // visual-test fixture. It is also what the marketing hero iframe embeds.
     id: 'landing',
-    label: 'Landing walkthrough (replays a recorded turn)',
-    project: project('demo-landing-project'),
+    label: 'Builds a cupcake site',
+    project: project('demo-landing-project', 'Crumb & Bloom', '/demo/crumb-and-bloom'),
     settings: {
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
       model: LANDING_TRACE.source?.model ?? 'claude-opus-5',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 640,
+        filesPaneHeight: 360,
+        fileTreeWidth: 140,
+      },
     },
     threads: [
       {
@@ -178,6 +194,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: LANDING_TRACE,
+    revealFinalPreview: true,
   },
   {
     // Exercises the proposed-diff path end to end: the replayed `write_file`
