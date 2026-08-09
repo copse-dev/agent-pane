@@ -1353,10 +1353,6 @@ footer a:hover {
   border-radius: 40px 14px 14px 14px;
 }
 
-.marketing-site .spotlight-card-zoomed-top-left figure::after {
-  border-radius: 0;
-}
-
 .marketing-site .spotlight-card h3 {
   margin: 0 0 22px;
   color: var(--pink);
@@ -2221,5 +2217,73 @@ footer a:hover {
 
   .marketing-site.content-site .arch-inspector {
     padding: 22px 20px;
+  }
+}
+
+/* ==========================================================================
+   Coming-soon mode
+   --------------------------------------------------------------------------
+   Pre-launch state for copse.dev. The app has no public release and the repo
+   is still private, so every download / source / releases link would 404. This
+   block hides them rather than deleting the markup.
+
+   Two classes carry it, and nothing else in the sheet knows about the mode:
+     .mode-live-only        — real once we ship; hidden until then.
+     .mode-coming-soon-only — stand-in copy. Ships with the `hidden` attribute
+                              so it stays inert on its own; only these rules
+                              bring it back.
+
+   To go live, delete this block and the data-site-mode attribute from
+   index.html, privacy.html, and architecture.html. Either half alone is enough
+   to restore the launch site — dropping the block leaves the stand-ins hidden,
+   dropping the attribute stops the selectors matching — so a partial revert
+   can't strand the page in a half-launched state.
+
+   !important is deliberate: .mode-live-only has to beat the responsive rules
+   above without this block having to restate each one at each breakpoint.
+   ========================================================================== */
+
+[data-site-mode='coming-soon'] .mode-live-only {
+  display: none !important;
+}
+
+[data-site-mode='coming-soon'] .mode-coming-soon-only[hidden] {
+  display: block;
+}
+
+/* Stands where the hero button row was, so the hero keeps its closing beat. */
+[data-site-mode='coming-soon'] .marketing-site .hero-coming-soon[hidden] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 12px 30px;
+  margin: 30px auto 0;
+  border-radius: 999px;
+  color: var(--forest);
+  background: var(--green);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* The centred download pill spaced the feature tour off the spotlight cards
+   (56px above it, 100px below). With it hidden that gap has to come from the
+   grid itself or the two sections collide. */
+[data-site-mode='coming-soon'] .marketing-site .spotlight-grid {
+  margin-top: 120px;
+}
+
+/* Second column held the pink download pill; drop it so the remaining copy
+   isn't pushed left by a 72px gap against an empty track. */
+[data-site-mode='coming-soon'] .marketing-site .download-panel {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 760px) {
+  [data-site-mode='coming-soon'] .marketing-site .spotlight-grid {
+    margin-top: 72px;
   }
 }

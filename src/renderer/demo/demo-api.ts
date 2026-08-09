@@ -6,6 +6,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
+import { detectLanguage } from '../controller/files.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
@@ -95,6 +97,63 @@ export interface DemoApiOptions {
   trace?: TracePlayerOptions
 }
 
+type ShowDiffHandler = (
+  projectId: string,
+  threadId: string,
+  path: string,
+  before: string,
+  after: string,
+  lang: string,
+) => void
+
+type QueuedHandler = (
+  projectId: string,
+  threadId: string,
+  entries: { path: string; language: string }[],
+) => void
+
+/**
+ * A string tool argument. Unlike the display helper in `tools/tool-display.ts`
+ * this keeps the empty string: `str_replace` with an empty `new_string` is a
+ * deletion, and `write_file` with empty `content` truncates a file.
+ */
+function stringArg(args: unknown, key: string): string | undefined {
+  if (!isRecord(args)) return undefined
+  const value = args[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+/**
+ * The file a replayed tool call proposes to change, and what it would look like
+ * afterwards — `undefined` for any tool that does not edit a file.
+ *
+ * `written` is what the turn has already written, so a second edit to the same
+ * file diffs against the first rather than against an empty buffer. The real
+ * `write_file` reads the previous content off disk for exactly this reason
+ * (`main/tools/write-file-tool.ts`); the demo has no disk, so the turn's own
+ * writes are the only history there is.
+ */
+function proposedEdit(
+  name: string,
+  args: unknown,
+  written: ReadonlyMap<string, string>,
+): { path: string; before: string; after: string } | undefined {
+  const path = stringArg(args, 'path')
+  if (path === undefined) return undefined
+  const before = written.get(path) ?? ''
+  if (name === 'write_file') {
+    const content = stringArg(args, 'content')
+    return content === undefined ? undefined : { path, before, after: content }
+  }
+  if (name === 'str_replace') {
+    const oldString = stringArg(args, 'old_string')
+    const newString = stringArg(args, 'new_string')
+    if (oldString === undefined || newString === undefined) return undefined
+    return { path, before, after: before.replace(oldString, newString) }
+  }
+  return undefined
+}
+
 function resolvedVoid(): Promise<void> {
   return Promise.resolve()
 }
@@ -123,9 +182,38 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   let threads: Thread[] = structuredClone(scenario.threads)
   let currentBranch = threads[0]?.gitBranch ?? 'demo/browser-renderer'
   const chunkHandlers = new Set<(threadId: string, chunk: StreamChunk) => void>()
+  const showDiffHandlers = new Set<ShowDiffHandler>()
+  const queuedHandlers = new Set<QueuedHandler>()
+  /** Files the replayed turn has written, oldest first — the demo's whole disk. */
+  const writtenFiles = new Map<string, string>()
 
   const emitChunk = (threadId: string, chunk: StreamChunk): void => {
     for (const handler of chunkHandlers) handler(threadId, chunk)
+  }
+
+  /**
+   * Push a replayed file edit down the same path the main process uses for a
+   * real one: queue the diff, then hand over its content. `agent.ts` opens the
+   * Changes panel on that second event and `git-changes-pane.ts` jumps to the
+   * file, so a trace that edits something shows the diff without the demo
+   * touching the panel itself.
+   */
+  const emitProposedDiff = (threadId: string, chunk: StreamChunk): void => {
+    if (chunk.type !== 'tool_call') return
+    const edit = proposedEdit(chunk.toolCall.name, chunk.toolCall.args, writtenFiles)
+    if (!edit) return
+    writtenFiles.set(edit.path, edit.after)
+    const language = detectLanguage(edit.path)
+    // The queue is the full set of pending diffs, not just the newest: the
+    // Changes pane drops a selection whose path has left the queue.
+    const entries = [...writtenFiles.keys()].map((path) => ({
+      path,
+      language: detectLanguage(path),
+    }))
+    for (const handler of queuedHandlers) handler(scenario.project.id, threadId, entries)
+    for (const handler of showDiffHandlers) {
+      handler(scenario.project.id, threadId, edit.path, edit.before, edit.after, language)
+    }
   }
 
   // One in-flight replay at a time, cancellable through `agent.abort` (the Stop
@@ -200,6 +288,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           replay = controller
           const emit = (chunk: StreamChunk): void => {
             emitChunk(threadId, chunk)
+            emitProposedDiff(threadId, chunk)
           }
           void playTrace(trace, emit, {
             ...options.trace,
@@ -274,8 +363,18 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       approveAll: resolvedVoid,
       rejectAll: resolvedVoid,
       content: () => resolved(null),
-      onShowDiff: subscribe,
-      onQueued: subscribe,
+      onShowDiff: (handler: ShowDiffHandler) => {
+        showDiffHandlers.add(handler)
+        return (): void => {
+          showDiffHandlers.delete(handler)
+        }
+      },
+      onQueued: (handler: QueuedHandler) => {
+        queuedHandlers.add(handler)
+        return (): void => {
+          queuedHandlers.delete(handler)
+        }
+      },
       onConflict: subscribe,
     },
     approval: { respond: resolvedVoid },
