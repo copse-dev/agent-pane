@@ -48,8 +48,18 @@ export async function prepareThreePaneScreenshot(): Promise<void> {
 }
 
 /** Capture the three-pane body with projects sidebar + chat + right panel visible. */
-export async function saveThreePaneScreenshot(filename: string): Promise<void> {
+export async function saveThreePaneScreenshot(
+  filename: string,
+  options: { filesPaneWidth?: number } = {},
+): Promise<void> {
   await prepareThreePaneScreenshot()
+  if (options.filesPaneWidth !== undefined) {
+    await browser.execute((width) => {
+      document.getElementById('body')?.style.setProperty('--files-width', `${String(width)}px`)
+      window.dispatchEvent(new Event('resize'))
+    }, options.filesPaneWidth)
+    await browser.pause(100)
+  }
   const body = await browser.$('#body.three-pane')
   await body.waitForDisplayed({ timeout: 15_000 })
   await body.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))

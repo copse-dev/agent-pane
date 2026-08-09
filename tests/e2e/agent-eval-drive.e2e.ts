@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
+import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
@@ -250,7 +251,9 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
   for (const fileExpectation of exp.filesContain ?? []) {
     const candidates = walkFiles(root).filter((file) => {
       if (!fileExpectation.glob) return true
-      if (fileExpectation.glob === '*.html') return file.toLowerCase().endsWith('.html')
+      if (fileExpectation.glob.startsWith('*.')) {
+        return basename(file).toLowerCase().endsWith(fileExpectation.glob.slice(1).toLowerCase())
+      }
       return basename(file) === fileExpectation.glob
     })
     const match = candidates.find((file) => {
@@ -266,14 +269,12 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
   }
 }
 
-function readActiveThread(): Thread {
+async function readActiveThread(): Promise<Thread> {
   const configPath = join(getCopseUserDataDir(), 'config.json')
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
   const projectId = config.activeProjectId as string
-  const threads = config[`threads:${projectId}`] as Thread[]
-  if (!Array.isArray(threads) || threads.length === 0) {
-    throw new Error('No threads in config after eval run')
-  }
+  const threads = await loadProjectThreads(projectId)
+  if (threads.length === 0) throw new Error('No threads in the thread store after eval run')
   const activeId = config.activeThreadId as string | undefined
   const thread = threads.find((t) => t.id === activeId) ?? threads[threads.length - 1]
   if (!thread) throw new Error('Could not resolve active thread')
@@ -395,7 +396,7 @@ describe('agent eval drive', () => {
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
 
-    const thread = readActiveThread()
+    const thread = await readActiveThread()
     assertToolUseExpectations(thread, scenario)
     if (
       scenario.id === 'working-brief-eval' ||

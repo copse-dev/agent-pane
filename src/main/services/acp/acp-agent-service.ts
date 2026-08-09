@@ -15,6 +15,7 @@ import type {
 } from '@agentclientprotocol/sdk'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -120,6 +121,12 @@ export interface RunAcpAgentOptions {
    * relying on the agent to already know the skill.
    */
   invokedSkills?: string[]
+  /**
+   * Trusted, current-turn guidance assembled by Copse's canonical `turnStart`
+   * hooks. The user's prompt remains verbatim; this block is separately framed
+   * as product guidance and is sent on every turn, including pooled sessions.
+   */
+  operatorInstructions?: string
   /**
    * Aborted when the Copse turn ends (success, error, or Stop). Merged into
    * bridged tool execution so an agent that abandons an MCP call and finishes
@@ -463,6 +470,7 @@ export async function runAcpAgentFromSettings(
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
+    entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
@@ -481,6 +489,9 @@ export async function runAcpAgentFromSettings(
         sandboxed,
         includeNotes: fresh,
         includeImages,
+        ...(options.operatorInstructions
+          ? { operatorInstructions: options.operatorInstructions }
+          : {}),
         ...(skillsBlock ? { skills: skillsBlock } : {}),
       },
     )
@@ -495,6 +506,7 @@ export async function runAcpAgentFromSettings(
     } finally {
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setTurnSignal(null)
+      entry.bridge?.setWorkspaceWriteObserver(null)
       entry.lastUsedAt = Date.now()
     }
   }
@@ -608,6 +620,26 @@ export function shouldAutoApproveLowRiskAcpPermission(
   return READ_ONLY_ACP_TOOL_KINDS.has(kind)
 }
 
+/**
+ * Codex's code-mode `exec` is the orchestration container from which it calls
+ * MCP tools. In ordinary `agent` mode the adapter asks before every such cell,
+ * but its ACP request intentionally exposes no shell command: the JavaScript
+ * remains inside Codex's own workspace-write sandbox. When Copse also wrapped
+ * the whole adapter in the native project seatbelt, asking again adds no
+ * authority. Concrete commands still carry `rawInput.command` and continue
+ * through {@link respondToAcpExecutePermission}; unsandboxed sessions and other
+ * agents remain prompt-first.
+ */
+export function shouldAutoApproveSandboxedCodexCodeMode(
+  agent: { id: string; sandboxed: boolean },
+  req: RequestPermissionRequest,
+): boolean {
+  if (agent.id !== 'codex' || !agent.sandboxed || req.toolCall.kind !== 'execute') return false
+  const meta = req._meta
+  if (!isRecord(meta) || !isRecord(meta['codex'])) return false
+  return acpExecuteCommandText(req.toolCall) === null
+}
+
 export function mergeAcpPermissionAbortSignals(
   turnSignal: AbortSignal | undefined,
   rpcSignal: AbortSignal,
@@ -667,6 +699,9 @@ async function respondToPermission(
   // to enable a broad scary toggle. Shell commands are routed through the same
   // approval flow as native run_shell below.
   if (shouldAutoApproveLowRiskAcpPermission(req, { sandboxed: agent.sandboxed })) {
+    return permissionResponseFor(req.options, true)
+  }
+  if (shouldAutoApproveSandboxedCodexCodeMode(agent, req)) {
     return permissionResponseFor(req.options, true)
   }
   // Copse's own bridged tools (gh_*/CI, semantic search, staged diffs, browser,
@@ -986,16 +1021,25 @@ export const ACP_SANDBOX_PROMPT_NOTE =
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
-  opts?: { sandboxed?: boolean; includeNotes?: boolean; skills?: string },
+  opts?: {
+    sandboxed?: boolean
+    includeNotes?: boolean
+    operatorInstructions?: string
+    skills?: string
+  },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
   const note = includeNotes
     ? ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') + '\n\n'
     : ''
-  // `opts.skills` carries the invoked skills' instructions (already prefixed with
-  // its own `---` separator by buildInvokedSkillsBlock). Attach it to the current
-  // message so the agent reads the instructions alongside the invocation.
-  const current = promptPayloadFromUserContent(userPrompt).text + (opts?.skills ?? '')
+  const operatorBlock = opts?.operatorInstructions
+    ? `\n\n---\n\n## Copse guidance\n\n${opts.operatorInstructions}`
+    : ''
+  // Explicitly invoked skills remain closest to the current message and after
+  // first-party guidance: invoking one is a direct user action and should be the
+  // final instruction block the external executor reads.
+  const current =
+    promptPayloadFromUserContent(userPrompt).text + operatorBlock + (opts?.skills ?? '')
   const transcript = priorMessages.map(messageLine).filter(Boolean).join('\n')
   if (!transcript) return `${note}${current}`
   return (
@@ -1020,6 +1064,7 @@ export function buildAcpPromptContent(
   opts?: {
     sandboxed?: boolean
     includeNotes?: boolean
+    operatorInstructions?: string
     skills?: string
     includeImages?: boolean
   },
@@ -1027,6 +1072,9 @@ export function buildAcpPromptContent(
   const text = buildAcpPrompt(userPrompt, priorMessages, {
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
+    ...(opts?.operatorInstructions !== undefined
+      ? { operatorInstructions: opts.operatorInstructions }
+      : {}),
     ...(opts?.skills !== undefined ? { skills: opts.skills } : {}),
   })
   const blocks: ContentBlock[] = [{ type: 'text', text }]

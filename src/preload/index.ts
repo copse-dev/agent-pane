@@ -37,6 +37,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:open-tab', listener)
       }
     },
+    onShowTab: (handler: (url: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
+        handler(url)
+      }
+      ipcRenderer.on('browser:show-tab', listener)
+      return (): void => {
+        ipcRenderer.off('browser:show-tab', listener)
+      }
+    },
     onShareText: (
       handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
     ) => {

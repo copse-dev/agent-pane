@@ -39,6 +39,59 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
+  it('opens the visible panel for an agent preview request from the main process', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'browser',
+    })
+    let showTab: ((url: string) => void) | undefined
+    const api = createPendingApi({
+      'browser.onShowTab': (handler: (url: string) => void): (() => void) => {
+        showTab = handler
+        return (): void => {}
+      },
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      assert.ok(showTab)
+      showTab('http://localhost:4321/')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(store.getState().filesPaneOpen, true)
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+      const input = qsRequired<HTMLInputElement>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      assert.equal(input.value, 'http://localhost:4321/')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('renders proposed workspace files for a localhost URL in the browser demo', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver
@@ -103,7 +156,6 @@ describe('browser pane requested URLs', () => {
     const ResizeObserverCtor = globalThis.ResizeObserver
     const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
     const DomParserCtor = globalThis.DOMParser
-    const originalFetch = globalThis.fetch
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -112,23 +164,6 @@ describe('browser pane requested URLs', () => {
     globalThis.ResizeObserver = NoopResizeObserver
     globalThis.DOMParser = window.DOMParser
     document.documentElement.dataset['demoStaticSite'] = 'https://demo.test/sites/cupcakes'
-
-    const published = new Map([
-      [
-        'index.html',
-        '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Published cupcakes</h1><script src="script.js"></script></body></html>',
-      ],
-      ['styles.css', 'h1 { color: coral; }'],
-      ['script.js', "document.body.dataset.source = 'published'"],
-    ])
-    const requests: string[] = []
-    globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
-      const url = input instanceof Request ? input.url : String(input)
-      requests.push(url)
-      const name = new URL(url).pathname.split('/').at(-1) ?? ''
-      const content = published.get(name)
-      return new Response(content ?? '', { status: content === undefined ? 404 : 200 })
-    }
 
     const { list, viewer } = mountBrowserHosts()
     const store = createStore({
@@ -152,22 +187,11 @@ describe('browser pane requested URLs', () => {
       await new Promise((resolve) => setTimeout(resolve, 20))
 
       const frame = qsRequired<HTMLIFrameElement>(viewer, 'iframe.browser-webview')
-      assert.deepEqual(
-        new Set(requests),
-        new Set([
-          'https://demo.test/sites/cupcakes/index.html',
-          'https://demo.test/sites/cupcakes/styles.css',
-          'https://demo.test/sites/cupcakes/script.js',
-        ]),
-      )
       assert.equal(workspaceReads, 0)
-      const srcdoc = frame.getAttribute('srcdoc') ?? ''
-      assert.match(srcdoc, /<h1>Published cupcakes<\/h1>/)
-      assert.match(srcdoc, /h1 \{ color: coral; \}/)
-      assert.match(srcdoc, /dataset\.source = 'published'/)
+      assert.equal(frame.getAttribute('srcdoc'), null)
+      assert.equal(frame.getAttribute('src'), 'https://demo.test/sites/cupcakes/index.html')
     } finally {
       delete document.documentElement.dataset['demoStaticSite']
-      globalThis.fetch = originalFetch
       if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
       else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       if (hadDomParser) globalThis.DOMParser = DomParserCtor

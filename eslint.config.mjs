@@ -180,6 +180,7 @@ export default ts.config(
       globals: {
         window: 'readonly',
         document: 'readonly',
+        FormData: 'readonly',
       },
     },
     rules: {

@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { connect } from 'node:net'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { classifySshPrompt } from './ssh-prompt.ts'
@@ -102,6 +102,34 @@ describe('ssh askpass bridge', () => {
     })
     assert.deepEqual(JSON.parse(response), { response: null })
     lease.release()
+  })
+
+  it('keeps the socket short when the profile path exceeds the macOS socket budget', async () => {
+    resetSshAskpassForTests()
+    const longUserDataDir = join(testDir, 'named-profile-'.repeat(10))
+    mkdirSync(longUserDataDir, { recursive: true })
+    setSshAskpassUserDataDirForTests(longUserDataDir)
+    initSshAskpassServer()
+    setSshPromptHandler(async () => ({ value: 'verified' }))
+
+    const lease = leaseSshAskpassEnv({})
+    try {
+      const path = lease.env['COPSE_SSH_ASKPASS_SOCKET']
+      assert.ok(typeof path === 'string' && path.length > 0)
+      if (process.platform === 'win32') {
+        assert.match(path, /^\\\\\\\\\.\\\\pipe\\\\copse-ssh-askpass-/)
+      } else {
+        assert.ok(
+          Buffer.byteLength(path) < 104,
+          `socket path is ${String(Buffer.byteLength(path))}B`,
+        )
+        assert.equal(path.startsWith(longUserDataDir), false)
+      }
+      const response = await askOverSocket(lease, 'Enter passphrase for key')
+      assert.deepEqual(JSON.parse(response), { response: 'verified' })
+    } finally {
+      lease.release()
+    }
   })
 
   it('returns secret responses from the prompt handler', async () => {

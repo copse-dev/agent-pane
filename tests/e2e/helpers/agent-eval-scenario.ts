@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -22,6 +23,7 @@ export interface EvalScenario {
   workspace?: {
     type: 'current' | 'tempProject'
     prefix?: string
+    initializeGit?: boolean
     seedFiles?: PromptAttachment[]
   }
   prompts?: EvalPrompt[]
@@ -84,6 +86,7 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
     .object({
       type: z.enum(['current', 'tempProject']),
       prefix: z.string().optional(),
+      initializeGit: z.boolean().optional(),
       seedFiles: z.array(promptAttachmentSchema).optional(),
     })
     .optional(),
@@ -214,5 +217,11 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
     }
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, file.content, 'utf8')
+  }
+  if (scenario.workspace?.initializeGit === true) {
+    // Copse's real New project flow initializes Git before opening the first
+    // chat. Mirror that boundary so native write tools can apply new files
+    // directly instead of staging approval-only diffs in an untracked folder.
+    execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' })
   }
 }

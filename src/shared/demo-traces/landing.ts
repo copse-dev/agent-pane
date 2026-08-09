@@ -5,31 +5,28 @@ export const LANDING_TRACE: DemoTrace = {
   id: 'landing',
   label: 'Builds a cupcake site',
   prompt:
-    'Build a polished coming-soon site for Crumb & Bloom, a small-batch cupcake studio. The workspace is intentionally empty: do not inspect it or read anything. Create only three new files: index.html, styles.css, and script.js. Make it a warm editorial two-column hero with an ivory, espresso, coral, and pistachio palette; a memorable serif headline; an accessible email waitlist; and an art-directed cupcake still-life made with HTML and CSS. Keep it responsive, refined, animated with reduced-motion support, and dependency-free.\n\nExplain the complete approach before any tool calls, then create all three files without narration between writes. Do not ask questions, start a server, or run package commands. Finish with a brief summary and this bare URL on its own final line:\nhttp://localhost:4173',
+    'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
   steps: [
     {
       chunk: {
         type: 'reasoning',
-        text: '\n\n**Planning file creation strategy**',
+        text: '\n\n**Planning commentary before editing**\n\n**Inspecting list and status with parallel exec**',
       },
     },
     {
       chunk: {
         type: 'text',
-        text: 'I’ll build this as a single, dependency-free landing page with semantic HTML, a carefully layered CSS design, and a small progressive-enhancement script. The left column will carry the editorial story, waitlist form, accessible validation/status messaging, and small-batch details; the right will be a fully CSS-drawn cupcake still-life with art-directed props, texture, shadows, and restrained entrance/parallax effects. The layout will collapse cleanly on smaller screens, preserve strong typography and contrast, support keyboard and screen-reader use, and disable nonessential movement when `prefers-reduced-motion` is enabled. I’ll now create exactly `index.html`, `styles.css`, and `script.js` in one write operation.',
+        text: 'I’ll first inspect the project structure and any existing assets, then I’ll build the page in the project’s native setup. Visual direction: warm patisserie editorial—vanilla paper, berry ink, hand-drawn flourishes, oversized type, and a signup interaction that feels like part of the composition rather than a generic form. Afterward I’ll test responsiveness and behavior, then open a browser preview.',
       },
     },
     {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'acp-replay-write-index-html',
-          name: 'write_file',
-          args: {
-            path: 'index.html',
-            content:
-              '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <meta name="description" content="Crumb & Bloom is a small-batch cupcake studio. Join the waitlist for opening-day news and first tastes.">\n  <title>Crumb &amp; Bloom — Small-batch cupcakes, coming soon</title>\n  <link rel="stylesheet" href="styles.css">\n  <script src="script.js" defer></script>\n</head>\n<body>\n  <main class="site-shell">\n    <section class="hero" aria-labelledby="hero-title">\n      <div class="hero__copy">\n        <header class="masthead">\n          <a class="wordmark" href="#" aria-label="Crumb and Bloom, home">\n            <span class="wordmark__flower" aria-hidden="true">✿</span>\n            <span>Crumb <i>&amp;</i> Bloom</span>\n          </a>\n          <p class="edition">Baking soon · Est. 2026</p>\n        </header>\n\n        <div class="intro">\n          <p class="eyebrow"><span></span> A little sweetness is rising</p>\n          <h1 id="hero-title">Cupcakes,<br>in full <em>bloom.</em></h1>\n          <p class="lede">Small-batch cakes with cloud-soft buttercream, bright seasonal fruit, and a pinch of the unexpected—made slowly, shared joyfully.</p>\n\n          <div class="signup-block">\n            <p class="signup-label" id="signup-label">Be first to the cake stand.</p>\n            <form class="waitlist" id="waitlist" novalidate aria-labelledby="signup-label">\n              <div class="field-wrap">\n                <label class="sr-only" for="email">Email address</label>\n                <input id="email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="Your email address" required aria-describedby="form-status">\n                <button type="submit">Join the waitlist <span aria-hidden="true">→</span></button>\n              </div>\n              <p class="form-status" id="form-status" role="status" aria-live="polite">Opening notes, first tastes, no crumbs in your inbox.</p>\n            </form>\n          </div>\n        </div>\n\n        <footer class="hero__footer">\n          <p>Mixed, piped &amp; sprinkled by hand</p>\n          <span aria-hidden="true">◆</span>\n          <p>Made locally in small batches</p>\n        </footer>\n      </div>\n\n      <div class="hero__art" aria-label="An illustrated coral cupcake with pistachio frosting, cherries and flowers on a table">\n        <div class="art-grain" aria-hidden="true"></div>\n        <p class="art-note art-note--top" aria-hidden="true">Good things<br>take thyme.</p>\n        <svg class="doodle doodle--spark" viewBox="0 0 80 80" aria-hidden="true">\n          <path d="M40 4c1 24 8 32 32 36-24 2-32 10-32 36-2-25-9-33-34-36C31 37 38 29 40 4Z"/>\n        </svg>\n\n        <div class="still-life" aria-hidden="true">\n          <div class="stem stem--one"><i></i><b></b></div>\n          <div class="stem stem--two"><i></i><b></b></div>\n          <div class="flower flower--one"><i></i><i></i><i></i><i></i><i></i><b></b></div>\n          <div class="flower flower--two"><i></i><i></i><i></i><i></i><i></i><b></b></div>\n\n          <div class="cupcake">\n            <div class="cherry"><i></i></div>\n            <div class="frosting frosting--top"></div>\n            <div class="frosting frosting--middle"></div>\n            <div class="frosting frosting--base"></div>\n            <i class="sprinkle s1"></i><i class="sprinkle s2"></i><i class="sprinkle s3"></i>\n            <i class="sprinkle s4"></i><i class="sprinkle s5"></i><i class="sprinkle s6"></i>\n            <div class="cake"></div>\n            <div class="wrapper"><i></i><i></i><i></i><i></i><i></i></div>\n          </div>\n\n          <div class="plate"><i></i></div>\n          <div class="berry berry--one"></div>\n          <div class="berry berry--two"></div>\n          <div class="crumb crumb--one"></div>\n          <div class="crumb crumb--two"></div>\n          <div class="crumb crumb--three"></div>\n        </div>\n\n        <div class="art-caption">\n          <span>01</span>\n          <p><strong>First on the menu</strong><br>Strawberry, vanilla bean<br>&amp; garden basil</p>\n        </div>\n        <svg class="doodle doodle--arrow" viewBox="0 0 120 90" aria-hidden="true">\n          <path d="M9 76c24 0 38-8 42-24 5-20-14-27-21-15-9 16 17 30 57 7"/>\n          <path d="m78 34 12 9-10 12"/>\n        </svg>\n      </div>\n    </section>\n  </main>\n</body>\n</html>\n',
-          },
+          id: 'exec-798b76ff-4aef-4927-a7ef-d7465b5dd9a9',
+          name: 'git_status',
+          args: {},
+          kind: 'execute',
         },
       },
       delayMs: 420,
@@ -37,9 +34,10 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'acp-replay-write-index-html',
-        result: 'Created index.html from the approved Codex ACP filesystem write.',
+        toolCallId: 'exec-798b76ff-4aef-4927-a7ef-d7465b5dd9a9',
+        result: '(no output)',
         isError: false,
+        resultFormat: 'markdown',
       },
       delayMs: 900,
     },
@@ -47,13 +45,13 @@ export const LANDING_TRACE: DemoTrace = {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'acp-replay-write-styles-css',
-          name: 'write_file',
+          id: 'exec-eab41b0d-9d5b-4803-99ca-c4fa777171a4',
+          name: 'list_dir',
           args: {
-            path: 'styles.css',
-            content:
-              "@import url('data:text/css,');\n\n:root {\n  --ivory: #f7f0df;\n  --paper: #fffaf0;\n  --espresso: #2f211b;\n  --coral: #e96f58;\n  --coral-dark: #c84d3d;\n  --pistachio: #b8c985;\n  --pistachio-dark: #677645;\n  --cream: #f4e3ad;\n  --ink-soft: #6f5b4e;\n}\n\n* { box-sizing: border-box; }\n\nhtml { scroll-behavior: smooth; }\n\nbody {\n  margin: 0;\n  color: var(--espresso);\n  background: #d9d0bc;\n  font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif;\n  -webkit-font-smoothing: antialiased;\n}\n\nbutton, input { font: inherit; }\n\n.site-shell {\n  min-height: 100svh;\n  padding: clamp(0px, 2vw, 28px);\n  display: grid;\n  place-items: center;\n}\n\n.hero {\n  width: min(1500px, 100%);\n  min-height: min(900px, calc(100svh - clamp(0px, 4vw, 56px)));\n  display: grid;\n  grid-template-columns: minmax(0, 1.04fr) minmax(440px, .96fr);\n  overflow: hidden;\n  background: var(--ivory);\n  box-shadow: 0 24px 70px rgb(47 33 27 / 18%);\n}\n\n.hero__copy {\n  min-width: 0;\n  padding: clamp(30px, 5vw, 76px) clamp(30px, 6vw, 92px) clamp(28px, 4vw, 56px);\n  display: flex;\n  flex-direction: column;\n  position: relative;\n  z-index: 2;\n}\n\n.masthead, .hero__footer {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 24px;\n}\n\n.wordmark {\n  display: inline-flex;\n  align-items: center;\n  gap: 11px;\n  color: inherit;\n  text-decoration: none;\n  font-family: Georgia, \"Times New Roman\", serif;\n  font-size: clamp(20px, 2vw, 27px);\n  font-weight: 700;\n  letter-spacing: -.04em;\n}\n\n.wordmark i { color: var(--coral); font-weight: 400; }\n.wordmark__flower { color: var(--coral); font-size: 25px; transform: rotate(-12deg); }\n\n.edition, .hero__footer {\n  margin: 0;\n  color: var(--ink-soft);\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: .16em;\n  text-transform: uppercase;\n}\n\n.intro {\n  width: min(660px, 100%);\n  margin: auto 0;\n  padding: clamp(72px, 9vh, 110px) 0 clamp(64px, 8vh, 90px);\n}\n\n.eyebrow {\n  margin: 0 0 26px;\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  color: var(--coral-dark);\n  font-size: 11px;\n  font-weight: 800;\n  letter-spacing: .18em;\n  text-transform: uppercase;\n}\n\n.eyebrow span { width: 34px; height: 1px; background: currentColor; }\n\nh1 {\n  margin: 0;\n  font-family: Georgia, \"Times New Roman\", serif;\n  font-size: clamp(66px, 7.1vw, 116px);\n  font-weight: 400;\n  line-height: .83;\n  letter-spacing: -.075em;\n}\n\nh1 em {\n  position: relative;\n  color: var(--coral);\n  font-weight: 400;\n}\n\nh1 em::after {\n  content: \"\";\n  position: absolute;\n  left: 2%; right: -2%; bottom: -8px;\n  height: 8px;\n  border-top: 2px solid currentColor;\n  border-radius: 50%;\n  transform: rotate(-2deg);\n}\n\n.lede {\n  max-width: 520px;\n  margin: 40px 0 0;\n  color: var(--ink-soft);\n  font-family: Georgia, \"Times New Roman\", serif;\n  font-size: clamp(17px, 1.35vw, 21px);\n  line-height: 1.6;\n}\n\n.signup-block { margin-top: clamp(38px, 5vh, 56px); }\n.signup-label { margin: 0 0 11px; font-size: 12px; font-weight: 800; letter-spacing: .04em; }\n\n.field-wrap {\n  max-width: 540px;\n  display: flex;\n  border-bottom: 1.5px solid var(--espresso);\n}\n\n.field-wrap:focus-within { border-color: var(--coral-dark); box-shadow: 0 2px 0 var(--coral-dark); }\n\ninput {\n  min-width: 0;\n  flex: 1;\n  padding: 14px 4px;\n  border: 0;\n  outline: 0;\n  color: var(--espresso);\n  background: transparent;\n  font-size: 15px;\n}\n\ninput::placeholder { color: #9b897c; opacity: 1; }\n\nbutton {\n  padding: 12px 2px 12px 20px;\n  border: 0;\n  color: var(--espresso);\n  background: transparent;\n  cursor: pointer;\n  font-size: 11px;\n  font-weight: 800;\n  letter-spacing: .12em;\n  text-transform: uppercase;\n}\n\nbutton span { display: inline-block; margin-left: 8px; color: var(--coral-dark); font-size: 17px; transition: transform .2s ease; }\nbutton:hover span, button:focus-visible span { transform: translateX(4px); }\nbutton:focus-visible { outline: 2px solid var(--coral-dark); outline-offset: 5px; }\n\n.form-status { min-height: 18px; margin: 10px 0 0; color: var(--ink-soft); font-size: 11px; }\n.form-status.is-error { color: #a12f29; }\n.form-status.is-success { color: var(--pistachio-dark); font-weight: 700; }\n\n.hero__footer { justify-content: flex-start; }\n.hero__footer span { color: var(--coral); font-size: 7px; }\n.hero__footer p { margin: 0; }\n\n.hero__art {\n  position: relative;\n  min-height: 680px;\n  overflow: hidden;\n  isolation: isolate;\n  background: var(--coral);\n}\n\n.hero__art::before {\n  content: \"\";\n  position: absolute;\n  width: 75%; aspect-ratio: 1;\n  top: -28%; right: -25%;\n  border: 1px solid rgb(255 250 240 / 35%);\n  border-radius: 50%;\n  box-shadow: 0 0 0 42px rgb(255 250 240 / 5%), 0 0 0 84px rgb(255 250 240 / 5%);\n}\n\n.art-grain {\n  position: absolute;\n  inset: 0;\n  opacity: .17;\n  background-image: url(\"data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E\");\n  mix-blend-mode: soft-light;\n  pointer-events: none;\n}\n\n.art-note {\n  position: absolute;\n  z-index: 3;\n  margin: 0;\n  color: var(--paper);\n  font-family: Georgia, serif;\n  font-size: 16px;\n  font-style: italic;\n  line-height: 1.25;\n  transform: rotate(-7deg);\n}\n\n.art-note--top { top: 9%; right: 10%; }\n\n.doodle { position: absolute; z-index: 3; fill: none; stroke: var(--paper); stroke-width: 1.7; overflow: visible; }\n.doodle--spark { top: 11%; left: 10%; width: 46px; fill: var(--paper); stroke: none; }\n.doodle--arrow { right: 14%; bottom: 16%; width: 100px; transform: rotate(7deg); }\n\n.still-life {\n  position: absolute;\n  z-index: 2;\n  inset: 10% 2% 10%;\n  transform: translate3d(var(--art-x, 0), var(--art-y, 0), 0);\n  transition: transform .25s ease-out;\n}\n\n.plate {\n  position: absolute;\n  z-index: 1;\n  left: 11%; right: 7%; bottom: 15%;\n  height: 14%;\n  border-radius: 50%;\n  background: var(--cream);\n  box-shadow: 0 22px 0 #dfc880, 0 34px 30px rgb(64 28 20 / 25%);\n}\n\n.plate i { position: absolute; inset: 21% 9%; border: 2px solid rgb(111 91 78 / 18%); border-radius: 50%; }\n\n.cupcake { position: absolute; z-index: 4; left: 20%; bottom: 24%; width: 60%; height: 62%; filter: drop-shadow(16px 18px 13px rgb(78 37 26 / 22%)); }\n\n.cake {\n  position: absolute; z-index: 2;\n  left: 19%; bottom: 17%; width: 62%; height: 28%;\n  background: #d69258;\n  clip-path: polygon(4% 0, 96% 0, 85% 100%, 15% 100%);\n}\n\n.wrapper {\n  position: absolute; z-index: 3;\n  left: 17%; bottom: 2%; width: 66%; height: 30%;\n  overflow: hidden;\n  background: var(--paper);\n  clip-path: polygon(2% 0, 98% 0, 85% 100%, 15% 100%);\n}\n\n.wrapper i { position: absolute; top: -4%; width: 2px; height: 110%; background: #e2cfa2; transform: rotate(-4deg); }\n.wrapper i:nth-child(1) { left: 18%; }.wrapper i:nth-child(2) { left: 34%; }.wrapper i:nth-child(3) { left: 50%; }\n.wrapper i:nth-child(4) { left: 66%; }.wrapper i:nth-child(5) { left: 82%; }\n\n.frosting { position: absolute; z-index: 5; background: var(--pistachio); }\n.frosting--base { left: 8%; bottom: 42%; width: 84%; height: 24%; border-radius: 48% 52% 38% 44% / 65% 68% 35% 38%; transform: rotate(-2deg); }\n.frosting--middle { left: 22%; bottom: 57%; width: 66%; height: 25%; border-radius: 50% 55% 40% 45% / 66% 70% 33% 40%; transform: rotate(3deg); }\n.frosting--top { left: 39%; bottom: 73%; width: 43%; height: 19%; border-radius: 58% 52% 38% 44% / 72% 70% 30% 34%; transform: rotate(-6deg); }\n.frosting::after { content: \"\"; position: absolute; inset: 12% 12% auto; height: 20%; border-radius: 50%; background: rgb(255 255 255 / 20%); transform: rotate(-7deg); }\n\n.cherry { position: absolute; z-index: 7; left: 57%; bottom: 88%; width: 17%; aspect-ratio: 1; border-radius: 50%; background: var(--coral-dark); box-shadow: inset -8px -8px 0 rgb(117 29 28 / 20%); }\n.cherry i { position: absolute; left: 54%; bottom: 75%; width: 45%; height: 80%; border-left: 3px solid var(--pistachio-dark); border-radius: 60% 0 0; transform: rotate(24deg); }\n\n.sprinkle { position: absolute; z-index: 8; width: 8px; height: 3px; border-radius: 3px; background: var(--coral-dark); }\n.s1 { left: 28%; bottom: 61%; transform: rotate(22deg); }.s2 { left: 47%; bottom: 69%; transform: rotate(-34deg); }\n.s3 { left: 68%; bottom: 61%; transform: rotate(18deg); }.s4 { left: 38%; bottom: 53%; transform: rotate(-12deg); }\n.s5 { left: 75%; bottom: 51%; transform: rotate(-28deg); }.s6 { left: 58%; bottom: 79%; transform: rotate(34deg); }\n\n.stem { position: absolute; z-index: 3; width: 2px; height: 42%; bottom: 27%; background: var(--pistachio-dark); transform-origin: bottom; }\n.stem--one { left: 18%; transform: rotate(-31deg); }.stem--two { right: 15%; transform: rotate(26deg); height: 36%; }\n.stem i, .stem b { position: absolute; width: 32px; height: 14px; border-radius: 100% 0; background: var(--pistachio-dark); }\n.stem i { top: 30%; right: 0; transform: rotate(-18deg); }.stem b { top: 58%; left: 0; transform: scaleX(-1) rotate(-18deg); }\n\n.flower { position: absolute; z-index: 5; width: 68px; aspect-ratio: 1; }\n.flower--one { left: 1%; top: 24%; transform: rotate(-15deg); }.flower--two { right: 1%; top: 31%; transform: scale(.72) rotate(10deg); }\n.flower i { position: absolute; left: 32%; top: 0; width: 35%; height: 52%; border-radius: 60% 60% 45% 45%; background: var(--paper); transform-origin: 50% 96%; }\n.flower i:nth-child(2) { transform: rotate(72deg); }.flower i:nth-child(3) { transform: rotate(144deg); }\n.flower i:nth-child(4) { transform: rotate(216deg); }.flower i:nth-child(5) { transform: rotate(288deg); }\n.flower b { position: absolute; z-index: 2; left: 38%; top: 38%; width: 24%; aspect-ratio: 1; border-radius: 50%; background: var(--cream); }\n\n.berry { position: absolute; z-index: 6; bottom: 25%; width: 7%; aspect-ratio: 1; border-radius: 50%; background: var(--coral-dark); box-shadow: inset -4px -4px 0 rgb(95 24 24 / 18%); }\n.berry--one { left: 14%; }.berry--two { right: 12%; bottom: 23%; transform: scale(.72); }\n.crumb { position: absolute; z-index: 7; bottom: 29%; width: 7px; height: 6px; border-radius: 50%; background: #9c633e; }\n.crumb--one { left: 31%; }.crumb--two { right: 27%; bottom: 23%; }.crumb--three { right: 20%; bottom: 30%; transform: scale(.7); }\n\n.art-caption { position: absolute; z-index: 4; left: 8%; bottom: 7%; display: flex; gap: 12px; color: var(--paper); }\n.art-caption span { font-family: Georgia, serif; font-size: 38px; line-height: .9; opacity: .65; }\n.art-caption p { margin: 0; padding-left: 12px; border-left: 1px solid rgb(255 250 240 / 55%); font-family: Georgia, serif; font-size: 12px; line-height: 1.5; }\n.art-caption strong { font-family: Arial, sans-serif; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }\n\n.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }\n\n.masthead, .intro > *, .hero__footer, .hero__art { animation: reveal .8s both cubic-bezier(.2,.7,.2,1); }\n.intro > *:nth-child(2) { animation-delay: .08s; }.intro > *:nth-child(3) { animation-delay: .16s; }\n.intro > *:nth-child(4) { animation-delay: .24s; }.hero__footer { animation-delay: .32s; }.hero__art { animation-name: artReveal; }\n\n@keyframes reveal { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }\n@keyframes artReveal { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }\n\n@media (max-width: 980px) {\n  .site-shell { padding: 0; }\n  .hero { grid-template-columns: 1fr; }\n  .hero__copy { min-height: 720px; }\n  .hero__art { min-height: 720px; }\n  h1 { font-size: clamp(72px, 14vw, 120px); }\n}\n\n@media (max-width: 560px) {\n  .hero__copy { min-height: 660px; padding: 25px 22px 28px; }\n  .edition { display: none; }\n  .intro { padding: 60px 0 52px; }\n  h1 { font-size: clamp(58px, 18vw, 84px); }\n  .lede { margin-top: 32px; font-size: 17px; }\n  .field-wrap { display: block; border: 0; }\n  input { width: 100%; border-bottom: 1.5px solid var(--espresso); }\n  button { margin-top: 12px; padding: 12px 0; }\n  .hero__footer { align-items: flex-start; gap: 10px; font-size: 8px; }\n  .hero__footer p:last-child { text-align: right; }\n  .hero__art { min-height: 590px; }\n  .still-life { inset: 8% -6% 8%; }\n  .art-note--top { top: 7%; }\n  .art-caption { left: 6%; }\n  .doodle--arrow { display: none; }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  html { scroll-behavior: auto; }\n  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }\n  .still-life { transform: none !important; }\n}\n",
+            path: '.',
+            recursive: true,
           },
+          kind: 'execute',
         },
       },
       delayMs: 420,
@@ -61,55 +59,288 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'acp-replay-write-styles-css',
-        result: 'Created styles.css from the approved Codex ACP filesystem write.',
+        toolCallId: 'exec-eab41b0d-9d5b-4803-99ca-c4fa777171a4',
+        result: '',
         isError: false,
-      },
-      delayMs: 900,
-    },
-    {
-      chunk: {
-        type: 'tool_call',
-        toolCall: {
-          id: 'acp-replay-write-script-js',
-          name: 'write_file',
-          args: {
-            path: 'script.js',
-            content:
-              "const form = document.querySelector('#waitlist');\nconst email = document.querySelector('#email');\nconst status = document.querySelector('#form-status');\nconst art = document.querySelector('.hero__art');\nconst stillLife = document.querySelector('.still-life');\nconst reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');\n\nform.addEventListener('submit', (event) => {\n  event.preventDefault();\n  status.classList.remove('is-error', 'is-success');\n\n  if (!email.checkValidity()) {\n    status.textContent = 'Please enter a valid email address.';\n    status.classList.add('is-error');\n    email.setAttribute('aria-invalid', 'true');\n    email.focus();\n    return;\n  }\n\n  email.removeAttribute('aria-invalid');\n  status.textContent = 'You’re on the list — save room for something lovely.';\n  status.classList.add('is-success');\n  form.reset();\n});\n\nemail.addEventListener('input', () => {\n  email.removeAttribute('aria-invalid');\n  if (status.classList.contains('is-error')) {\n    status.textContent = 'Opening notes, first tastes, no crumbs in your inbox.';\n    status.classList.remove('is-error');\n  }\n});\n\nif (!reduceMotion.matches) {\n  art.addEventListener('pointermove', (event) => {\n    const bounds = art.getBoundingClientRect();\n    const x = ((event.clientX - bounds.left) / bounds.width - 0.5) * 10;\n    const y = ((event.clientY - bounds.top) / bounds.height - 0.5) * 10;\n    stillLife.style.setProperty('--art-x', `${x}px`);\n    stillLife.style.setProperty('--art-y', `${y}px`);\n  });\n\n  art.addEventListener('pointerleave', () => {\n    stillLife.style.setProperty('--art-x', '0px');\n    stillLife.style.setProperty('--art-y', '0px');\n  });\n}\n",
-          },
-        },
-      },
-      delayMs: 420,
-    },
-    {
-      chunk: {
-        type: 'tool_result',
-        toolCallId: 'acp-replay-write-script-js',
-        result: 'Created script.js from the approved Codex ACP filesystem write.',
-        isError: false,
+        resultFormat: 'markdown',
       },
       delayMs: 900,
     },
     {
       chunk: {
         type: 'reasoning',
-        text: '\n\n**Refining patch execution timing**',
+        text: '\n\n**Creating SVG cupcake illustration files**',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-c3d1f576-7b42-4380-a915-d5a3d77fd339',
+          name: 'write_file',
+          args: {
+            path: 'index.html',
+            content:
+              '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <meta name="description" content="Crumb & Bloom — small-batch cupcakes, thoughtfully made. Join the first-bite list.">\n  <title>Crumb & Bloom — Coming Soon</title>\n  <link rel="preconnect" href="https://fonts.googleapis.com">\n  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">\n  <link rel="stylesheet" href="styles.css">\n</head>\n<body>\n  <div class="page-shell">\n    <header class="site-header">\n      <a class="brand" href="#" aria-label="Crumb and Bloom home">\n        <span class="brand-mark" aria-hidden="true">C<span>&</span>B</span>\n        <span class="brand-name">Crumb <em>&</em> Bloom</span>\n      </a>\n      <div class="header-note"><span></span> Whisking up something lovely</div>\n    </header>\n\n    <main>\n      <section class="hero" aria-labelledby="hero-title">\n        <div class="hero-copy">\n          <p class="eyebrow">A small-batch cupcake studio</p>\n          <h1 id="hero-title">Little cakes.<br><em>Big feelings.</em></h1>\n          <p class="intro">Playful flavours, cloud-soft swirls, and the kind of crumbs worth getting on your best shirt.</p>\n\n          <form class="signup" id="signup-form">\n            <label for="email">Join the first-bite list</label>\n            <div class="form-row">\n              <input id="email" name="email" type="email" placeholder="your@email.com" autocomplete="email" required>\n              <button type="submit"><span>Save me a spot</span><span aria-hidden="true">↗</span></button>\n            </div>\n            <p class="form-note" id="form-note" aria-live="polite">Fresh drops, opening news & no soggy inboxes.</p>\n          </form>\n        </div>\n\n        <div class="hero-art" aria-label="Illustration of a cherry-topped cupcake">\n          <span class="doodle doodle-one" aria-hidden="true">✦</span>\n          <span class="doodle doodle-two" aria-hidden="true">made<br>with joy</span>\n          <svg class="cupcake" viewBox="0 0 560 600" role="img" aria-labelledby="cupcake-title">\n            <title id="cupcake-title">A hand-drawn pink cupcake topped with a cherry</title>\n            <path class="shadow" d="M108 534c62 35 275 39 340-4 42-28-24-55-164-56-136-1-219 35-176 60z"/>\n            <path class="wrapper" d="M140 318l32 216c4 26 27 43 53 43h116c25 0 47-17 52-42l37-217z"/>\n            <path class="wrapper-line" d="M181 337l28 207M237 332l10 231M294 332l-1 231M350 332l-18 229M403 334l-43 211"/>\n            <path class="frosting" d="M126 329c-22-25 0-62 39-71-11-35 13-69 59-72-4-39 30-69 73-60 29-32 84-21 92 21 42-4 68 32 59 70 42 10 55 52 29 79 16 23 1 53-30 54l-291 1c-27 0-44-10-30-22z"/>\n            <path class="frosting-detail" d="M169 257c24-4 43 3 54 20M223 186c24 3 40 16 44 35M296 129c20 8 30 23 28 44M390 149c-19 7-30 21-30 41M447 219c-24-3-43 7-53 26M143 310c33-15 62-11 83 8M286 218c-26 9-37 31-32 53M345 280c17-25 40-34 69-25"/>\n            <path class="stem" d="M322 134c3-52 32-87 81-103"/>\n            <path class="leaf" d="M358 71c25-42 65-43 85-34-13 34-43 51-85 34z"/>\n            <circle class="cherry" cx="312" cy="126" r="43"/>\n            <path class="cherry-shine" d="M290 106c6-9 14-13 25-14"/>\n          </svg>\n          <p class="art-caption"><span>01</span> Signature swirls<br>in every season</p>\n        </div>\n      </section>\n\n      <section class="ticker" aria-label="What to expect">\n        <div class="ticker-track">\n          <span>Small batches</span><i>✿</i><span>Big buttercream</span><i>✿</i><span>Joyful flavours</span><i>✿</i>\n          <span aria-hidden="true">Small batches</span><i aria-hidden="true">✿</i><span aria-hidden="true">Big buttercream</span><i aria-hidden="true">✿</i><span aria-hidden="true">Joyful flavours</span><i aria-hidden="true">✿</i>\n        </div>\n      </section>\n    </main>\n\n    <footer>\n      <p>Baked with care in London</p>\n      <p>Opening autumn 2026</p>\n      <a href="https://www.instagram.com" aria-label="Follow Crumb and Bloom on Instagram">Instagram ↗</a>\n    </footer>\n  </div>\n  <script src="script.js"></script>\n</body>\n</html>',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-c3d1f576-7b42-4380-a915-d5a3d77fd339',
+        result:
+          'Applied edit directly to index.html. Git was clean except for Copse-applied edits in this session, so no approval was required. You can validate with run_shell/read_file/git now.',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-93ee42b7-5aa3-4f60-bc0d-742ecb190338',
+          name: 'write_file',
+          args: {
+            path: 'styles.css',
+            content:
+              ':root {\n  --cream: #f6f0e3;\n  --paper: #fffaf0;\n  --berry: #8d2341;\n  --pink: #e9a6b8;\n  --pink-light: #f5cbd3;\n  --red: #c9314b;\n  --green: #3d684d;\n  --ink: #2d251f;\n  --line: rgba(45, 37, 31, .25);\n}\n* { box-sizing: border-box; }\nhtml { scroll-behavior: smooth; }\nbody {\n  margin: 0;\n  background: var(--cream);\n  color: var(--ink);\n  font-family: "DM Sans", sans-serif;\n  -webkit-font-smoothing: antialiased;\n}\nbody::before {\n  content: "";\n  position: fixed; inset: 0; pointer-events: none; opacity: .32;\n  background-image: url("data:image/svg+xml,%3Csvg viewBox=\'0 0 180 180\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'.08\'/%3E%3C/svg%3E");\n  z-index: 10;\n}\n.page-shell { min-height: 100vh; overflow: hidden; }\n.site-header {\n  height: 100px; display: flex; align-items: center; justify-content: space-between;\n  padding: 0 clamp(24px, 5vw, 76px); border-bottom: 1px solid var(--line);\n}\n.brand { display: flex; align-items: center; gap: 13px; color: inherit; text-decoration: none; }\n.brand-mark {\n  width: 44px; height: 44px; border: 1.5px solid var(--ink); border-radius: 50%;\n  display: grid; place-items: center; font-family: "Instrument Serif"; font-size: 17px;\n  transform: rotate(-5deg);\n}\n.brand-mark span, .brand-name em { color: var(--berry); font-style: italic; }\n.brand-name { font-family: "Instrument Serif"; font-size: 25px; letter-spacing: -.02em; }\n.header-note { text-transform: uppercase; font-size: 10px; letter-spacing: .17em; display: flex; align-items: center; gap: 10px; }\n.header-note span { width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse 2s infinite; }\n\n.hero {\n  min-height: calc(100vh - 182px); display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(420px, .96fr);\n}\n.hero-copy {\n  padding: clamp(70px, 8vw, 125px) clamp(30px, 7.5vw, 118px) 74px;\n  display: flex; flex-direction: column; justify-content: center; border-right: 1px solid var(--line);\n}\n.eyebrow {\n  margin: 0 0 25px; color: var(--berry); text-transform: uppercase; letter-spacing: .19em;\n  font-size: 11px; font-weight: 600; display: flex; gap: 12px; align-items: center;\n}\n.eyebrow::before { content:""; width: 32px; height: 1px; background: currentColor; }\nh1 { margin: 0; font-family: "Instrument Serif"; font-weight: 400; font-size: clamp(68px, 7.3vw, 116px); line-height: .83; letter-spacing: -.055em; }\nh1 em { color: var(--berry); font-weight: 400; }\n.intro { max-width: 470px; margin: 35px 0 47px; font-family: "Instrument Serif"; font-size: clamp(20px, 1.7vw, 25px); line-height: 1.4; }\n.signup { max-width: 555px; }\n.signup label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .14em; font-weight: 600; margin-bottom: 11px; }\n.form-row { display: flex; border-bottom: 1.5px solid var(--ink); }\ninput {\n  min-width: 0; flex: 1; border: 0; background: transparent; padding: 14px 4px;\n  font: 17px "DM Sans"; color: var(--ink); outline: none;\n}\ninput::placeholder { color: #7b7169; }\nbutton {\n  border: 0; background: var(--berry); color: white; font: 600 11px "DM Sans";\n  text-transform: uppercase; letter-spacing: .1em; padding: 0 18px; margin-bottom: 7px;\n  display: flex; align-items: center; gap: 15px; cursor: pointer; transition: background .2s, transform .2s;\n}\nbutton:hover { background: var(--ink); transform: translateY(-2px); }\nbutton:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--pink); outline-offset: 4px; }\n.form-note { font-size: 11px; color: #746b63; margin: 10px 0 0; min-height: 16px; }\n.form-note.success { color: var(--green); font-weight: 600; }\n\n.hero-art { position: relative; display: grid; place-items: center; background: var(--pink-light); min-height: 660px; }\n.hero-art::before {\n  content:""; position: absolute; width: min(76%, 530px); aspect-ratio: 1;\n  border: 1px solid rgba(141,35,65,.24); border-radius: 50%;\n}\n.cupcake { width: min(78%, 580px); position: relative; filter: drop-shadow(0 16px 0 rgba(141,35,65,.08)); animation: float 5s ease-in-out infinite; }\n.shadow { fill: #cd889b; opacity: .45; }\n.wrapper { fill: #f3d58f; stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; }\n.wrapper-line { fill: none; stroke: #bb8647; stroke-width: 2.2; opacity: .65; }\n.frosting { fill: #fff9ee; stroke: var(--ink); stroke-width: 3.4; stroke-linejoin: round; }\n.frosting-detail { fill: none; stroke: #d795a8; stroke-width: 3; stroke-linecap: round; }\n.stem { fill: none; stroke: var(--green); stroke-width: 7; stroke-linecap: round; }\n.leaf { fill: #789b67; stroke: var(--ink); stroke-width: 3; }\n.cherry { fill: var(--red); stroke: var(--ink); stroke-width: 3; }\n.cherry-shine { fill: none; stroke: #ffd9da; stroke-width: 6; stroke-linecap: round; }\n.doodle { position: absolute; z-index: 2; color: var(--berry); }\n.doodle-one { font-size: 42px; top: 17%; right: 13%; transform: rotate(14deg); }\n.doodle-two { left: 8%; top: 26%; font: italic 20px/1 "Instrument Serif"; text-align: center; transform: rotate(-11deg); }\n.doodle-two::after { content: "↘"; display: block; font-size: 29px; margin: 7px 0 0 31px; }\n.art-caption {\n  position: absolute; right: 7%; bottom: 6%; margin: 0; font: italic 16px/1.25 "Instrument Serif";\n  transform: rotate(3deg);\n}\n.art-caption span { font: 10px "DM Sans"; letter-spacing: .15em; display: block; margin-bottom: 5px; }\n\n.ticker { background: var(--berry); color: var(--paper); overflow: hidden; padding: 15px 0; }\n.ticker-track { width: max-content; display: flex; align-items: center; animation: ticker 28s linear infinite; }\n.ticker span { font: italic 21px "Instrument Serif"; padding: 0 34px; }\n.ticker i { font-style: normal; font-size: 14px; color: var(--pink); }\nfooter {\n  min-height: 82px; padding: 0 clamp(24px, 5vw, 76px); display: flex; align-items: center; gap: 40px;\n  text-transform: uppercase; letter-spacing: .12em; font-size: 9px;\n}\nfooter p:nth-child(2) { margin-left: auto; }\nfooter a { color: inherit; text-underline-offset: 4px; }\n\n@keyframes pulse { 50% { transform: scale(.65); opacity: .5; } }\n@keyframes float { 50% { transform: translateY(-9px) rotate(1deg); } }\n@keyframes ticker { to { transform: translateX(-50%); } }\n\n@media (max-width: 860px) {\n  .site-header { height: 82px; }\n  .brand-name { font-size: 22px; }\n  .header-note { display: none; }\n  .hero { grid-template-columns: 1fr; }\n  .hero-copy { border-right: 0; padding: 72px 25px 70px; }\n  h1 { font-size: clamp(65px, 18vw, 94px); }\n  .intro { margin: 30px 0 42px; }\n  .hero-art { min-height: 570px; border-top: 1px solid var(--line); }\n  .cupcake { width: min(87%, 520px); }\n  footer { flex-wrap: wrap; justify-content: space-between; gap: 10px 20px; padding-block: 25px; }\n  footer p { margin: 0; }\n  footer p:nth-child(2) { margin-left: 0; }\n}\n@media (max-width: 480px) {\n  .brand-mark { width: 38px; height: 38px; }\n  h1 { font-size: 65px; }\n  .form-row { display: block; border: 0; }\n  input { width: 100%; border-bottom: 1.5px solid var(--ink); }\n  button { width: 100%; height: 50px; margin: 12px 0 0; justify-content: space-between; }\n  .hero-art { min-height: 470px; }\n  .doodle-two { top: 16%; }\n  .art-caption { bottom: 4%; }\n}\n@media (prefers-reduced-motion: reduce) {\n  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }\n}',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-93ee42b7-5aa3-4f60-bc0d-742ecb190338',
+        result:
+          'Applied edit directly to styles.css. Git was clean except for Copse-applied edits in this session, so no approval was required. You can validate with run_shell/read_file/git now.',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-2e778c46-b3e5-46b5-9e86-7a643af2fdb5',
+          name: 'write_file',
+          args: {
+            path: 'script.js',
+            content:
+              "const form = document.querySelector('#signup-form');\nconst note = document.querySelector('#form-note');\nform.addEventListener('submit', (event) => {\n  event.preventDefault();\n  const email = new FormData(form).get('email');\n  if (!email) return;\n  note.textContent = \"You're on the list — we'll save you the first swirl.\";\n  note.classList.add('success');\n  form.querySelector('button span:first-child').textContent = 'You’re in!';\n  form.querySelector('input').value = '';\n});",
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-2e778c46-b3e5-46b5-9e86-7a643af2fdb5',
+        result:
+          'Applied edit directly to script.js. Git was clean except for Copse-applied edits in this session, so no approval was required. You can validate with run_shell/read_file/git now.',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'text',
+        text: 'The core page is in place: a split editorial hero, custom hand-drawn cupcake artwork, moving flavour ribbon, and a responsive signup flow. I’m opening it now to check the actual rendered composition, keyboard-readable structure, and form behavior; I’ll adjust anything that looks off in the browser.',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-4e186036-cd38-4890-959e-556e67eeb55e',
+          name: 'browser_preview',
+          args: {
+            path: 'index.html',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-4e186036-cd38-4890-959e-556e67eeb55e',
+        result:
+          'Opened tab-1 in the visible Browser panel: Crumb & Bloom — Coming Soon\nhttp://localhost:61025/index.html',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Requesting screenshot**',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-d06a3ecf-21ee-4e84-98cd-59d0f0405a64',
+          name: 'browser_screenshot',
+          args: {
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-d06a3ecf-21ee-4e84-98cd-59d0f0405a64',
+        result:
+          'Saved screenshot of tab-1 to ~/debugging/agent-pane/.wdio-eval-userdata-a3a2d66b-7G38gL/browser-screenshots/tab-1-1786277869636.png',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-fa1cc6dd-5f45-4a2d-b3fa-1d9a42378200',
+          name: 'browser_snapshot',
+          args: {
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-fa1cc6dd-5f45-4a2d-b3fa-1d9a42378200',
+        result:
+          'page: "Crumb & Bloom — Coming Soon"\nurl: http://localhost:61025/index.html\n\n- link "Crumb and Bloom home" [ref=e1]\n  - text "&" [ref=e2]\n  - text "&" [ref=e3]\n- text "A small-batch cupcake studio"\n- heading "Little cakes.Big feelings."\n  - text "Big feelings."\n- text "Playful flavours, cloud-soft swirls, and the kind of crumbs worth getting on your best shirt."\n- text "Join the first-bite list"\n- textbox "Join the first-bite list" [ref=e4]\n- button "Save me a spot↗" [ref=e5]\n  - text "Save me a spot" [ref=e6]\n  - text "↗" [ref=e7]\n- text "Fresh drops, opening news & no soggy inboxes."\n- text "✦"\n- img "A hand-drawn pink cupcake topped with a cherry"\n- text "01 Signature swirlsin every season"\n- text "01"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Baked with care in London"\n- text "Opening autumn 2026"\n- link "Follow Crumb and Bloom on Instagram" [ref=e8]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Testing image viewing via screenshot tool**',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-a5b1aaf5-9e63-4bf6-af9c-4bcea44ce7a1',
+          name: 'browser_type',
+          args: {
+            ref: 'e4',
+            text: 'hello@example.com',
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-a5b1aaf5-9e63-4bf6-af9c-4bcea44ce7a1',
+        result: 'Typed into [ref=e4]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-13b18f21-2291-416f-9ab7-89c7347892f4',
+          name: 'browser_click',
+          args: {
+            ref: 'e5',
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-13b18f21-2291-416f-9ab7-89c7347892f4',
+        result: 'Clicked [ref=e5]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-1fe3e158-c75e-46b8-b140-e655e65e31eb',
+          name: 'browser_snapshot',
+          args: {
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-1fe3e158-c75e-46b8-b140-e655e65e31eb',
+        result:
+          'page: "Crumb & Bloom — Coming Soon"\nurl: http://localhost:61025/index.html\n\n- link "Crumb and Bloom home" [ref=e1]\n  - text "&" [ref=e2]\n  - text "&" [ref=e3]\n- text "A small-batch cupcake studio"\n- heading "Little cakes.Big feelings."\n  - text "Big feelings."\n- text "Playful flavours, cloud-soft swirls, and the kind of crumbs worth getting on your best shirt."\n- text "Join the first-bite list"\n- textbox "Join the first-bite list" [ref=e4]\n- button "You’re in!↗" [ref=e5]\n  - text "You’re in!" [ref=e6]\n  - text "↗" [ref=e7]\n- text "You\'re on the list — we\'ll save you the first swirl."\n- text "✦"\n- img "A hand-drawn pink cupcake topped with a cherry"\n- text "01 Signature swirlsin every season"\n- text "01"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Baked with care in London"\n- text "Opening autumn 2026"\n- link "Follow Crumb and Bloom on Instagram" [ref=e8]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Planning overflow validation approach**',
       },
     },
     {
       chunk: {
         type: 'text',
-        text: 'Created the polished, responsive coming-soon site with:\n\n- Warm editorial two-column layout\n- CSS-illustrated cupcake still-life\n- Accessible email waitlist validation\n- Refined entrance and pointer animations\n- Full reduced-motion support\n- No dependencies\n\nhttp://localhost:4173',
+        text: 'Built and previewed a polished, responsive coming-soon site for Crumb & Bloom featuring:\n\n- Handcrafted cupcake illustration\n- Warm editorial branding and typography\n- Animated flavour ticker\n- Functional email signup confirmation\n- Accessible focus states and reduced-motion support\n- Mobile-responsive layout\n\nFiles: [index.html](~/index.html), [styles.css](~/styles.css), [script.js](~/script.js)\n\nhttp://localhost:61025/index.html',
       },
     },
     {
       chunk: {
         type: 'usage',
         model: 'acp:codex',
-        inputTokens: 314,
-        outputTokens: 62,
-        cacheReadTokens: 21248,
+        inputTokens: 1236,
+        outputTokens: 160,
+        cacheReadTokens: 23296,
       },
       delayMs: 300,
     },
@@ -123,7 +354,7 @@ export const LANDING_TRACE: DemoTrace = {
   ],
   source: {
     exportVersion: 5,
-    threadId: 'edd43915-181a-467a-b965-4a87b44fe87b',
+    threadId: '44f88c10-9b17-4536-8314-646199f8936f',
     title: 'Build a polished coming-soon site for',
     turn: 0,
     model: 'acp:codex',

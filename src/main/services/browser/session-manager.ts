@@ -18,6 +18,7 @@ interface Tab {
 export interface BrowserSessionPlatform {
   createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
   getAgentSession(): Session
+  showUrl(url: string): void
 }
 
 let platform: BrowserSessionPlatform | null = null
@@ -122,6 +123,10 @@ export class BrowserSessionManager {
     }
     const wc = tab.window.webContents
     return { viewId: tab.id, title: wc.getTitle(), url: wc.getURL() }
+  }
+
+  showUrl(url: string): void {
+    requirePlatform().showUrl(url)
   }
 
   async snapshot(viewId?: string): Promise<string> {
