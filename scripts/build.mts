@@ -13,6 +13,7 @@ import {
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
+import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
@@ -221,6 +222,16 @@ if (isDemo) {
   // as a plain website at /sites/cupcakes/.
   cpSync('src/shared/demo-sites', `${rendererOutDir}/sites`, { recursive: true })
   await writeDemoScenarioManifest(`${rendererOutDir}/scenarios.json`)
+  // The demo is published under copse.dev/demo/ — as /demo/main/, /demo/release/
+  // and a /demo/pr-<n>/ per open PR — so keep every page of it out of search
+  // results: the app shell and the recorded cupcake site copied in above, which
+  // is a whole standalone website and would otherwise be indexed as one. Marked
+  // here rather than in demo-preview.yml so the tag travels with the artifact
+  // wherever it is served. The production marketing site is a different tree
+  // (site/, deployed to the root from main) and is deliberately left indexable.
+  // See scripts/lib/noindex.mts.
+  const marked = markTreeNoindex(rendererOutDir)
+  console.log(`[build] marked ${String(marked.length)} demo page(s) noindex`)
   // Fail closed: demo trees are committed to `demo-previews` and scanned by
   // gitleaks across every PR tip. A source map here is a repo-wide CI outage.
   const maps: string[] = []

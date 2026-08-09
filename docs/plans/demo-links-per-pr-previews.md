@@ -178,6 +178,35 @@ If deploy volume ever bites again, the remaining escape hatch is a dedicated ext
 preview host (Cloudflare Pages/Netlify give native per-PR URLs), explicitly _not_ chosen
 here but noted as the pressure-release valve.
 
+### Search indexing
+
+Previews live on the production domain, so search engines find them: the sticky PR
+comment is on a crawlable github.com page, and each `pr-<n>-preview/` is a near-duplicate
+of `copse.dev/` competing with it for its own copy. A closed PR then leaves dead
+`/demo/pr-<n>/` results behind, since cleanup removes the content but not the index entry.
+
+So **everything published under `/demo/` carries
+`<meta name="robots" content="noindex, nofollow">`**, injected at publish time by
+[`scripts/lib/noindex.mts`](../../scripts/lib/noindex.mts): the demos by `build:demo`
+(so the tag travels with the artifact wherever it is served, including the recorded
+cupcake site under `sites/`), the marketing-site bundles by `demo-preview.yml`'s publish
+step — on the copy, never on `site/` itself, which `pages.yml` deploys to the root from
+`main` and which stays indexable. `ci-workflow-invariants.test.ts` pins both directions.
+
+Three things about this that are easy to get wrong later:
+
+- **A meta tag, not `X-Robots-Tag`.** GitHub Pages serves static files with headers we
+  cannot configure. If the site ever moves to a host that can set them, the header
+  replaces the tag.
+- **`robots.txt` must not `Disallow: /demo/`.** A disallowed URL is never fetched, so its
+  `noindex` is never read, and it can stay indexed URL-only on the strength of those
+  public inbound links — with no mechanism left to drop it. `site/robots.txt` exists to
+  say exactly that to the next person who tries. Crawling is how the tag gets honoured.
+- **The tag is constant, so "publish only on change" still holds.** A marker that varied
+  per run — a timestamp, a PR number — would make every push republish and redeploy the
+  whole site, the same trap `.head-sha` fell into above. `markTreeNoindex` is idempotent
+  and rewrites no bytes on an already-marked tree.
+
 ## Security / phishing considerations
 
 Serving JS built from a contributor branch on the **primary marketing domain** is a real
