@@ -24,6 +24,7 @@ import { mountSupervisedTasks } from './views/supervised-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
+import { mountPortsPane } from './views/ports-pane.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
@@ -155,6 +156,7 @@ const POPOUT_MODES = new Set<RightPanelMode>([
   'terminal',
   'changes',
   'prs',
+  'ports',
   'browser',
   'memories',
   'roadmap',
@@ -484,6 +486,7 @@ function mountFullLayout(): void {
     store,
     api,
   )
+  mountPortsPane(requireElement('ports-host'), requireElement('ports-viewer-host'), store, api)
   mountMemoriesPane(
     requireElement('memories-host'),
     requireElement('memories-viewer-host'),

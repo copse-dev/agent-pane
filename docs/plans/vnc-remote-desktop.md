@@ -50,11 +50,13 @@ provision.
 | Secrets encrypted at rest                        | `storage/secret-cipher.ts`                                                                                                                                                       | Where a per-host VNC password goes, if we support one at all                      |
 | The recipe for an off-by-default capability      | `browserToolsEnabled` across `settings-writable.ts:292`, `settings-dialog.ts:269`, `agent-system-prompt.ts:65`, `registry-bootstrap.ts`, `permission-gate.ts`, `tool-display.ts` | Six files, a known shape, no new pattern needed                                   |
 
-One of those is worth stating as a finding rather than an asset: **the ports
-service has no production consumer.** `scanListeningPorts` and `readParentMap`
-are referenced nowhere in `src/` outside their own directory and tests — the
-local Ports panel described in #771 never landed. Remote port discovery for this
-plan should wire that code up rather than grow a second scanner beside it.
+That row was a finding before it was an asset: the ports service had parsers, a
+host scan, and no production consumer anywhere in `src/` — the local Ports panel
+described in #771 had never landed. It has now, in this plan's first slice: a
+`ports` right-panel mode listing the host's listeners, attributing the ones that
+descend from a Shells tab or a background task, and offering open/kill for those
+alone. Remote discovery in V2 extends `discover()` over the SSH exec path onto
+the same parsers rather than growing a second scanner beside them.
 
 ## Binding decisions
 
@@ -229,7 +231,8 @@ after disconnect. This is #771's tunnel half and lands under that issue.
 ### V2 — Human input and discovery (~3–4 days)
 
 1. Pointer and key events from the pane, with the keysym mapping noVNC provides.
-2. `discover()` over the SSH exec path, wiring the existing parsers.
+2. `discover()` over the SSH exec path, running the local Ports panel's parsers
+   against a remote host.
 3. Optional per-host password through `secret-cipher.ts`, never in settings JSON.
 4. Clipboard toggle, off by default, per connection.
 5. The idle-blanker problem is real and documented (`AGENTS.md:42`): synthetic

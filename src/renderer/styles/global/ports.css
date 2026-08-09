@@ -1,0 +1,118 @@
+/* Ports pane (#771, local half). The list column reuses the git-changes list
+   primitives; these rules cover the row layout and the detail column. */
+.ports-host {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.ports-row {
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.ports-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  flex: 1;
+}
+.ports-row-port {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.ports-row-command {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ports-row-owner {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+/* Detail column */
+.ports-viewer-host {
+  padding: var(--spacing-md);
+  overflow-y: auto;
+}
+.ports-empty {
+  padding: var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.ports-detail-title {
+  margin: 0 0 var(--spacing-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+}
+.ports-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px var(--spacing-sm);
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-sm);
+}
+.ports-fact-term {
+  color: var(--text-muted);
+}
+.ports-fact-value {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ports-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.ports-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.ports-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ports-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ports-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+.ports-btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+  color: var(--text-on-accent);
+}
+.ports-btn-danger {
+  color: var(--danger, #f14c4c);
+}
+.ports-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
+  color: var(--danger, #f14c4c);
+}
+.ports-detail-note {
+  margin: var(--spacing-sm) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}

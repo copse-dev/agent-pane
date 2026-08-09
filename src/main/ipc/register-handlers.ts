@@ -187,6 +187,7 @@ import {
   setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
+import { killOwnedPort, listPortRows, setSeededPortRows } from '../services/ports/ports-registry.ts'
 
 import {
   deleteAllKnowledgeAttachments,
@@ -597,6 +598,23 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = getWorkspaceRoot()
     if (root) await whenFileIndexReady(root)
     return await resolveFileReferences(candidates)
+  })
+
+  // Ports panel. Listening ports are discovered by scanning the host, not by
+  // tracking what Copse spawned, so the list includes the user's other apps and
+  // system services — visibility over enforcement, per #771. Only rows that
+  // descend from a Shells tab or a background task can be killed, and that is
+  // decided in `killOwnedPort` from a fresh scan rather than from anything the
+  // renderer sends.
+  ipcMain.handle('ports:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listPortRows()
+  })
+
+  ipcMain.handle('ports:kill', (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [port] = parseIpcArgs(z.tuple([z.number().int().min(1).max(65535)]), rawArgs)
+    return killOwnedPort(port)
   })
 
   // OKF memories management. The renderer's Memories pane (issue #645, Phase 3)
@@ -2081,7 +2099,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'ports', 'memories', 'roadmap', 'browser']),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -2090,7 +2108,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'ports', 'memories', 'roadmap', 'browser']),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -2243,6 +2261,33 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
           toVersion: '1.1.7',
         },
       ])
+    })
+    ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      // Scanning is a property of the host, and the CI image has neither `ss` nor
+      // `lsof` — so the Ports spec seeds rows instead of starting real listeners.
+      const rows = parseIpcArgs(
+        z
+          .array(
+            z.object({
+              port: z.number().int().min(1).max(65535),
+              pid: z.number().int().positive().nullable(),
+              command: z.string().max(200),
+              address: z.string().max(64),
+              owner: z
+                .object({
+                  kind: z.enum(['terminal', 'background']),
+                  id: z.string().max(128),
+                  label: z.string().max(200),
+                })
+                .nullable(),
+              url: z.string().max(2048).nullable(),
+            }),
+          )
+          .max(64),
+        [raw],
+      )
+      setSeededPortRows({ rows, tool: 'seeded' })
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)
