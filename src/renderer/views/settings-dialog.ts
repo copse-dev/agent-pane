@@ -279,6 +279,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'alertBounce', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
+  { name: 'worktreeAutoApproveEdits', kind: 'checkbox', default: true, save: true },
   { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
   // Experimental, opt-in features (off by default). The MCP-UI artefacts
   // (canvas) toggle moved to Settings > Packs (`copse.mcp-ui-canvas`).
@@ -803,6 +804,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Copse's tools (GitHub, code search, changes, browser, web fetch) apply their own
                 permission checks each time they run, so the extra prompt only asks twice. Turn off
                 to be asked anyway.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="worktreeAutoApproveEdits" />
+                Skip approval for deletes, renames, and new folders in an isolated worktree
+              </label>
+              <p class="field-hint">
+                A thread on an isolated worktree edits its own checkout on its own branch — your
+                files and branch are never touched — so it applies these straight away instead of
+                asking. Threads on the shared checkout keep asking. Copse still asks if the file
+                changed underneath it or its work could not be backed up. Turn off to review every
+                one.
               </p>
             </fieldset>
 

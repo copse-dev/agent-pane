@@ -1,7 +1,7 @@
 import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
-import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,7 @@ import {
   adoptWorktreeChangesSince,
   applyDiffEntry,
   applyOrStageDiff,
+  applyOrStageFileOp,
   awaitStagedDiffDecision,
   approveAllStagedDiffs,
   captureWorktreeBaseline,
@@ -25,7 +26,8 @@ import {
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
-import { ownedIt, TEST_THREAD_OWNER } from './thread-execution-context.test-support.ts'
+import { ownedIt, worktreeIt, TEST_THREAD_OWNER } from './thread-execution-context.test-support.ts'
+import { setSetting } from './storage/settings.ts'
 
 function git(cwd: string, args: string[]): void {
   execFileSync('git', args, {
@@ -295,6 +297,204 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getRecentStagedDiffDecision('a.txt')?.status, 'conflict')
     assert.equal(getStagedDiffEntry('a.txt')?.before, 'current\n')
     assert.equal(getStagedDiffEntry('a.txt')?.after, 'next\n')
+  })
+})
+
+describe('applyOrStageFileOp (worktree auto-approve)', () => {
+  let tempRoot = ''
+  let workspaceRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    resetSessionBackup(TEST_THREAD_OWNER)
+    setGitAvailableForTest(true)
+    await setSetting('worktreeAutoApproveEdits', true)
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-file-op-'))
+    workspaceRoot = join(tempRoot, 'packages/app')
+    await mkdir(workspaceRoot, { recursive: true })
+    initCommittedRepo(tempRoot)
+    restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
+  })
+
+  afterEach(async () => {
+    clearDiffQueueForTest()
+    resetSessionBackup(TEST_THREAD_OWNER)
+    setGitAvailableForTest(null)
+    await setSetting('worktreeAutoApproveEdits', true)
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  /** Commit `name` so the worktree is clean before the op under test runs. */
+  async function commitFile(name: string, content: string): Promise<void> {
+    await writeFile(join(workspaceRoot, name), content, 'utf-8')
+    git(tempRoot, ['add', `packages/app/${name}`])
+    git(tempRoot, ['commit', '-m', `add ${name}`])
+  }
+
+  worktreeIt('deletes directly instead of staging for approval', async () => {
+    await commitFile('gone.txt', 'bye\n')
+
+    const result = await applyOrStageFileOp({
+      op: 'delete',
+      path: 'gone.txt',
+      before: 'bye\n',
+      after: '',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Deleted gone\.txt directly/)
+    assert.match(result, /no approval was required/)
+    await assert.rejects(readFile(join(workspaceRoot, 'gone.txt'), 'utf-8'))
+    assert.equal(getDiffQueueForTest().length, 0)
+    assert.equal(getRecentStagedDiffDecision('gone.txt')?.status, 'applied_directly')
+  })
+
+  worktreeIt('renames directly instead of staging for approval', async () => {
+    await commitFile('from.txt', 'move me\n')
+
+    const result = await applyOrStageFileOp({
+      op: 'rename',
+      path: 'from.txt',
+      renameTo: 'to.txt',
+      before: 'move me\n',
+      after: 'move me\n',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Renamed from\.txt → to\.txt directly/)
+    assert.equal(await readFile(join(workspaceRoot, 'to.txt'), 'utf-8'), 'move me\n')
+    await assert.rejects(readFile(join(workspaceRoot, 'from.txt'), 'utf-8'))
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  worktreeIt('creates a directory directly instead of staging for approval', async () => {
+    const result = await applyOrStageFileOp({
+      op: 'mkdir',
+      path: 'nested/dir',
+      before: '',
+      after: '[create directory] nested/dir',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Created directory nested\/dir directly/)
+    assert.equal(getDiffQueueForTest().length, 0)
+    const stat = await lstat(join(workspaceRoot, 'nested/dir'))
+    assert.ok(stat.isDirectory())
+  })
+
+  worktreeIt('keeps a directly deleted path owned so later edits stay direct', async () => {
+    await commitFile('gone.txt', 'bye\n')
+    await applyOrStageFileOp({
+      op: 'delete',
+      path: 'gone.txt',
+      before: 'bye\n',
+      after: '',
+      language: 'plaintext',
+    })
+
+    // The deletion shows up in `git status`; without ownership it would read as
+    // unowned work and push the next write back through the approval panel.
+    const next = await applyOrStageDiff('other.txt', '', 'new\n', 'plaintext')
+    assert.match(next, /Applied edit directly/)
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  worktreeIt('stages when the file changed on disk since it was read', async () => {
+    await commitFile('a.txt', 'current\n')
+
+    const result = await applyOrStageFileOp({
+      op: 'delete',
+      path: 'a.txt',
+      before: 'stale\n',
+      after: '',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Direct apply was skipped because a\.txt changed after it was read/)
+    assert.equal(getRecentStagedDiffDecision('a.txt')?.status, 'conflict')
+    assert.equal(getStagedDiffEntry('a.txt')?.before, 'current\n')
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'current\n')
+  })
+
+  worktreeIt('restages a conflicting rename around the content actually on disk', async () => {
+    await commitFile('from.txt', 'current\n')
+
+    const result = await applyOrStageFileOp({
+      op: 'rename',
+      path: 'from.txt',
+      renameTo: 'to.txt',
+      before: 'stale\n',
+      after: 'stale\n',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Direct apply was skipped because from\.txt changed after it was read/)
+    // The move carries what is on disk, so re-proposing the stale copy the agent
+    // read would move the wrong bytes on approval.
+    const staged = getStagedDiffEntry('from.txt')
+    assert.equal(staged?.before, 'current\n')
+    assert.equal(staged.after, 'current\n')
+    assert.equal(staged.renameTo, 'to.txt')
+  })
+
+  worktreeIt('stages when unowned changes cannot be backed up (no safety net)', async () => {
+    await commitFile('gone.txt', 'bye\n')
+    await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
+    setGitAvailableForTest(false)
+
+    const result = await applyOrStageFileOp({
+      op: 'delete',
+      path: 'gone.txt',
+      before: 'bye\n',
+      after: '',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Deletion of gone\.txt staged/)
+    assert.match(result, /Reason approval is required/)
+    assert.equal(await readFile(join(workspaceRoot, 'gone.txt'), 'utf-8'), 'bye\n')
+  })
+
+  worktreeIt('stages every op when the setting is off', async () => {
+    await setSetting('worktreeAutoApproveEdits', false)
+    await commitFile('gone.txt', 'bye\n')
+
+    const result = await applyOrStageFileOp({
+      op: 'delete',
+      path: 'gone.txt',
+      before: 'bye\n',
+      after: '',
+      language: 'plaintext',
+    })
+
+    // Off is byte-identical to the pre-setting behaviour: no fast path existed,
+    // so nothing explains one that was declined.
+    assert.equal(
+      result,
+      'Deletion of gone.txt staged. Approve or reject in the diff panel — nothing changes on disk until accepted.',
+    )
+    assert.equal(await readFile(join(workspaceRoot, 'gone.txt'), 'utf-8'), 'bye\n')
+    assert.equal(getStagedDiffEntry('gone.txt')?.op, 'delete')
+  })
+
+  ownedIt('still stages in the shared checkout, however clean it is', async () => {
+    await commitFile('gone.txt', 'bye\n')
+
+    const result = await applyOrStageFileOp({
+      op: 'delete',
+      path: 'gone.txt',
+      before: 'bye\n',
+      after: '',
+      language: 'plaintext',
+    })
+
+    assert.equal(
+      result,
+      'Deletion of gone.txt staged. Approve or reject in the diff panel — nothing changes on disk until accepted.',
+    )
+    assert.equal(await readFile(join(workspaceRoot, 'gone.txt'), 'utf-8'), 'bye\n')
   })
 })
 
