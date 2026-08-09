@@ -1,6 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { attachTextExpand } from '../attachments/text-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -1550,7 +1551,11 @@ export function mountInputBar(
     chip.className = 'attachment-chip'
     const name = document.createElement('span')
     name.className = 'attachment-chip-label'
-    name.textContent = file.path.split('/').pop() ?? file.path
+    const label = file.path.split('/').pop() ?? file.path
+    name.textContent = label
+    // The label, not the pill: the pill already holds the ✕ button, and a
+    // button inside a role="button" is neither valid nor clickable-apart.
+    attachTextExpand(name, file.content, label)
     chip.append(name)
     const remove = document.createElement('button')
     remove.textContent = '✕'
@@ -1593,6 +1598,7 @@ export function mountInputBar(
     const title = document.createElement('span')
     title.className = 'attachment-chip-label'
     title.textContent = ref.label
+    attachTextExpand(title, ref.content, ref.label)
     chip.append(shellIcon('shell-chip-icon'), title)
     const remove = document.createElement('button')
     remove.textContent = '✕'
