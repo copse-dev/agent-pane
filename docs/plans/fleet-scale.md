@@ -1,6 +1,7 @@
 # Working at fleet scale
 
-**Status: Proposed**, except C3 which landed as
+**Status: Proposed**, except C7's boundary rules, which merged as
+[#1667](https://github.com/copse-dev/agent-pane/pull/1667). C3 is open as
 [#1663](https://github.com/copse-dev/agent-pane/pull/1663). This is an audit of what
 breaks when one person supervises a fleet of agents rather than writing the code
 themselves: what the CI should do differently, what the product should do differently, and
@@ -124,7 +125,7 @@ can be blocked by, so agents will keep reintroducing it and nobody will know.
 
 ### C3 — Cap every job
 
-**Change.** Add `timeout-minutes` to every job in `ci.yml`. Landed as
+**Change.** Add `timeout-minutes` to every job in `ci.yml`. Open as
 [#1663](https://github.com/copse-dev/agent-pane/pull/1663): 30 for `precheck`, 20 for
 `autoformat`, 45 each for `check` / `bench` / `e2e`, 30 for `build` and
 `commit-screenshots`, 90 for the two model-eval jobs, 15 for `ci-passed` — with a pin in
@@ -225,21 +226,31 @@ renderer bundle" — while `settings-dialog.ts` **violates** it twice, reaching 
 `main/services/` for `validateAdvisorPair` and `DEFAULT_ORCHESTRATION_WORKER_MODEL`. One
 file pays for the rule in duplicated code; another ignores it; neither is told.
 
-**Change.** Three tiers, in cost order:
+**Change.** All five boundaries are now enforced, merged as
+[#1667](https://github.com/copse-dev/agent-pane/pull/1667), split by what each tool is
+good at:
 
-1. **Ship the Electron rule** — an eslint `no-restricted-imports` on the bare `electron`
-   module with an explicit allow-list, type-only imports still legal. Landed as
-   [#1667](https://github.com/copse-dev/agent-pane/pull/1667): 815 of 841 source files come
-   under it, zero violations, every allow-list entry load-bearing.
-2. **Pin the three clean boundaries.** A rule with no violations costs nothing to add and
-   prevents the _first_ one, which is the only cheap moment to prevent it. `packages/*`
-   not importing `src/` matters most: it is what keeps the already-extracted
-   `@copse/agent` / `@copse/llm` genuinely standalone.
-3. **Resolve renderer→main, then pin it.** Both imports are pure (`@shared` + `@copse/llm`
-   only), so they are harmless at runtime and merely point the wrong way. The fix is to
-   move those two exports into `src/shared`, which is what that tree is for — but
-   `advisor-strategy.ts` and `orchestration-strategy.ts` are both under active work, so
-   this wants sequencing behind those rather than doing now.
+1. **ESLint for bans on bare module names**, where a specifier glob is exact and the error
+   lands at the point of the mistake: `electron` across `src/` and `packages/` behind an
+   explicit allow-list (1291 files, zero violations, every entry load-bearing), and
+   `node:*` in the renderer (167 files). Renderer _tests_ are exempt from the second —
+   they run under Node's test runner over happy-dom, and the boundary protects the shipped
+   bundle, not the test tree.
+2. **A structural test for the three direction rules** (`renderer ↛ main`,
+   `shared ↛ main/renderer`, `packages ↛ src`) in `scripts/module-boundaries.test.ts`,
+   because those turn on the zone of the _resolved file_ rather than the module name. A
+   specifier glob fails both ways here: relative specifiers vary by nesting depth, and
+   `src/renderer/main.ts` exists, so any pattern loose enough to catch
+   `../../main/services/x.ts` also blocks the renderer importing its own entry point.
+
+**Still open: resolve renderer→main rather than exempting it.** The two
+`settings-dialog.ts` crossings shipped as documented exceptions. Both are pure (`@shared`
+
+- `@copse/llm` only), so harmless at runtime and merely pointed the wrong way; the fix is
+  moving those exports into `src/shared`, which is what that tree is for. It waits on
+  `advisor-strategy.ts` and `orchestration-strategy.ts`, both under active work. The
+  exceptions list is self-clearing — a second test fails once an entry stops matching a real
+  import, so the fix forces the exemption out in the same change.
 
 **Why this belongs in a fleet plan.** A convention that lives in a maintainer's head
 scales to the people who have talked to that maintainer. Agents have not. They infer the
@@ -482,24 +493,24 @@ part's P0 too.
 
 ## What I would do first
 
-| Order | Item                                               | Effort  | Unlocks                                        |
-| ----- | -------------------------------------------------- | ------- | ---------------------------------------------- |
-| 1     | C3 job timeouts                                    | minutes | stops the capacity leak                        |
-| 2     | C7 tier 1–2 boundary lint rules                    | ~a day  | a convention agents can actually see           |
-| 3     | S1 + S2 video reporter, noVNC (`ffmpeg`, `x11vnc`) | ~a day  | a failure you can look at, a run you can watch |
-| 4     | C1 run record + job summaries                      | ~a day  | C2, C4, C5 arguments; P2's observation stream  |
-| 5     | S3 structured test results                         | ~a day  | annotations, per-test history, C2's input      |
-| 6     | C2 dated quarantine                                | ~a day  | trust in `CI Passed`                           |
-| 7     | P1 activity view                                   | ~a week | every other product item has somewhere to go   |
-| 8     | C5 pool-sized shards, C4 fleet priming             | ~a day  | wall-clock, once C1 says which one to do       |
-| 9     | P2 fleet registry + history (read-only)            | ~a week | P3, P4, P6                                     |
-| 10    | S4 container capture → `video_frames`              | ~a week | "watch this agent"; frames in incident notes   |
-| 11    | P3 shared CI memory                                | ~a week | stops N agents re-debugging one failure        |
+| Order | Item                                                                                        | Effort  | Unlocks                                        |
+| ----- | ------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------- |
+| 1     | C3 job timeouts                                                                             | minutes | stops the capacity leak                        |
+| ✓     | C7 boundary rules — **merged** ([#1667](https://github.com/copse-dev/agent-pane/pull/1667)) | —       | a convention agents can actually see           |
+| 3     | S1 + S2 video reporter, noVNC (`ffmpeg`, `x11vnc`)                                          | ~a day  | a failure you can look at, a run you can watch |
+| 4     | C1 run record + job summaries                                                               | ~a day  | C2, C4, C5 arguments; P2's observation stream  |
+| 5     | S3 structured test results                                                                  | ~a day  | annotations, per-test history, C2's input      |
+| 6     | C2 dated quarantine                                                                         | ~a day  | trust in `CI Passed`                           |
+| 7     | P1 activity view                                                                            | ~a week | every other product item has somewhere to go   |
+| 8     | C5 pool-sized shards, C4 fleet priming                                                      | ~a day  | wall-clock, once C1 says which one to do       |
+| 9     | P2 fleet registry + history (read-only)                                                     | ~a week | P3, P4, P6                                     |
+| 10    | S4 container capture → `video_frames`                                                       | ~a week | "watch this agent"; frames in incident notes   |
+| 11    | P3 shared CI memory                                                                         | ~a week | stops N agents re-debugging one failure        |
 
-C3 ([#1663](https://github.com/copse-dev/agent-pane/pull/1663)), C7 tier 1
-([#1667](https://github.com/copse-dev/agent-pane/pull/1667)), C6, S1 and S2 can land
-without discussion — S1 and S2 are two packages in `ci-runners/Dockerfile` and a reporter
-entry, and they change the debugging experience more per line than anything else here.
+C7 is merged. C3 ([#1663](https://github.com/copse-dev/agent-pane/pull/1663)), C6, S1 and
+S2 can land without discussion too — S1 and S2 are two packages in
+`ci-runners/Dockerfile` and a reporter entry, and they change the debugging experience
+more per line than anything else here.
 
 Two ordering constraints are worth keeping. Everything below the line in Part 2 should
 wait for P1, because a fleet capability with nowhere to surface is how the dark-factory
