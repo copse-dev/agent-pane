@@ -215,6 +215,11 @@ cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/
 })
 
 if (isDemo) {
+  // Publish the recorded site's real files alongside the walkthrough. The
+  // Browser panel reads these rather than requiring a model (or reconstructing
+  // a site during each static build), and the directory is independently usable
+  // as a plain website at /sites/cupcakes/.
+  cpSync('src/shared/demo-sites', `${rendererOutDir}/sites`, { recursive: true })
   await writeDemoScenarioManifest(`${rendererOutDir}/scenarios.json`)
   // Fail closed: demo trees are committed to `demo-previews` and scanned by
   // gitleaks across every PR tip. A source map here is a repo-wide CI outage.
