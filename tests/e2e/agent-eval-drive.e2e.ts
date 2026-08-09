@@ -206,6 +206,24 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
       )
       assert.ok(count >= exp.git.minCommits, `Expected at least ${exp.git.minCommits} commits`)
     }
+    if (exp.git.allCommitMessagesContain) {
+      const messages = execFileSync('git', ['log', '--format=%B%x00'], {
+        cwd: root,
+        encoding: 'utf8',
+      })
+        .split('\0')
+        .map((message) => message.trim())
+        .filter(Boolean)
+      assert.ok(messages.length > 0, 'Expected at least one commit message')
+      for (const expected of exp.git.allCommitMessagesContain) {
+        for (const message of messages) {
+          assert.ok(
+            message.includes(expected),
+            `Expected every commit message to contain ${JSON.stringify(expected)}; got ${JSON.stringify(message)}`,
+          )
+        }
+      }
+    }
   }
 
   if (exp.homePage) {
