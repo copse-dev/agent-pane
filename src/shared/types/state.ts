@@ -4,7 +4,7 @@ import type { ProjectWorktreeMode } from './worktree.ts'
 
 export type PanelTab = 'file' | 'diff'
 export type RightPanelMode =
-  'explorer' | 'terminal' | 'changes' | 'browser' | 'prs' | 'ports' | 'memories' | 'roadmap'
+  'explorer' | 'terminal' | 'changes' | 'browser' | 'prs' | 'memories' | 'roadmap'
 // Where the right panel sits relative to chat. `auto` keeps the legacy behaviour
 // (vertical/side, auto-stacking on tall portrait windows); `side` and `bottom`
 // pin the panel so users can force a readable terminal on any screen.

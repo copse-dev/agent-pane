@@ -53,10 +53,14 @@ provision.
 That row was a finding before it was an asset: the ports service had parsers, a
 host scan, and no production consumer anywhere in `src/` — the local Ports panel
 described in #771 had never landed. It has now, in this plan's first slice: a
-`ports` right-panel mode listing the host's listeners, attributing the ones that
-descend from a Shells tab or a background task, and offering open/kill for those
-alone. Remote discovery in V2 extends `discover()` over the SSH exec path onto
-the same parsers rather than growing a second scanner beside them.
+**Ports section in the Terminal tab's left rail**, beneath the shells and tasks,
+listing the host's listeners, attributing the ones that descend from a Shells tab
+or a background task, and offering open/kill for those alone. It sits there
+rather than in its own right-panel mode because a listening port is a property of
+something running in that pane — the same argument that put agent tasks and
+background tasks in the same rail. Remote discovery in V2 extends `discover()`
+over the SSH exec path onto the same parsers rather than growing a second scanner
+beside them.
 
 ## Binding decisions
 

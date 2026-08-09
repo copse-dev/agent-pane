@@ -15,7 +15,6 @@ const TITLES: Record<PopoutMode, string> = {
   terminal: 'Terminal — Copse',
   changes: 'Changes — Copse',
   prs: 'Pull requests — Copse',
-  ports: 'Ports — Copse',
   memories: 'Memories — Copse',
   roadmap: 'Roadmap — Copse',
   browser: 'Browser — Copse',

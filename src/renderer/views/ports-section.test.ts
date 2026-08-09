@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
-import { mountPortsPane } from './ports-pane.ts'
+import { mountPortsSection } from './ports-section.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 
@@ -29,13 +29,12 @@ const OWNED: PortRow = row({
 const FOREIGN: PortRow = row({ port: 5432, pid: 900, command: 'postgres', url: null })
 
 interface Mounted {
-  list: HTMLElement
-  viewer: HTMLElement
+  rail: HTMLElement
   store: AppStore
   destroy: () => void
 }
 
-/** Mount the pane with a canned `ports:list`, panel open and ports active. */
+/** Mount the section with a canned `ports:list`, panel open and Terminal active. */
 function mount(rows: PortRow[], overrides: Partial<ApiClient['ports']> = {}): Mounted {
   const base = createFakeApi()
   const api: ApiClient = {
@@ -47,15 +46,14 @@ function mount(rows: PortRow[], overrides: Partial<ApiClient['ports']> = {}): Mo
     },
   }
   const store = createStore()
-  store.setState({ filesPaneOpen: true, rightPanelMode: 'ports' })
-  const list = document.createElement('div')
-  const viewer = document.createElement('div')
-  document.body.append(list, viewer)
-  const destroy = mountPortsPane(list, viewer, store, api)
-  return { list, viewer, store, destroy }
+  store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
+  const rail = document.createElement('div')
+  document.body.append(rail)
+  const destroy = mountPortsSection(rail, store, api)
+  return { rail, store, destroy }
 }
 
-/** The pane loads over IPC, so let the microtask queue drain before asserting. */
+/** The section loads over IPC, so let the microtask queue drain before asserting. */
 async function settle(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -71,80 +69,99 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-describe('ports pane', () => {
+describe('ports section', () => {
   it('lists scanned ports with the owner badge only on rows Copse started', async () => {
-    const { list, destroy } = mount([OWNED, FOREIGN])
+    const { rail, destroy } = mount([OWNED, FOREIGN])
     mounts.push(destroy)
     await settle()
 
-    const rows = list.querySelectorAll('.ports-row')
+    const rows = rail.querySelectorAll('.ports-row')
     assert.equal(rows.length, 2)
     assert.equal(rows[0]?.querySelector('.ports-row-owner')?.textContent, 'Task')
     assert.equal(rows[1]?.querySelector('.ports-row-owner'), null)
   })
 
-  it('offers Kill only for an owned port', async () => {
-    const { list, viewer, destroy } = mount([OWNED, FOREIGN])
+  it('expands a row in place, and collapses it again', async () => {
+    const { rail, destroy } = mount([OWNED])
     mounts.push(destroy)
     await settle()
 
-    qsRequired<HTMLButtonElement>(list, '.ports-row[data-port="3000"]').click()
-    assert.ok(viewer.querySelector('.ports-kill-btn'), 'owned port should offer Kill')
+    const port = (): HTMLButtonElement =>
+      qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="3000"]')
+    assert.equal(rail.querySelector('.ports-detail'), null)
 
-    qsRequired<HTMLButtonElement>(list, '.ports-row[data-port="5432"]').click()
-    assert.equal(viewer.querySelector('.ports-kill-btn'), null)
+    port().click()
+    assert.ok(rail.querySelector('.ports-detail'))
+    assert.equal(port().getAttribute('aria-expanded'), 'true')
+
+    port().click()
+    assert.equal(rail.querySelector('.ports-detail'), null)
+  })
+
+  it('offers Kill only for an owned port', async () => {
+    const { rail, destroy } = mount([OWNED, FOREIGN])
+    mounts.push(destroy)
+    await settle()
+
+    qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="3000"]').click()
+    assert.ok(rail.querySelector('.ports-kill-btn'), 'owned port should offer Kill')
+
+    qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="5432"]').click()
+    assert.equal(rail.querySelector('.ports-kill-btn'), null)
     assert.match(
-      viewer.querySelector('.ports-detail-note')?.textContent ?? '',
+      rail.querySelector('.ports-detail-note')?.textContent ?? '',
       /only stops processes it started/,
     )
   })
 
   it('offers Open only when the bind address is reachable on loopback', async () => {
-    const { list, viewer, destroy } = mount([OWNED, FOREIGN])
+    const { rail, destroy } = mount([OWNED, FOREIGN])
     mounts.push(destroy)
     await settle()
 
-    qsRequired<HTMLButtonElement>(list, '.ports-row[data-port="3000"]').click()
-    assert.ok(viewer.querySelector('.ports-open-btn'))
+    qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="3000"]').click()
+    assert.ok(rail.querySelector('.ports-open-btn'))
 
-    qsRequired<HTMLButtonElement>(list, '.ports-row[data-port="5432"]').click()
-    assert.equal(viewer.querySelector('.ports-open-btn'), null)
+    qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="5432"]').click()
+    assert.equal(rail.querySelector('.ports-open-btn'), null)
   })
 
   it('opens the port in the browser pane', async () => {
-    const { list, viewer, store, destroy } = mount([OWNED])
+    const { rail, store, destroy } = mount([OWNED])
     mounts.push(destroy)
     await settle()
 
     const requested: string[] = []
     store.on('browser_url_requested', (url) => requested.push(url))
-    qsRequired<HTMLButtonElement>(list, '.ports-row[data-port="3000"]').click()
-    qsRequired<HTMLButtonElement>(viewer, '.ports-open-btn').click()
+    qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="3000"]').click()
+    qsRequired<HTMLButtonElement>(rail, '.ports-open-btn').click()
 
     assert.deepEqual(requested, ['http://localhost:3000'])
     assert.equal(store.getState().rightPanelMode, 'browser')
   })
 
-  it('shows an empty state rather than a bare list when nothing is listening', async () => {
-    const { list, destroy } = mount([])
+  it('hides itself when a scan ran and found nothing', async () => {
+    const { rail, destroy } = mount([])
     mounts.push(destroy)
     await settle()
 
-    assert.match(list.querySelector('.ports-list-empty')?.textContent ?? '', /Nothing is listening/)
+    // Siblings in this rail hide when empty; an empty Ports header is noise.
+    assert.equal(qsRequired(rail, '.ports-section').hidden, true)
   })
 
-  it('says it cannot see rather than claiming nothing is listening', async () => {
-    const { list, destroy } = mount([], { list: () => Promise.resolve({ rows: [], tool: null }) })
+  it('stays visible to say it cannot see, rather than claiming nothing is listening', async () => {
+    const { rail, destroy } = mount([], { list: () => Promise.resolve({ rows: [], tool: null }) })
     mounts.push(destroy)
     await settle()
 
+    assert.equal(qsRequired(rail, '.ports-section').hidden, false)
     assert.match(
-      list.querySelector('.ports-list-empty')?.textContent ?? '',
+      rail.querySelector('.ports-empty')?.textContent ?? '',
       /No port scanner on this machine/,
     )
   })
 
-  it('stops scanning once the pane is no longer the active mode', async () => {
+  it('scans only while the Terminal pane is on screen', async () => {
     let calls = 0
     const { store, destroy } = mount([], {
       list: () => {

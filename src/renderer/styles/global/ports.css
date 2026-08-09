@@ -1,35 +1,52 @@
-/* Ports pane (#771, local half). The list column reuses the git-changes list
-   primitives; these rules cover the row layout and the detail column. */
-.ports-host {
-  flex: 1;
+/* Ports (#771, local half) — a section in the Terminal tab's left rail, under
+   the shells and tasks, since a listening port belongs to something running in
+   one of them. Selecting a row expands it in place: the rail is ~200px, so the
+   detail is two lines and a compact action row rather than a viewer takeover. */
+.ports-section {
+  flex-shrink: 0;
+  max-height: 40%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.ports-list {
+  overflow-y: auto;
   min-height: 0;
+  padding: var(--spacing-xs) 0;
 }
 .ports-row {
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-sm);
-}
-.ports-row-main {
   display: flex;
   align-items: baseline;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
+  width: 100%;
   min-width: 0;
-  flex: 1;
+  text-align: left;
+  padding: 5px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.ports-row:hover {
+  background: var(--bg-hover);
+}
+.ports-row.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
 }
 .ports-row-port {
-  font-family: var(--font-mono);
-  font-weight: 500;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 .ports-row-command {
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-muted);
 }
 .ports-row-owner {
   flex-shrink: 0;
@@ -41,49 +58,33 @@
   color: var(--text-muted);
 }
 
-/* Detail column */
-.ports-viewer-host {
-  padding: var(--spacing-md);
-  overflow-y: auto;
+/* Expanded row. Shares the active row's fill so the two read as one block
+   rather than a highlighted row with loose text under it. */
+.ports-detail {
+  padding: 0 var(--spacing-sm) var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-selected);
 }
-.ports-empty {
-  padding: var(--spacing-md);
+.ports-detail-line {
+  font-size: 11px;
   color: var(--text-muted);
-  font-size: var(--font-size-sm);
-}
-.ports-detail-title {
-  margin: 0 0 var(--spacing-sm);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-lg);
-  font-weight: 500;
-}
-.ports-facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px var(--spacing-sm);
-  margin: 0 0 var(--spacing-md);
-  font-size: var(--font-size-sm);
-}
-.ports-fact-term {
-  color: var(--text-muted);
-}
-.ports-fact-value {
-  margin: 0;
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 .ports-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
+  gap: 4px;
+  margin-top: 2px;
 }
 .ports-btn {
-  padding: 4px 12px;
+  padding: 2px 8px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: 11px;
   cursor: pointer;
 }
 .ports-btn:hover:not(:disabled) {
@@ -94,16 +95,6 @@
   opacity: 0.5;
   cursor: default;
 }
-.ports-btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent);
-}
-.ports-btn-primary:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.08);
-  color: var(--text-on-accent);
-}
 .ports-btn-danger {
   color: var(--danger, #f14c4c);
 }
@@ -111,8 +102,11 @@
   background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
   color: var(--danger, #f14c4c);
 }
-.ports-detail-note {
-  margin: var(--spacing-sm) 0 0;
+.ports-detail-note,
+.ports-empty {
+  font-size: 11px;
   color: var(--text-muted);
-  font-size: var(--font-size-sm);
+}
+.ports-empty {
+  padding: var(--spacing-xs) var(--spacing-sm);
 }

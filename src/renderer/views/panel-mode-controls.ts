@@ -10,7 +10,7 @@ import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 
 export type PanelControlId =
-  'explorer' | 'terminal' | 'changes' | 'prs' | 'ports' | 'memories' | 'roadmap' | 'browser'
+  'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser'
 
 interface PanelControlDef {
   id: PanelControlId
@@ -77,14 +77,6 @@ function prsIcon(): SVGSVGElement {
   )
 }
 
-function portsIcon(): SVGSVGElement {
-  return outlineIcon(
-    'ports',
-    ['M12 2v6', 'M7 8h10v5a5 5 0 0 1-10 0V8Z', 'M12 18v4'],
-    'titlebar-btn-icon',
-  )
-}
-
 function memoriesIcon(): SVGSVGElement {
   return outlineIcon(
     'memories',
@@ -132,13 +124,6 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Open pull requests',
     label: 'PRs',
     icon: prsIcon,
-  },
-  {
-    id: 'ports',
-    mode: 'ports',
-    ariaLabel: 'Open ports',
-    label: 'Ports',
-    icon: portsIcon,
   },
   {
     id: 'memories',
