@@ -150,10 +150,10 @@ export function createRegistry(): ToolRegistry {
   // is the atomic master switch (it also gates the renderer's Roadmap pane).
   // Live toggles route through {@link syncRoadmapPlanTools} on `packs:setEnabled`.
   syncRoadmapPlanTools(registry)
-  // Experimental background tasks (off by default, issue #691). Gated by the
+  // Stable background tasks (on by default, issue #691). Gated by the
   // `copse.background-tasks` first-party pack — the pack toggle in Settings >
-  // Packs is the atomic master switch. Lets the agent run a long-lived command
-  // (dev server, watcher, build) that stays alive across turns. A task may opt
+  // Packs is the atomic master switch. Lets the agent run long-lived commands
+  // and bounded asynchronous work that stays alive across turns. A task may opt
   // into loopback port binding, which the pack DECLARES as its `loopback-bind`
   // permission relaxation (issue #1190): the permission-gate only grants it
   // while the pack is enabled, prompting for a per-project grant and escalating
@@ -378,7 +378,7 @@ export function syncPiiTools(registry: ToolRegistry): void {
 }
 
 /**
- * Register or unregister the experimental `run_background` tool to match the
+ * Register or unregister the stable `run_background` tool to match the
  * current enablement of the `copse.background-tasks` first-party pack (issue
  * #691). Called at startup (via createRegistry) and again whenever the pack is
  * toggled from Settings > Packs (see `ipc/register-handlers.ts`

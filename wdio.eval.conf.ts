@@ -53,7 +53,8 @@ export const config: Options.Testrunner = {
   capabilities: [
     {
       browserName: 'chrome',
-      browserVersion: '134.0.6998.205',
+      // Must match Chromium in the pinned Electron 43 runtime (see wdio.conf.ts).
+      browserVersion: '150.0.7871.46',
       'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
@@ -113,7 +114,6 @@ export const config: Options.Testrunner = {
     resetUserData()
     seedEmptyProject(project.root, `${scenario.id}-project`, {
       subagentsEnabled,
-      backgroundTasksEnabled: scenario.backgroundWake !== undefined,
       autoRunSandboxCommands: scenario.autonomy?.requireShellApproval !== true,
       ...(useMock
         ? { model: 'claude-sonnet-4-6' }

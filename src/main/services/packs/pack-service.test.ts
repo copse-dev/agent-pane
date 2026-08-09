@@ -41,6 +41,7 @@ import {
 } from './pack-tool-controller.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
+const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'packMigration.backgroundTasksStable'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
 const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'packMigration.parallelSearchEnablement'
 const PACK_SOURCES_KEY = 'packSources'
@@ -96,8 +97,9 @@ function makeRegistry(): PackRegistry {
 
 function clearStorage(): void {
   storageSet(PACK_DISABLED_KEY, [])
-  // Keep the prototype's one-time default-off migration out of unrelated cases;
-  // its dedicated test below deletes this marker explicitly.
+  // Keep one-time rollout migrations out of unrelated cases; dedicated tests
+  // below delete their marker explicitly.
+  storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(PACK_SOURCES_KEY, [])
@@ -267,8 +269,9 @@ describe('PackService', () => {
 
     const service = getPackService()
 
-    // Post-turn review has always been on; every experimental pack starts off.
+    // Stable packs start on; every experimental pack starts off.
     assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), true)
+    assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PACK_ID), true)
     for (const id of [
       MODEL_COMPARISON_PACK_ID,
       LONG_HORIZON_TASKS_PACK_ID,
@@ -278,11 +281,9 @@ describe('PackService', () => {
       CI_INVESTIGATOR_PACK_ID,
       PII_REDACTION_PACK_ID,
       FORCED_PLANNING_PACK_ID,
-      // Added with the contribution kinds (#1188-#1190); each replaces a retired
-      // opt-in boolean, so each must ship off like its predecessor.
+      // Capability-only experiments replace retired opt-in booleans and remain off.
       MCP_UI_CANVAS_PACK_ID,
       DEVTOOLS_SHORTCUT_PACK_ID,
-      BACKGROUND_TASKS_PACK_ID,
       AUTOMATIONS_PACK_ID,
       DARK_FACTORY_PACK_ID,
       PARALLEL_SEARCH_PACK_ID,
@@ -302,12 +303,29 @@ describe('PackService', () => {
         FORCED_PLANNING_PACK_ID,
         MCP_UI_CANVAS_PACK_ID,
         DEVTOOLS_SHORTCUT_PACK_ID,
-        BACKGROUND_TASKS_PACK_ID,
         AUTOMATIONS_PACK_ID,
         DARK_FACTORY_PACK_ID,
         PARALLEL_SEARCH_PACK_ID,
       ].sort(),
     )
+  })
+
+  it('graduates background tasks to default-on once and preserves later opt-out', async () => {
+    storageSet(PACK_DISABLED_KEY, [BACKGROUND_TASKS_PACK_ID])
+    storageDelete(BACKGROUND_TASKS_STABLE_MIGRATION_KEY)
+
+    const service = getPackService()
+    assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PACK_ID), true)
+    assert.equal(
+      parseStringList(storageGet(PACK_DISABLED_KEY)).includes(BACKGROUND_TASKS_PACK_ID),
+      false,
+    )
+    assert.equal(storageGet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY), true)
+
+    await service.setEnabled(BACKGROUND_TASKS_PACK_ID, false)
+    __resetPackServiceForTests()
+    const later = getPackService()
+    assert.equal(later.registry.isEnabled(BACKGROUND_TASKS_PACK_ID), false)
   })
 
   it('seeds the new automations pack disabled without erasing later choices', async () => {
