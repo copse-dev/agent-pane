@@ -211,7 +211,7 @@ describe('built-in reconcile-worktrees audit', () => {
     const { repo, worktree } = await fixture()
     const target = join(repo, 'shared-dependencies')
     await mkdir(target)
-    await writeFile(join(target, 'keep.txt'), 'keep me\n')
+    await writeFile(join(target, 'keep.bin'), 'x'.repeat(1024 * 1024))
     await writeFile(join(worktree, '.gitignore'), 'dist/\n')
     await symlink(target, join(worktree, 'node_modules'))
 
@@ -223,7 +223,10 @@ describe('built-in reconcile-worktrees audit', () => {
     assert.equal(artifact.kind, 'symlink')
     assert.equal(artifact.ignored, false)
     assert.equal(artifact.symlink_target, target)
-    assert.ok(artifact.size_bytes < 4096, 'the audit must size the link, not its target tree')
+    assert.ok(
+      artifact.size_bytes < 64 * 1024,
+      'the audit must size the link, not its 1 MiB target tree',
+    )
   })
 
   it('reports a missing registered worktree instead of aborting the whole audit', async () => {
