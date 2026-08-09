@@ -3,15 +3,27 @@ import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/work
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { checkForUpdatesManually } from '../services/auto-update.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
+import { buildAppFileMenuItems } from './app-menu-file-items.ts'
+
+export interface AppMenuWindowProvider {
+  getFocusedWindow(): BrowserWindow | null
+  createWindow(): BrowserWindow
+}
 
 // Builds the native application menu. The File ▸ Open Folder… item drives the
 // same flow as the renderer's Open Folder button: pick a directory, set it as
 // the workspace, kick off indexing, and notify the renderer to swap to the
 // full layout via the 'workspace:opened' event.
-export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
+export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = false): void {
   const isMac = process.platform === 'darwin'
 
+  function sendToFocused(channel: string): void {
+    windows.getFocusedWindow()?.webContents.send(channel)
+  }
+
   async function openFolder(): Promise<void> {
+    const win = windows.getFocusedWindow()
+    if (!win) return
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return
     // Canonicalize (realpath) the selected folder before storing it as the
@@ -37,7 +49,8 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
               {
                 label: 'Check for Updates…',
                 click: (): void => {
-                  checkForUpdatesManually(win)
+                  const win = windows.getFocusedWindow()
+                  if (win) checkForUpdatesManually(win)
                 },
               },
               { type: 'separator' as const },
@@ -45,7 +58,7 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
                 label: 'Settings…',
                 accelerator: 'CmdOrCtrl+,',
                 click: (): void => {
-                  win.webContents.send('menu:settings')
+                  sendToFocused('menu:settings')
                 },
               },
               { type: 'separator' as const },
@@ -62,35 +75,23 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
       : []),
     {
       label: 'File',
-      submenu: [
+      submenu: buildAppFileMenuItems(
         {
-          label: 'New Thread',
-          accelerator: 'CmdOrCtrl+N',
-          click: (): void => {
-            win.webContents.send('menu:newThread')
+          createWindow: () => {
+            windows.createWindow()
+          },
+          createThread: () => {
+            sendToFocused('menu:newThread')
+          },
+          openFolder: () => {
+            void openFolder()
+          },
+          openSettings: () => {
+            sendToFocused('menu:settings')
           },
         },
-        { type: 'separator' as const },
-        {
-          label: 'Open Folder…',
-          accelerator: 'CmdOrCtrl+O',
-          click: () => void openFolder(),
-        },
-        ...(isMac
-          ? []
-          : [
-              { type: 'separator' as const },
-              {
-                label: 'Settings…',
-                accelerator: 'CmdOrCtrl+,',
-                click: (): void => {
-                  win.webContents.send('menu:settings')
-                },
-              },
-            ]),
-        { type: 'separator' as const },
-        isMac ? { role: 'close' as const } : { role: 'quit' as const },
-      ],
+        isMac,
+      ),
     },
     {
       label: 'Edit',
@@ -111,35 +112,35 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
           label: 'Toggle Panel',
           accelerator: 'CmdOrCtrl+B',
           click: (): void => {
-            win.webContents.send('menu:togglePanel')
+            sendToFocused('menu:togglePanel')
           },
         },
         {
           label: 'Explorer',
           accelerator: 'CmdOrCtrl+Shift+E',
           click: (): void => {
-            win.webContents.send('menu:showExplorer')
+            sendToFocused('menu:showExplorer')
           },
         },
         {
           label: 'Terminal',
           accelerator: 'CmdOrCtrl+`',
           click: (): void => {
-            win.webContents.send('menu:showTerminal')
+            sendToFocused('menu:showTerminal')
           },
         },
         {
           label: 'Changes',
           accelerator: 'CmdOrCtrl+Shift+G',
           click: (): void => {
-            win.webContents.send('menu:showChanges')
+            sendToFocused('menu:showChanges')
           },
         },
         {
           label: 'Browser',
           accelerator: 'CmdOrCtrl+Shift+B',
           click: (): void => {
-            win.webContents.send('menu:showBrowser')
+            sendToFocused('menu:showBrowser')
           },
         },
         // Cmd/Ctrl+L must reach us even while the browser's <webview> has focus.
@@ -152,7 +153,7 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
           label: 'Focus Address Bar',
           accelerator: 'CmdOrCtrl+L',
           click: (): void => {
-            win.webContents.send('menu:focusBrowserUrlBar')
+            sendToFocused('menu:focusBrowserUrlBar')
           },
         },
         { type: 'separator' as const },
@@ -164,7 +165,7 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
         {
           label: 'Reload Interface',
           click: (): void => {
-            win.webContents.reload()
+            windows.getFocusedWindow()?.webContents.reload()
           },
         },
         ...(developerMode
@@ -172,7 +173,8 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
               {
                 label: 'Developer Tools',
                 click: (): void => {
-                  toggleDetachedDevTools(win.webContents)
+                  const win = windows.getFocusedWindow()
+                  if (win) toggleDetachedDevTools(win.webContents)
                 },
               },
             ]
@@ -185,21 +187,21 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
           label: 'Actual Size',
           accelerator: 'CmdOrCtrl+0',
           click: (): void => {
-            win.webContents.send('menu:uiScaleReset')
+            sendToFocused('menu:uiScaleReset')
           },
         },
         {
           label: 'Zoom In',
           accelerator: 'CmdOrCtrl+=',
           click: (): void => {
-            win.webContents.send('menu:uiScaleZoomIn')
+            sendToFocused('menu:uiScaleZoomIn')
           },
         },
         {
           label: 'Zoom Out',
           accelerator: 'CmdOrCtrl+-',
           click: (): void => {
-            win.webContents.send('menu:uiScaleZoomOut')
+            sendToFocused('menu:uiScaleZoomOut')
           },
         },
         { type: 'separator' as const },
@@ -221,7 +223,7 @@ export function buildAppMenu(win: BrowserWindow, developerMode = false): void {
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
           click: (): void => {
-            win.webContents.send('menu:keyboardShortcuts')
+            sendToFocused('menu:keyboardShortcuts')
           },
         },
       ],

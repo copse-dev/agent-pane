@@ -1077,6 +1077,9 @@ if (process.env['COPSE_E2E'] === '1') {
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
     },
+    createMainWindow() {
+      return ipcRenderer.invoke('test:createMainWindow')
+    },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
