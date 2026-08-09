@@ -10,10 +10,8 @@ name: Deploy site
 # GitHub Pages allows one deployment per repo and each deploy REPLACES the whole
 # published tree, so previews cannot be deployed independently of the site. This
 # job is the single assembler: it lays down site/ at the root, then mounts every
-# directory from demo-previews below /demo/. It runs on a site push (below) and
-# is also invoked via workflow_call by demo-preview.yml and
-# demo-preview-cleanup.yml after they mutate the previews branch, so a preview
-# publish and a site update both deploy through this one path.
+# directory from demo-previews below /demo/. A site update and a preview publish
+# both deploy through this one path.
 
 on:
   push:
@@ -22,11 +20,22 @@ on:
       - 'site/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
+  # Invoked by demo-preview.yml and demo-preview-cleanup.yml after they mutate
+  # the previews branch. NOT a `push:` trigger on demo-previews: that branch is
+  # an orphan holding preview content only, with no .github/ of its own, and a
+  # push event runs the workflow definitions from the pushed branch — so such a
+  # trigger would silently never fire and previews would stop deploying.
   workflow_call:
-    outputs:
-      page_url:
-        description: The deployed GitHub Pages base URL.
-        value: ${{ jobs.deploy.outputs.page_url }}
+    inputs:
+      tolerate-deploy-failure:
+        description: >-
+          Warn instead of failing when the deployment itself does not land.
+          Preview publishes pass true: they call this from a PR's own run, so a
+          failed deploy reddens a PR over a problem that is never that PR's —
+          the previews branch, the Pages service, or a deploy this one raced.
+          Site deploys from `release` leave it false and still fail loudly.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,14 +43,26 @@ permissions:
   id-token: write
 
 # Allow one concurrent deployment; let an in-progress run finish. Preview
-# publishes and site pushes share this group and therefore serialize. Keep a
-# real queue: GitHub's default single pending slot cancels the older pending
-# deployment whenever another preview is published, painting an otherwise
-# successful PR red.
+# publishes and site pushes share this group and therefore serialize.
+#
+# Deliberately NOT `queue: max`. This job assembles whatever is on the
+# demo-previews tip, not the content of whichever run called it, so two queued
+# deploys publish the same tree twice and only the last one can matter. Keeping
+# every one of them meant a burst of preview publishes became a backlog that
+# drained no faster than an ~11-minute full-tree upload — deploys were observed
+# starting six and a half hours after they were created, and the PR comment that
+# waited on them landed seven hours after the push.
+#
+# GitHub's default single pending slot is what we want instead: a newer pending
+# deploy supersedes an older one. That was previously rejected for marking the
+# caller's run cancelled and painting the PR red. It still does — but the cost is
+# now cosmetic rather than a lost preview link, because demo-preview.yml's sticky
+# comment no longer sits behind `needs: deploy`, and because the superseding
+# deploy publishes this target anyway. Publishes are also far rarer since the
+# no-change guard there started working, so pending collisions are the exception.
 concurrency:
   group: pages
   cancel-in-progress: false
-  queue: max
 
 jobs:
   deploy:
@@ -52,8 +73,6 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    outputs:
-      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       # Always publish the marketing site from `main`, even when this deploy was
       # invoked (workflow_call) by a preview push on another branch. A preview
@@ -93,3 +112,13 @@ jobs:
           path: _site
       - id: deployment
         uses: actions/deploy-pages@v5
+        # Expression rather than a plain literal: `inputs` is null for the push
+        # and workflow_dispatch triggers, where this resolves to false and a
+        # failed site deploy still fails the run.
+        continue-on-error: ${{ inputs.tolerate-deploy-failure || false }}
+      # Tolerated does not mean silent. The job goes green, but this annotation
+      # puts the failure on the run summary so a genuinely broken deploy is still
+      # visible to anyone looking at Actions rather than at a PR's checks.
+      - if: steps.deployment.outcome != 'success'
+        run: |
+          echo "::warning title=Pages deploy did not land::The published site is unchanged. This build is already committed to demo-previews, so the next deploy will publish it; see the deploy-pages step above for the cause."
