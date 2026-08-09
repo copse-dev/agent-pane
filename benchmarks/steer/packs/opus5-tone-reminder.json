@@ -1,0 +1,30 @@
+{
+  "id": "opus5-tone-reminder",
+  "description": "OPUS_5_TONE_REMINDER is the paired restatement the Opus 5 prompting guide recommends for long system prompts: the same instruction, repeated near the end so it is not buried under the skills catalog and rule blocks in between. It is 60 characters of prompt shipped on a stated assumption about position, and the assumption has never been measured. Running it as its own pack shows whether the reminder carries any effect on its own.",
+  "steer": { "kind": "block", "ref": "opus5ToneReminder" },
+  "gate": { "meanFinalCharsReduction": 0.1, "minWithPassRate": 0.8 },
+  "tasks": [
+    {
+      "id": "explain-backoff-helpers",
+      "description": "Identical task to opus5-response-length so the two blocks are directly comparable on one report.",
+      "prompt": "Explain what scheduler.js does and how the retry behaviour works.",
+      "fixture": "benchmarks/steer/fixtures/scheduler-project",
+      "maxSteps": 8,
+      "timeoutMs": 300000,
+      "checks": [
+        { "id": "answered-substantively", "kind": "final-min-chars", "min": 120 },
+        { "id": "covers-jitter", "kind": "final-matches", "pattern": "jitter" },
+        {
+          "id": "covers-retry-policy",
+          "kind": "final-matches",
+          "pattern": "retr(y|ies|ying)|4\\d\\d|429"
+        },
+        {
+          "id": "no-arrow-chain-fragments",
+          "kind": "final-not-matches",
+          "pattern": "(^|\\n)\\s*(?:[-*]\\s*)?\\S[^.\\n]{0,60}(?:→|->)[^.\\n]{0,60}(?:→|->)[^.\\n]{0,60}(?=\\n|$)"
+        }
+      ]
+    }
+  ]
+}
