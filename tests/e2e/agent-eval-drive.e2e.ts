@@ -250,7 +250,9 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
   for (const fileExpectation of exp.filesContain ?? []) {
     const candidates = walkFiles(root).filter((file) => {
       if (!fileExpectation.glob) return true
-      if (fileExpectation.glob === '*.html') return file.toLowerCase().endsWith('.html')
+      if (fileExpectation.glob.startsWith('*.')) {
+        return basename(file).toLowerCase().endsWith(fileExpectation.glob.slice(1).toLowerCase())
+      }
       return basename(file) === fileExpectation.glob
     })
     const match = candidates.find((file) => {

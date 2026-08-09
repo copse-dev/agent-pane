@@ -21,6 +21,17 @@ const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.js
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
 const KEEP_EVAL_WDIO = process.env.COPSE_EVAL_KEEP_WDIO === '1'
 
+function codexEvalPermissionMode(): string {
+  const requested = process.env.COPSE_EVAL_ACP_PERMISSION_MODE?.trim()
+  if (requested === 'agent' || requested === 'agent-full-access') return requested
+  if (requested) {
+    throw new Error(
+      'COPSE_EVAL_ACP_PERMISSION_MODE must be "agent" or "agent-full-access" for Codex ACP',
+    )
+  }
+  return 'agent-full-access'
+}
+
 /** WDIO config for real local-model agent evals (not mock LLM). */
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const chromedriverBinary = join(
@@ -152,7 +163,7 @@ export const config: Options.Testrunner = {
                       // workspace-only seatbelt; select the adapter's no-prompt
                       // mode explicitly so an unattended recording can finish.
                       ...(acpPreset.id === 'codex'
-                        ? { permissionMode: 'agent-full-access' }
+                        ? { permissionMode: codexEvalPermissionMode() }
                         : {}),
                     },
                   ],
