@@ -143,6 +143,21 @@ export default ts.config(
     },
   },
   {
+    // Executable resources shipped inside built-in skills run directly under
+    // Node and are copied as-is, so they are not part of a TypeScript project.
+    files: ['assets/skills/**/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
     // Static ESM worker host copied to dist; not part of the TS project graph.
     files: ['src/renderer/monaco/esm-worker-host.js'],
     extends: [ts.configs.disableTypeChecked],
