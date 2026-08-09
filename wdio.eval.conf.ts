@@ -145,6 +145,15 @@ export const config: Options.Testrunner = {
                       command: acpPreset.command,
                       args: acpPreset.args,
                       enabled: true,
+                      // Codex ACP implements all tool use through its code-mode
+                      // `exec` call, so its normal `agent` mode asks before even
+                      // read-only Copse MCP orchestration. Eval projects are
+                      // disposable and the adapter is already wrapped in Copse's
+                      // workspace-only seatbelt; select the adapter's no-prompt
+                      // mode explicitly so an unattended recording can finish.
+                      ...(acpPreset.id === 'codex'
+                        ? { permissionMode: 'agent-full-access' }
+                        : {}),
                     },
                   ],
                 }
