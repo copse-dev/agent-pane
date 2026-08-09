@@ -20,6 +20,7 @@ import {
   pruneSafeOrphans,
   restoreRetiredThreadWorktree,
   retireThreadWorktree,
+  ThreadWorktreeDetachedError,
   validateThreadWorktree,
 } from './worktree-manager.ts'
 
@@ -483,7 +484,11 @@ describe('worktree manager', () => {
         projectRoot: repo,
         worktree,
       }),
-      /detached HEAD/,
+      (error: unknown) => {
+        assert.ok(error instanceof ThreadWorktreeDetachedError)
+        assert.equal(error.branch, worktree.branch)
+        return true
+      },
     )
     git(worktree.path, ['checkout', '-q', worktree.branch])
 

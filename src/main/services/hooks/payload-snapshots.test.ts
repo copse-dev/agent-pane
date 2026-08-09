@@ -143,6 +143,18 @@ const CASES: SnapshotCase[] = [
       ),
   },
   {
+    label: 'toolGate/preToolUse',
+    dialects: ['cursor'],
+    marshal: (a) =>
+      a.marshalToolGateRequest(
+        { ...HOOK, dialect: 'cursor', wireEvent: 'preToolUse' },
+        // A tool with no dedicated pre-tool flavor — the case only the generic
+        // gate covers, so the snapshot pins the tool-type token mapping too.
+        { toolName: 'write_file', input: { path: EDIT_PATH, contents: 'x\n' } },
+        SESSION,
+      ),
+  },
+  {
     label: 'beforeSubmitPrompt',
     marshal: (a) =>
       a.marshalBeforeSubmitPromptRequest?.(HOOK, { prompt: 'Fix the failing test.' }, SESSION),
@@ -353,13 +365,21 @@ describe('hook payload snapshots (G4, decision 14)', () => {
       'subagentStart',
       'subagentStop',
       'toolGate/mcp',
+      'toolGate/preToolUse',
       'toolGate/read',
       'toolGate/shell',
     ])
 
-    // Claude wires only the PreToolUse gate (3 tool flavors) + SessionStart.
+    // Claude wires the PreToolUse gate (3 tool flavors), SessionStart, and the
+    // four events that ride canonical fire points Cursor already used:
+    // PostToolUse, UserPromptSubmit, Stop, SubagentStop.
     assert.deepEqual(Object.keys(snapshot['claude'] ?? {}).sort(), [
+      'afterToolUse/mcp',
+      'afterToolUse/shell',
+      'beforeSubmitPrompt',
       'sessionStart',
+      'stop',
+      'subagentStop',
       'toolGate/mcp',
       'toolGate/read',
       'toolGate/shell',

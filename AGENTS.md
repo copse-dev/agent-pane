@@ -30,7 +30,7 @@ This is a GUI Electron app. The Cloud VM exposes a VNC desktop on `DISPLAY=:1`, 
 that display set (e.g. `DISPLAY=:1 npm run dev`). Key gotchas discovered during setup:
 
 - **First `npm run dev` can crash once with a `SyntaxError` at `dist/main/index.js`.** `scripts/dev.mts`
-  relaunches Electron from an `esbuild` `onEnd` hook for each of its three build contexts, so the
+  relaunches Electron from an `esbuild` `onEnd` hook for each of its main/preload build contexts, so the
   very first launch can race the bundle write when `dist/` is empty and read a half-written file.
   It is transient: the watcher rebuilds and relaunches with a complete bundle. To avoid it entirely,
   run `npm run build` once before `npm run dev` (so `dist/` already holds a valid bundle), or just

@@ -497,6 +497,17 @@ jobs:
             exit 0
           fi
           npm run coverage:ci
+      # The console gets the `dot` reporter (see scripts/run-tests.mts) so a
+      # failure is reachable through the job-log API's ~5000-line tail. This is
+      # the full TAP for the same run, for when you want the passing detail too.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: unit-tests-tap
+          path: unit-tests.tap
+          if-no-files-found: ignore
+          retention-days: 7
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).
@@ -1060,8 +1071,17 @@ jobs:
           # "Unable to connect to http://localhost:PORT" tells us the driver
           # stopped accepting — it never says why, because the only account of
           # that is the driver's own log, which lives in wdio's outputDir and was
-          # being discarded at job end. Tail rather than cat: a driver log can run
-          # to megabytes and the failure is always at the end.
+          # being discarded at job end.
+          #
+          # Filtered, not tailed. The job-log API returns roughly the last 5000
+          # lines, so a raw tail of ~20 driver logs (more with chromedriver's
+          # `verbose`) crowds out everything printed after it — which is how both
+          # the spec summary and the runner diagnostics became unreachable
+          # through the API even though they were right there in the file. Print
+          # the error-adjacent lines instead, and fall back to a raw tail only
+          # when nothing matched, so a novel failure is never silently dropped.
+          # The uploaded artifact remains the complete record.
+          E2E_LOG_SIGNALS='ERROR|WARN|Unable to connect|ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR|bind\(\) failed|Cannot start http server|DevTools HTTP Request failed|aborted due to timeout|Timed out receiving message|no such session|invalid session id|session not created|boot-complete|was started successfully'
           dump_e2e_session_logs() {
             local logs_dir="e2e-failure-artifacts/wdio-logs"
             [ -d "$logs_dir" ] || return 0
@@ -1069,10 +1089,57 @@ jobs:
             for log_file in "$logs_dir"/*.log; do
               [ -f "$log_file" ] || continue
               echo "### $log_file"
-              tail -n 200 "$log_file" || true
+              # Capture first: `grep … | tail` exits with *tail's* status, which
+              # is 0 even when grep matched nothing, so testing the pipeline
+              # directly would make the fallback dead code and print nothing at
+              # all for a log with no known signal — the exact case it exists for.
+              matched="$(grep -nE "$E2E_LOG_SIGNALS" "$log_file" | tail -n 60)"
+              if [ -n "$matched" ]; then
+                printf '%s\n' "$matched"
+              else
+                echo "(no signal lines matched — raw tail)"
+                tail -n 60 "$log_file" || true
+              fi
               echo
             done
             echo "::endgroup::"
+          }
+
+          # The last thing the job prints, and deliberately not inside a group.
+          #
+          # Everything above competes for the job-log API's ~5000-line tail; this
+          # does not, because it is last and it is small. It re-states the two
+          # facts a triager always wants first — how many specs passed, and which
+          # ones failed with what — so they survive however large the dumps get.
+          summarise_e2e_attempt() {
+            local attempt="$1" run_log="$2"
+            [ -f "$run_log" ] || return 0
+            echo "── shard ${{ matrix.shard }} attempt ${attempt} digest ─────────────────"
+            grep -E '^Spec Files:' "$run_log" | tail -n 1 || true
+            # The reporter prints a `» <spec>` header for every file it runs, so
+            # keeping them all buried the one line that mattered under twenty
+            # that did not (run 31243627118 shard 2 printed all 21 paths for a
+            # single failing spec). And the error detail carries the same
+            # `[chrome …]` prefix as everything else, so anchoring on leading
+            # whitespace matched none of it — the digest named the spec but never
+            # said what failed.
+            #
+            # Select by worker instead: take the prefixes that reported a
+            # failure, then print those workers' lines whole. Header, verdict and
+            # error arrive together, whatever shape the error takes.
+            local failing
+            failing="$(grep -oE '^\[[^]]+\] [0-9]+ failing' "$run_log" | grep -oE '^\[[^]]+\]' | sort -u)"
+            if [ -n "$failing" ]; then
+              printf '%s\n' "$failing" | grep -F -f - "$run_log" | tail -n 40 || true
+            else
+              # No worker reported a failure, so the shard died some other way —
+              # a timeout, or a session that never came up. The raw tail is all
+              # there is, and printing nothing here is how a novel failure mode
+              # becomes invisible.
+              echo "(no per-spec failure reported — raw tail)"
+              tail -n 30 "$run_log" || true
+            fi
+            echo "──────────────────────────────────────────────────────────"
           }
 
           trap cleanup_e2e_processes EXIT
@@ -1082,16 +1149,24 @@ jobs:
           # attempts before reporting. Halves the cost of a genuine red shard.
           for attempt in 1 2; do
             cleanup_e2e_processes
+            run_log="e2e-failure-artifacts/attempt-${attempt}.log"
+            mkdir -p e2e-failure-artifacts
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
-            if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
-              echo "::endgroup::"
-              exit 0
-            else
-              attempt_status=$?
-            fi
+            # Tee so the reporter output can be re-read for the digest below.
+            # PIPESTATUS, not $?, or we would read tee's status instead.
+            ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
+              | tee "$run_log"
+            attempt_status=${PIPESTATUS[0]}
             echo "::endgroup::"
-            capture_e2e_runner_diagnostics "$attempt" "$attempt_status" || true
+            if [ "$attempt_status" -eq 0 ]; then
+              exit 0
+            fi
+            # Order matters as much as volume: the job-log API returns the tail,
+            # so the biggest output goes first and the smallest, most useful
+            # output goes last. Bulk dumps, then diagnostics, then the digest.
             dump_e2e_session_logs "$attempt" || true
+            capture_e2e_runner_diagnostics "$attempt" "$attempt_status" || true
+            summarise_e2e_attempt "$attempt" "$run_log" || true
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1

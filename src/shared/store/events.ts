@@ -26,6 +26,8 @@ export interface StoreEvents {
   projects_changed: []
   files_pane_changed: []
   right_panel_mode_changed: []
+  // The right panel was expanded over chat, or restored to the split view.
+  right_panel_maximized_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
   // Request the Roadmap pane to select a specific item (quick-open palette hit).
@@ -51,6 +53,10 @@ export interface StoreEvents {
   hook_card_added: [threadId: string, messageId: string]
   comparison_changed: [threadId: string]
   git_branch_changed: []
+  // A blank thread committed its checkout decision. Shells created before an
+  // isolated worktree existed use this to stop presenting the shared checkout
+  // as though it were the thread's current execution root.
+  thread_checkout_changed: [threadId: string]
   composer_draft_flush: []
   /**
    * Prefer a checkout mode on the active blank thread (e.g. PR viewer "New

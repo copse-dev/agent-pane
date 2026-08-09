@@ -1,6 +1,6 @@
 import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig, AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
-import { probeAcpAgent } from './acp-client.ts'
+import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { probeAcpAgentForSettings } from './acp-agent-service.ts'
 import { resolveOnPath } from './acp-detect.ts'
@@ -392,7 +392,7 @@ export async function requestAcpPackageInstallApproval(
  */
 type ProbedSelectorFields = Pick<
   AcpAgentConfig,
-  'availableModels' | 'availablePermissionModes' | 'modelsProbedAt'
+  'availableModels' | 'availablePermissionModes' | 'availableConfigOptions' | 'modelsProbedAt'
 >
 
 /**
@@ -407,7 +407,7 @@ async function probeSelectors(
 ): Promise<ProbedSelectorFields> {
   if (!cwd) return {}
   try {
-    const probe = await probeAcpAgent({
+    const probe = await probeAcpAgentIsolated({
       command: known.command,
       cwd,
       ...(known.args.length ? { args: known.args } : {}),
@@ -416,6 +416,7 @@ async function probeSelectors(
     const fields: ProbedSelectorFields = {
       ...(probe.models?.choices.length ? { availableModels: probe.models.choices } : {}),
       ...(probe.modes?.choices.length ? { availablePermissionModes: probe.modes.choices } : {}),
+      ...(probe.configOptions?.length ? { availableConfigOptions: probe.configOptions } : {}),
     }
     // Stamp the probe time whenever we actually reached the agent, so the
     // TTL-based background revalidation doesn't immediately re-probe an agent we
@@ -486,6 +487,7 @@ async function revalidateAcpAgentModels(agentId: string): Promise<void> {
   await updateCurrentAcpAgentSelectors(agentId, {
     ...(probe.models ? { availableModels: probe.models.choices } : {}),
     ...(probe.modes ? { availablePermissionModes: probe.modes.choices } : {}),
+    ...(probe.configOptions ? { availableConfigOptions: probe.configOptions } : {}),
     modelsProbedAt: Date.now(),
   })
 }

@@ -9,6 +9,7 @@ import {
   refreshIcon,
   searchIcon,
 } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -129,15 +130,100 @@ function browserModeActive(store: AppStore): boolean {
   return filesPaneOpen && rightPanelMode === 'browser'
 }
 
+/**
+ * Electron's `<webview>` is a registered custom element, so its methods are on
+ * the instance the moment it is created. Outside Electron — the browser demo —
+ * the same tag is an inert `HTMLElement`: no methods, and `dom-ready` never
+ * fires, so the pane would mount its whole toolbar around a permanently blank
+ * box.
+ */
+function supportsElectronWebview(element: HTMLElement): boolean {
+  return typeof (element as Partial<BrowserWebviewElement>).getURL === 'function'
+}
+
+/**
+ * An `<iframe>` wearing the guest-webview interface, for hosts without Electron.
+ *
+ * Only navigation is honest here. An iframe cannot report a cross-origin
+ * document's URL or title and exposes no session history, so those answer from
+ * what we were last asked to load and the history controls stay disabled —
+ * better than a Back button that lies. `getWebContentsId` throws, which is what
+ * callers already treat as "this page cannot be shared".
+ */
+function createIframeWebview(): BrowserWebviewElement {
+  const frame = document.createElement('iframe')
+  frame.className = 'browser-webview'
+  // Same intent as the guest's `contextIsolation`: scripts may run, but the
+  // page gets an opaque origin and no reach into the demo that embeds it.
+  frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups')
+  frame.setAttribute('referrerpolicy', 'no-referrer')
+
+  let requested = 'about:blank'
+  const navigate = (url: string): void => {
+    requested = url
+    frame.setAttribute('src', url)
+  }
+  // `src` has to record what it was handed before delegating: it is the only
+  // place the requested URL is ever seen, and `getURL` has no other source.
+  Object.defineProperty(frame, 'src', {
+    get: (): string => requested,
+    set: navigate,
+    configurable: true,
+  })
+  // The pane gates every navigation on `dom-ready`; an iframe says `load`.
+  frame.addEventListener('load', () => {
+    frame.dispatchEvent(new Event('dom-ready'))
+    frame.dispatchEvent(new Event('did-navigate'))
+  })
+  navigate('about:blank')
+  // The initial blank document does not reliably announce itself — Chromium
+  // creates it synchronously on insertion and may never fire `load` for it — and
+  // the pane holds every navigation until the first `dom-ready`. An iframe is in
+  // fact ready as soon as it exists, so say so on the next task, once the caller
+  // has attached its listener and put us in the document.
+  setTimeout(() => frame.dispatchEvent(new Event('dom-ready')), 0)
+
+  return Object.assign(frame, {
+    getURL: (): string => requested,
+    getTitle: (): string => '',
+    loadURL: navigate,
+    // Re-setting `src` to the value it already holds is not guaranteed to
+    // renavigate, so blank the frame first and restore on the next task.
+    reload: (): void => {
+      const url = requested
+      frame.setAttribute('src', 'about:blank')
+      setTimeout(() => {
+        frame.setAttribute('src', url)
+      }, 0)
+    },
+    // Nothing can halt a cross-origin load from out here. Blanking the frame
+    // would be worse than doing nothing: it discards the page *and* the URL the
+    // address bar is showing.
+    stop: (): void => {
+      /* no-op */
+    },
+    canGoBack: (): boolean => false,
+    canGoForward: (): boolean => false,
+    goBack: (): void => undefined,
+    goForward: (): void => undefined,
+    openDevTools: (): void => undefined,
+    getWebContentsId: (): number => {
+      throw new Error('No webContents outside Electron.')
+    },
+  })
+}
+
 function createWebview(): BrowserWebviewElement {
-  const webview = document.createElement('webview') as BrowserWebviewElement
-  webview.setAttribute('partition', BROWSER_SESSION_PARTITION)
-  webview.setAttribute('webpreferences', WEBVIEW_PREFS)
-  webview.setAttribute('allowpopups', 'false')
-  webview.className = 'browser-webview'
+  const webview = document.createElement('webview')
+  if (!supportsElectronWebview(webview)) return createIframeWebview()
+  const guest = webview as BrowserWebviewElement
+  guest.setAttribute('partition', BROWSER_SESSION_PARTITION)
+  guest.setAttribute('webpreferences', WEBVIEW_PREFS)
+  guest.setAttribute('allowpopups', 'false')
+  guest.className = 'browser-webview'
   // Attach the guest immediately; navigation waits for dom-ready.
-  webview.src = 'about:blank'
-  return webview
+  guest.src = 'about:blank'
+  return guest
 }
 
 export function mountBrowserPane(
@@ -158,7 +244,7 @@ export function mountBrowserPane(
     '+',
   )
   if (api) listHeader.append(panePopoutButton(store, api, 'browser', 'browser'))
-  listHeader.append(newBtn)
+  listHeader.append(paneMaximizeButton(store, 'browser'), newBtn)
 
   const tabsWrap = el('div', { class: 'browser-tabs-list' })
   listRoot.append(listHeader, tabsWrap)

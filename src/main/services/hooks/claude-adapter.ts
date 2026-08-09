@@ -23,7 +23,11 @@ import type {
 } from '@shared/types/hooks.ts'
 import { isPublishedClaudeEvent } from '@shared/hooks/vendored-hook-schemas.ts'
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type {
+  AgentSessionInfo,
+  HookEventName,
+  HookEventPayloads,
+} from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
@@ -46,22 +50,30 @@ import { isRecord } from '@shared/unknown-value.ts'
 export const CLAUDE_DEFAULT_HOOK_TIMEOUT_MS = 600_000
 
 /**
- * Claude hook events Copse discovers from settings. `PreToolUse` (tool gate,
- * A2/B4) and `SessionStart` (H4 — fire-and-forget session lifecycle, the only
- * Claude agent-session event that carries an optional `model`, per the vendor
- * contract).
+ * Claude hook events Copse discovers from settings — every event whose canonical
+ * fire point exists today. `PreToolUse` (tool gate, A2/B4), `SessionStart` (H4 —
+ * fire-and-forget session lifecycle, the only Claude agent-session event that
+ * carries an optional `model`, per the vendor contract), plus the four that ride
+ * fire points Cursor hooks were already using: `PostToolUse` → `afterToolUse`,
+ * `UserPromptSubmit` → `beforeSubmitPrompt`, `Stop` → `stop`, and
+ * `SubagentStop` → `subagentStop`.
  */
-type DiscoveredClaudeEvent = 'PreToolUse' | 'SessionStart'
+type DiscoveredClaudeEvent =
+  'PreToolUse' | 'SessionStart' | 'PostToolUse' | 'UserPromptSubmit' | 'Stop' | 'SubagentStop'
 
 /**
- * The Claude events Copse actually wires (discovers + fires): the `PreToolUse`
- * tool gate (A2/B4) and `SessionStart` (H4). Every other event the vendored
- * SchemaStore schema publishes is intentionally-unsupported v1 — the G3 drift
- * detector pins this set against `schemas/vendor/claude-code-settings.schema.json`.
+ * The Claude events Copse actually wires (discovers + fires). Every other event
+ * the vendored SchemaStore schema publishes is intentionally-unsupported — the
+ * G3 drift detector pins this set against
+ * `schemas/vendor/claude-code-settings.schema.json`.
  */
 export const CLAUDE_WIRED_HOOK_EVENTS: readonly DiscoveredClaudeEvent[] = [
   'PreToolUse',
   'SessionStart',
+  'PostToolUse',
+  'UserPromptSubmit',
+  'Stop',
+  'SubagentStop',
 ]
 
 function isDiscoveredClaudeEvent(value: string): value is DiscoveredClaudeEvent {
@@ -72,10 +84,12 @@ function isDiscoveredClaudeEvent(value: string): value is DiscoveredClaudeEvent 
 interface DiscoveredClaudeHook {
   event: DiscoveredClaudeEvent
   /**
-   * Tool-name matcher for `PreToolUse` (`Bash`, `Edit|Write`, `mcp__.*`, `*`, or
-   * omitted = all). For `SessionStart` the matcher is the session source
-   * (`startup` / `resume` / `clear` / `compact`); Copse fires on new
-   * conversations, so a matcher-less SessionStart hook always applies.
+   * Tool-name matcher for `PreToolUse` / `PostToolUse` (`Bash`, `Edit|Write`,
+   * `mcp__.*`, `*`, or omitted = all). For `SessionStart` the matcher is the
+   * session source (`startup` / `resume` / `clear` / `compact`); Copse fires on
+   * new conversations, so a matcher-less SessionStart hook always applies.
+   * `UserPromptSubmit` / `Stop` / `SubagentStop` carry no matcher subject in
+   * Claude's contract — a matcher on them is ignored, as in Claude Code.
    */
   matcher?: string
   command: string
@@ -274,9 +288,9 @@ export async function listClaudeHooks(opts: DialectDiscoverOpts): Promise<HooksL
       command: h.command,
       source: h.source,
       scope: h.scope,
-      // `discoverClaudeHooks` returns only wired events (`PreToolUse` tool gate +
-      // `SessionStart` fire-and-forget, H4), so every discovered Claude hook is
-      // currently supported.
+      // `discoverClaudeHooks` returns only wired events
+      // ({@link CLAUDE_WIRED_HOOK_EVENTS}); anything else is skipped at parse
+      // time with a warning, so every discovered Claude hook is supported.
       supported: true,
     }
     if (h.matcher !== undefined) summary.matcher = h.matcher
@@ -296,10 +310,37 @@ function auditProjectHook(hook: DiscoveredClaudeHook): void {
   if (warnedProjectHookCommands.has(hook.command)) return
   warnedProjectHookCommands.add(hook.command)
   console.warn(
-    `[claude-hooks] executing project (repo-supplied) PreToolUse hook: ${hook.command} ` +
+    `[claude-hooks] executing project (repo-supplied) ${hook.event} hook: ${hook.command} ` +
       `(from ${hook.source}). Project hooks run outside the sandbox with tool tokens in env; ` +
       `see docs/claude-hooks.md#security.`,
   )
+}
+
+/**
+ * Build the registry `CommandHook` for a discovered Claude hook on `event`.
+ * Every Claude discovery function resolves the same way — Claude has no
+ * `failClosed`, so `onFailure` is always `open` (decision 9); a project-scoped
+ * hook runs in the thread checkout and is audit-logged once per command; the
+ * per-hook `timeout` wins over the dialect default (decision 13 / H4).
+ */
+function toCommandHook<E extends HookEventName>(
+  hook: DiscoveredClaudeHook,
+  event: E,
+  opts: DialectDiscoverOpts,
+): CommandHook<E> {
+  auditProjectHook(hook)
+  return {
+    id: hook.command,
+    event,
+    executor: 'command' as const,
+    dialect: 'claude' as const,
+    wireEvent: hook.event,
+    command: hook.command,
+    onFailure: 'open' as const,
+    cwd: hook.scope === 'project' ? (opts.executionRoot ?? hook.cwd) : hook.cwd,
+    ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
+    timeoutMs: hook.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -339,21 +380,82 @@ export async function claudeToolGateHooks(
   if (!mapped) return []
   const hooks = await discoverClaudeHooks(opts)
   return hooks
-    .filter((h) => claudeMatcherMatches(h.matcher, mapped.toolName))
-    .map((h) => {
-      auditProjectHook(h)
-      return {
-        id: h.command,
-        event: 'toolGate' as const,
-        executor: 'command' as const,
-        dialect: 'claude' as const,
-        command: h.command,
-        onFailure: 'open' as const,
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
-        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
-        timeoutMs: h.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
-      }
-    })
+    .filter((h) => h.event === 'PreToolUse' && claudeMatcherMatches(h.matcher, mapped.toolName))
+    .map((h) => toCommandHook(h, 'toolGate', opts))
+}
+
+/**
+ * Discover the Claude `PostToolUse` command hooks for a finished tool call, as
+ * canonical `afterToolUse` `CommandHook`s. Matching uses the Claude tool name
+ * (`Bash` / `Read` / `mcp__…`), the same vocabulary `PreToolUse` matches against,
+ * so one matcher pattern covers a tool on both sides of the call.
+ *
+ * Fired **detached** (decision 3) by the fire site (`after-tool-use.ts`), which
+ * means Claude's "block" response cannot un-run the tool. Its `reason` /
+ * `additionalContext` are preserved through the one safe async channel — a
+ * hook-originated queued message (decision 11) — exactly as Cursor's generic
+ * `postToolUse` `additional_context` already is.
+ */
+export async function claudeAfterToolUseHooks(
+  payload: HookEventPayloads['afterToolUse'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'afterToolUse'>[]> {
+  const mapped = claudeToolForTool(payload.toolName, payload.input ?? {})
+  if (!mapped) return []
+  const hooks = await discoverClaudeHooks(opts)
+  return hooks
+    .filter((h) => h.event === 'PostToolUse' && claudeMatcherMatches(h.matcher, mapped.toolName))
+    .map((h) => toCommandHook(h, 'afterToolUse', opts))
+}
+
+/**
+ * Discover the Claude `UserPromptSubmit` command hooks, as canonical
+ * `beforeSubmitPrompt` `CommandHook`s. Claude's contract gives this event no
+ * matcher subject, so every declared hook applies. **Blocking**: a `block`
+ * decision (or exit 2) halts the submit, matching Claude Code, where the prompt
+ * is not processed and the reason is shown to the user.
+ */
+export async function claudeBeforeSubmitPromptHooks(
+  _payload: HookEventPayloads['beforeSubmitPrompt'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'beforeSubmitPrompt'>[]> {
+  const hooks = await discoverClaudeHooks(opts)
+  return hooks
+    .filter((h) => h.event === 'UserPromptSubmit')
+    .map((h) => toCommandHook(h, 'beforeSubmitPrompt', opts))
+}
+
+/**
+ * Discover the Claude `Stop` command hooks, as canonical `stop` `CommandHook`s.
+ * No matcher subject in Claude's contract, so every declared hook applies. Fired
+ * **detached** at turn end / abort (decision 3, no drain barrier), so Claude's
+ * "block the stop and keep going" response cannot resume the finished turn; the
+ * `reason` routes through the pending-message queue (decision 4) instead of a
+ * bespoke continuation protocol.
+ */
+export async function claudeStopHooks(
+  _payload: HookEventPayloads['stop'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'stop'>[]> {
+  const hooks = await discoverClaudeHooks(opts)
+  return hooks.filter((h) => h.event === 'Stop').map((h) => toCommandHook(h, 'stop', opts))
+}
+
+/**
+ * Discover the Claude `SubagentStop` command hooks, as canonical `subagentStop`
+ * `CommandHook`s. No matcher subject in Claude's contract, so every declared
+ * hook applies (unlike Cursor's, which matches on subagent type). Fired
+ * **detached** on subagent completion; a block `reason` becomes a queued message
+ * the same way Cursor's `followup_message` does (C2/C3).
+ */
+export async function claudeSubagentStopHooks(
+  _payload: HookEventPayloads['subagentStop'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'subagentStop'>[]> {
+  const hooks = await discoverClaudeHooks(opts)
+  return hooks
+    .filter((h) => h.event === 'SubagentStop')
+    .map((h) => toCommandHook(h, 'subagentStop', opts))
 }
 
 /**
@@ -372,20 +474,7 @@ export async function claudeSessionStartHooks(
   const hooks = await discoverClaudeHooks(opts)
   return hooks
     .filter((h) => h.event === 'SessionStart' && claudeMatcherMatches(h.matcher, 'startup'))
-    .map((h) => {
-      auditProjectHook(h)
-      return {
-        id: h.command,
-        event: 'sessionStart' as const,
-        executor: 'command' as const,
-        dialect: 'claude' as const,
-        command: h.command,
-        onFailure: 'open' as const,
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
-        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
-        timeoutMs: h.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
-      }
-    })
+    .map((h) => toCommandHook(h, 'sessionStart', opts))
 }
 
 function mapClaudeDecision(decision: ClaudePermissionDecision): HookDecision {
@@ -463,23 +552,151 @@ function outcomeFromExitZero(stdout: string): {
   return { outcome: Object.keys(outcome).length > 0 ? outcome : null, parseOk: true }
 }
 
+// ---------------------------------------------------------------------------
+// The non-gate Claude events (PostToolUse / UserPromptSubmit / Stop /
+// SubagentStop) — shared stdin base + shared response reading
+// ---------------------------------------------------------------------------
+
+/**
+ * The stdin envelope every Claude hook event carries: the session identity, the
+ * transcript path (Copse keeps no Claude-format transcript, so it is empty —
+ * honest rather than a fabricated path a hook might try to read), the cwd, and
+ * the event name. Per-event fields are spread on top by each marshaller.
+ */
+function claudeWireBase(
+  hook: CommandHook,
+  event: DiscoveredClaudeEvent,
+  session?: AgentSessionInfo,
+): Record<string, unknown> {
+  return {
+    session_id: session?.conversationId ?? '',
+    transcript_path: '',
+    cwd: hook.executionRoot ?? getAgentExecutionRoot() ?? '',
+    hook_event_name: event,
+  }
+}
+
+/**
+ * Claude's *common* JSON output fields, shared by every event. `continue: false`
+ * stops all processing (`stopReason` explains it); `decision: "block"` is the
+ * per-event block signal (`reason` explains it, and for `Stop` / `SubagentStop`
+ * is what the vendor shows the model). Only the string reason is extracted here
+ * — what each event *does* with it is the per-event interpretation's business.
+ */
+function claudeBlockReason(parsed: unknown): string | undefined {
+  if (!isRecord(parsed)) return undefined
+  if (parsed['continue'] === false) {
+    const stopReason = parsed['stopReason']
+    return typeof stopReason === 'string' && stopReason.trim() ? stopReason.trim() : ''
+  }
+  if (parsed['decision'] === 'block') {
+    const reason = parsed['reason']
+    return typeof reason === 'string' && reason.trim() ? reason.trim() : ''
+  }
+  return undefined
+}
+
+/**
+ * Claude's `hookSpecificOutput.additionalContext` — context the hook wants added
+ * to the model's view. Present on `UserPromptSubmit` and `PostToolUse`.
+ */
+function claudeAdditionalContext(parsed: unknown): string | undefined {
+  if (!isRecord(parsed)) return undefined
+  const specific = parsed['hookSpecificOutput']
+  if (!isRecord(specific)) return undefined
+  const raw = specific['additionalContext']
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined
+}
+
+/**
+ * Read the stdout of a non-gate Claude hook. Empty stdout is an intentional
+ * no-response; unparseable stdout is reported `parseOk: false` but, for an
+ * observation event, is not something to fail the run over — nothing downstream
+ * can be blocked by then.
+ */
+function parseClaudeStdout(stdout: string): { parsed: unknown; parseOk: boolean } {
+  const text = stdout.trim()
+  if (!text) return { parsed: null, parseOk: true }
+  try {
+    return { parsed: JSON.parse(text), parseOk: true }
+  } catch {
+    return { parsed: null, parseOk: false }
+  }
+}
+
+/**
+ * Build the async interpretation for a detached Claude observation event
+ * (`PostToolUse` / `Stop` / `SubagentStop`). These three share one shape: the
+ * event has already happened, so nothing they return can gate control flow
+ * (`outcome` is always null) — but Claude's contract still gives them a way to
+ * put text in front of the model, via exit 2's stderr, `decision: "block"`'s
+ * `reason`, or `additionalContext`. Copse routes all three through the single
+ * async output channel, a hook-originated queued message (decision 4 / 11),
+ * rather than inventing a per-event continuation protocol it cannot honour.
+ */
+function claudeAsyncInterpretation(
+  spawn: HookSpawnResult,
+  spineEvent: DiscoveredClaudeEvent,
+): DialectInterpretation {
+  const emptyDecision: SpineHookRunDecision = {}
+  const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+  if (spawn.spawnError || spawn.timedOut) {
+    return { ...base, failed: true, parseOk: false }
+  }
+
+  // Exit 2 is Claude's block signal; for these events it means "show the model
+  // this stderr", not "undo what happened". Surfaced as a queued message.
+  if (spawn.exitCode === 2) {
+    const reason = spawn.stderr.trim()
+    if (!reason) return { ...base, failed: false, parseOk: true }
+    return {
+      ...base,
+      queueMessage: { text: reason, sendNow: false },
+      spineDecision: { queuedMessageChars: reason.length },
+      failed: false,
+      parseOk: true,
+    }
+  }
+
+  if (spawn.exitCode !== 0) {
+    return { ...base, failed: true, parseOk: true }
+  }
+
+  const { parsed, parseOk } = parseClaudeStdout(spawn.stdout)
+  if (!parseOk) return { ...base, failed: false, parseOk: false }
+
+  // A block with an empty reason carries no text of its own, so fall through to
+  // `additionalContext` rather than queueing an empty message.
+  const blockReason = claudeBlockReason(parsed)
+  const text =
+    blockReason !== undefined && blockReason !== '' ? blockReason : claudeAdditionalContext(parsed)
+  if (text === undefined || text === '') return { ...base, failed: false, parseOk: true }
+  return {
+    ...base,
+    queueMessage: { text, sendNow: false },
+    spineDecision: { queuedMessageChars: text.length },
+    failed: false,
+    parseOk: true,
+  }
+}
+
 /** The concrete Claude dialect adapter the runner delegates to. */
 export const claudeAdapter: DialectAdapter = {
   dialect: 'claude',
 
-  // `_session` (B4 agent-session identity) is accepted for interface parity but
-  // unused: Claude's PreToolUse contract has no conversation/generation/model
-  // fields — Claude carries an optional `model` on `sessionStart` only (H4 fire
-  // site), matching the vendor audit in docs/plans/hooks-and-feature-packs.md.
-  marshalToolGateRequest(hook, payload, _session) {
+  // B4 agent-session identity: Claude's tool events carry `session_id` and
+  // nothing else from the envelope — no generation id, and `model` rides
+  // `SessionStart` alone, matching the vendor audit in
+  // docs/plans/hooks-and-feature-packs.md. (`session_id` was previously hardcoded
+  // empty here even when a session was running; it now comes from the session,
+  // as it already did for `SessionStart` and now does for the other events.)
+  marshalToolGateRequest(hook, payload, session) {
     const mapped = claudeToolForTool(payload.toolName, payload.input)
     if (!mapped) return null
     return {
-      session_id: '',
-      transcript_path: '',
-      cwd: hook.executionRoot ?? getAgentExecutionRoot() ?? '',
+      ...claudeWireBase(hook, 'PreToolUse', session),
       permission_mode: 'default',
-      hook_event_name: 'PreToolUse',
       tool_name: mapped.toolName,
       tool_input: mapped.toolInput,
     }
@@ -510,6 +727,115 @@ export const claudeAdapter: DialectAdapter = {
 
     const { outcome, parseOk } = outcomeFromExitZero(spawn.stdout)
     return { outcome, failed: false, parseOk, spineEvent, spineDecision: spineDecisionFor(outcome) }
+  },
+
+  marshalAfterToolUseRequest(hook, payload, session) {
+    // Claude's PostToolUse stdin: the PreToolUse fields plus `tool_response`.
+    // Copse's normalized tool result is textual, so the response is that text —
+    // no vendor-specific result object shape is invented for it.
+    const mapped = claudeToolForTool(payload.toolName, payload.input ?? {})
+    if (!mapped) return null
+    return {
+      ...claudeWireBase(hook, 'PostToolUse', session),
+      permission_mode: 'default',
+      tool_name: mapped.toolName,
+      tool_input: mapped.toolInput,
+      tool_response: payload.output ?? '',
+    }
+  },
+
+  interpretAfterToolUse(spawn: HookSpawnResult): DialectInterpretation {
+    return claudeAsyncInterpretation(spawn, 'PostToolUse')
+  },
+
+  marshalBeforeSubmitPromptRequest(hook, payload, session) {
+    // Claude's UserPromptSubmit stdin: the envelope plus the prompt about to run.
+    return { ...claudeWireBase(hook, 'UserPromptSubmit', session), prompt: payload.prompt }
+  },
+
+  interpretBeforeSubmitPrompt(spawn: HookSpawnResult): DialectInterpretation {
+    // The one *blocking* event of the four: Claude does not process a blocked
+    // prompt, which is exactly decision 12's `haltRun`. Exit 2 blocks with stderr
+    // as the reason; on exit 0, `decision: "block"` (or `continue: false`) blocks
+    // with its reason, and `additionalContext` is prepended to a prompt that
+    // proceeds. Any other non-zero exit fails **open** (Claude has no failClosed).
+    const spineEvent = 'UserPromptSubmit'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError || spawn.timedOut) {
+      return { ...base, failed: true, parseOk: false }
+    }
+
+    if (spawn.exitCode === 2) {
+      const reason =
+        spawn.stderr.trim() || 'Prompt submission was blocked by a UserPromptSubmit hook.'
+      return {
+        ...base,
+        outcome: { haltRun: { reason }, userMessage: reason },
+        spineDecision: { haltRun: true, userMessageChars: reason.length },
+        failed: false,
+        parseOk: true,
+      }
+    }
+
+    if (spawn.exitCode !== 0) {
+      return { ...base, failed: true, parseOk: true }
+    }
+
+    const { parsed, parseOk } = parseClaudeStdout(spawn.stdout)
+    if (!parseOk) {
+      return { ...base, failed: true, parseOk: false }
+    }
+
+    const blockReason = claudeBlockReason(parsed)
+    if (blockReason !== undefined) {
+      const reason = blockReason || 'Prompt submission was blocked by a UserPromptSubmit hook.'
+      return {
+        ...base,
+        outcome: { haltRun: { reason }, userMessage: reason },
+        spineDecision: { haltRun: true, userMessageChars: reason.length },
+        failed: false,
+        parseOk: true,
+      }
+    }
+
+    // Injected context only matters when the submit proceeds — a halt drops the
+    // turn entirely, so there is nothing to inject into (mirrors the Cursor path).
+    const injected = claudeAdditionalContext(parsed)
+    if (injected !== undefined) {
+      return {
+        ...base,
+        outcome: { injectContext: injected },
+        spineDecision: { injectContextChars: injected.length },
+        failed: false,
+        parseOk: true,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalStopRequest(hook, _payload, session) {
+    // Claude's Stop stdin: the envelope plus `stop_hook_active`, which Claude
+    // sets when the agent is *already* continuing because of a Stop hook, so a
+    // hook can avoid looping. Copse dispatches `stop` detached and never resumes
+    // a finished turn from it, so that state can never be true here.
+    return { ...claudeWireBase(hook, 'Stop', session), stop_hook_active: false }
+  },
+
+  interpretStop(spawn: HookSpawnResult): DialectInterpretation {
+    return claudeAsyncInterpretation(spawn, 'Stop')
+  },
+
+  marshalSubagentStopRequest(hook, _payload, session) {
+    // Claude's SubagentStop stdin mirrors Stop's. The canonical payload's
+    // subagent type / status have no field in the vendor contract, so they are
+    // not smuggled in under invented names.
+    return { ...claudeWireBase(hook, 'SubagentStop', session), stop_hook_active: false }
+  },
+
+  interpretSubagentStop(spawn: HookSpawnResult): DialectInterpretation {
+    return claudeAsyncInterpretation(spawn, 'SubagentStop')
   },
 
   marshalSessionStartRequest(hook, _payload, session) {

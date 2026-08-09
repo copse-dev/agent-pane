@@ -13,13 +13,12 @@
 // policies, but they are **removed from the static {@link TURN_START_HOOKS}
 // list** so `createHookRegistry` does not register them a second time when the
 // pack folds its hooks in. Only the non-todos entries
-// (`github-link-steering`, `commit-steering`) survive in this list; disabling
-// the todos pack therefore drops **only** the todo hooks from new work
-// (decision 15 atomicity).
+// (`github-link-steering`) survive in this list; disabling the todos pack
+// therefore drops **only** the todo hooks from new work (decision 15
+// atomicity).
 import type { BlockingHook } from './canonical-events.ts'
 import { shouldSteerTodos, formatTodosForPrompt, TODO_STEERING_PROMPT } from '../todo-steering.ts'
 import { shouldSteerGithubLinks, buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
-import { shouldSteerCommit, buildCommitSteeringPrompt } from '../commit-steering.ts'
 import {
   decideForcedPlanning,
   resolveForcedPlanningConfig,
@@ -49,16 +48,6 @@ export const githubLinkSteeringHook: BlockingHook<'turnStart'> = {
     if (!shouldSteerGithubLinks(payload.userText)) return undefined
     const repoSlug = (await context.resolveGithubRepoSlug?.()) ?? null
     return { injectContext: buildGithubLinkSteeringPrompt(repoSlug) }
-  },
-}
-
-/** Prefer `git_commit` so Co-Authored-By attribution is added automatically. */
-export const commitSteeringHook: BlockingHook<'turnStart'> = {
-  id: 'commit-steering',
-  event: 'turnStart',
-  run(payload) {
-    if (!shouldSteerCommit(payload.userText)) return undefined
-    return { injectContext: buildCommitSteeringPrompt() }
   },
 }
 
@@ -126,7 +115,4 @@ export const forcedPlanningHook: BlockingHook<'turnStart'> = {
  * matching the original layout. Removing them here is what stops the static +
  * pack pair from double-registering (P4 trap).
  */
-export const TURN_START_HOOKS: readonly BlockingHook<'turnStart'>[] = [
-  githubLinkSteeringHook,
-  commitSteeringHook,
-]
+export const TURN_START_HOOKS: readonly BlockingHook<'turnStart'>[] = [githubLinkSteeringHook]

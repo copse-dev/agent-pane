@@ -70,14 +70,14 @@
 //    `isCapabilityActive('devtools-shortcut')` instead of the retired
 //    `devtoolsShortcutEnabled` setting, so the pack toggle atomically
 //    registers/unregisters the global Ctrl+Shift+I shortcut. Default DISABLED.
-//  - `backgroundTasksPack` — the first-party pack for the experimental
+//  - `backgroundTasksPack` — the first-party pack for the stable, default-on
 //    background tasks feature (issue #691). Declares the `run_background` tool
 //    AND the `loopback-bind` **permission / sandbox relaxation** (issue #1190):
 //    the pack toggle atomically drops the tool from the model tool list
 //    (`registry-bootstrap.ts` reads the pack registry) and the permission-gate
 //    only grants the loopback port-binding relaxation while the pack declares it
 //    (`permission-gate.ts` reads `isPermissionDeclared('loopback-bind')`).
-//    Default DISABLED.
+//    Default ENABLED; users can still disable it through the pack toggle.
 //  - `parallelSearchPack` — direct, credential-gated access to Parallel's
 //    hosted Search API. It declares the native `parallel_search` tool, search
 //    mode setting, and first-party credential detail. Default DISABLED.

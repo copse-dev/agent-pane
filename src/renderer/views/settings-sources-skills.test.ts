@@ -77,6 +77,10 @@ describe('settings sources → skills list', () => {
     const hover = row.querySelector('.sources-row-hover-detail')
     assert.ok(hover)
     assert.ok(header.contains(hover), 'path belongs in the header gutter')
+    assert.ok(
+      row.querySelector('.sources-row-primary')?.contains(hover),
+      'path lives in the primary title slot',
+    )
     assert.equal(hover.textContent, BUNDLED_SKILL.skillPath)
     assert.ok(hover.querySelector('bdi'), 'bdi keeps the path LTR under rtl elision')
     assert.equal(row.title, BUNDLED_SKILL.skillPath)
@@ -92,7 +96,41 @@ describe('settings sources → skills list', () => {
     const hover = row.querySelector('.sources-row-hover-detail')
     assert.ok(hover)
     assert.ok(row.querySelector('.sources-row-header')?.contains(hover))
+    assert.ok(
+      row.querySelector('.sources-row-primary')?.contains(hover),
+      'path lives in the primary title slot',
+    )
     assert.equal(hover.textContent, PROJECT_SKILL.skillPath)
     assert.equal(row.title, PROJECT_SKILL.skillPath)
+  })
+
+  it('wraps title and hover path in a primary slot for containment', async () => {
+    const longPath =
+      '/Users/jonathankingston/.cursor/plugins/cache/cursor-public/very-long-plugin-id/' +
+      'skills/ai-writing-signs-report/SKILL.md'
+    const list = await openSkillsList([
+      {
+        name: 'ai-writing-signs-report',
+        description: 'Analyze text for signs of AI writing.',
+        source: 'bundled',
+        skillPath: longPath,
+        externalLinks: [],
+      },
+    ])
+    const row = list.querySelector<HTMLElement>('.sources-row')
+    assert.ok(row)
+    const primary = row.querySelector('.sources-row-primary')
+    const title = row.querySelector('.sources-row-title')
+    const hover = row.querySelector('.sources-row-hover-detail')
+    const badge = row.querySelector('.sources-badge')
+    assert.ok(primary)
+    assert.ok(title)
+    assert.ok(hover)
+    assert.ok(badge)
+    assert.ok(primary.contains(title))
+    assert.ok(primary.contains(hover))
+    assert.equal(primary.contains(badge), false, 'badge stays outside the primary slot')
+    assert.equal(hover.textContent, longPath)
+    assert.ok(hover.querySelector('bdi'))
   })
 })

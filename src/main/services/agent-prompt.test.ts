@@ -54,9 +54,13 @@ describe('agent-prompt', () => {
 
   it('keeps commits off the default branch with a consistent working-branch name', () => {
     for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
-      assert.match(prompt, /Never commit or push directly to the repository's default branch/)
-      assert.match(prompt, /copse\/<short-kebab-summary>/)
-      assert.match(prompt, /Preserve an existing non-default working branch/)
+      assert.match(
+        prompt,
+        /Git branch safety \(hard rule — a commit on the default branch is a failure\)/,
+      )
+      assert.match(prompt, /do NOT call git_commit yet/)
+      assert.match(prompt, /git checkout -b copse\/<short-kebab-summary>/)
+      assert.match(prompt, /If HEAD is already on a non-default working branch: stay there/)
     }
   })
 

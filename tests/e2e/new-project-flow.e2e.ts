@@ -30,6 +30,31 @@ describe('new project flow', () => {
 
     await $('.welcome-card').waitForDisplayed({ timeout: 30_000 })
     await expect($('.welcome-new-btn')).toHaveText('New Project')
+    await expect($('.welcome-open-btn')).toHaveText('Open Folder')
+
+    // Peer welcome CTAs share the pill action recipe — never square vs rounded mismatch.
+    const radii = await browser.execute(() => {
+      const newBtn = document.querySelector('.welcome-new-btn')
+      const openBtn = document.querySelector('.welcome-open-btn')
+      if (!(newBtn instanceof HTMLElement) || !(openBtn instanceof HTMLElement)) {
+        return null
+      }
+      const newRadius = getComputedStyle(newBtn).borderRadius
+      const openRadius = getComputedStyle(openBtn).borderRadius
+      // Resolve the token the same way the buttons do (used values, not the raw var).
+      const probe = document.createElement('div')
+      probe.style.borderRadius = 'var(--action-radius)'
+      document.body.append(probe)
+      const actionRadius = getComputedStyle(probe).borderRadius
+      probe.remove()
+      return { newRadius, openRadius, actionRadius }
+    })
+    expect(radii).not.toBeNull()
+    expect(radii!.newRadius).toBe(radii!.openRadius)
+    expect(radii!.newRadius).toBe(radii!.actionRadius)
+    // Guard against regressing to the square UI-kit radius (6px).
+    expect(radii!.newRadius).not.toMatch(/^6px/)
+    await saveAppScreenshot('welcome-empty.png')
 
     await $('.welcome-new-btn').click()
     const dialog = await $('#new-project-dialog')

@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import {
   detectPayloadVersion,
   graduateWanted,
@@ -202,5 +205,45 @@ describe('detectPayloadVersion', () => {
 
   it('returns undefined when no version field is present (caller defaults to canonical)', () => {
     assert.equal(detectPayloadVersion({}, [{ slug: 'x', evaluations: {} }]), undefined)
+  })
+})
+
+/**
+ * This module is both a library and a CLI, and importing it must not run the
+ * CLI. `main()` used to be called at module scope, so merely importing it here
+ * ran the whole sync on every unit run: a network fetch to Artificial Analysis,
+ * then a rewrite of `data/intellect.json` and of the tracked
+ * `model-intellect.generated.ts` via `prettier --write`. A green `npm run check`
+ * left the working tree dirty, and the bumped `// Last synced:` line went on to
+ * collide with the scheduled sync in a real merge conflict.
+ */
+describe('CLI entry guard', () => {
+  const source = readFileSync(resolve('scripts/sync-intellect.mts'), 'utf8')
+
+  it('never calls main() at module scope', () => {
+    assert.doesNotMatch(
+      source,
+      /^main\(\)/m,
+      'importing this module would run the sync — network calls and tracked-file writes',
+    )
+  })
+
+  it('guards the entry on argv[1] being this script', () => {
+    assert.match(source, /process\.argv\[1\]\?\.endsWith\('sync-intellect\.mts'\)/)
+  })
+
+  it('leaves the generated file alone when merely imported', () => {
+    // Importing above already happened. If the guard were absent, the sync would
+    // have run during module load and rewritten this file before we read it.
+    const generated = readFileSync(resolve('packages/llm/src/model-intellect.generated.ts'), 'utf8')
+    const committed = execFileSync(
+      'git',
+      ['show', 'HEAD:packages/llm/src/model-intellect.generated.ts'],
+      {
+        encoding: 'utf8',
+        maxBuffer: 32 * 1024 * 1024,
+      },
+    )
+    assert.equal(generated, committed, 'the unit suite must not rewrite a tracked generated file')
   })
 })
