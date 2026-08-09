@@ -90,13 +90,13 @@ jobs:
         uses: ./.github/actions/setup
       # Point the demo at the shared Monaco tree rather than bundling its own.
       # Root-relative so it resolves the same from `pr-<n>/` and from the deeper
-      # `pr-<n>-preview/demo/main/`, and so it survives a host change. Versioned,
+      # `pr-<n>-preview/demo/main/`. GitHub Pages serves this repo from the custom
+      # domain in `site/CNAME`, whose root is `/` — never prefix this with the
+      # repository name as an `<owner>.github.io/<repo>/` URL would. Versioned,
       # so a monaco-editor bump publishes a new tree beside the old one instead
       # of breaking every preview built against the previous version.
       - id: monaco
         if: steps.target.outputs.found == 'true'
-        env:
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Read the file, don't `require('monaco-editor/package.json')`: monaco's
@@ -105,7 +105,7 @@ jobs:
           # "Cannot find module .../esm/vs/package.json.js".
           version="$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/monaco-editor/package.json','utf8')).version")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "base=/${REPO#*/}/demo/vendor/monaco/${version}/" >> "$GITHUB_OUTPUT"
+          echo "base=/demo/vendor/monaco/${version}/" >> "$GITHUB_OUTPUT"
       - if: steps.target.outputs.found == 'true'
         env:
           MONACO_BASE_URL: ${{ steps.monaco.outputs.base }}
