@@ -138,7 +138,15 @@ export default ts.config(
     // the file lands in. Relative specifiers vary by nesting depth, and
     // `src/renderer/main.ts` exists — so any glob loose enough to catch
     // `../../main/services/x.ts` also blocks the renderer importing its own entry point.
+    //
+    // Renderer TESTS are exempt, and have to be: they are component tests run by Node's
+    // test runner over happy-dom (see tests/setup-dom.ts), so they import `node:test` and
+    // `node:assert/strict` by construction — 314 such imports across 153 files today. The
+    // boundary protects the SHIPPED renderer bundle, which contains no test file. They
+    // still fall through to the block above, so the Electron ban continues to apply to
+    // them; only the Node-builtin ban is lifted.
     files: ['src/renderer/**/*.ts', 'src/renderer/**/*.mts'],
+    ignores: ['src/renderer/**/*.test.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
