@@ -147,6 +147,14 @@ const INVARIANTS: Invariant[] = [
     check: () => expectUnitPlan(['docs/testing-strategy.md'], 'skip'),
   },
   {
+    // A published Markdown twin is generated from its HTML page and drift-checked
+    // by sync-site-markdown.test.ts, so it is NOT docs-only however much the
+    // extension says otherwise. Hand-editing one is exactly what the unit tier
+    // has to catch, and `skip` here would be a silent green on it.
+    name: 'a hand-edited site/*.md twin still runs the unit tier',
+    check: () => expectUnitPlan(['site/index.md'], 'full'),
+  },
+  {
     name: 'renderer panel change thins the unit tier to a subset',
     check: () => expectUnitPlan(['src/renderer/controller/panels.ts'], 'subset'),
   },
