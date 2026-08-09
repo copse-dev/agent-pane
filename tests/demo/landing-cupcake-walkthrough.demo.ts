@@ -25,7 +25,7 @@ describe('landing cupcake walkthrough', () => {
     )
     expect(visibleMonacoEditors).toBe(0)
     await expect($('.msg-user .message-text')).toHaveText(
-      'Build a beautiful coming-soon website for my cupcake business, Crumb & Bloom. Include an email waitlist, make it feel warm and memorable, and preview it when you’re done.',
+      'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
     )
     await expect($('.footer-model-host .model-picker-label')).toHaveText('Codex')
     expect(await browser.isAlertOpen()).toBe(false)
@@ -34,7 +34,9 @@ describe('landing cupcake walkthrough', () => {
   })
 
   it('replays one complete turn and reveals the finished Browser preview', async () => {
-    await $('.msg-assistant a[href^="http://localhost:4173"]').waitForDisplayed({ timeout: 60_000 })
+    await $('.msg-assistant a[href="http://localhost:61025/index.html"]').waitForDisplayed({
+      timeout: 60_000,
+    })
     await browser.waitUntil(
       () =>
         browser.execute(() => document.documentElement.dataset['demoExpandedPane'] === 'browser'),
@@ -48,7 +50,7 @@ describe('landing cupcake walkthrough', () => {
     })
     expect(publishedSite.root).toBe('sites/cupcakes')
     expect(publishedSite.ok).toBe(true)
-    expect(publishedSite.html).toContain('<title>Crumb &amp; Bloom')
+    expect(publishedSite.html).toContain('<title>Crumb & Bloom')
     const projectName = await browser.execute(
       () => document.querySelector('.project-name')?.textContent ?? '',
     )
@@ -72,12 +74,12 @@ describe('landing cupcake walkthrough', () => {
     const tokenLabel = await browser.execute(
       () => document.querySelector('.footer-usage')?.textContent ?? '',
     )
-    expect(tokenLabel).toBe('376 tokens')
+    expect(tokenLabel).toBe('1.4k tokens')
     await expect($('.titlebar-btn[aria-label="Open browser"]')).toHaveElementClass('active')
     await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
     const address = $('.browser-tab-panel.is-active .browser-url-input')
     await address.waitForDisplayed({ timeout: 10_000 })
-    await expect(address).toHaveValue(expect.stringContaining('http://localhost:4173'))
+    await expect(address).toHaveValue('http://localhost:61025/index.html')
     const preview = $('.browser-tab-panel.is-active iframe.browser-webview')
     await preview.waitForExist({ timeout: 10_000 })
     await browser.waitUntil(
@@ -86,10 +88,16 @@ describe('landing cupcake walkthrough', () => {
     )
     await browser.switchFrame(preview)
     await $('h1').waitForDisplayed({ timeout: 10_000 })
-    await expect($('h1')).toHaveText(expect.stringContaining('Cupcakes,'))
-    await expect($('h1')).toHaveText(expect.stringContaining('in full bloom.'))
-    await expect($('.waitlist')).toBeDisplayed()
-    await expect($('.hero__art')).toBeDisplayed()
+    await expect($('h1')).toHaveText(expect.stringContaining('Little cakes.'))
+    await expect($('h1')).toHaveText(expect.stringContaining('Big feelings.'))
+    await expect($('.signup')).toBeDisplayed()
+    await expect($('.hero-art')).toBeDisplayed()
+    await $('.signup input[type="email"]').setValue('demo@example.com')
+    await $('.signup button[type="submit"]').click()
+    await expect($('#form-note')).toHaveText("You're on the list — we'll save you the first swirl.")
+    await expect($('.signup button[type="submit"]')).toHaveText(
+      expect.stringContaining('You’re in!'),
+    )
     const previewLayout = await browser.execute(() => ({
       viewportWidth: window.innerWidth,
       columns: getComputedStyle(document.querySelector('.hero') ?? document.body)
@@ -108,7 +116,7 @@ describe('landing cupcake walkthrough', () => {
     await expect(expand).toBeDisplayed()
     await expect(expand).toHaveElementClass('pane-popout-btn')
     await expect($('.browser-url-input')).not.toBeFocused()
-    await expect($('.msg-assistant a[href^="http://localhost:4173"]')).toBeDisplayed()
+    await expect($('.msg-assistant a[href="http://localhost:61025/index.html"]')).toBeDisplayed()
     const transcriptState = await browser.execute(() => {
       const list = document.querySelector('.messages-list')
       const users = document.querySelectorAll<HTMLElement>('.msg-user')
@@ -138,7 +146,7 @@ describe('landing cupcake walkthrough', () => {
         ),
       }
     })
-    expect(transcriptState.text).toContain('No dependencies')
+    expect(transcriptState.text).toContain('Built and previewed a polished')
     expect(transcriptState.userPosition).toBe('relative')
     expect(transcriptState.overlap).toBe(0)
     expect(transcriptState.top).toBeGreaterThanOrEqual(transcriptState.visibleTop)
