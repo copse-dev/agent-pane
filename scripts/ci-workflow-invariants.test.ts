@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -415,5 +415,51 @@ describe('shared Monaco publishing invariants', () => {
       /base=\/\$\{?REPO|base=\/agent-pane\//,
       'copse.dev has no /agent-pane prefix; adding one makes every Monaco worker 404',
     )
+  })
+})
+
+// Previews and demos are published under the production domain, so search
+// engines must be told to skip them — and told *only* about them. Both halves
+// are one-line changes away from silently inverting: a marker dropped from a
+// publish step ships an indexable preview, a tag added to site/ de-indexes
+// copse.dev itself. Nothing but a crawl would ever reveal either.
+describe('preview noindex invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+  const build = readFileSync(resolve('scripts/build.mts'), 'utf8')
+  const robots = readFileSync(resolve('site/robots.txt'), 'utf8')
+
+  it('marks both marketing-site bundles published under /demo/', () => {
+    // main/preview and pr-<n>-preview are copies of site/, so the tag has to be
+    // applied to the copy — the source stays indexable for the root deploy.
+    assert.match(demoPreview, /mark_bundle_noindex "\$\{TARGET\}\/preview"/)
+    assert.match(demoPreview, /mark_bundle_noindex "\$bundle_target"/)
+    assert.match(demoPreview, /node scripts\/mark-noindex\.mts/)
+  })
+
+  it('marks the demo build itself, so the tag travels with the artifact', () => {
+    assert.match(build, /markTreeNoindex\(rendererOutDir\)/)
+    // Inside the isDemo block: the packaged app has no crawler, and marking the
+    // shipped renderer would be noise in the release bundle.
+    const demoBlock = build.match(/^if \(isDemo\) \{\n[\s\S]*?^\}$/m)?.[0]
+    assert.ok(demoBlock, 'expected the `if (isDemo)` block in build.mts')
+    assert.match(demoBlock, /markTreeNoindex\(rendererOutDir\)/)
+  })
+
+  it('leaves the production marketing site indexable', () => {
+    for (const name of readdirSync(resolve('site')).filter((f) => f.endsWith('.html'))) {
+      assert.doesNotMatch(
+        readFileSync(resolve('site', name), 'utf8'),
+        /name=["']robots["']/i,
+        `site/${name} is deployed to the copse.dev root from main — it must stay indexable`,
+      )
+    }
+  })
+
+  it('does not disallow /demo/ in robots.txt, which would hide the noindex', () => {
+    // A disallowed URL is never fetched, so its noindex is never read and the
+    // URL can stay indexed on the strength of inbound links alone (the sticky
+    // PR comment is public). Crawling is how the tag gets honoured.
+    assert.doesNotMatch(robots, /^\s*Disallow:\s*\/demo/im)
+    assert.doesNotMatch(robots, /^\s*Disallow:\s*\/\s*$/im)
   })
 })
