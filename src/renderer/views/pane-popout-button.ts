@@ -15,15 +15,17 @@ export function panePopoutButton(
   mode: RightPanelMode,
   paneLabel: string,
 ): HTMLButtonElement {
+  const browserDemo = document.documentElement.dataset['demoScenario'] !== undefined
   const btn = el(
     'button',
     {
       type: 'button',
       class: 'pane-popout-btn',
-      'aria-label': `Pop out ${paneLabel}`,
-      title: 'Pop out into its own window',
+      'data-pane-mode': mode,
+      'aria-label': browserDemo ? `Expand ${paneLabel}` : `Pop out ${paneLabel}`,
+      title: browserDemo ? 'Expand pane' : 'Pop out into its own window',
     },
-    '⧉',
+    browserDemo ? '⛶' : '⧉',
   )
   btn.addEventListener('click', () => {
     const seed = capturePopoutSeed(mode, store)

@@ -156,9 +156,9 @@ export default ts.config(
     },
   },
   {
-    // Marketing-site scripts: plain browser JS served as-is from `site/`, with
-    // no build step and no TS project to type-check against.
-    files: ['site/**/*.js'],
+    // Static-site scripts: plain browser JS served as-is, with no TS project to
+    // type-check against. Demo sites are copied next to the browser build.
+    files: ['site/**/*.js', 'src/shared/demo-sites/**/*.js'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'script',

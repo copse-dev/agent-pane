@@ -56,8 +56,11 @@ export async function saveThreePaneScreenshot(filename: string): Promise<void> {
 }
 
 /** Capture the app shell at the fixed viewport (excludes OS chrome). */
-export async function saveAppScreenshot(filename: string): Promise<void> {
-  await prepareE2eScreenshot()
+export async function saveAppScreenshot(
+  filename: string,
+  size: { width: number; height: number } = E2E_VIEWPORT,
+): Promise<void> {
+  await prepareE2eScreenshot(size)
   const app = await browser.$('#app')
   await app.waitForDisplayed({ timeout: 15_000 })
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))

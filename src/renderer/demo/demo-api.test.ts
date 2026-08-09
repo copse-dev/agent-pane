@@ -1,3 +1,4 @@
+import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
@@ -85,6 +86,30 @@ const REWRITE_TRACE: DemoTrace = {
   ],
 }
 
+/** A read-only turn must never disturb whichever right-hand panel is open. */
+const READ_TRACE: DemoTrace = {
+  id: 'read',
+  label: 'Reads one file',
+  prompt: 'read the package manifest',
+  steps: [
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: { id: 'tc-read', name: 'read_file', args: { path: 'package.json' } },
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'tc-read',
+        result: '{ "name": "copse-panel" }',
+        isError: false,
+      },
+    },
+    { chunk: { type: 'done', stopReason: 'end_turn' } },
+  ],
+}
+
 function scenarioFor(id: string, trace: DemoTrace): DemoScenario {
   return {
     id,
@@ -98,6 +123,7 @@ function scenarioFor(id: string, trace: DemoTrace): DemoScenario {
 
 const editScenario = scenarioFor('edit', EDIT_TRACE)
 const rewriteScenario = scenarioFor('rewrite', REWRITE_TRACE)
+const readScenario = scenarioFor('read', READ_TRACE)
 
 describe('createDemoApi decisions surface', () => {
   it('exposes list/export stubs so ApiClient stays complete for the browser demo', async () => {
@@ -106,6 +132,46 @@ describe('createDemoApi decisions surface', () => {
     const api = createDemoApi(scenario)
     assert.deepEqual(await api.decisions.list(), [])
     assert.deepEqual(await api.decisions.export(), { path: '', count: 0 })
+  })
+})
+
+describe('createDemoApi pane expansion', () => {
+  it('moves the Browser restore control into the toolbar, then returns it home', async () => {
+    assert.ok(tracedScenario)
+    document.body.innerHTML = `
+      <aside id="browser-tabs-host">
+        <header class="browser-tabs-list-header">
+          <button class="pane-popout-btn" data-pane-mode="browser">Expand</button>
+          <button class="browser-tabs-new-btn">New</button>
+        </header>
+      </aside>
+      <main id="browser-viewer-host">
+        <section class="browser-tab-panel is-active">
+          <nav class="browser-toolbar"><span class="browser-menu-wrap"></span></nav>
+        </section>
+      </main>
+    `
+    const api = createDemoApi(tracedScenario)
+    const button = document.querySelector<HTMLButtonElement>('.pane-popout-btn')
+    const header = document.querySelector<HTMLElement>('.browser-tabs-list-header')
+    const toolbar = document.querySelector<HTMLElement>('.browser-toolbar')
+    assert.ok(button)
+    assert.ok(header)
+    assert.ok(toolbar)
+
+    await api.panes.popout('browser')
+
+    assert.equal(document.documentElement.dataset['demoExpandedPane'], 'browser')
+    assert.equal(button.parentElement, toolbar)
+    assert.equal(button.getAttribute('aria-label'), 'Restore browser')
+
+    await api.panes.popout('browser')
+
+    assert.equal(document.documentElement.dataset['demoExpandedPane'], undefined)
+    assert.equal(button.parentElement, header)
+    assert.equal(header.firstElementChild, button)
+    assert.equal(button.getAttribute('aria-label'), 'Expand browser')
+    document.body.replaceChildren()
   })
 })
 
@@ -156,6 +222,14 @@ describe('createDemoApi trace replay', () => {
       { path: 'site/index.html', language: 'html' },
       { path: 'site/styles.css', language: 'css' },
     ])
+    assert.equal(
+      await api.fs.readFile('demo-edit-project', 't', 'site/index.html'),
+      '<h1>Cupcakes</h1>\n',
+    )
+    assert.equal(
+      await api.fs.readFile('demo-edit-project', 't', 'site/styles.css'),
+      'h1 {\n  color: pink;\n}\n',
+    )
   })
 
   it('diffs a second edit against what the same turn already wrote', async () => {
@@ -172,12 +246,11 @@ describe('createDemoApi trace replay', () => {
   })
 
   it('leaves the panel alone for a turn that only reads', async () => {
-    assert.ok(tracedScenario?.trace, 'expected a scenario carrying a trace')
-    const api = createDemoApi(tracedScenario, { trace: { instant: true } })
+    const api = createDemoApi(readScenario, { trace: { instant: true } })
     let shown = 0
     api.diff.onShowDiff(() => (shown += 1))
 
-    await runAndCollect(api, tracedScenario.trace.prompt)
+    await runAndCollect(api, READ_TRACE.prompt)
 
     assert.equal(shown, 0)
   })

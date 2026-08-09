@@ -17,6 +17,7 @@ const RUNNING_CLASS = 'with-stop'
 
 const MOUNT_TIMEOUT_MS = 20_000
 const RUN_TIMEOUT_MS = 120_000
+const PREVIEW_TIMEOUT_MS = 20_000
 const POLL_MS = 60
 
 export interface AutoplayOptions {
@@ -34,6 +35,8 @@ export interface AutoplayOptions {
   focusComposer?: boolean
   /** Pause on the finished transcript before looping. */
   loopPauseMs?: number
+  /** Open the last browser link, wait for its preview, then expand it in place. */
+  revealFinalPreview?: boolean
   signal?: AbortSignal
 }
 
@@ -167,6 +170,62 @@ async function playOnce(doc: Document, options: AutoplayOptions): Promise<boolea
 }
 
 /**
+ * Continue the recorded walkthrough through the ordinary browser-link and pane
+ * controls. Waiting for the iframe's replay-backed document before expanding
+ * avoids ending the hero on an empty Browser panel.
+ */
+export async function revealFinalPreview(
+  doc: Document,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<boolean> {
+  const links = doc.querySelectorAll<HTMLAnchorElement>(
+    '.msg-assistant a[href^="http://"], .msg-assistant a[href^="https://"]',
+  )
+  const link = [...links].at(-1)
+  if (!link) return false
+  link.click()
+
+  const ready = await waitUntil(
+    () =>
+      doc.querySelector<HTMLIFrameElement>(
+        '#browser-viewer-host iframe.browser-webview[data-workspace-preview="ready"]',
+      ) !== null,
+    options.timeoutMs ?? PREVIEW_TIMEOUT_MS,
+    options.signal,
+  )
+  if (!ready) return false
+
+  const expand = doc.querySelector<HTMLButtonElement>(
+    '#browser-tabs-host .pane-popout-btn[aria-label^="Expand"]',
+  )
+  if (!expand) return false
+  expand.click()
+  const expanded = await waitUntil(
+    () => doc.documentElement.dataset['demoExpandedPane'] === 'browser',
+    options.timeoutMs ?? PREVIEW_TIMEOUT_MS,
+    options.signal,
+  )
+  if (!expanded) return false
+
+  // Expansion makes chat narrower, which reflows the long prompt and changes
+  // its scroll height. Let that layout settle, then use the transcript's own
+  // control to keep the model's finished result in view. The URL field focuses
+  // on navigation; a passive hero should finish without a stray focus ring.
+  await sleep(POLL_MS)
+  doc.querySelector<HTMLButtonElement>('.scroll-to-bottom')?.click()
+  const assistantMessages = doc.querySelectorAll<HTMLElement>('.msg-assistant')
+  const finalAssistantMessage = [...assistantMessages].at(-1)
+  if (typeof finalAssistantMessage?.scrollIntoView === 'function') {
+    // The composer floats over the bottom of the transcript. Centering keeps
+    // the final answer in the genuinely visible region instead of merely
+    // placing it inside the scroll box behind that overlay.
+    finalAssistantMessage.scrollIntoView({ block: 'center' })
+  }
+  if (doc.activeElement instanceof HTMLElement) doc.activeElement.blur()
+  return true
+}
+
+/**
  * Run the walkthrough once, then — when looping — leave the finished transcript
  * up for a while and reload to start over.
  *
@@ -182,6 +241,11 @@ export async function startAutoplay(doc: Document, options: AutoplayOptions): Pr
   const aborted = (): boolean => signal?.aborted === true
   if (!options.instant) await sleep(options.startDelayMs ?? DEFAULT_START_DELAY_MS)
   const completed = await playOnce(doc, options)
+  if (completed && options.revealFinalPreview === true) {
+    await revealFinalPreview(doc, {
+      ...(signal === undefined ? {} : { signal }),
+    })
+  }
   if (options.loop !== true || !completed || aborted()) return
   await sleep(options.loopPauseMs ?? DEFAULT_LOOP_PAUSE_MS)
   if (aborted()) return
