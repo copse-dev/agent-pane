@@ -196,6 +196,57 @@ file. An agent asked to change CI reads the file — 111 KB of a context window 
 has done anything, on every such task, which is both slow and a real source of unrelated
 collateral edits. Reusable workflows are the platform's own answer and cost nothing.
 
+### C7 — Make the architectural boundaries enforceable, not just true
+
+**Today.** The repo has several real structural boundaries and enforces them by test,
+convention, or hand. The clearest case is the Electron boundary:
+`agent-path-electron-surface.test.ts` walks the import graph from three named roots and
+proves no runtime Electron import is reachable from them. That is a good test, and what it
+guarantees is narrower than it reads — a file _not_ reachable from those roots can take a
+runtime Electron dependency freely, and only turns some later, unrelated PR red once
+something imports it. The boundary is also invisible while editing: `src/main/services/`
+gives no signal about which side of the line a file is on.
+
+Measured across `src/` and `packages/` on 2026-08-09:
+
+| Boundary                                   | State                                                                    | Enforced by           |
+| ------------------------------------------ | ------------------------------------------------------------------------ | --------------------- |
+| Agent path must not import `electron`      | 18 runtime importers in `src/main`, all legitimately the desktop surface | one test, three roots |
+| `renderer` must not import `main`          | **2 violations**, both in `settings-dialog.ts`                           | nothing               |
+| `packages/*` must not import `src/`        | clean                                                                    | nothing               |
+| `shared` must not import `main`/`renderer` | clean                                                                    | nothing               |
+| `renderer` must not import node builtins   | clean                                                                    | nothing               |
+
+The renderer→main row is the one that shows the cost of leaving a boundary unenforced,
+because the repo is currently paying it in both directions at once. `agent-tasks.ts`
+**respects** the boundary by hand-duplicating `stripTerminalControlSequences`, with a
+comment saying it is "kept inline to avoid importing a main-process module into the
+renderer bundle" — while `settings-dialog.ts` **violates** it twice, reaching into
+`main/services/` for `validateAdvisorPair` and `DEFAULT_ORCHESTRATION_WORKER_MODEL`. One
+file pays for the rule in duplicated code; another ignores it; neither is told.
+
+**Change.** Three tiers, in cost order:
+
+1. **Ship the Electron rule** — an eslint `no-restricted-imports` on the bare `electron`
+   module with an explicit allow-list, type-only imports still legal. Landed as
+   [#1667](https://github.com/copse-dev/agent-pane/pull/1667): 815 of 841 source files come
+   under it, zero violations, every allow-list entry load-bearing.
+2. **Pin the three clean boundaries.** A rule with no violations costs nothing to add and
+   prevents the _first_ one, which is the only cheap moment to prevent it. `packages/*`
+   not importing `src/` matters most: it is what keeps the already-extracted
+   `@copse/agent` / `@copse/llm` genuinely standalone.
+3. **Resolve renderer→main, then pin it.** Both imports are pure (`@shared` + `@copse/llm`
+   only), so they are harmless at runtime and merely point the wrong way. The fix is to
+   move those two exports into `src/shared`, which is what that tree is for — but
+   `advisor-strategy.ts` and `orchestration-strategy.ts` are both under active work, so
+   this wants sequencing behind those rather than doing now.
+
+**Why this belongs in a fleet plan.** A convention that lives in a maintainer's head
+scales to the people who have talked to that maintainer. Agents have not. They infer the
+rule from the code they can see — and what they can see here is one file duplicating a
+function to respect a boundary and another importing straight through it. A lint rule is
+how you tell every future contributor, human or not, at the moment it matters.
+
 ### Also worth knowing
 
 - **Merge queue.** The `ci.yml` header correctly notes `merge_group` needs Enterprise
@@ -229,6 +280,27 @@ non-test caller of `runHeadlessAgent` is `scripts/autonomy-regression-agent.mts`
 runtime is exercised by a harness, not by the product. That still changes the estimate —
 the remaining work is wiring a consumer to an existing runtime, not building the runtime
 — but the plan should not be read as "headless is done".
+
+It changes the estimate by more than the file's location suggests, because the headless
+host is **not Electron-minus-the-window — it has no runtime Electron dependency at all**,
+and that is held by two mechanisms rather than asserted. A static walk pins zero runtime
+Electron imports reachable from the three construction roots, and
+`scripts/verify-agent-path-import.mts` goes further: it bundles those roots for plain
+Node, runs them in a child process with `Module._load` patched to throw on `electron`, and
+_actually constructs_ the registry and system prompt. Not "does not import Electron" —
+"builds the real agent under plain Node with Electron poisoned".
+
+Measured, 311 of the 408 non-test files in `src/main` are Electron-free and reachable from
+that host; only 18 files in the whole tree import `electron` at runtime. So `src/main` is
+~96% portable agent runtime with a thin desktop shell beside it, and the directory name is
+the misleading part rather than the placement.
+
+The consequence for everything below: a consumer of this runtime does **not** have to be
+the desktop app. A utility process, a worker, a plain Node CLI, or an agent running
+_inside a container_ are all reachable without dragging Electron along — which is what
+makes S4's "watch this agent" and P2's fleet nurse buildable at all, rather than requiring
+a whole second runtime first. What it does not yet have is a package boundary making that
+legible; see C7.
 
 ### P1 — Ship the activity view
 
@@ -413,17 +485,19 @@ part's P0 too.
 | Order | Item                                               | Effort  | Unlocks                                        |
 | ----- | -------------------------------------------------- | ------- | ---------------------------------------------- |
 | 1     | C3 job timeouts                                    | minutes | stops the capacity leak                        |
-| 2     | S1 + S2 video reporter, noVNC (`ffmpeg`, `x11vnc`) | ~a day  | a failure you can look at, a run you can watch |
-| 3     | C1 run record + job summaries                      | ~a day  | C2, C4, C5 arguments; P2's observation stream  |
-| 4     | S3 structured test results                         | ~a day  | annotations, per-test history, C2's input      |
-| 5     | C2 dated quarantine                                | ~a day  | trust in `CI Passed`                           |
-| 6     | P1 activity view                                   | ~a week | every other product item has somewhere to go   |
-| 7     | C5 pool-sized shards, C4 fleet priming             | ~a day  | wall-clock, once C1 says which one to do       |
-| 8     | P2 fleet registry + history (read-only)            | ~a week | P3, P4, P6                                     |
-| 9     | S4 container capture → `video_frames`              | ~a week | "watch this agent"; frames in incident notes   |
-| 10    | P3 shared CI memory                                | ~a week | stops N agents re-debugging one failure        |
+| 2     | C7 tier 1–2 boundary lint rules                    | ~a day  | a convention agents can actually see           |
+| 3     | S1 + S2 video reporter, noVNC (`ffmpeg`, `x11vnc`) | ~a day  | a failure you can look at, a run you can watch |
+| 4     | C1 run record + job summaries                      | ~a day  | C2, C4, C5 arguments; P2's observation stream  |
+| 5     | S3 structured test results                         | ~a day  | annotations, per-test history, C2's input      |
+| 6     | C2 dated quarantine                                | ~a day  | trust in `CI Passed`                           |
+| 7     | P1 activity view                                   | ~a week | every other product item has somewhere to go   |
+| 8     | C5 pool-sized shards, C4 fleet priming             | ~a day  | wall-clock, once C1 says which one to do       |
+| 9     | P2 fleet registry + history (read-only)            | ~a week | P3, P4, P6                                     |
+| 10    | S4 container capture → `video_frames`              | ~a week | "watch this agent"; frames in incident notes   |
+| 11    | P3 shared CI memory                                | ~a week | stops N agents re-debugging one failure        |
 
-C3 ([#1663](https://github.com/copse-dev/agent-pane/pull/1663)), C6, S1 and S2 can land
+C3 ([#1663](https://github.com/copse-dev/agent-pane/pull/1663)), C7 tier 1
+([#1667](https://github.com/copse-dev/agent-pane/pull/1667)), C6, S1 and S2 can land
 without discussion — S1 and S2 are two packages in `ci-runners/Dockerfile` and a reporter
 entry, and they change the debugging experience more per line than anything else here.
 
