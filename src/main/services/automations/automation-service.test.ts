@@ -22,6 +22,8 @@ describe('AutomationService', () => {
         created.push({ projectId, thread })
         return Promise.resolve()
       },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
     })
 
     const schedule = await service.upsert('project-a', {
@@ -58,6 +60,8 @@ describe('AutomationService', () => {
         created += 1
         return Promise.resolve()
       },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -82,6 +86,8 @@ describe('AutomationService', () => {
       now: () => 1,
       isPackEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -117,6 +123,8 @@ describe('AutomationService', () => {
         attempts += 1
         return attempts === 1 ? Promise.reject(new Error('disk unavailable')) : Promise.resolve()
       },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
     })
     await service.upsert('project-a', {
       name: 'First',
@@ -137,5 +145,162 @@ describe('AutomationService', () => {
     assert.equal(attempts, 2)
     await service.tick()
     assert.equal(attempts, 2)
+  })
+
+  it('starts each completed run in a fresh thread and coalesces while prior work is active', async () => {
+    let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    const service = createAutomationService({
+      now: () => now,
+      isPackEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const first = await service.runNow('project-a', schedule.id)
+    assert.equal(first.disposition, 'started')
+    const pending = threads.get(first.threadId)
+    assert.ok(pending)
+    threads.set(first.threadId, { ...pending, status: 'running', draftPrompt: '' })
+
+    now += 60_000
+    const overlap = await service.runNow('project-a', schedule.id)
+    assert.equal(overlap.disposition, 'coalesced')
+    assert.equal(overlap.threadId, first.threadId)
+    assert.equal(threads.size, 1)
+
+    const running = threads.get(first.threadId)
+    assert.ok(running)
+    threads.set(first.threadId, {
+      ...running,
+      status: 'idle',
+      messages: [
+        {
+          id: 'answer',
+          role: 'assistant',
+          content: 'Healthy.',
+          toolCalls: [],
+          createdAt: now,
+        },
+      ],
+    })
+    now += 60_000
+    const next = await service.runNow('project-a', schedule.id)
+    assert.equal(next.disposition, 'started')
+    assert.notEqual(next.threadId, first.threadId)
+    assert.equal(threads.size, 2)
+    assert.equal(threads.get(first.threadId)?.draftPrompt, '')
+    assert.equal(threads.get(first.threadId)?.messages.length, 1)
+    assert.equal(threads.get(next.threadId)?.draftPrompt, 'Check project health.')
+    assert.equal(threads.get(next.threadId)?.messages.length, 0)
+  })
+
+  it('does not allocate another worktree while the previous run retains changes', async () => {
+    let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    const service = createAutomationService({
+      now: () => now,
+      isPackEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: () => Promise.resolve(false),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const first = await service.runNow('project-a', schedule.id)
+    const pending = threads.get(first.threadId)
+    assert.ok(pending)
+    threads.set(first.threadId, {
+      ...pending,
+      status: 'idle',
+      draftPrompt: '',
+      worktree: {
+        path: '/worktrees/first',
+        branch: 'codex/first',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: now,
+        seededFromDirtyProject: false,
+      },
+    })
+
+    now += 60_000
+    const blocked = await service.runNow('project-a', schedule.id)
+    assert.equal(blocked.disposition, 'coalesced')
+    assert.equal(blocked.coalescedReason, 'worktree-limit')
+    assert.equal(blocked.threadId, first.threadId)
+    assert.equal(threads.size, 1)
+  })
+
+  it('allows a bounded number of retained worktrees when the schedule opts in', async () => {
+    let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    const service = createAutomationService({
+      now: () => now,
+      isPackEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: () => Promise.resolve(false),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+      maxLiveWorktrees: 2,
+    })
+    const attachWorktree = (threadId: string): void => {
+      const existing = threads.get(threadId)
+      assert.ok(existing)
+      threads.set(threadId, {
+        ...existing,
+        status: 'idle',
+        draftPrompt: '',
+        worktree: {
+          path: `/worktrees/${threadId}`,
+          branch: `codex/${threadId}`,
+          baseBranch: 'main',
+          baseCommit: 'a'.repeat(40),
+          createdAt: now,
+          seededFromDirtyProject: false,
+        },
+      })
+    }
+
+    const first = await service.runNow('project-a', schedule.id)
+    attachWorktree(first.threadId)
+    now += 60_000
+    const second = await service.runNow('project-a', schedule.id)
+    assert.equal(second.disposition, 'started')
+    assert.notEqual(second.threadId, first.threadId)
+
+    attachWorktree(second.threadId)
+    now += 60_000
+    const third = await service.runNow('project-a', schedule.id)
+    assert.equal(third.disposition, 'coalesced')
+    assert.equal(third.coalescedReason, 'worktree-limit')
+    assert.equal(threads.size, 2)
   })
 })

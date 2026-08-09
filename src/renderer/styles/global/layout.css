@@ -247,6 +247,88 @@
   flex-direction: column;
   padding: 2px 0 var(--spacing-sm) 0;
 }
+.automation-threads-group {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.automation-threads-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+.automation-threads-toggle:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+.automation-threads-twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--font-size-sm);
+  height: var(--font-size-sm);
+  transition: transform 0.1s ease;
+}
+.automation-threads-twisty.expanded {
+  transform: rotate(90deg);
+}
+.automation-threads-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.automation-threads-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.automation-threads-running {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.automation-thread-rows .chat-row {
+  padding-left: calc(28px + var(--spacing-sm));
+}
+.automation-schedule-group {
+  display: flex;
+  flex-direction: column;
+}
+.automation-schedule-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) calc(28px + var(--spacing-sm));
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+.automation-schedule-toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.automation-schedule-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-schedule-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.automation-schedule-runs .chat-row {
+  padding-left: calc(42px + var(--spacing-md));
+  color: var(--text-muted);
+}
 .chat-row {
   position: relative;
   display: flex;

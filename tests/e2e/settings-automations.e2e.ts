@@ -76,15 +76,20 @@ describe('settings automations pack', function () {
     assert.match(await detail.getText(), /Weekday project review/)
     assert.match(await detail.getText(), /0 9 \* \* 1-5/)
     assert.match(await detail.getText(), /Claude Sonnet 4\.6/)
+    assert.match(await detail.getText(), /Each run starts a fresh isolated task/i)
+    assert.match(await detail.getText(), /One live worktree is the safe default/i)
+    assert.match(await detail.getText(), /1 live worktree max/i)
     assert.match(await detail.getText(), /Normal tool permission prompts still apply/i)
     await expect(detail.$('.automation-run-btn')).toBeEnabled()
+    await saveElementScreenshot('.automation-pack-settings', 'settings-automations.png')
 
-    // Open the editor as well: the screenshot now covers the persisted row and
-    // the complete create/edit surface with its dynamic model picker.
+    // Capture the editor separately so the settings dialog's sticky global
+    // footer cannot cover a tall schedule form in the reference image.
     await detail.$('.automation-add-btn').click()
     await expect(detail.$('.automation-form')).toBeDisplayed()
     await expect(detail.$('.automation-form .model-picker-field')).toBeDisplayed()
+    await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
     await detail.$('.automation-form').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('.automation-pack-settings', 'settings-automations.png')
+    await saveElementScreenshot('.automation-form', 'settings-automation-form.png')
   })
 })
