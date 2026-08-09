@@ -39,6 +39,143 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
+  it('renders proposed workspace files for a localhost URL in the browser demo', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const files = new Map([
+      [
+        'index.html',
+        '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Cupcakes</h1><script src="script.js"></script></body></html>',
+      ],
+      ['styles.css', 'h1 { color: hotpink; }'],
+      ['script.js', "document.body.dataset.ready = 'true'"],
+    ])
+    const reads: string[] = []
+    const api = createPendingApi({
+      'fs.readFile': async (_projectId: string, _threadId: string, path: string) => {
+        reads.push(path)
+        return files.get(path) ?? ''
+      },
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      openBrowserUrl(store, 'http://localhost:4173')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const frame = qsRequired<HTMLIFrameElement>(viewer, 'iframe.browser-webview')
+      assert.deepEqual(new Set(reads), new Set(['index.html', 'styles.css', 'script.js']))
+      const srcdoc = frame.getAttribute('srcdoc') ?? ''
+      assert.match(srcdoc, /<h1>Cupcakes<\/h1>/)
+      assert.match(srcdoc, /<style data-workspace-path="styles.css">/)
+      assert.match(srcdoc, /h1 \{ color: hotpink; \}/)
+      assert.match(srcdoc, /<script data-workspace-path="script.js">/)
+      assert.match(srcdoc, /document\.body\.dataset\.ready/)
+      assert.equal(frame.src, 'http://localhost:4173/')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
+  it('prefers the checked-in published site over replayed workspace files', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    const originalFetch = globalThis.fetch
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+    document.documentElement.dataset['demoStaticSite'] = 'https://demo.test/sites/cupcakes'
+
+    const published = new Map([
+      [
+        'index.html',
+        '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Published cupcakes</h1><script src="script.js"></script></body></html>',
+      ],
+      ['styles.css', 'h1 { color: coral; }'],
+      ['script.js', "document.body.dataset.source = 'published'"],
+    ])
+    const requests: string[] = []
+    globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
+      const url = input instanceof Request ? input.url : String(input)
+      requests.push(url)
+      const name = new URL(url).pathname.split('/').at(-1) ?? ''
+      const content = published.get(name)
+      return new Response(content ?? '', { status: content === undefined ? 404 : 200 })
+    }
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    let workspaceReads = 0
+    const api = createPendingApi({
+      'fs.readFile': async (): Promise<string> => {
+        workspaceReads += 1
+        return 'workspace fallback should not render'
+      },
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      openBrowserUrl(store, 'http://localhost:4173')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const frame = qsRequired<HTMLIFrameElement>(viewer, 'iframe.browser-webview')
+      assert.deepEqual(
+        new Set(requests),
+        new Set([
+          'https://demo.test/sites/cupcakes/index.html',
+          'https://demo.test/sites/cupcakes/styles.css',
+          'https://demo.test/sites/cupcakes/script.js',
+        ]),
+      )
+      assert.equal(workspaceReads, 0)
+      const srcdoc = frame.getAttribute('srcdoc') ?? ''
+      assert.match(srcdoc, /<h1>Published cupcakes<\/h1>/)
+      assert.match(srcdoc, /h1 \{ color: coral; \}/)
+      assert.match(srcdoc, /dataset\.source = 'published'/)
+    } finally {
+      delete document.documentElement.dataset['demoStaticSite']
+      globalThis.fetch = originalFetch
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('creates and reuses a visible tab for a selected-pack browser request', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver

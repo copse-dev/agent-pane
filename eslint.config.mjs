@@ -123,6 +123,41 @@ export default ts.config(
     },
   },
   {
+    // Standalone test fixtures that are spawned as real child processes (see
+    // tests/fixtures/mock-acp-agent.mjs). They run as plain ESM under `node`,
+    // not through the test bundler, so they carry no TS annotations and are not
+    // part of the TS project graph.
+    files: ['tests/fixtures/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        ReadableStream: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
+    // Executable resources shipped inside built-in skills run directly under
+    // Node and are copied as-is, so they are not part of a TypeScript project.
+    files: ['assets/skills/**/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
     // Static ESM worker host copied to dist; not part of the TS project graph.
     files: ['src/renderer/monaco/esm-worker-host.js'],
     extends: [ts.configs.disableTypeChecked],
@@ -136,9 +171,9 @@ export default ts.config(
     },
   },
   {
-    // Marketing-site scripts: plain browser JS served as-is from `site/`, with
-    // no build step and no TS project to type-check against.
-    files: ['site/**/*.js'],
+    // Static-site scripts: plain browser JS served as-is, with no TS project to
+    // type-check against. Demo sites are copied next to the browser build.
+    files: ['site/**/*.js', 'src/shared/demo-sites/**/*.js'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'script',

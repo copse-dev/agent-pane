@@ -22,6 +22,21 @@ describe('checkup skill', () => {
     resetUserData()
   })
 
+  it('lists the built-in reconcile-worktrees skill in every repository', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await setComposerValue('/reconcile-worktrees')
+
+    const picker = $('.skill-picker')
+    await picker.waitForDisplayed({ timeout: 10_000 })
+    const row = picker.$('.skill-item*=/reconcile-worktrees')
+    await row.waitForExist({ timeout: 5_000 })
+    await expect(row.$('.skill-item-name')).toHaveText('/reconcile-worktrees')
+    await expect(row.$('.skill-item-desc')).toHaveText('Audit and safely reconcile', {
+      containing: true,
+    })
+    await saveAppScreenshot('reconcile-worktrees-skill-listed.png')
+  })
+
   it('picks /checkup from the slash picker and runs without Unknown skill', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
