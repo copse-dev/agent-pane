@@ -29,19 +29,6 @@ export interface DemoScenario {
    */
   trace?: DemoTrace
   /**
-   * A shorter prompt to type in the walkthrough while preserving the trace's
-   * exact recorded prompt as steering. This is intentionally explicit: the
-   * demo must not imply that a terse request produced a tightly art-directed
-   * recording without help.
-   */
-  presentedPrompt?: {
-    text: string
-    /** How the recorded prompt supplements the visitor-visible request. */
-    tracePromptRole: 'nudge'
-    /** Human-readable provenance for reviewers inspecting the scenario. */
-    nudgeLabel: string
-  }
-  /**
    * Queue replayed edits without forcing Changes open on every write. Visitors
    * can still open Changes and inspect the complete diffs after the turn.
    */
@@ -64,9 +51,9 @@ export const FOOTER_COMPACT_EXPECTATIONS = {
   tokenLabel: `${((FOOTER_INPUT_TOKENS + FOOTER_OUTPUT_TOKENS) / 1000).toFixed(1)}k tokens`,
 } as const
 
-/** Prompt a walkthrough submits; the source trace remains byte-for-byte honest. */
+/** Prompt a walkthrough submits: exactly the user text captured in its source trace. */
 export function demoScenarioPrompt(scenario: DemoScenario): string {
-  return scenario.presentedPrompt?.text ?? scenario.trace?.prompt ?? ''
+  return scenario.trace?.prompt ?? ''
 }
 
 const markdownContent = [
@@ -233,11 +220,6 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: LANDING_TRACE,
-    presentedPrompt: {
-      text: 'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
-      tracePromptRole: 'nudge',
-      nudgeLabel: 'Cupcake landing-page art direction and recording constraints',
-    },
     deferProposedDiffPreview: true,
     staticSite: 'sites/cupcakes',
     revealFinalPreview: true,

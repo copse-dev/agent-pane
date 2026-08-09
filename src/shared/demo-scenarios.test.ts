@@ -18,11 +18,7 @@ describe('demo scenarios', () => {
       demoScenarioPrompt(scenario),
       'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
     )
-    assert.equal(scenario.presentedPrompt?.tracePromptRole, 'nudge')
-    assert.ok(
-      scenario.trace.prompt.length > demoScenarioPrompt(scenario).length,
-      'the exact recording brief remains available as the explicit nudge',
-    )
+    assert.equal(demoScenarioPrompt(scenario), scenario.trace.prompt)
     assert.equal(scenario.threads[0]?.title, 'Crumb & Bloom coming soon')
     assert.deepEqual(scenario.settings['registeredAcpAgents'], [
       {

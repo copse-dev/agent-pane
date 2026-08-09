@@ -107,6 +107,54 @@ type ThreadLine = z.infer<typeof threadLineSchema>
 type MessageLine = z.infer<typeof messageLineSchema>
 type ToolCallLine = z.infer<typeof toolCallSchema>
 
+const COPSE_BRIDGE_TOOL_PREFIX = 'mcp.copse.'
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value))
+    : undefined
+}
+
+/**
+ * ACP exports preserve the adapter's MCP envelope (`mcp.copse.write_file` with
+ * `{server, tool, arguments}`). Demo replay drives Copse's native tool path, so
+ * collapse that envelope back to the same canonical call a built-in agent
+ * emits. The underlying arguments remain verbatim and still require review.
+ */
+function replayToolCall(call: ToolCallLine): ToolCallLine {
+  if (!call.name.startsWith(COPSE_BRIDGE_TOOL_PREFIX)) return call
+  const outer = recordValue(call.args)
+  return {
+    ...call,
+    name: call.name.slice(COPSE_BRIDGE_TOOL_PREFIX.length),
+    args: recordValue(outer?.['arguments']) ?? call.args,
+  }
+}
+
+function bridgedWritePaths(messages: readonly MessageLine[]): Set<string> {
+  const paths = new Set<string>()
+  for (const message of messages) {
+    for (const call of message.toolCalls ?? []) {
+      if (!call.name.startsWith(COPSE_BRIDGE_TOOL_PREFIX)) continue
+      const normalized = replayToolCall(call)
+      if (!['write_file', 'str_replace', 'delete_file'].includes(normalized.name)) continue
+      const path = recordValue(normalized.args)?.['path']
+      if (typeof path === 'string') paths.add(path)
+    }
+  }
+  return paths
+}
+
+function isRedundantWorkspaceAudit(call: ToolCallLine, bridgedWrites: ReadonlySet<string>): boolean {
+  if (call.name !== 'workspace_edit_audit') return false
+  const files = recordValue(call.args)?.['files']
+  return (
+    Array.isArray(files) &&
+    files.length > 0 &&
+    files.every((file) => typeof file === 'string' && bridgedWrites.has(file))
+  )
+}
+
 function fail(message: string): never {
   console.error(message)
   process.exit(1)
@@ -123,7 +171,9 @@ function flagValue(argv: string[], name: string): string | undefined {
  * home directory is both noise and a name nobody meant to publish.
  */
 function scrubPaths(text: string): string {
-  return text.replace(/(?:\/Users|\/home)\/[^/\s"']+/g, '~')
+  return text
+    .replace(/(?:\/Users|\/home)\/[^/\s"']+/g, '~')
+    .replace(/\/(?:private\/)?(?:var\/)?tmp\/[^/\s"']+/g, '~')
 }
 
 function clean(text: string): string {
@@ -270,14 +320,21 @@ function buildTrace(
   const steps: DemoTraceStep[] = []
   let model: string | undefined
   let toolIndex = 0
-  for (const message of messages.slice(start + 1, end)) {
+  const turnMessages = messages.slice(start + 1, end)
+  const nativeBridgeWrites = bridgedWritePaths(turnMessages)
+  for (const message of turnMessages) {
     if (message.role !== 'assistant') continue
     model ??= message.model
     if (message.reasoning)
       steps.push({ chunk: { type: 'reasoning', text: clean(message.reasoning) } })
     if (message.content) steps.push({ chunk: { type: 'text', text: clean(message.content) } })
     for (const call of message.toolCalls ?? []) {
-      steps.push(...toolCallSteps(call, toolIndex))
+      // Older ACP exports can contain a synthetic warning that bridged native
+      // writes bypassed Copse. Those writes did pass through Copse; current
+      // product code records them in the audit ledger. Preserve genuine audits,
+      // but do not publish this known false positive in a replay.
+      if (isRedundantWorkspaceAudit(call, nativeBridgeWrites)) continue
+      steps.push(...toolCallSteps(replayToolCall(call), toolIndex))
       toolIndex += 1
     }
   }
