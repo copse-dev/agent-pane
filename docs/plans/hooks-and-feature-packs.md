@@ -226,9 +226,13 @@ revisiting this document, not silently diverging in an implementation PR.
     pack declares `stable` or `experimental`; a user pack that omits the field is
     treated as experimental. Settings shows that status before enablement.
     Experimental first-party packs derive the fresh-profile default-off set from
-    the same declaration, so status and rollout cannot silently diverge. Stability
-    never changes decision 17: disabling removes contributions from new work while
-    stored data and historical rendering remain available.
+    the same declaration, so status and rollout cannot silently diverge. The
+    `copse.background-tasks` pack is stable and default-on (including a one-time
+    graduation of the old seeded disable): ordinary tasks retain the project sandbox,
+    while its optional `loopback-bind` relaxation still requires a separate
+    per-project grant at use time. Stability never changes
+    decision 17: disabling removes contributions from new work while stored data and
+    historical rendering remain available.
 
 ## Target architecture
 
@@ -592,6 +596,14 @@ from `todosToPanelListData()` so the extracted pack preserves the pre-existing U
 behavior; if every todo is cancelled, the conversation mounts no plan panel. The
 component and e2e assertions use the generic `.pack-panel` DOM rather than the
 deleted `.todo-panel` selectors.
+
+August 2026 loop-nudge wording follow-up: the E1 mechanism remains a tool-enabled
+message push. `LOOP_NUDGE_USER_MESSAGE` now explicitly ends exploration, forbids using
+shell/edit tools as substitute readers, and distinguishes analysis-only requests from
+requested actions. A deterministic experiment that removed only exploration tools was
+rejected: a model repurposed `run_shell` and `str_replace` to inspect files, including a
+temporary mutation. The later `stuck-finalize` tool-free escalation remains the hard
+mechanical boundary.
 
 Sequencing risk: packs are the second floor. P1 must not start before A1/A2 and C3 are
 merged, or it freezes their shapes prematurely. P4 (todos) is the forcing function for

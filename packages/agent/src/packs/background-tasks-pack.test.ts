@@ -29,9 +29,10 @@ import {
 import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
 
 describe('copse.background-tasks pack', () => {
-  it('is registered in FIRST_PARTY_PACKS with id copse.background-tasks', () => {
+  it('is registered as a stable first-party pack', () => {
     assert.equal(backgroundTasksPack.id, BACKGROUND_TASKS_PACK_ID)
     assert.equal(backgroundTasksPack.trust, 'first-party')
+    assert.equal(backgroundTasksPack.manifest.stability, 'stable')
     assert.ok(
       FIRST_PARTY_PACKS.some((pack) => pack.id === BACKGROUND_TASKS_PACK_ID),
       'background-tasks pack must be part of the shipped first-party pack list',

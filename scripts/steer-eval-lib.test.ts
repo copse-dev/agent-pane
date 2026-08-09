@@ -435,6 +435,19 @@ describe('shipped steer packs', () => {
     }
   })
 
+  it('response-length packs distinguish arrow examples from fragment chains', () => {
+    for (const id of ['opus5-response-length', 'opus5-tone-reminder']) {
+      const pack = loadSteerPack(`benchmarks/steer/packs/${id}.json`)
+      const check = pack.tasks[0]?.checks.find(
+        (candidate) => candidate.id === 'no-arrow-chain-fragments',
+      )
+      assert.ok(check && 'pattern' in check)
+      const pattern = new RegExp(check.pattern, 'i')
+      assert.equal(pattern.test('Attempt 1 → 250 ms is the initial delay.'), false)
+      assert.equal(pattern.test('Failure → retry → success'), true)
+    }
+  })
+
   it('a real-model pack declares a gate — an eval with no threshold cannot fail', () => {
     for (const path of steerPackPaths()) {
       const pack = loadSteerPack(path)
@@ -447,11 +460,26 @@ describe('shipped steer packs', () => {
     }
   })
 
-  it('fixtures referenced by packs exist', () => {
+  it('fixtures and seeded nudge reads referenced by packs exist', () => {
     for (const path of steerPackPaths()) {
-      for (const task of loadSteerPack(path).tasks) {
-        if (task.fixture === undefined) continue
+      const pack = loadSteerPack(path)
+      for (const task of pack.tasks) {
+        if (task.fixture === undefined) {
+          assert.equal(
+            task.seedReadFiles,
+            undefined,
+            `seeded reads require a fixture in ${task.id}`,
+          )
+          continue
+        }
         assert.ok(existsSync(task.fixture), `missing fixture ${task.fixture} for task ${task.id}`)
+        for (const seededPath of task.seedReadFiles ?? []) {
+          assert.equal(pack.steer.kind, 'nudge', `seeded reads require a nudge pack in ${task.id}`)
+          assert.ok(
+            existsSync(join(task.fixture, seededPath)),
+            `missing seeded read ${seededPath} for task ${task.id}`,
+          )
+        }
       }
     }
   })

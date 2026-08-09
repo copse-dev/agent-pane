@@ -152,6 +152,18 @@ describe('settings packs (about:addons)', function () {
     await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await packRow.getAttribute('data-enabled'), 'false')
 
+    // Background execution is a stable primitive and is available without a
+    // fresh-profile opt-in. Loopback binding still prompts separately at use time.
+    const backgroundTasksRow = packs.$('.pack-row[data-pack-id="copse.background-tasks"]')
+    await expect(backgroundTasksRow).toBeDisplayed()
+    await expect(backgroundTasksRow.$('.pack-badge-stable')).toHaveText('Stable')
+    assert.equal(await backgroundTasksRow.getAttribute('data-enabled'), 'true')
+    await backgroundTasksRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.pack-row[data-pack-id="copse.background-tasks"]',
+      'settings-background-tasks-pack.png',
+    )
+
     // Local cron automations are a new, explicit opt-in. Upgrading
     // must not arm a clock-driven feature until the user enables the pack.
     const automationsRow = packs.$('.pack-row[data-pack-id="copse.automations"]')

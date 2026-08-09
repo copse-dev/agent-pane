@@ -69,7 +69,6 @@ describe('session-scoped background task lifecycle', function () {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-background-task-lifecycle', {
-      backgroundTasksEnabled: true,
       subagentsEnabled: false,
     })
     await browser.reloadSession()
