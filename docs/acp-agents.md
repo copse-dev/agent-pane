@@ -309,6 +309,47 @@ tunnels. For write routing / permission payloads / mid-turn `_meta` under a real
 turn, use `npm run probe:acp:behavior` (issue #832; spends tokens). See
 [`docs/acp-capability-probe.md`](acp-capability-probe.md).
 
+## Capturing the raw ACP wire (`COPSE_DEBUG_ACP_UPDATES`)
+
+When an agent's tool calls show up with a useless label — the reported case is
+Cursor rendering every MCP call as `MCP: tool` — the probes above only tell you
+what survived parsing. To see what the adapter actually sent, run Copse with:
+
+```sh
+COPSE_DEBUG_ACP_UPDATES=1 npm start
+```
+
+Every inbound JSON-RPC message from the agent is then appended verbatim to
+`acp-debug.jsonl` inside that thread's own folder, beside `events.jsonl`. The tap
+sits on the transport, so each line is what the agent said **before** the ACP
+schema drops unmodelled fields and before Copse normalizes the rest — an
+experimental `name`, a vendor extension key, `_meta`, `rawInput` / `rawOutput`,
+`content`, and `locations` all arrive intact. One JSON object per line:
+
+```jsonc
+{
+  "v": 1,
+  "ts": "…",
+  "dir": "in",
+  "type": "notification",
+  "method": "session/update",
+  "msg": {/* verbatim */},
+}
+```
+
+Reproduce a case by starting a thread with the agent, asking it to call one MCP
+tool, and letting the call finish. To get the file out, use **Export thread
+folder (ZIP)** on the thread — `acp-debug.jsonl` is included — or read it
+directly at `~/.copse/workspace/<projectId>/<threadId>/acp-debug.jsonl` (under
+`$COPSE_WORKSPACE_DIR` instead, if you set one).
+
+> **The trace is deliberately unredacted.** It contains your prompts, tool
+> arguments and output, source code, absolute paths, and any secret an agent put
+> in one of those — for example an MCP server token echoed back in `rawInput`.
+> Read the file before sharing it, prefer a scratch project when reproducing,
+> and never set the flag by default. With the flag unset, no diagnostic file is
+> created and nothing is serialized or written.
+
 ## See also
 
 - [`docs/acp-capability-probe.md`](acp-capability-probe.md) — the Tier-1

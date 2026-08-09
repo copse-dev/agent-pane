@@ -39,6 +39,7 @@ import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
@@ -782,8 +783,15 @@ export async function openAcpSession(
   handlers: MutableAcpHandlers,
   createTransport: AcpTransportFactory = spawnTransport,
   resumeSessionId?: string,
+  trace: AcpWireSink | null = null,
 ): Promise<OpenAcpSession> {
   const transport = await createTransport(config)
+  // Opt-in diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`): record every inbound
+  // JSON-RPC message verbatim, before the SDK's schema parse strips unmodelled
+  // fields and before `sessionUpdateToStreamChunk` normalizes what survives.
+  // `null` (the default, and always when the flag is off) returns the
+  // transport's own stream, so the untraced path is unchanged.
+  const stream = tapAcpWireStream(transport.stream, trace)
 
   let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
   const pendingUpdates = new Map<string, SessionUpdate[]>()
@@ -833,7 +841,7 @@ export async function openAcpSession(
       return writeTextFile ? writeTextFile(ctx.params) : UNSUPPORTED('fs/write_text_file')()
     })
 
-  const connection = app.connect(transport.stream)
+  const connection = app.connect(stream)
   let disposed = false
   const dispose = (): void => {
     if (disposed) return

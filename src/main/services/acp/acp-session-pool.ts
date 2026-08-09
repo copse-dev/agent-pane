@@ -1,6 +1,7 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
+import { createAcpWireTrace } from './acp-wire-trace.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
@@ -196,9 +197,25 @@ export async function acquireAcpSession(
     ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),
   }
 
+  // Opt-in ACP wire diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`). Created here
+  // because this is the layer that knows which thread the session belongs to,
+  // and per session so a respawn/resume keeps appending to the same thread file
+  // in wire order. `null` — always, when the flag is off — leaves the transport
+  // untouched.
+  const trace = await createAcpWireTrace({
+    threadId: opts.threadId,
+    agent: { command: opts.config.command, args: opts.config.args },
+  })
+
   let open: OpenAcpSession
   try {
-    open = await openAcpSession(config, { current: null }, opts.createTransport, resumeSessionId)
+    open = await openAcpSession(
+      config,
+      { current: null },
+      opts.createTransport,
+      resumeSessionId,
+      trace,
+    )
   } catch (err) {
     bridgeAbort.abort()
     await bridge?.close()
