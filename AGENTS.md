@@ -1,354 +1,120 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## Product and standard commands
 
-`copse-panel` (branded **Copse**) is a single product: an Electron desktop app (an AI coding assistant). There is no
-backend service — the app's main process talks directly to LLM providers. The standard scripts
-live in `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`,
-`test:e2e`, `check`); CI (`.github/workflows/ci.yml`) runs the full `check` + `build` + `test:e2e`
-sequence. Prefer those rather than reinventing commands.
+`copse-panel` (branded **Copse**) is one product: an Electron desktop AI coding assistant. There is
+no backend service; the main process talks directly to LLM providers. Prefer the scripts in
+`package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
+`check`) rather than inventing parallel commands.
 
-### Node version (>=22.18 required)
+Use Node **22.18 or newer**. The repo pins `22.18.0` in `.nvmrc`; older Node 22 releases cannot run
+the native TypeScript tooling in `scripts/*.mts`. Environment setup, headless GUI notes, mock-model
+controls, app-state locations, and common validation commands live in
+[`docs/agent-development.md`](docs/agent-development.md).
 
-This repo pins Node via `.nvmrc` (`22.18.0`) and `package.json` `engines` (`>=22.18`). The build/check
-tooling under `scripts/*.mts` relies on Node's native TypeScript type-stripping, which older 22.x
-releases lack. **The Cloud VM default `node` may be older than this** (e.g. `/exec-daemon/node` at
-`22.14`), in which case `npm run check` fails at `check:dead-code` with
-`TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".mts"`. The cloud environment config
-(`.cursor/environment.json` → `.cursor/cloud-setup.sh`) installs and defaults Node to `.nvmrc` so fresh
-agents start correct. If you still land on an older node, switch before running anything:
+## Rules that apply before editing
+
+### Hooks and feature packs
+
+Any change touching agent hooks (`cursor-hooks`, `claude-hooks`, the permission-gate hook path),
+loop nudges/steering, auto-continuation, or feature-pack extraction MUST follow
+[`docs/plans/hooks-and-feature-packs.md`](docs/plans/hooks-and-feature-packs.md). Its decisions log is
+binding. If the implementation needs to diverge, update the document in the same PR. Read its
+“Execution guidance” and “Known implementation traps” before writing code.
+
+### Type safety
+
+Minimise `as` casts, never cast object literals, and do not use `eslint-disable` or
+`@ts-expect-error` to hide a real error. Keep `eslint-suppressions.json` empty. Parse untrusted JSON
+with a decoder (`safeJsonParse(text, decodeWithSchema(schema))`), not a type argument. An exported
+type predicate requires a test in the same PR. See [`docs/type-safety.md`](docs/type-safety.md).
+
+### User-visible changes require visual evidence
+
+Any change visible in the Electron app must include a focused visual eval unless it is demonstrably
+invisible (for example, pure data plumbing with unchanged DOM). This includes renderer components,
+styles, markdown, tool cards, terminal/diff surfaces, screenshot fixtures, and visual copy or layout.
+
+Add or update the smallest focused WebdriverIO browser/Electron spec that reaches the state, asserts
+the relevant DOM behavior, and saves a screenshot for review. Use
+`.cursor/skills/screenshot-validate/SKILL.md` for DOM/layout work and
+`.cursor/skills/agent-run-eval/SKILL.md` only when the visual depends on an agent/tool loop. A build
+or manual VNC inspection is not sufficient evidence. See [`docs/testing-strategy.md`](docs/testing-strategy.md)
+for the tier boundary and [`docs/ui-taste.md`](docs/ui-taste.md) for appearance conventions.
+
+### Tests must not create product backdoors
+
+An option, field, or flag written only by tests is not configuration; it is unsupported product API.
+When a test needs otherwise-unreachable state, reach it through a real product surface, make the
+option genuinely supported, or inject the dependency/fixture at a boundary. Search the whole repo
+for writers before deciding. See
+[`docs/testing-strategy.md#tests-must-not-create-product-api`](docs/testing-strategy.md#tests-must-not-create-product-api).
+
+### State and permissions
+
+Persistent settings live in Electron's `copse-panel` `config.json`, but chat threads do **not**.
+Threads live under `~/.copse/workspace/<projectId>/<threadId>/`; use `writeSeedConfig`
+(`tests/e2e/helpers/seed-config.ts`) so test threads are routed into the native thread store. See
+[`docs/thread-store-format.md`](docs/thread-store-format.md) and
+[`docs/agent-development.md#app-data-and-seeded-state`](docs/agent-development.md#app-data-and-seeded-state).
+
+Shell auto-run has a platform-specific security contract: macOS ASRT is the containment boundary;
+without an OS sandbox, commands prompt rather than treating the optional classifier as authority.
+External reads use a narrow, thread-scoped, fail-closed grant. Read
+[`docs/shell-permissions.md`](docs/shell-permissions.md) before changing permission policy, shell
+scope analysis, sandboxing, escalation, or approval copy.
+
+## Validation workflow
+
+### Choose the lowest useful test tier
+
+Prefer unit/component tests. Use browser geometry for deterministic renderer layout and Electron e2e
+only for native sizing, Monaco, terminal, webview, or real main-process IPC. Start with the smallest
+relevant set:
 
 ```bash
-export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm install; nvm use   # reads .nvmrc
-# nvm's `use` may not stick if an older node shadows PATH; if `node -v` is still wrong, prepend it:
-export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
+npm test -- thread-store
+npm run oracle
+npm run oracle -- --run unit
+npm run oracle -- --run e2e
 ```
 
-### Running the app (headless VNC notes)
+Read the oracle confidence. `LOW` exposes unmapped files and `broad` requires the full named tier; a
+green subset is never a substitute for the pre-commit gate. Full guidance is in
+[`docs/testing-strategy.md`](docs/testing-strategy.md).
 
-This is a GUI Electron app. The Cloud VM exposes a VNC desktop on `DISPLAY=:1`, so launch with
-that display set (e.g. `DISPLAY=:1 npm run dev`). Key gotchas discovered during setup:
+### Use the right machine
 
-- **First `npm run dev` can crash once with a `SyntaxError` at `dist/main/index.js`.** `scripts/dev.mts`
-  relaunches Electron from an `esbuild` `onEnd` hook for each of its main/preload build contexts, so the
-  very first launch can race the bundle write when `dist/` is empty and read a half-written file.
-  It is transient: the watcher rebuilds and relaunches with a complete bundle. To avoid it entirely,
-  run `npm run build` once before `npm run dev` (so `dist/` already holds a valid bundle), or just
-  restart `npm run dev`.
-- **GPU errors are benign.** The headless GPU stack logs `Exiting GPU process due to errors during
-initialization` / `bus.cc ... Failed to connect to the bus`. The app still runs and renders. Add
-  `--disable-gpu` (e.g. `DISPLAY=:1 npx electron --disable-gpu dist/main/index.js`) to silence the
-  GPU noise; it is optional.
-- **VNC idle screen-blanker.** After ~10s without a _real_ X input event the VNC desktop blanks to a
-  black screen / spinning cube / clock overlay that hides the app window — this is NOT an app crash
-  (the Electron process keeps running). Synthetic pointer warps (`xdotool mousemove_relative`) do
-  NOT reset it, but real key events do. For clean screen recordings, run a keep-awake loop of real
-  key events, e.g. `while true; do DISPLAY=:1 xdotool key F15; sleep 0.5; done` (F15 is unbound and
-  does not interfere with typing).
+- Prefer `npm run e2e:remote -- run --detach` while iterating when a remote-e2e host or registry is
+  configured; continue editing, then use `e2e:remote -- wait <run-id>`. Use local Electron e2e for
+  macOS-specific behavior or when no remote host is available. See
+  [`ci-runners/README.md`](ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
+- Use a spare macOS GUI machine when validation needs the real product and a real agent: authenticated
+  ACP inference, native macOS UI, GUI-only reproduction, or real-model demo recording. Follow
+  [`docs/remote-agent-demo-debugging.md`](docs/remote-agent-demo-debugging.md), isolate the app profile
+  and project workspace, keep at least one run visible, and pair it with focused WebdriverIO evidence.
 
-### LLM provider / mock
+### Let the post-edit hook do its job
 
-No real model key is required to exercise core functionality. With neither `ANTHROPIC_API_KEY` nor
-`OPENAI_API_KEY` set (and `COPSE_PANEL_MOCK_LLM` unset), the app falls back to `MockLLMProvider`
-(`src/shared/llm/mock-provider.ts`), which echoes `Mock response to: <message>` and issues one
-`list_dir` tool call on the first turn — enough to drive the full agent loop end-to-end. Set
-`COPSE_PANEL_MOCK_LLM=1` to force the mock even when keys are present.
-
-The mock also honors test-only steering directives in the user message — `[[mcp:<tool> {json}]]`
-(drive a specific tool call) and `[[mock:delay_ms <n>]]` (stall) — used by e2e specs. These are
-gated behind the `__COPSE_TEST_DIRECTIVES__` build constant: `npm run build` (dev/e2e/CI) keeps
-them, but `npm run build:release` (used by `pack:mac`/packaging) sets `COPSE_RELEASE=1`, so esbuild
-dead-code-eliminates the parser and `build.mts` fails the build if any directive marker survives.
-Shipped apps therefore never contain the directive parser.
-
-For multi-turn e2e, specs can register an **ordered mock script** (regex `when` → tool or text
-response) via `window.__copseE2e.setMockScript([…])` before submitting natural-language prompts.
-Define the script in the spec file next to the prompts it drives (`tests/e2e/mock-script-multiturn.e2e.ts`).
-The legacy `[[mcp:…]]` inline directives remain for one-shot tool steering.
-
-### Hooks / feature-pack work
-
-Any change touching agent hooks (`cursor-hooks`, `claude-hooks`, the permission-gate
-hook path), loop nudges/steering, auto-continuation, or feature-pack extraction MUST
-follow [`docs/plans/hooks-and-feature-packs.md`](docs/plans/hooks-and-feature-packs.md).
-Its decisions log is binding: on conflict, update that doc in the same PR — never
-silently diverge. Read its "Execution guidance" and "Known implementation traps"
-sections before writing code.
+`.copse/hooks.json`, `.cursor/hooks.json`, and `.claude/settings.json` run
+`scripts/hook-file-check.mts` after edits. It applies Prettier and reports type-unaware ESLint issues;
+do not rerun Prettier after every edit. If it rewrites a file, re-read it before editing again. The
+hook does not replace type-aware lint, TypeScript, or the full gate.
 
 ### Before committing
 
-Before opening a PR, rebase onto **`origin/main`** — GitHub PR CI tests the merge of base into head, not your branch tip alone.
+Rebase onto the PR's current base (normally `origin/main`) before opening the PR; GitHub tests the
+merged base and head, not an isolated branch tip. Run **`npm run check`** before committing. It covers
+typecheck, ESLint, Prettier, dead-code detection, and unit tests. If a source file is intentionally
+unlinked, add it to `ALLOWED_UNLINKED` in `scripts/check-dead-code.mts` with a reason.
 
-Agents should run **`npm run check`** before creating a commit. That runs typecheck, ESLint,
-Prettier, the dead-code guard (`check:dead-code` — fails on `src/**/*.ts` files that nothing in
-the build graph imports), and unit tests (`npm test`) — the same fast gates CI runs before
-build/e2e. If a file is intentionally unreferenced, add it to `ALLOWED_UNLINKED` in
-`scripts/check-dead-code.mts` with a reason rather than leaving it to be flagged. If you
-changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e2e`** locally
-(macOS/Linux paths for seeded `electron-store` data must match `src/main/app-init.ts`).
+For renderer UI or e2e fixture changes, also run the focused visual workflow selected by the test
+oracle. Detailed local commands and screenshot ownership behavior are in
+[`docs/agent-development.md#visual-validation`](docs/agent-development.md#visual-validation).
 
-### Type-safety & lint discipline
-
-Minimise `as` casts, never cast object literals, and never reach for `eslint-disable` /
-`@ts-expect-error` to silence a real error. `no-unsafe-type-assertion` and `prefer-nullish-coalescing`
-are now enforced outright — `eslint-suppressions.json` is empty (#1307) and must stay that way, so a
-new unsafe assertion fails `npm run lint` with no baseline to absorb it. Parse untrusted JSON with a
-decoder (`safeJsonParse(text, decodeWithSchema(schema))`), never a type argument. An **exported type
-predicate needs a test in the same PR** — nothing verifies that `x is T` follows from the body, and
-no lint rule flags it. Conventions and the rules behind them:
-[`docs/type-safety.md`](docs/type-safety.md).
-
-### Visual changes require evals
-
-Any change that affects what a user can see in the Electron app must include a focused visual eval
-unless the change is demonstrably invisible (for example, pure data plumbing with unchanged DOM).
-This includes edits to renderer components, styles, markdown rendering, tool cards, terminal/diff
-surfaces, screenshots fixtures, and visual copy/layout states. The eval should be a WebdriverIO
-Electron e2e spec that seeds the app into the target state, asserts the relevant DOM behavior, and
-saves screenshots for visual inspection. Use `.cursor/skills/screenshot-validate/SKILL.md` for
-DOM/layout changes and `.cursor/skills/agent-run-eval/SKILL.md` only when the visual change depends
-on an agent/tool loop. Do not rely on `npm run check`, a build, or manual VNC inspection alone as
-proof for a visual change.
-
-For appearance/layout taste — design-token usage, action-bar spacing, the sticky-footer-in-scroll
-gotcha, and other hard-won UI conventions — read and extend [`docs/ui-taste.md`](docs/ui-taste.md).
-
-### App data / state
-
-Persistent state (projects, selected model, workspace root, settings) lives in an `electron-store`
-JSON named `config.json` under the app userData directory (`copse-panel` in
-`src/main/app-init.ts`): on macOS
-`~/Library/Application Support/copse-panel/`, on Linux `~/.config/copse-panel/`, on Windows
-`%APPDATA%/copse-panel/`. The "Open Folder" button uses a native dialog; to open a workspace
-without driving that dialog, pre-seed `config.json` with a `projects` entry and `activeProjectId`
-before launching.
-
-**Chat threads are no longer in `config.json`.** They live in the filesystem-native thread store
-under `~/.copse/workspace/<projectId>/<threadId>/` (issue #644) — one directory per thread
-(`meta.json` + append-only `events.jsonl` spine + OKF `messages/*.md` + `blobs/*`), documented in
-[docs/thread-store-format.md](docs/thread-store-format.md). Override the root with
-`COPSE_WORKSPACE_DIR` (the e2e harness and unit tests point it at a throwaway dir). To seed threads
-for a test, don't write a `threads:<projectId>` key — use `writeSeedConfig`
-(`tests/e2e/helpers/seed-config.ts`), which routes any such array into new-format thread dirs. The
-store is mounted **read-only** into the agent's read tools so it can `@`-reference past threads.
-
-### Shell / tool permissions across platforms
-
-Shell command auto-run is gated by a single pure decision function,
-`decideShellPermission` (`src/main/services/permission-policy.ts`), called from
-`permission-gate.ts`. The OS sandbox is **macOS-only**; other platforms rely on
-static analysis plus an optional classifier. This is intentional, not a fallback
-ambiguity — the per-platform behavior is:
-
-| Situation                                                        | Sandbox-contained command                                                                                  | Hard-external command (network download, `git push`, install, `~/...`)                                                            | Ambiguous "may reach" command (`gh`, `nc`, `aws`/`gcloud`/`az`, `open <url>`)                                                                                                                                                                                                                                                                                       |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS, ASRT sandbox active**                                   | Auto-runs **inside** the seatbelt sandbox. The classifier is not consulted; seatbelt is the real boundary. | Prompts first, then runs **outside** the sandbox.                                                                                 | Auto-runs **inside** the seatbelt sandbox (no upfront prompt). If seatbelt blocks it, `shell-tool` offers a retry-unsandboxed prompt — same as a sandbox-contained command that later fails (e.g. Playwright). If the agent passes `expects_sandbox_block: true`, that same prompt is pulled **forward** — asked before the first attempt instead of after a block. |
-| **macOS sandbox init failure / Linux / Windows (no OS sandbox)** | Always prompts (no OS sandbox can contain the command; the classifier is never an authorization boundary). | Always prompts (static analysis flags `external` before the classifier is consulted), unless strict-mode hard-deny fires (below). | Always prompts (treated like hard-external when no OS sandbox can contain it).                                                                                                                                                                                                                                                                                      |
-| **Auto-run disabled in Settings** (`autoRunSandboxCommands` off) | Prompts.                                                                                                   | Prompts.                                                                                                                          | Prompts.                                                                                                                                                                                                                                                                                                                                                            |
-
-The ambiguous tier exists because short/overloaded command names (`gh`, `nc`, …)
-collide with file paths and arguments (e.g. `grep … src/.../gh-pr-service.ts`).
-Rather than prompt on a guess, macOS lets seatbelt — the actual boundary — decide:
-the command runs sandboxed and only escalates to an unsandboxed retry if the OS
-truly blocks it. Without an OS sandbox there is nothing to contain a misfire, so
-these still prompt.
-
-The `safetyExternalDenyThreshold` knob tunes the no-OS-sandbox path around the
-default "surface it" behavior:
-
-- **`safetyExternalDenyThreshold`** (default `1` = off) — strict mode. When the
-  classifier is at least this confident a command is `external` **and** a
-  deterministic destructive signal fires (`dangerousInSandboxReasons`), the
-  command is **hard-denied** (`decideShellPermission` returns `action: 'deny'`,
-  which `permission-gate` throws on) instead of being surfaced for approval. It
-  never denies plain external work — both an external verdict and a destructive
-  signal are required. Lower it (e.g. `0.9`) to enable.
-
-When the agent already knows a command needs the network or outside-workspace
-files (e.g. `gh`, cloud CLIs), it can pass `expects_sandbox_block: true` on
-`run_shell` to request that same unsandboxed approval **up front** instead of
-running inside seatbelt, failing partway, and retrying. The hint is honored
-**only** for the `ambiguous` tier (`shellExpectedBlockEscalation`): a
-hard-`external` command already prompts + runs outside, and a fully-contained
-`sandbox` command ignores the hint entirely — it must still earn its escape from
-a runner-verified block, never a model self-declaration (issues #103/#104). The
-up-front prompt is worded as the agent's _expectation_ (not a confirmed block) so
-the user can apply the appropriate scrutiny. Declining runs the command inside the
-sandbox without re-prompting on failure.
-
-#### Reads outside the project
-
-A command that only _reads_ paths outside the project, and whose every path we
-can account for, gets a narrower question than the generic escape hatch:
-**"Allow read access outside of the project?"** with the command behind a
-_Show details_ disclosure. Its primary button grants the shape for the rest of
-the **thread** (in-memory, never persisted — `read-outside-grant.ts`); expanding
-the details also offers **"Approve this command"**, which approves that one call
-and grants nothing.
-
-The grant authorises no command by itself: every later command is re-analysed by
-`read-outside-project.ts` and must independently prove it is a plain read. That
-analysis is an allow-list of shapes and fails closed — one unrecognised head,
-write flag, redirect, `$VAR`, or privilege wrapper (`sudo`, `env`) drops the
-command back to the ordinary prompt. Credential targets (`.env*`, `*.pem`,
-`~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, …) and targets as broad as `~` or `/`
-are refused outright, so they always ask even in a granted thread. This path runs
-on every platform: off macOS `outsideSandbox` is false (there is no seatbelt to
-leave) but the read is just as external.
-
-The grant lives in memory, but the decision to make it is durable: the answered
-prompt writes a `decisions.jsonl` line at `scope: external-read` naming the paths
-at stake, with `remembered: true` for a thread grant and `false` for a
-one-command approval, and every later command the grant covers writes its own
-`verdict: allowed` line sourced to `read-outside-grant`. A restart drops the
-grant; it never drops the record of it.
-
-Key components:
-
-- `permission-policy.ts` — `decideShellPermission` (pure; the table above),
-  `shellRequiresOutsideSandbox`, MCP-tool decisions, and the prompt-body
-  formatters that explain _why_ a command is being prompted.
-- `shell-scope.ts` — static `analyzeShellCommand` heuristic (`sandbox`,
-  `ambiguous`, or `external`), with human-readable `reasons`. Fuzzy "may reach"
-  matchers are tagged `ambiguous: true`; a command is only `external` when a
-  definite escape (hard pattern or outside-workspace path) fires.
-- `read-outside-project.ts` / `read-outside-grant.ts` — the read-only-escape
-  shape above, its credential/breadth refusals, and the thread-scoped grant.
-- `safety-classifier.ts` — optional LM Studio classifier (`classifyShellScope`),
-  used **only** when the OS sandbox is unavailable; returns `null` when disabled
-  or unreachable.
-- `project-sandbox/` — macOS ASRT integration. `isProjectSandboxEnabled()`
-  returns `false` on any non-`darwin` platform regardless of the stored flag, so
-  non-macOS code paths never assume a sandbox boundary exists.
-
-Tests pinning the documented matrix: `permission-platform.test.ts` (per-platform
-decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
-
-### Tests
-
-- `npm test` runs Node's test runner over `src/**/*.test.ts` (esbuild-bundled into `dist-test/`).
-- `npm run test:e2e` is WebdriverIO + `@wdio/electron-service` and needs a display. It passes under
-  `npm run test:e2e` on this headless VM (WDIO auto-starts Xvfb on Linux).
-- **Prefer remote e2e while iterating (don't block the machine).** When Scaleway (or AWS) creds
-  are available, or `.tmp/remote-e2e/host.json` already exists, agents should drive visual /
-  Electron e2e via `npm run e2e:remote -- run --detach` (oracle subset of the current diff) and
-  `e2e:remote -- wait <run-id>` — keep editing in between. Results land in
-  `.tmp/remote-e2e/runs/<run-id>/`. Use local `test:e2e` only for macOS-specific behaviour, when
-  no cloud creds/registry are configured, or when a skill explicitly requires an on-machine
-  display. With `COPSE_CI_REGISTRY` set, `e2e:remote up` pulls a pre-baked image (no on-host
-  bake / no `BUILD_GH_TOKEN` on the host). See
-  [`ci-runners/README.md`](ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
-
-For _which tier a test belongs in_ — favour unit/component tests, reserve e2e for broad validation
-and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) — read
-[`docs/testing-strategy.md`](docs/testing-strategy.md). The per-spec e2e→component migration backlog
-is in [`docs/e2e-component-migration.md`](docs/e2e-component-migration.md).
-
-### Don't add product API for tests
-
-An option, field, or flag whose only writer is a test is not configuration — it is a backdoor with a
-type. It costs the same as real API: everyone reading the code takes it for a supported knob, every
-policy that consults it has to keep handling it, and its default silently becomes product behaviour.
-
-`project.worktreeMode` is the standing example. No shipped code path has ever written it — there is
-no UI, no IPC, no setting — and its only writer is `tests/e2e/helpers/seed-config.ts`, which stamps
-`'never'` on every seeded project so specs keep asserting against the shared checkout instead of a
-fresh worktree. Because nothing else wrote it, `projectMode ?? 'never'` meant the automatic choice
-could never isolate, and every automatic thread quietly took the shared checkout — the user-visible
-bug #1568 had to fix by changing the default rather than the design.
-
-When a test needs a state the product cannot express:
-
-- **Reach it through the surface a user would.** Here the per-thread `worktreeChoice` already says
-  `'shared'`; the harness can seed that instead of inventing a project-level mode.
-- **Or make the option real** — give it a UI or a setting, and it stops being test-only.
-- **Or move the seam.** Inject the dependency, or take the fixture in at the boundary. A helper that
-  builds state is fine; a _product type_ that exists to be built by helpers is not.
-
-The tell is a grep: if every writer is under `tests/` or ends in `.test.ts`, the option is not
-earning its place. Check the whole repo before concluding an option is unused, too — `src/` alone
-will tell you a test-only field has no writer at all.
-
-### Run the smallest set of tests
-
-A full `npm test` is ~3 minutes over 530 files. While iterating, run the tests your change can
-actually break — the full `npm run check` stays the gate before you commit, not the loop you
-iterate in. Full guidance (including the confidence levels) is in
-[`docs/testing-strategy.md`](docs/testing-strategy.md#run-the-smallest-set-of-tests).
-
-```bash
-npm test -- thread-store        # filter: path substring, base name, or glob
-npm run oracle                  # which tests can your diff break, and how sure is it?
-npm run oracle -- --run unit    # run exactly those unit tests
-npm run oracle -- --run e2e     # run exactly those e2e specs
-```
-
-Three rules that keep the subset honest:
-
-- **Read the oracle's confidence line.** `HIGH` means the subset covers the diff. `LOW` means some
-  changed file maps to nothing — the unmapped files it lists are a blind spot the subset cannot
-  see. `broad` means run everything. A subset run on a `LOW` verdict is not evidence.
-- **A filter that matches nothing is an error, not a pass.** `npm test -- <typo>` exits non-zero
-  rather than reporting a green on zero tests. Never read "0 tests" as success.
-- **A green subset is not a green suite.** The oracle maps imports and DOM selectors, so anything
-  reached dynamically — a string key, an IPC channel name, a registry lookup — is invisible to it.
-  `npm run check` before committing, always.
-
-### The post-edit hook formats and lints for you
-
-Every file you edit in this repo is **reformatted and lint-checked automatically**, in about 2s,
-via the `afterFileEdit` / `PostToolUse` hook wired in `.copse/hooks.json`, `.cursor/hooks.json` and
-`.claude/settings.json` (all three run `scripts/hook-file-check.mts`, so it works whichever agent
-you are). **Don't spend a turn running Prettier on a file you just edited** — the hook already
-did, and if it said nothing at all, the file is clean.
-
-**When the hook says it rewrote a file, re-read it before your next edit.** Prettier is auto-applied
-(deterministic, semantically neutral), so your copy of the file is stale the moment that message
-appears — an edit matching against remembered text will fail. ESLint findings are _not_ auto-fixed:
-`eslint --fix` makes real code changes, and those are yours to make deliberately, so the hook
-reports them with the command to run.
-
-What the hook covers is deliberately narrow: Prettier, plus the **type-unaware** ESLint rules
-(`eslint.hook.config.mjs`). The type-aware rules and `tsc` need the whole TypeScript program —
-~10s per file — which is too slow to run on every edit, so they stay in `npm run check`. A silent
-hook means "no cheap problems", not "verified". Run it by hand with
-`node scripts/hook-file-check.mts <file> [--fix]`.
-
-### Visual validation (tool UI / screenshots)
-
-Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout. For every visual
-change, add or update the smallest focused spec that exercises the changed state and captures at
-least one screenshot that reviewers can inspect.
-
-1. `npm run build`
-2. Seed `~/.config/copse-panel/config.json` before launch (see `tests/e2e/helpers/seed-config.ts`):
-   - `projects` + `activeProjectId` pointing at repo root
-   - optional `threads:<projectId>` with pre-built `toolCalls` to exercise grouping without a real model
-3. Launch with mock LLM: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
-4. Run: `npm run test:e2e -- --spec tests/e2e/tool-display-live-mock.e2e.ts`
-5. Screenshots land in `tests/e2e/screenshots/`:
-   - `tool-display-live-mock.png` — live mock turn shows `Listed directory` (not `list_dir`)
-
-**CI only commits the shots your diff owns.** The e2e tier re-renders far more than a change
-touches — a broad selection renders everything — so `commit-screenshots` writes back only the
-reference PNGs the test oracle maps to your diff (plus any you hand-committed on the branch), and
-merge conflicts against `main` resolve the same way: your version for what you own, `main`'s for
-everything else. Anything held is listed by name in the PR comment. If your change really does
-move a shot the oracle didn't map, add the `update-screenshots` label to take CI's render.
-The rule lives in [`scripts/lib/screenshot-scope.mts`](scripts/lib/screenshot-scope.mts).
-
-Assertions to mirror: a turn with ≥2 tools collapses to `.tool-card-rollup` (`Used N tools` /
-category past-tense like `Read files`); expand for nested `.tool-card-group` / individuals;
-`.tool-count` = `×N` when the rollup is a single category; failed tools stay outside their
-success group with individual past-tense labels. Labels are progressive while `running`.
-The seeded tool-card DOM assertions now run without Electron in the component test
-`src/renderer/views/tool-display.test.ts`; grouping logic in `src/shared/tools/tool-display.test.ts`.
-
-### Markdown rendering
+## Specialized surfaces
 
 Conversation messages, subagent timelines, and file preview use the hand-rolled renderer in
-`src/renderer/markdown/`. Design invariants, regression tests, and e2e fixtures are documented in
-[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md). Table layout taste (wrapping,
-no magic column widths) is in [`docs/ui-taste.md`](docs/ui-taste.md).
-
-After markdown or list-indent changes, run `npm run build && npm run test:e2e:markdown`.
+`src/renderer/markdown/`. Before markdown or list-indent changes, read
+[`src/renderer/markdown/README.md`](src/renderer/markdown/README.md); then run
+`npm run build && npm run test:e2e:markdown`.
