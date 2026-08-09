@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import {
   analyzeShellCommand,
   dangerousInSandboxReasons,
+  externalOnlyForOutsidePath,
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 
@@ -409,7 +410,13 @@ describe('analyzeShellCommand', () => {
   it('flags direct execution of an in-workspace file (./x, ../x, bin/tool)', () => {
     // The agent can write and `chmod +x` these; their contents are opaque here, so
     // they must not auto-run — hard-external, like `node ./x.js`.
-    for (const cmd of ['./deploy', '../tool run', 'bin/gen-thing', 'cat x | ./x']) {
+    for (const cmd of [
+      './deploy',
+      '../tool run',
+      'bin/gen-thing',
+      'MODE=release ./deploy',
+      'cat x | ./x',
+    ]) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
       assert.ok(
@@ -422,6 +429,15 @@ describe('analyzeShellCommand', () => {
   it('does not flag a relative path passed as an argument as an executable', () => {
     // `src/index.ts` here is an argument to `cat`, not the command word.
     const r = analyzeShellCommand('cat src/index.ts', root)
+    assert.equal(r.verdict, 'sandbox')
+    assert.ok(!r.reasons.some((x) => /executes an in-workspace file directly/.test(x)))
+  })
+
+  it('does not treat an environment assignment containing a path as an executable', () => {
+    const r = analyzeShellCommand(
+      'TMPDIR="$PWD/.tmp/e2e-tmp" npm run test:e2e -- --spec tests/e2e/example.e2e.ts',
+      root,
+    )
     assert.equal(r.verdict, 'sandbox')
     assert.ok(!r.reasons.some((x) => /executes an in-workspace file directly/.test(x)))
   })
@@ -555,6 +571,34 @@ describe('isReplayableOpaqueLocalExecution', () => {
     ]) {
       assert.equal(isReplayableOpaqueLocalExecution(analyzeShellCommand(command, root)), false)
     }
+  })
+})
+
+describe('externalOnlyForOutsidePath', () => {
+  const root = '/Users/me/project'
+
+  it('accepts a command whose only escape is the path it names', () => {
+    for (const command of ['cat ~/notes.md', 'ls -la ~/.copse', 'rg foo /etc/hosts']) {
+      assert.equal(externalOnlyForOutsidePath(command, root), true)
+    }
+  })
+
+  it('rejects a command with any network signal, hard or fuzzy', () => {
+    for (const command of [
+      'curl https://example.com',
+      'cat ~/notes.md && curl https://example.com',
+      // Fuzzy "may reach the network" is disqualifying too: containing such a
+      // command would break it, and a read relaxation is not its approval.
+      'aws s3 ls ~/manifest.txt',
+      'nc -l ~/socket',
+    ]) {
+      assert.equal(externalOnlyForOutsidePath(command, root), false)
+    }
+  })
+
+  it('rejects a command that names no outside path', () => {
+    assert.equal(externalOnlyForOutsidePath('cat src/index.ts', root), false)
+    assert.equal(externalOnlyForOutsidePath('', root), false)
   })
 })
 

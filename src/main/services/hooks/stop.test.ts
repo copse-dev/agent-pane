@@ -91,6 +91,20 @@ describe('stop (turn-end / abort fire site — B3)', () => {
     assert.equal(stdin['status'], 'completed')
   })
 
+  it('sends `loop_count` so a vendor hook gating on it can actually fire', async () => {
+    // Cursor's documented stop-hook example gates its follow-up on
+    // `loop_count < N`; an absent field makes that comparison silently false.
+    // Copse never auto-submits a follow-up, so the honest value is always 0.
+    const stdinFile = join(tempHome, 'loop-count.json')
+    const script = await writeCaptureHook('stop-loop-count.sh', stdinFile)
+    await writeUserHooks({ hooks: { stop: [{ command: script }] } })
+
+    const result = await fireStop('completed')
+    await result.settled
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['loop_count'], 0)
+  })
+
   it('fires on abort with status "aborted"', async () => {
     const stdinFile = join(tempHome, 'aborted.json')
     const script = await writeCaptureHook('stop-aborted.sh', stdinFile)

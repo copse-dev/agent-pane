@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { containedSandboxNetworkConfig } from './config.ts'
 import {
   acquireSandboxNetworkScope,
+  activeSandboxNetworkScopeLabels,
   isSandboxNetworkScopeActive,
   mergedScopeNetwork,
 } from './network-scope.ts'
@@ -14,8 +15,8 @@ describe('mergedScopeNetwork', () => {
 
   it('unions domains and ORs local binding across scopes', () => {
     const merged = mergedScopeNetwork([
-      { domains: ['anthropic.com', '*.anthropic.com'], allowLocalBinding: false },
-      { domains: ['*.googleapis.com', 'anthropic.com'], allowLocalBinding: true },
+      { domains: ['anthropic.com', '*.anthropic.com'], allowLocalBinding: false, label: 'first' },
+      { domains: ['*.googleapis.com', 'anthropic.com'], allowLocalBinding: true, label: 'second' },
     ])
     assert.deepEqual([...merged.allowedDomains].sort(), [
       '*.anthropic.com',
@@ -34,6 +35,7 @@ describe('acquireSandboxNetworkScope', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['example.com'],
       allowLocalBinding: false,
+      label: 'test scope',
     })
     release()
     release()
@@ -43,10 +45,12 @@ describe('acquireSandboxNetworkScope', () => {
     const first = acquireSandboxNetworkScope({
       domains: ['first.example'],
       allowLocalBinding: false,
+      label: 'first holder',
     })
     const second = acquireSandboxNetworkScope({
       domains: ['second.example'],
       allowLocalBinding: false,
+      label: 'second holder',
     })
     try {
       assert.equal(isSandboxNetworkScopeActive(), true)
@@ -56,5 +60,49 @@ describe('acquireSandboxNetworkScope', () => {
       second()
     }
     assert.equal(isSandboxNetworkScopeActive(), false)
+  })
+
+  it('names its holders so the shell prompt can attribute the widening', () => {
+    assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
+    const probe = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    const server = acquireSandboxNetworkScope({
+      domains: [],
+      allowLocalBinding: true,
+      label: 'background task: npm run dev',
+    })
+    try {
+      assert.deepEqual(activeSandboxNetworkScopeLabels(), [
+        'ACP agent: codex',
+        'background task: npm run dev',
+      ])
+      probe()
+      assert.deepEqual(activeSandboxNetworkScopeLabels(), ['background task: npm run dev'])
+    } finally {
+      server()
+    }
+    assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
+  })
+
+  it('deduplicates labels so two identical holders read as one', () => {
+    const first = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    const second = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    try {
+      assert.deepEqual(activeSandboxNetworkScopeLabels(), ['ACP agent: codex'])
+    } finally {
+      first()
+      second()
+    }
   })
 })

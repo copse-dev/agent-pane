@@ -55,6 +55,7 @@ import {
   enabledClaudeAcpAgent,
   parseAcpAgentConfigs,
   parseAcpModel,
+  parseAcpModelSelection,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { PACK_MODEL_PREFIX, packModelValue, parsePackModelSelection } from '@shared/pack-model.ts'
@@ -163,9 +164,10 @@ async function packModelOptions(
 }
 
 // External ACP agents the user has configured. Only enabled agents are offered;
-// a stale `acp:<id>` selection for a removed/disabled agent is surfaced via the
-// "(not configured)" fallback below rather than silently vanishing. The agents
-// are fetched once by the caller (also used to decide the ACP-over-API ordering).
+// a stale `acp:<id>` selection is surfaced below with the precise cause (agent
+// removed, disabled, or selected model no longer advertised) rather than
+// silently vanishing. The agents are fetched once by the caller (also used to
+// decide the ACP-over-API ordering).
 function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
   const options: ModelOption[] = []
   for (const agent of agents.filter((agent) => agent.enabled)) {
@@ -563,12 +565,21 @@ export async function fetchModelOptions(
         group: selection ? remoteAgentGroupLabel(selection.provider) : 'Remote agents',
       })
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
+      const selection = parseAcpModelSelection(current)
+      const configuredAgent = selection
+        ? acpAgents.find((agent) => agent.id === selection.id)
+        : undefined
+      const configuredButUnlisted = configuredAgent?.enabled === true
       const stale: ModelOption = {
         value: current,
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`
-          : `${modelDisplayLabel(current)} (not configured)`,
-        group: ACP_GROUP,
+          : configuredButUnlisted
+            ? `${configuredAgent.title} — ${selection?.model ?? 'agent default'} (not currently advertised)`
+            : configuredAgent
+              ? `${configuredAgent.title} (disabled)`
+              : `${modelDisplayLabel(current)} (not configured)`,
+        group: configuredAgent ? acpGroupLabel(configuredAgent.title) : ACP_GROUP,
       }
       if (sshWorkspace) stale.disabled = true
       options.push(stale)

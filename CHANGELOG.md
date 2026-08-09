@@ -8,6 +8,69 @@ every published entry.
 
 ## Unreleased
 
+- The side panel can now take the whole chat column. Every pane header —
+  Explorer, Shells, Changes, PRs, Memories, Roadmap, Browser — carries an
+  **expand** control next to its pop-out button, and pressing it gives that pane
+  everything from the thread list to the right edge of the window; the same
+  control, now pointing inward, restores the split. It is the in-window half of
+  pop out: a wide diff, a real browser viewport or a full-width terminal without
+  detaching a second window to get one. The projects rail stays where it is, so
+  threads remain visible and switchable with the pane expanded, and the titlebar
+  stays reachable, so switching panes swaps the content and stays expanded.
+  Expanding covers chat rather than collapsing it, so the transcript keeps its
+  scroll position and the composer its draft, and restoring puts both back
+  exactly as they were — the agent carries on underneath either way. Closing the
+  panel gives chat its column back.
+- The file tree and file previews work in a `npm run dev` build again. `dev.mts`
+  never emitted `dist/main/sandbox-fs-worker.js` (nor the pack-tool, ACP-probe
+  and SSH-askpass bundles) — only `npm run build` did. A `dist/` filled purely by
+  `npm run dev`, as in a fresh worktree, therefore failed every sandboxed `fs:*`
+  call with a `MODULE_NOT_FOUND` from a child process, spawning two doomed
+  Electron processes per call. Both builders now emit the same list, and a
+  missing worker bundle reports itself by name instead of spawning anything.
+- Opening a new thread with the Terminal pane already visible no longer fails
+  to spawn a shell. Autosave already flushed `threads:create` immediately on a
+  new id, but `terminal:create` did not wait for that write — main's ownership
+  check then treated the missing `meta.json` as "thread does not belong to
+  project". The terminal spawn now awaits the in-flight create first, and a
+  missing meta is reported as "not persisted yet" rather than a membership
+  mismatch.
+- A thread that went wrong can now be handed to a thread that can read it.
+  **Debug trace**, in the composer's overflow menu, exports the conversation
+  you are looking at as a zip of its whole store directory — the spine, the
+  message prose, tool arguments and results, plans, nested subagent runs — opens
+  a new thread with that archive attached, and drafts a prompt asking for the
+  diagnosis: a timeline of what the thread was asked to do and what it actually
+  did, the point it went wrong quoted from the trace, the failure mode behind it,
+  and what would have prevented it. It says up front when history was trimmed
+  mid-run, which is a common cause and one the transcript alone cannot show. The
+  archive is stored with the new thread, so the investigation outlives the thread
+  it is about, and the agent unpacks it into files with `read_archive` rather
+  than ever taking the bytes into context. Nothing is sent: the draft ends on an
+  open line for you to say what you actually saw, which is the one thing a trace
+  cannot contain. Debug trace and **Share trace** are also no longer behind
+  Developer mode — someone whose thread has just gone wrong is by definition not
+  the person who went looking for a developer setting first.
+- New threads are now isolated by default, and no longer pick up where the last
+  thread left off. A new thread in a Git project gets its own linked checkout,
+  branched from the project's default branch — `origin/main` as last fetched,
+  not whatever happens to be checked out. Both halves of that are the fix. The
+  automatic choice deferred to a per-project setting that defaulted to off and
+  that nothing in the app could turn on, so in practice every thread shared the
+  project checkout; and because Copse leaves that checkout on the branch a
+  thread created, the next thread opened straight into the previous one's
+  working tree, on its branch, and built on top of it. Isolated threads were
+  affected too, more quietly: a worktree was cut from the live checkout, so even
+  an explicitly isolated thread started from the previous thread's commits.
+  Uncommitted work in the project checkout still comes along when it belongs to
+  the same commit the thread is starting from; when it does not — the checkout
+  is on another branch, or the default branch has moved on since — the thread
+  starts clean rather than mixing two unrelated states, and your own checkout is
+  left exactly as it was either way. Threads that cannot be isolated are
+  unchanged: a project that is not a Git repository, is reached over SSH, uses
+  submodules, or has no resolvable default branch shares the project checkout
+  and says so before you send. So does a project set to `worktreeMode: never`,
+  and either way the choice is still yours per thread, from the composer.
 - The Changes panel no longer goes blank when a diff is replaced. Opening a file
   tore the current diff down before the next one had been computed, so for the
   length of that compute the editor held nothing at all — and any attach that was

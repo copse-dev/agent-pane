@@ -160,7 +160,11 @@ export interface ApiClient {
     suggestTerminalTitle: (text: string) => Promise<string | null>
     suggestCommandSummary: (commands: string[]) => Promise<string | null>
     suggestToolTurnSummary: (actions: string[]) => Promise<string | null>
-    suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
+    suggestFollowUps: (
+      projectId: string,
+      threadId: string,
+      contextJson: string,
+    ) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {
@@ -778,7 +782,7 @@ export interface ApiClient {
       cols: number,
       rows: number,
       meta: { label?: string; projectId: string; threadId: string | null },
-    ) => Promise<string>
+    ) => Promise<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
     destroy: (sessionId: string) => Promise<void>

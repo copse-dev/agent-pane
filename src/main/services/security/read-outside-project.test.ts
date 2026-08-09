@@ -4,6 +4,7 @@ import {
   analyzeReadOutsideProject,
   describeReadOutsideTargets,
   formatReadOutsideProjectPromptParts,
+  readOutsideProjectGrantTargets,
   sensitiveTargetReason,
 } from './read-outside-project.ts'
 
@@ -91,6 +92,13 @@ describe('analyzeReadOutsideProject — ineligible commands', () => {
     ineligible('cat ~/.gitconfig | sh', /interpreter/)
   })
 
+  it('rejects a command that needs more than the outside read', () => {
+    // The gate must never offer the read question for a command the shell tool
+    // would then decline to contain — approving it would run it unsandboxed on
+    // an answer that was only ever about reads.
+    ineligible('scp ~/notes/todo.md host:/tmp/', /needs more than reads/)
+  })
+
   it('has nothing to compare against without a project root', () => {
     const analysis = analyze('cat ~/.gitconfig', null)
     assert.equal(analysis.eligible, false)
@@ -140,6 +148,52 @@ describe('sensitiveTargetReason', () => {
       /credential directory/,
     )
     assert.equal(sensitiveTargetReason('~/notes/todo.md', `${HOME}/notes/todo.md`), null)
+  })
+})
+
+describe('readOutsideProjectGrantTargets', () => {
+  it('returns the resolved paths a seatbelt can name, not the tokens as written', () => {
+    assert.deepEqual(readOutsideProjectGrantTargets('ls -la ~/.copse', ROOT, { homeDir: HOME }), [
+      `${HOME}/.copse`,
+    ])
+  })
+
+  it('resolves every distinct target of a compound read', () => {
+    const targets = readOutsideProjectGrantTargets(
+      'ls -la ~/.copse 2>/dev/null; cat ~/notes/todo.md',
+      ROOT,
+      { homeDir: HOME },
+    )
+    assert.deepEqual(targets, [`${HOME}/.copse`, `${HOME}/notes/todo.md`])
+  })
+
+  it('refuses a command the read analysis will not account for', () => {
+    // Credential target, command substitution, and a writing head each keep the
+    // command on its normal routing — no grant, so nothing to relax.
+    assert.equal(readOutsideProjectGrantTargets('cat ~/.ssh/config', ROOT, { homeDir: HOME }), null)
+    assert.equal(
+      readOutsideProjectGrantTargets('cat $(find ~/x -type f)', ROOT, { homeDir: HOME }),
+      null,
+    )
+    assert.equal(readOutsideProjectGrantTargets('rm -rf ~/.copse', ROOT, { homeDir: HOME }), null)
+  })
+
+  it('refuses a command with any network signal, so containment cannot break it', () => {
+    // Two independent guards have to agree before a seatbelt is widened: the read
+    // shape (`curl` is not a read head) and `externalOnlyForOutsidePath` (a read
+    // head composed with a network command is still a network command).
+    assert.equal(readOutsideProjectGrantTargets('curl https://x.test', ROOT), null)
+    assert.equal(
+      readOutsideProjectGrantTargets('cat ~/notes.md && curl https://x.test', ROOT, {
+        homeDir: HOME,
+      }),
+      null,
+    )
+  })
+
+  it('refuses a read that stays inside the project (nothing to widen)', () => {
+    assert.equal(readOutsideProjectGrantTargets('cat src/index.ts', ROOT), null)
+    assert.equal(readOutsideProjectGrantTargets('cat ~/notes.md', null), null)
   })
 })
 

@@ -145,6 +145,24 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
  * `threads:<projectId>` array in the config is routed to the filesystem-native
  * thread store the app now reads; everything else stays in `config.json`.
  */
+/**
+ * Pin seeded projects to the shared checkout unless the fixture asked for
+ * isolation. Specs point projects at real Git repositories — usually
+ * `process.cwd()`, this repo — and assert against files, Changes, terminals,
+ * and diffs in that checkout. Under the product default (`always`) a blank
+ * thread would cut a full worktree of it on the first message, moving the very
+ * files the spec inspects. A spec exercising isolation seeds `worktreeMode`
+ * explicitly and this leaves it alone.
+ */
+function pinSeededProjectCheckouts(projects: unknown): void {
+  if (!Array.isArray(projects)) return
+  for (const project of projects) {
+    if (project && typeof project === 'object' && !('worktreeMode' in project)) {
+      ;(project as Record<string, unknown>)['worktreeMode'] = 'never'
+    }
+  }
+}
+
 export function writeSeedConfig(config: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
@@ -157,6 +175,7 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
         seedThreadDir(match[1], thread as Record<string, unknown>)
       }
     } else {
+      if (key === 'projects') pinSeededProjectCheckouts(value)
       remaining[key] = value
     }
   }
@@ -404,6 +423,11 @@ export function seedEmptyProject(
      * the comparison approval flow must lift it out of `packDisabled`.
      */
     modelComparisonEnabled?: boolean
+    /**
+     * Per-project checkout isolation. Left unset, `writeSeedConfig` pins the
+     * project to the shared checkout; pass `always` to exercise isolation.
+     */
+    worktreeMode?: 'always' | 'never'
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -412,6 +436,7 @@ export function seedEmptyProject(
     path: workspaceRoot,
     name: 'workspace',
   }
+  if (options?.worktreeMode) project.worktreeMode = options.worktreeMode
   if (options?.sshHost) project.sshHost = options.sshHost
   const seedConfig: Record<string, unknown> = {
     projects: [project],
@@ -1476,6 +1501,20 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
 
   const { spine, files } = explodeThread(messages, sha256)
   const lines: string[] = []
+  // The first turn's `sessionStart` hooks fire detached before any message has
+  // been written, so their spine records precede the first message and fold onto
+  // it (an orphan attach). Emit them before the first message line to reproduce
+  // that first-turn layout.
+  for (const run of [
+    hookRun({ id: 'hr-session-start', event: 'sessionStart', hookId: 'session-start.sh' }),
+    hookRun({
+      id: 'hr-session-start-2',
+      event: 'sessionStart',
+      hookId: 'second-dialect.sh',
+    }),
+  ]) {
+    lines.push(serializeSpineLine(run))
+  }
   for (const line of spine) {
     lines.push(serializeSpineLine(line))
     for (const run of runsByAnchor[line.id] ?? []) lines.push(serializeSpineLine(run))

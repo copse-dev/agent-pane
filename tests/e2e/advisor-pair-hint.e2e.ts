@@ -61,7 +61,7 @@ describe('advisor pair assessment hint', () => {
     await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-good.png')
   })
 
-  it('warns when the advisor is annotated weaker than the executor', async () => {
+  it('warns when the advisor is weaker than the executor', async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-advisor-pair-warn', {
       model: 'claude-opus-4-8',
@@ -72,7 +72,11 @@ describe('advisor pair assessment hint', () => {
 
     const hint = $('#advisorPairHint')
     assert.equal(await hint.getAttribute('data-level'), 'warn')
-    assert.match(await hint.getText(), /annotated weaker/i)
+    // #1538 retired the editorial scale and deliberately reworded this from
+    // "annotated weaker" to "weaker" (advisor-strategy.ts). The assertion was
+    // not updated with it, and e2e does not run on pushes to main, so it went
+    // unnoticed. Match the measured-intellect wording the product ships.
+    assert.match(await hint.getText(), /is weaker than the executor/i)
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
     await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-warn.png')

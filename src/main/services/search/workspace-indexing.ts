@@ -3,6 +3,7 @@ import { ensureSemanticIndex } from './semantic-index.ts'
 import { setSemanticIndexScaleGuarded, setSemanticIndexUnavailable } from './index-status.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { startWorkspaceIndexWatcher, stopWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
+import { stopWatchingExecutionRoot } from './execution-root-watcher.ts'
 
 /** The most recently opened renderer-selected workspace root, if any. */
 let primaryWorkspaceRoot: string | null = null
@@ -125,11 +126,10 @@ export function resetWorkspaceIndexingForTest(): void {
  * execution root — a linked checkout under `~/.copse/worktrees/<project>/
  * <thread>/`, outside the primary workspace root the functions above cover.
  *
- * Deliberately skips semantic indexing: gortex scopes its shared daemon to one
- * active repo (`scopeGortexToActiveRepo`), so tracking every worktree
- * alongside the workspace would repeatedly untrack/re-track and thrash it.
- * Worktree threads fall back to regex/text search for "by meaning" queries,
- * the same posture SSH workspaces already take (see `semanticIndexBuildingNote`).
+ * Deliberately skips per-worktree semantic indexing: gortex scopes its shared
+ * daemon to one active repo, so tracking every linked checkout would thrash it.
+ * Semantic queries reuse the project checkout's index and overlay the current
+ * worktree delta in `executeSemanticSearch`.
  *
  * Safe to call repeatedly for the same root — both the file-index build and
  * the watcher registration are no-ops once already in place — so callers can
@@ -146,5 +146,13 @@ export function startExecutionRootIndexing(root: string): void {
 /** Release a worktree execution root's index/watcher once its thread's checkout is retired. */
 export function stopExecutionRootIndexing(root: string): void {
   stopWorkspaceIndexWatcher(root)
+  // The tool-result cache watches this root too (`ensureExecutionRootWatched`,
+  // via the tool registry). Nothing else stops it, and a recursive `fs.watch`
+  // left on a directory that has been removed is not inert: on a change event
+  // Node's recursive watcher scandirs the subtree it thinks is still there and
+  // the ENOENT surfaces as an uncaught exception, taking the main process with
+  // it. Retiring, pruning, and deleting a worktree all funnel through
+  // `releaseWorktreeRoot` into here, so this is where the watcher goes.
+  stopWatchingExecutionRoot(root)
   invalidateIndex(root)
 }

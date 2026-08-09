@@ -1,0 +1,30 @@
+{
+  "id": "forced-todo-plan",
+  "description": "FORCED_TODO_PLAN_PROMPT is injected when the turn's model measures below the copse.forced-planning intellect threshold — it exists specifically to prop up weaker models. decideForcedPlanning is thoroughly unit-tested; the prompt it returns is not, so nothing checks that a weak model actually plans when it fires. That is the arm that matters, because a strong model plans anyway and would hide the failure.",
+  "steer": { "kind": "turnStart", "ref": "forcedTodoPlan" },
+  "gate": { "minLift": 0.4, "minWithPassRate": 0.6 },
+  "tasks": [
+    {
+      "id": "rename-across-files",
+      "description": "Multi-file rename plus a new test — the shape of request the pack fires on. The prompt's first instruction is 'before any other tool call, call update_todos', so first-tool-is is the literal check.",
+      "prompt": "Rename the parseRecord function to parseCsvRecord everywhere it appears in this project, then add a small test file that checks it parses one line correctly.",
+      "fixture": "benchmarks/steer/fixtures/rename-project",
+      "maxSteps": 20,
+      "timeoutMs": 300000,
+      "checks": [
+        { "id": "planned-before-acting", "kind": "first-tool-is", "tool": "update_todos" },
+        { "id": "used-plan-tool", "kind": "tool-used", "tool": "update_todos" },
+        {
+          "id": "rename-complete",
+          "kind": "shell",
+          "command": "! grep -rq 'parseRecord' src && grep -rq 'parseCsvRecord' src"
+        },
+        {
+          "id": "test-added",
+          "kind": "shell",
+          "command": "ls src/*test* src/*spec* *test* *spec* 2>/dev/null | grep -q ."
+        }
+      ]
+    }
+  ]
+}

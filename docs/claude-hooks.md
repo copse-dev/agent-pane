@@ -1,9 +1,10 @@
 # Claude Code hooks support in Copse
 
 [Claude Code hooks](https://code.claude.com/docs/en/hooks) are scripts registered under
-`hooks` in Claude settings JSON. Copse loads the permission subset (`PreToolUse` command
-handlers) so repos that already ship Claude Code policy hooks work without a Cursor-format
-`hooks.json`. Tracks issue #639.
+`hooks` in Claude settings JSON. Copse loads every event whose canonical fire point
+exists — the `PreToolUse` gate plus `SessionStart`, `PostToolUse`, `UserPromptSubmit`,
+`Stop`, and `SubagentStop` — so repos that already ship Claude Code hooks work without a
+Cursor-format `hooks.json`. Tracks issue #639.
 
 This is the Claude counterpart to [`docs/cursor-hooks.md`](./cursor-hooks.md). For the
 dialect-agnostic architecture (registry, canonical events, async/budget/epoch, spine,
@@ -36,16 +37,41 @@ Example settings fragment:
 
 ## What Copse supports
 
-| Capability                         | Status        | Notes                                                            |
-| ---------------------------------- | ------------- | ---------------------------------------------------------------- |
-| **`PreToolUse` commands**          | Supported     | Matcher + `type: "command"` handlers; same trust model as Cursor |
-| **Exit code 2 deny**               | Supported     | stderr (else stdout) becomes the agent-facing deny reason        |
-| **JSON `permissionDecision`**      | Supported     | `allow` / `deny` / `ask`; `defer` mapped to `ask`                |
-| **User / project / local**         | Supported     | Project + local require workspace trust (#100)                   |
-| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Sources              |
-| **Prompt / HTTP / agent handlers** | Not supported | Only `type: "command"` (or omitted type)                         |
-| **`if` permission-rule filters**   | Not supported | Matcher-only for v1                                              |
-| **PostToolUse / lifecycle**        | Not supported | Same gap as Cursor lifecycle hooks                               |
+| Capability                         | Status        | Notes                                                                                |
+| ---------------------------------- | ------------- | ------------------------------------------------------------------------------------ |
+| **`PreToolUse` commands**          | Supported     | Matcher + `type: "command"` handlers; same trust model as Cursor                     |
+| **Exit code 2 deny**               | Supported     | stderr (else stdout) becomes the agent-facing deny reason                            |
+| **JSON `permissionDecision`**      | Supported     | `allow` / `deny` / `ask`; `defer` mapped to `ask`                                    |
+| **`SessionStart`**                 | Supported     | Fire-and-forget on a new conversation (source `startup`)                             |
+| **`PostToolUse`**                  | Supported     | Detached observation; matcher on the Claude tool name — see below                    |
+| **`UserPromptSubmit`**             | Supported     | Blocking: a `block` decision (or exit 2) halts the submit                            |
+| **`Stop` / `SubagentStop`**        | Supported     | Detached observation — see below                                                     |
+| **User / project / local**         | Supported     | Project + local require workspace trust (#100)                                       |
+| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Sources                                  |
+| **Prompt / HTTP / agent handlers** | Not supported | Only `type: "command"` (or omitted type)                                             |
+| **`if` permission-rule filters**   | Not supported | Matcher-only for v1                                                                  |
+| **`PreCompact`**                   | Not supported | The canonical `compaction` event is typed but has no fire site                       |
+| **`SessionEnd` / `Notification`**  | Not supported | No canonical event to hang them on                                                   |
+| **Long-tail events**               | Not supported | `PermissionRequest`, `TeammateIdle`, … — reported in Sources, never silently dropped |
+
+### What "block" means for the detached events
+
+`PostToolUse`, `Stop`, and `SubagentStop` fire **detached** — dispatched and never
+awaited, so the turn is never held up by a hook. That has a consequence worth being
+explicit about: by the time they run, the thing they would block has already happened.
+Claude Code lets these hooks return `decision: "block"` (or exit 2) to push text back at
+the model — "the tool output was bad, try again", "you stopped with todos open". Copse
+cannot un-run a finished tool call or resume a finished turn, so it does the next most
+faithful thing: the `reason` / `additionalContext` / exit-2 stderr becomes a
+**hook-originated queued message**, budgeted and delivered at the next drain, rather than
+being dropped or pretended into a control-flow decision it cannot honour.
+
+`UserPromptSubmit` is the exception — it is blocking, and a `block` decision genuinely
+stops the prompt from being submitted, exactly as in Claude Code.
+
+Claude has no `failClosed` flag, so every hook fails **open**: a crash, timeout, or
+unparseable response never blocks the agent. Exit 2 is a _decision_, not a failure, and is
+honoured on its own path.
 
 ### Enablement
 

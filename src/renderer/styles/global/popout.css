@@ -29,8 +29,10 @@ html.is-popout #pane-files {
   height: 100%;
 }
 
-/* No "pop out" affordance inside an already-detached window. */
-html.is-popout .pane-popout-btn {
+/* No "pop out" affordance inside an already-detached window — nor an "expand
+   over chat" one, since the pane already fills a window that has no chat. */
+html.is-popout .pane-popout-btn,
+html.is-popout .pane-maximize-btn {
   display: none;
 }
 

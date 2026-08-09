@@ -25,6 +25,7 @@ import {
   ensureShellCommandPermitted,
   ensureTerminalPermitted,
   ensureToolPermitted,
+  promptUnsandboxedShell,
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -177,6 +178,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let approvalBody = ''
     let approvalSubject = ''
@@ -207,12 +209,96 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('names the holder in the overlap prompt instead of "another process"', async () => {
+    setPermissionGateForTests(null)
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalFooter = ''
+    setApprovalHandler(async (request) => {
+      approvalFooter = request.bodyFooter ?? ''
+      return { approved: false, remember: false }
+    })
+    try {
+      await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
+      assert.match(approvalFooter, /widened for ACP agent: codex/)
+    } finally {
+      setApprovalHandler(null)
+      release()
+    }
+  })
+
+  // The overlap gate exists because a command spawned during the widening
+  // inherits the process-global allowlist. A structurally read-only command
+  // opens no sockets, so there is nothing for it to inherit — gating it turned
+  // one background probe into a prompt on every `cat`/`rg` in every pane.
+  it('does not prompt a structurally read-only command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/readonly-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('rg TODO src | head -20', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('still prompts a network-capable command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/network-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalCause: string | undefined
+    setApprovalHandler(async (request) => {
+      approvalCause = request.cause
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('curl https://example.com', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        false,
+      )
+      assert.equal(approvalCause, 'shell-network-scope-overlap')
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
   it('can share the active network scope with an already-sandboxed ACP command', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/acp-network-scope-project')
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -242,6 +328,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -621,8 +708,13 @@ describe('run_background permission', () => {
 })
 
 describe('ensureTerminalPermitted', () => {
-  it('auto-allows a user terminal on macOS while the global network scope is inactive', async () => {
+  it('auto-allows a local user terminal while an agent network scope is active', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
+    })
     let prompted = false
     setApprovalHandler(async () => {
       prompted = true
@@ -634,65 +726,6 @@ describe('ensureTerminalPermitted', () => {
         true,
       )
       assert.equal(prompted, false)
-    } finally {
-      setApprovalHandler(null)
-      restore()
-    }
-  })
-
-  it('requires approval for a user terminal while the global network scope is widened', async () => {
-    const restore = setWorkspaceRootForTest('/tmp/project')
-    const release = acquireSandboxNetworkScope({
-      domains: ['vendor.example'],
-      allowLocalBinding: false,
-    })
-    let approvalTitle = ''
-    let approvalBody = ''
-    let allowRemember: boolean | undefined
-    setApprovalHandler(async (request) => {
-      approvalTitle = request.title
-      approvalBody = request.body
-      allowRemember = request.allowRemember
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        false,
-      )
-      assert.match(approvalTitle, /widened network access/i)
-      assert.match(approvalBody, /temporarily widened/i)
-      assert.equal(allowRemember, false)
-    } finally {
-      setApprovalHandler(null)
-      release()
-      restore()
-    }
-  })
-
-  it('does not remember or launder approval while the network scope stays widened', async () => {
-    const restore = setWorkspaceRootForTest('/tmp/project')
-    const release = acquireSandboxNetworkScope({
-      domains: ['vendor.example'],
-      allowLocalBinding: false,
-    })
-    let promptCount = 0
-    setApprovalHandler(async (request) => {
-      promptCount++
-      assert.equal(request.allowRemember, false)
-      // Even a misbehaving transport returning remember=true cannot create a grant.
-      return { approved: true, remember: true }
-    })
-    try {
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        true,
-      )
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        true,
-      )
-      assert.equal(promptCount, 2)
     } finally {
       setApprovalHandler(null)
       release()
@@ -1715,6 +1748,58 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       assert.ok(event)
       assert.equal(event.verdict, 'denied')
       assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
+    })
+  })
+
+  /**
+   * Drive the post-failure escalation the shell tool reaches when a sandboxed
+   * run hit a violation, capturing the title of whatever prompt (if any) it puts
+   * up. `readGrantApplied` is the tool saying "this run already had the read
+   * relaxation and still failed".
+   */
+  async function captureEscalation(
+    command: string,
+    readGrantApplied: boolean,
+  ): Promise<{ approved: boolean; title: string | null }> {
+    setPermissionGateForTests(null)
+    let title: string | null = null
+    setApprovalHandler(async (request) => {
+      title = request.title
+      return { approved: false, remember: false }
+    })
+    try {
+      const approved = await promptUnsandboxedShell(command, ['sandbox violation'], undefined, {
+        readGrantApplied,
+      })
+      return { approved, title }
+    } finally {
+      setApprovalHandler(null)
+    }
+  }
+
+  it('spends the read grant on containment, not also on a full sandbox escape', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-spent', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+
+      // A command the grant covers that has NOT yet been given the relaxation is
+      // still answered by the grant — that is how the read question stays a
+      // once-per-thread question.
+      const covered = await runWithActiveRunIdentity('thread-spent', () =>
+        captureEscalation('cat ~/.gitconfig', false),
+      )
+      assert.equal(covered.approved, true)
+      assert.equal(covered.title, null, 'the standing grant answers it without asking')
+
+      // But once the seatbelt has already been widened to exactly the paths the
+      // grant named and the command STILL hit the sandbox, the grant is spent: it
+      // must not silently approve the full escape it never covered.
+      const spent = await runWithActiveRunIdentity('thread-spent', () =>
+        captureEscalation('cat ~/.gitconfig', true),
+      )
+      assert.equal(spent.approved, false)
+      assert.equal(spent.title, 'Run outside sandbox?')
     })
   })
 

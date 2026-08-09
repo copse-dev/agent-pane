@@ -22,7 +22,10 @@ import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
-import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
+import {
+  activeSandboxNetworkScopeLabels,
+  isSandboxNetworkScopeActive,
+} from '../../project-sandbox/network-scope.ts'
 import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
@@ -54,6 +57,7 @@ import {
   GITHUB_READONLY_CI_TOOLS,
   GITHUB_WRITE_TOOLS,
   isReadOnlySimpleCommand,
+  isStructurallyReadOnlyShellCommand,
 } from './permission-policy.ts'
 import { detectPackageInstall } from './safe-install.ts'
 import {
@@ -383,18 +387,30 @@ function readScriptForHarm(path: string): string | null {
   }
 }
 
-/** Prompt when a sandboxed command failed and may succeed unsandboxed. */
+/**
+ * Prompt when a sandboxed command failed and may succeed unsandboxed.
+ *
+ * `readGrantApplied` says the failed run had already been given the read-access
+ * relaxation for the paths it names. That command has now been contained with
+ * exactly what the read grant promised and still hit the sandbox, so the grant
+ * has been spent: it must not also auto-answer the full-escape question. Falling
+ * through to "Run outside sandbox?" puts the escalation back in front of the
+ * user, where a read grant silently approving writes and network never belonged.
+ */
 export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
+  opts: { readGrantApplied?: boolean } = {},
 ): Promise<boolean> {
   if (autoApproveShell(command, 'external')) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
-  const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
-  if (readOutside !== null) return readOutside
+  if (opts.readGrantApplied !== true) {
+    const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
+    if (readOutside !== null) return readOutside
+  }
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
@@ -708,12 +724,29 @@ export async function ensureShellCommandPermitted(
   // Exception: the sandboxed ACP agent's own bridged `run_shell` / direct
   // execute path opts in via `networkScopeAlreadyApplies` (or the bridge ALS) —
   // that scope exists *for* those calls, so they must not see the overlap prompt.
+  //
+  // Second exception: a structurally read-only command opens no sockets, so the
+  // widened allowlist is unreachable from it and the overlap is no reason to
+  // interrupt. Gating on the *window* rather than on what the command can do is
+  // what made an unrelated pane prompt on every `cat`/`rg` for as long as some
+  // background probe held a scope. This narrows the gate to commands that could
+  // actually inherit the egress; it does not weaken containment for those.
   const shareActiveNetworkScope =
     opts.networkScopeAlreadyApplies === true || acpBridgeNetworkScopeAlreadyApplies()
-  if (!guardedYolo && isSandboxNetworkScopeActive() && !shareActiveNetworkScope) {
+  if (
+    !guardedYolo &&
+    isSandboxNetworkScopeActive() &&
+    !shareActiveNetworkScope &&
+    !isStructurallyReadOnlyShellCommand(command)
+  ) {
+    const holders = activeSandboxNetworkScopeLabels()
     return promptShell(
       command,
-      ['sandbox network access is temporarily widened for another process'],
+      [
+        holders.length > 0
+          ? `sandbox network access is temporarily widened for ${holders.join(', ')}`
+          : 'sandbox network access is temporarily widened for another process',
+      ],
       false,
       'shell-network-scope-overlap',
       opts.signal,
@@ -1026,9 +1059,9 @@ async function checkBackgroundProcessPermission(
  * User-initiated integrated terminals always spawn outside the project seatbelt
  * (see terminal-service.ts). On platforms without an OS sandbox boundary, or
  * when an SSH-backed PTY necessarily runs outside the local seatbelt, opening
- * one is an explicit user decision. A new terminal also prompts while the
- * process-global sandbox network scope is widened, because an unsandboxed PTY
- * would inherit that temporary egress. Agent shell confinement stays on
+ * one is an explicit user decision. A local integrated terminal is already
+ * user-directed and unsandboxed, so an agent's process-global network scope does
+ * not add a separate approval boundary. Agent shell confinement stays on
  * run_shell / run_background. (#662, #803, #812)
  */
 export async function ensureTerminalPermitted(
@@ -1038,22 +1071,8 @@ export async function ensureTerminalPermitted(
   const decision = decideTerminalPermission({
     sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
     remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
-    networkScopeActive: isSandboxNetworkScopeActive(),
   })
   if (decision.action === 'allow') return true
-
-  if (decision.reason === 'widened-network') {
-    const { approved } = await requestApproval({
-      title: 'Open terminal with widened network access?',
-      cause: 'terminal-network-widened',
-      body:
-        'The project sandbox network is temporarily widened for another process. ' +
-        'A new integrated terminal would inherit that network access until the scope closes.',
-      type: 'shell',
-      allowRemember: false,
-    })
-    return approved
-  }
 
   if (decision.reason === 'remote-target') {
     const { approved } = await requestApproval({

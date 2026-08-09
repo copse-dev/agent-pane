@@ -17,9 +17,11 @@ import {
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
+  resetDefaultBranchCache,
   resolveWorkspaceRelativeGitPath,
   sumDiffNumstat,
   toGitShowPath,
+  getGitChangeStats,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
@@ -171,6 +173,60 @@ describe('classifyGitBlob (#130)', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('getGitChangeStats', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: repo })
+
+  async function resetTree(): Promise<void> {
+    git('checkout', '--', '.')
+    git('clean', '-fdq')
+  }
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-change-stats-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'tracked.txt'), 'one\n')
+    git('add', 'tracked.txt')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  afterEach(async () => {
+    await resetTree()
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('returns null on a clean tree', async () => {
+    assert.equal(await getGitChangeStats(repo), null)
+  })
+
+  it('counts tracked line edits from numstat', async () => {
+    await writeFile(join(repo, 'tracked.txt'), 'two\n')
+    assert.deepEqual(await getGitChangeStats(repo), { additions: 1, deletions: 1 })
+  })
+
+  it('includes untracked file lines that numstat alone would miss (#584)', async () => {
+    await writeFile(join(repo, 'fresh.ts'), 'alpha\nbeta\ngamma\n')
+    assert.deepEqual(await getGitChangeStats(repo), { additions: 3, deletions: 0 })
+  })
+
+  it('sums tracked edits with untracked additions', async () => {
+    await writeFile(join(repo, 'tracked.txt'), 'changed\n')
+    await writeFile(join(repo, 'another.ts'), 'one\ntwo\n')
+    assert.deepEqual(await getGitChangeStats(repo), { additions: 3, deletions: 1 })
+  })
+})
 
 describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed' }, () => {
   let repo = ''
@@ -626,12 +682,12 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
   const git = (...args: string[]): SpawnSyncReturns<string> =>
     spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
 
-  afterEach(() => {
+  // Each case mints its own repo, so reclaim it here rather than leaving every
+  // one but the last behind on the runner.
+  afterEach(async () => {
     restore?.()
     restore = undefined
-  })
-
-  after(async () => {
+    resetDefaultBranchCache()
     if (repo) await rm(repo, { recursive: true, force: true })
     repo = ''
   })
@@ -669,6 +725,46 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
 
     assert.equal(await getDefaultBranch(), null)
+  })
+
+  it('serves a resolved name from cache until the cache is dropped', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-cache-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('remote', 'add', 'origin', 'https://example.com/repo.git')
+    git('update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), 'develop')
+
+    // Repointing origin/HEAD is invisible to a cached read — that is the point,
+    // since the UI re-reads this on every file-watcher tick.
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    assert.equal(await getDefaultBranch(), 'develop')
+
+    resetDefaultBranchCache()
+    assert.equal(await getDefaultBranch(), 'main')
+  })
+
+  it('caches per repository root rather than globally', async () => {
+    const other = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-other-'))
+    try {
+      repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-first-'))
+      git('init', '-q', '-b', 'main')
+      git('config', 'init.defaultBranch', 'develop')
+      restore = setWorkspaceRootForTest(repo)
+      assert.equal(await getDefaultBranch(), 'develop')
+
+      spawnSync('git', ['init', '-q'], { cwd: other, encoding: 'utf8' })
+      spawnSync('git', ['config', 'init.defaultBranch', 'trunk'], { cwd: other, encoding: 'utf8' })
+      assert.equal(await getDefaultBranch(other), 'trunk')
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
   })
 })
 

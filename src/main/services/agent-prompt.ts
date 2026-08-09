@@ -35,10 +35,11 @@ export const SHARED_WORKING_STYLE = `Working style:
 - Follow explicit constraints on tool use and commands. When the user supplies an exact operation and says its prerequisites are satisfied, do not add speculative inspection, cleanup, command wrappers, or other preparation; deviate only when observed evidence makes that necessary.
 - Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
 
-export const GIT_BRANCH_SAFETY = `Git branch safety:
-- Never commit or push directly to the repository's default branch (commonly main or master). Before committing, check the current branch and the repository's default branch.
-- If the default branch is checked out, create and switch to a working branch named copse/<short-kebab-summary> before making the commit. Use that naming convention for new branches.
-- Preserve an existing non-default working branch unless the user explicitly asks to change branches.`
+export const GIT_BRANCH_SAFETY = `Git branch safety (hard rule — a commit on the default branch is a failure):
+1. Before every commit, check the current branch (git_status or \`git branch --show-current\`) and treat \`main\`/\`master\` (or the repo's default) as the default branch.
+2. If HEAD is on the default branch: do NOT call git_commit yet. First create and switch with \`run_shell\` to \`git checkout -b copse/<short-kebab-summary>\` (example: \`git checkout -b copse/set-retries-to-5\`). Only then call git_commit on that new branch.
+3. If HEAD is already on a non-default working branch: stay there — commit on it; do not create a fresh copse/ branch unless the user asked to change branches.
+4. Never push to the default branch.`
 
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes

@@ -8,7 +8,6 @@ import {
 
 const supported: WorktreePolicyInput = {
   choice: 'automatic',
-  projectMode: 'from-default-branch',
   isLocal: true,
   isGitRepository: true,
   currentBranch: 'main',
@@ -24,12 +23,14 @@ describe('decideThreadWorktreePolicy', () => {
       mode: 'shared' | 'worktree'
       reason: string
     }> = [
-      { patch: {}, mode: 'worktree', reason: 'default-branch' },
-      { patch: { isDirty: true }, mode: 'worktree', reason: 'default-branch' },
+      { patch: {}, mode: 'worktree', reason: 'project-always' },
+      { patch: { isDirty: true }, mode: 'worktree', reason: 'project-always' },
+      // The previous thread leaving the project checkout on its own branch no
+      // longer drags the next thread back into the shared checkout.
       {
-        patch: { currentBranch: 'feature' },
-        mode: 'shared',
-        reason: 'non-default-branch',
+        patch: { currentBranch: 'copse/previous-thread' },
+        mode: 'worktree',
+        reason: 'project-always',
       },
       { patch: { isGitRepository: false }, mode: 'shared', reason: 'not-git' },
       {
@@ -62,7 +63,6 @@ describe('decideThreadWorktreePolicy', () => {
         ...supported,
         choice: 'worktree',
         projectMode: 'never',
-        currentBranch: 'feature',
         isDirty: true,
       }),
       {
@@ -71,6 +71,21 @@ describe('decideThreadWorktreePolicy', () => {
         seededFromDirtyProject: true,
       },
     )
+  })
+
+  it('only seeds dirty project work when the checkout shares the worktree base', () => {
+    const onDefault = decideThreadWorktreePolicy({ ...supported, isDirty: true })
+    assert.equal(onDefault.seededFromDirtyProject, true)
+
+    // The edits belong to `feature`, but the worktree is cut from `main`.
+    // Restoring them over it would mix two unrelated trees.
+    const offDefault = decideThreadWorktreePolicy({
+      ...supported,
+      isDirty: true,
+      currentBranch: 'feature',
+    })
+    assert.equal(offDefault.checkoutMode, 'worktree')
+    assert.equal(offDefault.seededFromDirtyProject, false)
   })
 
   it('blocks an explicit worktree choice in unsupported repositories', () => {

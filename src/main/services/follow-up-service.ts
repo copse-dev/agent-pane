@@ -13,6 +13,7 @@ import { getSetting } from './storage/settings.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
+import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
@@ -132,14 +133,17 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
 }
 
 /** Build follow-up bubbles: deterministic PR/git signals first, then model picks. */
-export async function suggestFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
+export async function suggestFollowUps(
+  context: FollowUpContext,
+  root: string | null = getWorkspaceRoot(),
+): Promise<FollowUpSuggestion[]> {
   if (
     process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] === '1' ||
     getSetting<boolean>('mockFollowUps', false)
   ) {
     return mockFollowUpSuggestions()
   }
-  const workspaceCtx = await getPrWorkspaceContext()
+  const workspaceCtx = await getPrWorkspaceContext(root)
   const deterministic = buildDeterministicFollowUps(workspaceCtx)
   const modelPicks = await pickModelFollowUps(context)
 

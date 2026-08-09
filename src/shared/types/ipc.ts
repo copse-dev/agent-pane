@@ -71,7 +71,7 @@ export interface IpcInvokeMap {
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {
-    args: [contextJson: string]
+    args: [projectId: string, threadId: string, contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
   }
 
@@ -316,7 +316,7 @@ export interface IpcInvokeMap {
       rows: number,
       meta: { label?: string; projectId: string; threadId: string | null },
     ]
-    result: string
+    result: { sessionId: string; checkoutMode: 'shared' | 'worktree' }
   }
   'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
   'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: undefined }

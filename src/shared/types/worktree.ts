@@ -1,6 +1,12 @@
 export type ThreadWorktreeChoice = 'automatic' | 'shared' | 'worktree'
 
-export type ProjectWorktreeMode = 'from-default-branch' | 'always' | 'never'
+/**
+ * Whether a project isolates threads by default. Worktrees are always cut from
+ * the repository's default branch, so the old `from-default-branch` mode — which
+ * only isolated while the project checkout itself sat on that branch — no longer
+ * describes anything distinct and is migrated to `always` on load.
+ */
+export type ProjectWorktreeMode = 'always' | 'never'
 
 /** Durable metadata for a linked checkout owned by one thread. */
 export interface ThreadWorktree {
@@ -11,6 +17,14 @@ export interface ThreadWorktree {
   baseCommit: string
   createdAt: number
   seededFromDirtyProject: boolean
+  /** PR that made this checkout eligible for space-saving retirement. */
+  pullRequestUrl?: string
+  /** Set while the checkout is removed but its repository branch is retained. */
+  retiredAt?: number
+  /** Local HEAD verified against its upstream immediately before retirement. */
+  retiredHead?: string
+  /** Tracking ref whose commit matched retiredHead. */
+  upstreamRef?: string
 }
 
 export type ThreadCheckoutMode = 'shared' | 'worktree'

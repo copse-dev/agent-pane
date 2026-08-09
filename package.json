@@ -42,6 +42,7 @@
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "bench:agent": "node scripts/run-bench-agent.mts",
     "eval:doctrine": "node scripts/run-doctrine-eval.mts",
+    "eval:steer": "node scripts/run-steer-eval.mts",
     "bench:terminal": "node scripts/run-terminal-bench.mts",
     "bench:terminal:analyze": "node scripts/analyze-terminal-bench.mts",
     "bench:terminal:ablation-plan": "node scripts/terminal-bench-ablation-plan.mts",

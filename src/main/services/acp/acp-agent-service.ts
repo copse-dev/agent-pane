@@ -26,7 +26,6 @@ import {
 } from '@copse/llm/stream-retry.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import {
-  probeAcpAgent,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
   type AcpAgentProbe,
@@ -34,6 +33,7 @@ import {
   type AcpClientHandlers,
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
+import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
@@ -360,6 +360,13 @@ export async function runAcpAgentFromSettings(
   // No `model` and no `nativeBridge` here: the session pool owns the bridge
   // (it must exist before spawn for the seatbelt's loopback), and the model
   // switches live via session/set_config_option so it never forces a respawn.
+  // Reasoning level and any other selector the agent advertises, as chosen in
+  // the composer's model picker. Like `model` (and unlike `permissionMode`)
+  // these switch live, so they stay out of the pool fingerprint.
+  const configOptions =
+    agent.configOptions && Object.keys(agent.configOptions).length > 0
+      ? agent.configOptions
+      : undefined
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
@@ -368,6 +375,7 @@ export async function runAcpAgentFromSettings(
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
     ...(permissionMode ? { permissionMode } : {}),
+    ...(configOptions ? { configOptions } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -573,7 +581,7 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
-  return probeAcpAgent({
+  return probeAcpAgentIsolated({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),

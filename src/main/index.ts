@@ -126,8 +126,10 @@ import {
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
+  resolveThreadExecutionContext,
   runWithThreadExecutionContext,
 } from './services/thread-execution-context.ts'
+import { parkCompletedPullRequestWorktree } from './services/worktree-parking.ts'
 import { runWithActiveRunIdentity } from './services/thread-models.ts'
 import {
   prepareThreadCheckout,
@@ -469,6 +471,9 @@ app
           threadId,
           payload: parseAgentRunPayload(rawPrompt),
         })
+        await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
+          console.warn('[worktree] Could not park PR-backed checkout:', error)
+        })
       },
     )
 
@@ -625,20 +630,26 @@ app
       return suggestToolTurnSummary(actions)
     })
 
-    ipcMain.handle('agent:suggestFollowUps', (event, contextJson: string) => {
-      assertMainFrameSender(event, win)
-      let rawContext: unknown
-      try {
-        rawContext = JSON.parse(contextJson)
-      } catch {
-        throw new Error('agent:suggestFollowUps: context is not valid JSON')
-      }
-      const parsed = followUpContextSchema.safeParse(rawContext)
-      if (!parsed.success) {
-        throw new Error('agent:suggestFollowUps: context failed validation')
-      }
-      return suggestFollowUps(parsed.data)
-    })
+    ipcMain.handle(
+      'agent:suggestFollowUps',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, contextJson: string) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        let rawContext: unknown
+        try {
+          rawContext = JSON.parse(contextJson)
+        } catch {
+          throw new Error('agent:suggestFollowUps: context is not valid JSON')
+        }
+        const parsed = followUpContextSchema.safeParse(rawContext)
+        if (!parsed.success) {
+          throw new Error('agent:suggestFollowUps: context failed validation')
+        }
+        const { root } = await resolveThreadExecutionContext(projectId, threadId)
+        return suggestFollowUps(parsed.data, root)
+      },
+    )
 
     // Every channel the renderer can invoke is registered by here, so it is now
     // safe to block on the probe. Both syncs read `isGhAvailable()`, which only

@@ -12,6 +12,8 @@ import {
   recommendedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
+import { usesResponsesApi } from './openai-responses-models.ts'
+import type { Tool } from 'openai/resources/responses/responses'
 import type { ServiceTier } from './service-tier.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
@@ -28,10 +30,60 @@ interface ProviderKeys {
 // OpenAI-specific). See docs/provider-data-policies.md.
 const OPENAI_STORE_OPT_OUT = { extraBody: { store: false } } as const
 
-function isWebSearchTool(tool: unknown): tool is { type: 'web_search' } {
-  if (!tool || typeof tool !== 'object') return false
-  const candidate = tool as { type?: unknown }
-  return candidate.type === 'web_search'
+/**
+ * Whether a `tools` entry from a provider's advanced config is a server-side
+ * tool — one the provider executes itself, rather than handing back to Copse.
+ *
+ * Deliberately not an allowlist. The Responses API's server-side tool set is
+ * open-ended and provider-specific: OpenAI ships WebSearch and CodeInterpreter,
+ * OpenRouter has its own web-search spec, and more arrive without our involvement.
+ * An allowlist silently discards everything it hasn't been taught, which is
+ * exactly the bug this replaces — a user who configured `code_interpreter` got
+ * no tool and no error. An unrecognised type now reaches the provider, which
+ * rejects it loudly with a 400 if it really is wrong.
+ *
+ * `function` is the one exclusion, and it is not cosmetic: function tools are
+ * Copse's own local tools, built from the tool registry with an implementation
+ * behind each one. A `function` entry injected through this config would be
+ * advertised to the model with nothing able to execute it, so every call to it
+ * would fail.
+ *
+ * Narrows to the SDK's `Tool` because that is what the request field takes. The
+ * full shape is not checked here and cannot be: these specs are user-authored
+ * and provider-specific. The provider is the validator, and it answers with a
+ * 400 the user can see.
+ */
+function isServerSideTool(tool: unknown): tool is Tool {
+  if (tool === null || typeof tool !== 'object' || !('type' in tool)) return false
+  const { type } = tool
+  return typeof type === 'string' && type !== 'function'
+}
+
+/**
+ * First-party OpenAI over `/v1/responses`.
+ *
+ * `store: false` is carried across from the Chat Completions path — the privacy
+ * default must not change with the transport — and it is exactly why
+ * `encryptedReasoning` is needed: with no server-side copy retained, the
+ * encrypted blob has to travel on the response or the reasoning is unrecoverable
+ * for the next turn.
+ */
+function openAiResponsesProvider(
+  model: string,
+  apiKey: string,
+  promptCacheKey: string | undefined,
+  serviceTier: ServiceTier | undefined,
+): LLMProvider {
+  return new ResponsesProvider(model, {
+    apiKey,
+    reasoningSummaries: true,
+    encryptedReasoning: true,
+    ...(promptCacheKey ? { promptCacheKey } : {}),
+    // A billing choice, not a transport detail: moving a model to Responses
+    // must not silently drop the tier the user selected.
+    ...(serviceTier ? { serviceTier } : {}),
+    ...OPENAI_STORE_OPT_OUT,
+  })
 }
 
 // `model` is the user's selected model (from settings). It both picks the
@@ -39,15 +91,24 @@ function isWebSearchTool(tool: unknown): tool is { type: 'web_search' } {
 // the model id. Falls back to whichever key is present; mock only when
 // COPSE_PANEL_MOCK_LLM=1 (tests / dev). `promptCacheKey` is a stable per-thread
 // hint forwarded to OpenAI's `prompt_cache_key` to raise cache hit rates (#584).
+//
+// Reasoning-capable OpenAI models go over the Responses API (see
+// openai-responses-models.ts); `forceChatCompletions` pins them back to
+// /v1/chat/completions, mirroring llm's `-o chat_completions 1` escape hatch.
 export function createProvider(
   model?: string,
   keys: ProviderKeys = {},
   promptCacheKey?: string,
-  opts: { serviceTier?: ServiceTier; params?: ModelParameters } = {},
+  opts: {
+    serviceTier?: ServiceTier
+    params?: ModelParameters
+    forceChatCompletions?: boolean
+  } = {},
 ): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return new MockLLMProvider()
   }
+  const { forceChatCompletions = false } = opts
   const m = model ?? ''
   const cacheKeyOpt = promptCacheKey ? { promptCacheKey } : {}
   // Only ever reaches OpenAI: `service_tier` is an OpenAI request field, and
@@ -70,6 +131,9 @@ export function createProvider(
       throw new Error(
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
+    }
+    if (usesResponsesApi(m) && !forceChatCompletions) {
+      return openAiResponsesProvider(m, openAiApiKey, promptCacheKey, opts.serviceTier)
     }
     return new OpenAIProvider(m, {
       apiKey: openAiApiKey,
@@ -95,6 +159,9 @@ export function createProvider(
   }
   if (openAiApiKey) {
     const id = model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o'
+    if (usesResponsesApi(id) && !forceChatCompletions) {
+      return openAiResponsesProvider(id, openAiApiKey, promptCacheKey, opts.serviceTier)
+    }
     return new OpenAIProvider(id, {
       apiKey: openAiApiKey,
       ...cacheKeyOpt,
@@ -217,7 +284,7 @@ export function createExtraCloudProvider(
     // against Chat Completions endpoints, and this path has no drop-and-retry
     // for a ceiling the server rejects. The server's own default stands.
     const { tools, ...extraBody } = provider.extraBody ?? {}
-    const serverTools = Array.isArray(tools) ? tools.filter(isWebSearchTool) : []
+    const serverTools: Tool[] = Array.isArray(tools) ? tools.filter(isServerSideTool) : []
     return new ResponsesProvider(model, {
       baseURL: provider.baseUrl,
       apiKey,

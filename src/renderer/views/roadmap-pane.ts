@@ -1,6 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import {
   ROADMAP_EXPORT_FORMATS,
@@ -221,7 +222,9 @@ export function mountRoadmapPane(
   // identical otherwise.
   let loading = false
   // Text and facet filters entered in the list header. Every facet starts
-  // enabled, including legacy items that have not been stamped yet.
+  // enabled (including legacy items that have not been stamped yet) except
+  // `done` and `archived`, which are hidden by default so the list shows
+  // actionable work unless the user opts them back in.
   let searchQuery = ''
   const enabledCategories = new Set<RoadmapCategory | 'uncategorized'>([
     ...ROADMAP_CATEGORIES,
@@ -231,7 +234,7 @@ export function mountRoadmapPane(
     ...ROADMAP_COMPLEXITIES,
     'unestimated',
   ])
-  const enabledStatuses = new Set<RoadmapStatus>(STATUS_OPTIONS)
+  const enabledStatuses = new Set<RoadmapStatus>(['ready', 'blocked', 'conflicts'])
   const collapsedCategories = new Set<RoadmapCategory | 'uncategorized'>()
   /** In-progress edits keyed by item id, or {@link NEW_ITEM_DRAFT_KEY} for a new item. */
   const editorDrafts = new Map<string, EditorDraft>()
@@ -332,7 +335,8 @@ export function mountRoadmapPane(
   actionButtons.append(newBtn, importBtn, reviewBtn, exportBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
-    panePopoutButton(api, 'roadmap', 'roadmap'),
+    panePopoutButton(store, api, 'roadmap', 'roadmap'),
+    paneMaximizeButton(store, 'roadmap'),
     filter,
     actionButtons,
   )
@@ -344,10 +348,14 @@ export function mountRoadmapPane(
     values: readonly T[],
     enabled: Set<T>,
     label: (value: T) => string,
+    defaultChecked?: (value: T) => boolean,
   ): void {
     filterMenu.append(el('div', { class: 'roadmap-filter-heading' }, title))
     for (const value of values) {
-      const checkbox = el('input', { type: 'checkbox', checked: true })
+      const checkbox = el('input', {
+        type: 'checkbox',
+        checked: defaultChecked ? defaultChecked(value) : true,
+      })
       checkbox.addEventListener('change', () => {
         if (checkbox.checked) enabled.add(value)
         else enabled.delete(value)
@@ -371,7 +379,13 @@ export function mountRoadmapPane(
     enabledComplexities,
     (complexity) => (complexity === 'unestimated' ? 'Unestimated' : complexity),
   )
-  appendFilterSection('Status', STATUS_OPTIONS, enabledStatuses, (status) => status)
+  appendFilterSection(
+    'Status',
+    STATUS_OPTIONS,
+    enabledStatuses,
+    (status) => status,
+    (status) => status !== 'done' && status !== 'archived',
+  )
 
   function closeFilterMenu(): void {
     filterMenu.hidden = true
