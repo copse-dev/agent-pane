@@ -129,25 +129,44 @@ export function activeBridgeToolNames(): readonly string[] {
 
 /**
  * Per-tool matchers over a permission request's title, anchored at the *start*
- * of the (code-unwrapped, trimmed) title: the bridge server name (`copse`), a
- * single separator, then a bridged tool name — e.g. `copse-gh_pr_list`, the one
- * format we have actually observed (Cursor titles the call
- * `copse-gh_pr_list: gh_pr_list`).
+ * of the (code-unwrapped, trimmed) title: an optional `mcp` prefix, the bridge
+ * server name (`copse`), a separator, then a bridged tool name. Both observed
+ * shapes match:
+ *
+ * - `copse-gh_pr_list: gh_pr_list` — Cursor, server name leading.
+ * - `mcp__copse__gh_pr_view` — Claude, server name *infixed* under the
+ *   conventional `mcp__` prefix.
+ *
+ * Claude's shape was missed until a wire trace (#1659) showed it: `^copse`
+ * cannot match a title starting `mcp__`, so every bridged call under Claude fell
+ * through to a duplicate permission prompt — exactly what this gate exists to
+ * remove. The optional prefix is the literal `mcp` rather than "any leading
+ * token" on purpose; see the anchoring note below.
  *
  * Anchoring — rather than searching anywhere in the title — matters because
  * `copse` is a common token in this very repo: a prose title like
- * `Edit copse-gh_pr_list-notes.md` must not be mistaken for a bridged call. The
- * separator is left as any single non-alphanumeric joiner (the inherent shape of
- * `server<sep>tool`) rather than hard-coded to `-`, so a future agent that joins
- * with `/`, `_`, or `.` still matches; a title in some entirely different shape
- * just falls through to the normal prompt.
+ * `Edit copse-gh_pr_list-notes.md` must not be mistaken for a bridged call.
+ * Admitting an arbitrary leading word would reopen exactly that, since
+ * `Run copse gh_pr_list now` would then match. The separator is any run of
+ * non-alphanumeric joiners (the inherent shape of `server<sep>tool`) rather than
+ * hard-coded to `-`, so an agent that joins with `/`, `_`, `.`, or `__` still
+ * matches; a title in some entirely different shape just falls through to the
+ * normal prompt.
+ *
+ * Codex is a third shape this cannot help: it sends no `title` on permission
+ * requests at all (only `kind`, `rawInput`, `status`, `toolCallId`), so its
+ * bridged calls still double-prompt. Fixing that needs a non-title signal and
+ * a trace of a Codex MCP call, which we do not have yet.
  */
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function bridgeTitleMatcher(tool: string): RegExp {
-  return new RegExp(`^${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]${escapeRegex(tool)}(?![a-z0-9_])`, 'i')
+  return new RegExp(
+    `^(?:mcp[^a-z0-9]+)?${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]+${escapeRegex(tool)}(?![a-z0-9_])`,
+    'i',
+  )
 }
 
 /**
