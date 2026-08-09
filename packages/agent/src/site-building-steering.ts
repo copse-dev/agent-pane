@@ -29,4 +29,4 @@ export const SITE_BUILDING_STEERING_PROMPT = `When building a website, treat des
 - Preserve the repository's framework and conventions. For a small new marketing site, prefer a dependency-free implementation unless the project indicates otherwise.
 - Finish the interaction states and accessibility: semantic structure, keyboard use, readable contrast, useful focus states, and reduced-motion support where motion exists.
 - Verify the result in the available local browser or preview when possible. Fix console errors, broken behavior, and viewport overflow before declaring it done.
-- When the user asks for a preview, start an appropriate local server if needed and finish with its bare http:// URL on its own line.`
+- When the user asks for a preview, use the product's browser_preview tool for a static site; it serves the project and opens the visible Browser panel without a shell command. Use a framework dev server only when the project actually requires one. Finish with the returned bare http:// URL on its own line.`

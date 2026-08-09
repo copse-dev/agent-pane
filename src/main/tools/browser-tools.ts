@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
+import {
+  getStaticPreviewServer,
+  staticPreviewUrl,
+} from '../services/browser/static-preview-server.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 
 export const browserNavigateTool = defineTool({
@@ -15,6 +20,28 @@ export const browserNavigateTool = defineTool({
   async execute({ url, newTab, viewId }) {
     const result = await getBrowserSession().navigate(url, { newTab, viewId })
     return `Opened ${result.viewId}: ${result.title || '(untitled)'}\n${result.url}`
+  },
+})
+
+export const browserPreviewTool = defineTool({
+  name: 'browser_preview',
+  description:
+    'Preview a static website from the active project. Copse serves the workspace on a loopback-only URL, opens it in the visible Browser panel, and loads the same page in the agent browser for snapshots and interaction. Use this for HTML/CSS/JS sites instead of starting a dev server. No shell command or port-binding approval is needed.',
+  parameters: z.object({
+    path: z
+      .string()
+      .optional()
+      .describe('Workspace-relative entry page (defaults to index.html at the project root).'),
+  }),
+  async execute({ path }) {
+    const root = getAgentExecutionRoot()
+    if (!root) throw new Error('No workspace open.')
+    const preview = await getStaticPreviewServer(root)
+    const url = staticPreviewUrl(preview.url, path ?? '/')
+    const session = getBrowserSession()
+    const result = await session.navigate(url)
+    session.showUrl(result.url)
+    return `Opened ${result.viewId} in the visible Browser panel: ${result.title || '(untitled)'}\n${result.url}`
   },
 })
 
@@ -94,6 +121,7 @@ export const browserTabsTool = defineTool({
 // in TArgs, so a heterogeneous list can't be typed as ToolDefinition[] without
 // erasing here; the registry validates each tool's args at runtime.
 export const browserTools = [
+  browserPreviewTool,
   browserNavigateTool,
   browserSnapshotTool,
   browserScreenshotTool,
@@ -103,6 +131,7 @@ export const browserTools = [
 ]
 
 export function registerBrowserTools(registry: ToolRegistry): void {
+  registry.register(browserPreviewTool)
   registry.register(browserNavigateTool)
   registry.register(browserSnapshotTool)
   registry.register(browserScreenshotTool)

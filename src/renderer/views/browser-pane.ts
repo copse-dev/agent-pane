@@ -1045,6 +1045,10 @@ export function mountBrowserPane(
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
+    api?.browser.onShowTab?.((url) => {
+      openRightPanel(store, 'browser')
+      addTab({ url, activate: true })
+    }),
     api?.browser.onShareText(attachSharedText),
     api?.browser.onShareImage(attachSharedImage),
     api?.browser.onPackTabRequest(ensurePackBrowserTab),

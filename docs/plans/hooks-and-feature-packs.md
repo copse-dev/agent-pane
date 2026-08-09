@@ -448,7 +448,12 @@ one turn-start hook plus its own settings schema, which measures the capability 
 the model running the turn and forces an explicit plan below the configured
 threshold. `copse.site-building` (P16) is a stable, default-on example: one
 conditional turn-start hook supplies a brand-agnostic creative-engineering workflow
-to local and ACP executors without changing the user's visible brief.
+to local and ACP executors without changing the user's visible brief. Static-site
+preview uses the first-party `browser_preview` operation: the main process serves
+only the canonical workspace on loopback and opens the same URL in the visible
+Browser panel plus the agent automation tab. It executes no agent-provided command
+and grants no subprocess authority, so the background-task pack's separate
+`loopback-bind` approval remains unchanged for real framework dev servers.
 Nothing inline is deleted because nothing inline existed; the acceptance
 criterion that replaces "old inline mechanism deleted" is that **disabling the pack
 restores a byte-identical system prompt**.

@@ -82,6 +82,7 @@ describe('agent-prompt', () => {
 
   it('browser block steers away from installing a separate browser stack', () => {
     assert.match(BROWSER_TOOLS_BLOCK, /browser_navigate/)
+    assert.match(BROWSER_TOOLS_BLOCK, /browser_preview/)
     assert.match(BROWSER_TOOLS_BLOCK, /do NOT install/i)
     assert.match(BROWSER_TOOLS_BLOCK, /Playwright/)
   })

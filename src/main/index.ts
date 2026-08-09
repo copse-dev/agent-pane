@@ -89,6 +89,7 @@ import {
   setBrowserSessionPlatform,
   shutdownBrowserSession,
 } from './services/browser/session-manager.ts'
+import { shutdownStaticPreviewServers } from './services/browser/static-preview-server.ts'
 import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
@@ -157,6 +158,11 @@ const taskSupervisor = getTaskSupervisor()
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
   getAgentSession: () => getAgentBrowserSession(),
+  showUrl: (url) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    win.webContents.send('browser:show-tab', url)
+  },
 })
 
 setVideoDecoderPlatform({
@@ -731,6 +737,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
+  await shutdownStaticPreviewServers()
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.

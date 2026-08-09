@@ -15,6 +15,7 @@ import type {
 } from '@agentclientprotocol/sdk'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -617,6 +618,26 @@ export function shouldAutoApproveLowRiskAcpPermission(
   return READ_ONLY_ACP_TOOL_KINDS.has(kind)
 }
 
+/**
+ * Codex's code-mode `exec` is the orchestration container from which it calls
+ * MCP tools. In ordinary `agent` mode the adapter asks before every such cell,
+ * but its ACP request intentionally exposes no shell command: the JavaScript
+ * remains inside Codex's own workspace-write sandbox. When Copse also wrapped
+ * the whole adapter in the native project seatbelt, asking again adds no
+ * authority. Concrete commands still carry `rawInput.command` and continue
+ * through {@link respondToAcpExecutePermission}; unsandboxed sessions and other
+ * agents remain prompt-first.
+ */
+export function shouldAutoApproveSandboxedCodexCodeMode(
+  agent: { id: string; sandboxed: boolean },
+  req: RequestPermissionRequest,
+): boolean {
+  if (agent.id !== 'codex' || !agent.sandboxed || req.toolCall.kind !== 'execute') return false
+  const meta = req._meta
+  if (!isRecord(meta) || !isRecord(meta['codex'])) return false
+  return acpExecuteCommandText(req.toolCall) === null
+}
+
 export function mergeAcpPermissionAbortSignals(
   turnSignal: AbortSignal | undefined,
   rpcSignal: AbortSignal,
@@ -676,6 +697,9 @@ async function respondToPermission(
   // to enable a broad scary toggle. Shell commands are routed through the same
   // approval flow as native run_shell below.
   if (shouldAutoApproveLowRiskAcpPermission(req, { sandboxed: agent.sandboxed })) {
+    return permissionResponseFor(req.options, true)
+  }
+  if (shouldAutoApproveSandboxedCodexCodeMode(agent, req)) {
     return permissionResponseFor(req.options, true)
   }
   // Copse's own bridged tools (gh_*/CI, semantic search, staged diffs, browser,

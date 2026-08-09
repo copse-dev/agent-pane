@@ -33,6 +33,8 @@ describe('site-building steering policy', () => {
     assert.match(SITE_BUILDING_STEERING_PROMPT, /ask one compact creative-brief question/i)
     assert.match(SITE_BUILDING_STEERING_PROMPT, /make coherent assumptions and build immediately/i)
     assert.match(SITE_BUILDING_STEERING_PROMPT, /local browser or preview/i)
+    assert.match(SITE_BUILDING_STEERING_PROMPT, /browser_preview tool/i)
+    assert.match(SITE_BUILDING_STEERING_PROMPT, /without a shell command/i)
     assert.match(SITE_BUILDING_STEERING_PROMPT, /bare http:\/\/ URL on its own line/i)
     assert.doesNotMatch(SITE_BUILDING_STEERING_PROMPT, /cupcake|crumb|bloom/i)
   })

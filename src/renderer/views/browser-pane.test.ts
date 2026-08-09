@@ -39,6 +39,59 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
+  it('opens the visible panel for an agent preview request from the main process', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'browser',
+    })
+    let showTab: ((url: string) => void) | undefined
+    const api = createPendingApi({
+      'browser.onShowTab': (handler: (url: string) => void): (() => void) => {
+        showTab = handler
+        return (): void => {}
+      },
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      assert.ok(showTab)
+      showTab('http://localhost:4321/')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(store.getState().filesPaneOpen, true)
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+      const input = qsRequired<HTMLInputElement>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      assert.equal(input.value, 'http://localhost:4321/')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('renders proposed workspace files for a localhost URL in the browser demo', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver

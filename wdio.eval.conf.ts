@@ -125,9 +125,6 @@ export const config: Options.Testrunner = {
     seedEmptyProject(project.root, `${scenario.id}-project`, {
       subagentsEnabled,
       autoRunSandboxCommands: scenario.autonomy?.requireShellApproval !== true,
-      ...(scenario.workspace?.allowPortBinding === true
-        ? { portBindingAllowedRoots: [project.root] }
-        : {}),
       ...(useMock
         ? { model: 'claude-sonnet-4-6' }
         : {

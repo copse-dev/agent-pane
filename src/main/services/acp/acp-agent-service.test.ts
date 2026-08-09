@@ -18,6 +18,7 @@ import {
   mergeAcpPermissionAbortSignals,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
+  shouldAutoApproveSandboxedCodexCodeMode,
   runWithAcpRetry,
   sliceLines,
 } from './acp-agent-service.ts'
@@ -61,6 +62,57 @@ describe('shouldAutoApproveLowRiskAcpPermission', () => {
       shouldAutoApproveLowRiskAcpPermission(
         permissionRequest({ kind: 'execute', rawInput: { command: 'rg TODO src | head -20' } }),
         { sandboxed: true },
+      ),
+      false,
+    )
+  })
+})
+
+describe('shouldAutoApproveSandboxedCodexCodeMode', () => {
+  const opaqueCodexExec: RequestPermissionRequest = {
+    ...permissionRequest({ kind: 'execute' }),
+    _meta: { codex: { params: { itemId: 'exec-1' } } },
+  }
+
+  it('auto-approves only an opaque Codex code-mode cell inside the native sandbox', () => {
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode(
+        { id: 'codex', sandboxed: true },
+        opaqueCodexExec,
+      ),
+      true,
+    )
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode(
+        { id: 'codex', sandboxed: false },
+        opaqueCodexExec,
+      ),
+      false,
+    )
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode(
+        { id: 'custom', sandboxed: true },
+        opaqueCodexExec,
+      ),
+      false,
+    )
+  })
+
+  it('does not waive a concrete command or an unproven adapter request', () => {
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode(
+        { id: 'codex', sandboxed: true },
+        {
+          ...opaqueCodexExec,
+          toolCall: { ...opaqueCodexExec.toolCall, rawInput: { command: 'npm publish' } },
+        },
+      ),
+      false,
+    )
+    assert.equal(
+      shouldAutoApproveSandboxedCodexCodeMode(
+        { id: 'codex', sandboxed: true },
+        permissionRequest({ kind: 'execute' }),
       ),
       false,
     )

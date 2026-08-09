@@ -113,6 +113,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Origin-gated web + in-app browser tools.
   'web_search',
   'fetch_url',
+  'browser_preview',
   'browser_navigate',
   'browser_snapshot',
   'browser_screenshot',

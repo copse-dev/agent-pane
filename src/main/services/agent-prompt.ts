@@ -159,13 +159,14 @@ export const DIRECT_READS_BASE_PROMPT_VARS = DIRECT_READS_MODE_VARS
 export const BROWSER_TOOLS_BLOCK = `
 
 You also have built-in browser tools (loopback/localhost auto-runs; other origins prompt):
+- browser_preview: Serve a static HTML/CSS/JS project and open it in the visible Browser panel; use this instead of starting a server
 - browser_navigate: Open a URL in a headless browser tab
 - browser_snapshot: Read the page as an accessibility outline with [ref=…] handles
 - browser_screenshot: Save a PNG of the page for visual checks
 - browser_click / browser_type: Interact with an element by its snapshot ref
 - browser_tabs: List or close tabs
 Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
-This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download); start the project's dev server and open its URL with browser_navigate.`
+This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download). For static sites, use browser_preview. Use run_background plus browser_navigate only when the project needs its own framework dev server.`
 
 // Appended when `readTerminalEnabled` is on. The tool itself is only offered on
 // turns where this chat has an open Shells tab (see parentTools).

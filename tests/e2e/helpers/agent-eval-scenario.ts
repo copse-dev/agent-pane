@@ -24,7 +24,6 @@ export interface EvalScenario {
     type: 'current' | 'tempProject'
     prefix?: string
     initializeGit?: boolean
-    allowPortBinding?: boolean
     seedFiles?: PromptAttachment[]
   }
   prompts?: EvalPrompt[]
@@ -88,7 +87,6 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
       type: z.enum(['current', 'tempProject']),
       prefix: z.string().optional(),
       initializeGit: z.boolean().optional(),
-      allowPortBinding: z.boolean().optional(),
       seedFiles: z.array(promptAttachmentSchema).optional(),
     })
     .optional(),

@@ -201,6 +201,13 @@ silently degrades to the agent's default rather than failing the turn.
 > the seatbelt: a sandboxed agent that asks to touch a genuinely denied path
 > (system `/tmp`, network) still fails with `EPERM` even after you approve it.
 
+> **Sandboxed Codex keeps `agent` mode.** Codex orchestrates tool calls from an
+> opaque code-mode `exec` cell. Copse automatically accepts that cell only when
+> the Codex preset is inside the native project seatbelt; concrete shell commands
+> still include their command text and pass through Copse's ordinary shell gate.
+> This avoids a prompt before every Copse MCP call without selecting Codex's
+> broader `agent-full-access` mode for normal product sessions.
+
 ### Reasoning level and the agent's other selectors (experimental)
 
 Beyond the model, ACP lets an agent advertise arbitrary **session config
