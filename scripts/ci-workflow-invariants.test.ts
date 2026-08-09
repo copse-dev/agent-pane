@@ -293,6 +293,25 @@ describe('ci.yml workflow invariants', () => {
       'filter-screenshots.mts defaults to origin/main; it must be pointed at the PR base',
     )
   })
+
+  it('caps every job, so one wedged run cannot park an ephemeral runner for six hours', () => {
+    // GitHub's default `timeout-minutes` is 360. The runners here are ephemeral
+    // and serve both tiers, so an uncapped job holds a whole runner — a real
+    // slice of total capacity — while every other PR queues. This pin is the
+    // part that lasts: a job added later without a cap fails here rather than
+    // being discovered as a six-hour outage.
+    // Scope to the `jobs:` section: `on:` also holds 2-space keys with no value
+    // (`push:`, `pull_request:`, `schedule:`) that the job-name shape matches.
+    const jobsSection = workflow.slice(workflow.search(/^jobs:$/m))
+    const names = [...jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((m) => m[1])
+    assert.ok(names.length > 0, 'expected to find job names in ci.yml')
+    const uncapped = names.filter((name) => !/^ {4}timeout-minutes: \d+$/m.test(jobBlock(name)))
+    assert.deepEqual(
+      uncapped,
+      [],
+      `every ci.yml job needs timeout-minutes; missing on: ${uncapped}`,
+    )
+  })
 })
 
 describe('promote-develop.yml workflow invariants', () => {
