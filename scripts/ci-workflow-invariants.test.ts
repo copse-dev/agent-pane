@@ -303,13 +303,20 @@ describe('ci.yml workflow invariants', () => {
     // Scope to the `jobs:` section: `on:` also holds 2-space keys with no value
     // (`push:`, `pull_request:`, `schedule:`) that the job-name shape matches.
     const jobsSection = workflow.slice(workflow.search(/^jobs:$/m))
-    const names = [...jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((m) => m[1])
+    // `noUncheckedIndexedAccess` types a capture group as `string | undefined`, so collect
+    // through an explicit guard rather than `.map(m => m[1])` — same shape as
+    // `staticImports` in agent-path-electron-surface.test.ts.
+    const names: string[] = []
+    for (const match of jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)) {
+      const name = match[1]
+      if (name !== undefined) names.push(name)
+    }
     assert.ok(names.length > 0, 'expected to find job names in ci.yml')
     const uncapped = names.filter((name) => !/^ {4}timeout-minutes: \d+$/m.test(jobBlock(name)))
     assert.deepEqual(
       uncapped,
       [],
-      `every ci.yml job needs timeout-minutes; missing on: ${uncapped}`,
+      `every ci.yml job needs timeout-minutes; missing on: ${uncapped.join(', ')}`,
     )
   })
 })
