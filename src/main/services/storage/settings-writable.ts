@@ -312,6 +312,17 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the ACP prompt only duplicates that gate. Default on. Off restores the
   // per-call prompt for bridged tools.
   acpAutoApproveNativeBridgeTools: z.boolean(),
+  // Let a thread running in its own isolated worktree delete, rename, and create
+  // directories without staging each one for approval. Those ops used to stage
+  // unconditionally while writes did not, so an isolated thread was approving
+  // changes to files only the agent had ever written, in a checkout the user
+  // does not share. Default on. Off restores the per-op approval panel.
+  //
+  // Scoped to worktree mode on purpose: in the shared checkout the files are the
+  // user's own. The ordinary safety fallbacks still apply either way — an op
+  // stages when git is unreadable, when unowned work could not be backed up, or
+  // when the target changed on disk since Copse last touched it.
+  worktreeAutoApproveEdits: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   //
