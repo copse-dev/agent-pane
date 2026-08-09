@@ -2,6 +2,21 @@ import js from '@eslint/js'
 import ts from 'typescript-eslint'
 import prettier from 'eslint-config-prettier'
 
+// The one restricted module, hoisted because it must be repeated in the renderer block
+// below: ESLint replaces a rule's options wholesale rather than merging them, so a
+// renderer-specific `no-restricted-imports` that listed only its own patterns would
+// silently drop this and reopen the Electron boundary for the whole renderer.
+const NO_ELECTRON = {
+  name: 'electron',
+  allowTypeImports: true,
+  message:
+    'Importing Electron here couples the agent path to the desktop runtime. Inject the ' +
+    'capability from an Electron entry point instead (see the handler seams in ' +
+    'approval.ts / ask-user.ts), or `import type` if you only need its types. If this ' +
+    'file genuinely IS a desktop entry point, add it to the allow-list in ' +
+    'eslint.config.mjs — deliberately, and visibly in review.',
+}
+
 export default ts.config(
   {
     ignores: [
@@ -101,16 +116,42 @@ export default ts.config(
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
-          paths: [
+          paths: [NO_ELECTRON],
+        },
+      ],
+    },
+  },
+  {
+    // The renderer runs in a browser context: no Node builtins, ever. Nothing imports one
+    // today, which is exactly why this is cheap to add — a rule with no violations costs
+    // nothing and prevents the FIRST one, which is the only cheap moment to prevent it.
+    // A `node:fs` import here fails at runtime rather than at build, so the current
+    // guarantee is "nobody has tried yet".
+    //
+    // Repeating NO_ELECTRON is required, not redundant: ESLint replaces a rule's options
+    // rather than merging them, so omitting it here would turn the Electron boundary off
+    // across the whole renderer.
+    //
+    // The three direction rules that cannot be expressed as specifier globs
+    // (renderer -> main, shared -> main/renderer, packages -> src) live in
+    // `scripts/module-boundaries.test.ts`, which resolves the import and asks which zone
+    // the file lands in. Relative specifiers vary by nesting depth, and
+    // `src/renderer/main.ts` exists — so any glob loose enough to catch
+    // `../../main/services/x.ts` also blocks the renderer importing its own entry point.
+    files: ['src/renderer/**/*.ts', 'src/renderer/**/*.mts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [NO_ELECTRON],
+          patterns: [
             {
-              name: 'electron',
+              group: ['node:*'],
               allowTypeImports: true,
               message:
-                'Importing Electron here couples the agent path to the desktop runtime. Inject the ' +
-                'capability from an Electron entry point instead (see the handler seams in ' +
-                'approval.ts / ask-user.ts), or `import type` if you only need its types. If this ' +
-                'file genuinely IS a desktop entry point, add it to the allow-list in ' +
-                'eslint.config.mjs — deliberately, and visibly in review.',
+                'The renderer is a browser context and has no Node builtins at runtime. Reach the ' +
+                'filesystem, processes, or the network through the preload bridge (`preload/api.d.ts`), ' +
+                'or move the logic to src/shared if it is pure.',
             },
           ],
         },
