@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -10,6 +10,8 @@ import { setComposerValue, composerText } from './helpers/composer.ts'
 const PROJECT_ID = 'e2e-paste-attachment-project'
 const SCREENSHOT = 'paste-attachment-chip.png'
 const TRANSCRIPT_SCREENSHOT = 'paste-attachment-transcript.png'
+const COMPOSER_PREVIEW_SCREENSHOT = 'paste-attachment-composer-preview.png'
+const TRANSCRIPT_PREVIEW_SCREENSHOT = 'paste-attachment-transcript-preview.png'
 
 const SHORT_PASTE = 'The editor points:\n\n- tighten the intro\n- fix the typos'
 // Starts with blank lines: the chip label must come from the first non-blank
@@ -107,5 +109,53 @@ describe('Pasting text into the composer', () => {
     await expect(await $('.messages-list .msg-user .message-text').getText()).not.toContain('￼')
 
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
+  })
+
+  /**
+   * A chip shows a label; the body it stands for is invisible until it opens.
+   * That has to work on both sides of send — in the composer, so a paste can be
+   * checked before it is sent, and in the transcript, so the sent snapshot stays
+   * inspectable. The transcript half regressed because the chip was rebuilt from
+   * its label alone, dropping the snapshot the message already carried.
+   */
+  it('opens a pasted block in the preview modal, in the composer and after sending', async () => {
+    await setComposerValue('Please apply this feedback: ')
+    await pasteIntoComposer(LONG_PASTE)
+
+    const chipLabel = await $('.prompt-input .inline-paste-chip-label.text-expandable')
+    await chipLabel.waitForDisplayed({ timeout: 5_000 })
+    await expect(await chipLabel.getAttribute('role')).toBe('button')
+    await chipLabel.click()
+
+    const dialog = await $('dialog.attachment-preview-dialog[open]')
+    await dialog.waitForExist({ timeout: 5_000 })
+    await expect(await dialog.getAttribute('data-preview-kind')).toBe('text')
+    // The chip's label is the first non-blank line; the modal is where the rest
+    // of the body — never raw composer text — becomes readable.
+    await expect($('.attachment-preview-text')).toHaveText(expect.stringContaining('lorem ipsum'))
+    await saveAppScreenshot(COMPOSER_PREVIEW_SCREENSHOT)
+    await $('.attachment-preview-close').click()
+    await dialog.waitForExist({ timeout: 5_000, reverse: true })
+
+    // This spec has already sent one paste, so target the chip this send adds
+    // rather than the one left in the transcript by the previous test.
+    const sentChips =
+      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste'
+    const before = (await $$(sentChips)).length
+    await $('.submit-btn').click()
+    await browser.waitUntil(async () => (await $$(sentChips)).length > before, {
+      timeout: 10_000,
+      timeoutMsg: 'expected the sent paste to render a transcript chip',
+    })
+    const sentChip = (await $$(sentChips)).at(-1)
+    if (!sentChip) throw new Error('no transcript paste chip after send')
+    await expect(await sentChip.getAttribute('role')).toBe('button')
+    await sentChip.click()
+
+    const sentDialog = await $('dialog.attachment-preview-dialog[open]')
+    await sentDialog.waitForExist({ timeout: 5_000 })
+    await expect($('.attachment-preview-text')).toHaveText(expect.stringContaining('lorem ipsum'))
+    await saveAppScreenshot(TRANSCRIPT_PREVIEW_SCREENSHOT)
+    await $('.attachment-preview-close').click()
   })
 })

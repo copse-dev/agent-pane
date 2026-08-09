@@ -429,6 +429,14 @@ every published entry.
   train on inputs. Privacy-forward hosted endpoints (Groq, Together AI, and
   Fireworks AI) are available directly as provider presets instead of being
   hidden under Other. See docs/provider-data-policies.md.
+- Every text attachment chip now opens its snapshot in the preview modal. A
+  pasted block, an attached file and an attached terminal selection are all
+  openable in the composer, so what you attached can be checked before you send
+  it rather than only afterwards from the transcript — the ✕ still removes the
+  chip, since the affordance sits on the label beside it. Sent pasted blocks
+  open too: their chip was being rebuilt from its label alone, dropping the
+  snapshot the message already carried, so the most common text attachment was
+  the one kind that stayed stubbornly shut.
 
 ## Release-note process
 
