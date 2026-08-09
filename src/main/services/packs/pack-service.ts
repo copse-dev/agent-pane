@@ -43,6 +43,7 @@ import {
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -79,18 +80,20 @@ const PACK_SOURCES_KEY = 'packSources'
  * written into `packDisabled` on a profile that has never had one. This makes a
  * forgotten rollout-list update impossible when a new experiment is added.
  *
- * The three packs added with the contribution kinds (#1188-#1190) join the list
- * for the same reason — each replaces a retired opt-in boolean
- * (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`, `backgroundTasksEnabled`).
- * `copse.background-tasks` matters most: beyond registering `run_background` it
- * declares the `loopback-bind` sandbox relaxation, so defaulting it on would
- * advertise an authority nobody asked for.
+ * The capability packs added in #1188 remain experimental because each replaces
+ * a retired opt-in boolean (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`).
+ * `copse.background-tasks` graduated to stable/default-on: its ordinary sandboxed
+ * process support needs no extra authority, while `loopback-bind` still requires
+ * a separate per-project grant at the point of use.
  *
  * `copse.forced-planning` never had a standalone setting to be opt-in through,
  * but belongs here for the same reason: it rewrites the system prompt of every
  * turn that runs on a below-threshold model.
  */
 const DEFAULT_DISABLED_PACK_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_PACK_IDS
+
+/** One-time graduation from opt-in experiment to stable/default-on primitive. */
+const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'packMigration.backgroundTasksStable'
 
 /** One-time default-off seed for the new local automations prototype. */
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
@@ -130,6 +133,20 @@ function readDisabledIds(): Set<string> {
 function seedDefaultDisabledPacks(): void {
   if (storageGet(PACK_DISABLED_KEY) !== undefined) return
   storageSet(PACK_DISABLED_KEY, [...DEFAULT_DISABLED_PACK_IDS].sort())
+}
+
+/**
+ * Graduate background tasks from experimental/default-off to stable/default-on.
+ * Existing profiles cannot distinguish the old seeded disable from an explicit
+ * experimental opt-out, so the graduation removes it once. Any disable made
+ * after this migration remains user-owned because the marker prevents re-entry.
+ */
+function migrateBackgroundTasksStable(): void {
+  if (storageGet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.delete(BACKGROUND_TASKS_PACK_ID)
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
 }
 
 /**
@@ -486,6 +503,7 @@ export function createPackService(registry: PackRegistry): PackService {
 export function getPackService(): PackService {
   if (singleton) return singleton
   seedDefaultDisabledPacks()
+  migrateBackgroundTasksStable()
   migratePackModelSettings()
   migrateAutomationsEnablement()
   migrateParallelSearchEnablement()
