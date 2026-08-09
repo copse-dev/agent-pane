@@ -11,6 +11,8 @@ import {
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Writable } from 'node:stream'
+import { isRecord } from '@shared/unknown-value.ts'
+import { tapAcpWireStream } from './acp-wire-tap.ts'
 
 /**
  * Tier-2 ACP **behavioural probe** (issue #832): spawn an external ACP agent,
@@ -31,6 +33,8 @@ export type AcpWriteRouting = 'fs_write_text_file' | 'shell_or_execute' | 'both'
 export interface AcpPermissionProbeRecord {
   toolCallId: string
   title: string | null
+  /** Programmatic tool name on the permission's tool call, if the agent sent one. */
+  name: string | null
   kind: ToolKind | 'unknown'
   optionIds: string[]
   optionKinds: string[]
@@ -52,6 +56,12 @@ export interface AcpFsWriteProbeRecord {
 export interface AcpToolCallProbeRecord {
   toolCallId: string
   title: string | null
+  /**
+   * The programmatic tool name ACP models alongside `title`. Recorded because
+   * `title` is what Copse renders, and an adapter that sends only a generic
+   * `MCP: tool` title may still be sending a usable `name` here.
+   */
+  name: string | null
   kind: ToolKind | 'unknown'
   status: string | null
   metaKeys: string[]
@@ -72,6 +82,15 @@ export interface AcpBehaviorSnapshot {
   updateKinds: string[]
   /** Flattened `_meta` keys harvested mid-turn (permissions, updates, writes). */
   midTurnMetaKeys: string[]
+  /**
+   * Top-level field names seen on tool-bearing payloads **on the wire**, before
+   * the SDK's `z.object` parse drops everything ACP does not model. Keys only,
+   * never values — this is the matrix's answer to "does this adapter send
+   * anything we are throwing away?". Compare against the modelled fields on
+   * {@link AcpToolCallProbeRecord}; the unredacted values live in the opt-in
+   * wire trace (`acp-wire-trace.ts`) instead.
+   */
+  wireToolCallKeys: string[]
   stopReason: string | null
 }
 
@@ -156,10 +175,13 @@ export function extractBehaviorSnapshot(input: {
   toolCalls: readonly AcpToolCallProbeRecord[]
   updateKinds: readonly string[]
   midTurnMetaKeys: readonly string[]
+  /** Optional: callers without a wire tap (older tests) report no keys. */
+  wireToolCallKeys?: readonly string[] | undefined
   stopReason: string | null
 }): AcpBehaviorSnapshot {
   const midTurnMetaKeys = [...new Set(input.midTurnMetaKeys)].sort()
   const updateKinds = [...new Set(input.updateKinds)]
+  const wireToolCallKeys = [...new Set(input.wireToolCallKeys ?? [])].sort()
   return {
     writeRouting: classifyWriteRouting(input.fsWrites, input.toolCalls),
     fsWrites: [...input.fsWrites],
@@ -167,8 +189,36 @@ export function extractBehaviorSnapshot(input: {
     toolCalls: [...input.toolCalls],
     updateKinds,
     midTurnMetaKeys,
+    wireToolCallKeys,
     stopReason: input.stopReason,
   }
+}
+
+/**
+ * Pull the top-level field names off any tool-bearing payload in one inbound
+ * JSON-RPC message, tagged by where they sat. Shape-driven and schema-free, so
+ * a vendor field survives to be counted; values are never read.
+ */
+export function wireToolCallKeysOf(message: unknown): string[] {
+  if (!isRecord(message)) return []
+  const params = message['params']
+  if (!isRecord(params)) return []
+
+  const update = params['update']
+  if (isRecord(update)) {
+    const kind = update['sessionUpdate']
+    if (kind !== 'tool_call' && kind !== 'tool_call_update') return []
+    return Object.keys(update).map((key) => `${kind}:${key}`)
+  }
+
+  const toolCall = params['toolCall']
+  if (isRecord(toolCall)) {
+    return [
+      ...Object.keys(params).map((key) => `request_permission:${key}`),
+      ...Object.keys(toolCall).map((key) => `request_permission.toolCall:${key}`),
+    ]
+  }
+  return []
 }
 
 function recordPermission(req: RequestPermissionRequest): AcpPermissionProbeRecord {
@@ -177,6 +227,7 @@ function recordPermission(req: RequestPermissionRequest): AcpPermissionProbeReco
   return {
     toolCallId: req.toolCall.toolCallId,
     title: req.toolCall.title ?? null,
+    name: req.toolCall.name ?? null,
     kind: req.toolCall.kind ?? 'unknown',
     optionIds: req.options.map((option) => option.optionId),
     optionKinds: req.options.map((option) => option.kind),
@@ -204,6 +255,7 @@ function recordToolFromUpdate(update: SessionUpdate): AcpToolCallProbeRecord | n
   return {
     toolCallId: update.toolCallId,
     title: update.title ?? null,
+    name: update.name ?? null,
     kind: update.kind ?? 'unknown',
     status: update.status ?? null,
     metaKeys: metaKeysOf(toolMeta).map((key) => `${update.sessionUpdate}:${key}`),
@@ -430,6 +482,7 @@ export async function probeAgentBehavior(
   const toolCalls: AcpToolCallProbeRecord[] = []
   const updateKinds: string[] = []
   const midTurnMetaKeys: string[] = []
+  const wireToolCallKeys: string[] = []
 
   let transport: { stream: Stream; dispose: () => void } | null = null
   const state = { timedOut: false }
@@ -440,6 +493,12 @@ export async function probeAgentBehavior(
 
   try {
     transport = await createTransport(config)
+    // Count wire-level field names before the SDK parse strips unmodelled ones.
+    // Unlike the file-backed trace this is always on, because it keeps only
+    // key names — there is nothing sensitive to gate behind a flag.
+    const stream = tapAcpWireStream(transport.stream, {
+      record: (message) => wireToolCallKeys.push(...wireToolCallKeysOf(message)),
+    })
     const app = client({ name: 'copse-behavior-probe' })
       .onRequest(methods.client.fs.readTextFile, UNSUPPORTED('fs/read_text_file'))
       .onRequest(methods.client.fs.writeTextFile, (ctx) => {
@@ -461,7 +520,7 @@ export async function probeAgentBehavior(
         return { outcome: { outcome: 'selected' as const, optionId } }
       })
 
-    const snapshot = await app.connectWith(transport.stream, async (ctx) => {
+    const snapshot = await app.connectWith(stream, async (ctx) => {
       await ctx.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: true } },
@@ -479,6 +538,7 @@ export async function probeAgentBehavior(
               toolCalls,
               updateKinds,
               midTurnMetaKeys,
+              wireToolCallKeys,
               stopReason: message.response.stopReason,
             })
           }

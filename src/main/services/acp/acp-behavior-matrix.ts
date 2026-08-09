@@ -116,6 +116,7 @@ export function renderBehaviorMatrixMarkdown(
       for (const perm of s.permissionRequests) {
         lines.push(
           `- Permission: kind=\`${perm.kind}\` title=${JSON.stringify(perm.title ?? '')} ` +
+            `name=${JSON.stringify(perm.name ?? '')} ` +
             `options=[${perm.optionIds.join(', ')}] rawInputKeys=[${perm.rawInputKeys.join(', ')}]`,
         )
       }
@@ -123,8 +124,19 @@ export function renderBehaviorMatrixMarkdown(
     if (s.toolCalls.length > 0) {
       lines.push(
         `- Tool calls: ${s.toolCalls
-          .map((t) => `\`${t.kind}\` ${t.title ? JSON.stringify(t.title) : t.toolCallId}`)
+          .map(
+            (t) =>
+              `\`${t.kind}\` ${t.title ? JSON.stringify(t.title) : t.toolCallId}` +
+              // The whole point of the #1651 probe extension: a generic title
+              // next to a real `name` is the signature of the `MCP: tool` bug.
+              (t.name ? ` name=\`${t.name}\`` : ''),
+          )
           .join(', ')}`,
+      )
+    }
+    if (s.wireToolCallKeys.length > 0) {
+      lines.push(
+        `- Wire tool fields (pre-parse): ${s.wireToolCallKeys.map((k) => `\`${k}\``).join(', ')}`,
       )
     }
     if (s.updateKinds.length > 0) {
