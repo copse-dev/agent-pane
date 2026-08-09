@@ -96,13 +96,21 @@ jobs:
       - if: steps.target.outputs.found == 'true'
         uses: ./.github/actions/setup
       # Point the demo at the shared Monaco tree rather than bundling its own.
-      # Root-relative so it survives a host change. Versioned, so a monaco-editor
-      # bump publishes a new tree beside the old one instead of breaking every
-      # preview built against the previous version.
+      # Versioned, so a monaco-editor bump publishes a new tree beside the old one
+      # instead of breaking every preview built against the previous version.
+      #
+      # RELATIVE, deliberately. Every demo is published exactly one level under
+      # /demo/ — /demo/main/, /demo/release/, /demo/pr-<n>/ — so `../vendor/…`
+      # resolves to /demo/vendor/… from all of them, whether Pages serves the
+      # custom-domain root in site/CNAME or an <owner>.github.io/<repo>/ prefix.
+      # This used to carry a hardcoded /<repo>/ prefix, which the copse.dev root
+      # does not have, so every worker 404'd. A root-relative /demo/vendor/… is
+      # correct today but re-adopts the same assumption in the other direction.
+      # `monacoVsRoot()` resolves the value with `new URL(base, location.href)`,
+      # so a relative base is fine. It only became viable once preview bundles
+      # stopped nesting a second demo at the deeper …-preview/demo/main/ path.
       - id: monaco
         if: steps.target.outputs.found == 'true'
-        env:
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Read the file, don't `require('monaco-editor/package.json')`: monaco's
@@ -111,7 +119,7 @@ jobs:
           # "Cannot find module .../esm/vs/package.json.js".
           version="$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/monaco-editor/package.json','utf8')).version")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "base=/${REPO#*/}/demo/vendor/monaco/${version}/" >> "$GITHUB_OUTPUT"
+          echo "base=../vendor/monaco/${version}/" >> "$GITHUB_OUTPUT"
       - if: steps.target.outputs.found == 'true'
         env:
           MONACO_BASE_URL: ${{ steps.monaco.outputs.base }}
