@@ -182,6 +182,68 @@ describe('acp between-turn updates (issue #588)', () => {
     })
   })
 
+  // The Cursor half of the same split (#1659). A wire trace of a real
+  // `cursor-agent` MCP call shows `tool_call` titled `MCP: tool` with an empty
+  // rawInput, `tool_call_update`s that never carry a title at all, and the real
+  // tool name reaching us only on the permission request — the mirror image of
+  // the Codex case above, which sends rawInput but no title.
+  it('relabels a generically-titled tool call from the permission request', async () => {
+    const runner: AcpTurnRunner = async (ctx) => {
+      await ctx.emit({
+        type: 'tool_call',
+        toolCall: { id: 'mcp1', name: 'MCP: tool', args: {} },
+      })
+      const decision = await ctx.requestPermission({
+        toolCallId: 'mcp1',
+        title: 'copse-git_status: git_status',
+        rawInput: undefined,
+      })
+      assert.equal(decision, 'allow')
+      await ctx.emit({
+        type: 'tool_result',
+        toolCallId: 'mcp1',
+        result: 'clean',
+        isError: false,
+      })
+      return { stopReason: 'end_turn' }
+    }
+    const { entry } = await acquireAcpSession({
+      threadId: 'permission-title',
+      config: CONFIG,
+      createTransport: runnerTransport(runner),
+    })
+    const chunks: StreamChunk[] = []
+    entry.open.handlers.current = {
+      ...sink(chunks),
+      requestPermission: (): ReturnType<AcpClientHandlers['requestPermission']> =>
+        Promise.resolve({ outcome: { outcome: 'selected' as const, optionId: 'allow' } }),
+    }
+
+    const turn = await runAcpSessionPrompt(entry.open, 'check git', undefined)
+    assert.equal(turn.stopReason, 'end_turn')
+    await until(() =>
+      chunks.some((chunk) => chunk.type === 'tool_call_update' && chunk.result === 'clean'),
+    )
+
+    // The call is still created under the agent's generic label...
+    assert.equal(chunks.find((chunk) => chunk.type === 'tool_call')?.toolCall.name, 'MCP: tool')
+    // ...and the permission request renames it, before the result lands.
+    const renameIndex = chunks.findIndex(
+      (chunk) => chunk.type === 'tool_call_update' && chunk.name === 'copse-git_status: git_status',
+    )
+    const resultIndex = chunks.findIndex(
+      (chunk) => chunk.type === 'tool_call_update' && chunk.result === 'clean',
+    )
+    assert.ok(renameIndex >= 0, 'the permission request must surface the real tool name')
+    assert.ok(renameIndex < resultIndex, 'the rename must arrive before the result')
+
+    // Cursor sends no rawInput on the permission request; inventing an empty
+    // one would clobber arguments a later update might supply.
+    const rename = chunks[renameIndex]
+    assert.ok(rename?.type === 'tool_call_update')
+    assert.equal(rename.args, undefined)
+  })
+
   it('keeps between-turn updates suppressed after a cancelled turn, until the next turn', async () => {
     const contexts: AcpTurnContext[] = []
     const runner: AcpTurnRunner = async (ctx) => {
