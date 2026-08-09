@@ -27,6 +27,22 @@ A component test that mounts the real view is nearly always preferable to an e2e
 spec that asserts the same DOM — it's faster, deterministic, and gets exact
 import-graph selection from the oracle.
 
+## Tests must not create product API
+
+An option, field, or flag whose only writer is a test is not configuration. It
+looks like supported product behavior to every caller, makes defaults part of
+policy, and leaves production code maintaining a state users can never select.
+
+When a test needs a state the product cannot express, choose one of three seams:
+
+- reach it through the same surface a user would;
+- make the option real by giving it a supported writer and behavior; or
+- inject the dependency or fixture at the boundary under test.
+
+A helper that builds test state is fine; a product type that exists only for a
+helper to populate is not. Search the whole repository for writers before making
+that call—checking only `src/` can hide a test-only field rather than validate it.
+
 ## Run the smallest set of tests
 
 Steering for _how much to run, and when_. A full `npm test` is ~3 minutes over
