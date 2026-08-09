@@ -21,3 +21,49 @@ html[data-demo-scenario] :is(#titlebar, .settings-header)::before {
 html[data-demo-scenario] .settings-header {
   position: relative;
 }
+
+/* The native app's pane control opens another BrowserWindow. A static web demo
+   stays in one product frame instead: collapse Projects, keep chat at a useful
+   transcript width, and give the active right pane everything else. */
+html.is-demo-pane-expanded #pane-projects,
+html.is-demo-pane-expanded #resizer-projects,
+html.is-demo-pane-expanded #welcome {
+  display: none !important;
+}
+
+html.is-demo-pane-expanded #pane-chat {
+  display: flex !important;
+  flex: 0 0 280px;
+  width: 280px;
+  min-width: 280px;
+}
+
+html.is-demo-pane-expanded #resizer-files {
+  display: block !important;
+}
+
+html.is-demo-pane-expanded #pane-files {
+  display: flex !important;
+  flex: 1 1 auto;
+  width: auto !important;
+  min-width: 0;
+}
+
+/* Browser focus mode spends the remaining width on the page itself. The real
+   Restore control moves into the active Browser toolbar before this rail is
+   hidden, so the layout stays reversible without reserving 140px for one tab. */
+html[data-demo-expanded-pane='browser'] #right-sidebar,
+html[data-demo-expanded-pane='browser'] #resizer-tree {
+  display: none !important;
+}
+
+html[data-demo-expanded-pane='browser'] .browser-toolbar > .pane-popout-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 0;
+  padding: 0;
+}

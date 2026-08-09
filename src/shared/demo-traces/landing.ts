@@ -3,30 +3,32 @@ import type { DemoTrace } from '../demo-traces.ts'
 
 export const LANDING_TRACE: DemoTrace = {
   id: 'landing',
-  label: 'Landing hero',
-  prompt: 'how does the demo preview comment know which scenarios to link?',
+  label: 'Builds a cupcake site',
+  prompt:
+    'Build a polished coming-soon site for Crumb & Bloom, a small-batch cupcake studio. The workspace is intentionally empty: do not inspect it or read anything. Create only three new files: index.html, styles.css, and script.js. Make it a warm editorial two-column hero with an ivory, espresso, coral, and pistachio palette; a memorable serif headline; an accessible email waitlist; and an art-directed cupcake still-life made with HTML and CSS. Keep it responsive, refined, animated with reduced-motion support, and dependency-free.\n\nExplain the complete approach before any tool calls, then create all three files without narration between writes. Do not ask questions, start a server, or run package commands. Finish with a brief summary and this bare URL on its own final line:\nhttp://localhost:4173',
   steps: [
     {
       chunk: {
         type: 'reasoning',
-        text: 'The comment is written by a workflow, so the scenario list is either hard-coded there or handed to it by the build. Start at the workflow and follow the value backwards.',
+        text: '\n\n**Planning file creation strategy**',
       },
     },
     {
       chunk: {
         type: 'text',
-        text: 'The comment is generated in CI, so the list is either hard-coded in the workflow or emitted by the build. Following it back from the comment step:',
+        text: 'I’ll build this as a single, dependency-free landing page with semantic HTML, a carefully layered CSS design, and a small progressive-enhancement script. The left column will carry the editorial story, waitlist form, accessible validation/status messaging, and small-batch details; the right will be a fully CSS-drawn cupcake still-life with art-directed props, texture, shadows, and restrained entrance/parallax effects. The layout will collapse cleanly on smaller screens, preserve strong typography and contrast, support keyboard and screen-reader use, and disable nonessential movement when `prefers-reduced-motion` is enabled. I’ll now create exactly `index.html`, `styles.css`, and `script.js` in one write operation.',
       },
     },
     {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'tc-1',
-          name: 'search_code',
+          id: 'acp-replay-write-index-html',
+          name: 'write_file',
           args: {
-            pattern: 'scenarios',
-            path: '.github/workflows/demo-preview.yml',
+            path: 'index.html',
+            content:
+              '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <meta name="description" content="Crumb & Bloom is a small-batch cupcake studio. Join the waitlist for opening-day news and first tastes.">\n  <title>Crumb &amp; Bloom — Small-batch cupcakes, coming soon</title>\n  <link rel="stylesheet" href="styles.css">\n  <script src="script.js" defer></script>\n</head>\n<body>\n  <main class="site-shell">\n    <section class="hero" aria-labelledby="hero-title">\n      <div class="hero__copy">\n        <header class="masthead">\n          <a class="wordmark" href="#" aria-label="Crumb and Bloom, home">\n            <span class="wordmark__flower" aria-hidden="true">✿</span>\n            <span>Crumb <i>&amp;</i> Bloom</span>\n          </a>\n          <p class="edition">Baking soon · Est. 2026</p>\n        </header>\n\n        <div class="intro">\n          <p class="eyebrow"><span></span> A little sweetness is rising</p>\n          <h1 id="hero-title">Cupcakes,<br>in full <em>bloom.</em></h1>\n          <p class="lede">Small-batch cakes with cloud-soft buttercream, bright seasonal fruit, and a pinch of the unexpected—made slowly, shared joyfully.</p>\n\n          <div class="signup-block">\n            <p class="signup-label" id="signup-label">Be first to the cake stand.</p>\n            <form class="waitlist" id="waitlist" novalidate aria-labelledby="signup-label">\n              <div class="field-wrap">\n                <label class="sr-only" for="email">Email address</label>\n                <input id="email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="Your email address" required aria-describedby="form-status">\n                <button type="submit">Join the waitlist <span aria-hidden="true">→</span></button>\n              </div>\n              <p class="form-status" id="form-status" role="status" aria-live="polite">Opening notes, first tastes, no crumbs in your inbox.</p>\n            </form>\n          </div>\n        </div>\n\n        <footer class="hero__footer">\n          <p>Mixed, piped &amp; sprinkled by hand</p>\n          <span aria-hidden="true">◆</span>\n          <p>Made locally in small batches</p>\n        </footer>\n      </div>\n\n      <div class="hero__art" aria-label="An illustrated coral cupcake with pistachio frosting, cherries and flowers on a table">\n        <div class="art-grain" aria-hidden="true"></div>\n        <p class="art-note art-note--top" aria-hidden="true">Good things<br>take thyme.</p>\n        <svg class="doodle doodle--spark" viewBox="0 0 80 80" aria-hidden="true">\n          <path d="M40 4c1 24 8 32 32 36-24 2-32 10-32 36-2-25-9-33-34-36C31 37 38 29 40 4Z"/>\n        </svg>\n\n        <div class="still-life" aria-hidden="true">\n          <div class="stem stem--one"><i></i><b></b></div>\n          <div class="stem stem--two"><i></i><b></b></div>\n          <div class="flower flower--one"><i></i><i></i><i></i><i></i><i></i><b></b></div>\n          <div class="flower flower--two"><i></i><i></i><i></i><i></i><i></i><b></b></div>\n\n          <div class="cupcake">\n            <div class="cherry"><i></i></div>\n            <div class="frosting frosting--top"></div>\n            <div class="frosting frosting--middle"></div>\n            <div class="frosting frosting--base"></div>\n            <i class="sprinkle s1"></i><i class="sprinkle s2"></i><i class="sprinkle s3"></i>\n            <i class="sprinkle s4"></i><i class="sprinkle s5"></i><i class="sprinkle s6"></i>\n            <div class="cake"></div>\n            <div class="wrapper"><i></i><i></i><i></i><i></i><i></i></div>\n          </div>\n\n          <div class="plate"><i></i></div>\n          <div class="berry berry--one"></div>\n          <div class="berry berry--two"></div>\n          <div class="crumb crumb--one"></div>\n          <div class="crumb crumb--two"></div>\n          <div class="crumb crumb--three"></div>\n        </div>\n\n        <div class="art-caption">\n          <span>01</span>\n          <p><strong>First on the menu</strong><br>Strawberry, vanilla bean<br>&amp; garden basil</p>\n        </div>\n        <svg class="doodle doodle--arrow" viewBox="0 0 120 90" aria-hidden="true">\n          <path d="M9 76c24 0 38-8 42-24 5-20-14-27-21-15-9 16 17 30 57 7"/>\n          <path d="m78 34 12 9-10 12"/>\n        </svg>\n      </div>\n    </section>\n  </main>\n</body>\n</html>\n',
           },
         },
       },
@@ -35,9 +37,8 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'tc-1',
-        result:
-          ".github/workflows/demo-preview.yml:46:scenarios: ${{ steps.scenarios.outputs.json }}\n.github/workflows/demo-preview.yml:83:- id: scenarios\n.github/workflows/demo-preview.yml:88:tr -d '\\n' < dist/demo/scenarios.json 2>/dev/null || echo '[]'\n.github/workflows/demo-preview.yml:152:SCENARIOS: ${{ needs.publish.outputs.scenarios }}\n.github/workflows/demo-preview.yml:164:let scenarios = [];\n.github/workflows/demo-preview.yml:166:scenarios = JSON.parse(process.env.SCENARIOS || '[]');\n.github/workflows/demo-preview.yml:168:scenarios = [];\n.github/workflows/demo-preview.yml:170:const links = scenarios",
+        toolCallId: 'acp-replay-write-index-html',
+        result: 'Created index.html from the approved Codex ACP filesystem write.',
         isError: false,
       },
       delayMs: 900,
@@ -46,12 +47,12 @@ export const LANDING_TRACE: DemoTrace = {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'tc-2',
-          name: 'read_file',
+          id: 'acp-replay-write-styles-css',
+          name: 'write_file',
           args: {
-            path: 'scripts/build.mts',
-            start_line: 27,
-            end_line: 47,
+            path: 'styles.css',
+            content:
+              "@import url('data:text/css,');\n\n:root {\n  --ivory: #f7f0df;\n  --paper: #fffaf0;\n  --espresso: #2f211b;\n  --coral: #e96f58;\n  --coral-dark: #c84d3d;\n  --pistachio: #b8c985;\n  --pistachio-dark: #677645;\n  --cream: #f4e3ad;\n  --ink-soft: #6f5b4e;\n}\n\n* { box-sizing: border-box; }\n\nhtml { scroll-behavior: smooth; }\n\nbody {\n  margin: 0;\n  color: var(--espresso);\n  background: #d9d0bc;\n  font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif;\n  -webkit-font-smoothing: antialiased;\n}\n\nbutton, input { font: inherit; }\n\n.site-shell {\n  min-height: 100svh;\n  padding: clamp(0px, 2vw, 28px);\n  display: grid;\n  place-items: center;\n}\n\n.hero {\n  width: min(1500px, 100%);\n  min-height: min(900px, calc(100svh - clamp(0px, 4vw, 56px)));\n  display: grid;\n  grid-template-columns: minmax(0, 1.04fr) minmax(440px, .96fr);\n  overflow: hidden;\n  background: var(--ivory);\n  box-shadow: 0 24px 70px rgb(47 33 27 / 18%);\n}\n\n.hero__copy {\n  min-width: 0;\n  padding: clamp(30px, 5vw, 76px) clamp(30px, 6vw, 92px) clamp(28px, 4vw, 56px);\n  display: flex;\n  flex-direction: column;\n  position: relative;\n  z-index: 2;\n}\n\n.masthead, .hero__footer {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 24px;\n}\n\n.wordmark {\n  display: inline-flex;\n  align-items: center;\n  gap: 11px;\n  color: inherit;\n  text-decoration: none;\n  font-family: Georgia, \"Times New Roman\", serif;\n  font-size: clamp(20px, 2vw, 27px);\n  font-weight: 700;\n  letter-spacing: -.04em;\n}\n\n.wordmark i { color: var(--coral); font-weight: 400; }\n.wordmark__flower { color: var(--coral); font-size: 25px; transform: rotate(-12deg); }\n\n.edition, .hero__footer {\n  margin: 0;\n  color: var(--ink-soft);\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: .16em;\n  text-transform: uppercase;\n}\n\n.intro {\n  width: min(660px, 100%);\n  margin: auto 0;\n  padding: clamp(72px, 9vh, 110px) 0 clamp(64px, 8vh, 90px);\n}\n\n.eyebrow {\n  margin: 0 0 26px;\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  color: var(--coral-dark);\n  font-size: 11px;\n  font-weight: 800;\n  letter-spacing: .18em;\n  text-transform: uppercase;\n}\n\n.eyebrow span { width: 34px; height: 1px; background: currentColor; }\n\nh1 {\n  margin: 0;\n  font-family: Georgia, \"Times New Roman\", serif;\n  font-size: clamp(66px, 7.1vw, 116px);\n  font-weight: 400;\n  line-height: .83;\n  letter-spacing: -.075em;\n}\n\nh1 em {\n  position: relative;\n  color: var(--coral);\n  font-weight: 400;\n}\n\nh1 em::after {\n  content: \"\";\n  position: absolute;\n  left: 2%; right: -2%; bottom: -8px;\n  height: 8px;\n  border-top: 2px solid currentColor;\n  border-radius: 50%;\n  transform: rotate(-2deg);\n}\n\n.lede {\n  max-width: 520px;\n  margin: 40px 0 0;\n  color: var(--ink-soft);\n  font-family: Georgia, \"Times New Roman\", serif;\n  font-size: clamp(17px, 1.35vw, 21px);\n  line-height: 1.6;\n}\n\n.signup-block { margin-top: clamp(38px, 5vh, 56px); }\n.signup-label { margin: 0 0 11px; font-size: 12px; font-weight: 800; letter-spacing: .04em; }\n\n.field-wrap {\n  max-width: 540px;\n  display: flex;\n  border-bottom: 1.5px solid var(--espresso);\n}\n\n.field-wrap:focus-within { border-color: var(--coral-dark); box-shadow: 0 2px 0 var(--coral-dark); }\n\ninput {\n  min-width: 0;\n  flex: 1;\n  padding: 14px 4px;\n  border: 0;\n  outline: 0;\n  color: var(--espresso);\n  background: transparent;\n  font-size: 15px;\n}\n\ninput::placeholder { color: #9b897c; opacity: 1; }\n\nbutton {\n  padding: 12px 2px 12px 20px;\n  border: 0;\n  color: var(--espresso);\n  background: transparent;\n  cursor: pointer;\n  font-size: 11px;\n  font-weight: 800;\n  letter-spacing: .12em;\n  text-transform: uppercase;\n}\n\nbutton span { display: inline-block; margin-left: 8px; color: var(--coral-dark); font-size: 17px; transition: transform .2s ease; }\nbutton:hover span, button:focus-visible span { transform: translateX(4px); }\nbutton:focus-visible { outline: 2px solid var(--coral-dark); outline-offset: 5px; }\n\n.form-status { min-height: 18px; margin: 10px 0 0; color: var(--ink-soft); font-size: 11px; }\n.form-status.is-error { color: #a12f29; }\n.form-status.is-success { color: var(--pistachio-dark); font-weight: 700; }\n\n.hero__footer { justify-content: flex-start; }\n.hero__footer span { color: var(--coral); font-size: 7px; }\n.hero__footer p { margin: 0; }\n\n.hero__art {\n  position: relative;\n  min-height: 680px;\n  overflow: hidden;\n  isolation: isolate;\n  background: var(--coral);\n}\n\n.hero__art::before {\n  content: \"\";\n  position: absolute;\n  width: 75%; aspect-ratio: 1;\n  top: -28%; right: -25%;\n  border: 1px solid rgb(255 250 240 / 35%);\n  border-radius: 50%;\n  box-shadow: 0 0 0 42px rgb(255 250 240 / 5%), 0 0 0 84px rgb(255 250 240 / 5%);\n}\n\n.art-grain {\n  position: absolute;\n  inset: 0;\n  opacity: .17;\n  background-image: url(\"data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E\");\n  mix-blend-mode: soft-light;\n  pointer-events: none;\n}\n\n.art-note {\n  position: absolute;\n  z-index: 3;\n  margin: 0;\n  color: var(--paper);\n  font-family: Georgia, serif;\n  font-size: 16px;\n  font-style: italic;\n  line-height: 1.25;\n  transform: rotate(-7deg);\n}\n\n.art-note--top { top: 9%; right: 10%; }\n\n.doodle { position: absolute; z-index: 3; fill: none; stroke: var(--paper); stroke-width: 1.7; overflow: visible; }\n.doodle--spark { top: 11%; left: 10%; width: 46px; fill: var(--paper); stroke: none; }\n.doodle--arrow { right: 14%; bottom: 16%; width: 100px; transform: rotate(7deg); }\n\n.still-life {\n  position: absolute;\n  z-index: 2;\n  inset: 10% 2% 10%;\n  transform: translate3d(var(--art-x, 0), var(--art-y, 0), 0);\n  transition: transform .25s ease-out;\n}\n\n.plate {\n  position: absolute;\n  z-index: 1;\n  left: 11%; right: 7%; bottom: 15%;\n  height: 14%;\n  border-radius: 50%;\n  background: var(--cream);\n  box-shadow: 0 22px 0 #dfc880, 0 34px 30px rgb(64 28 20 / 25%);\n}\n\n.plate i { position: absolute; inset: 21% 9%; border: 2px solid rgb(111 91 78 / 18%); border-radius: 50%; }\n\n.cupcake { position: absolute; z-index: 4; left: 20%; bottom: 24%; width: 60%; height: 62%; filter: drop-shadow(16px 18px 13px rgb(78 37 26 / 22%)); }\n\n.cake {\n  position: absolute; z-index: 2;\n  left: 19%; bottom: 17%; width: 62%; height: 28%;\n  background: #d69258;\n  clip-path: polygon(4% 0, 96% 0, 85% 100%, 15% 100%);\n}\n\n.wrapper {\n  position: absolute; z-index: 3;\n  left: 17%; bottom: 2%; width: 66%; height: 30%;\n  overflow: hidden;\n  background: var(--paper);\n  clip-path: polygon(2% 0, 98% 0, 85% 100%, 15% 100%);\n}\n\n.wrapper i { position: absolute; top: -4%; width: 2px; height: 110%; background: #e2cfa2; transform: rotate(-4deg); }\n.wrapper i:nth-child(1) { left: 18%; }.wrapper i:nth-child(2) { left: 34%; }.wrapper i:nth-child(3) { left: 50%; }\n.wrapper i:nth-child(4) { left: 66%; }.wrapper i:nth-child(5) { left: 82%; }\n\n.frosting { position: absolute; z-index: 5; background: var(--pistachio); }\n.frosting--base { left: 8%; bottom: 42%; width: 84%; height: 24%; border-radius: 48% 52% 38% 44% / 65% 68% 35% 38%; transform: rotate(-2deg); }\n.frosting--middle { left: 22%; bottom: 57%; width: 66%; height: 25%; border-radius: 50% 55% 40% 45% / 66% 70% 33% 40%; transform: rotate(3deg); }\n.frosting--top { left: 39%; bottom: 73%; width: 43%; height: 19%; border-radius: 58% 52% 38% 44% / 72% 70% 30% 34%; transform: rotate(-6deg); }\n.frosting::after { content: \"\"; position: absolute; inset: 12% 12% auto; height: 20%; border-radius: 50%; background: rgb(255 255 255 / 20%); transform: rotate(-7deg); }\n\n.cherry { position: absolute; z-index: 7; left: 57%; bottom: 88%; width: 17%; aspect-ratio: 1; border-radius: 50%; background: var(--coral-dark); box-shadow: inset -8px -8px 0 rgb(117 29 28 / 20%); }\n.cherry i { position: absolute; left: 54%; bottom: 75%; width: 45%; height: 80%; border-left: 3px solid var(--pistachio-dark); border-radius: 60% 0 0; transform: rotate(24deg); }\n\n.sprinkle { position: absolute; z-index: 8; width: 8px; height: 3px; border-radius: 3px; background: var(--coral-dark); }\n.s1 { left: 28%; bottom: 61%; transform: rotate(22deg); }.s2 { left: 47%; bottom: 69%; transform: rotate(-34deg); }\n.s3 { left: 68%; bottom: 61%; transform: rotate(18deg); }.s4 { left: 38%; bottom: 53%; transform: rotate(-12deg); }\n.s5 { left: 75%; bottom: 51%; transform: rotate(-28deg); }.s6 { left: 58%; bottom: 79%; transform: rotate(34deg); }\n\n.stem { position: absolute; z-index: 3; width: 2px; height: 42%; bottom: 27%; background: var(--pistachio-dark); transform-origin: bottom; }\n.stem--one { left: 18%; transform: rotate(-31deg); }.stem--two { right: 15%; transform: rotate(26deg); height: 36%; }\n.stem i, .stem b { position: absolute; width: 32px; height: 14px; border-radius: 100% 0; background: var(--pistachio-dark); }\n.stem i { top: 30%; right: 0; transform: rotate(-18deg); }.stem b { top: 58%; left: 0; transform: scaleX(-1) rotate(-18deg); }\n\n.flower { position: absolute; z-index: 5; width: 68px; aspect-ratio: 1; }\n.flower--one { left: 1%; top: 24%; transform: rotate(-15deg); }.flower--two { right: 1%; top: 31%; transform: scale(.72) rotate(10deg); }\n.flower i { position: absolute; left: 32%; top: 0; width: 35%; height: 52%; border-radius: 60% 60% 45% 45%; background: var(--paper); transform-origin: 50% 96%; }\n.flower i:nth-child(2) { transform: rotate(72deg); }.flower i:nth-child(3) { transform: rotate(144deg); }\n.flower i:nth-child(4) { transform: rotate(216deg); }.flower i:nth-child(5) { transform: rotate(288deg); }\n.flower b { position: absolute; z-index: 2; left: 38%; top: 38%; width: 24%; aspect-ratio: 1; border-radius: 50%; background: var(--cream); }\n\n.berry { position: absolute; z-index: 6; bottom: 25%; width: 7%; aspect-ratio: 1; border-radius: 50%; background: var(--coral-dark); box-shadow: inset -4px -4px 0 rgb(95 24 24 / 18%); }\n.berry--one { left: 14%; }.berry--two { right: 12%; bottom: 23%; transform: scale(.72); }\n.crumb { position: absolute; z-index: 7; bottom: 29%; width: 7px; height: 6px; border-radius: 50%; background: #9c633e; }\n.crumb--one { left: 31%; }.crumb--two { right: 27%; bottom: 23%; }.crumb--three { right: 20%; bottom: 30%; transform: scale(.7); }\n\n.art-caption { position: absolute; z-index: 4; left: 8%; bottom: 7%; display: flex; gap: 12px; color: var(--paper); }\n.art-caption span { font-family: Georgia, serif; font-size: 38px; line-height: .9; opacity: .65; }\n.art-caption p { margin: 0; padding-left: 12px; border-left: 1px solid rgb(255 250 240 / 55%); font-family: Georgia, serif; font-size: 12px; line-height: 1.5; }\n.art-caption strong { font-family: Arial, sans-serif; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }\n\n.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }\n\n.masthead, .intro > *, .hero__footer, .hero__art { animation: reveal .8s both cubic-bezier(.2,.7,.2,1); }\n.intro > *:nth-child(2) { animation-delay: .08s; }.intro > *:nth-child(3) { animation-delay: .16s; }\n.intro > *:nth-child(4) { animation-delay: .24s; }.hero__footer { animation-delay: .32s; }.hero__art { animation-name: artReveal; }\n\n@keyframes reveal { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }\n@keyframes artReveal { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }\n\n@media (max-width: 980px) {\n  .site-shell { padding: 0; }\n  .hero { grid-template-columns: 1fr; }\n  .hero__copy { min-height: 720px; }\n  .hero__art { min-height: 720px; }\n  h1 { font-size: clamp(72px, 14vw, 120px); }\n}\n\n@media (max-width: 560px) {\n  .hero__copy { min-height: 660px; padding: 25px 22px 28px; }\n  .edition { display: none; }\n  .intro { padding: 60px 0 52px; }\n  h1 { font-size: clamp(58px, 18vw, 84px); }\n  .lede { margin-top: 32px; font-size: 17px; }\n  .field-wrap { display: block; border: 0; }\n  input { width: 100%; border-bottom: 1.5px solid var(--espresso); }\n  button { margin-top: 12px; padding: 12px 0; }\n  .hero__footer { align-items: flex-start; gap: 10px; font-size: 8px; }\n  .hero__footer p:last-child { text-align: right; }\n  .hero__art { min-height: 590px; }\n  .still-life { inset: 8% -6% 8%; }\n  .art-note--top { top: 7%; }\n  .art-caption { left: 6%; }\n  .doodle--arrow { display: none; }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  html { scroll-behavior: auto; }\n  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }\n  .still-life { transform: none !important; }\n}\n",
           },
         },
       },
@@ -60,9 +61,8 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'tc-2',
-        result:
-          "// Emit a scenario manifest (id + label) alongside the demo build so the per-PR\n// demo-preview PR comment can link each selectable `?scenario=` state without\n// hard-coding the list. `demo-scenarios.ts` has only a type-only import, so\n// esbuild bundles it standalone; we import the emitted module and read the\n// exported list back. Best-effort: any failure writes `[]` rather than breaking\n// the demo build, since the comment degrades gracefully without it.\nasync function writeDemoScenarioManifest(outPath: string): Promise<void> {\n  const tempModule = resolve('dist', '.demo-scenarios.mjs')\n  try {\n    await esbuild.build({\n      entryPoints: ['src/shared/demo-scenarios.ts'],\n      bundle: true,\n      platform: 'node',\n      format: 'esm',\n      outfile: tempModule,\n      alias: sharedAlias,\n    })\n    const imported: unknown = await import(pathToFileURL(tempModule).href)\n    const list =\n      imported !== null && typeof imported === 'object' && 'DEMO_SCENARIOS' in imported\n        ? imported.DEMO_SCENARIOS",
+        toolCallId: 'acp-replay-write-styles-css',
+        result: 'Created styles.css from the approved Codex ACP filesystem write.',
         isError: false,
       },
       delayMs: 900,
@@ -71,12 +71,12 @@ export const LANDING_TRACE: DemoTrace = {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'tc-3',
-          name: 'read_file',
+          id: 'acp-replay-write-script-js',
+          name: 'write_file',
           args: {
-            path: 'src/shared/demo-scenarios.ts',
-            start_line: 1,
-            end_line: 16,
+            path: 'script.js',
+            content:
+              "const form = document.querySelector('#waitlist');\nconst email = document.querySelector('#email');\nconst status = document.querySelector('#form-status');\nconst art = document.querySelector('.hero__art');\nconst stillLife = document.querySelector('.still-life');\nconst reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');\n\nform.addEventListener('submit', (event) => {\n  event.preventDefault();\n  status.classList.remove('is-error', 'is-success');\n\n  if (!email.checkValidity()) {\n    status.textContent = 'Please enter a valid email address.';\n    status.classList.add('is-error');\n    email.setAttribute('aria-invalid', 'true');\n    email.focus();\n    return;\n  }\n\n  email.removeAttribute('aria-invalid');\n  status.textContent = 'You’re on the list — save room for something lovely.';\n  status.classList.add('is-success');\n  form.reset();\n});\n\nemail.addEventListener('input', () => {\n  email.removeAttribute('aria-invalid');\n  if (status.classList.contains('is-error')) {\n    status.textContent = 'Opening notes, first tastes, no crumbs in your inbox.';\n    status.classList.remove('is-error');\n  }\n});\n\nif (!reduceMotion.matches) {\n  art.addEventListener('pointermove', (event) => {\n    const bounds = art.getBoundingClientRect();\n    const x = ((event.clientX - bounds.left) / bounds.width - 0.5) * 10;\n    const y = ((event.clientY - bounds.top) / bounds.height - 0.5) * 10;\n    stillLife.style.setProperty('--art-x', `${x}px`);\n    stillLife.style.setProperty('--art-y', `${y}px`);\n  });\n\n  art.addEventListener('pointerleave', () => {\n    stillLife.style.setProperty('--art-x', '0px');\n    stillLife.style.setProperty('--art-y', '0px');\n  });\n}\n",
           },
         },
       },
@@ -85,26 +85,31 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'tc-3',
-        result:
-          "import type { Project, Thread } from './types/index.ts'\nimport type { DemoTrace } from './demo-traces.ts'\nimport { LANDING_TRACE } from './demo-traces/landing.ts'\n\nconst FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)\nconst FOOTER_INPUT_TOKENS = 50_000\nconst FOOTER_OUTPUT_TOKENS = 1_800\n\nexport interface DemoScenario {\n  id: string\n  label: string\n  project: Project\n  threads: Thread[]\n  settings: Readonly<Record<string, unknown>>\n  /**\n   * A recorded turn the demo can replay when its prompt is submitted. Scenarios",
+        toolCallId: 'acp-replay-write-script-js',
+        result: 'Created script.js from the approved Codex ACP filesystem write.',
         isError: false,
       },
       delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Refining patch execution timing**',
+      },
     },
     {
       chunk: {
         type: 'text',
-        text: "Nothing hard-codes it — the list is a build output.\n\n### The chain\n\n1. **`src/shared/demo-scenarios.ts`** is the single source: `DEMO_SCENARIOS` holds every\n   `{ id, label, project, threads, settings }` the demo can boot into.\n2. **`scripts/build.mts`** (`writeDemoScenarioManifest`) bundles that module on its own with\n   esbuild, imports the result, and writes `id` + `label` pairs to `dist/demo/scenarios.json`.\n3. **`.github/workflows/demo-preview.yml`** reads that file into a step output:\n\n   ```yaml\n   tr -d '\\n' < dist/demo/scenarios.json 2>/dev/null || echo '[]'\n   ```\n\n4. The `comment` job parses it and maps each entry to `?scenario=<id>`.\n\n### What that means for you\n\nAdd a scenario to `DEMO_SCENARIOS` and the PR comment picks it up on the next push — no\nworkflow edit. The manifest step is deliberately best-effort: if the bundle fails it writes\n`[]` and the comment degrades to a bare preview link rather than failing the build.",
+        text: 'Created the polished, responsive coming-soon site with:\n\n- Warm editorial two-column layout\n- CSS-illustrated cupcake still-life\n- Accessible email waitlist validation\n- Refined entrance and pointer animations\n- Full reduced-motion support\n- No dependencies\n\nhttp://localhost:4173',
       },
     },
     {
       chunk: {
         type: 'usage',
-        model: 'claude-sonnet-5',
-        inputTokens: 41820,
-        outputTokens: 1264,
-        cacheReadTokens: 38400,
+        model: 'acp:codex',
+        inputTokens: 314,
+        outputTokens: 62,
+        cacheReadTokens: 21248,
       },
       delayMs: 300,
     },
@@ -118,9 +123,9 @@ export const LANDING_TRACE: DemoTrace = {
   ],
   source: {
     exportVersion: 5,
-    threadId: 'a2f1c6d4-9f4a-4a91-8d7e-3f0b1c2d4e5f',
-    title: 'Where the demo scenario list comes from',
+    threadId: 'edd43915-181a-467a-b965-4a87b44fe87b',
+    title: 'Build a polished coming-soon site for',
     turn: 0,
-    model: 'claude-sonnet-5',
+    model: 'acp:codex',
   },
 }
