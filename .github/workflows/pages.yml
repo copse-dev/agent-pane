@@ -96,7 +96,13 @@ jobs:
             mkdir -p _previews
             git archive FETCH_HEAD | tar -x -C _previews
             shopt -s nullglob
-            for dir in _previews/release/ _previews/main/ _previews/pr-*/; do
+            # `vendor/` belongs in this list. It is not a demo, but demo-preview.yml
+            # stopped every demo carrying its own 34MB Monaco tree and pointed them
+            # at that one shared copy instead — so a build that is not published
+            # beside them has no editor to load. It was omitted here, which meant
+            # every preview built after that change requested a Monaco tree that
+            # was committed to demo-previews and then never deployed.
+            for dir in _previews/release/ _previews/main/ _previews/pr-*/ _previews/vendor/; do
               [ -d "$dir" ] || continue
               name="$(basename "$dir")"
               echo "Adding demo: demo/$name"
