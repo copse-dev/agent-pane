@@ -1,8 +1,9 @@
 # Working at fleet scale
 
-**Status: Proposed**, except C7's boundary rules, which merged as
-[#1667](https://github.com/copse-dev/agent-pane/pull/1667). C3 is open as
-[#1663](https://github.com/copse-dev/agent-pane/pull/1663). This is an audit of what
+**Status: Proposed**, except C3 and C7, which are merged —
+[#1663](https://github.com/copse-dev/agent-pane/pull/1663) capped every CI job and
+[#1667](https://github.com/copse-dev/agent-pane/pull/1667) enforced the five module
+boundaries. This is an audit of what
 breaks when one person supervises a fleet of agents rather than writing the code
 themselves: what the CI should do differently, what the product should do differently, and
 what neither currently lets you look at.
@@ -54,7 +55,7 @@ Measured 2026-08-09 against `copse-dev/agent-pane`.
 | Cancelled                               | 7 of 30 (~23%) — concurrency supersession                                                   | Actions API                                      |
 | Failed                                  | 3 of 23 completed (~13%)                                                                    | Actions API                                      |
 | Longest un-concluded run                | 167 min and counting on a `main` push (run 31312937555)                                     | Actions API                                      |
-| Job-level `timeout-minutes` in `ci.yml` | **none** — only the e2e _step_ caps at 18 min                                               | `.github/workflows/ci.yml`                       |
+| Job-level `timeout-minutes` in `ci.yml` | **none** at audit time — only the e2e _step_ capped, at 18 min; fixed by #1663              | `.github/workflows/ci.yml`                       |
 | `setup` action cost                     | 4:31 / 4:54 / 4:43 in precheck / check / bench, vs 0:24 in build — same run                 | run 31303508909                                  |
 | e2e queue delay                         | shard 1 created 08:42:23, started 08:57:49 — 15 min waiting for a runner                    | run 31303508909                                  |
 | e2e pool                                | 8 shards over ~6 ephemeral runners that also serve every check-tier job                     | run 31303508909, `ci-runners/docker-compose.yml` |
@@ -63,10 +64,12 @@ Measured 2026-08-09 against `copse-dev/agent-pane`.
 
 Two of these deserve calling out because they are not tuning problems.
 
-**No job in `ci.yml` sets `timeout-minutes`.** GitHub's default is 360 minutes. On an
-ephemeral self-hosted pool of roughly six runners, one wedged job holds 1/6th of the
-fleet's capacity for up to six hours, and every PR behind it queues. The 167-minute run
-above is that failure mode in progress. The e2e step is capped; nothing else is.
+**No job in `ci.yml` set `timeout-minutes`** at the time of measurement — since fixed by
+[#1663](https://github.com/copse-dev/agent-pane/pull/1663). GitHub's default is 360
+minutes. On an ephemeral self-hosted pool of roughly six runners, one wedged job holds
+1/6th of the fleet's capacity for up to six hours, and every PR behind it queues. The
+167-minute run above is that failure mode in progress. Only the e2e _step_ was capped, at
+18 minutes, which does not bound the job around it.
 
 **Quarantine has no expiry.** Fourteen e2e specs are off in CI. Some entries name a real
 cause (`context-wheel` OOM-crashes the runner); others say "flaky on the CI runner" with
@@ -125,7 +128,7 @@ can be blocked by, so agents will keep reintroducing it and nobody will know.
 
 ### C3 — Cap every job
 
-**Change.** Add `timeout-minutes` to every job in `ci.yml`. Open as
+**Change.** Add `timeout-minutes` to every job in `ci.yml`. Merged as
 [#1663](https://github.com/copse-dev/agent-pane/pull/1663): 30 for `precheck`, 20 for
 `autoformat`, 45 each for `check` / `bench` / `e2e`, 30 for `build` and
 `commit-screenshots`, 90 for the two model-eval jobs, 15 for `ci-passed` — with a pin in
@@ -495,7 +498,7 @@ part's P0 too.
 
 | Order | Item                                                                                        | Effort  | Unlocks                                        |
 | ----- | ------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------- |
-| 1     | C3 job timeouts                                                                             | minutes | stops the capacity leak                        |
+| ✓     | C3 job timeouts — **merged** ([#1663](https://github.com/copse-dev/agent-pane/pull/1663))   | —       | stops the capacity leak                        |
 | ✓     | C7 boundary rules — **merged** ([#1667](https://github.com/copse-dev/agent-pane/pull/1667)) | —       | a convention agents can actually see           |
 | 3     | S1 + S2 video reporter, noVNC (`ffmpeg`, `x11vnc`)                                          | ~a day  | a failure you can look at, a run you can watch |
 | 4     | C1 run record + job summaries                                                               | ~a day  | C2, C4, C5 arguments; P2's observation stream  |
@@ -507,10 +510,9 @@ part's P0 too.
 | 10    | S4 container capture → `video_frames`                                                       | ~a week | "watch this agent"; frames in incident notes   |
 | 11    | P3 shared CI memory                                                                         | ~a week | stops N agents re-debugging one failure        |
 
-C7 is merged. C3 ([#1663](https://github.com/copse-dev/agent-pane/pull/1663)), C6, S1 and
-S2 can land without discussion too — S1 and S2 are two packages in
-`ci-runners/Dockerfile` and a reporter entry, and they change the debugging experience
-more per line than anything else here.
+C3 and C7 are merged. C6, S1 and S2 can land without discussion too — S1 and S2 are two
+packages in `ci-runners/Dockerfile` and a reporter entry, and they change the debugging
+experience more per line than anything else here.
 
 Two ordering constraints are worth keeping. Everything below the line in Part 2 should
 wait for P1, because a fleet capability with nowhere to surface is how the dark-factory
