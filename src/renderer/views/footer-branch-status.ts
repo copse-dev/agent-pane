@@ -16,6 +16,15 @@ import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
 
+/**
+ * Branch lookups fail for a legitimately broken worktree, so they never toast —
+ * but they still belong in the console, or a genuine IPC regression here would
+ * leave no trace at all.
+ */
+function reportBranchFailure(what: string, error: unknown): void {
+  console.warn(`[footer-branch-status] failed to ${what}:`, error)
+}
+
 function orderBranchesWithDefaultFirst(
   branches: GitBranchInfo[],
   defaultBranch: string | null,
@@ -68,6 +77,7 @@ export function mountFooterBranchStatus(
   let branches: GitBranchInfo[] = []
   let defaultBranch: string | null = null
   let open = false
+  let refreshToken = 0
 
   function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
@@ -240,18 +250,25 @@ export function mountFooterBranchStatus(
     }
   }
 
-  async function loadBranches(): Promise<void> {
+  /**
+   * Load the picker's branch list. `token` names the refresh generation the
+   * caller started in — results from an older generation are dropped rather
+   * than painted over the thread the user has since switched to.
+   */
+  async function loadBranches(token: number): Promise<void> {
     const owner = getActiveThreadOwner(store)
     if (!owner) return
     const [listed, defaultName] = await Promise.all([
       api.git.listBranches(owner.projectId, owner.threadId),
       api.git.getDefaultBranch(owner.projectId, owner.threadId),
     ])
+    if (token !== refreshToken) return
     branches = listed
     defaultBranch = defaultName
   }
 
   async function refresh(): Promise<void> {
+    const token = ++refreshToken
     if (!store.getState().workspaceRoot) {
       status = null
       branches = []
@@ -262,11 +279,37 @@ export function mountFooterBranchStatus(
     const owner = getActiveThreadOwner(store)
     if (!owner) return
     const threadBranch = getActiveThreadBranch()
-    status = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
-    if (isPickerMode()) await loadBranches()
-    else {
-      branches = []
-      defaultBranch = await api.git.getDefaultBranch(owner.projectId, owner.threadId)
+    branches = []
+    defaultBranch = null
+    try {
+      const nextStatus = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
+      if (token !== refreshToken) return
+      status = nextStatus
+    } catch (error) {
+      if (token !== refreshToken) return
+      // Branch status is supplementary UI. A detached or externally modified
+      // worktree makes the main process reject (validateThreadWorktree), and
+      // the thread must stay selectable so the user can inspect and recover it.
+      reportBranchFailure('read branch status', error)
+      status = null
+    }
+    if (isPickerMode()) {
+      try {
+        await loadBranches(token)
+      } catch (error) {
+        if (token !== refreshToken) return
+        reportBranchFailure('list branches', error)
+      }
+      // loadBranches awaits again, so a newer refresh can have overtaken us.
+      if (token !== refreshToken) return
+    } else {
+      try {
+        defaultBranch = await api.git.getDefaultBranch(owner.projectId, owner.threadId)
+      } catch (error) {
+        if (token !== refreshToken) return
+        reportBranchFailure('read default branch', error)
+      }
+      if (token !== refreshToken) return
     }
     renderTrigger()
     if (open) renderMenu()
@@ -303,7 +346,13 @@ export function mountFooterBranchStatus(
     setOpen(next)
     if (next) {
       void (async (): Promise<void> => {
-        await loadBranches()
+        const token = refreshToken
+        try {
+          await loadBranches(token)
+        } catch (error) {
+          reportBranchFailure('list branches', error)
+        }
+        if (token !== refreshToken) return
         renderMenu()
       })()
     }
@@ -334,6 +383,7 @@ export function mountFooterBranchStatus(
   return {
     refresh: () => void refresh(),
     destroy: (): void => {
+      refreshToken += 1
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubs.forEach((u) => {
         u()
