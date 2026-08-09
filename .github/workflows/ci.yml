@@ -1130,7 +1130,19 @@ jobs:
             local failing
             failing="$(grep -oE '^\[[^]]+\] [0-9]+ failing' "$run_log" | grep -oE '^\[[^]]+\]' | sort -u)"
             if [ -n "$failing" ]; then
-              printf '%s\n' "$failing" | grep -F -f - "$run_log" | tail -n 40 || true
+              # Name every failing spec before printing any detail. The detail is
+              # capped, and a cap measured in lines drops whole workers once more
+              # than one spec fails: run 31266338302 shard 6 reported "3 failed"
+              # and named exactly one, because `tail -n 40` reached back only as
+              # far as the last worker's block. The names are what a reader needs
+              # first and they cost one line each, so they are never truncated.
+              #
+              # The raw wdio output lives in $run_log, which is not uploaded and
+              # not in the job log, so anything this function drops is gone.
+              echo "failing specs:"
+              printf '%s\n' "$failing" | grep -F -f - "$run_log" | grep -F '» ' | sort -u || true
+              echo
+              printf '%s\n' "$failing" | grep -F -f - "$run_log" | tail -n 120 || true
             else
               # No worker reported a failure, so the shard died some other way —
               # a timeout, or a session that never came up. The raw tail is all
