@@ -1,10 +1,19 @@
 import type { Project, Thread } from './types/index.ts'
+import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
 const FOOTER_OUTPUT_TOKENS = 1_800
+
+const DEMO_CODEX_ACP_AGENT = {
+  id: 'codex',
+  title: 'Codex',
+  command: 'codex-acp',
+  args: [],
+  enabled: true,
+} satisfies AcpAgentConfig
 
 export interface DemoScenario {
   id: string
@@ -201,6 +210,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       theme: 'dark',
       uiTintStrength: 'off',
       model: LANDING_TRACE.source?.model ?? 'claude-opus-5',
+      registeredAcpAgents: [DEMO_CODEX_ACP_AGENT],
       layout: {
         projectsPaneWidth: 240,
         filesPaneWidth: 640,
