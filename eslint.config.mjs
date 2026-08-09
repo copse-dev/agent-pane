@@ -80,6 +80,76 @@ export default ts.config(
     },
   },
   {
+    // Keep the agent path importable without Electron. `agent-path-electron-surface.test.ts`
+    // already proves the product's agent construction runs under plain Node, but it does so
+    // by walking the import graph from three named roots — so a file that is not yet
+    // reachable can take a runtime Electron dependency freely, and only turns some later,
+    // unrelated PR red once something imports it. This rule enforces the same boundary at
+    // every file, and reports it where the mistake is made.
+    //
+    // Type-only imports stay allowed everywhere (`allowTypeImports`): TypeScript erases
+    // them, so Node never resolves Electron, and several pure modules legitimately type
+    // their injected handles as `BrowserWindow` / `IpcMain`.
+    //
+    // Only the bare `electron` module is restricted. `electron-updater` and
+    // `electron-store` are separate packages and do not match a `paths` entry; bringing
+    // them under the boundary is a follow-up, not a silent side effect of this rule.
+    // `.mts` is listed alongside `.ts` because `src/shared` has two of them, and shared
+    // code is exactly where an Electron import would do the most damage.
+    files: ['src/**/*.ts', 'src/**/*.mts', 'packages/*/src/**/*.ts', 'packages/*/src/**/*.mts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              allowTypeImports: true,
+              message:
+                'Importing Electron here couples the agent path to the desktop runtime. Inject the ' +
+                'capability from an Electron entry point instead (see the handler seams in ' +
+                'approval.ts / ask-user.ts), or `import type` if you only need its types. If this ' +
+                'file genuinely IS a desktop entry point, add it to the allow-list in ' +
+                'eslint.config.mjs — deliberately, and visibly in review.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The Electron surface: every file that may hold a runtime `electron` import. Kept as an
+    // explicit list rather than a glob over `src/main/**` because the point of the rule is
+    // that `src/main` is NOT the boundary — 18 of its ~400 files need Electron, and the rest
+    // are a portable agent runtime that merely lives beside them.
+    //
+    // `windows/` and `ipc/` are wholesale: both directories exist to own the desktop shell
+    // and IPC surface. `preload/` bridges the renderer and cannot work without it. The
+    // six services below are the leaky ones — each is a desktop capability behind a seam
+    // (auto-update, dialogs, tray/menu prompts, the browser panel, SSH IPC), and each is a
+    // candidate for the `*-electron.ts` suffix convention if that is ever adopted.
+    //
+    // The renderer is deliberately absent: it reaches Electron only through the preload
+    // bridge, and today imports it nowhere.
+    files: [
+      'src/preload/**/*.ts',
+      'src/main/index.ts',
+      'src/main/app-init.ts',
+      'src/main/app-icon.ts',
+      'src/main/windows/**/*.ts',
+      'src/main/ipc/**/*.ts',
+      'src/main/services/auto-update.ts',
+      'src/main/services/close-confirm.ts',
+      'src/main/services/update-prompt.ts',
+      'src/main/services/user-alerts-electron.ts',
+      'src/main/services/packs/pack-browser-panel.ts',
+      'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': 'off',
+    },
+  },
+  {
     files: [
       'src/**/*.test.ts',
       'packages/*/src/**/*.test.ts',
