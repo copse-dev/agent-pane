@@ -55,6 +55,20 @@ describe('browser preview tool', () => {
         timeoutMsg: 'expected the preview page to load in the visible Browser tab',
       },
     )
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(async () => {
+          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
+            executeJavaScript?: (code: string) => Promise<unknown>
+          } | null
+          const text = await webview?.executeJavaScript?.('document.body.innerText')
+          return typeof text === 'string' && text.includes('Fresh from the Copse preview')
+        }),
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the preview document content to finish rendering',
+      },
+    )
     await expect($('.approval-dialog')).not.toExist()
     await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
     await saveThreePaneScreenshot('browser-preview-tool-visible.png', { filesPaneWidth: 1_040 })
