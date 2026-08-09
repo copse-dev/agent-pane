@@ -174,6 +174,31 @@ boundaries rather than every mechanical call site.
 | New terminal                                             | Active thread      | Existing terminals keep their original cwd and show owning thread/root.                     |
 | Background process                                       | Owning thread      | Needed to stop processes before worktree retirement.                                        |
 
+### Edit approval in worktree mode
+
+Isolation changes what an approval prompt is protecting, so the diff queue reads
+`checkoutMode` as policy input, not just as a root.
+
+In shared mode nothing moved: writes apply directly when the checkout is clean or
+its uncommitted work has been backed up (`canApplyDirectly`), and delete, rename,
+and mkdir always stage. In worktree mode the three non-content ops take the same
+path writes do, gated on the `worktreeAutoApproveEdits` setting (default on). The
+justification is invariant 6: the worktree is cut from the default branch, lives
+on its own branch in its own directory, and the user's checkout is never mutated
+by it — so the files an isolated thread deletes or renames are ones only the
+agent has ever written, and the prompt asks the user to adjudicate their own
+absence of stake.
+
+What isolation does **not** buy is an exemption from the safety fallbacks. An op
+still stages when git cannot be read, when unowned work in the worktree could not
+be backed up (dirty seeding puts the user's work there), or when the target
+changed on disk since Copse last touched it. Issue #699 settled those as genuine
+fallbacks rather than friction, and worktree mode does not reopen that.
+
+The state cache mirrors `root`: `DiffQueueState.checkoutMode` is refreshed from
+the execution context whenever one is bound, because the ACP native-tool bridge
+binds only the owner and leaves `getThreadExecutionContext()` null on its chain.
+
 ## Persisted model and migration
 
 Add optional metadata; absence always means shared mode. `ThreadMeta` already derives
