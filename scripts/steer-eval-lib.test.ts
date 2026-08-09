@@ -238,6 +238,18 @@ describe('steer eval prompt arms', () => {
     assert.ok(!withoutArm.includes(STEER_TURN_START_TEXTS.forcedTodoPlan))
   })
 
+  it('does not prescribe a git tool in the shared eval prompt', () => {
+    const withoutArm = buildSteerEvalPrompt(
+      '/tmp/ws',
+      { kind: 'turnStart', ref: 'forcedTodoPlan' },
+      'without',
+    )
+    assert.doesNotMatch(
+      withoutArm,
+      /Use the git_\* tools for version control rather than run_shell/,
+    )
+  })
+
   it('a nudge steer leaves both prompts identical — it varies mid-loop', () => {
     const spec = { kind: 'nudge', ref: 'stuckFinalize', afterSteps: 3 } as const
     assert.equal(
@@ -249,10 +261,10 @@ describe('steer eval prompt arms', () => {
 
   it('resolves steer text from the shipping constants, not a copy', () => {
     assert.equal(
-      steerText({ kind: 'turnStart', ref: 'commitSteering' }),
-      STEER_TURN_START_TEXTS.commitSteering,
+      steerText({ kind: 'turnStart', ref: 'forcedTodoPlan' }),
+      STEER_TURN_START_TEXTS.forcedTodoPlan,
     )
-    assert.match(STEER_TURN_START_TEXTS.commitSteering, /git_commit tool/)
+    assert.match(STEER_TURN_START_TEXTS.forcedTodoPlan, /update_todos/)
   })
 })
 
@@ -435,11 +447,26 @@ describe('shipped steer packs', () => {
     }
   })
 
-  it('fixtures referenced by packs exist', () => {
+  it('fixtures and seeded nudge reads referenced by packs exist', () => {
     for (const path of steerPackPaths()) {
-      for (const task of loadSteerPack(path).tasks) {
-        if (task.fixture === undefined) continue
+      const pack = loadSteerPack(path)
+      for (const task of pack.tasks) {
+        if (task.fixture === undefined) {
+          assert.equal(
+            task.seedReadFiles,
+            undefined,
+            `seeded reads require a fixture in ${task.id}`,
+          )
+          continue
+        }
         assert.ok(existsSync(task.fixture), `missing fixture ${task.fixture} for task ${task.id}`)
+        for (const seededPath of task.seedReadFiles ?? []) {
+          assert.equal(pack.steer.kind, 'nudge', `seeded reads require a nudge pack in ${task.id}`)
+          assert.ok(
+            existsSync(join(task.fixture, seededPath)),
+            `missing seeded read ${seededPath} for task ${task.id}`,
+          )
+        }
       }
     }
   })

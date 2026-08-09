@@ -53,7 +53,6 @@ import {
   READ_TERMINAL_BLOCK,
   SHARED_WORKING_STYLE,
 } from '../src/main/services/agent-prompt.ts'
-import { buildCommitSteeringPrompt } from '@copse/agent/commit-steering.ts'
 import { TODO_STEERING_PROMPT } from '@copse/agent/todo-steering.ts'
 import {
   FORCED_TODO_PLAN_PROMPT,
@@ -98,12 +97,7 @@ export const STEER_BLOCK_IDS = [
   'opus5ToneReminder',
   'readTerminal',
 ] as const
-export const STEER_TURN_START_IDS = [
-  'commitSteering',
-  'forcedTodoPlan',
-  'forcedWrittenPlan',
-  'todoSteering',
-] as const
+export const STEER_TURN_START_IDS = ['forcedTodoPlan', 'forcedWrittenPlan', 'todoSteering'] as const
 export const STEER_NUDGE_IDS = [
   'loopNudge',
   'openTodosFinalize',
@@ -128,7 +122,6 @@ export const STEER_BLOCK_TEXTS: Record<SteerBlockId, string> = {
 
 /** Steers a `turnStart` hook injects into the system prompt for one turn. */
 export const STEER_TURN_START_TEXTS: Record<SteerTurnStartId, string> = {
-  commitSteering: buildCommitSteeringPrompt(),
   forcedTodoPlan: FORCED_TODO_PLAN_PROMPT,
   forcedWrittenPlan: FORCED_WRITTEN_PLAN_PROMPT,
   todoSteering: TODO_STEERING_PROMPT,
@@ -225,6 +218,13 @@ export interface SteerEvalTask {
    * list registered.
    */
   excludeTools?: string[] | undefined
+  /**
+   * For nudge packs, seed an exact read-only checkpoint instead of asking the
+   * model to generate an independently sampled phase 1 in each arm. Seeded
+   * calls are context, not scored calls; checks therefore measure only work
+   * performed after the injected nudge/control message.
+   */
+  seedReadFiles?: string[] | undefined
   checks: SteerCheck[]
   maxSteps?: number | undefined
   timeoutMs?: number | undefined
@@ -372,6 +372,7 @@ const steerTaskSchema: z.ZodType<SteerEvalTask> = z.object({
   allowedCommandPatterns: z.array(z.string()).optional(),
   mockOnly: z.boolean().optional(),
   excludeTools: z.array(z.string()).optional(),
+  seedReadFiles: z.array(z.string()).optional(),
   checks: z.array(steerCheckSchema).min(1),
   maxSteps: z.number().int().positive().optional(),
   timeoutMs: z.number().int().positive().optional(),
@@ -413,9 +414,8 @@ const steerPackSchema: z.ZodType<SteerPack> = z.object({
 // Tools
 //
 // The doctrine harness ships file tools only. Steer evals additionally need git
-// (branch safety, commit steering) and a plan tool (forced planning), and they
-// need `run_shell` to be able to do the WRONG thing — a model that shells out
-// to `git commit` must be observable, or the commit-steering eval cannot fail.
+// (branch safety), a plan tool (forced planning), and `run_shell` for task
+// validation.
 // ---------------------------------------------------------------------------
 
 export const STEER_EVAL_TOOLS: LLMTool[] = [
@@ -533,7 +533,7 @@ const EVAL_PROMPT_VARS: PromptSectionVars = {
   inspectVerb: 'read',
   toolChoice: `- Use read_file and list_dir for workspace inspection, not run_shell
 - Use the dedicated file tools for edits
-- Use the git_* tools for version control rather than run_shell`,
+- Reserve run_shell for running tests, builds, package installs, and other commands with no dedicated tool`,
   workingStyle: SHARED_WORKING_STYLE,
   gitBranchSafety: GIT_BRANCH_SAFETY,
 }
@@ -626,8 +626,7 @@ async function executeTool(
   }
   if (name === 'git_commit') {
     // Mirrors the shipping tool: stage everything, then commit with the Copse
-    // trailer. The trailer is exactly what `run_shell git commit` loses, so the
-    // commit-steering eval can assert on it.
+    // trailer.
     git(workspace, 'add -A')
     const message = stringArg(args, 'message')
     const body = `${message}\n\nCo-Authored-By: Copse <noreply@copse.dev>`
@@ -854,6 +853,26 @@ function recordArgs(args: unknown): Record<string, unknown> {
   return { ...expectRecord(args) }
 }
 
+function appendSeededReads(
+  messages: LLMMessage[],
+  workspace: string,
+  paths: readonly string[],
+): void {
+  const calls = paths.map((path, index) => ({
+    id: `seed-read-${String(index + 1)}`,
+    name: 'read_file',
+    args: { path },
+  }))
+  messages.push({ role: 'assistant', content: calls })
+  messages.push({
+    role: 'tool',
+    toolResults: paths.map((path, index) => ({
+      toolCallId: calls[index]?.id ?? `seed-read-${String(index + 1)}`,
+      result: readFileSync(jailPath(workspace, path), 'utf8'),
+    })),
+  })
+}
+
 async function runAttempt(
   pack: SteerPack,
   task: SteerEvalTask,
@@ -916,19 +935,23 @@ async function runAttempt(
   const maxSteps = task.maxSteps ?? 16
   try {
     if (pack.steer.kind === 'nudge') {
-      // Phase 1 runs both arms identically, up to the point the production
-      // guard would fire. Phase 2 is the only difference: the steered arm gets
-      // the shipping nudge, the control gets a neutral continuation.
+      // A seeded checkpoint is exactly identical across arms and leaves `calls`
+      // empty, so checks score only post-injection behavior. Packs without one
+      // retain the generated phase for nudges that need an organic setup.
       const { afterSteps } = pack.steer
-      await runAgentLoop({
-        provider,
-        messages,
-        tools,
-        executeTool: (name, args) => executeTool(workspace, task, name, args),
-        signal: controller.signal,
-        maxSteps: Math.min(afterSteps, maxSteps),
-        onChunk,
-      })
+      if (task.seedReadFiles) {
+        appendSeededReads(messages, workspace, task.seedReadFiles)
+      } else {
+        await runAgentLoop({
+          provider,
+          messages,
+          tools,
+          executeTool: (name, args) => executeTool(workspace, task, name, args),
+          signal: controller.signal,
+          maxSteps: Math.min(afterSteps, maxSteps),
+          onChunk,
+        })
+      }
       const nudge =
         armId === 'with'
           ? STEER_NUDGE_TEXTS[pack.steer.ref]
@@ -940,7 +963,7 @@ async function runAttempt(
         tools,
         executeTool: (name, args) => executeTool(workspace, task, name, args),
         signal: controller.signal,
-        maxSteps: Math.max(1, maxSteps - afterSteps),
+        maxSteps: task.seedReadFiles ? maxSteps : Math.max(1, maxSteps - afterSteps),
         onChunk,
       })
     } else {

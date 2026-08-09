@@ -17,8 +17,8 @@
 // `FIRST_PARTY_HOOKS` list (`hook-registry.ts`) via `TURN_START_HOOKS` /
 // `BEFORE_FINALIZE_HOOKS`. Registering them here **without** removing them
 // there would double-register (a P4 landing check). They are dropped from
-// those static lists in the same change; only the non-todo entries
-// (`github-link-steering`, `commit-steering`) remain.
+// those static lists in the same change; only the non-todo
+// `github-link-steering` entry remains.
 //
 // **Decision 17 invariant.** The pack's *emission* (agent-service pumps
 // `panel_update` through the pack contribution id when the pack is enabled)
