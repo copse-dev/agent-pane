@@ -7,6 +7,7 @@ import {
   githubLinkSteeringHook,
   todoPinHook,
   forcedPlanningHook,
+  siteBuildingSteeringHook,
 } from './turn-start-hooks.ts'
 import {
   FORCED_PLANNING_PACK_ID,
@@ -18,6 +19,7 @@ import {
 import { TODO_STEERING_PROMPT, formatTodosForPrompt } from '../todo-steering.ts'
 import { buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
 import type { TodoItem } from '../wire-types.ts'
+import { SITE_BUILDING_STEERING_PROMPT } from '../site-building-steering.ts'
 
 const multiStepPrompt =
   'Refactor the renderer across several files and then run tests to confirm nothing broke'
@@ -57,6 +59,39 @@ describe('todo-steering', () => {
     )
     assert.equal(
       await todoSteeringHook.run({ userText: plainPrompt, priorTodos: [] }, {}),
+      undefined,
+    )
+  })
+
+  it('abstains on ACP because update_todos is not a bridged tool', async () => {
+    assert.equal(
+      await todoSteeringHook.run(
+        { userText: multiStepPrompt, priorTodos: [], executor: 'acp', toolNames: [] },
+        {},
+      ),
+      undefined,
+    )
+  })
+})
+
+describe('site-building-steering', () => {
+  it('injects the same quality brief for local and ACP executors', async () => {
+    const userText =
+      'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio.'
+    for (const executor of ['local', 'acp'] as const) {
+      assert.deepEqual(
+        await siteBuildingSteeringHook.run({ userText, priorTodos: [], executor }, {}),
+        { injectContext: SITE_BUILDING_STEERING_PROMPT },
+      )
+    }
+  })
+
+  it('abstains from a site review', async () => {
+    assert.equal(
+      await siteBuildingSteeringHook.run(
+        { userText: 'Review our coming-soon website', priorTodos: [] },
+        {},
+      ),
       undefined,
     )
   })

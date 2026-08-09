@@ -93,6 +93,7 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    onShowTab?: (handler: (url: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void

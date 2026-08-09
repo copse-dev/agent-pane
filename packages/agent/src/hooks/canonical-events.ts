@@ -39,6 +39,13 @@ export interface TurnStartPayload {
   /** Todos carried over from prior turns (drives the prior-todos pin). */
   priorTodos: readonly TodoItem[]
   /**
+   * Executor that will run this turn. Hooks use this only to avoid naming
+   * executor-private tools or mechanisms that are unavailable on that path;
+   * intent policy itself should stay executor-neutral. Absent in pure package
+   * tests and older fire sites.
+   */
+  executor?: 'local' | 'acp'
+  /**
    * The resolved model id running this turn, in the app's selection form
    * (`claude-sonnet-5`, `lmstudio:<weights>`, `openrouter:<vendor>/<model>`, …).
    * Lets a steering hook condition on *which* model is about to run — the

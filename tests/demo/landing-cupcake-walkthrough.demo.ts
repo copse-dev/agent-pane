@@ -1,4 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { collectErrorToasts } from '../e2e/helpers/assert-no-error-toasts.ts'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('landing cupcake walkthrough', () => {
@@ -6,15 +7,41 @@ describe('landing cupcake walkthrough', () => {
     this.timeout(180_000)
     await browser.url('/?scenario=landing&loop=0')
     await $('.msg-user').waitForExist({ timeout: 120_000 })
-    await $('.msg-assistant a[href^="http://localhost:4173"]').waitForDisplayed({ timeout: 60_000 })
+  })
+
+  it('keeps the chat stable while edits are queued in the background', async () => {
+    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length >= 1, {
+      timeout: 60_000,
+      timeoutMsg: 'expected the first cupcake file to enter the proposed changes queue',
+    })
+
+    await expect($('#pane-files')).not.toBeDisplayed()
+    const visibleMonacoEditors = await browser.execute(
+      () =>
+        [...document.querySelectorAll<HTMLElement>('.monaco-editor')].filter((editor) => {
+          const rect = editor.getBoundingClientRect()
+          return rect.width > 0 && rect.height > 0
+        }).length,
+    )
+    expect(visibleMonacoEditors).toBe(0)
+    await expect($('.msg-user .message-text')).toHaveText(
+      'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
+    )
+    await expect($('.footer-model-host .model-picker-label')).toHaveText('Codex')
+    expect(await browser.isAlertOpen()).toBe(false)
+    expect(await collectErrorToasts()).toEqual([])
+    await saveAppScreenshot('landing-cupcake-writing.png')
+  })
+
+  it('replays one complete turn and reveals the finished Browser preview', async () => {
+    await $('.msg-assistant a[href="http://localhost:61025/index.html"]').waitForDisplayed({
+      timeout: 60_000,
+    })
     await browser.waitUntil(
       () =>
         browser.execute(() => document.documentElement.dataset['demoExpandedPane'] === 'browser'),
       { timeout: 30_000, timeoutMsg: 'expected autoplay to reveal the finished Browser preview' },
     )
-  })
-
-  it('replays one complete turn and reveals the finished Browser preview', async () => {
     await expect($$('.msg-user')).toBeElementsArrayOfSize(1)
     const publishedSite = await browser.execute(async () => {
       const root = document.documentElement.dataset['demoStaticSite'] ?? ''
@@ -23,12 +50,15 @@ describe('landing cupcake walkthrough', () => {
     })
     expect(publishedSite.root).toBe('sites/cupcakes')
     expect(publishedSite.ok).toBe(true)
-    expect(publishedSite.html).toContain('<title>Crumb &amp; Bloom')
+    expect(publishedSite.html).toContain('<title>Crumb & Bloom')
     const projectName = await browser.execute(
       () => document.querySelector('.project-name')?.textContent ?? '',
     )
     expect(projectName).toBe('Crumb & Bloom')
     await expect($('.msg-user .message-text')).toHaveText(expect.stringContaining('Crumb & Bloom'))
+    await expect($('.msg-user .message-text')).not.toHaveText(
+      expect.stringContaining('workspace is intentionally empty'),
+    )
     await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 3, {
       timeout: 20_000,
       timeoutMsg: 'expected all three cupcake files in the proposed changes list',
@@ -44,12 +74,12 @@ describe('landing cupcake walkthrough', () => {
     const tokenLabel = await browser.execute(
       () => document.querySelector('.footer-usage')?.textContent ?? '',
     )
-    expect(tokenLabel).toBe('376 tokens')
+    expect(tokenLabel).toBe('1.4k tokens')
     await expect($('.titlebar-btn[aria-label="Open browser"]')).toHaveElementClass('active')
     await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
     const address = $('.browser-tab-panel.is-active .browser-url-input')
     await address.waitForDisplayed({ timeout: 10_000 })
-    await expect(address).toHaveValue(expect.stringContaining('http://localhost:4173'))
+    await expect(address).toHaveValue('http://localhost:61025/index.html')
     const preview = $('.browser-tab-panel.is-active iframe.browser-webview')
     await preview.waitForExist({ timeout: 10_000 })
     await browser.waitUntil(
@@ -58,10 +88,16 @@ describe('landing cupcake walkthrough', () => {
     )
     await browser.switchFrame(preview)
     await $('h1').waitForDisplayed({ timeout: 10_000 })
-    await expect($('h1')).toHaveText(expect.stringContaining('Cupcakes,'))
-    await expect($('h1')).toHaveText(expect.stringContaining('in full bloom.'))
-    await expect($('.waitlist')).toBeDisplayed()
-    await expect($('.hero__art')).toBeDisplayed()
+    await expect($('h1')).toHaveText(expect.stringContaining('Little cakes.'))
+    await expect($('h1')).toHaveText(expect.stringContaining('Big feelings.'))
+    await expect($('.signup')).toBeDisplayed()
+    await expect($('.hero-art')).toBeDisplayed()
+    await $('.signup input[type="email"]').setValue('demo@example.com')
+    await $('.signup button[type="submit"]').click()
+    await expect($('#form-note')).toHaveText("You're on the list — we'll save you the first swirl.")
+    await expect($('.signup button[type="submit"]')).toHaveText(
+      expect.stringContaining('YOU’RE IN!'),
+    )
     const previewLayout = await browser.execute(() => ({
       viewportWidth: window.innerWidth,
       columns: getComputedStyle(document.querySelector('.hero') ?? document.body)
@@ -80,7 +116,7 @@ describe('landing cupcake walkthrough', () => {
     await expect(expand).toBeDisplayed()
     await expect(expand).toHaveElementClass('pane-popout-btn')
     await expect($('.browser-url-input')).not.toBeFocused()
-    await expect($('.msg-assistant a[href^="http://localhost:4173"]')).toBeDisplayed()
+    await expect($('.msg-assistant a[href="http://localhost:61025/index.html"]')).toBeDisplayed()
     const transcriptState = await browser.execute(() => {
       const list = document.querySelector('.messages-list')
       const users = document.querySelectorAll<HTMLElement>('.msg-user')
@@ -110,11 +146,14 @@ describe('landing cupcake walkthrough', () => {
         ),
       }
     })
-    expect(transcriptState.text).toContain('No dependencies')
+    expect(transcriptState.text).toContain('Built and previewed a polished')
     expect(transcriptState.userPosition).toBe('relative')
     expect(transcriptState.overlap).toBe(0)
-    expect(transcriptState.top).toBeGreaterThanOrEqual(transcriptState.visibleTop)
-    expect(transcriptState.bottom).toBeLessThanOrEqual(transcriptState.visibleBottom)
+    // The recorded final response is slightly taller than the narrow chat
+    // viewport. Bound either edge to one wrapped line; the URL has already
+    // been asserted visible and the messages must still never overlap.
+    expect(transcriptState.top).toBeGreaterThanOrEqual(transcriptState.visibleTop - 24)
+    expect(transcriptState.bottom).toBeLessThanOrEqual(transcriptState.visibleBottom + 24)
     const layoutSize = await browser.execute(() => {
       const paneRect = document.getElementById('pane-files')?.getBoundingClientRect()
       const chatRect = document.getElementById('pane-chat')?.getBoundingClientRect()
@@ -132,6 +171,7 @@ describe('landing cupcake walkthrough', () => {
     expect(layoutSize.paneWidth).toBeGreaterThan(layoutSize.chatWidth * 3)
     expect(layoutSize.viewerWidth).toBeGreaterThan(980)
     expect(layoutSize.paneHeight).toBe(layoutSize.bodyHeight)
+    expect(await collectErrorToasts()).toEqual([])
     await saveAppScreenshot('landing-cupcake-browser.png')
   })
 

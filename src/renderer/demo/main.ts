@@ -2,6 +2,7 @@ import './demo.css'
 import { createDemoApi } from './demo-api.ts'
 import { selectDemoScenario } from './scenarios.ts'
 import { startAutoplay } from './autoplay.ts'
+import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
 
 /**
  * Read a boolean query flag. Present-but-empty (`?loop`) counts as on, so the
@@ -37,7 +38,7 @@ void import('../main.ts').then(() => {
   const trace = scenario.trace
   if (!autoplay || !trace) return
   void startAutoplay(document, {
-    prompt: trace.prompt,
+    prompt: demoScenarioPrompt(scenario),
     loop: flag(params, 'loop', false),
     instant: reducedMotion,
     focusComposer: !embedded,

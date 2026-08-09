@@ -113,6 +113,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Origin-gated web + in-app browser tools.
   'web_search',
   'fetch_url',
+  'browser_preview',
   'browser_navigate',
   'browser_snapshot',
   'browser_screenshot',
@@ -196,6 +197,8 @@ export interface AcpNativeBridge {
    * external agent abandons an MCP call and finishes the prompt on its own.
    */
   setTurnSignal: (signal: AbortSignal | null) => void
+  /** Attribute successful native workspace edits to the current ACP turn's audit. */
+  setWorkspaceWriteObserver: (observer: ((path: string) => void) | null) => void
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
 }
@@ -227,6 +230,29 @@ interface BridgeExecuteContext {
    */
   projectId: string | null
   networkScopeAlreadyApplies: boolean
+  recordWorkspaceWrite: (path: string) => void
+}
+
+/** Paths a successful bridged native edit owns in the post-turn workspace audit. */
+export function bridgedWorkspaceWritePaths(
+  name: string,
+  args: Record<string, unknown> | undefined,
+): string[] {
+  if (!args) return []
+  const stringValue = (key: string): string[] => {
+    const value = args[key]
+    return typeof value === 'string' && value.trim() ? [value] : []
+  }
+  switch (name) {
+    case 'write_file':
+    case 'str_replace':
+    case 'delete_file':
+      return stringValue('path')
+    case 'rename_file':
+      return [...stringValue('from'), ...stringValue('to')]
+    default:
+      return []
+  }
 }
 
 function mergeBridgeExecuteSignal(
@@ -320,6 +346,9 @@ function buildMcpServer(
         name === 'advisor' && advisor
           ? await runWithAdvisorContext(advisor, runExecute)
           : await runExecute()
+      for (const path of bridgedWorkspaceWritePaths(name, request.params.arguments)) {
+        ctx.recordWorkspaceWrite(path)
+      }
       return { content: toMcpContent(result, images) }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
@@ -411,6 +440,7 @@ export async function startAcpNativeBridge(
   // advisor call; simultaneous bridges can never see one another's transcript.
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let turnSignal: AbortSignal | null = null
+  let workspaceWriteObserver: ((path: string) => void) | null = null
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -437,6 +467,7 @@ export async function startAcpNativeBridge(
         threadId: opts.threadId,
         projectId: getActiveProjectId(),
         networkScopeAlreadyApplies,
+        recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
       })
       res.on('close', () => {
         onHttpClose()
@@ -475,6 +506,9 @@ export async function startAcpNativeBridge(
     },
     setTurnSignal: (next): void => {
       turnSignal = next
+    },
+    setWorkspaceWriteObserver: (observer): void => {
+      workspaceWriteObserver = observer
     },
     close: () =>
       new Promise<void>((resolve) => {
