@@ -71,6 +71,14 @@ describe('browser preview tool', () => {
     )
     await expect($('.approval-dialog')).not.toExist()
     await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
+    // The server correctly chooses a fresh random port; mask only the displayed
+    // value after validating it so the visual reference is deterministic.
+    await browser.execute(() => {
+      const address = document.querySelector<HTMLInputElement>(
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      if (address) address.value = 'http://localhost:4321/'
+    })
     await saveThreePaneScreenshot('browser-preview-tool-visible.png', { filesPaneWidth: 1_040 })
   })
 })
