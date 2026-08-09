@@ -168,11 +168,30 @@ function workspaceAssetPath(reference: string, previewUrl: string): string | nul
 }
 
 /**
- * A localhost URL in the static browser demo has no server behind it. The demo
- * API does have the replayed turn's proposed files, though, so assemble the
- * entry document and its local CSS/JS into one isolated iframe document. A
- * missing entry falls through to ordinary navigation, preserving honest local
- * server behaviour for other browser hosts.
+ * Read a file from the checked-in site published alongside a static demo. A
+ * missing file returns null so older builds and non-demo hosts can fall back to
+ * the replayed workspace writes.
+ */
+async function readPublishedDemoSite(path: string): Promise<string | null> {
+  const root = document.documentElement.dataset['demoStaticSite']?.trim()
+  if (!root) return null
+  const base = new URL(`${root.replace(/\/+$/, '')}/`, document.baseURI)
+  const url = new URL(path, base)
+  if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) return null
+  try {
+    const response = await fetch(url)
+    return response.ok ? await response.text() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A localhost URL in the static browser demo has no server behind it. Assemble
+ * the entry document and its local CSS/JS into one isolated iframe document,
+ * preferring the checked-in published site and falling back to the replayed
+ * proposed files. A missing entry falls through to ordinary navigation,
+ * preserving honest local-server behaviour for Electron and other hosts.
  */
 async function workspacePreviewHtml(
   rawUrl: string,
@@ -183,20 +202,20 @@ async function workspacePreviewHtml(
   const { activeProjectId, activeThreadId } = store.getState()
   if (!entryPath || !activeProjectId || !activeThreadId) return null
 
-  const read = (path: string): Promise<string> =>
-    api.fs.readFile(activeProjectId, activeThreadId, path)
+  const read = async (path: string): Promise<string> =>
+    (await readPublishedDemoSite(path)) ?? api.fs.readFile(activeProjectId, activeThreadId, path)
   const html = await read(entryPath)
   if (!html) return null
 
-  const document = new DOMParser().parseFromString(html, 'text/html')
+  const previewDocument = new DOMParser().parseFromString(html, 'text/html')
   await Promise.all(
-    [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]')].map(
+    [...previewDocument.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]')].map(
       async (link) => {
         const path = workspaceAssetPath(link.getAttribute('href') ?? '', rawUrl)
         if (!path) return
         const css = await read(path)
         if (!css) return
-        const style = document.createElement('style')
+        const style = previewDocument.createElement('style')
         style.dataset['workspacePath'] = path
         style.textContent = css
         link.replaceWith(style)
@@ -204,18 +223,18 @@ async function workspacePreviewHtml(
     ),
   )
   await Promise.all(
-    [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map(async (script) => {
+    [...previewDocument.querySelectorAll<HTMLScriptElement>('script[src]')].map(async (script) => {
       const path = workspaceAssetPath(script.getAttribute('src') ?? '', rawUrl)
       if (!path) return
       const source = await read(path)
       if (!source) return
-      const inline = document.createElement('script')
+      const inline = previewDocument.createElement('script')
       inline.dataset['workspacePath'] = path
       inline.textContent = source.replace(/<\/script/gi, '<\\/script')
       script.replaceWith(inline)
     }),
   )
-  return `<!doctype html>\n${document.documentElement.outerHTML}`
+  return `<!doctype html>\n${previewDocument.documentElement.outerHTML}`
 }
 
 /**

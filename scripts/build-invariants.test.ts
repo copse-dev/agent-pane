@@ -67,6 +67,13 @@ describe('build.mts bundle invariants', () => {
       "these bundles are only ever exec'd, so the build must verify each one parses",
     )
   })
+
+  it('publishes the checked-in demo sites in static builds', () => {
+    assert.match(
+      build,
+      /cpSync\('src\/shared\/demo-sites', `\$\{rendererOutDir\}\/sites`, \{ recursive: true \}\)/,
+    )
+  })
 })
 
 /**

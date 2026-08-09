@@ -20,6 +20,12 @@ export interface DemoScenario {
    */
   trace?: DemoTrace
   /**
+   * Published directory containing the files produced by the trace. The static
+   * Browser panel prefers this checked-in copy, while the replayed writes still
+   * drive Changes and provide a fallback for older builds.
+   */
+  staticSite?: string
+  /**
    * After a walkthrough finishes, follow its final browser link and expand the
    * loaded preview in place. This is the static demo equivalent of a visitor
    * clicking the URL and then the pane's Expand control.
@@ -194,6 +200,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: LANDING_TRACE,
+    staticSite: 'sites/cupcakes',
     revealFinalPreview: true,
   },
   {

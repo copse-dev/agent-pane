@@ -16,6 +16,14 @@ describe('landing cupcake walkthrough', () => {
 
   it('replays one complete turn and reveals the finished Browser preview', async () => {
     await expect($$('.msg-user')).toBeElementsArrayOfSize(1)
+    const publishedSite = await browser.execute(async () => {
+      const root = document.documentElement.dataset['demoStaticSite'] ?? ''
+      const response = await fetch(`${root}/index.html`)
+      return { root, ok: response.ok, html: await response.text() }
+    })
+    expect(publishedSite.root).toBe('sites/cupcakes')
+    expect(publishedSite.ok).toBe(true)
+    expect(publishedSite.html).toContain('<title>Crumb &amp; Bloom')
     const projectName = await browser.execute(
       () => document.querySelector('.project-name')?.textContent ?? '',
     )

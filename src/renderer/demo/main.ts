@@ -29,6 +29,7 @@ const embedded = flag(params, 'embedded', false)
 
 window.api = createDemoApi(scenario, { trace: { instant: reducedMotion } })
 document.documentElement.dataset['demoScenario'] = scenario.id
+if (scenario.staticSite) document.documentElement.dataset['demoStaticSite'] = scenario.staticSite
 if (autoplay) document.documentElement.dataset['demoAutoplay'] = 'on'
 if (embedded) document.documentElement.dataset['demoEmbedded'] = 'on'
 
