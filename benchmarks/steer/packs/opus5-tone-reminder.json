@@ -15,9 +15,14 @@
         { "id": "answered-substantively", "kind": "final-min-chars", "min": 120 },
         { "id": "covers-jitter", "kind": "final-matches", "pattern": "jitter" },
         {
+          "id": "covers-retry-policy",
+          "kind": "final-matches",
+          "pattern": "retr(y|ies|ying)|4\\d\\d|429"
+        },
+        {
           "id": "no-arrow-chain-fragments",
           "kind": "final-not-matches",
-          "pattern": "(^|\\n)\\s*(?:[-*]\\s*)?\\S[^\\n]*\\s(?:→|->)\\s\\S"
+          "pattern": "(^|\\n)\\s*(?:[-*]\\s*)?\\S[^.\\n]{0,60}(?:→|->)[^.\\n]{0,60}(?:→|->)[^.\\n]{0,60}(?=\\n|$)"
         }
       ]
     }

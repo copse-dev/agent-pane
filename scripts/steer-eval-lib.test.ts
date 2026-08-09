@@ -390,6 +390,19 @@ describe('shipped steer packs', () => {
     }
   })
 
+  it('response-length packs distinguish arrow examples from fragment chains', () => {
+    for (const id of ['opus5-response-length', 'opus5-tone-reminder']) {
+      const pack = loadSteerPack(`benchmarks/steer/packs/${id}.json`)
+      const check = pack.tasks[0]?.checks.find(
+        (candidate) => candidate.id === 'no-arrow-chain-fragments',
+      )
+      assert.ok(check && 'pattern' in check)
+      const pattern = new RegExp(check.pattern, 'i')
+      assert.equal(pattern.test('Attempt 1 → 250 ms is the initial delay.'), false)
+      assert.equal(pattern.test('Failure → retry → success'), true)
+    }
+  })
+
   it('a real-model pack declares a gate — an eval with no threshold cannot fail', () => {
     for (const path of steerPackPaths()) {
       const pack = loadSteerPack(path)
