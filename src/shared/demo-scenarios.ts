@@ -68,6 +68,88 @@ const semanticSearchSummary = [
   '- Search for `classifySearchQuery`',
 ].join('\n')
 
+const PROPOSED_INDEX_HTML = [
+  '<!doctype html>',
+  '<html lang="en">',
+  '  <head>',
+  '    <meta charset="utf-8" />',
+  '    <title>Sample</title>',
+  '    <link rel="stylesheet" href="styles.css" />',
+  '  </head>',
+  '  <body>',
+  '    <h1>Hello</h1>',
+  '  </body>',
+  '</html>',
+  '',
+].join('\n')
+
+const PROPOSED_STYLES_CSS = ['h1 {', '  font-family: system-ui, sans-serif;', '}', ''].join('\n')
+
+/**
+ * A turn that writes two new files. Hand-written: its job is to put the Changes
+ * panel into its proposed-diff state for visual review, not to reproduce a run.
+ */
+const PROPOSED_DIFF_TRACE: DemoTrace = {
+  id: 'proposed-diff',
+  label: 'Proposed edits',
+  prompt: 'add a starter page and stylesheet',
+  steps: [
+    {
+      chunk: {
+        type: 'text',
+        text: 'Adding a minimal page and the stylesheet it links to.',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'tc-1',
+          name: 'write_file',
+          args: { path: 'index.html', content: PROPOSED_INDEX_HTML },
+        },
+      },
+      delayMs: 700,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'tc-1',
+        result: 'Proposed index.html (+12)',
+        isError: false,
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'tc-2',
+          name: 'write_file',
+          args: { path: 'styles.css', content: PROPOSED_STYLES_CSS },
+        },
+      },
+      delayMs: 700,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'tc-2',
+        result: 'Proposed styles.css (+4)',
+        isError: false,
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'text',
+        text: 'Both files are staged in **Changes** — review the diffs and accept or reject each one.',
+      },
+    },
+    { chunk: { type: 'done', stopReason: 'end_turn' }, delayMs: 300 },
+  ],
+}
+
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   {
     // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
@@ -96,6 +178,36 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: LANDING_TRACE,
+  },
+  {
+    // Exercises the proposed-diff path end to end: the replayed `write_file`
+    // calls travel the same route a real edit does (demo-api → `agent:show_diff`
+    // → Changes panel), so this fixture fails if that wiring breaks.
+    //
+    // Hand-written, unlike `landing`: it is a fixture for a panel state, not a
+    // recording of a turn that happened. `DEMO_TRACE` provenance rules apply to
+    // `demo-traces/`, not to fixtures declared here.
+    id: 'proposed-diff',
+    label: 'Agent-proposed edits open the Changes panel',
+    project: project('demo-proposed-diff-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-proposed-diff-thread',
+        title: 'Proposed edits',
+        status: 'idle',
+        gitBranch: 'main',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    trace: PROPOSED_DIFF_TRACE,
   },
   {
     id: 'markdown-list-indent',
