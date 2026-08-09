@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import type { DemoTrace } from '@shared/demo-traces.ts'
-import { DEMO_SCENARIOS, type DemoScenario } from '@shared/demo-scenarios.ts'
+import { DEMO_SCENARIOS, demoScenarioPrompt, type DemoScenario } from '@shared/demo-scenarios.ts'
 import { createDemoApi } from './demo-api.ts'
 
 const tracedScenario = DEMO_SCENARIOS.find((entry) => entry.trace !== undefined)
@@ -179,7 +179,7 @@ describe('createDemoApi trace replay', () => {
   it('replays the recorded turn when its own prompt is sent', async () => {
     assert.ok(tracedScenario?.trace, 'expected a scenario carrying a trace')
     const api = createDemoApi(tracedScenario, { trace: { instant: true } })
-    const seen = await runAndCollect(api, tracedScenario.trace.prompt)
+    const seen = await runAndCollect(api, demoScenarioPrompt(tracedScenario))
 
     const recorded = new Set(tracedScenario.trace.steps.map((step) => step.chunk.type))
     for (const type of recorded) {
@@ -230,6 +230,29 @@ describe('createDemoApi trace replay', () => {
       await api.fs.readFile('demo-edit-project', 't', 'site/styles.css'),
       'h1 {\n  color: pink;\n}\n',
     )
+  })
+
+  it('keeps deferred edits fetchable without forcing the Changes panel open', async () => {
+    const scenario = { ...editScenario, deferProposedDiffPreview: true }
+    const api = createDemoApi(scenario, { trace: { instant: true } })
+    let shown = 0
+    const queued: unknown[][] = []
+    api.diff.onShowDiff(() => (shown += 1))
+    api.diff.onQueued((...args) => queued.push(args))
+
+    await runAndCollect(api, EDIT_TRACE.prompt)
+
+    assert.equal(shown, 0)
+    assert.deepEqual(queued.at(-1)?.[2], [
+      { path: 'site/index.html', language: 'html' },
+      { path: 'site/styles.css', language: 'css' },
+    ])
+    assert.deepEqual(await api.diff.content('demo-edit-project', 't', 'site/index.html'), {
+      path: 'site/index.html',
+      before: '',
+      after: '<h1>Cupcakes</h1>\n',
+      language: 'html',
+    })
   })
 
   it('diffs a second edit against what the same turn already wrote', async () => {

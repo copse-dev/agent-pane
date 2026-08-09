@@ -295,6 +295,21 @@ describe('ci.yml workflow invariants', () => {
   })
 })
 
+describe('demo-preview.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+  const cname = readFileSync(resolve('site/CNAME'), 'utf8').trim()
+
+  it('serves shared Monaco workers from the custom-domain root', () => {
+    assert.equal(cname, 'copse.dev')
+    assert.match(workflow, /echo "base=\/demo\/vendor\/monaco\/\$\{version\}\/"/)
+    assert.doesNotMatch(
+      workflow,
+      /base=\/\$\{?REPO|base=\/agent-pane\/demo\/vendor\/monaco/,
+      'copse.dev has no /agent-pane prefix; adding one makes every Monaco worker 404',
+    )
+  })
+})
+
 describe('promote-develop.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
 
