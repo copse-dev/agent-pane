@@ -323,6 +323,7 @@ const zAutomationScheduleInput = z.object({
   prompt: z.string().trim().min(1).max(100_000),
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
+  maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 })
 
 const SKILLS_RELOAD_KEYS = new Set([

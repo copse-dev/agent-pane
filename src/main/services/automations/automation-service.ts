@@ -8,7 +8,8 @@ import type {
 } from '@shared/types'
 import { getPackService } from '../packs/pack-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
-import { createThread } from '../thread-store.ts'
+import { createThread, loadProjectThreads } from '../thread-store.ts'
+import { releaseCompletedAutomationWorktree } from '../worktree-parking.ts'
 import { cronMatches, validateCronExpression } from './cron.ts'
 import { getTaskSupervisor } from '../supervisor/task-supervisor.ts'
 
@@ -18,6 +19,7 @@ const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 function isSchedule(value: unknown): value is AutomationSchedule {
   if (typeof value !== 'object' || value === null) return false
   const row = value as Partial<AutomationSchedule>
+  const maxLiveWorktrees: unknown = Reflect.get(value, 'maxLiveWorktrees')
   return (
     typeof row.id === 'string' &&
     typeof row.projectId === 'string' &&
@@ -26,6 +28,10 @@ function isSchedule(value: unknown): value is AutomationSchedule {
     typeof row.prompt === 'string' &&
     typeof row.model === 'string' &&
     typeof row.enabled === 'boolean' &&
+    (maxLiveWorktrees === undefined ||
+      maxLiveWorktrees === 1 ||
+      maxLiveWorktrees === 2 ||
+      maxLiveWorktrees === 3) &&
     typeof row.createdAt === 'number' &&
     typeof row.updatedAt === 'number'
   )
@@ -55,6 +61,8 @@ export interface AutomationService {
 export interface AutomationServiceDependencies {
   now(): number
   createProjectThread(projectId: string, thread: Thread): Promise<void>
+  loadProjectThreads(projectId: string): Promise<Thread[]>
+  releasePreviousRun(projectId: string, threadId: string): Promise<boolean>
   isPackEnabled(): boolean
 }
 
@@ -144,7 +152,52 @@ export function createAutomationService(
     if (inFlight.has(schedule.id)) throw new Error('This automation is already creating a task')
     inFlight.add(schedule.id)
     try {
+      const scheduleThreads = (await dependencies.loadProjectThreads(schedule.projectId)).filter(
+        (thread) => thread.automation?.scheduleId === schedule.id,
+      )
+      const previous = schedule.lastCreatedThreadId
+        ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
+        : null
+      const busy = scheduleThreads.find(
+        (thread) => thread.status === 'running' || Boolean(thread.draftPrompt?.trim()),
+      )
+
+      if (busy) {
+        return {
+          projectId: schedule.projectId,
+          scheduleId: schedule.id,
+          threadId: busy.id,
+          triggeredAt,
+          disposition: 'coalesced',
+          coalescedReason: 'busy',
+        }
+      }
+
+      let retainedWorktrees = 0
+      for (const thread of scheduleThreads) {
+        if (!thread.worktree || thread.worktree.retiredAt !== undefined) continue
+        if (!(await dependencies.releasePreviousRun(schedule.projectId, thread.id))) {
+          retainedWorktrees += 1
+        }
+      }
+      const maxLiveWorktrees = schedule.maxLiveWorktrees ?? 1
+      if (retainedWorktrees >= maxLiveWorktrees) {
+        return {
+          projectId: schedule.projectId,
+          scheduleId: schedule.id,
+          threadId: previous?.id ?? scheduleThreads[0]?.id ?? schedule.id,
+          triggeredAt,
+          disposition: 'coalesced',
+          coalescedReason: 'worktree-limit',
+        }
+      }
+
       const threadId = randomUUID()
+      const provenance = {
+        scheduleId: schedule.id,
+        scheduleName: schedule.name,
+        triggeredAt,
+      }
       const thread: Thread = {
         id: threadId,
         title: schedule.name,
@@ -153,11 +206,7 @@ export function createAutomationService(
         usage: { inputTokens: 0, outputTokens: 0 },
         model: schedule.model,
         draftPrompt: schedule.prompt,
-        automation: {
-          scheduleId: schedule.id,
-          scheduleName: schedule.name,
-          triggeredAt,
-        },
+        automation: provenance,
         createdAt: triggeredAt,
         updatedAt: triggeredAt,
       }
@@ -173,6 +222,7 @@ export function createAutomationService(
         scheduleId: schedule.id,
         threadId,
         triggeredAt,
+        disposition: 'started' as const,
       }
       notify?.(event)
       return event
@@ -204,6 +254,7 @@ export function createAutomationService(
         prompt: input.prompt.trim(),
         model: input.model.trim(),
         enabled: input.enabled,
+        maxLiveWorktrees: input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
         ...(existing?.lastRunAt !== undefined ? { lastRunAt: existing.lastRunAt } : {}),
@@ -291,6 +342,8 @@ export function getAutomationService(): AutomationService {
   singleton ??= createAutomationService({
     now: () => Date.now(),
     createProjectThread: createThread,
+    loadProjectThreads,
+    releasePreviousRun: releaseCompletedAutomationWorktree,
     isPackEnabled: () => getPackService().registry.isEnabled(AUTOMATIONS_PACK_ID),
   })
   return singleton

@@ -106,6 +106,7 @@ test('a cron trigger submits its prompt as a new root agent turn', async () => {
     scheduleId: 'schedule-ci',
     threadId: created.id,
     triggeredAt: 100,
+    disposition: 'started',
   })
   await tick()
   await tick()
@@ -115,7 +116,7 @@ test('a cron trigger submits its prompt as a new root agent turn', async () => {
       projectId: 'project-a',
       threadId: created.id,
       prompt: 'Review CI and report any failures.',
-      choice: 'automatic',
+      choice: 'worktree',
       model: 'mock-model',
     },
   ])
@@ -216,6 +217,7 @@ test('a trigger for an inactive project remains persisted until that project ope
     scheduleId: 'schedule-ci',
     threadId: created.id,
     triggeredAt: 100,
+    disposition: 'started',
   })
   await tick()
 
