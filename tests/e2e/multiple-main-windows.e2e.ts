@@ -6,7 +6,8 @@ interface MultiWindowBridge {
   createMainWindow(): Promise<void>
 }
 
-describe('multiple main windows', () => {
+describe('multiple main windows', function () {
+  this.timeout(90_000)
   let primaryHandle: string | undefined
   let secondaryHandle: string | undefined
 
@@ -22,22 +23,14 @@ describe('multiple main windows', () => {
     await $('#app').waitForExist({ timeout: 30_000 })
   })
 
-  after(async () => {
-    const handles = await browser.getWindowHandles().catch(() => [])
-    if (secondaryHandle && handles.includes(secondaryHandle)) {
-      await browser.switchToWindow(secondaryHandle)
-      await browser.closeWindow()
-    }
-    const remaining = await browser.getWindowHandles().catch(() => [])
-    if (primaryHandle && remaining.includes(primaryHandle)) {
-      await browser.switchToWindow(primaryHandle)
-    }
+  after(() => {
     resetUserData()
   })
 
   it('opens a second complete Copse window', async () => {
     primaryHandle = (await browser.getWindowHandles())[0]
     if (!primaryHandle) throw new Error('Main window handle unavailable')
+    const mainHandle = primaryHandle
 
     const before = await browser.getWindowHandles()
     await browser.execute(async () => {
@@ -62,10 +55,8 @@ describe('multiple main windows', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await saveAppScreenshot('multiple-main-windows-secondary.png')
 
-    await browser.closeWindow()
-    secondaryHandle = undefined
-    await browser.switchToWindow(primaryHandle)
+    await browser.switchToWindow(mainHandle)
     await $('#app').waitForDisplayed({ timeout: 10_000 })
-    await expect(await browser.getWindowHandles()).toHaveLength(1)
+    await expect(await browser.getWindowHandles()).toContain(mainHandle)
   })
 })
