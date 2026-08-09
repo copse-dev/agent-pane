@@ -204,6 +204,68 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
     })
   })
 
+  it('prefers a meaningful ACP title over the programmatic tool name', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-title',
+      title: 'Read the project manifest',
+      name: 'copse.read_file',
+      rawInput: { path: 'package.json' },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: {
+        id: 't-title',
+        name: 'Read the project manifest',
+        args: { path: 'package.json' },
+      },
+    })
+  })
+
+  it('uses the programmatic name for Cursor’s generic MCP title', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-mcp',
+      title: 'MCP: tool',
+      name: 'mcp__copse__read_archive',
+      rawInput: { path: 'thread.zip' },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: {
+        id: 't-mcp',
+        name: 'mcp__copse__read_archive',
+        args: { path: 'thread.zip' },
+      },
+    })
+  })
+
+  it('keeps Cursor’s generic MCP title when no programmatic name is available', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-generic',
+      title: 'MCP: tool',
+      rawInput: {},
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: { id: 't-generic', name: 'MCP: tool', args: {} },
+    })
+  })
+
+  it('accepts a programmatic name supplied by a later tool update', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't-late-name',
+      name: 'copse.search_code',
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call_update',
+      toolCallId: 't-late-name',
+      name: 'copse.search_code',
+    })
+  })
+
   it('carries the ACP kind so the UI can spot the agent’s shell commands', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call',
