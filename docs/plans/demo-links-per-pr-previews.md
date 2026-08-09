@@ -22,16 +22,18 @@ before it serves untrusted PR builds from the live domain.
   testable on the PR that introduces it, before merge. It resolves the branch's open PR,
   builds the demo, commits the flat demo under `pr-<n>/` and the branch's self-contained
   site+demo bundle under `pr-<n>-preview/` on the machine-managed `demo-previews`
-  branch, calls `pages.yml` to redeploy, and posts/updates the sticky
-  `<!-- copse-demo-preview -->` comment. Branches without an open PR build nothing.
+  branch, and posts/updates the sticky `<!-- copse-demo-preview -->` comment. Branches
+  without an open PR build nothing, and a build whose bytes match what is already
+  published commits nothing — see "Publish only on change" below.
 - **`.github/workflows/pages.yml`** — the deploy job is the single assembler: it lays
   down the production `site/` **from `main`** and overlays every machine-managed target
-  below `/demo/`. It exposes a `workflow_call` entrypoint returning `page_url`. Keeping
+  below `/demo/`. It triggers on pushes to `demo-previews`, so publishing and cleanup
+  deploy by writing to the store rather than by calling this workflow. Keeping
   both PR artifacts as ordinary targets makes them compatible with older branch-local
   copies of this workflow, so a queued older deploy cannot omit or remap them. Pinning
   the root site to `main` means a preview push never changes the production homepage.
 - **`.github/workflows/demo-preview-cleanup.yml`** — on PR close, prunes both
-  `pr-<n>/` and `pr-<n>-preview/` from `demo-previews` and redeploys.
+  `pr-<n>/` and `pr-<n>-preview/` from `demo-previews`; that push redeploys.
 
 ## What already exists (don't rebuild it)
 
@@ -113,12 +115,43 @@ previews** that a single deploy re-assembles from.
    already in the screenshots comment step so re-pushes update in place rather than
    spamming.
 
+### Publish only on change
+
+The publish step stages the rebuilt target and stops at `git diff --cached --quiet` when
+the bytes match what is already published. Most pushes land there: the demo build reads
+only the renderer, shared, preload and site trees, so a docs, test, benchmark or
+main-process commit rebuilds byte-identical output.
+
+**Nothing written under a target directory may derive from the commit SHA**, or that
+check can never be true. A `.head-sha` provenance file used to be written into each
+target and staged immediately before the check, which defeated it on every single push —
+so every push to every branch with an open PR committed to `demo-previews` and triggered
+a full-tree redeploy, whatever it had changed. Nothing ever read the file. Provenance
+belongs in the commit message, which already carries the SHA.
+
 ### Deploy serialization
 
-`pages.yml` already sets `concurrency: { group: pages, cancel-in-progress: false }`.
-Every preview publish redeploys the whole site, so with many open PRs, deploys queue and
-each is a full-tree upload. Correct but not instant — acceptable at this repo's PR
-volume. If it ever becomes a bottleneck, the escape hatch is a dedicated external
+`pages.yml` sets `concurrency: { group: pages, cancel-in-progress: false }` and every
+preview publish redeploys the whole site, so deploys serialize behind an ~11-minute
+full-tree upload. This _did_ become the bottleneck this section originally anticipated,
+and the fix was cheaper than the external-host escape hatch below.
+
+Two things were wrong. Publishing called `pages.yml` via `workflow_call`, which made the
+deploy a job of the PR's own run; to stop a superseded deploy painting a PR red, the
+group carried `queue: max`, which kept **every** queued deploy. But the assembler reads
+whatever is on the `demo-previews` tip rather than the calling run's content, so queued
+deploys are identical re-assemblies where only the last can matter. Arrivals ran at
+roughly the drain rate, and the queue became a standing backlog — deploys observed
+starting 6h26m after creation, with the sticky comment (behind `needs: deploy`) landing
+seven hours after the push.
+
+Now publishing and cleanup deploy by _pushing to `demo-previews`_, and `pages.yml`
+triggers on that push. The deploy is no longer a PR check, so GitHub's default single
+pending slot is safe: a newer pending deploy supersedes an older one, bursts coalesce
+into one upload, and nothing a PR waits on gets cancelled. The comment posts straight
+from the publish job, resolving the base URL from the Pages API.
+
+If deploy volume ever bites again, the remaining escape hatch is a dedicated external
 preview host (Cloudflare Pages/Netlify give native per-PR URLs), explicitly _not_ chosen
 here but noted as the pressure-release valve.
 

@@ -18,9 +18,15 @@ name: Demo preview
 # introduces it, before merge. This is safe because only same-repo branches can
 # push here: forks push to their own fork and never trigger this repo's push
 # workflows, so untrusted code never reaches the write token or the deploy. Each
-# qualifying push rebuilds the demo, releases it into the machine-managed
-# demo-previews branch, and redeploys Pages. Feature branches without an open PR
-# build nothing.
+# qualifying push rebuilds the demo and, ONLY IF the built bytes differ from
+# what is already published, releases it into the machine-managed demo-previews
+# branch. That push is what deploys — pages.yml watches the branch rather than
+# being called from here. Feature branches without an open PR build nothing.
+#
+# The build reads the renderer, shared, preload and site trees, so the common
+# case on this repo — a docs, test, benchmark or main-process commit — rebuilds
+# identical bytes and stops at the no-change check, publishing nothing and
+# deploying nothing.
 #
 # The deploy always republishes the root site/ from `main` (see pages.yml), so a
 # preview push can only change content below /demo/ — never the production
@@ -32,11 +38,11 @@ on:
       - demo-previews
   workflow_dispatch:
 
+# No pages/id-token scopes: this workflow publishes and comments, it no longer
+# deploys. The comment job narrows to what it actually needs.
 permissions:
   contents: write
   pull-requests: write
-  pages: write
-  id-token: write
 
 # A newer push to the same branch supersedes an in-flight preview build.
 concurrency:
@@ -195,19 +201,26 @@ jobs:
               mkdir -p "previews-branch/${bundle_target}/demo/main"
               cp -R site/. "previews-branch/${bundle_target}/"
               cp -R dist/demo/. "previews-branch/${bundle_target}/demo/main/"
-              printf '%s\n' "$SHA" > "previews-branch/${bundle_target}/.head-sha"
               find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
               git -C previews-branch add "$bundle_target"
             fi
             # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
             # and high-entropy map contents fail Secret scan on unrelated tips.
             find "previews-branch/${TARGET}" -type f -name '*.map' -delete
-            printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
             git -C previews-branch add "$TARGET"
             if git -C previews-branch diff --cached --quiet; then
               # Reached on the first pass when the build is byte-identical to what
               # is already published, and on a retry when the winning push carried
               # the same content for this target.
+              #
+              # NOTHING under the target directory may be derived from the commit
+              # SHA, or this check can never be true and every push republishes
+              # and redeploys. A `.head-sha` provenance stamp used to be written
+              # here and staged just above, which did exactly that: it changed on
+              # every push, so the diff was never quiet, so a docs-only or
+              # test-only commit still triggered a full-tree Pages deploy. Nothing
+              # ever read the file. Provenance lives in the commit message below,
+              # where it belongs; `git log demo-previews -- <target>/` recovers it.
               echo "No preview change for ${LABEL}"
               unchanged=true
               break
@@ -224,34 +237,49 @@ jobs:
           fi
           echo "published=${published}" >> "$GITHUB_OUTPUT"
 
-  deploy:
-    needs: publish
-    if: needs.publish.outputs.published == 'true'
-    uses: ./.github/workflows/pages.yml
-    secrets: inherit
-
+  # There is deliberately no deploy job here. Pushing to `demo-previews` above is
+  # itself the deploy trigger (see pages.yml), which decouples publishing from
+  # deploying in two ways that matter:
+  #   • Deploys coalesce. pages.yml assembles whatever is on the demo-previews
+  #     tip, so concurrent publishes collapse into one full-tree upload instead
+  #     of each queueing its own behind the others.
+  #   • The comment below no longer waits on that queue. It used to sit behind
+  #     `needs: deploy`, so on a busy day the PR link arrived hours after the
+  #     push that produced it.
   comment:
-    needs: [publish, deploy]
+    needs: publish
     if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       pull-requests: write
+      pages: read
     steps:
       - uses: actions/github-script@v9
         env:
           PR: ${{ needs.publish.outputs.pr }}
-          BASE_URL: ${{ needs.deploy.outputs.page_url }}
           SCENARIOS: ${{ needs.publish.outputs.scenarios }}
         with:
           script: |
             const marker = '<!-- copse-demo-preview -->';
             const pr = Number(process.env.PR);
-            // page_url is the Pages root; normalise to exactly one trailing
-            // slash, then use the shared /demo/ namespace. The final trailing
-            // slash matters because the demo's assets are document-relative.
-            const base = (
-              process.env.BASE_URL || 'https://copse-dev.github.io/agent-pane/'
-            ).replace(/\/*$/, '/');
+            // Ask Pages for its own base URL rather than hard-coding one. This
+            // repo publishes under the site/CNAME custom domain, so the
+            // <owner>.github.io/<repo>/ form would 404 — and it would silently
+            // become the right answer again if the domain were ever dropped.
+            // Normalise to exactly one trailing slash, then use the shared
+            // /demo/ namespace; that final slash matters because the demo's
+            // assets are document-relative.
+            let root = 'https://copse.dev/';
+            try {
+              const { data: pages } = await github.rest.repos.getPages({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              if (pages.html_url) root = pages.html_url;
+            } catch (err) {
+              console.log(`Could not read the Pages URL (${err.message}); using ${root}`);
+            }
+            const base = root.replace(/\/*$/, '/');
             const previewUrl = `${base}demo/pr-${pr}-preview/`;
             const demoUrl = `${previewUrl}demo/main/`;
             let scenarios = [];
@@ -273,7 +301,7 @@ jobs:
               links ? 'Interactive, with a mocked backend — jump to a scenario:' : '',
               links,
               '',
-              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Refreshed on each push; removed when the PR closes.</sub>',
+              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Rebuilt whenever a push changes the demo bundle, and live a few minutes after this comment once the deploy lands; removed when the PR closes.</sub>',
             ]
               .filter((line) => line !== '')
               .join('\n');

@@ -1,11 +1,14 @@
 name: Demo preview cleanup
 
 # When a PR closes (merged or not), remove its demo preview from the
-# machine-managed demo-previews branch and redeploy Pages so /demo/pr-<n>/ and
-# /demo/pr-<n>-preview/ stop serving. Same-repo PRs only: fork PRs never had a
-# preview, and their closed-event token is read-only anyway. Like pull_request
-# generally, the workflow definition is read from the base branch, so a fork
-# head cannot alter this cleanup.
+# machine-managed demo-previews branch so /demo/pr-<n>/ and
+# /demo/pr-<n>-preview/ stop serving. Removing them is all this does: the push
+# to demo-previews is itself what redeploys Pages (see pages.yml's trigger), so
+# there is no deploy job here and no pages/id-token scope to grant.
+#
+# Same-repo PRs only: fork PRs never had a preview, and their closed-event token
+# is read-only anyway. Like pull_request generally, the workflow definition is
+# read from the base branch, so a fork head cannot alter this cleanup.
 
 on:
   pull_request:
@@ -13,18 +16,13 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   cleanup:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
-    outputs:
-      removed: ${{ steps.remove.outputs.removed }}
     steps:
-      - id: remove
-        env:
+      - env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
@@ -33,14 +31,12 @@ jobs:
           remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
           if ! git clone --depth=1 --branch demo-previews "$remote" previews-branch 2>/dev/null; then
             echo "No demo-previews branch — nothing to clean."
-            echo "removed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git -C previews-branch config user.name "github-actions[bot]"
           git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ ! -d "previews-branch/pr-${PR}" ] && [ ! -d "previews-branch/pr-${PR}-preview" ]; then
             echo "No preview for PR #${PR}."
-            echo "removed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           for target in "pr-${PR}" "pr-${PR}-preview"; do
@@ -50,10 +46,4 @@ jobs:
           done
           git -C previews-branch commit -m "demo preview: remove PR #${PR} (closed)"
           git -C previews-branch push origin demo-previews
-          echo "removed=true" >> "$GITHUB_OUTPUT"
-
-  deploy:
-    needs: cleanup
-    if: needs.cleanup.outputs.removed == 'true'
-    uses: ./.github/workflows/pages.yml
-    secrets: inherit
+          echo "Removed preview for PR #${PR}; the push redeploys Pages."
