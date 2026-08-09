@@ -938,8 +938,12 @@ footer a:hover {
   position: relative;
   z-index: 1;
   width: min(1285px, calc(100% - 156px));
-  margin: 59px auto 0;
+  margin: 76px auto 0;
   min-width: 0;
+  /* Place the popout link beside the floating nav, leaving the demo itself
+     directly below it. The larger preceding margin keeps the hero's closing
+     beat fully above the viewport at this anchor. */
+  scroll-margin-top: 72px;
   text-align: left;
 }
 
@@ -1725,7 +1729,7 @@ footer a:hover {
 
   .marketing-site .hero-visual {
     width: calc(100% - 80px);
-    margin-top: 52px;
+    margin-top: 76px;
   }
 
   .marketing-site .feature-stage {
