@@ -242,6 +242,11 @@ jobs:
     needs: publish
     if: needs.publish.outputs.published == 'true'
     uses: ./.github/workflows/pages.yml
+    with:
+      # A deploy problem is never this PR's fault — the previews branch is shared,
+      # and so is the Pages service and the deploy queue. Warn rather than redden
+      # the PR; the preview is already committed and the next deploy publishes it.
+      tolerate-deploy-failure: true
     secrets: inherit
 
   # Deliberately NOT `needs: deploy`. The deploy serializes on the shared `pages`
