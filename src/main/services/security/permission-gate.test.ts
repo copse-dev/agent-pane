@@ -44,6 +44,7 @@ import {
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -176,7 +177,35 @@ describe('ensureToolPermitted', () => {
     }
   })
 
-  it('prompts before sending a direct Parallel Search request', async () => {
+  it('auto-allows a direct Parallel Search request while its pack is enabled', async () => {
+    setPermissionGateForTests(null)
+    // A fresh first-party seed enables every pack, so `copse.parallel-search`
+    // declares the tool here (default-OFF is a pack-service migration concern).
+    const registry = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(registry)
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      setDefaultPackRegistry(null)
+    }
+  })
+
+  it('prompts before sending a direct Parallel Search request while its pack is disabled', async () => {
+    const registry = createFirstPartyPackRegistry()
+    registry.disable(PARALLEL_SEARCH_PACK_ID)
+    setDefaultPackRegistry(registry)
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
@@ -197,6 +226,7 @@ describe('ensureToolPermitted', () => {
       assert.match(approvalBody, /Zero Data Retention/i)
     } finally {
       setApprovalHandler(null)
+      setDefaultPackRegistry(null)
     }
   })
 

@@ -102,6 +102,7 @@ import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/packs/background-tasks-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { assessShellHarm } from './shell-harm.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
@@ -553,6 +554,13 @@ async function checkWebSearchPermission(): Promise<boolean> {
 }
 
 async function checkParallelSearchPermission(): Promise<boolean> {
+  // Enabling the `copse.parallel-search` pack (default-off, experimental,
+  // explicit API key) IS the user's consent to send search queries to Parallel.
+  // Auto-allow its fixed API origin while the pack is enabled, mirroring how
+  // the `copse.background-tasks` pack auto-declares its `loopback-bind`
+  // relaxation: no web-origin prompt just because the enabled search tool ran.
+  if (getDefaultPackRegistry().isEnabled(PARALLEL_SEARCH_PACK_ID)) return true
+
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
   const decision = decideWebFetchPermission({
     url: PARALLEL_SEARCH_API_URL,
