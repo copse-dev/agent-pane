@@ -470,6 +470,7 @@ export async function runAcpAgentFromSettings(
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
+    entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
@@ -505,6 +506,7 @@ export async function runAcpAgentFromSettings(
     } finally {
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setTurnSignal(null)
+      entry.bridge?.setWorkspaceWriteObserver(null)
       entry.lastUsedAt = Date.now()
     }
   }
