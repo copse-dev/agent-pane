@@ -91,6 +91,8 @@ describe('revealFinalPreview', () => {
       <section id="browser-tabs-host">
         <button class="pane-popout-btn" aria-label="Expand browser">Expand</button>
       </section>
+      <button class="scroll-to-bottom">Bottom</button>
+      <input class="browser-url-input">
     `
     const link = document.querySelector<HTMLAnchorElement>('a')
     const expand = document.querySelector<HTMLButtonElement>('.pane-popout-btn')
@@ -98,6 +100,7 @@ describe('revealFinalPreview', () => {
     assert.ok(expand)
     let linkClicked = false
     let expandClicked = false
+    let scrollClicked = false
     link.addEventListener('click', (event) => {
       event.preventDefault()
       linkClicked = true
@@ -105,15 +108,21 @@ describe('revealFinalPreview', () => {
       preview.className = 'browser-webview'
       preview.dataset['workspacePreview'] = 'ready'
       document.getElementById('browser-viewer-host')?.append(preview)
+      document.querySelector<HTMLInputElement>('.browser-url-input')?.focus()
     })
     expand.addEventListener('click', () => {
       expandClicked = true
       document.documentElement.dataset['demoExpandedPane'] = 'browser'
     })
+    document.querySelector('.scroll-to-bottom')?.addEventListener('click', () => {
+      scrollClicked = true
+    })
 
     assert.equal(await revealFinalPreview(document, { timeoutMs: 100 }), true)
     assert.equal(linkClicked, true)
     assert.equal(expandClicked, true)
+    assert.equal(scrollClicked, true)
+    assert.notEqual(document.activeElement?.className, 'browser-url-input')
   })
 
   it('does not expand before a preview is ready', async () => {

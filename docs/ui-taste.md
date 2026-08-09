@@ -385,6 +385,19 @@ It fills the window and its sections run several screens, so it is typed and spa
 
 Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
 
+## Sticky prompts yield in narrow chat panes
+
+The latest user prompt can stay anchored while a response grows at normal chat widths. In a narrow
+split, however, a long sticky prompt can cover the entire assistant response even when the outer
+window is wide. Responsive chat behavior therefore follows the width of `.pane-chat` itself via a
+container query, not a viewport breakpoint.
+
+At 360px or narrower, return the latest prompt to ordinary transcript flow. This preserves the
+request immediately above its answer without letting it become an opaque overlay. Keep the normal
+sticky behavior above that threshold. The paired regression states live in
+[`tests/e2e/user-prompt-sticky.e2e.ts`](../tests/e2e/user-prompt-sticky.e2e.ts): one wide reference
+and one narrow reference that proves the response reaches the composer unobscured.
+
 ## Markdown prose spacing in chat
 
 Symptom: assistant messages look “double spaced” — extra blank lines between headings, paragraphs,

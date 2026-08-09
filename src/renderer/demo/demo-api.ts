@@ -186,6 +186,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   const queuedHandlers = new Set<QueuedHandler>()
   /** Files the replayed turn has written, oldest first — the demo's whole disk. */
   const writtenFiles = new Map<string, string>()
+  /** Original homes for controls moved into an expanded pane's toolbar. */
+  const expandedPaneButtons = new Map<
+    string,
+    { button: HTMLButtonElement; parent: HTMLElement; nextSibling: ChildNode | null }
+  >()
 
   const emitChunk = (threadId: string, chunk: StreamChunk): void => {
     for (const handler of chunkHandlers) handler(threadId, chunk)
@@ -785,12 +790,35 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       popout: (mode) => {
         const root = document.documentElement
         const expanded = root.dataset['demoExpandedPane'] === mode
+        const button = document.querySelector<HTMLButtonElement>(
+          `.pane-popout-btn[data-pane-mode="${mode}"]`,
+        )
         if (expanded) {
           root.classList.remove('is-demo-pane-expanded')
           delete root.dataset['demoExpandedPane']
+          const placement = expandedPaneButtons.get(mode)
+          if (placement) {
+            if (placement.nextSibling?.parentNode === placement.parent) {
+              placement.parent.insertBefore(placement.button, placement.nextSibling)
+            } else {
+              placement.parent.append(placement.button)
+            }
+            expandedPaneButtons.delete(mode)
+          }
         } else {
           root.classList.add('is-demo-pane-expanded')
           root.dataset['demoExpandedPane'] = mode
+          const toolbar = document.querySelector<HTMLElement>(
+            `#${mode}-viewer-host .browser-tab-panel.is-active .browser-toolbar`,
+          )
+          if (mode === 'browser' && button?.parentElement && toolbar) {
+            expandedPaneButtons.set(mode, {
+              button,
+              parent: button.parentElement,
+              nextSibling: button.nextSibling,
+            })
+            toolbar.insertBefore(button, toolbar.querySelector('.browser-menu-wrap'))
+          }
         }
         for (const button of document.querySelectorAll<HTMLButtonElement>(
           `.pane-popout-btn[data-pane-mode="${mode}"]`,

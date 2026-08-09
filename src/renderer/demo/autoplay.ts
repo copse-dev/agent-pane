@@ -200,11 +200,29 @@ export async function revealFinalPreview(
   )
   if (!expand) return false
   expand.click()
-  return waitUntil(
+  const expanded = await waitUntil(
     () => doc.documentElement.dataset['demoExpandedPane'] === 'browser',
     options.timeoutMs ?? PREVIEW_TIMEOUT_MS,
     options.signal,
   )
+  if (!expanded) return false
+
+  // Expansion makes chat narrower, which reflows the long prompt and changes
+  // its scroll height. Let that layout settle, then use the transcript's own
+  // control to keep the model's finished result in view. The URL field focuses
+  // on navigation; a passive hero should finish without a stray focus ring.
+  await sleep(POLL_MS)
+  doc.querySelector<HTMLButtonElement>('.scroll-to-bottom')?.click()
+  const assistantMessages = doc.querySelectorAll<HTMLElement>('.msg-assistant')
+  const finalAssistantMessage = [...assistantMessages].at(-1)
+  if (typeof finalAssistantMessage?.scrollIntoView === 'function') {
+    // The composer floats over the bottom of the transcript. Centering keeps
+    // the final answer in the genuinely visible region instead of merely
+    // placing it inside the scroll box behind that overlay.
+    finalAssistantMessage.scrollIntoView({ block: 'center' })
+  }
+  if (doc.activeElement instanceof HTMLElement) doc.activeElement.blur()
+  return true
 }
 
 /**

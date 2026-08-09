@@ -1,3 +1,4 @@
+import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
@@ -131,6 +132,46 @@ describe('createDemoApi decisions surface', () => {
     const api = createDemoApi(scenario)
     assert.deepEqual(await api.decisions.list(), [])
     assert.deepEqual(await api.decisions.export(), { path: '', count: 0 })
+  })
+})
+
+describe('createDemoApi pane expansion', () => {
+  it('moves the Browser restore control into the toolbar, then returns it home', async () => {
+    assert.ok(tracedScenario)
+    document.body.innerHTML = `
+      <aside id="browser-tabs-host">
+        <header class="browser-tabs-list-header">
+          <button class="pane-popout-btn" data-pane-mode="browser">Expand</button>
+          <button class="browser-tabs-new-btn">New</button>
+        </header>
+      </aside>
+      <main id="browser-viewer-host">
+        <section class="browser-tab-panel is-active">
+          <nav class="browser-toolbar"><span class="browser-menu-wrap"></span></nav>
+        </section>
+      </main>
+    `
+    const api = createDemoApi(tracedScenario)
+    const button = document.querySelector<HTMLButtonElement>('.pane-popout-btn')
+    const header = document.querySelector<HTMLElement>('.browser-tabs-list-header')
+    const toolbar = document.querySelector<HTMLElement>('.browser-toolbar')
+    assert.ok(button)
+    assert.ok(header)
+    assert.ok(toolbar)
+
+    await api.panes.popout('browser')
+
+    assert.equal(document.documentElement.dataset['demoExpandedPane'], 'browser')
+    assert.equal(button.parentElement, toolbar)
+    assert.equal(button.getAttribute('aria-label'), 'Restore browser')
+
+    await api.panes.popout('browser')
+
+    assert.equal(document.documentElement.dataset['demoExpandedPane'], undefined)
+    assert.equal(button.parentElement, header)
+    assert.equal(header.firstElementChild, button)
+    assert.equal(button.getAttribute('aria-label'), 'Expand browser')
+    document.body.replaceChildren()
   })
 })
 

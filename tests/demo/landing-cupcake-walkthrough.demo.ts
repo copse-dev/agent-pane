@@ -53,13 +53,60 @@ describe('landing cupcake walkthrough', () => {
     await expect($('h1')).toHaveText(expect.stringContaining('Cupcakes,'))
     await expect($('h1')).toHaveText(expect.stringContaining('in full bloom.'))
     await expect($('.waitlist')).toBeDisplayed()
+    await expect($('.hero__art')).toBeDisplayed()
+    const previewLayout = await browser.execute(() => ({
+      viewportWidth: window.innerWidth,
+      columns: getComputedStyle(document.querySelector('.hero') ?? document.body)
+        .gridTemplateColumns,
+    }))
+    expect(previewLayout.viewportWidth).toBeGreaterThan(980)
+    expect(previewLayout.columns.split(' ')).toHaveLength(2)
     await browser.switchFrame(null)
 
-    const expand = $('#browser-tabs-host .pane-popout-btn')
+    const expand = $('.browser-toolbar .pane-popout-btn')
     await expect($('#titlebar')).toBeDisplayed()
     await expect($('#pane-chat')).toBeDisplayed()
     await expect($('#pane-projects')).not.toBeDisplayed()
+    await expect($('#right-sidebar')).not.toBeDisplayed()
     await expect(expand).toHaveAttribute('aria-label', 'Restore browser')
+    await expect(expand).toBeDisplayed()
+    await expect(expand).toHaveElementClass('pane-popout-btn')
+    await expect($('.browser-url-input')).not.toBeFocused()
+    await expect($('.msg-assistant a[href^="http://localhost:4173"]')).toBeDisplayed()
+    const transcriptState = await browser.execute(() => {
+      const list = document.querySelector('.messages-list')
+      const users = document.querySelectorAll<HTMLElement>('.msg-user')
+      const latestUser = [...users].at(-1)
+      const messages = document.querySelectorAll<HTMLElement>('.msg-assistant')
+      const finalMessage = [...messages].at(-1)
+      const listRect = list?.getBoundingClientRect()
+      const userRect = latestUser?.getBoundingClientRect()
+      const messageRect = finalMessage?.getBoundingClientRect()
+      const composerRect = document.getElementById('input-bar')?.getBoundingClientRect()
+      return {
+        text: finalMessage?.textContent ?? '',
+        userPosition: latestUser ? getComputedStyle(latestUser).position : '',
+        overlap: Math.max(
+          0,
+          Math.min(userRect?.bottom ?? 0, messageRect?.bottom ?? 0) -
+            Math.max(userRect?.top ?? 0, messageRect?.top ?? 0),
+        ),
+        top: Math.round(messageRect?.top ?? -1),
+        bottom: Math.round(messageRect?.bottom ?? -1),
+        visibleTop: Math.round(listRect?.top ?? -1),
+        visibleBottom: Math.round(
+          Math.min(
+            listRect?.bottom ?? Number.POSITIVE_INFINITY,
+            composerRect?.top ?? Number.POSITIVE_INFINITY,
+          ),
+        ),
+      }
+    })
+    expect(transcriptState.text).toContain('No dependencies')
+    expect(transcriptState.userPosition).toBe('relative')
+    expect(transcriptState.overlap).toBe(0)
+    expect(transcriptState.top).toBeGreaterThanOrEqual(transcriptState.visibleTop)
+    expect(transcriptState.bottom).toBeLessThanOrEqual(transcriptState.visibleBottom)
     const layoutSize = await browser.execute(() => {
       const paneRect = document.getElementById('pane-files')?.getBoundingClientRect()
       const chatRect = document.getElementById('pane-chat')?.getBoundingClientRect()
@@ -73,15 +120,15 @@ describe('landing cupcake walkthrough', () => {
         bodyHeight: Math.round(bodyRect?.height ?? 0),
       }
     })
-    expect(layoutSize.chatWidth).toBe(340)
-    expect(layoutSize.paneWidth).toBeGreaterThan(layoutSize.chatWidth * 2)
-    expect(layoutSize.viewerWidth).toBeGreaterThanOrEqual(780)
+    expect(layoutSize.chatWidth).toBe(280)
+    expect(layoutSize.paneWidth).toBeGreaterThan(layoutSize.chatWidth * 3)
+    expect(layoutSize.viewerWidth).toBeGreaterThan(980)
     expect(layoutSize.paneHeight).toBe(layoutSize.bodyHeight)
     await saveAppScreenshot('landing-cupcake-browser.png')
   })
 
   it('keeps the three generated files available for review', async () => {
-    const restore = $('#browser-tabs-host .pane-popout-btn')
+    const restore = $('.browser-toolbar .pane-popout-btn')
     await restore.click()
     await browser.waitUntil(
       () =>
