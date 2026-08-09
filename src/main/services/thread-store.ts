@@ -66,6 +66,7 @@ import { runSerialized } from './storage/write-queue.ts'
  *   events.jsonl        append-only spine, one line per finalized message
  *   agent-history.json  provider-format LLM resume snapshot (issue #993)
  *   acp-session.json    private external-agent session binding
+ *   acp-debug.jsonl     opt-in ACP wire trace (COPSE_DEBUG_ACP_UPDATES=1 only)
  *   messages/*.md       OKF prose (message content + reasoning)
  *   blobs/*             verbatim tool results and images
  *   subagents/**        nested subagent sessions, same structure recursively
@@ -1204,6 +1205,21 @@ function agentEpochPath(projectId: string, threadId: string): string {
  */
 export function threadBlobsDir(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), 'blobs')
+}
+
+/**
+ * A thread's own directory in the chat store.
+ *
+ * Exposed for sidecar writers that are not part of the thread model and must
+ * not become part of it — today the opt-in ACP wire trace
+ * (`acp-wire-trace.ts`), which appends `acp-debug.jsonl` beside `events.jsonl`.
+ * A root-level file like that is safe by construction: {@link writeThread}
+ * regenerates only the spine and prunes only {@link CONTENT_DIRS}, and
+ * {@link readThread} reads only `meta.json` and the spine, so a full save keeps
+ * it and a load ignores it.
+ */
+export function threadDirectoryPath(projectId: string, threadId: string): string {
+  return threadDir(projectId, threadId)
 }
 
 /** Ceiling on a thread-directory snapshot, so an export cannot exhaust memory. */
