@@ -30,6 +30,13 @@ name: Demo preview
 # The deploy always republishes the root site/ from `main` (see pages.yml), so a
 # preview push can only change content below /demo/ — never the production
 # marketing site at the domain root.
+#
+# Everything published below /demo/ is marked `noindex, nofollow`: the demos by
+# `build:demo`, the marketing-site bundles by the publish step here. Previews are
+# near-duplicates of copse.dev/ that appear and vanish with pull requests, and
+# their links are public, so indexing them competes with the production site for
+# its own copy and leaves dead /demo/pr-<n>/ results behind. The production root
+# carries no such tag and stays indexable — see scripts/lib/noindex.mts.
 
 on:
   push:
@@ -215,11 +222,23 @@ jobs:
               fi
               sed -i "s|\"demo/main/|\"$2|g" "$file"
             }
+            # These bundles are copies of the production marketing site served
+            # under /demo/, so they are near-duplicates of copse.dev/ and of each
+            # other, and they come and go with pull requests. Mark them noindex
+            # here, on the copy — site/ itself stays indexable, and pages.yml
+            # deploys it to the root from main untouched. The flat demo published
+            # beside them is already marked by `build:demo`. GitHub Pages cannot
+            # set an X-Robots-Tag header, hence a meta tag; see
+            # scripts/lib/noindex.mts.
+            mark_bundle_noindex() {
+              node scripts/mark-noindex.mts "previews-branch/$1"
+            }
             if [[ "$TARGET" == "main" ]]; then
               mkdir -p "previews-branch/${TARGET}/preview"
               cp -R site/. "previews-branch/${TARGET}/preview/"
               # ../ from /demo/main/preview/ is /demo/main/, the flat build above.
               point_site_at_demo "${TARGET}/preview" "../"
+              mark_bundle_noindex "${TARGET}/preview"
             elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
               bundle_target="${TARGET}-preview"
               rm -rf "previews-branch/${bundle_target}"
@@ -227,6 +246,7 @@ jobs:
               cp -R site/. "previews-branch/${bundle_target}/"
               # ../pr-<n>/ from /demo/pr-<n>-preview/ is the flat build above.
               point_site_at_demo "$bundle_target" "../${TARGET}/"
+              mark_bundle_noindex "$bundle_target"
               find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
               git -C previews-branch add "$bundle_target"
             fi
