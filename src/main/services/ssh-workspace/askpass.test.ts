@@ -119,7 +119,10 @@ describe('ssh askpass bridge', () => {
       if (process.platform === 'win32') {
         assert.match(path, /^\\\\\\\\\.\\\\pipe\\\\copse-ssh-askpass-/)
       } else {
-        assert.ok(Buffer.byteLength(path) < 104, `socket path is ${String(Buffer.byteLength(path))}B`)
+        assert.ok(
+          Buffer.byteLength(path) < 104,
+          `socket path is ${String(Buffer.byteLength(path))}B`,
+        )
         assert.equal(path.startsWith(longUserDataDir), false)
       }
       const response = await askOverSocket(lease, 'Enter passphrase for key')

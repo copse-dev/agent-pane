@@ -145,7 +145,10 @@ function bridgedWritePaths(messages: readonly MessageLine[]): Set<string> {
   return paths
 }
 
-function isRedundantWorkspaceAudit(call: ToolCallLine, bridgedWrites: ReadonlySet<string>): boolean {
+function isRedundantWorkspaceAudit(
+  call: ToolCallLine,
+  bridgedWrites: ReadonlySet<string>,
+): boolean {
   if (call.name !== 'workspace_edit_audit') return false
   const files = recordValue(call.args)?.['files']
   return (

@@ -76,24 +76,15 @@ describe('shouldAutoApproveSandboxedCodexCodeMode', () => {
 
   it('auto-approves only an opaque Codex code-mode cell inside the native sandbox', () => {
     assert.equal(
-      shouldAutoApproveSandboxedCodexCodeMode(
-        { id: 'codex', sandboxed: true },
-        opaqueCodexExec,
-      ),
+      shouldAutoApproveSandboxedCodexCodeMode({ id: 'codex', sandboxed: true }, opaqueCodexExec),
       true,
     )
     assert.equal(
-      shouldAutoApproveSandboxedCodexCodeMode(
-        { id: 'codex', sandboxed: false },
-        opaqueCodexExec,
-      ),
+      shouldAutoApproveSandboxedCodexCodeMode({ id: 'codex', sandboxed: false }, opaqueCodexExec),
       false,
     )
     assert.equal(
-      shouldAutoApproveSandboxedCodexCodeMode(
-        { id: 'custom', sandboxed: true },
-        opaqueCodexExec,
-      ),
+      shouldAutoApproveSandboxedCodexCodeMode({ id: 'custom', sandboxed: true }, opaqueCodexExec),
       false,
     )
   })

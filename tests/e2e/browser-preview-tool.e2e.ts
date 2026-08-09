@@ -40,7 +40,7 @@ describe('browser preview tool', () => {
     const input = await $('.browser-tab-panel.is-active .browser-url-input')
     await browser.waitUntil(async () => /^http:\/\/localhost:\d+\/$/.test(await input.getValue()), {
       timeout: 10_000,
-      timeoutMsg: 'expected the visible Browser panel to show Copse\'s loopback preview URL',
+      timeoutMsg: "expected the visible Browser panel to show Copse's loopback preview URL",
     })
     await browser.waitUntil(
       async () =>
@@ -50,7 +50,10 @@ describe('browser preview tool', () => {
           } | null
           return webview?.getTitle?.() === 'Crumb & Bloom preview'
         }),
-      { timeout: 15_000, timeoutMsg: 'expected the preview page to load in the visible Browser tab' },
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the preview page to load in the visible Browser tab',
+      },
     )
     await expect($('.approval-dialog')).not.toExist()
     await saveThreePaneScreenshot('browser-preview-tool-visible.png')
