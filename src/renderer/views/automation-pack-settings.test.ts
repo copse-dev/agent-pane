@@ -34,6 +34,9 @@ function stubApi(schedules: AutomationSchedule[]): {
           prompt: input.prompt,
           model: input.model,
           enabled: input.enabled,
+          ...(input.maxLiveWorktrees !== undefined
+            ? { maxLiveWorktrees: input.maxLiveWorktrees }
+            : {}),
           createdAt: 1,
           updatedAt: 1,
         })
@@ -46,12 +49,14 @@ function stubApi(schedules: AutomationSchedule[]): {
         scheduleId: string
         threadId: string
         triggeredAt: number
+        disposition: 'started'
       }> {
         return Promise.resolve({
           projectId: 'project-a',
           scheduleId: 'schedule-a',
           threadId: 'thread-a',
           triggeredAt: 1,
+          disposition: 'started',
         })
       },
       onTriggered(): () => void {
@@ -149,11 +154,13 @@ describe('automation pack settings detail', () => {
     const name = root.querySelector<HTMLInputElement>('.automation-name-input')
     const cron = root.querySelector<HTMLInputElement>('.automation-cron-input')
     const prompt = root.querySelector<HTMLTextAreaElement>('.automation-prompt-input')
+    const worktreeLimit = root.querySelector<HTMLSelectElement>('.automation-worktree-limit-select')
     const form = root.querySelector<HTMLFormElement>('.automation-form')
-    assert.ok(name && cron && prompt && form)
+    assert.ok(name && cron && prompt && worktreeLimit && form)
     name.value = 'Nightly review'
     cron.value = '0 21 * * *'
     prompt.value = 'Review the diff.'
+    worktreeLimit.value = '2'
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await tick()
 
@@ -166,6 +173,7 @@ describe('automation pack settings detail', () => {
           prompt: 'Review the diff.',
           model: BEST_VALUE_CHAT_MODEL,
           enabled: true,
+          maxLiveWorktrees: 2,
         },
       },
     ])
