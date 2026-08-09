@@ -117,7 +117,12 @@ jobs:
 
   build-test:
     needs: [preflight, verify-clean-release-build]
-    runs-on: macos-14
+    # The runtime smoke test below is the only gate that actually launches the
+    # packaged app, so it has to run on an OS the app supports. Keep this label
+    # at or above `build.mac.minimumSystemVersion` in package.json; the
+    # deployment-target check in the verify step enforces that and fails the
+    # release rather than letting the gate silently drift below the floor again.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -160,6 +165,18 @@ jobs:
           UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
         run: |
           set -euo pipefail
+          # The smoke test below launches the packaged app, so this runner must be
+          # at least the version the app declares it supports. Without this check a
+          # runner-label bump (or an OS-image retirement) can silently move the only
+          # runtime gate onto an OS no shipped build will ever run on.
+          declared_minimum="$(node -p "require('./package.json').build.mac.minimumSystemVersion")"
+          runner_version="$(sw_vers -productVersion)"
+          if [ "$(printf '%s\n%s\n' "$declared_minimum" "$runner_version" | sort -V | head -n1)" != "$declared_minimum" ]; then
+            echo "Runner macOS $runner_version is below the declared minimum $declared_minimum;"
+            echo "the packaged runtime smoke test would not run on a supported OS."
+            exit 1
+          fi
+          echo "Runner macOS $runner_version satisfies the declared minimum $declared_minimum"
           apps=()
           while IFS= read -r app; do apps+=("$app"); done < <(find release -type d -name Copse.app -print)
           if [ "${#apps[@]}" -ne 2 ]; then
