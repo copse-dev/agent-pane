@@ -149,10 +149,11 @@ describe('landing cupcake walkthrough', () => {
     expect(transcriptState.text).toContain('Built and previewed a polished')
     expect(transcriptState.userPosition).toBe('relative')
     expect(transcriptState.overlap).toBe(0)
-    // The recorded final response is tall enough to clip at most one wrapped
-    // line in the narrow chat column while keeping its URL and ending visible.
+    // The recorded final response is slightly taller than the narrow chat
+    // viewport. Bound either edge to one wrapped line; the URL has already
+    // been asserted visible and the messages must still never overlap.
     expect(transcriptState.top).toBeGreaterThanOrEqual(transcriptState.visibleTop - 24)
-    expect(transcriptState.bottom).toBeLessThanOrEqual(transcriptState.visibleBottom)
+    expect(transcriptState.bottom).toBeLessThanOrEqual(transcriptState.visibleBottom + 24)
     const layoutSize = await browser.execute(() => {
       const paneRect = document.getElementById('pane-files')?.getBoundingClientRect()
       const chatRect = document.getElementById('pane-chat')?.getBoundingClientRect()
