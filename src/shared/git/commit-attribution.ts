@@ -43,6 +43,3 @@ export function appendCommitAttribution(message: string, models: string[]): stri
   if (body.includes(COPSE_COAUTHOR)) return `${body}\n`
   return `${body}\n\n${buildCommitAttribution(models)}\n`
 }
-
-/** True when the user's message is about making a commit (commit, committed, committing, commits). */
-export { shouldSteerCommit, buildCommitSteeringPrompt } from '@copse/agent/commit-steering.ts'

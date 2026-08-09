@@ -238,6 +238,18 @@ describe('steer eval prompt arms', () => {
     assert.ok(!withoutArm.includes(STEER_TURN_START_TEXTS.forcedTodoPlan))
   })
 
+  it('does not prescribe a git tool in the shared eval prompt', () => {
+    const withoutArm = buildSteerEvalPrompt(
+      '/tmp/ws',
+      { kind: 'turnStart', ref: 'forcedTodoPlan' },
+      'without',
+    )
+    assert.doesNotMatch(
+      withoutArm,
+      /Use the git_\* tools for version control rather than run_shell/,
+    )
+  })
+
   it('a nudge steer leaves both prompts identical — it varies mid-loop', () => {
     const spec = { kind: 'nudge', ref: 'stuckFinalize', afterSteps: 3 } as const
     assert.equal(
@@ -249,10 +261,10 @@ describe('steer eval prompt arms', () => {
 
   it('resolves steer text from the shipping constants, not a copy', () => {
     assert.equal(
-      steerText({ kind: 'turnStart', ref: 'commitSteering' }),
-      STEER_TURN_START_TEXTS.commitSteering,
+      steerText({ kind: 'turnStart', ref: 'forcedTodoPlan' }),
+      STEER_TURN_START_TEXTS.forcedTodoPlan,
     )
-    assert.match(STEER_TURN_START_TEXTS.commitSteering, /git_commit tool/)
+    assert.match(STEER_TURN_START_TEXTS.forcedTodoPlan, /update_todos/)
   })
 })
 
