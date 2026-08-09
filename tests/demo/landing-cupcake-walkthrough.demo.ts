@@ -27,6 +27,7 @@ describe('landing cupcake walkthrough', () => {
     await expect($('.msg-user .message-text')).toHaveText(
       'Build a beautiful coming-soon website for my cupcake business, Crumb & Bloom. Include an email waitlist, make it feel warm and memorable, and preview it when you’re done.',
     )
+    await expect($('.footer-model-host .model-picker-label')).toHaveText('Codex')
     expect(await browser.isAlertOpen()).toBe(false)
     expect(await collectErrorToasts()).toEqual([])
     await saveAppScreenshot('landing-cupcake-writing.png')

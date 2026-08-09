@@ -21,6 +21,15 @@ describe('demo scenarios', () => {
       'the exact recording brief remains available as the explicit nudge',
     )
     assert.equal(scenario.threads[0]?.title, 'Crumb & Bloom coming soon')
+    assert.deepEqual(scenario.settings['registeredAcpAgents'], [
+      {
+        id: 'codex',
+        title: 'Codex',
+        command: 'codex-acp',
+        args: [],
+        enabled: true,
+      },
+    ])
     assert.deepEqual(
       scenario.threads.map((thread) => thread.messages.length),
       [0],
