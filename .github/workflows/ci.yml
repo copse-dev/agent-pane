@@ -1816,8 +1816,8 @@ jobs:
   # `needs` every other job (and e2e's result aggregates all 8 shards), so it
   # turns the whole pipeline into one green/red status. New jobs or e2e shard
   # counts can change without touching the required-checks list — just add the
-  # job to `needs` here. `if: always()` so this runs even when an upstream job
-  # fails/is skipped; we then assert none failed or were cancelled. Fork PRs
+  # job to `needs` here. `if: !cancelled()` so this runs even when an upstream
+  # job fails/is skipped; we then assert none failed or were cancelled. Fork PRs
   # have their own explicit safe-tier result below: they may pass only after
   # `precheck` actually ran on a GitHub-hosted runner, never merely because all
   # code-executing jobs were skipped.
@@ -1825,12 +1825,27 @@ jobs:
   # Concurrency supersession: top-level `cancel-in-progress` cancels in-flight
   # jobs when a newer push/sync arrives on the same ref. Those cancelled jobs
   # must not paint the superseded SHA's `CI Passed` red — tip CI is the gate
-  # that matters. We detect supersession by (1) comparing this run's head SHA
-  # to the live tip, and (2) looking for a newer CI workflow run on the same
-  # head SHA (same-SHA supersession — e.g. a delayed nightly schedule sharing
-  # `ci-refs/heads/main` with a tip push). Genuine cancels of the tip with no
-  # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
-  # after a real shard failure still fail because `ANY_FAILURE` is true first.
+  # that matters. Two different mechanisms cover that, and which one applies
+  # depends on whether the RUN was cancelled or only some of its JOBS were:
+  #
+  #   - Whole run cancelled (concurrency supersession, manual cancel): this job
+  #     is SKIPPED by the `if:` below and never reports. The superseding run's
+  #     own `CI Passed` is the one that counts.
+  #   - Individual jobs cancelled while the run itself lives on (skip-mode's
+  #     check/build/e2e — issue #609 — matrix cancels, a runner losing
+  #     communication): this job still runs, and the `ANY_CANCELLED` branch in
+  #     the step below decides. It detects supersession by (1) comparing this
+  #     run's head SHA to the live tip, and (2) looking for a newer CI run on
+  #     the same head SHA (e.g. a delayed nightly schedule sharing
+  #     `ci-refs/heads/main` with a tip push). A job-level cancel still at tip
+  #     with no newer run fails. Sibling-matrix cancels after a real shard
+  #     failure fail because `ANY_FAILURE` is true first.
+  #
+  # KNOWN CONSEQUENCE of the first bullet: a skipped required check satisfies
+  # branch protection, so a manually cancelled run now reads as satisfied rather
+  # than red. That is a deliberate trade for unwedging the concurrency group
+  # (see the `if:` below); the case it costs is a human cancelling a run they
+  # do not intend to re-run, which the next push re-gates anyway.
   ci-passed:
     # A push to trunk (`main`) intentionally skips the expensive tier. Give that
     # run a distinct check context so its green result on the same head SHA
@@ -1842,12 +1857,38 @@ jobs:
     # match on by name, so renaming it is a separate change that has to land
     # together with the protection rule.
     name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' || 'CI Passed' }}
-    if: always()
+    # NOT `always()`. That is true even when the RUN is cancelled, so GitHub
+    # still creates and queues this job on a run that is being torn down — and
+    # `runs-on` below prefers the self-hosted fleet, where it can then wait for
+    # a runner that is never coming. A queued job keeps its run out of a
+    # terminal state, the run keeps holding the `ci-<pr>` concurrency group, and
+    # the run that superseded it therefore never starts: it sits `pending` with
+    # zero jobs created. Observed on #1669, where promoting a draft cancelled
+    # the in-flight run and CI was wedged for 114 minutes — until a fleet runner
+    # freed up and the orphan finally ran, correctly reporting "superseded" in
+    # about five seconds. That is the point: the job was never broken, it just
+    # should not have been queued for a runner at all on a run nobody was
+    # waiting for. Meanwhile a normal cancel is accepted (202) but does not
+    # dequeue it, and `force-cancel` is the only manual way out.
+    #
+    # `!cancelled()` keeps everything `always()` was buying — this still runs
+    # when an upstream job FAILS or is SKIPPED, which the default `success()`
+    # would not — and differs only on a cancelled run, where being skipped is
+    # what lets the run finish and release the group. GitHub documents this
+    # exact substitution as the fix for `always()` hangs.
+    if: ${{ !cancelled() }}
     needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
     # minutes; hosted fallback when unset. Fails closed either way: if the fleet
     # is saturated this stays pending (never green), so it can't wave a run
     # through without its required status check.
+    #
+    # "Stays pending" is the right answer for a LIVE run and the wrong one for a
+    # cancelled run, where it wedges the concurrency group — which is why the
+    # `if:` above must never go back to `always()` while this prefers the fleet.
+    # Pinning this one job to `ubuntu-latest` is the other way to buy that (it
+    # would start in seconds and could never queue behind the fleet), at roughly
+    # one billed hosted minute per run; deliberately not taken.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read

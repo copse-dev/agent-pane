@@ -105,6 +105,26 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
   })
 
+  it('never gates the aggregate on always(), which wedges the concurrency group', () => {
+    // `always()` is true even when the RUN is cancelled, so GitHub creates and
+    // queues `ci-passed` on a run being torn down. It prefers the self-hosted
+    // fleet, so it can then wait for a runner that never arrives — and a queued
+    // job keeps its run non-terminal, keeps the `ci-<pr>` concurrency group
+    // held, and leaves the superseding run `pending` with zero jobs. #1669 sat
+    // wedged for 114 minutes that way, with `force-cancel` the only manual exit.
+    // `!cancelled()` runs in every case `always()` did except a cancelled run.
+    const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
+    assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
+    const jobIf = aggregate.match(/^ {4}if: (.+)$/m)?.[1]
+    assert.ok(jobIf, 'expected a job-level `if:` on ci-passed')
+    assert.match(jobIf, /!cancelled\(\)/, 'the aggregate must skip itself on a cancelled run')
+    assert.doesNotMatch(
+      jobIf,
+      /(^|[^!])always\(\)/,
+      'always() on the aggregate wedges the concurrency group; use !cancelled()',
+    )
+  })
+
   it('does not let a cheap trunk push satisfy the promotion aggregate gate', () => {
     const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
