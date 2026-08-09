@@ -238,6 +238,12 @@ decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
   display. With `COPSE_CI_REGISTRY` set, `e2e:remote up` pulls a pre-baked image (no on-host
   bake / no `BUILD_GH_TOKEN` on the host). See
   [`ci-runners/README.md`](ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
+- **Use a spare macOS GUI machine when validation needs the real product and a real agent.** For
+  authenticated ACP inference, native macOS UI, GUI-only reproduction, or recording a real-model
+  demo, follow [`docs/remote-agent-demo-debugging.md`](docs/remote-agent-demo-debugging.md). Use an
+  isolated short app profile and dedicated project workspace, keep at least one run visible, and
+  pair it with focused WebdriverIO evidence. This complements the ordinary remote e2e path; it does
+  not replace deterministic regression coverage.
 
 For _which tier a test belongs in_ — favour unit/component tests, reserve e2e for broad validation
 and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) — read
