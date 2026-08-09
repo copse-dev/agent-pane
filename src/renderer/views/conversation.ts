@@ -1077,7 +1077,10 @@ function renderUserTranscript(
   parts.forEach((part, i) => {
     if (part) host.append(document.createTextNode(part))
     if (i < parts.length - 1) {
-      host.append(transcriptChip({ kind: 'paste', label: pastes[i]?.label ?? 'Pasted text' }, api))
+      // Pass the whole attachment, not just its label: the snapshot behind a
+      // paste is what makes its chip openable in the preview modal. A
+      // placeholder with no attachment left to match stays display-only.
+      host.append(transcriptChip(pastes[i] ?? { kind: 'paste', label: 'Pasted text' }, api))
     }
   })
 

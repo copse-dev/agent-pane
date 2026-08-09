@@ -37,6 +37,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:open-tab', listener)
       }
     },
+    onShowTab: (handler: (url: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
+        handler(url)
+      }
+      ipcRenderer.on('browser:show-tab', listener)
+      return (): void => {
+        ipcRenderer.off('browser:show-tab', listener)
+      }
+    },
     onShareText: (
       handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
     ) => {
@@ -188,8 +197,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:suggestCommandSummary', commands),
     suggestToolTurnSummary: (actions: string[]) =>
       ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
-    suggestFollowUps: (contextJson: string) =>
-      ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
+    suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown): void => {
         handler(tid, chunk)
@@ -1076,6 +1085,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
+    },
+    createMainWindow() {
+      return ipcRenderer.invoke('test:createMainWindow')
     },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')

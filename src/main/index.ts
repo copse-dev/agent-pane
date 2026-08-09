@@ -10,7 +10,12 @@ import {
 import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
-import { createMainWindow } from './windows/create-main-window.ts'
+import {
+  assertPrimaryMainWindow,
+  createMainWindow,
+  getFocusedMainWindow,
+  getMainWindow,
+} from './windows/create-main-window.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
@@ -81,7 +86,6 @@ import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import { clearAgentHistory } from './services/thread-store.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
-import { getMainWindow } from './windows/create-main-window.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
@@ -89,6 +93,7 @@ import {
   setBrowserSessionPlatform,
   shutdownBrowserSession,
 } from './services/browser/session-manager.ts'
+import { shutdownStaticPreviewServers } from './services/browser/static-preview-server.ts'
 import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
@@ -126,8 +131,10 @@ import {
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
+  resolveThreadExecutionContext,
   runWithThreadExecutionContext,
 } from './services/thread-execution-context.ts'
+import { parkCompletedPullRequestWorktree } from './services/worktree-parking.ts'
 import { runWithActiveRunIdentity } from './services/thread-models.ts'
 import {
   prepareThreadCheckout,
@@ -155,6 +162,11 @@ const taskSupervisor = getTaskSupervisor()
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
   getAgentSession: () => getAgentBrowserSession(),
+  showUrl: (url) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    win.webContents.send('browser:show-tab', url)
+  },
 })
 
 setVideoDecoderPlatform({
@@ -264,7 +276,13 @@ app
     })
     applyAppIcon([win])
     const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
-    buildAppMenu(win, developerMode)
+    buildAppMenu(
+      {
+        getFocusedWindow: getFocusedMainWindow,
+        createWindow: createMainWindow,
+      },
+      developerMode,
+    )
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win)
@@ -437,6 +455,7 @@ app
         modelArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         if (typeof promptArg !== 'string' || promptArg.length > 1_000_000) {
@@ -462,12 +481,16 @@ app
       'agent:run',
       async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         await agentDispatcher.dispatch({
           projectId,
           threadId,
           payload: parseAgentRunPayload(rawPrompt),
+        })
+        await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
+          console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
       },
     )
@@ -513,6 +536,7 @@ app
       'agent:clearHistory',
       async (event, projectIdArg: unknown, threadIdArg: unknown) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         agentDispatcher.forgetHistory(projectId, threadId)
@@ -533,6 +557,7 @@ app
 
     ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
       assertMainFrameSender(event, win)
+      assertPrimaryMainWindow(event.sender)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       abortAgent(threadId)
     })
@@ -575,6 +600,7 @@ app
       'agent:retryReview',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
@@ -592,6 +618,7 @@ app
       'agent:retryComparison',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
@@ -625,20 +652,26 @@ app
       return suggestToolTurnSummary(actions)
     })
 
-    ipcMain.handle('agent:suggestFollowUps', (event, contextJson: string) => {
-      assertMainFrameSender(event, win)
-      let rawContext: unknown
-      try {
-        rawContext = JSON.parse(contextJson)
-      } catch {
-        throw new Error('agent:suggestFollowUps: context is not valid JSON')
-      }
-      const parsed = followUpContextSchema.safeParse(rawContext)
-      if (!parsed.success) {
-        throw new Error('agent:suggestFollowUps: context failed validation')
-      }
-      return suggestFollowUps(parsed.data)
-    })
+    ipcMain.handle(
+      'agent:suggestFollowUps',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, contextJson: string) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        let rawContext: unknown
+        try {
+          rawContext = JSON.parse(contextJson)
+        } catch {
+          throw new Error('agent:suggestFollowUps: context is not valid JSON')
+        }
+        const parsed = followUpContextSchema.safeParse(rawContext)
+        if (!parsed.success) {
+          throw new Error('agent:suggestFollowUps: context failed validation')
+        }
+        const { root } = await resolveThreadExecutionContext(projectId, threadId)
+        return suggestFollowUps(parsed.data, root)
+      },
+    )
 
     // Every channel the renderer can invoke is registered by here, so it is now
     // safe to block on the probe. Both syncs read `isGhAvailable()`, which only
@@ -720,6 +753,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
+  await shutdownStaticPreviewServers()
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.

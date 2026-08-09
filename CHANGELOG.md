@@ -8,6 +8,61 @@ every published entry.
 
 ## Unreleased
 
+- A thread working in its own isolated worktree no longer asks you to approve
+  every delete, rename, and new folder. Writes have applied straight to disk
+  since the session backup landed, but the three non-content ops still staged
+  unconditionally — so an isolated thread was queueing up approvals for files
+  only the agent had ever written, in a checkout you do not share, on a branch
+  that is not yours. They now take the same path writes do, and the same
+  fallbacks: an op still stages if git cannot be read, if uncommitted work could
+  not be backed up first, or if the file changed underneath the agent since it
+  read it. Threads on the shared checkout are unchanged — those are your files.
+  **Settings → Permissions → File edits** carries the toggle
+  (_Skip approval for deletes, renames, and new folders in an isolated
+  worktree_), on by default.
+- The side panel can now take the whole chat column. Every pane header —
+  Explorer, Shells, Changes, PRs, Memories, Roadmap, Browser — carries an
+  **expand** control next to its pop-out button, and pressing it gives that pane
+  everything from the thread list to the right edge of the window; the same
+  control, now pointing inward, restores the split. It is the in-window half of
+  pop out: a wide diff, a real browser viewport or a full-width terminal without
+  detaching a second window to get one. The projects rail stays where it is, so
+  threads remain visible and switchable with the pane expanded, and the titlebar
+  stays reachable, so switching panes swaps the content and stays expanded.
+  Expanding covers chat rather than collapsing it, so the transcript keeps its
+  scroll position and the composer its draft, and restoring puts both back
+  exactly as they were — the agent carries on underneath either way. Closing the
+  panel gives chat its column back.
+- The file tree and file previews work in a `npm run dev` build again. `dev.mts`
+  never emitted `dist/main/sandbox-fs-worker.js` (nor the pack-tool, ACP-probe
+  and SSH-askpass bundles) — only `npm run build` did. A `dist/` filled purely by
+  `npm run dev`, as in a fresh worktree, therefore failed every sandboxed `fs:*`
+  call with a `MODULE_NOT_FOUND` from a child process, spawning two doomed
+  Electron processes per call. Both builders now emit the same list, and a
+  missing worker bundle reports itself by name instead of spawning anything.
+- Opening a new thread with the Terminal pane already visible no longer fails
+  to spawn a shell. Autosave already flushed `threads:create` immediately on a
+  new id, but `terminal:create` did not wait for that write — main's ownership
+  check then treated the missing `meta.json` as "thread does not belong to
+  project". The terminal spawn now awaits the in-flight create first, and a
+  missing meta is reported as "not persisted yet" rather than a membership
+  mismatch.
+- A thread that went wrong can now be handed to a thread that can read it.
+  **Debug trace**, in the composer's overflow menu, exports the conversation
+  you are looking at as a zip of its whole store directory — the spine, the
+  message prose, tool arguments and results, plans, nested subagent runs — opens
+  a new thread with that archive attached, and drafts a prompt asking for the
+  diagnosis: a timeline of what the thread was asked to do and what it actually
+  did, the point it went wrong quoted from the trace, the failure mode behind it,
+  and what would have prevented it. It says up front when history was trimmed
+  mid-run, which is a common cause and one the transcript alone cannot show. The
+  archive is stored with the new thread, so the investigation outlives the thread
+  it is about, and the agent unpacks it into files with `read_archive` rather
+  than ever taking the bytes into context. Nothing is sent: the draft ends on an
+  open line for you to say what you actually saw, which is the one thing a trace
+  cannot contain. Debug trace and **Share trace** are also no longer behind
+  Developer mode — someone whose thread has just gone wrong is by definition not
+  the person who went looking for a developer setting first.
 - New threads are now isolated by default, and no longer pick up where the last
   thread left off. A new thread in a Git project gets its own linked checkout,
   branched from the project's default branch — `origin/main` as last fetched,
@@ -374,6 +429,14 @@ every published entry.
   train on inputs. Privacy-forward hosted endpoints (Groq, Together AI, and
   Fireworks AI) are available directly as provider presets instead of being
   hidden under Other. See docs/provider-data-policies.md.
+- Every text attachment chip now opens its snapshot in the preview modal. A
+  pasted block, an attached file and an attached terminal selection are all
+  openable in the composer, so what you attached can be checked before you send
+  it rather than only afterwards from the transcript — the ✕ still removes the
+  chip, since the affordance sits on the label beside it. Sent pasted blocks
+  open too: their chip was being rebuilt from its label alone, dropping the
+  snapshot the message already carried, so the most common text attachment was
+  the one kind that stayed stubbornly shut.
 
 ## Release-note process
 

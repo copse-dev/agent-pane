@@ -13,27 +13,49 @@
 // policies, but they are **removed from the static {@link TURN_START_HOOKS}
 // list** so `createHookRegistry` does not register them a second time when the
 // pack folds its hooks in. Only the non-todos entries
-// (`github-link-steering`, `commit-steering`) survive in this list; disabling
-// the todos pack therefore drops **only** the todo hooks from new work
-// (decision 15 atomicity).
+// (`github-link-steering`) survive in this list; disabling the todos pack
+// therefore drops **only** the todo hooks from new work (decision 15
+// atomicity).
 import type { BlockingHook } from './canonical-events.ts'
 import { shouldSteerTodos, formatTodosForPrompt, TODO_STEERING_PROMPT } from '../todo-steering.ts'
 import { shouldSteerGithubLinks, buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
-import { shouldSteerCommit, buildCommitSteeringPrompt } from '../commit-steering.ts'
 import {
   decideForcedPlanning,
   resolveForcedPlanningConfig,
   FORCED_PLANNING_PACK_ID,
   PLAN_TOOL_NAME,
 } from '../forced-planning.ts'
+import {
+  shouldSteerSiteBuilding,
+  SITE_BUILDING_STEERING_PROMPT,
+} from '../site-building-steering.ts'
 
 /** Todo multi-step steering block when the user message looks plan-worthy. */
 export const todoSteeringHook: BlockingHook<'turnStart'> = {
   id: 'todo-steering',
   event: 'turnStart',
   run(payload) {
+    // ACP owns its own orchestration loop and Copse deliberately does not
+    // bridge update_todos. Preserve the pre-ACP-hook behavior instead of
+    // instructing that executor to call a tool it cannot see.
+    if (payload.executor === 'acp') return undefined
     if (!shouldSteerTodos(payload.userText)) return undefined
     return { injectContext: TODO_STEERING_PROMPT }
+  },
+}
+
+/**
+ * Product-quality steering for requests that ask Copse to build a website.
+ * The detector and prompt are intentionally brand-agnostic: the user's brief
+ * owns the visual direction; the pack supplies a reliable design/build/verify
+ * workflow to both local and ACP executors.
+ */
+export const siteBuildingSteeringHook: BlockingHook<'turnStart'> = {
+  id: 'site-building-steering',
+  event: 'turnStart',
+  run(payload) {
+    if (!shouldSteerSiteBuilding(payload.userText)) return undefined
+    return { injectContext: SITE_BUILDING_STEERING_PROMPT }
   },
 }
 
@@ -49,16 +71,6 @@ export const githubLinkSteeringHook: BlockingHook<'turnStart'> = {
     if (!shouldSteerGithubLinks(payload.userText)) return undefined
     const repoSlug = (await context.resolveGithubRepoSlug?.()) ?? null
     return { injectContext: buildGithubLinkSteeringPrompt(repoSlug) }
-  },
-}
-
-/** Prefer `git_commit` so Co-Authored-By attribution is added automatically. */
-export const commitSteeringHook: BlockingHook<'turnStart'> = {
-  id: 'commit-steering',
-  event: 'turnStart',
-  run(payload) {
-    if (!shouldSteerCommit(payload.userText)) return undefined
-    return { injectContext: buildCommitSteeringPrompt() }
   },
 }
 
@@ -126,7 +138,4 @@ export const forcedPlanningHook: BlockingHook<'turnStart'> = {
  * matching the original layout. Removing them here is what stops the static +
  * pack pair from double-registering (P4 trap).
  */
-export const TURN_START_HOOKS: readonly BlockingHook<'turnStart'>[] = [
-  githubLinkSteeringHook,
-  commitSteeringHook,
-]
+export const TURN_START_HOOKS: readonly BlockingHook<'turnStart'>[] = [githubLinkSteeringHook]

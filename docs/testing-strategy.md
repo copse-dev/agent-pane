@@ -157,6 +157,20 @@ new tests should keep that trend:
 - The **cheap static gate** (`lint`/typecheck/format/dead-code) short-circuits
   the pipeline before any build or e2e shard burns minutes. Put fast, broad
   checks here.
+- The same oracle call also emits a **unit plan** (`unit_mode` / `unit_specs`),
+  which the `check` job applies **only to a PR stacked on another PR's branch**.
+  Such a layer cannot merge — the layer below has to land first, and when it
+  does the PR is retargeted at trunk and re-runs the whole suite under the
+  coverage ratchet. So the run that actually gates a merge is never a thinned
+  one. Two properties keep this honest, and both are pinned by
+  `npm run check:oracle`:
+  - **An empty selection means `full`, never `skip`.** A fixture, JSON snapshot
+    or config a test _reads_ is invisible to the import graph, so "no unit test
+    selected" is evidence of a blind spot, not of safety. Only a docs-only diff
+    skips outright.
+  - **`subset` skips the coverage ratchet**, because a partial run's coverage
+    number isn't comparable to `coverage-baseline.json`. The trunk-targeted run
+    is where the ratchet applies.
 - **Remote e2e for the local loop** (`npm run e2e:remote`) runs the same
   oracle-selected / CI-shaped suite on a cloud container from the working tree
   so agents and humans can keep iterating. Prefer it over local `test:e2e`
@@ -192,6 +206,49 @@ tier boundary is:
 | ------------------------------------------------------ | -------------- |
 | Sizing/geometry over a deterministic mocked backend    | demo (browser) |
 | Monaco / terminal / webview / native window / main IPC | e2e (Electron) |
+
+## Testing ACP without a model key
+
+Copse implements **both ends** of [ACP](acp-agents.md): the **client** role
+(`acp-client.ts`, driving someone else's agent) and the **agent** role
+(`acp-agent-server.ts` / `acp-app-entry.ts`, exposing Copse's own loop to someone
+else's editor). None of that needs e2e, an installed agent binary, or an API key —
+it all lives in the unit tier and runs on every PR.
+
+Three shapes, cheapest first:
+
+1. **Protocol loopback** (`acp-loopback.test.ts`, `acp-cancel.test.ts`,
+   `acp-session-pool.test.ts`, …) — the agent role and the client role wired
+   together through two in-memory byte pipes over real ndjson framing, injected
+   via the pool's `createTransport` seam. The turn runner is a stub, so these pin
+   _protocol_ behaviour: cancel and its grace window, resume, idle updates, mode
+   and model selection, permission cancellation.
+2. **Full stack on a mock model** (`acp-app-entry.test.ts`) — the same loopback,
+   but the far end is the real `createAcpTurnRunner`, driving the real `runAgent`
+   over a real `ToolRegistry` and the real approval plumbing. The only fake is the
+   model: a `MockLLMProvider` passed through `runAgent`'s `provider` option (the
+   same seam the headless host and the bench harness use), steered into a named
+   tool call with the `[[mcp:<tool> {args}]]` directive. This is the tier that
+   proves an ACP client gets _Copse's agent_ rather than a protocol echo — a turn
+   crosses client → ndjson → agent role → agent loop → tool → `requestApproval` →
+   back out as `session/request_permission` → client answer → tool result →
+   chunks.
+3. **A real subprocess** (`acp-spawn.test.ts`, driving
+   `tests/fixtures/mock-acp-agent.mjs`) — the client spawning an actual child over
+   stdio. The loopbacks step over the process boundary, so this is the only tier
+   that reaches `spawnAcpAgentProcess`, the stdout→ndjson reader, the stderr tail
+   and the exit-error path. The fixture is an independent implementation over the
+   bare SDK, not Copse's own agent role, so the client is also exercised against
+   an agent that shares none of its assumptions.
+
+Pick the lowest one that can fail on the change, same as everywhere else: protocol
+edge cases at (1), anything about what the agent actually _does_ at (2), and only
+process lifecycle at (3).
+
+What genuinely needs a real agent stays out of the PR path by design: the
+`probe:acp*` scripts ([capability probe](acp-capability-probe.md)) measure what an
+installed adapter actually negotiates, per adapter version. That is not knowable
+from the spec and not fakeable — a mock can only tell you what we already believe.
 
 ## Self-hosted runners and on-machine LLM eval
 
@@ -298,10 +355,11 @@ spurious conflict.
 
 ## Quick rule of thumb
 
-| Question the test answers              | Tier             |
-| -------------------------------------- | ---------------- |
-| Pure logic / data transform            | unit             |
-| "Does the view render / wire up X?"    | component        |
-| Sizing, computed style, real geometry  | browser geometry |
-| Monaco / terminal / webview / main IPC | e2e              |
-| Does a real local model drive the loop | local-model eval |
+| Question the test answers              | Tier              |
+| -------------------------------------- | ----------------- |
+| Pure logic / data transform            | unit              |
+| "Does the view render / wire up X?"    | component         |
+| Sizing, computed style, real geometry  | browser geometry  |
+| Monaco / terminal / webview / main IPC | e2e               |
+| Either end of ACP, incl. the real loop | unit (mock model) |
+| Does a real local model drive the loop | local-model eval  |

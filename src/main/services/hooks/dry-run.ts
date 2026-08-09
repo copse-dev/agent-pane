@@ -84,6 +84,10 @@ function cursorPlan(wireEvent: string): DryRunPlan | null {
       return { canonicalEvent: 'toolGate', toolName: SYNTHETIC_MCP_TOOL }
     case 'beforeReadFile':
       return { canonicalEvent: 'toolGate', toolName: 'read_file' }
+    case 'preToolUse':
+      // The generic gate fires for every tool; a shell payload is representative
+      // and matches the flavor `postToolUse` dry-runs with.
+      return { canonicalEvent: 'toolGate', toolName: 'run_shell' }
     case 'afterShellExecution':
       return { canonicalEvent: 'afterToolUse', toolName: 'run_shell' }
     case 'afterMCPExecution':
@@ -109,11 +113,19 @@ function cursorPlan(wireEvent: string): DryRunPlan | null {
   }
 }
 
-/** Map a Claude wire event to its dry-run plan (`PreToolUse` gate / `SessionStart`). */
+/** Map a Claude wire event to its dry-run plan. Mirrors {@link CLAUDE_WIRED_HOOK_EVENTS}. */
 function claudePlan(wireEvent: string): DryRunPlan | null {
   switch (wireEvent) {
     case 'PreToolUse':
       return { canonicalEvent: 'toolGate', toolName: 'run_shell' }
+    case 'PostToolUse':
+      return { canonicalEvent: 'afterToolUse', toolName: 'run_shell', isError: false }
+    case 'UserPromptSubmit':
+      return { canonicalEvent: 'beforeSubmitPrompt' }
+    case 'Stop':
+      return { canonicalEvent: 'stop' }
+    case 'SubagentStop':
+      return { canonicalEvent: 'subagentStop' }
     case 'SessionStart':
       return { canonicalEvent: 'sessionStart' }
     default:
@@ -250,7 +262,7 @@ function marshalDryRun(
       const payload = buildToolGatePayload(plan.toolName ?? 'run_shell')
       return {
         request: adapter.marshalToolGateRequest(hook, payload, session),
-        interpret: (s) => adapter.interpretToolGate(s, payload),
+        interpret: (s) => adapter.interpretToolGate(s, payload, hook),
       }
     }
     case 'afterToolUse': {

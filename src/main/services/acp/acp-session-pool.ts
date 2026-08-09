@@ -2,6 +2,7 @@ import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from '.
 import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
 /**
  * Per-thread pool of persistent ACP sessions (issue #605).
@@ -58,9 +59,11 @@ const resumeCandidates = new Map<string, { fingerprint: string; sessionId: strin
 let reaper: NodeJS.Timeout | null = null
 
 /** Everything that decides whether an existing session can serve this turn.
- * `model` is deliberately excluded — it switches live via set_config_option.
- * `permissionMode` IS included (issue #607): unlike model, it's applied once at
- * `session/new`, so a change needs a fresh session to take effect. */
+ * `model` is deliberately excluded — it switches live via set_config_option, and
+ * so do the other `configOptions` (reasoning level, …), which are re-applied at
+ * the start of each turn. `permissionMode` IS included (issue #607): unlike
+ * those, it's applied once at `session/new`, so a change needs a fresh session
+ * to take effect. */
 export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
   return JSON.stringify({
     command: config.command,
@@ -134,6 +137,10 @@ export async function acquireAcpSession(
   if (existing) {
     if (existing.fingerprint === fingerprint && !existing.open.isClosed()) {
       existing.lastUsedAt = Date.now()
+      // Config options (reasoning level, …) are excluded from the fingerprint so
+      // changing one reuses the session instead of respawning it; hand the fresh
+      // selection to the open session, which applies the diff next turn.
+      existing.open.desiredConfigOptions = opts.config.configOptions
       return { entry: existing, fresh: false }
     }
     if (existing.fingerprint === fingerprint && existing.open.canResume) {
@@ -234,6 +241,7 @@ export async function disposeAcpSession(
   }
   pool.delete(threadId)
   await entry.dispose()
+  notifyThreadResourceFinished(threadId)
   return true
 }
 

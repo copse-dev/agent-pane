@@ -52,7 +52,6 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 const DEFAULT_DISABLED_PACK_IDS = [
   'copse.advisor-strategy',
   'copse.automations',
-  'copse.background-tasks',
   'copse.ci-investigator',
   'copse.devtools-shortcut',
   'copse.dark-factory',
@@ -386,8 +385,6 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
-    /** Opt into the session-scoped `run_background` tool. */
-    backgroundTasksEnabled?: boolean
     developerMode?: boolean
     /**
      * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
@@ -451,7 +448,6 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
-  if (options?.backgroundTasksEnabled) enabledPacks.push('copse.background-tasks')
   seedConfig.packDisabled =
     options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
   if (options?.packSources) {
@@ -1501,6 +1497,20 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
 
   const { spine, files } = explodeThread(messages, sha256)
   const lines: string[] = []
+  // The first turn's `sessionStart` hooks fire detached before any message has
+  // been written, so their spine records precede the first message and fold onto
+  // it (an orphan attach). Emit them before the first message line to reproduce
+  // that first-turn layout.
+  for (const run of [
+    hookRun({ id: 'hr-session-start', event: 'sessionStart', hookId: 'session-start.sh' }),
+    hookRun({
+      id: 'hr-session-start-2',
+      event: 'sessionStart',
+      hookId: 'second-dialect.sh',
+    }),
+  ]) {
+    lines.push(serializeSpineLine(run))
+  }
   for (const line of spine) {
     lines.push(serializeSpineLine(line))
     for (const run of runsByAnchor[line.id] ?? []) lines.push(serializeSpineLine(run))

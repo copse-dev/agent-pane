@@ -130,7 +130,10 @@ groups every pack's contributions by pack id and owns the lifecycle:
   seeds every pack enabled, then `EXPERIMENTAL_FIRST_PARTY_PACK_IDS` derives the
   off-by-default set from those declarations and writes it into `packDisabled` on
   a profile that has never had one. Once `packDisabled` exists it is the user's
-  own and is never re-seeded.
+  own and is never re-seeded. `copse.background-tasks` is stable and default-on;
+  a one-time graduation removes its old seeded experimental disable, after which
+  user toggles remain authoritative. Its optional loopback-bind relaxation stays
+  separately permission-gated.
 - **Atomic enable/disable** — `disable(id)` flips a single flag, so every one of
   a pack's contribution kinds drops from the active getters at once: tools leave
   the model tool list, hooks stop firing, prompt blocks drop out, UI stops

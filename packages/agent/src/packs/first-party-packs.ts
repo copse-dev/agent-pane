@@ -70,17 +70,20 @@
 //    `isCapabilityActive('devtools-shortcut')` instead of the retired
 //    `devtoolsShortcutEnabled` setting, so the pack toggle atomically
 //    registers/unregisters the global Ctrl+Shift+I shortcut. Default DISABLED.
-//  - `backgroundTasksPack` — the first-party pack for the experimental
+//  - `backgroundTasksPack` — the first-party pack for the stable, default-on
 //    background tasks feature (issue #691). Declares the `run_background` tool
 //    AND the `loopback-bind` **permission / sandbox relaxation** (issue #1190):
 //    the pack toggle atomically drops the tool from the model tool list
 //    (`registry-bootstrap.ts` reads the pack registry) and the permission-gate
 //    only grants the loopback port-binding relaxation while the pack declares it
 //    (`permission-gate.ts` reads `isPermissionDeclared('loopback-bind')`).
-//    Default DISABLED.
+//    Default ENABLED; users can still disable it through the pack toggle.
 //  - `parallelSearchPack` — direct, credential-gated access to Parallel's
 //    hosted Search API. It declares the native `parallel_search` tool, search
 //    mode setting, and first-party credential detail. Default DISABLED.
+//  - `siteBuildingPack` — stable, default-on website creative-engineering
+//    steering. Contributes one conditional turn-start hook shared by the local
+//    loop and ACP; no customer- or demo-specific art direction is embedded.
 import type { RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
@@ -99,6 +102,7 @@ import { backgroundTasksPack } from './background-tasks-pack.ts'
 import { automationsPack } from './automations-pack.ts'
 import { parallelSearchPack } from './parallel-search-pack.ts'
 import { darkFactoryPack } from './dark-factory-pack.ts'
+import { siteBuildingPack } from './site-building-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
@@ -108,7 +112,8 @@ import { darkFactoryPack } from './dark-factory-pack.ts'
  * the CI investigator, then PII redaction, then forced planning, then the two
  * capability-only packs (MCP-UI canvas + DevTools shortcut), then the
  * background-tasks pack (which declares a permission / sandbox relaxation,
- * issue #1190), then the automations prototype and Parallel Search.
+ * issue #1190), then the automations prototype, Parallel Search, dark factory,
+ * and the stable site-building steering pack.
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -127,6 +132,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   automationsPack,
   parallelSearchPack,
   darkFactoryPack,
+  siteBuildingPack,
 ]
 
 /**

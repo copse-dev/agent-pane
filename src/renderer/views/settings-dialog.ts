@@ -279,6 +279,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'alertBounce', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
+  { name: 'worktreeAutoApproveEdits', kind: 'checkbox', default: true, save: true },
   { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
   // Experimental, opt-in features (off by default). The MCP-UI artefacts
   // (canvas) toggle moved to Settings > Packs (`copse.mcp-ui-canvas`).
@@ -803,6 +804,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Copse's tools (GitHub, code search, changes, browser, web fetch) apply their own
                 permission checks each time they run, so the extra prompt only asks twice. Turn off
                 to be asked anyway.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="worktreeAutoApproveEdits" />
+                Skip approval for deletes, renames, and new folders in an isolated worktree
+              </label>
+              <p class="field-hint">
+                A thread on an isolated worktree edits its own checkout on its own branch — your
+                files and branch are never touched — so it applies these straight away instead of
+                asking. Threads on the shared checkout keep asking. Copse still asks if the file
+                changed underneath it or its work could not be backed up. Turn off to review every
+                one.
               </p>
             </fieldset>
 
@@ -1764,11 +1776,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (opts.titleAttr) row.title = opts.titleAttr
     const header = document.createElement('div')
     header.className = 'sources-row-header'
+    // Title + optional hover path share one flex slot so a long origin cannot
+    // inflate the row / settings scrollport (min-content of a bare path would
+    // otherwise win over the section width).
+    const primary = document.createElement('div')
+    primary.className = 'sources-row-primary'
     const titleEl = document.createElement('span')
     titleEl.className = 'sources-row-title'
     titleEl.textContent = title
-    header.append(titleEl)
-    // Origin sits in the header gutter (title → badge) on hover so the row
+    primary.append(titleEl)
+    // Origin sits in the primary gutter (title → badge) on hover so the row
     // height never grows; long paths ellipsize from the left. `<bdi>` keeps
     // the path LTR so a leading `/` doesn't flip to the end under `direction:
     // rtl` (same left-elide trick as `.git-change-path`).
@@ -1778,8 +1795,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const pathEl = document.createElement('bdi')
       pathEl.textContent = opts.hoverDetail
       hoverEl.append(pathEl)
-      header.append(hoverEl)
+      primary.append(hoverEl)
     }
+    header.append(primary)
     if (badge) {
       const badgeEl = document.createElement('span')
       badgeEl.className = opts.badgeClass ? `sources-badge ${opts.badgeClass}` : 'sources-badge'

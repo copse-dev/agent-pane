@@ -50,6 +50,7 @@ import { getActiveRunThread } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
 import { recordDecision } from '../services/security/decision-log-store.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
+import { recordCreatedPullRequest } from '../services/worktree-parking.ts'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -290,7 +291,7 @@ export const runShellTool = defineTool({
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
     'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
     'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. ' +
-    'A foreground command may run up to 30 minutes (timeout_ms); for dev servers, watchers, or intentionally unbounded processes use run_background instead of a long timeout. ' +
+    'A foreground command may run up to 30 minutes (timeout_ms). Use run_background for dev servers and watchers, and for bounded work expected to leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs); arm wake_on_completion and end the turn instead of polling. ' +
     "Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, while a producer that only stopped because `head` closed the pipe early still counts as success.",
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
@@ -305,8 +306,8 @@ export const runShellTool = defineTool({
         `Foreground timeout in milliseconds (default ${String(
           RUN_SHELL_DEFAULT_TIMEOUT_MS,
         )}, max ${String(RUN_SHELL_MAX_TIMEOUT_MS)}). On timeout the process tree is killed. ` +
-          `Use run_background for dev servers, watchers, or intentionally unbounded processes ` +
-          `rather than a long foreground timeout.`,
+          `Use run_background for dev servers, watchers, and bounded work expected to leave you ` +
+          `waiting (long builds, test suites, evals, data generation, or migrations).`,
       ),
     expects_sandbox_block: z
       .boolean()
@@ -441,7 +442,10 @@ export const runShellTool = defineTool({
       const succeeded = (r: ShellRunResult): boolean =>
         r.exitCode === 0 || isSigpipeOnlyFailure(r.exitCode, pipefailInjected)
 
-      if (succeeded(result)) return `${containmentBanner}${withBanner(formatShellSuccess(result))}`
+      if (succeeded(result)) {
+        recordCreatedPullRequest(command, result.output)
+        return `${containmentBanner}${withBanner(formatShellSuccess(result))}`
+      }
 
       if (!suppressUnsandboxedRetry) {
         const retry = await maybeRetryUnsandboxed(
@@ -457,6 +461,7 @@ export const runShellTool = defineTool({
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
           if (succeeded(retry)) {
+            recordCreatedPullRequest(command, retry.output)
             const retryBanner = guardedYolo ? '[Guarded YOLO · unsandboxed retry]\n' : ''
             return `${retryBanner}${withBanner(formatShellSuccess(retry))}`
           }

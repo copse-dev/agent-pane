@@ -31,7 +31,12 @@ describe('context wheel hover while running', () => {
     // Hold the run open long enough to hover while `status === 'running'`.
     await setComposerValue('Summarise this repo. [[mock:delay_ms 15000]]')
     await $('.submit-btn').click()
-    await browser.waitUntil(async () => (await $$('.stop-btn')).length > 0, {
+    // Displayed, not present. input-bar.ts creates the stop button once at mount
+    // with `hidden` and toggles `stopBtn.hidden = !running`, so an existence
+    // check is true from app start and this wait returned immediately — leaving
+    // the `pause(500)` below as the only thing standing between the hover and a
+    // run that had not started yet.
+    await browser.waitUntil(async () => await $('.stop-btn').isDisplayed(), {
       timeout: 15_000,
       timeoutMsg: 'expected the run to start',
     })

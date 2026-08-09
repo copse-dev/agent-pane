@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -10,6 +10,20 @@ import { resolve } from 'node:path'
  */
 describe('ci.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
+
+  /**
+   * A whole job block, header through to the next top-level job. The
+   * `(?: {4}.*\n)+` shape used by the older pins above stops at the first line
+   * indented deeper than 4 spaces, so it only ever sees a job's `if:` /
+   * `runs-on:` preamble — never its `steps:`.
+   */
+  function jobBlock(name: string): string {
+    const start = workflow.search(new RegExp(`^ {2}${name}:$`, 'm'))
+    assert.ok(start >= 0, `expected a \`${name}:\` job in ci.yml`)
+    const rest = workflow.slice(start + 1)
+    const next = rest.search(/^ {2}[a-z][a-z0-9-]*:$/m)
+    return next >= 0 ? rest.slice(0, next) : rest
+  }
 
   it('skips the e2e job when the oracle plans zero shards (empty matrix is a GHA failure)', () => {
     // GitHub Actions treats `strategy.matrix: []` as job failure, not skipped.
@@ -91,6 +105,26 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
   })
 
+  it('never gates the aggregate on always(), which wedges the concurrency group', () => {
+    // `always()` is true even when the RUN is cancelled, so GitHub creates and
+    // queues `ci-passed` on a run being torn down. It prefers the self-hosted
+    // fleet, so it can then wait for a runner that never arrives — and a queued
+    // job keeps its run non-terminal, keeps the `ci-<pr>` concurrency group
+    // held, and leaves the superseding run `pending` with zero jobs. #1669 sat
+    // wedged for 114 minutes that way, with `force-cancel` the only manual exit.
+    // `!cancelled()` runs in every case `always()` did except a cancelled run.
+    const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
+    assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
+    const jobIf = aggregate.match(/^ {4}if: (.+)$/m)?.[1]
+    assert.ok(jobIf, 'expected a job-level `if:` on ci-passed')
+    assert.match(jobIf, /!cancelled\(\)/, 'the aggregate must skip itself on a cancelled run')
+    assert.doesNotMatch(
+      jobIf,
+      /(^|[^!])always\(\)/,
+      'always() on the aggregate wedges the concurrency group; use !cancelled()',
+    )
+  })
+
   it('does not let a cheap trunk push satisfy the promotion aggregate gate', () => {
     const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
@@ -128,6 +162,102 @@ describe('ci.yml workflow invariants', () => {
       aggregate,
       /\[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \]/,
       'a zero-shard plan skips e2e, so the gate must not demand it',
+    )
+  })
+
+  it('only thins the unit tier on a PR that cannot merge yet', () => {
+    // The whole safety argument for thinning is that a stacked layer gets a
+    // second, un-thinned run once it is retargeted at trunk. Lose the base_ref
+    // guard and a PR could merge into `main` having run a subset — silently, and
+    // with the coverage ratchet skipped alongside it.
+    const check = jobBlock('check')
+    assert.match(
+      check,
+      /STACKED_PR: \$\{\{ github\.event_name == 'pull_request' && github\.base_ref != 'main' && github\.base_ref != 'release' \}\}/,
+      'thinning must be restricted to PRs stacked on another PR branch',
+    )
+    assert.match(
+      check,
+      /\[ "\$STACKED_PR" = "true" \] && \[ "\$UNIT_MODE" = "subset" \]/,
+      'the subset arm must require STACKED_PR, not just a subset plan',
+    )
+    assert.match(
+      check,
+      /npm run coverage:ci/,
+      'the unthinned arm must still run the coverage ratchet',
+    )
+    // A base branch name is attacker-chosen on any PR. Reaching the script
+    // through `${{ }}` would splice it into the shell.
+    assert.doesNotMatch(
+      check.slice(check.indexOf('- name: Unit tests')),
+      /run: \|[\s\S]*\$\{\{ github\.base_ref \}\}/,
+      'base_ref must reach the unit-test script through the environment',
+    )
+  })
+
+  it('reads an unset unit_mode as the full suite', () => {
+    // `unit_mode` crosses a job boundary, so a plan branch that forgets to emit
+    // one yields the empty string. That must land on `coverage:ci`, never on a
+    // thinned run — fail safe, not fail cheap.
+    const check = jobBlock('check')
+    const subsetArm = check.indexOf('[ "$UNIT_MODE" = "subset" ]')
+    const fallthrough = check.lastIndexOf('npm run coverage:ci')
+    assert.ok(subsetArm >= 0 && fallthrough > subsetArm, 'coverage:ci must be the fallthrough arm')
+  })
+
+  it('emits a unit_mode from every branch of the plan step', () => {
+    // Each early exit predates the oracle looking at the diff, so each must
+    // pin the unit tier to `full`. A branch that emits only `mode=` would leave
+    // `unit_mode` empty — safe today because `check` falls through to the full
+    // suite, but the pin keeps that from being load-bearing by accident.
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    assert.ok(planStep, 'expected the plan step in ci.yml')
+    const emits = planStep.match(/echo "mode=(?:full|subset|skip)"/g) ?? []
+    const unitEmits = planStep.match(/echo "unit_mode=full"/g) ?? []
+    assert.equal(
+      emits.length,
+      unitEmits.length,
+      `every hardcoded mode= branch needs a unit_mode= sibling (${String(emits.length)} vs ${String(unitEmits.length)})`,
+    )
+    assert.match(
+      planStep,
+      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' plan\.txt/,
+      'the oracle path must forward the unit plan to $GITHUB_OUTPUT',
+    )
+  })
+
+  it('retires the update-screenshots label once the refresh has been committed', () => {
+    // Nothing else removes it, and left on it stops being a request and becomes
+    // a mode: the plan step forces mode=full and the label punches through the
+    // `base_ref == release` guard on e2e, so a trunk PR re-runs 8 Electron
+    // shards on every push forever (#1569).
+    const job = jobBlock('commit-screenshots')
+    assert.match(job, /name: Retire the update-screenshots label/)
+    assert.match(
+      job,
+      /-X DELETE[\s\S]*?issues\/\$\{PR_NUMBER\}\/labels\/update-screenshots/,
+      'the label must be deleted through the issues labels API',
+    )
+    assert.match(
+      job,
+      /pull-requests: write/,
+      'removing a label needs pull-requests: write on this job',
+    )
+  })
+
+  it('decides autofix has work to do before paying for the dependency install', () => {
+    // The install is minutes; the autofix is seconds. Ordering them the other
+    // way round means a diff with no formattable file pays the whole install to
+    // print "nothing to do" — once per layer, per push.
+    const job = jobBlock('autoformat')
+    const listStep = job.indexOf('id: changed')
+    const setup = job.indexOf('uses: ./.github/actions/setup')
+    assert.ok(listStep >= 0, 'expected the changed-file listing step')
+    assert.ok(setup > listStep, 'setup must come after the changed-file listing step')
+    assert.match(
+      job,
+      /- uses: \.\/\.github\/actions\/setup\n {8}if: steps\.changed\.outputs\.any == 'true'/,
+      'setup must be gated on there being something to fix',
     )
   })
 
@@ -181,6 +311,32 @@ describe('ci.yml workflow invariants', () => {
       job,
       /SCREENSHOT_MAIN_REF: origin\/\$\{\{ github\.base_ref \}\}/,
       'filter-screenshots.mts defaults to origin/main; it must be pointed at the PR base',
+    )
+  })
+
+  it('caps every job, so one wedged run cannot park an ephemeral runner for six hours', () => {
+    // GitHub's default `timeout-minutes` is 360. The runners here are ephemeral
+    // and serve both tiers, so an uncapped job holds a whole runner — a real
+    // slice of total capacity — while every other PR queues. This pin is the
+    // part that lasts: a job added later without a cap fails here rather than
+    // being discovered as a six-hour outage.
+    // Scope to the `jobs:` section: `on:` also holds 2-space keys with no value
+    // (`push:`, `pull_request:`, `schedule:`) that the job-name shape matches.
+    const jobsSection = workflow.slice(workflow.search(/^jobs:$/m))
+    // `noUncheckedIndexedAccess` types a capture group as `string | undefined`, so collect
+    // through an explicit guard rather than `.map(m => m[1])` — same shape as
+    // `staticImports` in agent-path-electron-surface.test.ts.
+    const names: string[] = []
+    for (const match of jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)) {
+      const name = match[1]
+      if (name !== undefined) names.push(name)
+    }
+    assert.ok(names.length > 0, 'expected to find job names in ci.yml')
+    const uncapped = names.filter((name) => !/^ {4}timeout-minutes: \d+$/m.test(jobBlock(name)))
+    assert.deepEqual(
+      uncapped,
+      [],
+      `every ci.yml job needs timeout-minutes; missing on: ${uncapped.join(', ')}`,
     )
   })
 })
@@ -274,5 +430,82 @@ describe('gitleaks workflow invariants', () => {
       /^ {4}if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name != github\.repository$/m,
     )
     assert.match(gitleaksWorkflow, /^ {4}runs-on: ubuntu-latest$/m)
+  })
+})
+
+// Demos stopped carrying their own 34MB copy of Monaco and now share one
+// published tree. That only works if both halves agree, and neither half fails
+// on its own: the build succeeds, the publish succeeds, the deploy succeeds, and
+// the tree is present on the branch. Only loading a published preview shows it,
+// and only the editor is affected — so assert the pairing here instead.
+describe('shared Monaco publishing invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+  const pages = readFileSync(resolve('.github/workflows/pages.yml'), 'utf8')
+
+  it('deploys the shared tree the demos are pointed at', () => {
+    const assemble = pages.match(/for dir in [^\n]*/)?.[0]
+    assert.ok(assemble, 'expected the assemble loop that mounts demo-previews targets')
+    assert.match(
+      assemble,
+      /_previews\/vendor\//,
+      'vendor/ is committed to demo-previews but only what this loop mounts is served',
+    )
+  })
+
+  it('addresses it relatively, never through a repository-name prefix', () => {
+    assert.match(demoPreview, /echo "base=\.\.\/vendor\/monaco\/\$\{version\}\/"/)
+    // The site publishes under the site/CNAME custom domain, whose root is `/`.
+    // An <owner>.github.io/<repo>/ style prefix 404s there — the original bug.
+    assert.doesNotMatch(
+      demoPreview,
+      /base=\/\$\{?REPO|base=\/agent-pane\//,
+      'copse.dev has no /agent-pane prefix; adding one makes every Monaco worker 404',
+    )
+  })
+})
+
+// Previews and demos are published under the production domain, so search
+// engines must be told to skip them — and told *only* about them. Both halves
+// are one-line changes away from silently inverting: a marker dropped from a
+// publish step ships an indexable preview, a tag added to site/ de-indexes
+// copse.dev itself. Nothing but a crawl would ever reveal either.
+describe('preview noindex invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+  const build = readFileSync(resolve('scripts/build.mts'), 'utf8')
+  const robots = readFileSync(resolve('site/robots.txt'), 'utf8')
+
+  it('marks both marketing-site bundles published under /demo/', () => {
+    // main/preview and pr-<n>-preview are copies of site/, so the tag has to be
+    // applied to the copy — the source stays indexable for the root deploy.
+    assert.match(demoPreview, /mark_bundle_noindex "\$\{TARGET\}\/preview"/)
+    assert.match(demoPreview, /mark_bundle_noindex "\$bundle_target"/)
+    assert.match(demoPreview, /node scripts\/mark-noindex\.mts/)
+  })
+
+  it('marks the demo build itself, so the tag travels with the artifact', () => {
+    assert.match(build, /markTreeNoindex\(rendererOutDir\)/)
+    // Inside the isDemo block: the packaged app has no crawler, and marking the
+    // shipped renderer would be noise in the release bundle.
+    const demoBlock = build.match(/^if \(isDemo\) \{\n[\s\S]*?^\}$/m)?.[0]
+    assert.ok(demoBlock, 'expected the `if (isDemo)` block in build.mts')
+    assert.match(demoBlock, /markTreeNoindex\(rendererOutDir\)/)
+  })
+
+  it('leaves the production marketing site indexable', () => {
+    for (const name of readdirSync(resolve('site')).filter((f) => f.endsWith('.html'))) {
+      assert.doesNotMatch(
+        readFileSync(resolve('site', name), 'utf8'),
+        /name=["']robots["']/i,
+        `site/${name} is deployed to the copse.dev root from main — it must stay indexable`,
+      )
+    }
+  })
+
+  it('does not disallow /demo/ in robots.txt, which would hide the noindex', () => {
+    // A disallowed URL is never fetched, so its noindex is never read and the
+    // URL can stay indexed on the strength of inbound links alone (the sticky
+    // PR comment is public). Crawling is how the tag gets honoured.
+    assert.doesNotMatch(robots, /^\s*Disallow:\s*\/demo/im)
+    assert.doesNotMatch(robots, /^\s*Disallow:\s*\/\s*$/im)
   })
 })

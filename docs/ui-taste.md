@@ -111,6 +111,21 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
   glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
   text-field overlay.
 
+### Permission / approval prompts
+
+Approval is a workbench decision surface, not a debug dump:
+
+- Titles are **questions in plain language** (`Mark pull request ready for review?`, `Run package
+install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
+- Bodies lead with the **thing at stake** (PR target, command, origin). Pretty-printed JSON args
+  are a last-resort fallback when the gate cannot summarize, not the default.
+- Buttons use `.ui-btn*` via `uiActions` (Approve = primary, Reject = secondary). Do not paint
+  Approve in `--success` and Reject in `--error`; those tokens are for status, not yes/no chrome.
+- Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
+  one-line PR target does not look like a `<pre>` of JSON.
+
+Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
@@ -203,9 +218,15 @@ Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch”
 
 For primary/secondary action buttons (Save / Cancel style):
 
-- Pill geometry is reserved for clear, high-value actions such as Save, Continue, Build, or the
-  primary onboarding action. Routine toolbar controls, row actions, icon buttons, filters, and
-  status indicators retain the normal UI-kit radius.
+- **Primary CTAs are never square.** High-value actions — welcome empty-state buttons, dialog
+  Save / Continue / Confirm, onboarding primary, composer Submit — use the shared action recipe
+  (`--action-radius: 999px`, `--action-min-height`, `--action-padding-*`). Do not leave a primary
+  CTA on `--radius` / `--radius-lg`; a 6–8px corner next to a pill reads as two control systems.
+- Pill geometry is reserved for those clear, high-value actions. Routine toolbar controls, row
+  actions, icon buttons, filters, and status indicators retain the normal UI-kit radius.
+- Paired peer CTAs on the same surface (e.g. welcome **New Project** + **Open Folder**) must share
+  the same action geometry even when fill vs outline differs. Register the whole peer set together
+  in `brand.css` / local baselines — omitting one button is how square-vs-pill mismatches ship.
 - Paired secondary actions may use the matching outline treatment, but should not compete with the
   primary fill.
 - Define action geometry through shared `--action-*` tokens and a UI-kit variant. Do not maintain a
@@ -363,6 +384,19 @@ It fills the window and its sections run several screens, so it is typed and spa
   would be wearing our badge of trust.
 
 Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
+
+## Sticky prompts yield in narrow chat panes
+
+The latest user prompt can stay anchored while a response grows at normal chat widths. In a narrow
+split, however, a long sticky prompt can cover the entire assistant response even when the outer
+window is wide. Responsive chat behavior therefore follows the width of `.pane-chat` itself via a
+container query, not a viewport breakpoint.
+
+At 360px or narrower, return the latest prompt to ordinary transcript flow. This preserves the
+request immediately above its answer without letting it become an opaque overlay. Keep the normal
+sticky behavior above that threshold. The paired regression states live in
+[`tests/e2e/user-prompt-sticky.e2e.ts`](../tests/e2e/user-prompt-sticky.e2e.ts): one wide reference
+and one narrow reference that proves the response reaches the composer unobscured.
 
 ## Markdown prose spacing in chat
 
@@ -599,10 +633,12 @@ Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.
 
 Settings → Sources rows already carry a coarse source badge (`bundled`, `project`, …). When the
 useful origin is a long filesystem path, keep it out of the resting list: put it in
-`.sources-row-hover-detail` inside the header gutter (between title and badge), revealed on
-`:hover` / `:focus-within` without growing the row. Truncate with left-elision
-(`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so the leaf
-stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
+`.sources-row-hover-detail` inside `.sources-row-primary` (the title slot between name and badge),
+revealed on `:hover` / `:focus-within` without growing the row or widening the settings column.
+The row / primary slot set `min-width: 0` + `overflow: hidden`, and the path uses `width: 0` with
+`flex: 1 1 0`, so intrinsic path length cannot blow out the flex min-content. Truncate with
+left-elision (`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so
+the leaf stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
 [`tests/e2e/settings-sources-skills.e2e.ts`](../tests/e2e/settings-sources-skills.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval
@@ -692,6 +728,28 @@ without that margin — the label drifts left of the titles above it.
 
 Settings nav (`.settings-nav-btn.active`) keeps a **leading** accent rail — that list sits on the
 dialog's left edge, so the marker belongs there, not on the trailing side.
+
+### Automation threads
+
+Recurring work must not turn the main conversation list into a run log. Automation
+threads live under one collapsed **Automations** disclosure per project; the header
+shows only a schedule count and exceptional running/attention indicators. Multiple
+runs coalesce under one schedule-name disclosure with a compact run count and
+timestamped children; a schedule with one run stays a single row. Opening an
+automation thread reveals both owning disclosures so the selected row is never
+hidden. Keep run rows visually identical to ordinary threads apart from their extra
+indent — the same full-bleed selected state, PR lifecycle icon, attention bell, and
+row actions still apply.
+
+Attention is the exception to the collapsed default. A waiting run automatically
+reveals its **Automations** and schedule ancestors, but the bell appears only on
+the actionable run. While the older history is filtered out, the schedule keeps
+the right-facing chevron; the first deliberate click rotates it and expands the
+complete run list.
+
+Do not create a second permanent pane or one sidebar section per schedule. The
+schedule editor owns configuration; the collapsed project disclosure owns task
+history.
 
 ## Settings → Usage worth-it card
 

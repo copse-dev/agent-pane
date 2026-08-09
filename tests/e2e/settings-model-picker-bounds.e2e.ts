@@ -19,6 +19,16 @@ async function readMenuGeometry(hostSelector: string): Promise<{
   verticalGap: number
   containedInSurface: boolean
   escapesPaneClip: boolean
+  // Raw edges, carried so a failure can say *why* rather than only that the
+  // menu did not end up where it should. The gaps above are absolute
+  // differences, so on their own they cannot distinguish "the menu never
+  // flipped" from "the trigger never moved, so there was nothing to flip".
+  triggerLeft: number
+  triggerRight: number
+  menuLeft: number
+  menuRight: number
+  surfaceLeft: number
+  surfaceRight: number
 } | null> {
   return browser.execute((hostSelector) => {
     const surface = document.querySelector<HTMLElement>('#settings-dialog')
@@ -30,6 +40,7 @@ async function readMenuGeometry(hostSelector: string): Promise<{
     const surfaceRect = surface.getBoundingClientRect()
     const triggerRect = trigger.getBoundingClientRect()
     const menuRect = menu.getBoundingClientRect()
+    const round = (n: number): number => Math.round(n)
     return {
       anchorName: getComputedStyle(trigger).getPropertyValue('anchor-name'),
       positionAnchor: getComputedStyle(menu).getPropertyValue('position-anchor'),
@@ -39,6 +50,12 @@ async function readMenuGeometry(hostSelector: string): Promise<{
       containedInSurface:
         menuRect.left >= surfaceRect.left - 1 && menuRect.right <= surfaceRect.right + 1,
       escapesPaneClip: !!menu.offsetParent && !pane.contains(menu.offsetParent),
+      triggerLeft: round(triggerRect.left),
+      triggerRight: round(triggerRect.right),
+      menuLeft: round(menuRect.left),
+      menuRight: round(menuRect.right),
+      surfaceLeft: round(surfaceRect.left),
+      surfaceRight: round(surfaceRect.right),
     }
   }, hostSelector)
 }
@@ -96,17 +113,56 @@ describe('settings model picker bounds', function () {
 
     // The reported case: a right-aligned field (pack settings put the control
     // in a `justify-self: end` column) left the menu growing off the surface.
+    //
+    // `margin-left: auto` alone does not reproduce it. Auto only reaches the
+    // edge of the host's *parent*, and the settings pane is inset from the
+    // dialog, so the trigger stops well short of the surface edge: run
+    // 31276959420 shard 6 measured trigger [744, 1073] inside surface [0, 1200],
+    // which left the 420px menu ending at 1164 — 36px clear of the edge. No
+    // overflow, no flip, and `position-try` was right not to fire. The spec was
+    // asserting a condition it never created.
+    //
+    // So place the host explicitly: shift it until its right edge meets the
+    // surface's, which needs a real margin rather than `auto` because the host
+    // has to overhang its parent to get there.
     await browser.execute((hostSelector) => {
+      const surface = document.querySelector<HTMLElement>('#settings-dialog')
       const host = document.querySelector<HTMLElement>(hostSelector)
-      if (!host) return
+      const parent = host?.parentElement
+      if (!surface || !host || !parent) return
       host.style.width = 'max-content'
-      host.style.marginLeft = 'auto'
+      const surfaceRight = surface.getBoundingClientRect().right
+      const hostRect = host.getBoundingClientRect()
+      const parentLeft = parent.getBoundingClientRect().left
+      host.style.marginLeft = `${hostRect.left - parentLeft + (surfaceRight - hostRect.right)}px`
     }, CHAT_MODEL_HOST)
 
-    await browser.waitUntil(
-      async () => ((await readMenuGeometry(CHAT_MODEL_HOST))?.rightGap ?? 99) <= 1,
-      { timeoutMsg: 'expected the menu to flip to right alignment beside the surface edge' },
-    )
+    // Report the geometry on failure. `expected the menu to flip to right
+    // alignment beside the surface edge` on its own says only that the menu is
+    // not where it should be — it cannot distinguish a flip that never fired
+    // from a mutation that never pushed the trigger rightwards in the first
+    // place, and the numbers needed to tell those apart were measured and then
+    // thrown away. The CSS declares the fallback
+    // (`position-try-fallbacks: --model-picker-clamp-right`, model-picker.css),
+    // so which of the two is happening is the whole question.
+    let lastGeometry: Awaited<ReturnType<typeof readMenuGeometry>> = null
+    try {
+      await browser.waitUntil(async () => {
+        lastGeometry = await readMenuGeometry(CHAT_MODEL_HOST)
+        return (lastGeometry?.rightGap ?? 99) <= 1
+      })
+    } catch {
+      throw new Error(
+        'expected the menu to flip to right alignment beside the surface edge — ' +
+          (lastGeometry
+            ? `trigger [${lastGeometry.triggerLeft}, ${lastGeometry.triggerRight}], ` +
+              `menu [${lastGeometry.menuLeft}, ${lastGeometry.menuRight}], ` +
+              `surface [${lastGeometry.surfaceLeft}, ${lastGeometry.surfaceRight}], ` +
+              `rightGap ${Math.round(lastGeometry.rightGap)}, ` +
+              `leftGap ${Math.round(lastGeometry.leftGap)}`
+            : 'geometry could not be read at all (menu or trigger missing)'),
+      )
+    }
     const flipped = await readMenuGeometry(CHAT_MODEL_HOST)
     expect(flipped?.rightGap).toBeLessThanOrEqual(1)
     expect(flipped?.verticalGap).toBeGreaterThanOrEqual(3)

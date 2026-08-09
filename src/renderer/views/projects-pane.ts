@@ -247,6 +247,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   store.on('settings_changed', syncRemoteOpenVisibility)
 
   const visibleThreadCounts = new Map<string, number>()
+  // Automation history is intentionally tucked away from ordinary conversation
+  // rows. Expansion is session-only: a fresh app launch returns to the quiet
+  // default, while selecting an automation thread always reveals its owner.
+  const expandedAutomationProjects = new Set<string>()
+  const expandedAutomationSchedules = new Set<string>()
   let orphans: OrphanProjectStore[] = []
 
   // Inline rename state survives `render()` (which rebuilds the chat list).
@@ -530,17 +535,28 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             (t.title || 'New Thread').toLowerCase().includes(threadFilter),
           )
         : sidebarThreads
+      const automationThreads = matchingThreads.filter((thread) => thread.automation !== undefined)
+      const conversationThreads = matchingThreads.filter(
+        (thread) => thread.automation === undefined,
+      )
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null
       let visibleThreads: SidebarThread[]
       let visibleCount: number
       let hasMore: boolean
       if (isFiltering) {
-        visibleThreads = matchingThreads
-        visibleCount = matchingThreads.length
+        visibleThreads = conversationThreads
+        visibleCount = conversationThreads.length
         hasMore = false
       } else {
-        const paged = paginateSidebarThreads(sidebarThreads, visibleLimit, activeId)
+        const activeConversationId = conversationThreads.some((thread) => thread.id === activeId)
+          ? activeId
+          : null
+        const paged = paginateSidebarThreads(
+          conversationThreads,
+          visibleLimit,
+          activeConversationId,
+        )
         visibleThreads = paged.visibleThreads
         visibleCount = paged.visibleCount
         hasMore = paged.hasMore
@@ -562,8 +578,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
       }
-      for (const thread of visibleThreads) {
-        const displayTitle = thread.title || 'New Thread'
+
+      function renderThreadRow(
+        thread: SidebarThread,
+        options: { displayTitle?: string; allowRename?: boolean } = {},
+      ): HTMLElement {
+        const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
+        const allowRename = options.allowRename ?? true
         const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null
         let title: HTMLElement
         if (renameState) {
@@ -598,15 +619,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           title = input
         } else {
           title = el('span', { class: 'chat-title' }, displayTitle)
-          title.addEventListener('dblclick', (e) => {
-            e.stopPropagation()
-            beginThreadRename(thread.id, displayTitle)
-          })
+          if (allowRename) {
+            title.addEventListener('dblclick', (e) => {
+              e.stopPropagation()
+              beginThreadRename(thread.id, displayTitle)
+            })
+          }
         }
         const chatRow = el(
           'div',
           {
-            class: `chat-row${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
+            class: `chat-row${thread.automation ? ' is-automation' : ''}${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
             'data-thread-id': thread.id,
           },
           title,
@@ -619,12 +642,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           e.preventDefault()
           e.stopPropagation()
           showContextMenu(e.clientX, e.clientY, [
-            {
-              label: 'Rename',
-              onSelect: (): void => {
-                beginThreadRename(thread.id, displayTitle)
-              },
-            },
+            ...(allowRename
+              ? [
+                  {
+                    label: 'Rename',
+                    onSelect: (): void => {
+                      beginThreadRename(thread.id, displayTitle)
+                    },
+                  },
+                ]
+              : []),
             {
               label: 'Fork',
               onSelect: (): void => {
@@ -670,7 +697,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           }
         })
         chatRow.append(del)
-        chats.append(chatRow)
+        return chatRow
+      }
+
+      for (const thread of visibleThreads) {
+        chats.append(renderThreadRow(thread))
       }
 
       if (hasMore) {
@@ -680,6 +711,141 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         })
         chats.append(showMoreBtn)
+      }
+
+      if (automationThreads.length > 0) {
+        const scheduleGroups = new Map<string, SidebarThread[]>()
+        for (const thread of automationThreads) {
+          const scheduleId = thread.automation?.scheduleId
+          if (!scheduleId) continue
+          const runs = scheduleGroups.get(scheduleId)
+          if (runs) runs.push(thread)
+          else scheduleGroups.set(scheduleId, [thread])
+        }
+        const hasActiveAutomation = automationThreads.some((thread) => thread.id === activeId)
+        const attentionAutomationThreads = automationThreads.filter((thread) =>
+          isThreadAwaitingAttention(thread.id),
+        )
+        const automationExpanded =
+          isFiltering ||
+          expandedAutomationProjects.has(project.id) ||
+          hasActiveAutomation ||
+          attentionAutomationThreads.length > 0
+        const group = el('div', { class: 'automation-threads-group' })
+        const toggle = el(
+          'button',
+          {
+            type: 'button',
+            class: 'automation-threads-toggle',
+            'aria-expanded': automationExpanded ? 'true' : 'false',
+          },
+          el(
+            'span',
+            { class: `automation-threads-twisty${automationExpanded ? ' expanded' : ''}` },
+            chevronRightIcon('ui-icon ui-icon-sm'),
+          ),
+          el('span', { class: 'automation-threads-title' }, 'Automations'),
+          el('span', { class: 'automation-threads-count' }, String(scheduleGroups.size)),
+        )
+        if (automationThreads.some((thread) => thread.status === 'running')) {
+          const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
+          status.setAttribute('role', 'img')
+          status.setAttribute('aria-label', 'An automation is running')
+          status.removeAttribute('aria-hidden')
+          toggle.append(status)
+        }
+        toggle.addEventListener('click', () => {
+          if (expandedAutomationProjects.has(project.id)) {
+            expandedAutomationProjects.delete(project.id)
+          } else {
+            expandedAutomationProjects.add(project.id)
+          }
+          render()
+        })
+        group.append(toggle)
+        if (automationExpanded) {
+          const automationRows = el('div', { class: 'automation-thread-rows' })
+          for (const [scheduleId, runs] of scheduleGroups) {
+            const firstRun = runs[0]
+            if (!firstRun) continue
+            if (runs.length === 1) {
+              automationRows.append(renderThreadRow(firstRun))
+              continue
+            }
+
+            const scheduleKey = `${project.id}\0${scheduleId}`
+            const hasActiveRun = runs.some((thread) => thread.id === activeId)
+            const attentionRuns = runs.filter((thread) => isThreadAwaitingAttention(thread.id))
+            const showingAllRuns =
+              isFiltering || expandedAutomationSchedules.has(scheduleKey) || hasActiveRun
+            const scheduleRevealed = showingAllRuns || attentionRuns.length > 0
+            const scheduleGroup = el('div', {
+              class: 'automation-schedule-group',
+              'data-schedule-id': scheduleId,
+            })
+            const scheduleToggle = el(
+              'button',
+              {
+                type: 'button',
+                class: 'automation-schedule-toggle',
+                'aria-expanded': showingAllRuns ? 'true' : 'false',
+              },
+              el(
+                'span',
+                {
+                  class: `automation-threads-twisty${showingAllRuns ? ' expanded' : ''}`,
+                },
+                chevronRightIcon('ui-icon ui-icon-sm'),
+              ),
+              el(
+                'span',
+                { class: 'automation-schedule-title' },
+                firstRun.automation?.scheduleName ?? firstRun.title,
+              ),
+              el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
+            )
+            if (runs.some((thread) => thread.status === 'running')) {
+              const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
+              status.setAttribute('role', 'img')
+              status.setAttribute('aria-label', 'This automation is running')
+              status.removeAttribute('aria-hidden')
+              scheduleToggle.append(status)
+            }
+            scheduleToggle.addEventListener('click', () => {
+              if (expandedAutomationSchedules.has(scheduleKey)) {
+                expandedAutomationSchedules.delete(scheduleKey)
+              } else {
+                expandedAutomationSchedules.add(scheduleKey)
+              }
+              render()
+            })
+            scheduleGroup.append(scheduleToggle)
+            if (scheduleRevealed) {
+              const runRows = el('div', { class: 'automation-schedule-runs' })
+              const visibleRuns = showingAllRuns ? runs : attentionRuns
+              for (const thread of visibleRuns) {
+                const index = runs.indexOf(thread)
+                const timestamp = thread.automation?.triggeredAt
+                const when = timestamp
+                  ? new Date(timestamp).toLocaleString([], {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    })
+                  : 'Unknown time'
+                runRows.append(
+                  renderThreadRow(thread, {
+                    displayTitle: index === 0 ? `Latest · ${when}` : when,
+                    allowRename: false,
+                  }),
+                )
+              }
+              scheduleGroup.append(runRows)
+            }
+            automationRows.append(scheduleGroup)
+          }
+          group.append(automationRows)
+        }
+        chats.append(group)
       }
 
       list.append(chats)

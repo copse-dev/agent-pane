@@ -48,16 +48,29 @@ export async function prepareThreePaneScreenshot(): Promise<void> {
 }
 
 /** Capture the three-pane body with projects sidebar + chat + right panel visible. */
-export async function saveThreePaneScreenshot(filename: string): Promise<void> {
+export async function saveThreePaneScreenshot(
+  filename: string,
+  options: { filesPaneWidth?: number } = {},
+): Promise<void> {
   await prepareThreePaneScreenshot()
+  if (options.filesPaneWidth !== undefined) {
+    await browser.execute((width) => {
+      document.getElementById('body')?.style.setProperty('--files-width', `${String(width)}px`)
+      window.dispatchEvent(new Event('resize'))
+    }, options.filesPaneWidth)
+    await browser.pause(100)
+  }
   const body = await browser.$('#body.three-pane')
   await body.waitForDisplayed({ timeout: 15_000 })
   await body.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
 /** Capture the app shell at the fixed viewport (excludes OS chrome). */
-export async function saveAppScreenshot(filename: string): Promise<void> {
-  await prepareE2eScreenshot()
+export async function saveAppScreenshot(
+  filename: string,
+  size: { width: number; height: number } = E2E_VIEWPORT,
+): Promise<void> {
+  await prepareE2eScreenshot(size)
   const app = await browser.$('#app')
   await app.waitForDisplayed({ timeout: 15_000 })
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))

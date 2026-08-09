@@ -3,27 +3,10 @@ import { before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { qsRequired } from '../dom/helpers.ts'
 import { attachTextExpand, openTextExpand } from './text-expand.ts'
-
-function patchDialog(): void {
-  Object.defineProperties(window.HTMLDialogElement.prototype, {
-    showModal: {
-      configurable: true,
-      value(this: HTMLDialogElement): void {
-        this.open = true
-      },
-    },
-    close: {
-      configurable: true,
-      value(this: HTMLDialogElement): void {
-        this.open = false
-        this.dispatchEvent(new window.Event('close'))
-      },
-    },
-  })
-}
+import { patchPreviewDialog } from './preview-dialog.test-support.ts'
 
 describe('text attachment preview', () => {
-  before(patchDialog)
+  before(patchPreviewDialog)
 
   it('renders arbitrary text literally in the shared attachment dialog', () => {
     openTextExpand('<script>not markup</script>\nsecond line', 'notes.txt')

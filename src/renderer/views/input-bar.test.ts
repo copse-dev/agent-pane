@@ -1,5 +1,5 @@
 import '../../../tests/setup-dom.ts'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
@@ -7,10 +7,13 @@ import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
+import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
+import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -66,6 +69,8 @@ function createApi(options: {
   onDescribeImages?: ApiClient['agent']['describeImages']
   estimateContext?: ApiClient['agent']['estimateContext']
   promptState?: { startingCommit: string | null; dirty: boolean }
+  onExportArchive?: (projectId: string, threadId: string) => void
+  onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -179,15 +184,31 @@ function createApi(options: {
       threads: {
         ...base['threads'],
         listOrphans: async () => [],
+        // A zip magic number is enough: nothing here unpacks it, and the bytes
+        // are only ever asserted on as the payload handed to `archive:attach`.
+        exportArchive: async (
+          projectId: string,
+          threadId: string,
+        ): Promise<Uint8Array<ArrayBuffer>> => {
+          options.onExportArchive?.(projectId, threadId)
+          return new Uint8Array([80, 75, 3, 4])
+        },
       },
       archive: {
         // Mirrors storeArchiveAttachment: the stored path is under whichever
         // thread was active at attach time.
-        attach: async (_projectId: string, threadId: string, archive: { name: string }) => ({
-          path: `/store/${threadId}/blobs/media/uuid-${archive.name}`,
-          name: archive.name,
-          sizeBytes: 8,
-        }),
+        attach: async (
+          projectId: string,
+          threadId: string,
+          archive: { name: string; bytes?: Uint8Array },
+        ): Promise<ArchiveAttachmentRef> => {
+          options.onAttachArchive?.(projectId, threadId, archive.name, archive.bytes)
+          return {
+            path: `/store/${threadId}/blobs/media/uuid-${archive.name}`,
+            name: archive.name,
+            sizeBytes: 8,
+          }
+        },
       },
     } satisfies ApiClient
   })()
@@ -689,18 +710,24 @@ describe('input bar model recents', () => {
   })
 })
 
+/** A thread with one persisted message, which is what makes it exportable. */
+function exportableThread(): Thread {
+  const populated = thread()
+  populated.messages = [
+    {
+      id: 'message-1',
+      role: 'user',
+      content: 'A persisted message makes this thread exportable.',
+      toolCalls: [],
+      createdAt: 1,
+    },
+  ]
+  return populated
+}
+
 describe('input bar developer diagnostics', () => {
   it('hides diagnostics by default and reveals them in Developer mode', async () => {
-    const populated = thread()
-    populated.messages = [
-      {
-        id: 'message-1',
-        role: 'user',
-        content: 'A persisted message makes this thread exportable.',
-        toolCalls: [],
-        createdAt: 1,
-      },
-    ]
+    const populated = exportableThread()
     const store = createStore({
       workspaceRoot: '/repo',
       projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
@@ -719,11 +746,13 @@ describe('input bar developer diagnostics', () => {
     assert.ok(trigger)
     assert.equal(overflow.hidden, false)
     trigger.click()
+    // The two trace exits stay out in the open: someone whose thread just went
+    // wrong is not going to have found a developer setting first.
     assert.deepEqual(
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO'],
+      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
     )
 
     store.setState({ developerMode: true })
@@ -739,6 +768,7 @@ describe('input bar developer diagnostics', () => {
         'Copy thread ID',
         'Export conversation (JSONL)',
         'Export thread folder (ZIP)',
+        'Debug trace',
         'Share trace',
       ],
     )
@@ -751,8 +781,113 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO'],
+      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
     )
+  })
+})
+
+describe('input bar debug trace', () => {
+  function clickOverflowItem(host: HTMLElement, label: string): void {
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(trigger)
+    trigger.click()
+    const item = Array.from(host.querySelectorAll<HTMLButtonElement>('.footer-overflow-item')).find(
+      (candidate) => candidate.textContent.trim() === label,
+    )
+    assert.ok(item, `overflow menu offers "${label}"`)
+    item.click()
+  }
+
+  it('opens a new thread holding the zipped trace and an unsent diagnosis prompt', async () => {
+    const populated = exportableThread()
+    const exported: string[] = []
+    const attached: { threadId: string; name: string; bytes: number }[] = []
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: populated.id,
+      threads: [populated],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async (): Promise<void> => {
+          runs += 1
+        },
+        onExportArchive: (_projectId, threadId) => exported.push(threadId),
+        onAttachArchive: (_projectId, threadId, name, bytes) => {
+          attached.push({ threadId, name, bytes: bytes?.byteLength ?? 0 })
+        },
+      }),
+    )
+    await settle()
+
+    clickOverflowItem(host, 'Debug trace')
+    await flush()
+
+    // The trace zipped is the thread the user was reading.
+    assert.deepEqual(exported, [populated.id])
+
+    const { activeThreadId, threads } = store.getState()
+    assert.notEqual(activeThreadId, populated.id, 'the debug thread is a new, active thread')
+    const debugThread = threads.find((candidate) => candidate.id === activeThreadId)
+    assert.ok(debugThread)
+    assert.equal(debugThread.title, 'Debug: Test thread')
+    assert.equal(debugThread.messages.length, 0, 'nothing is sent on the user’s behalf')
+    assert.equal(runs, 0, 'no agent run is dispatched')
+    assert.match(debugThread.draftPrompt ?? '', /thread-1/)
+
+    // The prompt is sitting in the composer, waiting to be added to and sent.
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.match(composer.textContent, /Something went wrong in another Copse thread/)
+    assert.match(composer.textContent, /What I saw:/)
+
+    // ...with the archive stored under the *new* thread, so it lives as long as
+    // the conversation about it does, and survives deleting the original.
+    assert.equal(attached.length, 1)
+    const [stored] = attached
+    assert.ok(stored)
+    assert.equal(stored.threadId, debugThread.id)
+    assert.match(stored.name, /\.zip$/)
+    assert.equal(stored.bytes, 4, 'the exported bytes reach the store intact')
+    const chip = host.querySelector<HTMLElement>('.attachment-chips .archive-chip')
+    assert.ok(chip, 'the trace shows as an archive chip on the new thread')
+    assert.match(chip.textContent, /\.zip/)
+  })
+
+  it('leaves the user where they were when the export fails', async () => {
+    const populated = exportableThread()
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: populated.id,
+      threads: [populated],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: 'main' })
+    mountInputBar(host, store, {
+      ...base,
+      threads: {
+        ...base.threads,
+        exportArchive: () => Promise.reject(new Error('store is gone')),
+      },
+    })
+    await settle()
+
+    clickOverflowItem(host, 'Debug trace')
+    await flush()
+
+    assert.equal(store.getState().activeThreadId, populated.id)
+    assert.equal(store.getState().threads.length, 1, 'no empty thread is left behind')
   })
 })
 
@@ -1006,6 +1141,100 @@ function nth<T>(items: readonly T[], index: number): T {
   assert.ok(value, `expected an element at index ${String(index)}`)
   return value
 }
+
+describe('input bar attachment previews', () => {
+  before(patchPreviewDialog)
+
+  /**
+   * A chip is the only thing standing between "I attached something" and a sent
+   * prompt, so its snapshot has to be inspectable before send — not only after,
+   * from the transcript. The affordance rides the label because the pill itself
+   * already holds the ✕ button.
+   */
+  it('opens an attached file in the preview modal from the composer', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    handlers.attachFile({ path: '/repo/src/notes.txt', content: 'release checklist' })
+    await flush()
+
+    const label = host.querySelector<HTMLElement>('.attachment-chip .attachment-chip-label')
+    assert.ok(label, 'the file chip renders its label')
+    assert.equal(label.getAttribute('role'), 'button')
+    assert.equal(label.getAttribute('aria-label'), 'Preview notes.txt')
+    label.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.querySelector('.attachment-preview-title')?.textContent, 'notes.txt')
+    assert.equal(dialog.querySelector('.attachment-preview-text')?.textContent, 'release checklist')
+    dialog.close()
+  })
+
+  it('opens an attached terminal selection in the preview modal', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const unregister = registerShellCatalog(
+      () => [
+        {
+          tabId: 'tab-1',
+          sessionId: 'sess-1',
+          label: 'npm test',
+          scopeId: 'thread-1',
+          active: true,
+        },
+      ],
+      () => 'PASS\n2 tests',
+    )
+    try {
+      const composer = host.querySelector<HTMLElement>('.prompt-input')
+      assert.ok(composer)
+      composer.textContent = '@shell'
+      composer.dispatchEvent(new Event('input', { bubbles: true }))
+      await flush()
+
+      const shellRow = host.querySelector<HTMLElement>('.mention-item-shell')
+      assert.ok(shellRow, 'the @shell mention lists the open tab')
+      shellRow.dispatchEvent(new Event('mousedown', { bubbles: true }))
+      await flush()
+
+      const label = host.querySelector<HTMLElement>('.shell-chip .attachment-chip-label')
+      assert.ok(label, 'the shell chip renders its label')
+      assert.equal(label.getAttribute('aria-label'), 'Preview npm test')
+      label.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+      const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+      assert.ok(dialog)
+      assert.equal(dialog.open, true)
+      assert.equal(dialog.querySelector('.attachment-preview-text')?.textContent, 'PASS\n2 tests')
+      dialog.close()
+    } finally {
+      unregister()
+    }
+  })
+})
 
 describe('input bar image compatibility', () => {
   function imageModelApi(onRun?: () => Promise<void>): ApiClient {

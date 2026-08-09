@@ -1498,12 +1498,27 @@ dialog.settings-overlay::backdrop {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-sm);
+  /* Flex-column item default min-width:auto would let a long hover path
+     expand the Sources list past the settings column. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .sources-row-header {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
   min-width: 0;
+  overflow: hidden;
+}
+/* Title (+ hover path) claim the free header space; badges/actions stay put. */
+.sources-row-primary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  overflow: hidden;
 }
 .sources-row-title {
   font-weight: 600;
@@ -1512,7 +1527,7 @@ dialog.settings-overlay::backdrop {
   word-break: break-word;
 }
 /* When a hover origin is showing, keep the title to content width so the path
-   can claim the header gutter without wrapping the row taller. */
+   can claim the primary gutter without wrapping the row taller. */
 .sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
 .sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
   flex: 0 1 auto;
@@ -1573,11 +1588,14 @@ dialog.settings-overlay::backdrop {
   word-break: break-word;
   margin-top: 2px;
 }
-/* Skills (and similar): filesystem origin in the header gutter on hover —
-   never a second line. Elide from the left so the leaf stays readable. */
+/* Skills (and similar): filesystem origin in the primary gutter on hover —
+   never a second line. Elide from the left so the leaf stays readable.
+   `width: 0` + `flex-basis: 0` makes the flex algorithm ignore the path's
+   intrinsic min-content so truncation actually kicks in. */
 .sources-row-hover-detail {
   display: none;
   flex: 1 1 0;
+  width: 0;
   min-width: 0;
   font-size: 11px;
   font-family: var(--font-mono);
@@ -1587,6 +1605,7 @@ dialog.settings-overlay::backdrop {
   text-overflow: ellipsis;
   direction: rtl;
   text-align: left;
+  pointer-events: none;
 }
 .sources-row:hover .sources-row-hover-detail,
 .sources-row:focus-within .sources-row-hover-detail {
@@ -2192,6 +2211,7 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 .automation-label:has(.automation-prompt-input),
+.automation-worktree-limit-label,
 .automation-enabled-label,
 .automation-form-actions {
   grid-column: 1 / -1;

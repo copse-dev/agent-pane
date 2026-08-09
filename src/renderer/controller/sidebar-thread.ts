@@ -20,6 +20,7 @@ export interface SidebarThread {
   title: string
   status: Thread['status']
   archivedAt?: number
+  automation?: Thread['automation']
   remoteAgentLink?: Thread['remoteAgentLink']
   /** The live transcript. Absent once the entry has been compacted. */
   messages?: Message[]
@@ -51,6 +52,7 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     title: thread.title,
     status: thread.status,
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
+    ...(thread.automation ? { automation: thread.automation } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),
   }

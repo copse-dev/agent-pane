@@ -3,21 +3,14 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { attachVideoExpand, openVideoExpand, type VideoPlaybackApi } from './video-expand.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { patchPreviewDialog } from './preview-dialog.test-support.ts'
 
-// happy-dom implements neither <dialog> modality nor media playback. Stubbing
-// on HTMLDialogElement/HTMLMediaElement rather than HTMLElement keeps every
-// assignment type-checked — the members exist on those interfaces.
+// happy-dom implements neither <dialog> modality nor media playback. The dialog
+// half is shared with the other preview tests; the media stubs are this suite's
+// own. Stubbing on HTMLMediaElement rather than HTMLElement keeps every
+// assignment type-checked — the members exist on that interface.
 function patchEnv(): void {
-  const dialog = window.HTMLDialogElement.prototype
-  if (typeof dialog.showModal !== 'function') {
-    dialog.showModal = function (this: HTMLDialogElement): void {
-      this.open = true
-    }
-    dialog.close = function (this: HTMLDialogElement): void {
-      this.open = false
-      this.dispatchEvent(new window.Event('close'))
-    }
-  }
+  patchPreviewDialog()
   const media = window.HTMLMediaElement.prototype
   if (typeof media.play !== 'function') {
     media.play = (): Promise<void> => Promise.resolve()

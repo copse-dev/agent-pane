@@ -1,5 +1,7 @@
 <!doctype html>
-<html class="marketing-root" lang="en">
+<!-- Pre-launch mode — see the note in index.html and the coming-soon block in
+     styles.css. -->
+<html class="marketing-root" lang="en" data-site-mode="coming-soon">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -21,6 +23,9 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://copse.dev/architecture.html" />
     <link rel="icon" href="brand-mark.svg" />
+    <!-- Markdown twin — see the note in index.html. The diagram data is the
+         page's content, so the twin renders the `views` literal below. -->
+    <link rel="alternate" type="text/markdown" href="architecture.md" />
     <link rel="stylesheet" href="styles.css" />
     <style>
       .architecture-container {
@@ -487,7 +492,7 @@
           <a href="architecture.html" aria-current="page">Architecture</a>
           <a href="privacy.html">Privacy</a>
         </div>
-        <a class="nav-cta" href="index.html#download">Download</a>
+        <a class="nav-cta mode-live-only" href="index.html#download">Download</a>
       </nav>
     </header>
 
@@ -528,7 +533,7 @@
         </a>
         <p>Free &amp; open source · Made for developers who pair with agents every day</p>
         <div>
-          <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
+          <a class="mode-live-only" href="https://github.com/copse-dev/agent-pane">GitHub</a>
           <a href="architecture.html" aria-current="page">Architecture</a>
           <a href="privacy.html">Privacy</a>
         </div>

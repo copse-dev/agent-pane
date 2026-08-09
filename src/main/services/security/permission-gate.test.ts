@@ -5,6 +5,7 @@ import {
   decideWebFetchPermission,
   decideWebSearchPermission,
   formatInstallPromptParts,
+  formatGithubWritePrompt,
   formatGuardedYoloHarmPromptAdvice,
   formatEphemeralRunnerPromptParts,
   shellRequiresOutsideSandbox,
@@ -43,6 +44,7 @@ import {
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -136,6 +138,32 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('surfaces human GitHub write prompt copy instead of snake_case + JSON', async () => {
+    setPermissionGateForTests(null)
+    let title = ''
+    let body = ''
+    setApprovalHandler(async (req) => {
+      title = req.title
+      body = req.body
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'gh_pr_mark_ready',
+          args: { number: 1478, owner: 'acme', repo: 'widgets' },
+        }),
+        false,
+      )
+      assert.equal(title, 'Mark pull request ready for review?')
+      assert.equal(body, 'acme/widgets#1478')
+      assert.doesNotMatch(body, /\{/)
+      assert.doesNotMatch(title, /gh_pr_mark_ready/)
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
   it('proceeds with a mutating GitHub PR tool when the user approves', async () => {
     setPermissionGateForTests(null)
     setApprovalHandler(async () => ({ approved: true, remember: false }))
@@ -149,7 +177,35 @@ describe('ensureToolPermitted', () => {
     }
   })
 
-  it('prompts before sending a direct Parallel Search request', async () => {
+  it('auto-allows a direct Parallel Search request while its pack is enabled', async () => {
+    setPermissionGateForTests(null)
+    // A fresh first-party seed enables every pack, so `copse.parallel-search`
+    // declares the tool here (default-OFF is a pack-service migration concern).
+    const registry = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(registry)
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      setDefaultPackRegistry(null)
+    }
+  })
+
+  it('prompts before sending a direct Parallel Search request while its pack is disabled', async () => {
+    const registry = createFirstPartyPackRegistry()
+    registry.disable(PARALLEL_SEARCH_PACK_ID)
+    setDefaultPackRegistry(registry)
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
@@ -170,6 +226,7 @@ describe('ensureToolPermitted', () => {
       assert.match(approvalBody, /Zero Data Retention/i)
     } finally {
       setApprovalHandler(null)
+      setDefaultPackRegistry(null)
     }
   })
 
@@ -178,6 +235,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let approvalBody = ''
     let approvalSubject = ''
@@ -208,12 +266,96 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('names the holder in the overlap prompt instead of "another process"', async () => {
+    setPermissionGateForTests(null)
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalFooter = ''
+    setApprovalHandler(async (request) => {
+      approvalFooter = request.bodyFooter ?? ''
+      return { approved: false, remember: false }
+    })
+    try {
+      await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
+      assert.match(approvalFooter, /widened for ACP agent: codex/)
+    } finally {
+      setApprovalHandler(null)
+      release()
+    }
+  })
+
+  // The overlap gate exists because a command spawned during the widening
+  // inherits the process-global allowlist. A structurally read-only command
+  // opens no sockets, so there is nothing for it to inherit — gating it turned
+  // one background probe into a prompt on every `cat`/`rg` in every pane.
+  it('does not prompt a structurally read-only command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/readonly-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('rg TODO src | head -20', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('still prompts a network-capable command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/network-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalCause: string | undefined
+    setApprovalHandler(async (request) => {
+      approvalCause = request.cause
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('curl https://example.com', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        false,
+      )
+      assert.equal(approvalCause, 'shell-network-scope-overlap')
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
   it('can share the active network scope with an already-sandboxed ACP command', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/acp-network-scope-project')
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -243,6 +385,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -627,6 +770,7 @@ describe('ensureTerminalPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -1170,6 +1314,28 @@ describe('decideShellPermission', () => {
       externalDenyThreshold: 0.5,
     })
     assert.equal(d.action, 'prompt')
+  })
+})
+
+describe('formatGithubWritePrompt', () => {
+  it('uses a question title and PR target body', () => {
+    assert.deepEqual(formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 }), {
+      title: 'Mark pull request ready for review?',
+      body: 'PR #1478',
+    })
+    assert.deepEqual(
+      formatGithubWritePrompt('gh_pr_approve', { number: 42, owner: 'acme', repo: 'widgets' }),
+      {
+        title: 'Approve pull request on GitHub?',
+        body: 'acme/widgets#42',
+      },
+    )
+  })
+
+  it('falls back to JSON when args are not a PR target', () => {
+    const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
+    assert.equal(prompt.title, 'Re-run failed CI?')
+    assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
   })
 })
 

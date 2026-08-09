@@ -1,10 +1,19 @@
 import type { Project, Thread } from './types/index.ts'
+import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
 const FOOTER_OUTPUT_TOKENS = 1_800
+
+const DEMO_CODEX_ACP_AGENT = {
+  id: 'codex',
+  title: 'Codex',
+  command: 'codex-acp',
+  args: [],
+  enabled: true,
+} satisfies AcpAgentConfig
 
 export interface DemoScenario {
   id: string
@@ -19,11 +28,33 @@ export interface DemoScenario {
    * through the ordinary chunk path.
    */
   trace?: DemoTrace
+  /**
+   * Queue replayed edits without forcing Changes open on every write. Visitors
+   * can still open Changes and inspect the complete diffs after the turn.
+   */
+  deferProposedDiffPreview?: boolean
+  /**
+   * Published directory containing the files produced by the trace. The static
+   * Browser panel prefers this checked-in copy, while the replayed writes still
+   * drive Changes and provide a fallback for older builds.
+   */
+  staticSite?: string
+  /**
+   * After a walkthrough finishes, follow its final browser link and expand the
+   * loaded preview in place. This is the static demo equivalent of a visitor
+   * clicking the URL and then the pane's Expand control.
+   */
+  revealFinalPreview?: boolean
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
   tokenLabel: `${((FOOTER_INPUT_TOKENS + FOOTER_OUTPUT_TOKENS) / 1000).toFixed(1)}k tokens`,
 } as const
+
+/** Prompt a walkthrough submits: exactly the user text captured in its source trace. */
+export function demoScenarioPrompt(scenario: DemoScenario): string {
+  return scenario.trace?.prompt ?? ''
+}
 
 const markdownContent = [
   '### ⚠️ Known Failures',
@@ -42,7 +73,11 @@ const markdownContent = [
   '- Persistence — filesystem-native threads and project settings',
 ].join('\n')
 
-const project = (id: string): Project => ({ id, path: '/demo/copse', name: 'copse-demo' })
+const project = (id: string, name = 'copse-demo', path = '/demo/copse'): Project => ({
+  id,
+  path,
+  name,
+})
 
 const semanticSearchSummary = [
   'Here is the complete summary of how semantic search is classified, routed, and executed:',
@@ -68,25 +103,114 @@ const semanticSearchSummary = [
   '- Search for `classifySearchQuery`',
 ].join('\n')
 
+const PROPOSED_INDEX_HTML = [
+  '<!doctype html>',
+  '<html lang="en">',
+  '  <head>',
+  '    <meta charset="utf-8" />',
+  '    <title>Sample</title>',
+  '    <link rel="stylesheet" href="styles.css" />',
+  '  </head>',
+  '  <body>',
+  '    <h1>Hello</h1>',
+  '  </body>',
+  '</html>',
+  '',
+].join('\n')
+
+const PROPOSED_STYLES_CSS = ['h1 {', '  font-family: system-ui, sans-serif;', '}', ''].join('\n')
+
+/**
+ * A turn that writes two new files. Hand-written: its job is to put the Changes
+ * panel into its proposed-diff state for visual review, not to reproduce a run.
+ */
+const PROPOSED_DIFF_TRACE: DemoTrace = {
+  id: 'proposed-diff',
+  label: 'Proposed edits',
+  prompt: 'add a starter page and stylesheet',
+  steps: [
+    {
+      chunk: {
+        type: 'text',
+        text: 'Adding a minimal page and the stylesheet it links to.',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'tc-1',
+          name: 'write_file',
+          args: { path: 'index.html', content: PROPOSED_INDEX_HTML },
+        },
+      },
+      delayMs: 700,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'tc-1',
+        result: 'Proposed index.html (+12)',
+        isError: false,
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'tc-2',
+          name: 'write_file',
+          args: { path: 'styles.css', content: PROPOSED_STYLES_CSS },
+        },
+      },
+      delayMs: 700,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'tc-2',
+        result: 'Proposed styles.css (+4)',
+        isError: false,
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'text',
+        text: 'Both files are staged in **Changes** — review the diffs and accept or reject each one.',
+      },
+    },
+    { chunk: { type: 'done', stopReason: 'end_turn' }, delayMs: 300 },
+  ],
+}
+
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   {
     // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
     // visual-test fixture. It is also what the marketing hero iframe embeds.
     id: 'landing',
-    label: 'Landing walkthrough (replays a recorded turn)',
-    project: project('demo-landing-project'),
+    label: 'Builds a cupcake site',
+    project: project('demo-landing-project', 'Crumb & Bloom', '/demo/crumb-and-bloom'),
     settings: {
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
       model: LANDING_TRACE.source?.model ?? 'claude-opus-5',
+      registeredAcpAgents: [DEMO_CODEX_ACP_AGENT],
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 640,
+        filesPaneHeight: 360,
+        fileTreeWidth: 140,
+      },
     },
     threads: [
       {
         // Empty on purpose: the walkthrough types the prompt into the composer,
         // so the transcript builds from nothing while you watch.
         id: 'demo-landing-thread',
-        title: LANDING_TRACE.source?.title ?? LANDING_TRACE.label,
+        title: 'Crumb & Bloom coming soon',
         status: 'idle',
         gitBranch: 'main',
         messages: [],
@@ -96,6 +220,39 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: LANDING_TRACE,
+    deferProposedDiffPreview: true,
+    staticSite: 'sites/cupcakes',
+    revealFinalPreview: true,
+  },
+  {
+    // Exercises the proposed-diff path end to end: the replayed `write_file`
+    // calls travel the same route a real edit does (demo-api → `agent:show_diff`
+    // → Changes panel), so this fixture fails if that wiring breaks.
+    //
+    // Hand-written, unlike `landing`: it is a fixture for a panel state, not a
+    // recording of a turn that happened. `DEMO_TRACE` provenance rules apply to
+    // `demo-traces/`, not to fixtures declared here.
+    id: 'proposed-diff',
+    label: 'Agent-proposed edits open the Changes panel',
+    project: project('demo-proposed-diff-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-proposed-diff-thread',
+        title: 'Proposed edits',
+        status: 'idle',
+        gitBranch: 'main',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    trace: PROPOSED_DIFF_TRACE,
   },
   {
     id: 'markdown-list-indent',

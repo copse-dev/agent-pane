@@ -60,6 +60,11 @@ export type RetireWorktreeResult =
   | { status: 'blocked-dirty'; paths: string[] }
   | { status: 'blocked-unmerged'; branch: string; baseBranch: string }
 
+export type ParkWorktreeResult =
+  | { status: 'removed'; branch: string; head: string; upstreamRef: string }
+  | { status: 'blocked-dirty'; paths: string[] }
+  | { status: 'blocked-unpushed'; branch: string }
+
 export type OrphanRetentionReason = 'dirty' | 'unmerged' | 'detached' | 'unavailable'
 
 export interface PruneSafeOrphansInput {
@@ -90,6 +95,16 @@ export class WorktreeAllocationError extends Error {
     super(message)
     this.name = 'WorktreeAllocationError'
     this.recovery = recovery
+  }
+}
+
+export class ThreadWorktreeDetachedError extends Error {
+  readonly branch: string
+
+  constructor(branch: string) {
+    super('Thread worktree is on a detached HEAD')
+    this.name = 'ThreadWorktreeDetachedError'
+    this.branch = branch
   }
 }
 
@@ -297,6 +312,23 @@ async function branchExists(projectRoot: string, branch: string): Promise<boolea
 }
 
 /**
+ * Read HEAD from the checkout itself. `git worktree list` is authoritative for
+ * registration, but its repository-wide inventory can transiently omit branch
+ * information while another worktree is being updated. That must not turn an
+ * attached checkout into a false "detached HEAD" failure.
+ */
+async function symbolicHeadBranch(worktreePath: string): Promise<string | null> {
+  const result = await git(worktreePath, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  if (result.code === 0) {
+    const branch = result.stdout.trim()
+    if (branch) return branch
+    throw new Error('Thread worktree branch name is empty')
+  }
+  if (result.code === 1) return null
+  throw commandFailure('Cannot inspect thread worktree HEAD', result)
+}
+
+/**
  * Best-effort `git fetch origin <branch>` for a repository's default branch, so
  * a worktree based on it starts from the latest remote tip rather than whatever
  * the local branch happened to be pointed at. Never throws: no network / no
@@ -478,6 +510,69 @@ function assertWorktreeMetadata(worktree: unknown): asserts worktree is ThreadWo
   ) {
     throw new Error('Thread worktree metadata is malformed')
   }
+  if (
+    ('pullRequestUrl' in worktree && typeof worktree.pullRequestUrl !== 'string') ||
+    ('retiredAt' in worktree &&
+      (typeof worktree.retiredAt !== 'number' || !Number.isFinite(worktree.retiredAt))) ||
+    ('retiredHead' in worktree && typeof worktree.retiredHead !== 'string') ||
+    ('upstreamRef' in worktree && typeof worktree.upstreamRef !== 'string')
+  ) {
+    throw new Error('Thread worktree retirement metadata is malformed')
+  }
+}
+
+function activeWorktreeMetadata(worktree: ThreadWorktree, path: string): ThreadWorktree {
+  return {
+    path,
+    branch: worktree.branch,
+    baseBranch: worktree.baseBranch,
+    baseCommit: worktree.baseCommit,
+    createdAt: worktree.createdAt,
+    seededFromDirtyProject: worktree.seededFromDirtyProject,
+    ...(worktree.pullRequestUrl ? { pullRequestUrl: worktree.pullRequestUrl } : {}),
+  }
+}
+
+/**
+ * Reattach a deliberately retired checkout to its retained local branch.
+ * Ordinary missing worktrees remain errors; only explicit retirement metadata
+ * authorizes reconstruction.
+ */
+export async function restoreRetiredThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<ThreadWorktree> {
+  assertOwnerId('project id', input.projectId)
+  assertOwnerId('thread id', input.threadId)
+  assertWorktreeMetadata(input.worktree)
+  if (input.worktree.retiredAt === undefined && !input.worktree.pullRequestUrl) {
+    return input.worktree
+  }
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    const registered = (await listRecords(projectRoot)).find(
+      (record) => resolve(record.path) === resolve(target),
+    )
+    if (!registered) {
+      const branchHead = await requireGitValue(
+        projectRoot,
+        ['rev-parse', '--verify', `${branchRef(input.worktree.branch)}^{commit}`],
+        `Cannot restore retired branch ${input.worktree.branch}`,
+      )
+      if (
+        input.worktree.retiredHead &&
+        branchHead.toLowerCase() !== input.worktree.retiredHead.toLowerCase()
+      ) {
+        throw new Error('Retired worktree branch changed since retirement')
+      }
+      await mkdir(dirname(target), { recursive: true })
+      const add = await git(projectRoot, ['worktree', 'add', target, input.worktree.branch])
+      if (add.code !== 0) throw commandFailure('Cannot restore retired thread worktree', add)
+    }
+    const canonicalPath = await realpath(target)
+    return activeWorktreeMetadata(input.worktree, canonicalPath)
+  })
 }
 
 /** Reconstruct and validate persisted metadata; failure never falls back to shared mode. */
@@ -517,12 +612,11 @@ export async function validateThreadWorktree(
   })
   if (!record) throw new Error('Thread worktree is not registered with Git')
   // Path is the durable identity. Agents commonly `git checkout -b` inside the
-  // linked checkout; treat Git's live branch as authoritative and adopt it so
-  // reopen / continue is not bricked by stale meta (detached HEAD still fails).
-  const liveBranch = record.branch
-  if (!liveBranch || record.detached) {
-    throw new Error('Thread worktree is on a detached HEAD')
-  }
+  // linked checkout; read that checkout's HEAD directly and adopt its live
+  // branch. The repository-wide worktree inventory above proves registration,
+  // but a missing branch field there is not evidence that this HEAD detached.
+  const liveBranch = await symbolicHeadBranch(canonicalPath)
+  if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
   await assertBranchName(projectRoot, liveBranch, 'Thread branch')
   if (liveBranch === input.worktree.baseBranch) {
     throw new Error('Thread worktree branch must differ from its recorded base branch')
@@ -602,6 +696,49 @@ export async function retireThreadWorktree(
   if (remove.code !== 0) throw commandFailure('Cannot retire thread worktree', remove)
   releaseWorktreeRoot(validated.root)
   return { status: 'removed', branch: validated.branch }
+}
+
+/**
+ * Remove a PR-backed checkout while retaining its local branch. Unlike ordinary
+ * retirement this does not require merge: it requires a clean checkout whose
+ * local HEAD exactly matches its configured upstream.
+ */
+export async function parkThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<ParkWorktreeResult> {
+  const validated = await validateThreadWorktree(input)
+  const status = await git(validated.path, ['status', '--porcelain=v1', '-z', '--ignored=matching'])
+  if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
+  if (status.stdout) return { status: 'blocked-dirty', paths: changedPaths(status.stdout) }
+
+  const head = await requireGitValue(
+    validated.path,
+    ['rev-parse', '--verify', 'HEAD^{commit}'],
+    'Cannot resolve thread worktree HEAD',
+  )
+  const upstreamRefResult = await git(validated.path, [
+    'rev-parse',
+    '--abbrev-ref',
+    '--symbolic-full-name',
+    '@{upstream}',
+  ])
+  if (upstreamRefResult.code !== 0 || !upstreamRefResult.stdout.trim()) {
+    return { status: 'blocked-unpushed', branch: validated.branch }
+  }
+  const upstreamRef = upstreamRefResult.stdout.trim()
+  const upstreamHead = await requireGitValue(
+    validated.path,
+    ['rev-parse', '--verify', `${upstreamRef}^{commit}`],
+    'Cannot resolve thread worktree upstream',
+  )
+  if (head.toLowerCase() !== upstreamHead.toLowerCase()) {
+    return { status: 'blocked-unpushed', branch: validated.branch }
+  }
+
+  const remove = await git(input.projectRoot, ['worktree', 'remove', validated.path])
+  if (remove.code !== 0) throw commandFailure('Cannot park thread worktree', remove)
+  releaseWorktreeRoot(validated.root)
+  return { status: 'removed', branch: validated.branch, head, upstreamRef }
 }
 
 /** True when a registered path is managed under this project/thread namespace. */

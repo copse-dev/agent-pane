@@ -2,6 +2,21 @@ import js from '@eslint/js'
 import ts from 'typescript-eslint'
 import prettier from 'eslint-config-prettier'
 
+// The one restricted module, hoisted because it must be repeated in the renderer block
+// below: ESLint replaces a rule's options wholesale rather than merging them, so a
+// renderer-specific `no-restricted-imports` that listed only its own patterns would
+// silently drop this and reopen the Electron boundary for the whole renderer.
+const NO_ELECTRON = {
+  name: 'electron',
+  allowTypeImports: true,
+  message:
+    'Importing Electron here couples the agent path to the desktop runtime. Inject the ' +
+    'capability from an Electron entry point instead (see the handler seams in ' +
+    'approval.ts / ask-user.ts), or `import type` if you only need its types. If this ' +
+    'file genuinely IS a desktop entry point, add it to the allow-list in ' +
+    'eslint.config.mjs — deliberately, and visibly in review.',
+}
+
 export default ts.config(
   {
     ignores: [
@@ -24,6 +39,7 @@ export default ts.config(
       'tests/fixtures/git-changes-repo/**',
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
+      'benchmarks/steer/fixtures/**',
     ],
   },
   js.configs.recommended,
@@ -79,6 +95,110 @@ export default ts.config(
     },
   },
   {
+    // Keep the agent path importable without Electron. `agent-path-electron-surface.test.ts`
+    // already proves the product's agent construction runs under plain Node, but it does so
+    // by walking the import graph from three named roots — so a file that is not yet
+    // reachable can take a runtime Electron dependency freely, and only turns some later,
+    // unrelated PR red once something imports it. This rule enforces the same boundary at
+    // every file, and reports it where the mistake is made.
+    //
+    // Type-only imports stay allowed everywhere (`allowTypeImports`): TypeScript erases
+    // them, so Node never resolves Electron, and several pure modules legitimately type
+    // their injected handles as `BrowserWindow` / `IpcMain`.
+    //
+    // Only the bare `electron` module is restricted. `electron-updater` and
+    // `electron-store` are separate packages and do not match a `paths` entry; bringing
+    // them under the boundary is a follow-up, not a silent side effect of this rule.
+    // `.mts` is listed alongside `.ts` because `src/shared` has two of them, and shared
+    // code is exactly where an Electron import would do the most damage.
+    files: ['src/**/*.ts', 'src/**/*.mts', 'packages/*/src/**/*.ts', 'packages/*/src/**/*.mts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [NO_ELECTRON],
+        },
+      ],
+    },
+  },
+  {
+    // The renderer runs in a browser context: no Node builtins, ever. Nothing imports one
+    // today, which is exactly why this is cheap to add — a rule with no violations costs
+    // nothing and prevents the FIRST one, which is the only cheap moment to prevent it.
+    // A `node:fs` import here fails at runtime rather than at build, so the current
+    // guarantee is "nobody has tried yet".
+    //
+    // Repeating NO_ELECTRON is required, not redundant: ESLint replaces a rule's options
+    // rather than merging them, so omitting it here would turn the Electron boundary off
+    // across the whole renderer.
+    //
+    // The three direction rules that cannot be expressed as specifier globs
+    // (renderer -> main, shared -> main/renderer, packages -> src) live in
+    // `scripts/module-boundaries.test.ts`, which resolves the import and asks which zone
+    // the file lands in. Relative specifiers vary by nesting depth, and
+    // `src/renderer/main.ts` exists — so any glob loose enough to catch
+    // `../../main/services/x.ts` also blocks the renderer importing its own entry point.
+    //
+    // Renderer TESTS are exempt, and have to be: they are component tests run by Node's
+    // test runner over happy-dom (see tests/setup-dom.ts), so they import `node:test` and
+    // `node:assert/strict` by construction — 314 such imports across 153 files today. The
+    // boundary protects the SHIPPED renderer bundle, which contains no test file. They
+    // still fall through to the block above, so the Electron ban continues to apply to
+    // them; only the Node-builtin ban is lifted.
+    files: ['src/renderer/**/*.ts', 'src/renderer/**/*.mts'],
+    ignores: ['src/renderer/**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [NO_ELECTRON],
+          patterns: [
+            {
+              group: ['node:*'],
+              allowTypeImports: true,
+              message:
+                'The renderer is a browser context and has no Node builtins at runtime. Reach the ' +
+                'filesystem, processes, or the network through the preload bridge (`preload/api.d.ts`), ' +
+                'or move the logic to src/shared if it is pure.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The Electron surface: every file that may hold a runtime `electron` import. Kept as an
+    // explicit list rather than a glob over `src/main/**` because the point of the rule is
+    // that `src/main` is NOT the boundary — 18 of its ~400 files need Electron, and the rest
+    // are a portable agent runtime that merely lives beside them.
+    //
+    // `windows/` and `ipc/` are wholesale: both directories exist to own the desktop shell
+    // and IPC surface. `preload/` bridges the renderer and cannot work without it. The
+    // six services below are the leaky ones — each is a desktop capability behind a seam
+    // (auto-update, dialogs, tray/menu prompts, the browser panel, SSH IPC), and each is a
+    // candidate for the `*-electron.ts` suffix convention if that is ever adopted.
+    //
+    // The renderer is deliberately absent: it reaches Electron only through the preload
+    // bridge, and today imports it nowhere.
+    files: [
+      'src/preload/**/*.ts',
+      'src/main/index.ts',
+      'src/main/app-init.ts',
+      'src/main/app-icon.ts',
+      'src/main/windows/**/*.ts',
+      'src/main/ipc/**/*.ts',
+      'src/main/services/auto-update.ts',
+      'src/main/services/close-confirm.ts',
+      'src/main/services/update-prompt.ts',
+      'src/main/services/user-alerts-electron.ts',
+      'src/main/services/packs/pack-browser-panel.ts',
+      'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': 'off',
+    },
+  },
+  {
     files: [
       'src/**/*.test.ts',
       'packages/*/src/**/*.test.ts',
@@ -122,6 +242,41 @@ export default ts.config(
     },
   },
   {
+    // Standalone test fixtures that are spawned as real child processes (see
+    // tests/fixtures/mock-acp-agent.mjs). They run as plain ESM under `node`,
+    // not through the test bundler, so they carry no TS annotations and are not
+    // part of the TS project graph.
+    files: ['tests/fixtures/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        ReadableStream: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
+    // Executable resources shipped inside built-in skills run directly under
+    // Node and are copied as-is, so they are not part of a TypeScript project.
+    files: ['assets/skills/**/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
     // Static ESM worker host copied to dist; not part of the TS project graph.
     files: ['src/renderer/monaco/esm-worker-host.js'],
     extends: [ts.configs.disableTypeChecked],
@@ -135,15 +290,16 @@ export default ts.config(
     },
   },
   {
-    // Marketing-site scripts: plain browser JS served as-is from `site/`, with
-    // no build step and no TS project to type-check against.
-    files: ['site/**/*.js'],
+    // Static-site scripts: plain browser JS served as-is, with no TS project to
+    // type-check against. Demo sites are copied next to the browser build.
+    files: ['site/**/*.js', 'src/shared/demo-sites/**/*.js'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'script',
       globals: {
         window: 'readonly',
         document: 'readonly',
+        FormData: 'readonly',
       },
     },
     rules: {

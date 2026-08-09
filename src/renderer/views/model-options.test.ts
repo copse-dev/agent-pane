@@ -399,6 +399,30 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /not configured/)
   })
 
+  it('distinguishes an unadvertised model from an unconfigured ACP agent', async () => {
+    const staleValue = 'acp:cursor#composer-2.5[fast=true]'
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            enabled: true,
+            availableModels: [{ value: 'composer-2.5[fast=false]', label: 'Composer 2.5' }],
+          },
+        ],
+      }),
+      staleValue,
+    )
+    const current = options.find((option) => option.value === staleValue)
+    assert.deepEqual(current, {
+      value: staleValue,
+      label: 'Cursor — composer-2.5[fast=true] (not currently advertised)',
+      group: 'Cursor on this device',
+    })
+  })
+
   it('omits ACP agents on SSH workspaces and marks a stale selection unavailable', async () => {
     const api = mockApi({
       available: { anthropic: true },

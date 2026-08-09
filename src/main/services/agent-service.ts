@@ -24,6 +24,7 @@ import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import {
+  acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -169,6 +170,7 @@ import {
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { offerAcpReauth } from './acp/acp-reauth.ts'
+import { assembleAcpTurnStart } from './acp/acp-turn-start.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { parsePackModelSelection } from '@shared/pack-model.ts'
@@ -670,6 +672,9 @@ export async function runAgent(
   // to thread history, so placeholders stay consistent across turns. No-op when
   // the feature is off or Rampart is unavailable.
   const outboundPrompt = await redactUserContent(threadId, userPrompt)
+  const resolvePackSetting =
+    options?.resolvePackSetting ??
+    ((packId: string, key: string): unknown => getPackService().getSetting(packId, key))
 
   if (resolved.fallbackNotice) {
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
@@ -774,6 +779,10 @@ export async function runAgent(
     // decisions cannot become unaudited merely because an ACP client invoked
     // the shell tool.
     beginHookRunRecording(threadId)
+    const acpHookCardSink = (card: HookCard): void => {
+      sendChunk({ type: 'hook_run', card })
+    }
+    setHookRunLiveSink(acpHookCardSink)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
     // Same idle-deadline registry as the local loop: pause while approval dialogs
@@ -811,6 +820,20 @@ export async function runAgent(
         }
       : null
     try {
+      // `turnStart` is an executor-neutral assembly event (decision 20): ACP
+      // receives the same active first-party pack hooks as the built-in loop.
+      // Only Copse's bridged tools are listed because the host cannot inspect
+      // the external agent's private tool catalogue.
+      const operatorInstructions = await assembleAcpTurnStart({
+        userText: promptTextForSubmit(userPrompt),
+        priorTodos: options?.priorTodos ?? [],
+        model: executorModel,
+        registry,
+        signal: controller.signal,
+        resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolvePackSetting,
+        recordHookRun: recordFunctionHookRun,
+      })
       const result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -820,6 +843,7 @@ export async function runAgent(
         bridgeTurnSignal: bridgeTurn.signal,
         onChunk: acpChunkSink,
         registry,
+        ...(operatorInstructions ? { operatorInstructions } : {}),
         ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpRunModel ? { model: acpRunModel } : {}),
@@ -839,6 +863,15 @@ export async function runAgent(
       // its estimated usage is reported instead of a silent zero. The error
       // text is separated from any streamed text so the bubble stays readable.
       const partial = err instanceof AcpTurnFailure ? err.partial : null
+      // Classified before anything is streamed so the live diagnosis and the
+      // line written into history are two readings of one verdict, not two
+      // verdicts that can disagree. `aborted` is sampled once for the same
+      // reason: an abort landing mid-catch must not offer a re-auth and then
+      // record the turn as merely stopped.
+      const aborted = controller.signal.aborted
+      const authFailure = aborted
+        ? null
+        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
@@ -847,9 +880,6 @@ export async function runAgent(
       // with its explanation already on screen. The idle deadline is paused for
       // the wait, exactly as it is around approval dialogs, so a user thinking
       // it over can't have the turn aborted underneath the modal.
-      const authFailure = controller.signal.aborted
-        ? null
-        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
       if (authFailure) {
         // Best-effort: the turn has already reported its failure, and a broken
         // offer must not escalate a handled error into an unhandled one.
@@ -864,19 +894,24 @@ export async function runAgent(
         }
       }
       sendChunk({ type: 'done' })
+      // The diagnosis is persisted, not just streamed: a bubble the user can
+      // still see and a history entry that has forgotten why the turn died
+      // would disagree about the same moment. It is also the only assistant
+      // content when the agent failed before emitting a token — an auth failure
+      // at connect time — which used to persist nothing at all.
+      const content = [
+        partial?.assistantText,
+        msg,
+        acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join('\n\n')
       return {
         usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },
         messages: [
           ...priorMessages,
           { role: 'user' as const, content: outboundPrompt },
-          ...(partial?.assistantText
-            ? [
-                {
-                  role: 'assistant' as const,
-                  content: `${partial.assistantText}\n\n[This turn was interrupted by a transient provider error before it completed.]`,
-                },
-              ]
-            : []),
+          { role: 'assistant' as const, content },
         ],
       }
     } finally {
@@ -886,6 +921,7 @@ export async function runAgent(
       cancelApprovalsForThread(threadId)
       runAbort.clear()
       clearRunDeadline(threadId, runAbort.deadline)
+      clearHookRunLiveSink(acpHookCardSink)
       endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -1078,9 +1114,6 @@ export async function runAgent(
 
   try {
     const invokedSkills = options?.invokedSkills ?? []
-    const resolvePackSetting =
-      options?.resolvePackSetting ??
-      ((packId: string, key: string): unknown => getPackService().getSetting(packId, key))
     const subagentsEnabled = getSetting<boolean>(
       SUBAGENTS_ENABLED_SETTING,
       SUBAGENTS_ENABLED_DEFAULT,
@@ -1142,14 +1175,12 @@ export async function runAgent(
     // working brief, both of which reach providers.
     const parentGoal = resolveParentGoal(options?.workingBrief, messages, outboundPrompt)
 
-    // Steering checks are local-only (they decide which prompt blocks to add), so
-    // they run on the raw text — redaction must not change which steering fires.
+    // Steering checks run on raw text for every executor — redaction must not
+    // change which product guidance fires. This local fire site mirrors the ACP
+    // fire in runAcpTurn above (decision 20).
     // M0.2: policy lives in named `turnStart` hooks; this site only fires the
     // event and applies the merged `injectContext` to messages[0].
-    const userTextForSteering =
-      typeof userPrompt === 'string'
-        ? userPrompt
-        : resolveParentGoal(undefined, messages, userPrompt)
+    const userTextForSteering = promptTextForSubmit(userPrompt)
     const priorTodos = options?.priorTodos ?? []
 
     // Fingerprint the toolset offered to the model before any hook can fire, so
@@ -1176,6 +1207,7 @@ export async function runAgent(
       {
         userText: userTextForSteering,
         priorTodos,
+        executor: 'local',
         // The resolved run model + the tool list the model will actually see, so
         // a steering hook can condition on which model is running (the
         // forced-planning pack thresholds on its measured capability) and never

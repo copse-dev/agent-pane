@@ -12,7 +12,9 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { copyMonacoWorkers } from './copy-monaco-workers.mts'
+import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
+import { markTreeNoindex } from './lib/noindex.mts'
+import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -126,28 +128,12 @@ if (!isDemo) {
     entryPoints: ['src/main/index.ts'],
     outfile: 'dist/main/index.js',
   })
-  await esbuild.build({
-    ...nodeOpts,
-    entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
-    outfile: 'dist/main/sandbox-fs-worker.js',
-  })
-  await esbuild.build({
-    ...nodeOpts,
-    entryPoints: ['src/main/services/packs/pack-tool-worker.ts'],
-    outfile: 'dist/main/pack-tool-worker.js',
-  })
-  assertParses('dist/main/pack-tool-worker.js')
-  // No `banner` here: askpass-helper.ts already starts with `#!/usr/bin/env node`
-  // and esbuild preserves a source hashbang verbatim. Adding the banner too put a
-  // second `#!…` on line 2 of the bundle, where it is not a hashbang but a syntax
-  // error — every SSH password/passphrase/host-key prompt died in the helper, so
-  // OpenSSH silently skipped the prompt and burned through auth attempts instead.
-  await esbuild.build({
-    ...nodeOpts,
-    entryPoints: ['src/main/services/ssh-workspace/askpass-helper.ts'],
-    outfile: 'dist/main/ssh-askpass-helper.js',
-  })
-  assertParses('dist/main/ssh-askpass-helper.js')
+  // Every standalone main-process bundle, from the list `dev.mts` also builds
+  // (see main-bundles.mts for why they are enumerated in one place).
+  for (const { entry, outfile } of STANDALONE_MAIN_BUNDLES) {
+    await esbuild.build({ ...nodeOpts, entryPoints: [entry], outfile })
+    assertParses(outfile)
+  }
   await esbuild.build({
     ...nodeOpts,
     entryPoints: ['src/preload/index.ts'],
@@ -207,13 +193,45 @@ copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
 // list of other people's things (today: first-party pack rows in Settings).
 copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
 cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
-copyMonacoWorkers(rendererOutDir)
+
+// Monaco's ESM `vs/` tree is ~34MB of small files, and it is identical for every
+// build pinned to the same monaco-editor version. The shipped app carries its
+// own copy; demo previews do not, because each one is committed to the
+// `demo-previews` branch and a per-PR copy made that branch grow by 34MB per
+// preview per push, forever (git keeps the history even after the preview is
+// removed). Point them at one published copy instead.
+//
+// Only ever set for the demo build. An unset MONACO_BASE_URL leaves the app's
+// packaging byte-identical.
+const monacoBaseUrl = isDemo ? (process.env['MONACO_BASE_URL'] ?? '').trim() : ''
+if (monacoBaseUrl === '') {
+  copyMonacoWorkers(rendererOutDir)
+} else {
+  console.log(`[build] Monaco served from ${monacoBaseUrl} — not copying the vs/ tree`)
+  const indexPath = `${rendererOutDir}/index.html`
+  writeFileSync(indexPath, pointHtmlAtMonacoBase(readFileSync(indexPath, 'utf8'), monacoBaseUrl))
+}
 cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {
   recursive: true,
 })
 
 if (isDemo) {
+  // Publish the recorded site's real files alongside the walkthrough. The
+  // Browser panel reads these rather than requiring a model (or reconstructing
+  // a site during each static build), and the directory is independently usable
+  // as a plain website at /sites/cupcakes/.
+  cpSync('src/shared/demo-sites', `${rendererOutDir}/sites`, { recursive: true })
   await writeDemoScenarioManifest(`${rendererOutDir}/scenarios.json`)
+  // The demo is published under copse.dev/demo/ — as /demo/main/, /demo/release/
+  // and a /demo/pr-<n>/ per open PR — so keep every page of it out of search
+  // results: the app shell and the recorded cupcake site copied in above, which
+  // is a whole standalone website and would otherwise be indexed as one. Marked
+  // here rather than in demo-preview.yml so the tag travels with the artifact
+  // wherever it is served. The production marketing site is a different tree
+  // (site/, deployed to the root from main) and is deliberately left indexable.
+  // See scripts/lib/noindex.mts.
+  const marked = markTreeNoindex(rendererOutDir)
+  console.log(`[build] marked ${String(marked.length)} demo page(s) noindex`)
   // Fail closed: demo trees are committed to `demo-previews` and scanned by
   // gitleaks across every PR tip. A source map here is a repo-wide CI outage.
   const maps: string[] = []

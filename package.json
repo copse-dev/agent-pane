@@ -42,6 +42,7 @@
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "bench:agent": "node scripts/run-bench-agent.mts",
     "eval:doctrine": "node scripts/run-doctrine-eval.mts",
+    "eval:steer": "node scripts/run-steer-eval.mts",
     "bench:terminal": "node scripts/run-terminal-bench.mts",
     "bench:terminal:analyze": "node scripts/analyze-terminal-bench.mts",
     "bench:terminal:ablation-plan": "node scripts/terminal-bench-ablation-plan.mts",
@@ -73,6 +74,10 @@
     "test:e2e:markdown": "wdio run wdio.conf.ts --spec tests/e2e/markdown-ordered-list-spacing.e2e.ts --spec tests/e2e/markdown-streaming-table.e2e.ts --spec tests/e2e/markdown-streaming-list.e2e.ts --spec tests/e2e/markdown-streaming-heading.e2e.ts --spec tests/e2e/markdown-streaming-blockquote.e2e.ts --spec tests/e2e/markdown-nbsp-metadata.e2e.ts",
     "analyze:thread": "node scripts/run-analyze-thread.mts",
     "demo:trace": "node scripts/run-build-demo-trace.mts",
+    "demo:site:sync": "node scripts/run-sync-cupcake-demo-site.mts",
+    "demo:site:check": "node scripts/run-sync-cupcake-demo-site.mts --check",
+    "site:md": "node scripts/sync-site-markdown.mts",
+    "site:md:check": "node scripts/sync-site-markdown.mts --check",
     "analyze:autonomy": "node scripts/analyze-autonomy-regression.mts",
     "bench:semantic": "node scripts/semantic-search-bench.mts",
     "report:prompt-causes": "node scripts/report-prompt-causes.mts",
@@ -85,7 +90,7 @@
     "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm run check:oracle && npm test"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run demo:site:check && npm run site:md:check && npm run check:dead-code && npm run check:oracle && npm test"
   },
   "build": {
     "appId": "app.copse-panel",
@@ -166,7 +171,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "ddg-search": "^2026.2.16",
-    "dompurify": "^3.4.12",
+    "dompurify": "^3.4.13",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",

@@ -4,7 +4,11 @@ import type { StreamChunk } from '@shared/types'
 import { classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
-import { validateThreadWorktree, type ValidatedThreadWorktree } from './worktree-manager.ts'
+import {
+  restoreRetiredThreadWorktree,
+  validateThreadWorktree,
+  type ValidatedThreadWorktree,
+} from './worktree-manager.ts'
 import { startExecutionRootIndexing } from './search/workspace-indexing.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 
@@ -46,6 +50,12 @@ export interface ThreadExecutionContextDependencies {
     projectRoot: string
     worktree: ThreadWorktree
   }) => Promise<ValidatedThreadWorktree>
+  restoreWorktree?: (input: {
+    projectId: string
+    threadId: string
+    projectRoot: string
+    worktree: ThreadWorktree
+  }) => Promise<ThreadWorktree>
   /** Persist adopted live branch when Git HEAD drifted inside the worktree. */
   syncWorktreeBranch?: (
     projectId: string,
@@ -66,6 +76,7 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
   getProjectRoot,
   getThreadMeta,
   validateWorktree: validateThreadWorktree,
+  restoreWorktree: restoreRetiredThreadWorktree,
   syncWorktreeBranch: syncAdoptedWorktreeBranch,
   startWorktreeIndexing: startExecutionRootIndexing,
 }
@@ -86,29 +97,45 @@ export async function resolveThreadExecutionContext(
   if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
 
   const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
-  if (threadMeta?.id !== threadId) {
+  if (threadMeta == null) {
+    throw new Error(`Thread "${threadId}" is not persisted yet under project "${projectId}"`)
+  }
+  if (threadMeta.id !== threadId) {
     throw new Error(`Thread "${threadId}" does not belong to project "${projectId}"`)
   }
 
   if (threadMeta.worktree) {
+    const restored =
+      threadMeta.worktree.retiredAt === undefined && !threadMeta.worktree.pullRequestUrl
+        ? threadMeta.worktree
+        : await (dependencies.restoreWorktree ?? restoreRetiredThreadWorktree)({
+            projectId,
+            threadId,
+            projectRoot,
+            worktree: threadMeta.worktree,
+          })
     const validate = dependencies.validateWorktree ?? validateThreadWorktree
     const worktree = await validate({
       projectId,
       threadId,
       projectRoot,
-      worktree: threadMeta.worktree,
+      worktree: restored,
     })
     if (
+      restored !== threadMeta.worktree ||
       worktree.branch !== threadMeta.worktree.branch ||
       threadMeta.gitBranch !== worktree.branch
     ) {
       const adopted: ThreadWorktree = {
-        path: threadMeta.worktree.path,
+        path: restored.path,
         branch: worktree.branch,
         baseBranch: threadMeta.worktree.baseBranch,
         baseCommit: threadMeta.worktree.baseCommit,
         createdAt: threadMeta.worktree.createdAt,
         seededFromDirtyProject: threadMeta.worktree.seededFromDirtyProject,
+        ...(threadMeta.worktree.pullRequestUrl
+          ? { pullRequestUrl: threadMeta.worktree.pullRequestUrl }
+          : {}),
       }
       await dependencies.syncWorktreeBranch?.(projectId, threadId, adopted)
     }

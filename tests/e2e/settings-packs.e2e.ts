@@ -152,6 +152,32 @@ describe('settings packs (about:addons)', function () {
     await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await packRow.getAttribute('data-enabled'), 'false')
 
+    // Background execution is a stable primitive and is available without a
+    // fresh-profile opt-in. Loopback binding still prompts separately at use time.
+    const backgroundTasksRow = packs.$('.pack-row[data-pack-id="copse.background-tasks"]')
+    await expect(backgroundTasksRow).toBeDisplayed()
+    await expect(backgroundTasksRow.$('.pack-badge-stable')).toHaveText('Stable')
+    assert.equal(await backgroundTasksRow.getAttribute('data-enabled'), 'true')
+    await backgroundTasksRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.pack-row[data-pack-id="copse.background-tasks"]',
+      'settings-background-tasks-pack.png',
+    )
+
+    // Website creative-engineering steering is a stable, default-on product
+    // behavior. Its pack row makes the guidance and disable boundary visible.
+    const siteBuildingRow = packs.$('.pack-row[data-pack-id="copse.site-building"]')
+    await expect(siteBuildingRow).toBeDisplayed()
+    assert.equal(await siteBuildingRow.$('.pack-name').getText(), 'Site building')
+    await expect(siteBuildingRow.$('.pack-badge-stable')).toHaveText('Stable')
+    assert.equal(await siteBuildingRow.getAttribute('data-enabled'), 'true')
+    assert.match(await siteBuildingRow.getText(), /design, implementation, accessibility/i)
+    await siteBuildingRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.pack-row[data-pack-id="copse.site-building"]',
+      'settings-site-building-pack.png',
+    )
+
     // Local cron automations are a new, explicit opt-in. Upgrading
     // must not arm a clock-driven feature until the user enables the pack.
     const automationsRow = packs.$('.pack-row[data-pack-id="copse.automations"]')

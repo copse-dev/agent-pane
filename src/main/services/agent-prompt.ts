@@ -35,10 +35,11 @@ export const SHARED_WORKING_STYLE = `Working style:
 - Follow explicit constraints on tool use and commands. When the user supplies an exact operation and says its prerequisites are satisfied, do not add speculative inspection, cleanup, command wrappers, or other preparation; deviate only when observed evidence makes that necessary.
 - Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
 
-export const GIT_BRANCH_SAFETY = `Git branch safety:
-- Never commit or push directly to the repository's default branch (commonly main or master). Before committing, check the current branch and the repository's default branch.
-- If the default branch is checked out, create and switch to a working branch named copse/<short-kebab-summary> before making the commit. Use that naming convention for new branches.
-- Preserve an existing non-default working branch unless the user explicitly asks to change branches.`
+export const GIT_BRANCH_SAFETY = `Git branch safety (hard rule — a commit on the default branch is a failure):
+1. Before every commit, check the current branch (git_status or \`git branch --show-current\`) and treat \`main\`/\`master\` (or the repo's default) as the default branch.
+2. If HEAD is on the default branch: do NOT call git_commit yet. First create and switch with \`run_shell\` to \`git checkout -b copse/<short-kebab-summary>\` (example: \`git checkout -b copse/set-retries-to-5\`). Only then call git_commit on that new branch.
+3. If HEAD is already on a non-default working branch: stay there — commit on it; do not create a fresh copse/ branch unless the user asked to change branches.
+4. Never push to the default branch.`
 
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
@@ -158,13 +159,14 @@ export const DIRECT_READS_BASE_PROMPT_VARS = DIRECT_READS_MODE_VARS
 export const BROWSER_TOOLS_BLOCK = `
 
 You also have built-in browser tools (loopback/localhost auto-runs; other origins prompt):
+- browser_preview: Serve a static HTML/CSS/JS project and open it in the visible Browser panel; use this instead of starting a server
 - browser_navigate: Open a URL in a headless browser tab
 - browser_snapshot: Read the page as an accessibility outline with [ref=…] handles
 - browser_screenshot: Save a PNG of the page for visual checks
 - browser_click / browser_type: Interact with an element by its snapshot ref
 - browser_tabs: List or close tabs
 Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
-This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download); start the project's dev server and open its URL with browser_navigate.`
+This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download). For static sites, use browser_preview. Use run_background plus browser_navigate only when the project needs its own framework dev server.`
 
 // Appended when `readTerminalEnabled` is on. The tool itself is only offered on
 // turns where this chat has an open Shells tab (see parentTools).

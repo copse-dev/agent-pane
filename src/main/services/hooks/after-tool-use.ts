@@ -23,15 +23,15 @@
 // caps `payload.output` to {@link AFTER_TOOL_USE_OUTPUT_CAP} before dispatch, so
 // the wire payload the adapter marshals is always bounded.
 //
-// Cursor declares both after-events (wired here); Claude has no post-tool
-// observation hook, so no Claude hooks participate — matching the vendor audit
-// in docs/plans/hooks-and-feature-packs.md.
+// Cursor declares both after-events and Claude a `PostToolUse` hook; all are
+// wired here, per the vendor audit in docs/plans/hooks-and-feature-packs.md.
 import { HookRegistry } from '@copse/agent/hooks/hook-registry.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorAfterToolUseHooks } from './cursor-adapter.ts'
+import { claudeAfterToolUseHooks } from './claude-adapter.ts'
 import { copseAfterToolUseHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
@@ -122,11 +122,12 @@ export async function runAfterToolUseHooks(
     ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
-  const [cursorHooks, copseHooks] = await Promise.all([
+  const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
     cursorAfterToolUseHooks(cappedPayload, discoverOpts),
+    claudeAfterToolUseHooks(cappedPayload, discoverOpts),
     copseAfterToolUseHooks(cappedPayload, discoverOpts),
   ])
-  const hooks = [...cursorHooks, ...copseHooks]
+  const hooks = [...cursorHooks, ...claudeHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()

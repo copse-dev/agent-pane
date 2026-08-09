@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -22,6 +23,7 @@ export interface EvalScenario {
   workspace?: {
     type: 'current' | 'tempProject'
     prefix?: string
+    initializeGit?: boolean
     seedFiles?: PromptAttachment[]
   }
   prompts?: EvalPrompt[]
@@ -36,9 +38,16 @@ export interface EvalScenario {
     finalAssistantContains: string
     timeoutMs?: number
   }
+  toolUse?: {
+    requireTools?: string[]
+    forbidTools?: string[]
+    requireBackgroundWakeStart?: boolean
+    maxApprovals?: number
+  }
   assertWorkspace?: {
     git?: {
       minCommits?: number
+      allCommitMessagesContain?: string[]
     }
     homePage?: {
       path?: string
@@ -77,6 +86,7 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
     .object({
       type: z.enum(['current', 'tempProject']),
       prefix: z.string().optional(),
+      initializeGit: z.boolean().optional(),
       seedFiles: z.array(promptAttachmentSchema).optional(),
     })
     .optional(),
@@ -96,9 +106,22 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
       timeoutMs: z.number().positive().optional(),
     })
     .optional(),
+  toolUse: z
+    .object({
+      requireTools: z.array(z.string()).optional(),
+      forbidTools: z.array(z.string()).optional(),
+      requireBackgroundWakeStart: z.boolean().optional(),
+      maxApprovals: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
   assertWorkspace: z
     .object({
-      git: z.object({ minCommits: z.number().optional() }).optional(),
+      git: z
+        .object({
+          minCommits: z.number().optional(),
+          allCommitMessagesContain: z.array(z.string()).optional(),
+        })
+        .optional(),
       homePage: z
         .object({
           path: z.string().optional(),
@@ -194,5 +217,11 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
     }
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, file.content, 'utf8')
+  }
+  if (scenario.workspace?.initializeGit === true) {
+    // Copse's real New project flow initializes Git before opening the first
+    // chat. Mirror that boundary so native write tools can apply new files
+    // directly instead of staging approval-only diffs in an untracked folder.
+    execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' })
   }
 }
