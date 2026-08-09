@@ -3,25 +3,7 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { attachImageExpand, openImageExpand } from './image-expand.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
-
-// happy-dom doesn't implement <dialog> modality; stub showModal/close like mermaid-expand.
-function patchEnv(): void {
-  Object.defineProperties(window.HTMLDialogElement.prototype, {
-    showModal: {
-      configurable: true,
-      value(this: HTMLDialogElement): void {
-        this.open = true
-      },
-    },
-    close: {
-      configurable: true,
-      value(this: HTMLDialogElement): void {
-        this.open = false
-        this.dispatchEvent(new window.Event('close'))
-      },
-    },
-  })
-}
+import { patchPreviewDialog } from './preview-dialog.test-support.ts'
 
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
@@ -32,7 +14,7 @@ function mouseClick(target: EventTarget): void {
 
 describe('image expand lightbox', () => {
   before(() => {
-    patchEnv()
+    patchPreviewDialog()
   })
 
   it('wires expand affordances onto a thumbnail once', () => {
