@@ -97,12 +97,16 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
         })
         stream.pipe(response)
       },
-      () => response.writeHead(500).end(),
+      () => {
+        response.writeHead(500).end()
+      },
     )
   })
 
   const port = await new Promise<number>((resolvePort, reject) => {
-    const onError = (error: Error): void => reject(error)
+    const onError = (error: Error): void => {
+      reject(error)
+    }
     server.once('error', onError)
     server.listen(0, LOOPBACK_HOST, () => {
       server.off('error', onError)
@@ -158,7 +162,9 @@ export async function shutdownStaticPreviewServers(): Promise<void> {
     active.map(
       ({ server }) =>
         new Promise<void>((resolveClose) => {
-          server.close(() => resolveClose())
+          server.close(() => {
+            resolveClose()
+          })
           server.closeAllConnections()
         }),
     ),

@@ -172,19 +172,16 @@ function workspaceAssetPath(reference: string, previewUrl: string): string | nul
  * missing file returns null so older builds and non-demo hosts can fall back to
  * the replayed workspace writes.
  */
-async function readPublishedDemoSite(path: string): Promise<string | null> {
+function publishedDemoSiteUrl(path: string): string | null {
   const root = document.documentElement.dataset['demoStaticSite']?.trim()
   if (!root) return null
   const base = new URL(`${root.replace(/\/+$/, '')}/`, document.baseURI)
   const url = new URL(path, base)
   if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) return null
-  try {
-    const response = await fetch(url)
-    return response.ok ? await response.text() : null
-  } catch {
-    return null
-  }
+  return url.toString()
 }
+
+type WorkspacePreview = { html: string } | { url: string }
 
 /**
  * A localhost URL in the static browser demo has no server behind it. Assemble
@@ -197,13 +194,19 @@ async function workspacePreviewHtml(
   rawUrl: string,
   store: AppStore,
   api: ApiClient,
-): Promise<string | null> {
+): Promise<WorkspacePreview | null> {
   const entryPath = loopbackWorkspacePath(rawUrl)
   const { activeProjectId, activeThreadId } = store.getState()
   if (!entryPath || !activeProjectId || !activeThreadId) return null
 
-  const read = async (path: string): Promise<string> =>
-    (await readPublishedDemoSite(path)) ?? api.fs.readFile(activeProjectId, activeThreadId, path)
+  // A checked-in site has a real same-origin URL. Navigate the sandboxed frame
+  // there instead of copying it into `srcdoc`: srcdoc inherits Copse's parent
+  // CSP, whose `script-src 'self'` intentionally blocks inlined site scripts.
+  const published = publishedDemoSiteUrl(entryPath)
+  if (published) return { url: published }
+
+  const read = (path: string): Promise<string> =>
+    api.fs.readFile(activeProjectId, activeThreadId, path)
   const html = await read(entryPath)
   if (!html) return null
 
@@ -234,7 +237,7 @@ async function workspacePreviewHtml(
       script.replaceWith(inline)
     }),
   )
-  return `<!doctype html>\n${previewDocument.documentElement.outerHTML}`
+  return { html: `<!doctype html>\n${previewDocument.documentElement.outerHTML}` }
 }
 
 /**
@@ -258,7 +261,7 @@ function supportsElectronWebview(element: HTMLElement): boolean {
  * callers already treat as "this page cannot be shared".
  */
 function createIframeWebview(
-  resolveWorkspacePreview?: (url: string) => Promise<string | null>,
+  resolveWorkspacePreview?: (url: string) => Promise<WorkspacePreview | null>,
 ): BrowserWebviewElement {
   const frame = document.createElement('iframe')
   frame.className = 'browser-webview'
@@ -285,16 +288,21 @@ function createIframeWebview(
       return
     }
     void resolveWorkspacePreview(url)
-      .then((html) => {
+      .then((preview) => {
         if (id !== navigationId) return
-        if (html === null) {
+        if (preview === null) {
           navigateRemote(url)
           return
         }
         workspacePreviewActive = true
         frame.dataset['workspacePreview'] = 'loading'
-        frame.removeAttribute('src')
-        frame.srcdoc = html
+        if ('url' in preview) {
+          frame.removeAttribute('srcdoc')
+          frame.setAttribute('src', preview.url)
+        } else {
+          frame.removeAttribute('src')
+          frame.srcdoc = preview.html
+        }
       })
       .catch(() => {
         if (id === navigationId) navigateRemote(url)
@@ -352,7 +360,7 @@ function createIframeWebview(
 }
 
 function createWebview(
-  resolveWorkspacePreview?: (url: string) => Promise<string | null>,
+  resolveWorkspacePreview?: (url: string) => Promise<WorkspacePreview | null>,
 ): BrowserWebviewElement {
   const webview = document.createElement('webview')
   if (!supportsElectronWebview(webview)) return createIframeWebview(resolveWorkspacePreview)
@@ -394,7 +402,7 @@ export function mountBrowserPane(
 
   const tabs = new Map<string, BrowserTab>()
   const resolveWorkspacePreview = api
-    ? (url: string): Promise<string | null> => workspacePreviewHtml(url, store, api)
+    ? (url: string): Promise<WorkspacePreview | null> => workspacePreviewHtml(url, store, api)
     : undefined
   let activeTabId: string | null = null
   let resizeObserver: ResizeObserver | null = null

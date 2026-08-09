@@ -156,7 +156,6 @@ describe('browser pane requested URLs', () => {
     const ResizeObserverCtor = globalThis.ResizeObserver
     const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
     const DomParserCtor = globalThis.DOMParser
-    const originalFetch = globalThis.fetch
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -165,23 +164,6 @@ describe('browser pane requested URLs', () => {
     globalThis.ResizeObserver = NoopResizeObserver
     globalThis.DOMParser = window.DOMParser
     document.documentElement.dataset['demoStaticSite'] = 'https://demo.test/sites/cupcakes'
-
-    const published = new Map([
-      [
-        'index.html',
-        '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Published cupcakes</h1><script src="script.js"></script></body></html>',
-      ],
-      ['styles.css', 'h1 { color: coral; }'],
-      ['script.js', "document.body.dataset.source = 'published'"],
-    ])
-    const requests: string[] = []
-    globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
-      const url = input instanceof Request ? input.url : String(input)
-      requests.push(url)
-      const name = new URL(url).pathname.split('/').at(-1) ?? ''
-      const content = published.get(name)
-      return new Response(content ?? '', { status: content === undefined ? 404 : 200 })
-    }
 
     const { list, viewer } = mountBrowserHosts()
     const store = createStore({
@@ -205,22 +187,11 @@ describe('browser pane requested URLs', () => {
       await new Promise((resolve) => setTimeout(resolve, 20))
 
       const frame = qsRequired<HTMLIFrameElement>(viewer, 'iframe.browser-webview')
-      assert.deepEqual(
-        new Set(requests),
-        new Set([
-          'https://demo.test/sites/cupcakes/index.html',
-          'https://demo.test/sites/cupcakes/styles.css',
-          'https://demo.test/sites/cupcakes/script.js',
-        ]),
-      )
       assert.equal(workspaceReads, 0)
-      const srcdoc = frame.getAttribute('srcdoc') ?? ''
-      assert.match(srcdoc, /<h1>Published cupcakes<\/h1>/)
-      assert.match(srcdoc, /h1 \{ color: coral; \}/)
-      assert.match(srcdoc, /dataset\.source = 'published'/)
+      assert.equal(frame.getAttribute('srcdoc'), null)
+      assert.equal(frame.getAttribute('src'), 'https://demo.test/sites/cupcakes/index.html')
     } finally {
       delete document.documentElement.dataset['demoStaticSite']
-      globalThis.fetch = originalFetch
       if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
       else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       if (hadDomParser) globalThis.DOMParser = DomParserCtor
