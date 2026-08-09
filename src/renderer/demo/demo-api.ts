@@ -1,4 +1,4 @@
-import type { StreamChunk, Thread } from '@shared/types'
+import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import type { PackContributionsSummary, PackSummary } from '@shared/types/packs.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
@@ -8,6 +8,7 @@ import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
@@ -186,6 +187,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   const queuedHandlers = new Set<QueuedHandler>()
   /** Files the replayed turn has written, oldest first — the demo's whole disk. */
   const writtenFiles = new Map<string, string>()
+  /** Full proposed diffs remain fetchable even when a scenario keeps Changes closed. */
+  const proposedDiffs = new Map<string, ActiveDiff>()
   /** Original homes for controls moved into an expanded pane's toolbar. */
   const expandedPaneButtons = new Map<
     string,
@@ -209,6 +212,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     if (!edit) return
     writtenFiles.set(edit.path, edit.after)
     const language = detectLanguage(edit.path)
+    proposedDiffs.set(edit.path, {
+      path: edit.path,
+      before: edit.before,
+      after: edit.after,
+      language,
+    })
     // The queue is the full set of pending diffs, not just the newest: the
     // Changes pane drops a selection whose path has left the queue.
     const entries = [...writtenFiles.keys()].map((path) => ({
@@ -216,8 +225,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       language: detectLanguage(path),
     }))
     for (const handler of queuedHandlers) handler(scenario.project.id, threadId, entries)
-    for (const handler of showDiffHandlers) {
-      handler(scenario.project.id, threadId, edit.path, edit.before, edit.after, language)
+    if (scenario.deferProposedDiffPreview !== true) {
+      for (const handler of showDiffHandlers) {
+        handler(scenario.project.id, threadId, edit.path, edit.before, edit.after, language)
+      }
     }
   }
 
@@ -288,7 +299,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         // Anything else a visitor types is off-script, and gets the stub reply
         // rather than an answer to a question they did not ask.
         const trace = scenario.trace
-        if (trace && prompt.trim() === trace.prompt.trim()) {
+        if (trace && prompt.trim() === demoScenarioPrompt(scenario).trim()) {
           replay?.abort()
           const controller = new AbortController()
           replay = controller
@@ -368,7 +379,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reject: resolvedVoid,
       approveAll: resolvedVoid,
       rejectAll: resolvedVoid,
-      content: () => resolved(null),
+      content: (_projectId: string, _threadId: string, path: string) =>
+        resolved(proposedDiffs.get(path) ?? null),
       onShowDiff: (handler: ShowDiffHandler) => {
         showDiffHandlers.add(handler)
         return (): void => {

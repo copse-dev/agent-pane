@@ -129,19 +129,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     const { activeDiff } = store.getState()
     const stillQueued =
       activeDiff && entries.some((entry) => entry.path === activeDiff.path) ? activeDiff : null
-    const openingChanges = entries.length > 0
     store.setState({
       stagedDiffs: entries,
-      rightPanelMode: openingChanges ? 'changes' : store.getState().rightPanelMode,
-      filesPaneOpen: openingChanges ? true : store.getState().filesPaneOpen,
       activeDiff: entries.length === 0 ? null : stillQueued,
     })
-    // Unhide `#pane-files` and switch the Changes hosts before the pane syncs
-    // a Monaco model — otherwise `whenDiffHostVisible` races a still-closed
-    // panel and can stall the shared diff load queue.
-    if (openingChanges) syncFilesPaneDom(store)
-    if (openingChanges) store.emit('right_panel_mode_changed')
-    store.emit('files_pane_changed')
+    // `agent:show_diff` owns opening Changes and arrives before this queue in
+    // the real edit path. A queue-only update is metadata: forcing the panel
+    // open here makes background/deferred proposals construct Monaco while the
+    // user is still watching another surface.
     store.emit('staged_diffs_changed')
     store.emit('panel_changed')
   }

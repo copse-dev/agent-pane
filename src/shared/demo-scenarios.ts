@@ -20,6 +20,24 @@ export interface DemoScenario {
    */
   trace?: DemoTrace
   /**
+   * A shorter prompt to type in the walkthrough while preserving the trace's
+   * exact recorded prompt as steering. This is intentionally explicit: the
+   * demo must not imply that a terse request produced a tightly art-directed
+   * recording without help.
+   */
+  presentedPrompt?: {
+    text: string
+    /** How the recorded prompt supplements the visitor-visible request. */
+    tracePromptRole: 'nudge'
+    /** Human-readable provenance for reviewers inspecting the scenario. */
+    nudgeLabel: string
+  }
+  /**
+   * Queue replayed edits without forcing Changes open on every write. Visitors
+   * can still open Changes and inspect the complete diffs after the turn.
+   */
+  deferProposedDiffPreview?: boolean
+  /**
    * Published directory containing the files produced by the trace. The static
    * Browser panel prefers this checked-in copy, while the replayed writes still
    * drive Changes and provide a fallback for older builds.
@@ -36,6 +54,11 @@ export interface DemoScenario {
 export const FOOTER_COMPACT_EXPECTATIONS = {
   tokenLabel: `${((FOOTER_INPUT_TOKENS + FOOTER_OUTPUT_TOKENS) / 1000).toFixed(1)}k tokens`,
 } as const
+
+/** Prompt a walkthrough submits; the source trace remains byte-for-byte honest. */
+export function demoScenarioPrompt(scenario: DemoScenario): string {
+  return scenario.presentedPrompt?.text ?? scenario.trace?.prompt ?? ''
+}
 
 const markdownContent = [
   '### ⚠️ Known Failures',
@@ -190,7 +213,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         // Empty on purpose: the walkthrough types the prompt into the composer,
         // so the transcript builds from nothing while you watch.
         id: 'demo-landing-thread',
-        title: LANDING_TRACE.source?.title ?? LANDING_TRACE.label,
+        title: 'Crumb & Bloom coming soon',
         status: 'idle',
         gitBranch: 'main',
         messages: [],
@@ -200,6 +223,12 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: LANDING_TRACE,
+    presentedPrompt: {
+      text: 'Build a beautiful coming-soon website for my cupcake business, Crumb & Bloom. Include an email waitlist, make it feel warm and memorable, and preview it when you’re done.',
+      tracePromptRole: 'nudge',
+      nudgeLabel: 'Cupcake landing-page art direction and recording constraints',
+    },
+    deferProposedDiffPreview: true,
     staticSite: 'sites/cupcakes',
     revealFinalPreview: true,
   },
