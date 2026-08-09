@@ -226,9 +226,13 @@ revisiting this document, not silently diverging in an implementation PR.
     pack declares `stable` or `experimental`; a user pack that omits the field is
     treated as experimental. Settings shows that status before enablement.
     Experimental first-party packs derive the fresh-profile default-off set from
-    the same declaration, so status and rollout cannot silently diverge. Stability
-    never changes decision 17: disabling removes contributions from new work while
-    stored data and historical rendering remain available.
+    the same declaration, so status and rollout cannot silently diverge. The
+    `copse.background-tasks` pack is stable and default-on (including a one-time
+    graduation of the old seeded disable): ordinary tasks retain the project sandbox,
+    while its optional `loopback-bind` relaxation still requires a separate
+    per-project grant at use time. Stability never changes
+    decision 17: disabling removes contributions from new work while stored data and
+    historical rendering remain available.
 
 ## Target architecture
 

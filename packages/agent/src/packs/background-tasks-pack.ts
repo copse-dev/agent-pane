@@ -1,6 +1,6 @@
 // The `copse.background-tasks` first-party pack (issue #1190).
 //
-// Bundles the experimental "background tasks" feature (issue #691) behind a
+// Bundles the stable "background tasks" feature (issue #691) behind a
 // single lifecycle flag. The pack declares the `run_background` native tool
 // (registered host-side in `registry-bootstrap.ts` by
 // `syncBackgroundTasksTools`); the runtime call site reads
@@ -20,13 +20,9 @@
 // also feeds the Settings pack-list enumeration and the future install-time
 // capability/permission review (#1082).
 //
-// **Default DISABLED.** Background tasks were opt-in (off by default via the
-// `backgroundTasksEnabled` setting); this pack must not silently enable them for
-// existing users. Default-off is expressed the same way as every other
-// experimental pack: the pack-service enablement migration
-// (`migrateBackgroundTasksEnablement`) seeds the persisted `packDisabled` set
-// (an absent/false old setting → disabled) before the shared registry is built.
-// A user who had previously turned the setting on keeps background tasks enabled.
+// **Default ENABLED.** Background tasks are a stable execution primitive. A
+// one-time pack-service migration removes the old seeded experimental disable;
+// after that, the ordinary pack toggle persists an explicit user disable.
 //
 // **No-double-registration.** The `backgroundTasksEnabled` standalone setting is
 // gone (removed from the zod schema and the settings dialog) — the pack toggle
@@ -74,9 +70,9 @@ export const backgroundTasksPack: RegisteredPack = definePack(
   {
     name: BACKGROUND_TASKS_PACK_ID,
     description:
-      'Background tasks — run a long-lived command (dev server, watcher, build) via the `run_background` tool that stays alive across turns, with list / logs / stop actions. A task can opt into binding a local port (reporting its http://localhost:<port> URL), which relaxes the sandbox to allow loopback binding, gated by a per-project permission grant.',
+      'Background tasks — run long-lived or bounded asynchronous commands (dev servers, watchers, builds, tests, and evals) via the `run_background` tool. Tasks stay alive across turns and can wake the agent once on completion instead of being polled. A task can opt into binding a local port (reporting its http://localhost:<port> URL), which relaxes the sandbox to allow loopback binding, gated by a per-project permission grant.',
     trust: 'first-party',
-    stability: 'experimental',
+    stability: 'stable',
     tools: { native: [BACKGROUND_TASKS_TOOL_NAME] },
     permissions: [LOOPBACK_BIND_PERMISSION_DECL],
   },

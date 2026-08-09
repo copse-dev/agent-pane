@@ -36,6 +36,12 @@ export interface EvalScenario {
     finalAssistantContains: string
     timeoutMs?: number
   }
+  toolUse?: {
+    requireTools?: string[]
+    forbidTools?: string[]
+    requireBackgroundWakeStart?: boolean
+    maxApprovals?: number
+  }
   assertWorkspace?: {
     git?: {
       minCommits?: number
@@ -94,6 +100,14 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
       reloadRenderer: z.boolean().optional(),
       finalAssistantContains: z.string().min(1),
       timeoutMs: z.number().positive().optional(),
+    })
+    .optional(),
+  toolUse: z
+    .object({
+      requireTools: z.array(z.string()).optional(),
+      forbidTools: z.array(z.string()).optional(),
+      requireBackgroundWakeStart: z.boolean().optional(),
+      maxApprovals: z.number().int().nonnegative().optional(),
     })
     .optional(),
   assertWorkspace: z

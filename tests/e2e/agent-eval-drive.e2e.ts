@@ -273,6 +273,37 @@ function assertExploreSubagentCompleted(thread: Thread): void {
   assert.ok(completed.length > 0, 'expected explore to complete with a non-empty summary result')
 }
 
+function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void {
+  const expectation = scenario.toolUse
+  if (!expectation) return
+  const calls = thread.messages.flatMap((message) => message.toolCalls)
+  const names = new Set(calls.map((call) => call.name))
+  for (const name of expectation.requireTools ?? []) {
+    assert.ok(names.has(name), `expected agent to use ${name}`)
+  }
+  for (const name of expectation.forbidTools ?? []) {
+    assert.equal(names.has(name), false, `expected agent not to use ${name}`)
+  }
+  if (expectation.requireBackgroundWakeStart === true) {
+    assert.ok(
+      calls.some(
+        (call) =>
+          call.name === 'run_background' &&
+          call.args['action'] === 'start' &&
+          call.args['wake_on_completion'] === true &&
+          typeof call.args['timeout_ms'] === 'number',
+      ),
+      'expected run_background start with wake_on_completion and a bounded timeout',
+    )
+  }
+  if (expectation.maxApprovals !== undefined) {
+    assert.ok(
+      approvalCount <= expectation.maxApprovals,
+      `approval count ${String(approvalCount)} > max ${String(expectation.maxApprovals)}`,
+    )
+  }
+}
+
 function readJsonValue(path: string): unknown {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
   return value
@@ -347,6 +378,7 @@ describe('agent eval drive', () => {
     assertWorkspaceExpectations(workspaceRoot, scenario)
 
     const thread = readActiveThread()
+    assertToolUseExpectations(thread, scenario)
     if (
       scenario.id === 'working-brief-eval' ||
       scenario.id === 'working-brief-eval-lmstudio' ||
