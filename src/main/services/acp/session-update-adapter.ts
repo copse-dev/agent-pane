@@ -154,6 +154,22 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
   }
 }
 
+/**
+ * ACP's title is the user-facing description and stays authoritative whenever
+ * it is meaningful. The optional `name` is unstable programmatic identity, but
+ * it can rescue adapters such as Cursor that collapse MCP titles to the known
+ * `MCP: tool` placeholder.
+ */
+function preferredAcpToolLabel(
+  title: string | null | undefined,
+  name: string | null | undefined,
+): string | undefined {
+  const displayTitle = typeof title === 'string' ? unwrapInlineCode(title) : undefined
+  const programmaticName = typeof name === 'string' ? unwrapInlineCode(name) : undefined
+  if (displayTitle !== undefined && !/^MCP\s*:\s*tool$/i.test(displayTitle)) return displayTitle
+  return programmaticName ?? displayTitle
+}
+
 export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
@@ -195,7 +211,7 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         type: 'tool_call',
         toolCall: {
           id: update.toolCallId,
-          name: unwrapInlineCode(update.title),
+          name: preferredAcpToolLabel(update.title, update.name) ?? unwrapInlineCode(update.title),
           args: update.rawInput ?? {},
           // Carry a *meaningful* ACP kind so the card groups/labels like the
           // built-in tools (`getToolGroupKey`) and the terminal's "Agent tasks"
@@ -221,7 +237,7 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         rawTextResult ??
         contentResult ??
         (update.rawOutput !== undefined ? formatRawToolValue(update.rawOutput) : undefined)
-      const name = typeof update.title === 'string' ? unwrapInlineCode(update.title) : undefined
+      const name = preferredAcpToolLabel(update.title, update.name)
       if (
         status === undefined &&
         result === undefined &&
