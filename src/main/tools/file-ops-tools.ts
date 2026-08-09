@@ -4,13 +4,13 @@ import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { resolvePathWithinRoot } from '../services/workspace.ts'
 import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
-import { stageFileOp } from '../services/diff-queue.ts'
+import { applyOrStageFileOp } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
 
 export const deleteFileTool = defineTool({
   name: 'delete_file',
   description:
-    'Propose deleting an existing file. Stages the deletion for user approval (shown as a diff removing the file) — the file is not removed until accepted. Use this instead of run_shell rm so the deletion flows through the approval model.',
+    'Delete an existing file. Applies directly when this thread runs in its own isolated worktree; otherwise stages the deletion for user approval (shown as a diff removing the file) and the file is not removed until accepted. Use this instead of run_shell rm so the deletion flows through the approval model.',
   parameters: z.object({
     path: z.string().describe('File path relative to workspace root'),
   }),
@@ -26,7 +26,7 @@ export const deleteFileTool = defineTool({
     // Report the deletion as all lines removed (additions: 0) so the tool card
     // shows the removed line count rather than a blank, mis-rendered stat.
     const editStats = computeLineDiffStats(before, '')
-    const result = await stageFileOp({
+    const result = await applyOrStageFileOp({
       op: 'delete',
       path,
       before,
@@ -40,7 +40,7 @@ export const deleteFileTool = defineTool({
 export const renameFileTool = defineTool({
   name: 'rename_file',
   description:
-    'Propose renaming or moving a file from one path to another. Stages the move for user approval — nothing changes on disk until accepted. Use this instead of run_shell mv so the move flows through the approval model.',
+    'Rename or move a file from one path to another. Applies directly when this thread runs in its own isolated worktree; otherwise stages the move for user approval and nothing changes on disk until accepted. Use this instead of run_shell mv so the move flows through the approval model.',
   parameters: z.object({
     from: z.string().describe('Existing file path relative to workspace root'),
     to: z.string().describe('Destination path relative to workspace root'),
@@ -63,7 +63,7 @@ export const renameFileTool = defineTool({
     } catch {
       /* destination is free */
     }
-    return stageFileOp({
+    return applyOrStageFileOp({
       op: 'rename',
       path: from,
       renameTo: to,
@@ -77,7 +77,7 @@ export const renameFileTool = defineTool({
 export const makeDirectoryTool = defineTool({
   name: 'make_directory',
   description:
-    'Propose creating a directory (including any missing parents). Stages the creation for user approval — the directory is not created until accepted.',
+    'Create a directory (including any missing parents). Applies directly when this thread runs in its own isolated worktree; otherwise stages the creation for user approval and the directory is not created until accepted.',
   parameters: z.object({
     path: z.string().describe('Directory path relative to workspace root'),
   }),
@@ -90,7 +90,7 @@ export const makeDirectoryTool = defineTool({
     } catch {
       /* does not exist — proceed to stage */
     }
-    return stageFileOp({
+    return applyOrStageFileOp({
       op: 'mkdir',
       path,
       before: '',
