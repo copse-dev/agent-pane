@@ -350,6 +350,14 @@ directly at `~/.copse/workspace/<projectId>/<threadId>/acp-debug.jsonl` (under
 > and never set the flag by default. With the flag unset, no diagnostic file is
 > created and nothing is serialized or written.
 
+The one exception to "unredacted" is the header line, which records how Copse
+spawned the agent rather than anything the agent sent. Argument values that look
+like credentials are masked there — `CLAUDE_CODE_OAUTH_TOKEN=<redacted>` keeps
+the variable name so you can still see which credential was passed. This matters
+because some agents take their token as an argv entry, which would otherwise put
+a live secret on line 1 of a file whose purpose is to be handed to someone else.
+Every ACP payload below the header is still written verbatim.
+
 ## See also
 
 - [`docs/acp-capability-probe.md`](acp-capability-probe.md) — the Tier-1

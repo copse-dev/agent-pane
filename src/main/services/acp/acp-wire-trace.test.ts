@@ -467,6 +467,44 @@ describe('acp wire trace', () => {
       agent: { command: 'cursor-agent', args: ['--acp'] },
     })
   })
+
+  // Observed on a real trace: `claude-agent-acp` takes its credential as an
+  // argv entry, so an unmasked header put a live `sk-ant-oat01-…` token on line
+  // 1 of a file whose whole purpose is to be handed to someone else. Wire
+  // payloads stay verbatim; only our own spawn arguments are masked.
+  it('masks credentials in the header without hiding which credential it was', async () => {
+    await saveProjectThread('p1', threadOf('t1'))
+    const trace = await createAcpWireTrace(
+      {
+        threadId: 't1',
+        projectId: 'p1',
+        agent: {
+          command: 'claude-agent-acp',
+          args: [
+            'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-L-P7k9FA53kxXZZntKT2gIzAewR9Vee',
+            '--model',
+            'sonnet',
+            'sk-ant-api03-bare-value',
+          ],
+        },
+      },
+      ON,
+    )
+    assert.ok(trace)
+    await drainAcpWireTrace()
+
+    const [header] = readTrace(trace.path)
+    assert.deepEqual(header?.['msg'], {
+      threadId: 't1',
+      projectId: 'p1',
+      pid: process.pid,
+      agent: {
+        command: 'claude-agent-acp',
+        args: ['CLAUDE_CODE_OAUTH_TOKEN=<redacted>', '--model', 'sonnet', '<redacted>'],
+      },
+    })
+    assert.ok(!JSON.stringify(header).includes('sk-ant-'))
+  })
 })
 
 /**

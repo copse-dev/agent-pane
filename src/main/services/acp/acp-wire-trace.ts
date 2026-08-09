@@ -224,6 +224,33 @@ function traceLine(record: {
 }
 
 /**
+ * Values that look like credentials, masked out of the *header* line only.
+ *
+ * The header records how *we* spawned the agent, which is our own config rather
+ * than anything the agent sent — and in practice it is where a live token is
+ * most likely to sit, because some agents take their credential as an argv
+ * entry (`claude-agent-acp CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-…`). A trace is
+ * meant to be handed to a maintainer, so leaking the user's own agent
+ * credential in line 1 is a bad default with no diagnostic value.
+ *
+ * This does NOT weaken the "unredacted wire trace" contract in the module doc
+ * above: every `session/update` and `session/request_permission` payload is
+ * still written verbatim, secrets and all. Only our own spawn arguments are
+ * masked, and only the value — the variable name survives, so you can still
+ * see *which* credential the agent was given.
+ */
+const SECRETISH_ASSIGNMENT =
+  /^([^=\s]*(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIALS?|AUTH)[^=\s]*)=(.+)$/i
+const SECRETISH_VALUE = /^(sk-|xox[baprs]-|ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|AIza)/
+
+function maskSecret(arg: string): string {
+  const name = SECRETISH_ASSIGNMENT.exec(arg)?.[1]
+  if (name !== undefined) return `${name}=<redacted>`
+  if (SECRETISH_VALUE.test(arg)) return '<redacted>'
+  return arg
+}
+
+/**
  * Open a trace for one thread's ACP session, or return `null` when the flag is
  * off (or the thread's owning project cannot be resolved). Writes a header line
  * naming the thread, project, and agent, so a file handed back by a user is
@@ -261,7 +288,12 @@ export async function createAcpWireTrace(
         projectId,
         pid: process.pid,
         ...(target.agent
-          ? { agent: { command: target.agent.command, args: [...(target.agent.args ?? [])] } }
+          ? {
+              agent: {
+                command: maskSecret(target.agent.command),
+                args: (target.agent.args ?? []).map(maskSecret),
+              },
+            }
           : {}),
       },
     }),
