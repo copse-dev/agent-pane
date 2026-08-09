@@ -4,7 +4,8 @@
   "workspace": {
     "type": "tempProject",
     "prefix": "copse-cupcake-site-",
-    "initializeGit": true
+    "initializeGit": true,
+    "allowPortBinding": true
   },
   "prompts": [
     "Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done."

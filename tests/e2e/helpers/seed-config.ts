@@ -394,6 +394,8 @@ export function seedEmptyProject(
      * is shown.
      */
     autoRunSandboxCommands?: boolean
+    /** Existing per-project loopback-binding grants, using canonical workspace roots. */
+    portBindingAllowedRoots?: readonly string[]
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /**
@@ -505,6 +507,9 @@ export function seedEmptyProject(
   }
   if (options?.autoRunSandboxCommands !== undefined) {
     settings.autoRunSandboxCommands = options.autoRunSandboxCommands
+  }
+  if (options?.portBindingAllowedRoots !== undefined) {
+    settings.portBindingAllowedRoots = [...options.portBindingAllowedRoots]
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
