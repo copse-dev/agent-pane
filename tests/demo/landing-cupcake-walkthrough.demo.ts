@@ -96,7 +96,7 @@ describe('landing cupcake walkthrough', () => {
     await $('.signup button[type="submit"]').click()
     await expect($('#form-note')).toHaveText("You're on the list — we'll save you the first swirl.")
     await expect($('.signup button[type="submit"]')).toHaveText(
-      expect.stringContaining('You’re in!'),
+      expect.stringContaining('YOU’RE IN!'),
     )
     const previewLayout = await browser.execute(() => ({
       viewportWidth: window.innerWidth,
