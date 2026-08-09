@@ -54,6 +54,7 @@ import {
   shellPromptToApprovalFields,
   shellRequiresOutsideSandbox,
   mcpToolLabel,
+  formatGithubWritePrompt,
   GITHUB_READONLY_CI_TOOLS,
   GITHUB_WRITE_TOOLS,
   isReadOnlySimpleCommand,
@@ -597,12 +598,14 @@ async function checkCustomToolPermission(toolName: string, args: unknown): Promi
  * every approve / merge-when-ready / mark-ready / rerun-CI call asks first.
  */
 async function checkGithubWriteToolPermission(toolName: string, args: unknown): Promise<boolean> {
+  const prompt = formatGithubWritePrompt(toolName, args)
   const { approved } = await requestApproval({
-    title: `GitHub action: ${toolName}`,
-    body: JSON.stringify(args, null, 2),
+    title: prompt.title,
+    body: prompt.body,
     type: 'mcp',
     cause: 'github-write',
     allowRemember: false,
+    subject: toolName,
   })
   return approved
 }
