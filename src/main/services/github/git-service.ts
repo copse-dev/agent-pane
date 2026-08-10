@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
-import { runCommand } from '../exec/command-runner.ts'
+import { runCommand, type CommandResult } from '../exec/command-runner.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
+import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -27,12 +28,31 @@ import {
   type GitStatusResult,
 } from '@shared/types/git.ts'
 
+/**
+ * A local checkout can vanish while the app still holds a path to it — a
+ * deleted scratch worktree, an unmounted volume, a project record that outlived
+ * its folder. Git cannot even start there, and the raw spawn failure escapes as
+ * an opaque `spawn /bin/bash ENOENT` rejection (see
+ * {@link isSpawnableWorkingDirectory}) rather than something a caller handles.
+ * Report it as what it is instead: a failed git command, which every caller in
+ * this module already copes with. Remote roots live on the SSH host, so they
+ * are never probed against this filesystem.
+ */
+async function isRootReachable(root: string): Promise<boolean> {
+  return isActiveSshWorkspace() || (await isSpawnableWorkingDirectory(root))
+}
+
+function unreachableRootResult(root: string): CommandResult {
+  return { stdout: '', stderr: `Workspace path no longer exists: ${root}`, code: 1 }
+}
+
 async function runGit(
   args: string[],
   root: string | null = getAgentExecutionRoot(),
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
+  if (!(await isRootReachable(cwd))) return unreachableRootResult(cwd)
   return runCommand('git', args, { cwd })
 }
 
@@ -42,6 +62,7 @@ async function runGitRead(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
+  if (!(await isRootReachable(cwd))) return unreachableRootResult(cwd)
   return runCommand('git', args, {
     cwd,
     sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
@@ -277,6 +298,7 @@ async function runGitBuffer(
 ): Promise<{ stdout: Buffer; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
+  if (!(await isRootReachable(cwd))) return { stdout: Buffer.alloc(0), code: 1 }
   const baseEnv = envForRendererChildProcess()
   const gitSsh = leaseGitSshEnv(baseEnv)
   try {
