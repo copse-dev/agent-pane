@@ -128,6 +128,28 @@ function nestedCheckoutSiblingDenyPaths(checkoutRoot: string, executionRoot: str
 }
 
 /**
+ * Deny linked checkouts that are not already covered by the broad home-read deny.
+ *
+ * A busy repository can have hundreds of linked worktrees. Repeating every
+ * home-contained sibling in both denyRead and denyWrite makes ASRT's inline
+ * macOS Seatbelt profile grow past ARG_MAX even though `denyRead: [homedir()]`
+ * already blocks those paths and the write policy is allow-list based. Keep
+ * explicit rules only for external siblings, which need their own read deny.
+ */
+export function uncoveredSiblingDenyPaths(
+  siblingRoots: readonly string[],
+  broadReadDenyRoot: string = homedir(),
+): string[] {
+  const denyRoot = canonicalizeWorkspaceRoot(broadReadDenyRoot)
+  return siblingRoots.flatMap((siblingRoot) => {
+    const sibling = canonicalizeWorkspaceRoot(siblingRoot)
+    const rel = relative(denyRoot, sibling)
+    const covered = rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
+    return covered ? [] : [sibling, `${sibling}/**`]
+  })
+}
+
+/**
  * A workspace-owned scratch directory the sandbox permits writes to, used to
  * redirect $TMPDIR away from the system temp dir.
  *
@@ -612,9 +634,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'packed-refs'),
       ]
     : []
-  const siblingDeny = internalRoot
-    ? internalRoot.siblingRoots.flatMap((siblingRoot) => [siblingRoot, `${siblingRoot}/**`])
-    : []
+  const siblingDeny = internalRoot ? uncoveredSiblingDenyPaths(internalRoot.siblingRoots) : []
   // Close the "shared project tree" hole: ASRT default-allows all reads, and
   // the base `denyRead: [homedir()]` only covers layouts where the primary
   // checkout lives under $HOME. Linked worktrees under `/tmp`, `/var/folders`,
