@@ -210,6 +210,36 @@ describe('setGitFileDiffModel keeps a diff on screen while the next one computes
       'clearing the viewer releases the attached wrapper too',
     )
   })
+
+  it('skips rebuild when the attached before/after are unchanged', async () => {
+    const host = document.createElement('div')
+    forceSize(host, 400, 300)
+    document.body.append(host)
+    const fake = createFakeDiff()
+    const { monaco, editor, disposed } = fake
+    const diff = { path: 'a.ts', before: 'same-before', after: 'same-after', language: 'ts' }
+
+    let createCount = 0
+    const createModel = monaco.editor.createModel
+    monaco.editor.createModel = (value, language, uri): ReturnType<typeof createModel> => {
+      createCount++
+      return createModel(value, language, uri)
+    }
+
+    const first = setGitFileDiffModel(editor, monaco, diff, host)
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(first), true)
+    assert.equal(createCount, 2)
+
+    const second = setGitFileDiffModel(editor, monaco, diff, host)
+    await flush()
+    // No waitForDiff to finish — a no-op must not start another compute.
+    assert.equal(await withDeadline(second), true)
+    assert.equal(createCount, 2, 'identical refresh must not mint new models')
+    assert.equal(disposed.length, 0, 'identical refresh must not dispose the visible diff')
+    assert.equal(editor.getModel()?.modified.getValue(), 'same-after')
+  })
 })
 
 describe('whenDiffHostVisible', () => {
