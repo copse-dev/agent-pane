@@ -5,6 +5,7 @@ import { getAppIcon } from '../app-icon.ts'
 import { stashPopoutSeed } from '../services/popout-seed-store.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
+import { registerAppWindow } from './app-window-broadcast.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
 
 /** Any right-panel pane can be detached into its own window. */
@@ -80,12 +81,16 @@ export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): Browse
   // first API calls (settings/gh lookups) are not rejected by the frame guard.
   const frame = win.webContents.mainFrame
   registerTrustedAppFrame(frame)
+  // Shared-state pushes (diff queue, file changes) fan out to every app window,
+  // so the detached pane sees the same workspace the main window does (#1704).
+  const unregisterBroadcast = registerAppWindow(win.webContents)
 
   win.once('ready-to-show', () => {
     win.show()
   })
   win.on('closed', () => {
     unregisterTrustedAppFrame(frame)
+    unregisterBroadcast()
     popoutWindow = null
   })
 

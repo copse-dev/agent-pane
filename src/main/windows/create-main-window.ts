@@ -9,6 +9,7 @@ import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/packs/devtools-shortc
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import { MainWindowRegistry, type MainWindowContext } from './main-window-registry.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
+import { registerAppWindow } from './app-window-broadcast.ts'
 
 const mainWindowRegistry = new MainWindowRegistry<BrowserWindow>()
 
@@ -101,11 +102,13 @@ export function createMainWindow(): BrowserWindow {
   const context = mainWindowRegistry.register(win)
   const frame = win.webContents.mainFrame
   registerTrustedAppFrame(frame)
+  const unregisterBroadcast = registerAppWindow(win.webContents)
   win.on('focus', () => {
     mainWindowRegistry.markFocused(context.id)
   })
   win.on('closed', () => {
     unregisterTrustedAppFrame(frame)
+    unregisterBroadcast()
     mainWindowRegistry.unregister(context.id)
   })
   attachWebContentsLockdown(win.webContents)
