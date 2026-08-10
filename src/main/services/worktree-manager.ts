@@ -7,7 +7,11 @@ import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
-import { createWorktreeBackup, getDefaultBranch } from './github/git-service.ts'
+import {
+  createWorktreeBackup,
+  getDefaultBranch,
+  invalidateGitWorkTreeProbe,
+} from './github/git-service.ts'
 import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
 import { stopExecutionRootIndexing } from './search/workspace-indexing.ts'
 
@@ -182,6 +186,11 @@ export function parseWorktreePorcelain(raw: string): WorktreeRecord[] {
 export function releaseWorktreeRoot(executionRoot: string): void {
   unregisterInternalWorkspaceRoot(executionRoot)
   stopExecutionRootIndexing(executionRoot)
+  // The cached `rev-parse` probes for this root are keyed by path, and a
+  // released worktree's path can be reused by the next allocation. A stale
+  // positive is otherwise self-correcting (the following `git status` fails on
+  // its own), but a *reused* path would answer for the wrong checkout.
+  invalidateGitWorkTreeProbe(executionRoot)
 }
 
 function assertOwnerId(label: string, value: string): void {
