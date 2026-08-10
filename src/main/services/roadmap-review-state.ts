@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { getActiveProjectRoot } from './workspace.ts'
+import { copseDataRoot } from './storage/copse-paths.ts'
 
 /**
  * Per-project roadmap review checkpoint. Commit history for the next bulk run is
@@ -31,7 +31,7 @@ export function setRoadmapReviewRootForTest(path: string | null): void {
 }
 
 function reviewBaseDir(): string {
-  return rootOverride ?? join(homedir(), '.copse', 'roadmap-review')
+  return rootOverride ?? join(copseDataRoot(), 'roadmap-review')
 }
 
 function workspaceNamespace(): string {

@@ -8,6 +8,22 @@ every published entry.
 
 ## Unreleased
 
+- Everything Copse stores now lives in one directory. Threads, worktrees and
+  knowledge were already under `~/.copse/`, but projects, settings, API keys,
+  MCP config, custom tools, the browser profiles and the search index sat in
+  Electron's own directory — `~/Library/Application Support/copse-panel/` on
+  macOS — so backing Copse up meant copying two unrelated folders and restoring
+  them as a matched pair, and moving to a new machine meant the same. They now
+  live at `~/.copse/user-data/`, and the first launch after updating moves an
+  existing profile across. A migration that cannot complete logs why and keeps
+  using the old directory, so a failure costs a retry rather than your projects
+  list. `COPSE_DIR` consequently relocates the whole profile for real: it used
+  to move the thread store's per-project directories while the chat store root,
+  knowledge, long tasks, roadmap review, pack snapshots and user hooks stayed
+  behind in `~/.copse`, which left thread reads authorised against a root
+  nothing was being written to. Back up `~/.copse/` and you have all of it —
+  see [`docs/recovery.md`](docs/recovery.md), which is now one directory rather
+  than a checklist.
 - A thread working in its own isolated worktree no longer asks you to approve
   every delete, rename, and new folder. Writes have applied straight to disk
   since the session backup landed, but the three non-content ops still staged
