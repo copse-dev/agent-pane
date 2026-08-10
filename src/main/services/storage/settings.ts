@@ -1,4 +1,5 @@
 import { getSecretCipher, isSecretEncryptionAvailable } from './secret-cipher.ts'
+import { clearKeyReadability, resolveKeyReadability } from './api-key-readability.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
@@ -102,6 +103,29 @@ export function getApiKey(provider: KeyProvider): string | null {
   }
 }
 
+/**
+ * Whether a stored key can actually be decrypted on this machine.
+ *
+ * `safeStorage` binds ciphertext to the OS user's keychain (Keychain, DPAPI, or
+ * the Linux secret service) — never to the profile directory. Restoring a
+ * profile on another machine, or under a different OS user, therefore keeps a
+ * key that {@link hasApiKey} reports as present and {@link getApiKey} cannot
+ * read, so every request fails while the settings UI shows a key on file.
+ *
+ * Returns `null` when no key is stored, and `true` whenever readability cannot
+ * be established rather than guessed at: with no usable cipher — a Linux keyring
+ * that is not unlocked yet — a decrypt failure says nothing about the key, and
+ * reporting it as broken would hide a provider that works minutes later.
+ */
+export function isApiKeyReadable(provider: KeyProvider): boolean | null {
+  if (getExplicitSettingsProfile()) return hasApiKey(provider) ? true : null
+  const raw = cached.get(`apiKey.${provider}`)
+  return resolveKeyReadability(provider, isStoredKey(raw) ? raw : null, {
+    encryptionAvailable: isSecretEncryptionAvailable(),
+    readKey: () => getApiKey(provider),
+  })
+}
+
 function envVarFor(provider: KeyProvider): string | null {
   return PROVIDER_ENV_VARS[provider] ?? null
 }
@@ -156,6 +180,7 @@ export function setApiKey(
     : Buffer.from(trimmed, 'utf8')
   const record: StoredKey = { v: 1, enc: bytes.toString('base64'), plain: !available }
   cached.set(`apiKey.${provider}`, record)
+  clearKeyReadability(provider)
   return { ok: true }
 }
 
@@ -165,6 +190,7 @@ export function deleteApiKey(provider: KeyProvider): void {
     throw new Error('Cannot mutate API keys inside an explicit settings profile.')
   }
   cached.delete(`apiKey.${provider}`)
+  clearKeyReadability(provider)
   const envVar = envVarFor(provider)
   if (envVar) Reflect.deleteProperty(process.env, envVar)
 }
@@ -193,7 +219,11 @@ export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   if (getExplicitSettingsProfile()) return hasApiKey(provider)
   const envVar = envVarFor(provider)
   const environmentKey = envVar ? firstNonEmptyString(process.env[envVar]) : undefined
-  return environmentKey !== undefined || hasApiKey(provider)
+  if (environmentKey !== undefined) return true
+  // Not `hasApiKey`: ciphertext this machine cannot open is not a usable key,
+  // and reporting it as configured hides the "add a key" affordance behind
+  // requests that fail with no explanation (#1708).
+  return isApiKeyReadable(provider) === true
 }
 
 /** Stored key, falling back to the provider's env var when it ships one. */

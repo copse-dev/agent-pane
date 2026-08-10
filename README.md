@@ -112,6 +112,7 @@ Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-
 - [Security policy](SECURITY.md)
 - [Privacy and data flow](docs/privacy-data-flow.md)
 - [Provider retention and training policies](docs/provider-data-policies.md)
+- [Profiles, multiple profiles, and API-key portability](docs/profiles.md)
 - [Backup and recovery](docs/recovery.md)
 - [MCP example configuration](mcp.json.example)
 - [Custom tools](docs/custom-tools.md)

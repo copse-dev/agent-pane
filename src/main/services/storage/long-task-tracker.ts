@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { at } from '@shared/array-utils.ts'
 import { getActiveProjectRoot } from '../workspace.ts'
+import { copseDataRoot } from './copse-paths.ts'
+import { projectStoreNamespaceDir } from './project-namespace.ts'
 
 /**
  * Experimental, opt-in "long-horizon tasks" feature (tracked in
@@ -73,26 +73,12 @@ export function setLongTaskRootForTest(path: string | null): void {
 }
 
 function longTaskBaseDir(): string {
-  return rootOverride ?? join(homedir(), '.copse', 'long-tasks')
-}
-
-function workspaceNamespace(root: string | null = getActiveProjectRoot()): string {
-  if (!root) return 'shared'
-  const name = slugify(basename(root)) || 'workspace'
-  const hash = createHash('sha1').update(root).digest('hex').slice(0, 8)
-  return `${name}-${hash}`
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
+  return rootOverride ?? join(copseDataRoot(), 'long-tasks')
 }
 
 function longTaskFile(root?: string | null): string {
-  return join(longTaskBaseDir(), workspaceNamespace(root), 'tasks.json')
+  const scope = root === undefined ? getActiveProjectRoot() : root
+  return join(projectStoreNamespaceDir(longTaskBaseDir(), scope), 'tasks.json')
 }
 
 /** Load this project's long tasks, oldest first. Missing/corrupt file → []. */

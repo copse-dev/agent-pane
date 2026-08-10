@@ -116,8 +116,8 @@ configuration may pass selected values by design.
 
 The principal local stores are:
 
-- `settings.json` and `config.json` in the `copse-panel` Electron user-data
-  directory for credentials, preferences, providers, projects, and UI state;
+- `settings.json` and `config.json` under `~/.copse/user-data/` (or `COPSE_DIR`)
+  for credentials, preferences, providers, projects, and UI state;
 - `~/.copse/workspace/<projectId>/<threadId>/` (or `COPSE_WORKSPACE_DIR`) for
   conversations, reasoning, tool arguments/results, hook output, images, and
   nested subagents;

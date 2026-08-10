@@ -11,20 +11,21 @@ import {
 } from './copse-paths.ts'
 
 describe('Copse profile paths', () => {
-  it('keeps existing defaults when COPSE_DIR is unset', () => {
+  it('keeps the whole profile under ~/.copse when nothing is overridden', () => {
     const env: NodeJS.ProcessEnv = {}
+    const root = join(homedir(), '.copse')
 
-    assert.equal(copseDataRoot(env), join(homedir(), '.copse'))
-    assert.equal(copseUserDataDir('/legacy/user-data', env), '/legacy/user-data')
-    assert.equal(copseWorkspaceDir(env), join(homedir(), '.copse', 'workspace'))
-    assert.equal(copseWorktreesDir(env), join(homedir(), '.copse', 'worktrees'))
+    assert.equal(copseDataRoot(env), root)
+    assert.equal(copseUserDataDir(env), join(root, 'user-data'))
+    assert.equal(copseWorkspaceDir(env), join(root, 'workspace'))
+    assert.equal(copseWorktreesDir(env), join(root, 'worktrees'))
   })
 
   it('derives the complete profile layout from COPSE_DIR', () => {
     const env = { COPSE_DIR: ' /profiles/secondary ' }
 
     assert.equal(copseDataRoot(env), '/profiles/secondary')
-    assert.equal(copseUserDataDir('/legacy/user-data', env), '/profiles/secondary/user-data')
+    assert.equal(copseUserDataDir(env), '/profiles/secondary/user-data')
     assert.equal(copseWorkspaceDir(env), '/profiles/secondary/workspace')
     assert.equal(copseWorktreesDir(env), '/profiles/secondary/worktrees')
   })
@@ -37,7 +38,7 @@ describe('Copse profile paths', () => {
       COPSE_WORKTREES_DIR: '/custom/worktrees',
     }
 
-    assert.equal(copseUserDataDir('/legacy/user-data', env), '/custom/user-data')
+    assert.equal(copseUserDataDir(env), '/custom/user-data')
     assert.equal(copseWorkspaceDir(env), '/custom/workspace')
     assert.equal(copseWorktreesDir(env), '/custom/worktrees')
   })
@@ -50,9 +51,19 @@ describe('Copse profile paths', () => {
       COPSE_WORKTREES_DIR: '   ',
     }
 
-    assert.equal(copseUserDataDir('/legacy/user-data', env), '/profiles/secondary/user-data')
+    assert.equal(copseUserDataDir(env), '/profiles/secondary/user-data')
     assert.equal(copseWorkspaceDir(env), '/profiles/secondary/workspace')
     assert.equal(copseWorktreesDir(env), '/profiles/secondary/worktrees')
+  })
+
+  // The chat store used to resolve through its own `chatStoreDir` that ignored
+  // COPSE_DIR while `projectStoreDir` honoured it, so a COPSE_DIR profile wrote
+  // threads to one root and authorised reads against another.
+  it('keeps the workspace store and its project dirs on one root under COPSE_DIR', () => {
+    const env = { COPSE_DIR: '/profiles/secondary' }
+
+    assert.equal(copseWorkspaceDir(env), '/profiles/secondary/workspace')
+    assert.equal(projectStoreDir('project-1', env), '/profiles/secondary/workspace/project-1')
   })
 })
 
