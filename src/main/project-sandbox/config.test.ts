@@ -17,6 +17,7 @@ import {
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
   sandboxNetworkConfig,
+  uncoveredSiblingDenyPaths,
   workspaceMandatoryWriteDenyPaths,
   workspaceSandboxOverlay,
   workspaceTmpDir,
@@ -131,6 +132,22 @@ describe('resolveNodeToolchainAllowRead', () => {
 })
 
 describe('workspaceSandboxOverlay', () => {
+  it('does not expand home-contained sibling worktrees into the sandbox profile', () => {
+    const home = '/Users/copse-test'
+    const siblings = Array.from({ length: 100 }, (_, index) =>
+      join(home, '.copse', 'worktrees', 'project', `thread-${String(index)}`),
+    )
+    const prefixCollision = `${home}-other/worktree`
+    const external = '/private/tmp/copse-external-worktree'
+
+    assert.deepEqual(uncoveredSiblingDenyPaths([...siblings, prefixCollision, external], home), [
+      prefixCollision,
+      `${prefixCollision}/**`,
+      external,
+      `${external}/**`,
+    ])
+  })
+
   it('denies all network for the auto-run, sandbox-contained path (M6)', () => {
     // Auto-run commands reach the seatbelt only through this overlay; the
     // classifier presents them as "Network: denied", so the contained policy
