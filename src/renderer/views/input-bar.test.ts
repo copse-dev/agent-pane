@@ -1135,6 +1135,13 @@ describe('input bar browse button', () => {
   })
 })
 
+/** Index into a NodeList-derived array with a failure message instead of `!`. */
+function nth<T>(items: readonly T[], index: number): T {
+  const value = items[index]
+  assert.ok(value, `expected an element at index ${String(index)}`)
+  return value
+}
+
 describe('input bar attachment previews', () => {
   before(patchPreviewDialog)
 
@@ -1311,6 +1318,85 @@ describe('input bar image compatibility', () => {
     assert.equal(composer.textContent, 'Describe this screenshot')
     assert.equal(host.querySelectorAll('.image-chip').length, 1)
     assert.equal(warning.hidden, true)
+  })
+
+  it('chooses image fidelity per chip and sends it on that image only', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      // Image-capable, so the compatibility warning does not intercept the send.
+      threads: [{ ...thread(), model: 'openrouter:anthropic/claude-sonnet' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    // The chosen fidelity rides on the agent run payload, not on the stored
+    // message: the transcript keeps images as bare data URLs.
+    let dispatched = ''
+    const api = imageModelApi()
+    api.agent.run = async (_projectId, _threadId, prompt): Promise<void> => {
+      dispatched = prompt
+    }
+    mountInputBar(host, store, api)
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'what broke?'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    const handlers = getPromptAttachmentHandlers()
+    handlers?.attachImage('data:image/png;base64,trace', 'image/png')
+    handlers?.attachImage('data:image/png;base64,frame', 'image/png')
+    await flush()
+
+    const chips = [...host.querySelectorAll<HTMLElement>('.image-chip')]
+    assert.equal(chips.length, 2)
+    // Untouched attachments stay at auto and carry no badge.
+    assert.deepEqual(
+      chips.map((c) => c.dataset['detail']),
+      ['auto', 'auto'],
+    )
+
+    nth(chips, 0).dispatchEvent(
+      new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+    )
+    const items = [...document.querySelectorAll<HTMLButtonElement>('.context-menu-item')]
+    assert.deepEqual(
+      items.map((b) => b.textContent.trim()),
+      [
+        '✓ Auto detail (provider decides)',
+        'Low detail — cheapest, text may be unreadable',
+        'High detail — full fidelity, most tokens',
+      ],
+    )
+    nth(items, 2).click()
+    await flush()
+
+    assert.equal(nth(chips, 0).dataset['detail'], 'high')
+    assert.equal(nth(chips, 1).dataset['detail'], 'auto', 'the other image is untouched')
+
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    await flush()
+    await flush()
+
+    const parsed: unknown = JSON.parse(dispatched)
+    const content =
+      parsed !== null && typeof parsed === 'object' && 'content' in parsed ? parsed.content : null
+    assert.ok(Array.isArray(content))
+    assert.deepEqual(
+      content.filter(
+        (part: unknown) =>
+          part !== null && typeof part === 'object' && 'type' in part && part.type === 'image',
+      ),
+      [
+        { type: 'image', dataUrl: 'data:image/png;base64,trace', detail: 'high' },
+        // `auto` is omitted rather than sent, so an untouched image is byte-for-byte
+        // the content Copse has always dispatched.
+        { type: 'image', dataUrl: 'data:image/png;base64,frame' },
+      ],
+    )
   })
 
   it('can continue immediately by sending the prompt without its image', async () => {
