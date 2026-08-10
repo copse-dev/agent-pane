@@ -634,6 +634,11 @@ export interface ApiClient {
       handler: (status: import('@shared/types/index-status.ts').WorkspaceIndexStatus) => void,
     ) => () => void
   }
+  ports: {
+    list: () => Promise<import('../main/services/ports/ports-registry.ts').PortScanResult>
+    /** Refuses ports Copse did not start; `reason` says why when `killed` is false. */
+    kill: (port: number) => Promise<{ killed: boolean; reason?: string }>
+  }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
     create: (
