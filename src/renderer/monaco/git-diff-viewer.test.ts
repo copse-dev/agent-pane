@@ -220,7 +220,9 @@ describe('setGitFileDiffModel keeps a diff on screen while the next one computes
     const diff = { path: 'a.ts', before: 'same-before', after: 'same-after', language: 'ts' }
 
     let createCount = 0
-    const createModel = monaco.editor.createModel
+    // Bound eagerly: the spy below replaces `monaco.editor.createModel`, so the
+    // original has to be captured now rather than looked up at call time.
+    const createModel = monaco.editor.createModel.bind(monaco.editor)
     monaco.editor.createModel = (value, language, uri): ReturnType<typeof createModel> => {
       createCount++
       return createModel(value, language, uri)
