@@ -188,10 +188,6 @@ export function mountGitChangesPane(
   let sessionBackup: SessionBackup | null = null
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
-  // The proposed diff currently attached to Monaco, so a re-entrant sync that
-  // resolves to identical content can skip the rebuild entirely. Cleared
-  // whenever the editor's model is torn down or replaced by a git diff.
-  let renderedProposed: GitFileDiff | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshRequestId = 0
   const proposedDiffCachesByOwner = new Map<string, Map<string, ActiveDiff>>()
@@ -419,16 +415,6 @@ export function mountGitChangesPane(
     rejectBtn.hidden = true
   }
 
-  function sameAsRendered(next: GitFileDiff): boolean {
-    return (
-      renderedProposed !== null &&
-      renderedProposed.path === next.path &&
-      renderedProposed.before === next.before &&
-      renderedProposed.after === next.after &&
-      renderedProposed.language === next.language
-    )
-  }
-
   async function showProposedDiff(view: ActiveDiff): Promise<void> {
     const requestId = ++selectRequestId
     pendingSelect = { kind: 'proposed', path: view.path }
@@ -456,15 +442,6 @@ export function mountGitChangesPane(
       after: view.after,
       language: view.language,
     }
-    // Already on screen, byte for byte: nothing to rebuild. `refresh()` re-enters
-    // here on every fs change and panel toggle, and rebuilding identical models
-    // is not free — it disposes and recreates both Monaco models, waits on a
-    // fresh diff computation, and re-runs revealFirstDiffChange, which throws the
-    // reader's scroll position back to the first hunk mid-review (#1704).
-    // Bumping `selectRequestId` above already cancelled any in-flight attach, so
-    // returning here cannot leave a superseded diff to land on top of this one.
-    if (sameAsRendered(proposed)) return
-
     // Store and IPC events can request the same/new proposed diff several times
     // while Monaco is still computing the previous view-model. Keep all diff
     // work on one queue and let only the latest request attach its model.
@@ -480,14 +457,13 @@ export function mountGitChangesPane(
         // the editor while Changes is still closed (0×0) leaves a blank viewer
         // after the panel opens, and a hung visibility wait used to stall this
         // shared queue so later file clicks never attached a model.
-        const attached = await setGitFileDiffModel(
+        await setGitFileDiffModel(
           () => ensureDiffEditor(),
           requireMonaco(),
           proposed,
           viewerRoot,
           isCurrent,
         )
-        if (attached) renderedProposed = proposed
       })
     await diffLoadQueue
   }
@@ -574,8 +550,6 @@ export function mountGitChangesPane(
           return
         }
         emptyState.hidden = true
-        // A git diff takes the editor over from any proposed one.
-        renderedProposed = null
         if (isImageDiff(diff)) {
           diffWrap.hidden = true
           imageWrap.hidden = false
@@ -603,7 +577,6 @@ export function mountGitChangesPane(
   function clearViewer(): void {
     selectRequestId++
     pendingSelect = null
-    renderedProposed = null
     hideApprovalButtons()
     emptyState.hidden = false
     emptyState.textContent = 'Select a changed file'

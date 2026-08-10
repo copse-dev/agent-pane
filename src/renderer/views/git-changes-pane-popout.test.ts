@@ -284,11 +284,12 @@ describe('#1704 Changes in a pop-out window', () => {
   })
 })
 
-describe('#1704 proposed diff is not rebuilt for identical content', () => {
+describe('proposed diff is not rebuilt for identical content', () => {
   it('skips the Monaco rebuild when a refresh resolves to the same diff', async () => {
-    // `refresh()` re-enters selectProposed on every fs change and panel toggle.
-    // Rebuilding identical models re-runs revealFirstDiffChange, throwing the
-    // reader's scroll back to the first hunk mid-review.
+    // The skip itself lives in setGitFileDiffModel (#1721). This covers it from
+    // the pane's side: `refresh()` re-enters selectProposed on every fs change
+    // and panel toggle, and a rebuild there would re-run revealFirstDiffChange,
+    // throwing the reader's scroll back to the first hunk mid-review.
     const store = createStore({
       activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
