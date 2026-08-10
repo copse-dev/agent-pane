@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { runCommand } from './command-runner.ts'
 import {
   COMMAND_OUTPUT_MAX_BYTES,
@@ -67,6 +70,21 @@ describe('runCommand git wrapper', () => {
     })
     assert.equal(result.code, 0, result.stderr || result.stdout)
     assert.equal(result.stdout.trim(), 'true')
+  })
+})
+
+describe('runCommand missing cwd', () => {
+  it('rejects with the missing directory, not "spawn <shell> ENOENT"', async () => {
+    const missing = await mkdtemp(join(tmpdir(), 'copse-runcommand-cwd-'))
+    await rm(missing, { recursive: true, force: true })
+    await assert.rejects(
+      runCommand(process.execPath, ['-e', ''], { cwd: missing, unsandboxed: true }),
+      (err: Error) => {
+        assert.match(err.message, /Working directory no longer exists/)
+        assert.ok(err.message.includes(missing))
+        return true
+      },
+    )
   })
 })
 
