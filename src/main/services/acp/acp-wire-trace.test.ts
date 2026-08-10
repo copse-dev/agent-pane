@@ -260,9 +260,9 @@ describe('acp wire trace', () => {
     })
     assert.deepEqual(update['vendorExtension'], { deeply: { nested: [1, 'two', null, true] } })
 
-    // The point of tracing the transport rather than the parsed update: by the
-    // time Copse has a StreamChunk, the label is derived from `title` and the
-    // programmatic name and vendor fields are gone. The trace still has them.
+    // The point of tracing the transport rather than the parsed update: Copse
+    // uses the programmatic name to replace a generic title, but transport-only
+    // metadata and vendor extensions are still gone. The trace keeps them.
     const chunk = sessionUpdateToStreamChunk({
       sessionUpdate: 'tool_call',
       toolCallId: 'call-1',
@@ -272,8 +272,9 @@ describe('acp wire trace', () => {
       rawInput: { team: 'ENG' },
     })
     assert.ok(chunk !== null && chunk.type === 'tool_call')
-    assert.equal(chunk.toolCall.name, 'MCP: tool')
-    assert.equal(JSON.stringify(chunk).includes('mcp__linear__create_issue'), false)
+    assert.equal(chunk.toolCall.name, 'mcp__linear__create_issue')
+    assert.equal(JSON.stringify(chunk).includes('cursor.dev/serverName'), false)
+    assert.equal(JSON.stringify(chunk).includes('vendorExtension'), false)
   })
 
   it('records a complete session/request_permission payload', async () => {
@@ -593,12 +594,13 @@ describe('acp wire trace (session pool integration)', () => {
     process.env['COPSE_DEBUG_ACP_UPDATES'] = '1'
     const chunks = await runOneTurn()
 
-    // What the user sees today: the generic label, and no trace of the real
-    // tool identity anywhere in the normalized stream.
+    // What the user sees today: the programmatic identity replaces the generic
+    // label, while transport-only vendor fields stay out of the normalized stream.
     const toolChunk = chunks.find((chunk) => chunk.type === 'tool_call')
     assert.ok(toolChunk)
-    assert.equal(toolChunk.toolCall.name, 'MCP: tool')
-    assert.equal(JSON.stringify(chunks).includes('mcp__linear__create_issue'), false)
+    assert.equal(toolChunk.toolCall.name, 'mcp__linear__create_issue')
+    assert.equal(JSON.stringify(chunks).includes('cursor.dev/serverName'), false)
+    assert.equal(JSON.stringify(chunks).includes('vendorExtension'), false)
 
     // What the diagnostic recovers, from the same turn.
     const traced = join(root, 'proj-1', 'thread-1', ACP_WIRE_TRACE_FILE)
@@ -622,7 +624,7 @@ describe('acp wire trace (session pool integration)', () => {
     // Identical rendering — the diagnostic changes nothing about the turn.
     const toolChunk = chunks.find((chunk) => chunk.type === 'tool_call')
     assert.ok(toolChunk)
-    assert.equal(toolChunk.toolCall.name, 'MCP: tool')
+    assert.equal(toolChunk.toolCall.name, 'mcp__linear__create_issue')
     assert.equal(existsSync(join(root, 'proj-1', 'thread-1', ACP_WIRE_TRACE_FILE)), false)
   })
 })
