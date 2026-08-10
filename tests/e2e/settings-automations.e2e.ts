@@ -81,7 +81,7 @@ describe('settings automations plugin', function () {
     assert.match(await detail.getText(), /1 live worktree max/i)
     assert.match(await detail.getText(), /Normal tool permission prompts still apply/i)
     await expect(detail.$('.automation-run-btn')).toBeEnabled()
-    await saveElementScreenshot('.automation-pack-settings', 'settings-automations.png')
+    await saveElementScreenshot('.automation-plugin-settings', 'settings-automations.png')
 
     // Capture the editor separately so the settings dialog's sticky global
     // footer cannot cover a tall schedule form in the reference image.
