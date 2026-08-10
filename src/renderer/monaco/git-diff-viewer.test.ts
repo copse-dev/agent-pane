@@ -220,7 +220,11 @@ describe('setGitFileDiffModel keeps a diff on screen while the next one computes
     const diff = { path: 'a.ts', before: 'same-before', after: 'same-after', language: 'ts' }
 
     let createCount = 0
-    const createModel = monaco.editor.createModel
+    // Bound, not a bare reference: the property is reassigned on the next line,
+    // so the original has to be captured — and `@typescript-eslint/unbound-method`
+    // rejects capturing a method without its receiver. The fake's `createModel`
+    // is an arrow that never reads `this`, so this is behaviour-preserving.
+    const createModel = monaco.editor.createModel.bind(monaco.editor)
     monaco.editor.createModel = (value, language, uri): ReturnType<typeof createModel> => {
       createCount++
       return createModel(value, language, uri)
