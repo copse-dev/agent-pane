@@ -14,6 +14,7 @@ import { FS_WATCH_MAX_CONTENT_BYTES } from '../services/fs-watch-limits.ts'
 import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { z } from 'zod'
+import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 
 const watchers = new Map<string, fs.FSWatcher>()
 const watcherArgs = z.tuple([zProjectId, zThreadId, zPathString])
@@ -37,7 +38,7 @@ export function initFsWatcher(win: BrowserWindow): void {
     const w = fs.watch(abs, { persistent: false }, () => {
       clearTimeout(debounce)
       debounce = setTimeout(() => {
-        void notifyFileChanged(win, projectId, threadId, rel, abs, root)
+        void notifyFileChanged(projectId, threadId, rel, abs, root)
       }, 200)
     })
     watchers.set(key, w)
@@ -54,7 +55,6 @@ export function initFsWatcher(win: BrowserWindow): void {
 }
 
 async function notifyFileChanged(
-  win: BrowserWindow,
   projectId: string,
   threadId: string,
   relPath: string,
@@ -70,11 +70,11 @@ async function notifyFileChanged(
     const st = await fsp.stat(absPath)
     if (!st.isFile()) return
     if (st.size > FS_WATCH_MAX_CONTENT_BYTES) {
-      win.webContents.send('fs:changed', projectId, threadId, relPath, null)
+      broadcastToAppWindows('fs:changed', projectId, threadId, relPath, null)
       return
     }
     const content = await gatewayReadFile(absPath, root)
-    win.webContents.send('fs:changed', projectId, threadId, relPath, content)
+    broadcastToAppWindows('fs:changed', projectId, threadId, relPath, content)
   } catch {
     /* ignore missing/unreadable files */
   }

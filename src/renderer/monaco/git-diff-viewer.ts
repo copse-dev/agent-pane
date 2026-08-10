@@ -148,6 +148,7 @@ export function disposeDiffModels(diffEditor: GitDiffEditor): void {
   const oldModels = diffEditor.getModel()
   const oldViewModel = attachedViewModels.get(diffEditor)
   attachedViewModels.delete(diffEditor)
+  attachedDiffIds.delete(diffEditor)
   if (!oldModels && !oldViewModel) return
   diffEditor.setModel(null)
   oldViewModel?.dispose()
@@ -177,9 +178,20 @@ export function disposeDiffModels(diffEditor: GitDiffEditor): void {
  * re-enter here continuously while a pop-out Changes window (no fs:changed IPC)
  * stays put. Rebuilding would only replay the hideUnchangedRegions flash.
  */
+/**
+ * Identity of the diff each editor currently displays. The models themselves
+ * only carry text, so content equality alone cannot tell "the same file,
+ * refreshed" from "a different file that happens to read identically" — and
+ * short-circuiting on the latter would leave the previous file's models, and its
+ * language, on screen under the new selection.
+ */
+const attachedDiffIds = new WeakMap<GitDiffEditor, { path: string; language: string }>()
+
 function isSameAttachedDiff(diffEditor: GitDiffEditor, diff: GitFileDiff): boolean {
   const attached = diffEditor.getModel()
   if (!attached) return false
+  const id = attachedDiffIds.get(diffEditor)
+  if (id?.path !== diff.path || id.language !== diff.language) return false
   return attached.original.getValue() === diff.before && attached.modified.getValue() === diff.after
 }
 
@@ -225,6 +237,7 @@ export async function setGitFileDiffModel(
   const previousViewModel = attachedViewModels.get(diffEditor)
   diffEditor.setModel(viewModel)
   attachedViewModels.set(diffEditor, viewModel)
+  attachedDiffIds.set(diffEditor, { path: diff.path, language: diff.language })
   previousViewModel?.dispose()
   previousModels?.original.dispose()
   previousModels?.modified.dispose()
