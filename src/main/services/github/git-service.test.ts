@@ -15,6 +15,7 @@ import {
   getGitShowText,
   getGitStatus,
   getGitWorkingFileDiff,
+  invalidateGitWorkTreeProbe,
   isInsideGitWorkTree,
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
@@ -175,6 +176,74 @@ describe('classifyGitBlob (#130)', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('work-tree probe cache', { skip: !gitOk && 'git not installed' }, () => {
+  let dir = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: dir })
+
+  before(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'copse-git-worktree-probe-'))
+    restore = setWorkspaceRootForTest(dir)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    invalidateGitWorkTreeProbe()
+    restore?.()
+    if (dir) await rm(dir, { recursive: true, force: true })
+  })
+
+  it('does not cache a negative, so a later git init is seen', async () => {
+    // The whole reason only positives are cached: a plain directory becoming a
+    // repo is an ordinary thing for an agent to do, and caching "not a work
+    // tree" would stranded the workspace as permanently git-less.
+    assert.equal(await isInsideGitWorkTree(dir), false)
+
+    git('init', '-q')
+
+    assert.equal(await isInsideGitWorkTree(dir), true)
+  })
+
+  it('serves getGitStatus from cache, and a stale entry still yields null', async () => {
+    git('init', '-q')
+    assert.notEqual(await getGitStatus(dir), null)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+
+    // The cached probe short-circuits, so `getGitStatus` goes straight to
+    // `git status` — which fails on its own and produces the same null the live
+    // probe would have. That backstop is what makes caching the positive safe.
+    assert.equal(await getGitStatus(dir), null)
+  })
+
+  it('never serves isInsideGitWorkTree from cache, so a vanished checkout says so', async () => {
+    // The bare boolean has no failing follow-up command to correct a stale yes,
+    // and callers gate real work on it — #1686 pins the deleted-folder case.
+    git('init', '-q')
+    assert.equal(await isInsideGitWorkTree(dir), true)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+
+    assert.equal(await isInsideGitWorkTree(dir), false)
+  })
+
+  it('evicts a stale entry when a live probe observes the negative', async () => {
+    git('init', '-q')
+    assert.notEqual(await getGitStatus(dir), null)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+    // The live probe both answers honestly and heals the cache behind it, so a
+    // later `git init` at the same path is not read through the old entry.
+    assert.equal(await isInsideGitWorkTree(dir), false)
+
+    git('init', '-q')
+
+    assert.notEqual(await getGitStatus(dir), null)
+  })
+})
 
 describe('getGitChangeStats', { skip: !gitOk && 'git not installed' }, () => {
   let repo = ''

@@ -195,6 +195,14 @@ be backed up (dirty seeding puts the user's work there), or when the target
 changed on disk since Copse last touched it. Issue #699 settled those as genuine
 fallbacks rather than friction, and worktree mode does not reopen that.
 
+`mkdir` is the one op exempt from the git half of that. Every fallback above
+protects content from being destroyed — the backup, the unowned-changes scan, the
+stale-content comparison — and creating a directory destroys nothing: it cannot
+overwrite a file, cannot conflict, and an empty directory has no git-status
+footprint. It still respects the pending queue, so it never lands ahead of diffs
+the user is reviewing. The sweep is left to the first op that could actually lose
+work, which is where its three subprocesses are worth paying for.
+
 The state cache mirrors `root`: `DiffQueueState.checkoutMode` is refreshed from
 the execution context whenever one is bound, because the ACP native-tool bridge
 binds only the owner and leaves `getThreadExecutionContext()` null on its chain.
