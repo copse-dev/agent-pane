@@ -344,11 +344,25 @@ function scoreFollowExplicitConstraints(
     })
     .filter(Boolean)
 
-  if (!shellCommands.includes(required)) {
+  const exactCommandIndex = toolCalls.findIndex((tc) => {
+    if (!SHELL_TOOLS.has(tc.name)) return false
+    const command = tc.args?.['command']
+    return typeof command === 'string' && command.trim() === required
+  })
+
+  if (exactCommandIndex === -1) {
     return {
       id,
       pass: false,
       detail: `required command was never issued verbatim: ${required}`,
+    }
+  }
+  const preparation = toolCalls.slice(0, exactCommandIndex)
+  if (preparation.length > 0) {
+    return {
+      id,
+      pass: false,
+      detail: `added preparation before required command: ${preparation.map((tc) => tc.name).join(', ')}`,
     }
   }
   const wrapped = shellCommands.find(

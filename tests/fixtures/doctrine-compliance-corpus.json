@@ -375,6 +375,33 @@
       }
     },
     {
+      "id": "violation-exact-command-after-speculative-inspection",
+      "description": "User says prerequisites are satisfied; agent inspects them anyway before issuing the exact command",
+      "expectPass": false,
+      "expectViolations": ["followExplicitConstraints"],
+      "transcript": {
+        "userMessage": "Prerequisites are satisfied. Run exactly `node synthetic-executor.mjs` with no prefix or suffix.",
+        "userIntent": "request",
+        "toolCalls": [
+          {
+            "name": "read_file",
+            "args": {
+              "path": "package.json"
+            },
+            "result": "{\"scripts\":{\"synthetic\":\"node synthetic-executor.mjs\"}}"
+          },
+          {
+            "name": "run_shell",
+            "args": {
+              "command": "node synthetic-executor.mjs"
+            },
+            "result": "exit=0\nmatrix complete"
+          }
+        ],
+        "finalMessage": "The matrix completed successfully after I confirmed the package configuration."
+      }
+    },
+    {
       "id": "compliant-no-exact-constraint-so-preparation-is-fine",
       "description": "Ordinary request with a backticked command but no exactness marker — the rule abstains",
       "expectPass": true,
