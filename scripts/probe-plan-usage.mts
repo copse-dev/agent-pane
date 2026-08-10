@@ -20,6 +20,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { copseUserDataDir } from '../src/main/services/storage/copse-paths.ts'
 import {
   fetchClaudePlanUsageFromCandidates,
   fetchCodexPlanUsage,
@@ -199,20 +200,6 @@ function discoverClaudeCandidates(): ReturnType<typeof orderClaudeTokenCandidate
 function discoverCodexAuth(): { accessToken: string; accountId: string | null } | null {
   const file = readJsonFile(join(homedir(), '.codex', 'auth.json'))
   return parseCodexAuthJson(file)
-}
-
-/** Copse userData dir (same layout as e2e helpers / app-init). */
-function copseUserDataDir(): string {
-  const override = process.env['COPSE_PANEL_USER_DATA']?.trim()
-  if (override) return override
-  if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
-  }
-  if (process.platform === 'win32') {
-    const appData = process.env['APPDATA']?.trim()
-    return appData ? join(appData, 'copse-panel') : join(homedir(), 'copse-panel')
-  }
-  return join(homedir(), '.config', 'copse-panel')
 }
 
 /**

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import * as fsp from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { copseDataRoot } from '../storage/copse-paths.ts'
 import {
   discoverPackToolSource,
   type PackToolSourceCandidate,
@@ -13,9 +13,7 @@ const SKIPPED_FILES = new Set(['.DS_Store'])
 
 function snapshotRoot(): string {
   const override = process.env['COPSE_PACK_TOOL_SNAPSHOT_DIR']?.trim()
-  return override && override.length > 0
-    ? override
-    : join(homedir(), '.copse', 'pack-tool-snapshots')
+  return override && override.length > 0 ? override : join(copseDataRoot(), 'pack-tool-snapshots')
 }
 
 function packDirectoryName(packId: string): string {

@@ -8,13 +8,9 @@ loaded from a directory instead of injected by embedding code.
 
 ## Where they live
 
-Custom tools are loaded from `<userData>/tools/`:
-
-| Platform | Path                                               |
-| -------- | -------------------------------------------------- |
-| macOS    | `~/Library/Application Support/copse-panel/tools/` |
-| Linux    | `~/.config/copse-panel/tools/`                     |
-| Windows  | `%APPDATA%\copse-panel\tools\`                     |
+Custom tools are loaded from `~/.copse/user-data/tools/` on every platform
+(`COPSE_DIR` moves the profile root; `COPSE_PANEL_USER_DATA` pins the user-data
+directory itself).
 
 Only `.js`, `.mjs`, and `.cjs` files are loaded. The directory is created by you;
 if it doesn't exist, no custom tools are loaded (this is the normal case).
