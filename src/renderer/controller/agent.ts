@@ -34,8 +34,8 @@ import {
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
+import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
-import { syncFilesPaneDom } from './panels.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
@@ -117,29 +117,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     syncAgentActivity(store, tid, get(tid).writing)
   }
 
-  type QueuedDiffSummary = { path: string; language: string }
-  const diffQueuesByOwner = new Map<string, QueuedDiffSummary[]>()
-  const ownerKey = (projectId: string, threadId: string): string =>
-    JSON.stringify([projectId, threadId])
-  const isActiveOwner = (projectId: string, threadId: string): boolean => {
-    const current = store.getState()
-    return current.activeProjectId === projectId && current.activeThreadId === threadId
-  }
-  const publishActiveQueue = (entries: QueuedDiffSummary[]): void => {
-    const { activeDiff } = store.getState()
-    const stillQueued =
-      activeDiff && entries.some((entry) => entry.path === activeDiff.path) ? activeDiff : null
-    store.setState({
-      stagedDiffs: entries,
-      activeDiff: entries.length === 0 ? null : stillQueued,
-    })
-    // `agent:show_diff` owns opening Changes and arrives before this queue in
-    // the real edit path. A queue-only update is metadata: forcing the panel
-    // open here makes background/deferred proposals construct Monaco while the
-    // user is still watching another surface.
-    store.emit('staged_diffs_changed')
-    store.emit('panel_changed')
-  }
+  // Diff IPC → store. Shared with pop-out windows, which run this wiring alone
+  // because they deliberately do not start the rest of the agent controller.
+  const detachDiffState = attachDiffState(store, api, { revealOnShowDiff: true })
 
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)
@@ -459,23 +439,6 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     }
   })
 
-  api.diff.onShowDiff((projectId, threadId, path, before, after, language) => {
-    if (!isActiveOwner(projectId, threadId)) return
-    store.setState({
-      activeDiff: { path, before, after, language },
-      rightPanelMode: 'changes',
-      filesPaneOpen: true,
-    })
-    // Layout first (unhide pane + Changes hosts), then tell the pane to sync.
-    syncFilesPaneDom(store)
-    store.emit('right_panel_mode_changed')
-    store.emit('files_pane_changed')
-    store.emit('panel_changed')
-  })
-
-  // Diff IPC → store: `agent:show_diff` sets activeDiff; `diff:queued` updates
-  // stagedDiffs (path/language only). The Changes panel caches full payloads from
-  // show_diff for multi-file switching; approve/reject use diff:* IPC handlers.
   // C2: an async hook's queued message (decision 4) arrives here and lands in the
   // thread's pending queue with its origin + epoch. `enqueueHookMessage` owns the
   // staleness check (decision 16): a stale send-now is downgraded to held instead
@@ -489,34 +452,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     })
   })
 
-  api.diff.onQueued((projectId, threadId, entries) => {
-    diffQueuesByOwner.set(ownerKey(projectId, threadId), entries)
-    if (isActiveOwner(projectId, threadId)) publishActiveQueue(entries)
-  })
-
-  let publishedOwnerKey = ownerKey(
-    store.getState().activeProjectId ?? '',
-    store.getState().activeThreadId ?? '',
-  )
-  const syncDiffOwner = (): void => {
-    const { activeProjectId, activeThreadId } = store.getState()
-    const nextOwnerKey = ownerKey(activeProjectId ?? '', activeThreadId ?? '')
-    if (nextOwnerKey === publishedOwnerKey) return
-    publishedOwnerKey = nextOwnerKey
-    const entries =
-      activeProjectId && activeThreadId
-        ? (diffQueuesByOwner.get(ownerKey(activeProjectId, activeThreadId)) ?? [])
-        : []
-    publishActiveQueue(entries)
-  }
-  const unsubDiffWorkspace = store.on('workspace_changed', syncDiffOwner)
-  const unsubDiffThreads = store.on('threads_changed', syncDiffOwner)
-
   return () => {
     unsub()
     unsubHookQueue()
-    unsubDiffWorkspace()
-    unsubDiffThreads()
+    detachDiffState()
   }
 }
 

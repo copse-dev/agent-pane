@@ -335,6 +335,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('diff:rejectAll', projectId, threadId),
     content: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('diff:content', projectId, threadId, path),
+    queue: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('diff:queue', projectId, threadId),
     onShowDiff: (
       handler: (
         projectId: string,

@@ -100,6 +100,10 @@ export interface IpcInvokeMap {
   }
   'diff:approveAll': { args: [projectId: string, threadId: string]; result: undefined }
   'diff:rejectAll': { args: [projectId: string, threadId: string]; result: undefined }
+  'diff:queue': {
+    args: [projectId: string, threadId: string]
+    result: { path: string; language: string }[]
+  }
 
   // Approval gate (shell / MCP)
   'approval:respond': {

@@ -217,6 +217,11 @@ export interface ApiClient {
     approveAll: (projectId: string, threadId: string) => Promise<void>
     rejectAll: (projectId: string, threadId: string) => Promise<void>
     content: (projectId: string, threadId: string, path: string) => Promise<ActiveDiff | null>
+    /** Current proposed-diff queue for this thread — the pull counterpart to `onQueued`. */
+    queue: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/types/state.ts').StagedDiffEntry[]>
     onShowDiff: (
       handler: (
         projectId: string,
