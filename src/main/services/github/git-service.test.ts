@@ -13,7 +13,9 @@ import {
   getGitFileDiff,
   getGitPromptState,
   getGitShowText,
+  getGitStatus,
   getGitWorkingFileDiff,
+  isInsideGitWorkTree,
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
@@ -824,5 +826,30 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
 
     assert.equal(await getCurrentCommitHash(), null)
     assert.deepEqual(await getGitPromptState(), { startingCommit: null, dirty: false })
+  })
+})
+
+describe('git reads on a deleted checkout', { skip: !gitOk && 'git not installed' }, () => {
+  let restore: (() => void) | undefined
+
+  afterEach(() => {
+    setGitAvailableForTest(null)
+    restore?.()
+    restore = undefined
+  })
+
+  it('degrades to a failed read instead of an unhandled spawn rejection', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'copse-git-deleted-checkout-'))
+    spawnSync('git', ['init', '-q'], { cwd: repo })
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+    assert.equal(await isInsideGitWorkTree(repo), true)
+
+    // A checkout can vanish under a running app while the persisted project path
+    // that names it keeps reaching git — the folder is gone, not the shell, so
+    // the inspection must answer "no repository" rather than reject.
+    await rm(repo, { recursive: true, force: true })
+    assert.equal(await isInsideGitWorkTree(repo), false)
+    assert.equal(await getGitStatus(repo), null)
   })
 })
