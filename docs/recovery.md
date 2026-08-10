@@ -25,9 +25,11 @@ Back up each project repository separately, through its normal version-control
 and backup process. Copse's app-data backup is not a backup of the project
 itself.
 
-Stored API keys are tied to the operating system's secure-storage account when
-encrypted and may not decrypt after moving to another machine or user. Keep a
-separate secure record of credentials and be prepared to enter them again.
+Stored API keys are sealed with the operating system's secure storage, which
+belongs to the OS user account rather than to the Copse profile, so they do not
+decrypt after a restore onto another machine or user. Keep a separate secure
+record of credentials and expect to enter them again; `/checkup` reports each
+key it cannot decrypt. See [profiles.md](profiles.md#what-profiles-do-not-isolate-api-keys).
 
 Browser profiles and the semantic-search index are the bulk of `user-data/` and
 are not required to reconstruct threads. Excluding them keeps a backup small, at
@@ -35,7 +37,8 @@ the cost of losing browser sessions and rebuilding the search index on restore.
 
 The granular overrides `COPSE_WORKSPACE_DIR`, `COPSE_WORKTREES_DIR`, and
 `COPSE_PANEL_USER_DATA` each move one directory out of this root. If you set
-any of them, back up that location too.
+any of them, back up that location too. See [profiles.md](profiles.md) for
+running more than one profile and for what a profile does not carry with it.
 
 ### Profiles from before the single-root layout
 
@@ -88,8 +91,7 @@ current data directories for investigation, and report the problem through
 [../SUPPORT.md](../SUPPORT.md). Recovery is a corrective newer release.
 
 To restore a pre-update backup, install the latest supported release, quit it,
-replace the conversation store and Electron user-data directory with the matched
-backup copies, then launch again. Do not combine individual files from different
+replace `~/.copse/` with the backup copy, then launch again. Do not combine individual files from different
 backup times unless the on-disk format documentation explicitly permits it.
 
 Reinstalling the latest application bundle can repair a damaged app binary, but

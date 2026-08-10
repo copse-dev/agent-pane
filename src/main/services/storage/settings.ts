@@ -102,6 +102,21 @@ export function getApiKey(provider: KeyProvider): string | null {
   }
 }
 
+/**
+ * Whether a stored key can actually be decrypted on this machine.
+ *
+ * `safeStorage` binds ciphertext to the OS user's keychain (Keychain, DPAPI, or
+ * the Linux secret service) — never to the profile directory. Restoring a
+ * profile on another machine, or under a different OS user, therefore keeps a
+ * key that {@link hasApiKey} reports as present and {@link getApiKey} cannot
+ * read, so every request fails while the settings UI shows a key on file. Returns
+ * `null` when no key is stored.
+ */
+export function isApiKeyReadable(provider: KeyProvider): boolean | null {
+  if (!hasApiKey(provider)) return null
+  return getApiKey(provider) !== null
+}
+
 function envVarFor(provider: KeyProvider): string | null {
   return PROVIDER_ENV_VARS[provider] ?? null
 }

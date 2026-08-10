@@ -69,6 +69,11 @@ export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
   return apiKeys.has(provider) ? true : null
 }
 
+export function isApiKeyReadable(provider: KeyProvider): boolean | null {
+  if (!hasApiKey(provider)) return null
+  return getApiKey(provider) !== null
+}
+
 export function resolveApiKey(provider: KeyProvider): string | null {
   const scoped = getExplicitSettingsProfile()
   if (scoped) return firstNonEmptyString(scoped.apiKeys?.[provider]) ?? null

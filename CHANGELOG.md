@@ -24,6 +24,17 @@ every published entry.
   nothing was being written to. Back up `~/.copse/` and you have all of it —
   see [`docs/recovery.md`](docs/recovery.md), which is now one directory rather
   than a checklist.
+- `/checkup` now reports an API key it cannot decrypt. Keys are sealed with the
+  OS keychain of the user that saved them, not with the Copse profile, so a
+  profile restored on a second machine carries ciphertext nothing there can
+  open. Copse used to treat "a key is stored" as "a key works": the provider
+  showed as configured, `/checkup` called it encrypted and healthy, and only the
+  request failed. Each unreadable key is now an error naming the provider and
+  pointing at re-entering it or supplying the environment variable instead. New
+  [`docs/profiles.md`](docs/profiles.md) covers running more than one profile,
+  what a profile does and does not isolate — keys are separated by file, not by
+  encryption key — and what to expect from the one-time move of the old Electron
+  directory.
 - A thread working in its own isolated worktree no longer asks you to approve
   every delete, rename, and new folder. Writes have applied straight to disk
   since the session backup landed, but the three non-content ops still staged
