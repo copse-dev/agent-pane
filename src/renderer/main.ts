@@ -86,6 +86,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
+import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
@@ -304,6 +305,12 @@ async function boot(): Promise<void> {
     // Outside Cursor cloud agents for the open project — first tick after one
     // interval, never on editor open.
     startExternalCursorAgentSync(store, api)
+  } else {
+    // …but the diff queue is shared workspace state, not agent ownership. Without
+    // this the detached Changes pane has an empty `stagedDiffs` forever and never
+    // renders its "Proposed" section (#1704). `revealOnShowDiff` stays off: a
+    // pop-out is already pinned to one pane, so there is nothing to reveal.
+    attachDiffState(store, api, { revealOnShowDiff: false })
   }
   attachProjectThreadCache(store)
 

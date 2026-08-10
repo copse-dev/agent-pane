@@ -28,6 +28,7 @@ import {
   type ThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -148,7 +149,6 @@ function projectRootFor(state: DiffQueueState): string | null {
  * insertion order so a long-running session can't grow it without limit.
  */
 const MAX_DIRECT_APPLIED_SNAPSHOTS = 1000
-let mainWindow: BrowserWindow | null = null
 
 /**
  * Headless resolver for a staged diff. In the GUI a staged entry waits for the
@@ -763,8 +763,6 @@ async function applyMkdir(entry: QueueEntry, root: string): Promise<ApplyResult>
 }
 
 export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
-  mainWindow = win
-
   function parseOwner(projectIdArg: unknown, threadIdArg: unknown): ThreadExecutionOwner {
     const projectId = parseIpcArgs(zProjectId, [projectIdArg])
     const threadId = parseIpcArgs(zThreadId, [threadIdArg])
@@ -786,7 +784,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
       if (result.status === 'conflict') {
         restage(owner, entry, result.current)
         recordDecision(state, owner, { path: entry.path, status: 'conflict' })
-        mainWindow?.webContents.send('diff:conflict', owner.projectId, owner.threadId, [entry.path])
+        broadcastToAppWindows('diff:conflict', owner.projectId, owner.threadId, [entry.path])
         return
       }
       if (result.status === 'error') {
@@ -836,6 +834,17 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
       }
     },
   )
+
+  // On-demand read of the queue itself, the list counterpart to `diff:content`.
+  // `diff:queued` is a push, so any renderer that boots mid-run starts with an
+  // empty queue and stays empty until the next stage/approve — which is how a
+  // Changes pop-out ended up with no "Proposed" section at all (#1704). Panes
+  // hydrate from this on mount instead of depending on catching the push.
+  ipcMain.handle('diff:queue', (event, projectIdArg: unknown, threadIdArg: unknown) => {
+    assertMainFrameSender(event, win)
+    const owner = parseOwner(projectIdArg, threadIdArg)
+    return stateFor(owner).queue.map((e) => ({ path: e.path, language: e.language }))
+  })
 
   ipcMain.handle('diff:approveAll', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
@@ -898,7 +907,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
     }
   }
   if (conflicts.length) {
-    mainWindow?.webContents.send(
+    broadcastToAppWindows(
       'diff:conflict',
       resolvedOwner.projectId,
       resolvedOwner.threadId,
@@ -922,7 +931,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
  */
 function restage(owner: ThreadExecutionOwner, entry: QueueEntry, current: string): void {
   entry.before = current
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'agent:show_diff',
     owner.projectId,
     owner.threadId,
@@ -947,7 +956,7 @@ export function stageDiff(
   const entry = state.queue.find((e) => e.path === path)
   if (!entry) throw new Error(`Staged diff entry for ${path} missing immediately after upsert`)
   // Payload before queue broadcast so the renderer can populate activeDiff first.
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'agent:show_diff',
     owner.projectId,
     owner.threadId,
@@ -1110,7 +1119,7 @@ function stageFileOp(entry: FileOpRequest): Promise<string> {
   } else {
     state.queue.push(queued)
   }
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'agent:show_diff',
     owner.projectId,
     owner.threadId,
@@ -1146,7 +1155,7 @@ function removeEntry(state: DiffQueueState, owner: ThreadExecutionOwner, path: s
 }
 
 function broadcastQueue(state: DiffQueueState, owner: ThreadExecutionOwner): void {
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'diff:queued',
     owner.projectId,
     owner.threadId,

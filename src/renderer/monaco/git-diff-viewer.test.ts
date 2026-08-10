@@ -220,7 +220,9 @@ describe('setGitFileDiffModel keeps a diff on screen while the next one computes
     const diff = { path: 'a.ts', before: 'same-before', after: 'same-after', language: 'ts' }
 
     let createCount = 0
-    const createModel = monaco.editor.createModel
+    // Bound eagerly: the spy below replaces `monaco.editor.createModel`, so the
+    // original has to be captured now rather than looked up at call time.
+    const createModel = monaco.editor.createModel.bind(monaco.editor)
     monaco.editor.createModel = (value, language, uri): ReturnType<typeof createModel> => {
       createCount++
       return createModel(value, language, uri)
@@ -239,6 +241,50 @@ describe('setGitFileDiffModel keeps a diff on screen while the next one computes
     assert.equal(createCount, 2, 'identical refresh must not mint new models')
     assert.equal(disposed.length, 0, 'identical refresh must not dispose the visible diff')
     assert.equal(editor.getModel()?.modified.getValue(), 'same-after')
+  })
+
+  it('still rebuilds for a different file whose content happens to match', async () => {
+    // Content equality alone cannot tell "same file, refreshed" from "different
+    // file that reads identically" — short-circuiting the latter would leave the
+    // previous file's models, and its language, under the new selection.
+    const host = document.createElement('div')
+    forceSize(host, 400, 300)
+    document.body.append(host)
+    const fake = createFakeDiff()
+    const { monaco, editor } = fake
+    const shared = { before: 'same-before', after: 'same-after' }
+
+    const languages: (string | undefined)[] = []
+    const createModel = monaco.editor.createModel.bind(monaco.editor)
+    monaco.editor.createModel = (value, language, uri): ReturnType<typeof createModel> => {
+      languages.push(language)
+      return createModel(value, language, uri)
+    }
+
+    const first = setGitFileDiffModel(
+      editor,
+      monaco,
+      { path: 'a.ts', ...shared, language: 'typescript' },
+      host,
+    )
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(first), true)
+
+    const second = setGitFileDiffModel(
+      editor,
+      monaco,
+      { path: 'b.py', ...shared, language: 'python' },
+      host,
+    )
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(second), true)
+    assert.deepEqual(
+      languages,
+      ['typescript', 'typescript', 'python', 'python'],
+      'a different path/language must mint its own models',
+    )
   })
 })
 

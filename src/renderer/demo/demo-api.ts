@@ -381,6 +381,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       rejectAll: resolvedVoid,
       content: (_projectId: string, _threadId: string, path: string) =>
         resolved(proposedDiffs.get(path) ?? null),
+      // Same list `onQueued` pushes — panes hydrate from this on mount.
+      queue: () =>
+        resolved(
+          [...writtenFiles.keys()].map((path) => ({ path, language: detectLanguage(path) })),
+        ),
       onShowDiff: (handler: ShowDiffHandler) => {
         showDiffHandlers.add(handler)
         return (): void => {
