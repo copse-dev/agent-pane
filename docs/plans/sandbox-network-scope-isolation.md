@@ -1,13 +1,12 @@
 # Sandbox network scope isolation
 
-**Status: Phases 1–4 implemented; 5 proposed.** Written after a user report of
+**Status: Phases 1–5 implemented.** Written after a user report of
 constant "Run shell command?" prompts in a pane running an OpenRouter model,
 where the reason line named a network widening the pane had nothing to do with.
 
 Phases 1–3 (probe teardown, scope labelling, capability-based gating) shipped
-first; phase 4 (probes in their own process) followed. Each is marked inline
-below. Phase 5 is unstarted and should stay that way until the phase 2 logs show
-whether a pooled ACP session still pins the allowlist often enough to matter.
+first; phase 4 moved probes into their own process, and phase 5 applied the same
+process boundary to long-lived ACP sessions. Each is marked inline below.
 
 ## The symptom
 
@@ -56,19 +55,25 @@ duration is the only lever the current API offers.
 
 ## Who holds a scope
 
-Exactly two callers:
+Before phases 4–5, exactly two main-process callers held scopes:
 
 | caller                           | trigger                                                | lifetime                    |
 | -------------------------------- | ------------------------------------------------------ | --------------------------- |
 | `project-sandbox/spawn.ts:308`   | background task with `allow_port_binding` (dev server) | until the process exits     |
 | `services/acp/acp-client.ts:287` | any sandboxed ACP agent process                        | pooled session, 10 min idle |
 
-The second includes work no one initiated. `workspace:set` fires
+The second included work no one initiated. `workspace:set` fires
 `revalidateStaleAcpModels()` (`ipc/register-handlers.ts:513`), which re-probes
 every **enabled** ACP agent whose model cache is older than `ACP_MODELS_TTL_MS`
 (24h, `acp-auto-setup.ts`). All five `KNOWN_ACP_AGENTS` carry `sandbox` presets,
 so each probe takes a scope. Opening a folder is enough; the user need never have
 selected an ACP agent in a pane.
+
+After phase 5, a local sandboxed ACP agent still acquires a scope, but it does so
+inside its dedicated session host process. The Electron main process therefore
+only observes scopes for its own background tasks; ACP scopes cannot trip an
+unrelated pane's overlap gate. The in-process ACP path remains only as a labelled
+fallback when the standalone host cannot initialize.
 
 ### Suspected leak
 
@@ -253,10 +258,34 @@ failure reporting, and the built `dist/main/acp-probe-worker.js` artifact were a
 run end-to-end against a fake ACP agent; confinement itself still wants a check on
 macOS or a bwrap-capable Linux box.
 
-### Phase 5 — Long-lived ACP sessions (deferred)
+### Phase 5 — Long-lived ACP sessions (implemented)
 
-Reassess after Phase 4. If a pooled session still pins the global allowlist
-across 10 idle minutes, give it a host process too — same mechanism, higher cost.
+The phase 2 labels confirmed that pooled ACP sessions still pinned the global
+allowlist across their 10 idle minutes. Each local sandboxed session now spawns
+through `acp-session-host-worker.ts`, a standalone process that initializes its
+own `SandboxManager`, confines the real agent, and transparently relays the
+agent's stdin/stdout to the main-process ACP connection.
+
+The boundary is deliberately below the ACP protocol rather than around the
+whole session implementation:
+
+- session pooling, resume, updates, permissions, filesystem callbacks, and the
+  native-tool bridge remain in the Electron process;
+- only ASRT ownership and the sandboxed agent process move into the host;
+- a small IPC channel carries startup success/failure and network-denial
+  telemetry back to the main process, preserving per-turn denial audits;
+- the host and agent share a process group so normal session disposal kills the
+  complete host/wrapper/agent tree; and
+- host initialization failure falls back to the former in-process sandboxed
+  spawn. That preserves confinement instead of silently treating an unsandboxed
+  agent as sandboxed, while retaining the labelled overlap prompt for this rare
+  degradation.
+
+`acp-session-host-worker.test.ts` bundles the worker with a controllable ASRT
+stub, drives a real stdio child through it, verifies denial forwarding, and
+asserts that the parent process acquires no network scope. The worker is listed
+in `scripts/main-bundles.mts`, so both development and production builds emit
+and syntax-check it.
 
 **Per-thread network sandboxes are not recommended.** Every thread's shell policy
 is already deny-all and identical; threads differ in filesystem root, which
