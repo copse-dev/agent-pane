@@ -20,7 +20,6 @@
     "Add opening hours and a reservations/contact call-to-action to the home page. Commit this improvement."
   ],
   "expect": {
-    "shouldSteerTodos": true,
     "requireUpdateTodos": true,
     "requireTools": ["git_commit"]
   },

@@ -34,6 +34,12 @@ export interface ProviderSnapshot {
   source: 'env' | 'stored' | null
   /** true = OS-encrypted at rest, false = base64 plaintext, null = no stored key. */
   encrypted: boolean | null
+  /**
+   * Whether the stored key decrypts on this machine. `false` means ciphertext
+   * sealed by another OS user's keychain — the usual cause is a profile restored
+   * on a new machine. null when no key is stored.
+   */
+  readable: boolean | null
   /** Local server (LM Studio / Ollama / …) that needs no API key. */
   local: boolean
 }
@@ -165,6 +171,22 @@ export function buildCheckupReport(s: CheckupSnapshot): CheckupReport {
       status: 'ok',
       detail: `Configured: ${names || 'local models'}.`,
     })
+  }
+
+  // Ciphertext this machine holds no key for. `hasApiKey` still reports the key
+  // as present, so without this the setup looks configured and every request
+  // fails — the standard symptom of a profile restored on a new machine.
+  for (const p of s.providers) {
+    if (p.readable === false) {
+      add({
+        id: `key-unreadable-${p.id}`,
+        category: 'Models',
+        label: `${p.label} key at rest`,
+        status: 'error',
+        detail: `The stored ${p.label} API key cannot be decrypted on this machine. Keys are sealed with the OS keychain of the user that saved them, not with the Copse profile, so they do not survive a move to another machine or OS user.`,
+        fix: `Re-enter the ${p.label} key in Settings → Providers, or provide it via its environment variable instead.`,
+      })
+    }
   }
 
   // Keys stored unencrypted (no OS keyring) — a real at-rest risk worth flagging.

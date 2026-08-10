@@ -69,19 +69,28 @@ one-shot steering.
 
 ## App data and seeded state
 
-Persistent projects, selected model, workspace root, and settings live in the `copse-panel`
-Electron Store `config.json`:
+Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile):
 
-- macOS: `~/Library/Application Support/copse-panel/`
-- Linux: `~/.config/copse-panel/`
-- Windows: `%APPDATA%/copse-panel/`
+| Path                                                                                 | Contents                                                                 |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `user-data/config.json`                                                              | projects, `activeProjectId`, workspace root, pack settings, usage ledger |
+| `user-data/settings.json`                                                            | settings, including encrypted API keys                                   |
+| `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index         |
+| `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                         |
+| `worktrees/`                                                                         | Copse-managed Git worktrees                                              |
+| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                       |
+
+Electron's `userData` used to default to `<appData>/copse-panel` (`~/Library/Application Support/`
+on macOS), which split the profile across two unrelated directories. `app-init.ts` now points it at
+`~/.copse/user-data/` and migrates a legacy directory across on first launch;
+`COPSE_PANEL_USER_DATA` still pins an exact directory and skips migration.
 
 To bypass the native “Open Folder” dialog, pre-seed a `projects` entry and `activeProjectId`.
 
-Chat threads no longer live in `config.json`. They use the filesystem-native store at
+Chat threads do not live in `config.json`. They use the filesystem-native store at
 `~/.copse/workspace/<projectId>/<threadId>/`, with `meta.json`, append-only `events.jsonl`, OKF
-`messages/*.md`, and `blobs/*`. `COPSE_WORKSPACE_DIR` overrides the root. The e2e harness and unit
-tests point it at a disposable directory.
+`messages/*.md`, and `blobs/*`. `COPSE_WORKSPACE_DIR` overrides just that root. The e2e harness and
+unit tests point it at a disposable directory.
 
 Use `writeSeedConfig` in `tests/e2e/helpers/seed-config.ts` to seed e2e state. It translates any
 `threads:<projectId>` fixture array into the native thread directories; writing that key directly to

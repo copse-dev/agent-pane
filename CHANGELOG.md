@@ -25,6 +25,50 @@ every published entry.
   both editor models to recreate them from byte-identical content — which, among
   other things, scrolled you back to the first hunk in the middle of reading a
   long diff.
+- Everything Copse stores now lives in one directory. Threads, worktrees and
+  knowledge were already under `~/.copse/`, but projects, settings, API keys,
+  MCP config, custom tools, the browser profiles and the search index sat in
+  Electron's own directory — `~/Library/Application Support/copse-panel/` on
+  macOS — so backing Copse up meant copying two unrelated folders and restoring
+  them as a matched pair, and moving to a new machine meant the same. They now
+  live at `~/.copse/user-data/`, and the first launch after updating moves an
+  existing profile across. A migration that cannot complete logs why and keeps
+  using the old directory, so a failure costs a retry rather than your projects
+  list. `COPSE_DIR` consequently relocates the whole profile for real: it used
+  to move the thread store's per-project directories while the chat store root,
+  knowledge, long tasks, roadmap review, pack snapshots and user hooks stayed
+  behind in `~/.copse`, which left thread reads authorised against a root
+  nothing was being written to. Back up `~/.copse/` and you have all of it —
+  see [`docs/recovery.md`](docs/recovery.md), which is now one directory rather
+  than a checklist.
+- Knowledge notes, long tasks and roadmap-review state now follow a project that
+  moves. They were filed under a hash of the project's absolute path while
+  threads were filed under its id, so relocating a project — moving the repo,
+  recovering a folder Copse had quarantined, or restoring a backup onto a
+  machine where your home directory has a different name — brought the threads
+  back and left the notes behind. Nothing was ever deleted; the app was looking
+  in a directory named after where the project used to be. All three now key by
+  project id like threads do, and an existing directory is carried across the
+  first time it is opened.
+- A provider whose stored API key cannot be decrypted no longer presents itself
+  as configured. Keys are sealed with the OS keychain of the user that saved
+  them, not with the Copse profile, so a profile restored on a second machine
+  carries ciphertext nothing there can open. Copse treated "a key is stored" as
+  "a key works": the provider looked ready and only the request failed. Such a
+  key now reads as unconfigured, so the normal prompt to add one appears. A
+  keyring that is merely locked — common on Linux at login — is not mistaken for
+  a broken key.
+- `/checkup` now reports an API key it cannot decrypt. Keys are sealed with the
+  OS keychain of the user that saved them, not with the Copse profile, so a
+  profile restored on a second machine carries ciphertext nothing there can
+  open. Copse used to treat "a key is stored" as "a key works": the provider
+  showed as configured, `/checkup` called it encrypted and healthy, and only the
+  request failed. Each unreadable key is now an error naming the provider and
+  pointing at re-entering it or supplying the environment variable instead. New
+  [`docs/profiles.md`](docs/profiles.md) covers running more than one profile,
+  what a profile does and does not isolate — keys are separated by file, not by
+  encryption key — and what to expect from the one-time move of the old Electron
+  directory.
 - A thread working in its own isolated worktree no longer asks you to approve
   every delete, rename, and new folder. Writes have applied straight to disk
   since the session backup landed, but the three non-content ops still staged

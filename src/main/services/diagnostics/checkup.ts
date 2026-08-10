@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import {
   hasApiKey,
   isApiKeyEncrypted,
+  isApiKeyReadable,
   isProviderAvailable,
   getSetting,
 } from '../storage/settings.ts'
@@ -54,6 +55,7 @@ function providerSnapshot(id: string, label: string): ProviderSnapshot {
     configured: available,
     source: stored ? 'stored' : available ? 'env' : null,
     encrypted: stored ? isApiKeyEncrypted(id) : null,
+    readable: stored ? isApiKeyReadable(id) : null,
   }
 }
 

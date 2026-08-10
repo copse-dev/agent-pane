@@ -618,6 +618,14 @@ jobs:
       - run: >-
           npm run eval:doctrine -- --provider mock --repeats 1 --sections tools
           --out bench-results/doctrine-mock --require-solved --require-doctrine
+      # Steer A/B harness self-test: drives both arms of the mock pack through
+      # the real agent loop, including git workspace setup and the check runner.
+      # The mock ignores the system prompt, so this proves the harness works and
+      # says nothing about any steer — real-model lift is an on-demand run
+      # (docs/steer-evals.md), never a per-PR gate.
+      - run: >-
+          npm run eval:steer -- --provider mock --repeats 1
+          --out bench-results/steer-mock --require-gates
       - uses: actions/upload-artifact@v7
         if: always()
         continue-on-error: true
@@ -682,7 +690,8 @@ jobs:
           LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
           LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
         run: >-
-          npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools
+          npm run eval:doctrine -- --provider lmstudio --repeats 3
+          --sections tools,workingStyle,gitBranchSafety
           --out bench-results/doctrine
       - uses: actions/upload-artifact@v7
         if: always()

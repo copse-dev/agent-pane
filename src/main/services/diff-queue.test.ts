@@ -479,6 +479,54 @@ describe('applyOrStageFileOp (worktree auto-approve)', () => {
     assert.equal(getStagedDiffEntry('gone.txt')?.op, 'delete')
   })
 
+  worktreeIt('creates a directory directly even when git cannot be read', async () => {
+    // The negative control is the delete two tests up: identical conditions,
+    // and it stages because losing content without a backup is unrecoverable.
+    // A mkdir has nothing to lose, so it never consults git at all.
+    await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
+    setGitAvailableForTest(false)
+
+    const result = await applyOrStageFileOp({
+      op: 'mkdir',
+      path: 'fresh-dir',
+      before: '',
+      after: '',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Created directory fresh-dir directly/)
+    assert.equal((await lstat(join(workspaceRoot, 'fresh-dir'))).isDirectory(), true)
+    assert.equal(getStagedDiffEntry('fresh-dir'), null)
+  })
+
+  worktreeIt('stages a directory creation while diffs await approval', async () => {
+    // Skipping the git checks must not let a mkdir jump the queue: the user is
+    // mid-review, and ops landing behind their back reorder what they approved.
+    await setSetting('worktreeAutoApproveEdits', false)
+    await commitFile('gone.txt', 'bye\n')
+    await applyOrStageFileOp({
+      op: 'delete',
+      path: 'gone.txt',
+      before: 'bye\n',
+      after: '',
+      language: 'plaintext',
+    })
+    assert.equal(getStagedDiffEntry('gone.txt')?.op, 'delete')
+    await setSetting('worktreeAutoApproveEdits', true)
+
+    const result = await applyOrStageFileOp({
+      op: 'mkdir',
+      path: 'queued-dir',
+      before: '',
+      after: '',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Creation of directory queued-dir staged/)
+    assert.match(result, /pending staged diffs waiting for user approval/)
+    await assert.rejects(lstat(join(workspaceRoot, 'queued-dir')))
+  })
+
   ownedIt('still stages in the shared checkout, however clean it is', async () => {
     await commitFile('gone.txt', 'bye\n')
 

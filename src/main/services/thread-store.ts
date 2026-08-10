@@ -55,7 +55,7 @@ import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { z } from 'zod'
 import { storageGet } from './storage/storage.ts'
-import { chatStoreDir, projectStoreDir } from './storage/copse-paths.ts'
+import { copseWorkspaceDir, projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**
@@ -97,7 +97,7 @@ const sha256 = (input: string): string => createHash('sha256').update(input, 'ut
 const projectDir = projectStoreDir
 
 /** Root of the chat store. COPSE_DIR owns the normal profile layout. */
-const workspaceRoot = chatStoreDir
+const workspaceRoot = copseWorkspaceDir
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
 export const chatStoreRoot = workspaceRoot

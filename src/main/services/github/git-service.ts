@@ -1,5 +1,5 @@
 import * as fsp from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
@@ -67,6 +67,76 @@ async function runGitRead(
     cwd,
     sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
   })
+}
+
+/**
+ * Per-root cache of the two `rev-parse` probes that bracket every
+ * {@link getGitStatus}: whether `root` is inside a work tree, and its path
+ * relative to the repo top. Both are constants for a fixed root — a checkout
+ * does not stop being a work tree, and a fixed cwd does not move within its
+ * repo — but they were re-spawning on every call, so a `git status` cost three
+ * sandboxed `git` subprocesses where only one reads live state.
+ *
+ * That is invisible at human pace and expensive at agent pace: `canApplyDirectly`
+ * in the diff queue runs this per file operation, so a worktree thread renaming
+ * fifty files paid a hundred avoidable spawns.
+ *
+ * **Only positive results are cached.** A negative is the one answer that
+ * legitimately flips — `git init` in a plain directory makes it a work tree —
+ * and caching that would strand the workspace as permanently git-less.
+ *
+ * **The cache serves {@link getGitStatus}, not {@link isInsideGitWorkTree}.** A
+ * stale positive is safe here because the `git status` that follows fails on its
+ * own, so the caller sees the same `null` the probe would have given it. The bare
+ * boolean has no such backstop, and #1686 pins the case that proves it matters: a
+ * project folder deleted under a running app must answer "no repository" rather
+ * than a cached yes. So that entry point always probes live, and a live negative
+ * evicts any stale entry — the cache heals the moment anything observes the truth.
+ */
+const workTreeProbes = new Map<string, { prefix?: string }>()
+
+/**
+ * Drop cached probes for `root`, or for every root when called with none.
+ * Belt-and-braces for the one case a stale positive is not self-correcting: a
+ * root path reused by a *different* repo after its worktree is released.
+ */
+export function invalidateGitWorkTreeProbe(root?: string): void {
+  if (root === undefined) workTreeProbes.clear()
+  else workTreeProbes.delete(resolve(root))
+}
+
+/**
+ * `rev-parse --is-inside-work-tree`, live unless `allowCached`. A positive always
+ * populates the cache; a live negative evicts it.
+ */
+async function confirmInsideWorkTree(root: string, allowCached: boolean): Promise<boolean> {
+  const key = resolve(root)
+  if (allowCached && workTreeProbes.has(key)) return true
+  const { stdout, code } = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
+  if (code !== 0 || stdout.trim() !== 'true') {
+    workTreeProbes.delete(key)
+    return false
+  }
+  if (!workTreeProbes.has(key)) workTreeProbes.set(key, {})
+  return true
+}
+
+/**
+ * Cached `rev-parse --show-prefix` — `root`'s path relative to the repo top,
+ * used to report status paths workspace-relative. Filled on demand rather than
+ * alongside the work-tree probe so callers that only want the boolean still
+ * cost one subprocess on a cold cache.
+ */
+async function workTreePrefix(root: string): Promise<string | null> {
+  const key = resolve(root)
+  const cached = workTreeProbes.get(key)
+  if (cached?.prefix !== undefined) return cached.prefix
+  const { stdout, code } = await runGitRead(['rev-parse', '--show-prefix'], root)
+  if (code !== 0) return null
+  const prefix = stdout.trim()
+  if (cached) cached.prefix = prefix
+  else workTreeProbes.set(key, { prefix })
+  return prefix
 }
 
 function toWorkspaceRelativeGitPath(path: string, workspacePrefix: string): string | null {
@@ -411,8 +481,9 @@ export async function isInsideGitWorkTree(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<boolean> {
   if (!(await isGitAvailableForTarget()) || !root) return false
-  const { stdout, code } = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
-  return code === 0 && stdout.trim() === 'true'
+  // Deliberately uncached: callers gate real work on this answer, and a checkout
+  // that vanished under the app has to say so (#1686).
+  return confirmInsideWorkTree(root, false)
 }
 
 /** `org/repo` from `origin` when the workspace remote is GitHub. */
@@ -567,15 +638,13 @@ export async function pruneWorktreeBackups(
 export async function getGitStatus(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<GitStatusResult | null> {
-  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
-  const { stdout: prefix, code: prefixCode } = await runGitRead(
-    ['rev-parse', '--show-prefix'],
-    root,
-  )
-  if (prefixCode !== 0) return null
+  if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root, true)))
+    return null
+  const prefix = await workTreePrefix(root)
+  if (prefix === null) return null
   const { stdout, code } = await runGitRead(['status', '--porcelain=v1', '-z'], root)
   if (code !== 0) return null
-  return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix.trim())
+  return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
 }
 
 /** Sum added/deleted line counts from `git diff --numstat` output (binary rows use `-`). */

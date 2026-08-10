@@ -22,6 +22,7 @@ function baseSnapshot(overrides: Partial<CheckupSnapshot> = {}): CheckupSnapshot
         configured: true,
         source: 'env',
         encrypted: null,
+        readable: null,
         local: false,
       },
     ],
@@ -66,6 +67,7 @@ describe('buildCheckupReport', () => {
             configured: false,
             source: null,
             encrypted: null,
+            readable: null,
             local: false,
           },
         ],
@@ -89,6 +91,7 @@ describe('buildCheckupReport', () => {
             configured: false,
             source: null,
             encrypted: null,
+            readable: null,
             local: false,
           },
         ],
@@ -109,6 +112,7 @@ describe('buildCheckupReport', () => {
             configured: true,
             source: 'stored',
             encrypted: false,
+            readable: true,
             local: false,
           },
         ],
@@ -129,11 +133,39 @@ describe('buildCheckupReport', () => {
             configured: true,
             source: 'stored',
             encrypted: true,
+            readable: true,
             local: false,
           },
         ],
       }),
     )
+    assert.equal(hasCheck(report, 'key-plaintext-openai'), false)
+    assert.equal(hasCheck(report, 'key-unreadable-openai'), false)
+  })
+
+  // A profile restored on a new machine keeps ciphertext sealed by the old
+  // machine's keychain: the key is still "present", so nothing else notices.
+  it('errors when a stored key cannot be decrypted on this machine', () => {
+    const report = buildCheckupReport(
+      baseSnapshot({
+        providers: [
+          {
+            id: 'openai',
+            label: 'OpenAI',
+            configured: true,
+            source: 'stored',
+            encrypted: true,
+            readable: false,
+            local: false,
+          },
+        ],
+      }),
+    )
+    const check = getCheck(report, 'key-unreadable-openai')
+    assert.equal(check.status, 'error')
+    assert.match(check.detail, /cannot be decrypted/)
+    assert.match(check.fix ?? '', /Re-enter/)
+    // Undecryptable is a different fault from "saved as plaintext".
     assert.equal(hasCheck(report, 'key-plaintext-openai'), false)
   })
 
@@ -214,6 +246,7 @@ describe('formatCheckupReport', () => {
             configured: false,
             source: null,
             encrypted: null,
+            readable: null,
             local: false,
           },
         ],
