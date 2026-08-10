@@ -52,7 +52,7 @@ const PLUGIN_SOURCES_KEY = 'pluginSources'
 const pluginSettingsKey = (id: string): string => `plugin.${id}.settings`
 const localPluginRoots: string[] = []
 
-async function makeToolPlugin(): Promise<string> {
+async function makeToolPlugin(name = 'personal.local-tools'): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'copse-plugin-service-local-'))
   localPluginRoots.push(root)
   await mkdir(join(root, 'dist'))
@@ -60,11 +60,27 @@ async function makeToolPlugin(): Promise<string> {
   await writeFile(
     join(root, 'copse-plugin.json'),
     JSON.stringify({
-      name: 'personal.local-tools',
+      name,
       tools: {
         provides: ['personal_judge'],
       },
       runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+    }),
+  )
+  return root
+}
+
+async function makeAgentPluginRoot(name: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'copse-plugin-service-agent-'))
+  localPluginRoots.push(root)
+  const pluginRoot = join(root, name)
+  await mkdir(pluginRoot, { recursive: true })
+  await writeFile(
+    join(pluginRoot, 'plugin.json'),
+    JSON.stringify({
+      $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
+      name,
+      description: 'Passive package with a colliding id',
     }),
   )
   return root
@@ -119,6 +135,7 @@ describe('PluginService', () => {
 
   afterEach(async () => {
     __resetPluginServiceForTests()
+    delete process.env['COPSE_PLUGINS_DIR']
     await Promise.all(
       localPluginRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
     )
@@ -227,6 +244,21 @@ describe('PluginService', () => {
     assert.ok(changed)
     assert.ok(changed.source)
     assert.notEqual(changed.source.contentHash, discovered.source.contentHash)
+  })
+
+  it('reconciles selected sources before auto-discovered packages with the same id', async () => {
+    const id = 'personal.colliding-source'
+    const selectedSource = await makeToolPlugin(id)
+    storageSet(PLUGIN_SOURCES_KEY, [selectedSource])
+    process.env['COPSE_PLUGINS_DIR'] = await makeAgentPluginRoot(id)
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshInstalledPlugins()
+
+    const plugin = service.list().find((candidate) => candidate.id === id)
+    assert.ok(plugin?.source)
+    assert.equal(plugin.source.path, await realpath(selectedSource))
+    assert.deepEqual(plugin.contributions.toolNames, ['personal_judge'])
   })
 
   it('starts selected tool behavior on add and stops it before disabling the plugin', async () => {

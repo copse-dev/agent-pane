@@ -367,11 +367,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const pluginService = getPluginService()
   setPluginBrowserService(createPluginBrowserPanelService(win))
   setPluginToolRuntimeController(new ToolingPluginToolRuntimeController(registry))
-  void pluginService.refreshPluginSources().catch((error: unknown) => {
-    console.warn('[plugins] selected-plugin startup reconciliation failed:', error)
-  })
-  void pluginService.refreshUserPlugins().catch((error: unknown) => {
-    console.warn('[plugins] user-plugin discovery failed:', error)
+  void pluginService.refreshInstalledPlugins().catch((error: unknown) => {
+    console.warn('[plugins] startup reconciliation failed:', error)
   })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // plugin is enabled. The plugin ships off (`defaultEnabled: false`) and

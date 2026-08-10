@@ -355,6 +355,8 @@ export interface PluginService {
    * each a registry row. Stage A2 of `docs/plans/agent-plugins-migration.md`.
    */
   refreshUserPlugins(): Promise<void>
+  /** Reconcile selected sources first, then auto-discovered packages. */
+  refreshInstalledPlugins(): Promise<void>
   /**
    * MCP servers discovered plugins declare that nothing is running, so
    * Settings → MCP servers can account for them. See {@link DeclaredMcpServer}.
@@ -472,15 +474,19 @@ export function createPluginService(registry: PluginRegistry): PluginService {
     // manifest arriving in the plugin root can never start contributing before
     // anyone looks at it — while a later toggle stays the user's own.
     if (fresh.length > 0) {
-      await storageUpdate(PLUGINS_SEEN_KEY, (raw) => {
-        const seen = new Set(parseStringList(raw))
-        for (const id of fresh) seen.add(id)
-        return [...seen].sort()
-      })
+      // Persist the fail-safe state before the one-shot marker. If the process
+      // stops between these writes, the next refresh repeats the harmless
+      // `pluginsSeen` update instead of mistaking a never-reviewed plugin for
+      // one the user deliberately enabled.
       await storageUpdate(PLUGIN_DISABLED_KEY, (raw) => {
         const off = new Set(parseStringList(raw))
         for (const id of fresh) off.add(id)
         return [...off].sort()
+      })
+      await storageUpdate(PLUGINS_SEEN_KEY, (raw) => {
+        const seen = new Set(parseStringList(raw))
+        for (const id of fresh) seen.add(id)
+        return [...seen].sort()
       })
     }
 
@@ -591,6 +597,27 @@ export function createPluginService(registry: PluginRegistry): PluginService {
     }
   }
 
+  async function refreshInstalledPlugins(): Promise<void> {
+    // Explicitly selected development sources are a user choice and already
+    // have executable-runtime lifecycle handling. Reconcile them before the
+    // passive Agent Plugins walk so a duplicate id has one deterministic
+    // incumbent instead of whichever async disk walk happens to finish first.
+    const failures: unknown[] = []
+    try {
+      await refreshPluginSources()
+    } catch (error) {
+      failures.push(error)
+    }
+    try {
+      await refreshUserPlugins()
+    } catch (error) {
+      failures.push(error)
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(failures, 'One or more plugin sources could not be reconciled.')
+    }
+  }
+
   return {
     registry,
     list(): readonly PluginSummaryOut[] {
@@ -666,6 +693,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
     },
     refreshPluginSources,
     refreshUserPlugins,
+    refreshInstalledPlugins,
     declaredMcpServers,
     async addPluginSource(sourcePath: string): Promise<void> {
       const candidate = await discoverPluginToolSource(sourcePath)
