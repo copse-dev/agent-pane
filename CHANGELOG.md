@@ -8,6 +8,23 @@ every published entry.
 
 ## Unreleased
 
+- Changes popped out into its own window now shows the same thing the docked
+  pane does. The **Proposed** section was missing entirely from the pop-out: the
+  main process pushed the proposed-diff queue to the main window only, and a
+  pop-out deliberately does not run the agent loop, so nothing in the detached
+  window was listening either. Two windows side by side disagreed about what the
+  agent had proposed, and the one you popped out to review in was the one that
+  could not show it — or accept it, since Accept and Reject only appear
+  alongside a proposed diff. Diff-queue and file-change events now reach every
+  window, panes read the current queue on mount rather than waiting to catch a
+  push, and a pop-out opens on the file you were looking at instead of falling
+  through to an unrelated git change. Approving or rejecting also refreshes the
+  git sections in both windows, so the two stay in step.
+- The proposed diff no longer rebuilds itself when nothing about it changed.
+  Every file-watcher tick and panel toggle re-entered the viewer and threw away
+  both editor models to recreate them from byte-identical content — which, among
+  other things, scrolled you back to the first hunk in the middle of reading a
+  long diff.
 - A thread working in its own isolated worktree no longer asks you to approve
   every delete, rename, and new folder. Writes have applied straight to disk
   since the session backup landed, but the three non-content ops still staged
