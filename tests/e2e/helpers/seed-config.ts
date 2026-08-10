@@ -32,7 +32,7 @@ const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
 /**
- * Plugins the host turns off on a profile with no `packDisabled` list — mirrors
+ * Plugins the host turns off on a profile with no `pluginDisabled` list — mirrors
  * `DEFAULT_DISABLED_PLUGIN_IDS` in `src/main/services/plugins/plugin-service.ts`.
  * Seeding the list explicitly means a fixture never depends on that default.
  */
@@ -57,8 +57,8 @@ export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
   writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(validated, null, 2)}\n`, 'utf8')
 }
 
-/** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
-function packDisabledSeed(enabled: readonly string[]): string[] {
+/** The `pluginDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
+function pluginDisabledSeed(enabled: readonly string[]): string[] {
   return DEFAULT_DISABLED_PLUGIN_IDS.filter((id) => !enabled.includes(id))
 }
 
@@ -371,7 +371,7 @@ export function seedMessageImageFixture(
       },
     ],
   }
-  seedConfig.packDisabled = packDisabledSeed(
+  seedConfig.pluginDisabled = pluginDisabledSeed(
     options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : [],
   )
   writeSeedConfig(seedConfig)
@@ -433,11 +433,11 @@ export function seedEmptyProject(
     /**
      * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
      * memory prompt block, and the Memories pane). The pack ships off, so a test
-     * that needs the Memories pane visible must lift it out of `packDisabled`.
+     * that needs the Memories pane visible must lift it out of `pluginDisabled`.
      */
     okfMemoriesEnabled?: boolean
     /** Explicit pack directories discovered at Settings load. */
-    packSources?: readonly string[]
+    pluginSources?: readonly string[]
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
      * Roadmap pane). Ships off, like the other experimental packs.
@@ -466,16 +466,16 @@ export function seedEmptyProject(
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
-     * The exact `packDisabled` list to write, replacing the host defaults. Use
+     * The exact `pluginDisabled` list to write, replacing the host defaults. Use
      * this to opt out of a pack that ships enabled (e.g. drop
      * `copse.post-turn-review`); the per-pack opt-in flags below are ignored
      * when this is set.
      */
-    packDisabled?: readonly string[]
+    pluginDisabled?: readonly string[]
     /**
      * Opt into the `copse.model-comparison` pack (and its `compare_models`
      * tool). Ships off, like the other experimental packs — a test exercising
-     * the comparison approval flow must lift it out of `packDisabled`.
+     * the comparison approval flow must lift it out of `pluginDisabled`.
      */
     modelComparisonEnabled?: boolean
     /**
@@ -498,20 +498,20 @@ export function seedEmptyProject(
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
-  // Plugin enablement lives in `config.json` under `packDisabled` (what the host
-  // pack service reads via `storageGet`). Write it explicitly: an explicit
-  // `packDisabled` wins, otherwise the host defaults with the opted-in packs
-  // lifted out.
+  // Plugin enablement lives in `config.json` under `pluginDisabled` (what the
+  // plugin service reads via `storageGet`). Write it explicitly: an explicit
+  // `pluginDisabled` wins, otherwise the host defaults with the opted-in
+  // plugins lifted out.
   const enabledPlugins: string[] = []
   if (options?.modelComparisonEnabled) enabledPlugins.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
-  seedConfig.packDisabled =
-    options?.packDisabled !== undefined
-      ? [...options.packDisabled]
-      : packDisabledSeed(enabledPlugins)
-  if (options?.packSources) {
-    seedConfig.packSources = [...options.packSources]
+  seedConfig.pluginDisabled =
+    options?.pluginDisabled !== undefined
+      ? [...options.pluginDisabled]
+      : pluginDisabledSeed(enabledPlugins)
+  if (options?.pluginSources) {
+    seedConfig.pluginSources = [...options.pluginSources]
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
@@ -1987,8 +1987,8 @@ export function seedPortraitRightPanelFixture(
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
     // The Memories and Roadmap panes are gated by their packs; seed the
-    // `packDisabled` list the host reads (mirrors `seedEmptyProject`).
-    packDisabled: packDisabledSeed([
+    // `pluginDisabled` list the host reads (mirrors `seedEmptyProject`).
+    pluginDisabled: pluginDisabledSeed([
       ...(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
       ...(options?.okfMemoriesEnabled ? ['copse.okf-memories'] : []),
     ]),

@@ -77,7 +77,7 @@ describe('automation attention grouping', function () {
           updatedAt: timestamp,
         })),
       ],
-      packDisabled: [],
+      pluginDisabled: [],
       packMigration: { automationsEnablement: true },
       pack: {
         copse: {
