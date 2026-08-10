@@ -20,11 +20,13 @@ every published entry.
   push, and a pop-out opens on the file you were looking at instead of falling
   through to an unrelated git change. Approving or rejecting also refreshes the
   git sections in both windows, so the two stay in step.
-- The proposed diff no longer rebuilds itself when nothing about it changed.
-  Every file-watcher tick and panel toggle re-entered the viewer and threw away
-  both editor models to recreate them from byte-identical content — which, among
-  other things, scrolled you back to the first hunk in the middle of reading a
-  long diff.
+- The diff viewer no longer rebuilds itself when nothing about the file changed.
+  Every file-watcher tick and panel toggle re-entered it and threw away both
+  editor models to recreate them from byte-identical content, which flashed the
+  collapsed-region markers and scrolled you back to the first hunk in the middle
+  of reading a long diff. Selecting a genuinely different file still remounts —
+  including the case where two files happen to read identically, which would
+  otherwise have left the previous file's syntax highlighting on screen.
 - Everything Copse stores now lives in one directory. Threads, worktrees and
   knowledge were already under `~/.copse/`, but projects, settings, API keys,
   MCP config, custom tools, the browser profiles and the search index sat in
