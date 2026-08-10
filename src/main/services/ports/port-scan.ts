@@ -122,10 +122,12 @@ export interface ScanPlan {
   parse: (out: string) => ListeningPort[]
 }
 
-const LSOF_PLAN: ScanPlan = {
-  file: 'lsof',
-  args: ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpcn'],
-  parse: parseLsof,
+function lsofPlan(port?: number): ScanPlan {
+  return {
+    file: 'lsof',
+    args: ['-nP', port === undefined ? '-iTCP' : `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-Fpcn'],
+    parse: parseLsof,
+  }
 }
 const SS_PLAN: ScanPlan = { file: 'ss', args: ['-tlnpH'], parse: parseSs }
 const NETSTAT_PLAN: ScanPlan = { file: 'netstat', args: ['-ano'], parse: parseNetstat }
@@ -136,11 +138,15 @@ const NETSTAT_PLAN: ScanPlan = { file: 'netstat', args: ['-ano'], parse: parseNe
  * versa). Pure; the runner in host-scan.ts walks this list. First tool that
  * runs wins — even a genuinely empty result stops the search.
  */
-export function scanCandidates(platform: NodeJS.Platform = process.platform): ScanPlan[] {
+export function scanCandidates(
+  platform: NodeJS.Platform = process.platform,
+  port?: number,
+): ScanPlan[] {
+  const lsof = lsofPlan(port)
   if (platform === 'win32') return [NETSTAT_PLAN]
-  if (platform === 'linux') return [SS_PLAN, LSOF_PLAN, NETSTAT_PLAN]
+  if (platform === 'linux') return [SS_PLAN, lsof, NETSTAT_PLAN]
   // macOS (and other BSDs).
-  return [LSOF_PLAN, NETSTAT_PLAN]
+  return [lsof, NETSTAT_PLAN]
 }
 
 /**

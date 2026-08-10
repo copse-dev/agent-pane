@@ -26,6 +26,13 @@ export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z
   return parsed.data
 }
 
+const zPortNumber = z.number().int().min(1).max(65535)
+
+/** Decode the single positional argument accepted by `ports:kill`. */
+export function parsePortKillArgs(args: unknown[]): number {
+  return parseIpcArgs(zPortNumber, args)
+}
+
 export const zNonEmptyString = z.string().min(1)
 export const zPathString = z.string().max(4096)
 export const zSessionId = z.uuid()
