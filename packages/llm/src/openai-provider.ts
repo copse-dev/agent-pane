@@ -1,5 +1,11 @@
 import OpenAI from 'openai'
-import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  ImageDetail,
+  LLMProvider,
+  LLMMessage,
+  LLMTool,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
 import {
   isImageUnsupportedError,
@@ -332,11 +338,25 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
 }
 
 function toOpenAIContent(
-  content: Array<{ type: string; text?: string; dataUrl?: string }>,
+  content: Array<{ type: string; text?: string; dataUrl?: string; detail?: ImageDetail }>,
 ): OpenAI.ChatCompletionContentPart[] {
   return content.map((c) => {
     if (c.type === 'text') return { type: 'text', text: c.text ?? '' }
-    if (c.type === 'image' && c.dataUrl) return { type: 'image_url', image_url: { url: c.dataUrl } }
+    if (c.type === 'image' && c.dataUrl) {
+      return {
+        type: 'image_url',
+        // `detail` rides on the individual part, because fidelity is a property
+        // of the image: a pasted stack trace needs 'high' to stay legible while
+        // a batch of frames is fine at 'low'. Omitted entirely at 'auto' rather
+        // than sent explicitly — that is already OpenAI's default, and the
+        // OpenAI-compatible servers this adapter also drives can reject fields
+        // they don't recognise.
+        image_url: {
+          url: c.dataUrl,
+          ...(c.detail && c.detail !== 'auto' ? { detail: c.detail } : {}),
+        },
+      }
+    }
     return { type: 'text', text: '' }
   })
 }

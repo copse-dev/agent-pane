@@ -264,7 +264,7 @@ export function toResponsesInput(
           role: 'user',
           content: message.content.map((part) =>
             part.type === 'image'
-              ? { type: 'input_image', image_url: part.dataUrl, detail: 'auto' }
+              ? { type: 'input_image', image_url: part.dataUrl, detail: part.detail ?? 'auto' }
               : { type: 'input_text', text: part.text },
           ),
         },
@@ -305,7 +305,7 @@ export function toResponsesInput(
           role: 'user',
           content: images.map((part) =>
             part.type === 'image'
-              ? { type: 'input_image', image_url: part.dataUrl, detail: 'auto' }
+              ? { type: 'input_image', image_url: part.dataUrl, detail: part.detail ?? 'auto' }
               : { type: 'input_text', text: part.text },
           ),
         },

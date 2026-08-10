@@ -11,7 +11,25 @@
 // ── Messages sent to a provider ──────────────────────────────────────────────
 
 export type UserContent =
-  string | Array<{ type: 'text'; text: string } | { type: 'image'; dataUrl: string }>
+  | string
+  | Array<{ type: 'text'; text: string } | { type: 'image'; dataUrl: string; detail?: ImageDetail }>
+
+/**
+ * How much fidelity a provider should spend on one image.
+ *
+ * `low` downsamples to a fixed small budget — far cheaper, and enough for a
+ * screenshot you only need the gist of, but too coarse to read text in. `high`
+ * pays for full detail. `auto` leaves the choice to the provider, which is what
+ * Copse has always done and remains the default when a part carries no value.
+ *
+ * Carried per image rather than per provider on purpose: fidelity is a property
+ * of the picture, not the endpoint. A pasted stack trace and a batch of video
+ * frames can travel in the same request and want opposite answers, so one
+ * setting covering both would be wrong for one of them whichever way it is set.
+ */
+export const IMAGE_DETAILS = ['auto', 'low', 'high'] as const
+
+export type ImageDetail = (typeof IMAGE_DETAILS)[number]
 
 export type LLMMessage =
   | { role: 'system'; content: string }
