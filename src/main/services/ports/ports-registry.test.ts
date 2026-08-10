@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPortRows, portUrl } from './ports-registry.ts'
+import { buildPortRows, createPortScanCoalescer, portUrl } from './ports-registry.ts'
 import type { OwnedProcess } from './port-owners.ts'
 import type { ListeningPort } from './port-scan.ts'
 
@@ -86,5 +86,31 @@ describe('buildPortRows', () => {
     ])
     const rows = buildPortRows([port({ port: 3000, pid: 1 })], parentMap, [shell])
     assert.equal(rows[0]?.owner, null)
+  })
+})
+
+describe('createPortScanCoalescer', () => {
+  it('shares an in-flight host scan and starts a new one after it settles', async () => {
+    let calls = 0
+    let finish: ((result: { rows: []; tool: string }) => void) | undefined
+    const scan = createPortScanCoalescer(
+      () =>
+        new Promise((resolve) => {
+          calls++
+          finish = resolve
+        }),
+    )
+
+    const first = scan()
+    const concurrent = scan()
+    assert.equal(concurrent, first)
+    assert.equal(calls, 1)
+    finish?.({ rows: [], tool: 'lsof' })
+    await first
+
+    const next = scan()
+    assert.equal(calls, 2)
+    finish?.({ rows: [], tool: 'lsof' })
+    await next
   })
 })

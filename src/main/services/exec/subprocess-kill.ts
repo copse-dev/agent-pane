@@ -35,19 +35,20 @@ function signalProcessTree(proc: ChildProcess, signal: NodeJS.Signals): void {
  * one, so a non-leader falls through to a direct kill and never reaches a
  * sibling's group.
  */
-function signalPidTree(pid: number, signal: NodeJS.Signals): void {
+function signalPidTree(pid: number, signal: NodeJS.Signals): boolean {
   if (process.platform !== 'win32') {
     try {
       process.kill(-pid, signal)
-      return
+      return true
     } catch {
       // Not a group leader — fall through to a direct kill.
     }
   }
   try {
     process.kill(pid, signal)
+    return true
   } catch {
-    // Already exited.
+    return false
   }
 }
 
@@ -67,12 +68,13 @@ export function isPidAlive(pid: number): boolean {
  * so liveness is probed with signal 0. The timer is unref'd: a pending escalation
  * must never hold the app open at quit.
  */
-export function terminatePidTree(pid: number, graceMs = SUBPROCESS_KILL_GRACE_MS): void {
-  if (!Number.isInteger(pid) || pid <= 1) return
-  signalPidTree(pid, 'SIGTERM')
+export function terminatePidTree(pid: number, graceMs = SUBPROCESS_KILL_GRACE_MS): boolean {
+  if (!Number.isInteger(pid) || pid <= 1) return false
+  if (!signalPidTree(pid, 'SIGTERM')) return false
   setTimeout(() => {
     if (isPidAlive(pid)) signalPidTree(pid, 'SIGKILL')
   }, graceMs).unref()
+  return true
 }
 
 /**

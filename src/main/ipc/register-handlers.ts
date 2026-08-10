@@ -40,6 +40,7 @@ import {
   modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
+  parsePortKillArgs,
   zMcpServerName,
   zHookRunId,
   zHookTestRequest,
@@ -613,7 +614,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('ports:kill', (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const [port] = parseIpcArgs(z.tuple([z.number().int().min(1).max(65535)]), rawArgs)
+    const port = parsePortKillArgs(rawArgs)
     return killOwnedPort(port)
   })
 

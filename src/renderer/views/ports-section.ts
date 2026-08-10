@@ -59,7 +59,9 @@ export function mountPortsSection(
   let scanTool: string | null = null
   let selectedKey: string | null = null
   let loadToken = 0
-  let pollTimer: ReturnType<typeof setInterval> | null = null
+  let refreshTail: Promise<void> = Promise.resolve()
+  let pollRunning = false
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
 
   const section = el('section', { class: 'ports-section', hidden: true })
   const header = el('div', { class: 'agent-tasks-section-header' }, 'Ports')
@@ -174,7 +176,7 @@ export function mountPortsSection(
     }
   }
 
-  async function refresh(): Promise<void> {
+  async function runRefresh(): Promise<void> {
     const token = ++loadToken
     let next: PortScanResult
     try {
@@ -190,6 +192,15 @@ export function mountPortsSection(
     render()
   }
 
+  // A host scan can exceed POLL_MS (notably lsof on a busy macOS host). Queue
+  // callers behind the current scan so future refresh sources cannot spawn
+  // overlapping lsof/ps pairs or discard every completion.
+  function refresh(): Promise<void> {
+    const queued = refreshTail.then(runRefresh, runRefresh)
+    refreshTail = queued.catch(() => {})
+    return queued
+  }
+
   async function kill(row: PortRow, button: HTMLButtonElement): Promise<void> {
     const confirmed = await showConfirmDialog({
       message: `Stop ${portRowLabel(row)} on port ${String(row.port)}?`,
@@ -200,19 +211,45 @@ export function mountPortsSection(
     button.disabled = true
     try {
       const result = await api.ports.kill(row.port)
-      if (!result.killed) showErrorToast('Could not stop that process', result.reason ?? '')
+      if (!result.killed) {
+        showErrorToast('Could not stop that process', result.reason ?? '')
+      } else {
+        // A refresh that began before the signal can still hold a pre-kill
+        // snapshot. Invalidate it before removing the row so it cannot put the
+        // listener back after this accepted action renders.
+        loadToken++
+        const killedKey = rowKey(row)
+        rows = rows.filter((candidate) => rowKey(candidate) !== killedKey)
+        if (selectedKey === killedKey) selectedKey = null
+        render()
+      }
     } catch (err) {
       showErrorToast('Could not stop that process', err)
     }
-    // The signal is asynchronous — re-scan so the row disappears once it dies
-    // rather than pretending it already has.
-    await refresh()
+    // The regular serialized poll reconciles the optimistic removal after the
+    // SIGTERM/SIGKILL grace period without blocking this action on a slow lsof.
   }
 
   function stopPolling(): void {
     if (pollTimer === null) return
-    clearInterval(pollTimer)
+    clearTimeout(pollTimer)
     pollTimer = null
+  }
+
+  async function pollOnce(): Promise<void> {
+    if (pollRunning || !terminalModeActive(store)) return
+    pollRunning = true
+    try {
+      await refresh()
+    } finally {
+      pollRunning = false
+      if (terminalModeActive(store) && pollTimer === null) {
+        pollTimer = setTimeout(() => {
+          pollTimer = null
+          void pollOnce()
+        }, POLL_MS)
+      }
+    }
   }
 
   function syncPolling(): void {
@@ -220,9 +257,7 @@ export function mountPortsSection(
       stopPolling()
       return
     }
-    void refresh()
-    if (pollTimer !== null) return
-    pollTimer = setInterval(() => void refresh(), POLL_MS)
+    void pollOnce()
   }
 
   const unsubs = [

@@ -25,13 +25,15 @@ export interface PortScan {
  * while no tool at all is "we cannot see". Collapsing both to `[]` makes the
  * panel claim the first when it means the second.
  */
-export async function scanListeningPorts(): Promise<PortScan> {
-  for (const plan of scanCandidates()) {
+export async function scanListeningPorts(port?: number): Promise<PortScan> {
+  for (const plan of scanCandidates(process.platform, port)) {
     try {
       const { stdout, code } = await runCommand(plan.file, plan.args, { unsandboxed: true })
       // netstat/ss exit non-zero on some flag combos even while printing usable
       // rows; trust the parse when we got output, otherwise move on.
-      const parsed = plan.parse(stdout)
+      const parsed = plan
+        .parse(stdout)
+        .filter((candidate) => port === undefined || candidate.port === port)
       if (code === 0 || parsed.length > 0) return { tool: plan.file, ports: dedupePorts(parsed) }
     } catch {
       // Tool absent — try the next candidate.

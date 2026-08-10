@@ -1,10 +1,11 @@
 import '../../../tests/setup-dom.ts'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { mountPortsSection } from './ports-section.ts'
+import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 
@@ -114,6 +115,69 @@ describe('ports section', () => {
     )
   })
 
+  it('removes an owned row once main accepts its kill signal', async () => {
+    mountConfirmDialog()
+    const killed: number[] = []
+    const { rail, destroy } = mount([OWNED], {
+      kill: (port) => {
+        killed.push(port)
+        return Promise.resolve({ killed: true })
+      },
+    })
+    mounts.push(destroy)
+    await settle()
+
+    qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="3000"]').click()
+    qsRequired<HTMLButtonElement>(rail, '.ports-kill-btn').click()
+    clickActiveConfirmDialogConfirm()
+    await settle()
+    await settle()
+
+    assert.deepEqual(killed, [3000])
+    assert.equal(rail.querySelector('.ports-row[data-port="3000"]'), null)
+  })
+
+  it('does not let a pre-kill scan restore the removed row', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    mountConfirmDialog()
+    let calls = 0
+    let releaseStaleScan: ((result: PortScanResult) => void) | undefined
+    const staleScan = new Promise<PortScanResult>((resolve) => {
+      releaseStaleScan = resolve
+    })
+
+    try {
+      const { rail, destroy } = mount([], {
+        list: () => {
+          calls++
+          return calls === 1 ? Promise.resolve({ rows: [OWNED], tool: 'lsof' }) : staleScan
+        },
+        kill: () => Promise.resolve({ killed: true }),
+      })
+      mounts.push(destroy)
+      await settle()
+      await settle()
+      await settle()
+
+      mock.timers.tick(5_000)
+      await settle()
+      assert.equal(calls, 2)
+
+      qsRequired<HTMLButtonElement>(rail, '.ports-row[data-port="3000"]').click()
+      qsRequired<HTMLButtonElement>(rail, '.ports-kill-btn').click()
+      clickActiveConfirmDialogConfirm()
+      await settle()
+      await settle()
+      assert.equal(rail.querySelector('.ports-row[data-port="3000"]'), null)
+
+      releaseStaleScan?.({ rows: [OWNED], tool: 'lsof' })
+      await settle()
+      assert.equal(rail.querySelector('.ports-row[data-port="3000"]'), null)
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
   it('offers Open only when the bind address is reachable on loopback', async () => {
     const { rail, destroy } = mount([OWNED, FOREIGN])
     mounts.push(destroy)
@@ -178,5 +242,34 @@ describe('ports section', () => {
     await settle()
     // Leaving the pane must not trigger another scan; each one spawns subprocesses.
     assert.equal(calls, 1)
+  })
+
+  it('does not overlap scans when one outlasts the polling interval', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    let release: ((result: PortScanResult) => void) | undefined
+    const slowScan = new Promise<PortScanResult>((resolve) => {
+      release = resolve
+    })
+    let calls = 0
+
+    try {
+      const { destroy } = mount([], {
+        list: () => {
+          calls++
+          return slowScan
+        },
+      })
+      mounts.push(destroy)
+      await settle()
+      assert.equal(calls, 1)
+
+      mock.timers.tick(5_000)
+      await settle()
+      assert.equal(calls, 1, 'a slow scan must not be overlapped by the next poll')
+      release?.({ rows: [], tool: 'lsof' })
+      await settle()
+    } finally {
+      mock.timers.reset()
+    }
   })
 })
