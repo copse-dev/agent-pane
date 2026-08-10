@@ -104,8 +104,8 @@ manual we have not written yet.
 
 ## What we have today
 
-43 top-level docs (8,088 lines), 57 plan documents, 3 spikes, plus `README.md`, `AGENTS.md`,
-`SECURITY.md`, `SUPPORT.md`, `CHANGELOG.md`. By audience:
+43 top-level docs (8,088 lines), 58 plan documents (this one included), 3 spikes, plus
+`README.md`, `AGENTS.md`, `SECURITY.md`, `SUPPORT.md`, `CHANGELOG.md`. By audience:
 
 | Bucket                                               | Count | Docs                                                                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------------------------------------- | ----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
