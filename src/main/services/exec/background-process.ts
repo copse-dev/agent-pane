@@ -296,6 +296,29 @@ export function listBackgroundProcesses(
   return [...processes.values()].filter((entry) => sameOwner(entry.owner, owner)).map(toInfo)
 }
 
+/** A running task's pid, for attributing listening ports back to the task that bound them. */
+export interface BackgroundProcessPid {
+  id: string
+  command: string
+  pid: number
+}
+
+/**
+ * Every running task's pid, across threads and projects. Unlike
+ * `listBackgroundProcesses` this is deliberately unscoped: the Ports panel shows
+ * the whole host, so a port bound by another thread's task should still be named
+ * rather than left inert.
+ */
+export function listBackgroundProcessPids(): BackgroundProcessPid[] {
+  const out: BackgroundProcessPid[] = []
+  for (const entry of processes.values()) {
+    const pid = entry.proc.pid
+    if (entry.exited || pid === undefined || pid <= 0) continue
+    out.push({ id: entry.id, command: entry.command, pid })
+  }
+  return out
+}
+
 /** Recent output for a process (head + tail, capped), or null when unknown. */
 export function getBackgroundProcessLogs(
   id: string,
