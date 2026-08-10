@@ -75,6 +75,32 @@ On a Linux box with no unlocked keyring, `safeStorage` is unavailable and Copse
 will not silently write a key to disk in the clear: saving one requires explicit
 consent, and `/checkup` warns for as long as a plaintext key is stored.
 
+API keys are the only thing Copse itself encrypts. Everything else in the
+profile is plain JSON or plain files — but "not encrypted" is not the same as
+"portable", because several stores record **absolute paths**.
+
+## Moving a profile to another machine
+
+Threads are the part that always survives. They are keyed by the project's
+internal id, not by where the repository sits, so `workspace/` restores intact
+even if every path changed.
+
+What needs attention:
+
+| Store                                 | On a path change                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Threads, tasks, decision log          | Survive — keyed by project id                                                                                 |
+| Knowledge, long tasks, roadmap review | Survive — keyed by project id                                                                                 |
+| Projects (`config.json`)              | Record absolute paths. A path that no longer exists is quarantined, not deleted; relocate it from the sidebar |
+| Worktrees                             | Git records absolute paths inside each linked checkout; expect to recreate them                               |
+| Browser sessions                      | Cookies are sealed with the same OS key as API keys, so logins do not survive                                 |
+| Semantic-search index                 | Rebuilt on demand                                                                                             |
+
+So the practical restore sequence is: copy `~/.copse/` across, relocate each
+project onto its path on the new machine, and re-enter your API keys. Threads
+and per-project notes follow the project once it is relocated; browser logins
+and the search index rebuild themselves.
+
 ## Other things that do not travel
 
 - **Browser sessions and the semantic index** live in `user-data/` and are the

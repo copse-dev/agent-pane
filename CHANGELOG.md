@@ -24,6 +24,23 @@ every published entry.
   nothing was being written to. Back up `~/.copse/` and you have all of it —
   see [`docs/recovery.md`](docs/recovery.md), which is now one directory rather
   than a checklist.
+- Knowledge notes, long tasks and roadmap-review state now follow a project that
+  moves. They were filed under a hash of the project's absolute path while
+  threads were filed under its id, so relocating a project — moving the repo,
+  recovering a folder Copse had quarantined, or restoring a backup onto a
+  machine where your home directory has a different name — brought the threads
+  back and left the notes behind. Nothing was ever deleted; the app was looking
+  in a directory named after where the project used to be. All three now key by
+  project id like threads do, and an existing directory is carried across the
+  first time it is opened.
+- A provider whose stored API key cannot be decrypted no longer presents itself
+  as configured. Keys are sealed with the OS keychain of the user that saved
+  them, not with the Copse profile, so a profile restored on a second machine
+  carries ciphertext nothing there can open. Copse treated "a key is stored" as
+  "a key works": the provider looked ready and only the request failed. Such a
+  key now reads as unconfigured, so the normal prompt to add one appears. A
+  keyring that is merely locked — common on Linux at login — is not mistaken for
+  a broken key.
 - `/checkup` now reports an API key it cannot decrypt. Keys are sealed with the
   OS keychain of the user that saved them, not with the Copse profile, so a
   profile restored on a second machine carries ciphertext nothing there can

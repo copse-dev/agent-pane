@@ -35,6 +35,11 @@ Browser profiles and the semantic-search index are the bulk of `user-data/` and
 are not required to reconstruct threads. Excluding them keeps a backup small, at
 the cost of losing browser sessions and rebuilding the search index on restore.
 
+Threads survive a restore even if your projects land at different absolute paths,
+because they are keyed by project id. Some smaller stores are not — see
+[profiles.md](profiles.md#moving-a-profile-to-another-machine) before restoring
+onto a machine where the repository paths will differ.
+
 The granular overrides `COPSE_WORKSPACE_DIR`, `COPSE_WORKTREES_DIR`, and
 `COPSE_PANEL_USER_DATA` each move one directory out of this root. If you set
 any of them, back up that location too. See [profiles.md](profiles.md) for

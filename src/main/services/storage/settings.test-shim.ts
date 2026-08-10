@@ -62,7 +62,8 @@ export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   if (getExplicitSettingsProfile()) return hasApiKey(provider)
   const envVar = ENV_VARS[provider]
   const environmentKey = envVar ? firstNonEmptyString(process.env[envVar]) : undefined
-  return environmentKey !== undefined || hasApiKey(provider)
+  if (environmentKey !== undefined) return true
+  return isApiKeyReadable(provider) === true
 }
 
 export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {

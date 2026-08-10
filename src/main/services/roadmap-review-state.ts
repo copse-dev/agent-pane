@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { z } from 'zod'
-import { getActiveProjectRoot } from './workspace.ts'
 import { copseDataRoot } from './storage/copse-paths.ts'
+import { projectStoreNamespaceDir } from './storage/project-namespace.ts'
 
 /**
  * Per-project roadmap review checkpoint. Commit history for the next bulk run is
@@ -34,23 +33,8 @@ function reviewBaseDir(): string {
   return rootOverride ?? join(copseDataRoot(), 'roadmap-review')
 }
 
-function workspaceNamespace(): string {
-  const root = getActiveProjectRoot()
-  if (!root) return 'shared'
-  const name = slugify(basename(root)) || 'workspace'
-  const hash = createHash('sha1').update(root).digest('hex').slice(0, 8)
-  return `${name}-${hash}`
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
 function statePath(): string {
-  const dir = join(reviewBaseDir(), workspaceNamespace())
+  const dir = projectStoreNamespaceDir(reviewBaseDir())
   mkdirSync(dir, { recursive: true })
   return join(dir, 'state.json')
 }

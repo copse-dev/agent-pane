@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   appendFileSync,
   mkdirSync,
@@ -8,10 +8,10 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { splitSkillMarkdown } from '../skills/parse-skill-frontmatter.ts'
-import { getActiveProjectRoot } from '../workspace.ts'
 import { copseDataRoot } from './copse-paths.ts'
+import { projectStoreNamespaceDir } from './project-namespace.ts'
 
 /**
  * Per-project store for durable *application knowledge* — facts, decisions, and
@@ -102,34 +102,26 @@ function knowledgeBaseDir(): string {
 }
 
 /**
- * Knowledge is scoped per project so notes about one repo never leak into
- * another. The namespace is a readable slug of the workspace folder name plus a
- * short hash of its absolute path, mirroring the memories store. With no
- * workspace open they fall back to a `shared` namespace.
+ * Absolute directory holding the current project's knowledge notes and index.
+ *
+ * Scoped per project so notes about one repo never leak into another. With no
+ * project open the namespace falls back to `shared`.
  */
-function workspaceNamespace(): string {
-  const root = getActiveProjectRoot()
-  if (!root) return 'shared'
-  const name = slugify(basename(root)) || 'workspace'
-  const hash = createHash('sha1').update(root).digest('hex').slice(0, 8)
-  return `${name}-${hash}`
+export function knowledgeDir(): string {
+  return projectStoreNamespaceDir(knowledgeBaseDir())
 }
 
+function indexFile(): string {
+  return join(knowledgeDir(), 'index.jsonl')
+}
+
+/** Note types become directory names (`Roadmap` → `roadmap/`). */
 function slugify(text: string): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64)
-}
-
-/** Absolute directory holding the current project's knowledge notes and index. */
-export function knowledgeDir(): string {
-  return join(knowledgeBaseDir(), workspaceNamespace())
-}
-
-function indexFile(): string {
-  return join(knowledgeDir(), 'index.jsonl')
 }
 
 /** Relative path (from the workspace knowledge dir) of a note's file. */
