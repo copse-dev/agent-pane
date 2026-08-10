@@ -16,13 +16,17 @@ function testWindow(): TestWindow {
   let destroyed = false
   let focused = false
   const sent: Array<[string, ...unknown[]]> = []
-  const webContents: MainWindowWebContents = {
+  const liveWebContents: MainWindowWebContents = {
     send(channel, ...args): void {
       sent.push([channel, ...args])
     },
   }
   return {
-    webContents,
+    get webContents(): MainWindowWebContents {
+      // Match Electron: reading properties on a destroyed BrowserWindow throws.
+      if (destroyed) throw new TypeError('Object has been destroyed')
+      return liveWebContents
+    },
     sent,
     isDestroyed: () => destroyed,
     isFocused: () => focused,
@@ -98,6 +102,39 @@ describe('MainWindowRegistry', () => {
     assert.equal(registry.getPrimary(), undefined)
     assert.equal(registry.isPrimary(second.webContents), false)
     assert.equal(registry.fromWebContents(first.webContents), undefined)
+  })
+
+  it('unregisters after the window is destroyed without reading destroyed webContents', () => {
+    const registry = new MainWindowRegistry<TestWindow>(idFactory('first', 'second'))
+    const first = testWindow()
+    const second = testWindow()
+    const firstContents = first.webContents
+    registry.register(first)
+    registry.register(second)
+
+    first.setDestroyed(true)
+    registry.unregister('first')
+
+    assert.equal(registry.fromWebContents(firstContents), undefined)
+    assert.equal(registry.getPrimary(), undefined)
+    assert.equal(registry.getMostRecentlyFocused()?.id, 'second')
+    assert.deepEqual(
+      registry.list().map(({ id }) => id),
+      ['second'],
+    )
+  })
+
+  it('unregisters a destroyed window handle without throwing', () => {
+    const registry = new MainWindowRegistry<TestWindow>(idFactory('first'))
+    const first = testWindow()
+    const firstContents = first.webContents
+    registry.register(first)
+
+    first.setDestroyed(true)
+    registry.unregister(first)
+
+    assert.equal(registry.fromWebContents(firstContents), undefined)
+    assert.equal(registry.list().length, 0)
   })
 
   it('skips destroyed windows when sending and broadcasting', () => {
