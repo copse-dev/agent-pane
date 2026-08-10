@@ -62,22 +62,45 @@ describe('agent-eval scenarios agree with shouldSteerTodos', () => {
     expect: z.object({ shouldSteerTodos: z.boolean().optional() }).optional(),
   })
 
+  function selectableFirstPrompts(scenario: z.infer<typeof scenarioSchema>): string[] {
+    if (scenario.promptVariants && scenario.promptVariants.length > 0) {
+      return scenario.promptVariants
+    }
+    const first = scenario.prompts?.[0]
+    if (first === undefined) return []
+    return [typeof first === 'string' ? first : first.text]
+  }
+
+  it('checks every selectable prompt variant', () => {
+    assert.deepEqual(
+      selectableFirstPrompts({
+        prompts: ['ignored when variants are present'],
+        promptVariants: ['variant zero', 'variant one'],
+      }),
+      ['variant zero', 'variant one'],
+    )
+  })
+
   for (const file of readdirSync(scenarioDir).filter((name) => name.endsWith('.json'))) {
     const parsed = scenarioSchema.parse(
       JSON.parse(readFileSync(join(scenarioDir, file), 'utf8')) as unknown,
     )
     const declared = parsed.expect?.shouldSteerTodos
     if (declared === undefined) continue
-    const first = parsed.prompts?.[0] ?? parsed.promptVariants?.[0]
-    const text = typeof first === 'string' ? first : first?.text
-    if (text === undefined) continue
+    // A prompts scenario is analyzed against its first user turn. A variants
+    // scenario can select any variant as that first turn, so every variant must
+    // agree with the shared expectation.
+    const selectedPrompts = selectableFirstPrompts(parsed)
 
-    it(`${file} declares shouldSteerTodos=${String(declared)} and means it`, () => {
-      assert.equal(
-        shouldSteerTodos(text),
-        declared,
-        `${file} expects shouldSteerTodos=${String(declared)} but the matcher disagrees for its first prompt`,
-      )
-    })
+    for (const [index, text] of selectedPrompts.entries()) {
+      const label = parsed.promptVariants ? ` variant ${String(index)}` : ''
+      it(`${file}${label} declares shouldSteerTodos=${String(declared)} and means it`, () => {
+        assert.equal(
+          shouldSteerTodos(text),
+          declared,
+          `${file}${label} expects shouldSteerTodos=${String(declared)} but the matcher disagrees for its first prompt`,
+        )
+      })
+    }
   }
 })
