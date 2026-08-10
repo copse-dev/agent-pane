@@ -13,6 +13,7 @@ import {
   workspaceSandboxOverlay,
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
+import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
 import {
   detachForGroupKill,
   formatArgvForShell,
@@ -85,6 +86,17 @@ function strippedBaseEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   return envForRendererChildProcess(base)
 }
 
+/**
+ * Fail before the fork when the working directory is gone, naming the missing
+ * directory instead of libuv's misleading `spawn /bin/bash ENOENT` (see
+ * {@link isSpawnableWorkingDirectory}). Local spawns only — an SSH target's
+ * working directory lives on the remote host, so it returns before this.
+ */
+async function requireLocalWorkingDirectory(cwd: string): Promise<void> {
+  if (await isSpawnableWorkingDirectory(cwd)) return
+  throw new Error(`Working directory no longer exists: ${cwd}`)
+}
+
 function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
   const target = resolveExecutionTarget(explicit)
   if (isSshExecutionTarget(target)) return target
@@ -116,6 +128,7 @@ export async function spawnInProjectSandbox(
       ...(opts.signal ? { signal: opts.signal } : {}),
     })
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return spawn(executable, args, {
@@ -176,6 +189,7 @@ export async function spawnShellInProjectSandbox(
       ...(opts.signal ? { signal: opts.signal } : {}),
     })
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
@@ -247,6 +261,7 @@ export async function spawnBackgroundProcess(
       ...(opts.env ? { env: opts.env } : {}),
     })
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   if (opts.unsandboxed === true || !isProjectSandboxEnabled()) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
@@ -360,6 +375,7 @@ export async function spawnPtyInProjectSandbox(
     })
     return ptyProcess
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   const termEnv: NodeJS.ProcessEnv = {
     ...strippedBaseEnv(),

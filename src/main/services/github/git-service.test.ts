@@ -207,22 +207,41 @@ describe('work-tree probe cache', { skip: !gitOk && 'git not installed' }, () =>
     assert.equal(await isInsideGitWorkTree(dir), true)
   })
 
-  it('caches a positive, and a stale one self-corrects through getGitStatus', async () => {
+  it('serves getGitStatus from cache, and a stale entry still yields null', async () => {
+    git('init', '-q')
+    assert.notEqual(await getGitStatus(dir), null)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+
+    // The cached probe short-circuits, so `getGitStatus` goes straight to
+    // `git status` — which fails on its own and produces the same null the live
+    // probe would have. That backstop is what makes caching the positive safe.
+    assert.equal(await getGitStatus(dir), null)
+  })
+
+  it('never serves isInsideGitWorkTree from cache, so a vanished checkout says so', async () => {
+    // The bare boolean has no failing follow-up command to correct a stale yes,
+    // and callers gate real work on it — #1686 pins the deleted-folder case.
     git('init', '-q')
     assert.equal(await isInsideGitWorkTree(dir), true)
 
     await rm(join(dir, '.git'), { recursive: true, force: true })
 
-    // Stale positive: the cache still answers true without re-probing...
-    assert.equal(await isInsideGitWorkTree(dir), true)
-    // ...but the `git status` behind it fails on its own, so callers see the
-    // same null the probe would have given them. That is what makes caching
-    // the positive safe without eager invalidation.
-    assert.equal(await getGitStatus(dir), null)
-
-    invalidateGitWorkTreeProbe(dir)
-
     assert.equal(await isInsideGitWorkTree(dir), false)
+  })
+
+  it('evicts a stale entry when a live probe observes the negative', async () => {
+    git('init', '-q')
+    assert.notEqual(await getGitStatus(dir), null)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+    // The live probe both answers honestly and heals the cache behind it, so a
+    // later `git init` at the same path is not read through the old entry.
+    assert.equal(await isInsideGitWorkTree(dir), false)
+
+    git('init', '-q')
+
+    assert.notEqual(await getGitStatus(dir), null)
   })
 })
 
@@ -876,5 +895,30 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
 
     assert.equal(await getCurrentCommitHash(), null)
     assert.deepEqual(await getGitPromptState(), { startingCommit: null, dirty: false })
+  })
+})
+
+describe('git reads on a deleted checkout', { skip: !gitOk && 'git not installed' }, () => {
+  let restore: (() => void) | undefined
+
+  afterEach(() => {
+    setGitAvailableForTest(null)
+    restore?.()
+    restore = undefined
+  })
+
+  it('degrades to a failed read instead of an unhandled spawn rejection', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'copse-git-deleted-checkout-'))
+    spawnSync('git', ['init', '-q'], { cwd: repo })
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+    assert.equal(await isInsideGitWorkTree(repo), true)
+
+    // A checkout can vanish under a running app while the persisted project path
+    // that names it keeps reaching git — the folder is gone, not the shell, so
+    // the inspection must answer "no repository" rather than reject.
+    await rm(repo, { recursive: true, force: true })
+    assert.equal(await isInsideGitWorkTree(repo), false)
+    assert.equal(await getGitStatus(repo), null)
   })
 })
