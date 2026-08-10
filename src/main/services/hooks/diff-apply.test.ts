@@ -66,7 +66,9 @@ describe('diff-apply Copse-native events (F2)', () => {
     process.env['HOME'] = tempHome
     restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
     resetCopseHookSessionErrorsForTest()
-    setCopseHookTimeoutForTest(2_000)
+    // Coverage workers can take several seconds to schedule the real shell
+    // process; this suite is asserting payload delivery, not timeout behavior.
+    setCopseHookTimeoutForTest(10_000)
     clearDiffQueueForTest()
   })
 
