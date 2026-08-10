@@ -14,16 +14,16 @@ so, what actually goes on it?
 **Adopt the shape; do not move the tree.**
 
 The gap OpenChamber's site closes is not "our docs are badly organised" — it is that _we have
-almost no user documentation at all_. Of 40 top-level docs, roughly half are written for a
+almost no user documentation at all_. Of 43 top-level docs, roughly half are written for a
 contributor or for an agent working on this codebase, and the ones that do address a user are
 tool-by-tool essays rather than "here is how you do the thing you opened the app to do."
 `README.md` carries the entire user manual in about 40 lines.
 
 So the work splits cleanly:
 
-1. **Keep `docs/` where it is.** It is load-bearing: 362 references across the repo, 34
-   distinct docs cited from `src/`, `tests/` and `scripts/`, plus `AGENTS.md`. Moving or
-   renaming that tree breaks agent navigation for no user benefit.
+1. **Keep `docs/` where it is.** It is load-bearing: hundreds of references across the repo,
+   dozens of distinct docs cited from `src/`, `tests/` and `scripts/`, plus `AGENTS.md`.
+   Moving or renaming that tree breaks agent navigation for no user benefit.
 2. **Write a new user-facing tree** in OpenChamber's shape, publish it under `copse.dev/docs/`,
    and let the existing `docs/` become explicitly what it already is — the contributor and
    design archive.
@@ -34,8 +34,9 @@ descriptions, and troubleshooting as a first-class section rather than an aftert
 
 ## What OpenChamber actually does
 
-Source lives in `packages/docs/content/docs/` — 41 flat `.mdx` files, one `troubleshooting/`
-subdirectory, and nine locale directories. Rendered with VitePress.
+Checked 10 August 2026: source lives in `packages/docs/content/docs/` — 42 flat `.mdx` files,
+one `troubleshooting/` subdirectory, and nine locale directories. The source package declares
+Starlight navigation; rendering and deployment live in OpenChamber's separate website repo.
 
 **The IA is a separate artifact.** `sidebar.config.json` hand-curates every page into seven
 sections; the file tree stays flat. Sections are named for what the reader is trying to do,
@@ -103,15 +104,15 @@ manual we have not written yet.
 
 ## What we have today
 
-40 top-level docs (7,489 lines), 57 plans, 3 spikes, plus `README.md`, `AGENTS.md`,
+43 top-level docs (8,088 lines), 57 plan documents, 3 spikes, plus `README.md`, `AGENTS.md`,
 `SECURITY.md`, `SUPPORT.md`, `CHANGELOG.md`. By audience:
 
-| Bucket                                               | Count | Docs                                                                                                                                                                                                                                                                                                                                                                 |
-| ---------------------------------------------------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **User-facing material** (raw material for the site) |    20 | `acp-agents`, `acp-setup-guide`, `adding-a-pack`, `packs`, `custom-tools`, `claude-hooks`, `cursor-hooks`, `copse-hooks`, `cursor-plugins`, `forced-planning`, `parallel-search`, `pii-redaction`, `lm-studio-context-persistence`, `privacy-data-flow`, `provider-data-policies`, `recovery`, `remote-agents`, `read-archive`, `video-frames`, `computer-use-tools` |
-| **Contributor / architecture** (stays put)           |    11 | `testing-strategy`, `type-safety`, `ui-taste`, `e2e-component-migration`, `steer-evals`, `demo-walkthrough`, `decision-log-format`, `thread-store-format`, `hooks`, `prompt-caching`, `acp-capability-probe`                                                                                                                                                         |
-| **Release & ops**                                    |     3 | `release-checklist`, `releasing-macos`, `ci-runner-security`                                                                                                                                                                                                                                                                                                         |
-| **Security & point-in-time audits**                  |     6 | `threat-model`, `supply-chain-security`, `security-review-ga`, `product-definition-of-done-audit`, `acp-support-findings`, `acp-v2-readiness`                                                                                                                                                                                                                        |
+| Bucket                                               | Count | Docs                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------- | ----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **User-facing material** (raw material for the site) |    21 | `acp-agents`, `acp-setup-guide`, `adding-a-pack`, `packs`, `custom-tools`, `claude-hooks`, `cursor-hooks`, `copse-hooks`, `cursor-plugins`, `forced-planning`, `parallel-search`, `pii-redaction`, `lm-studio-context-persistence`, `privacy-data-flow`, `provider-data-policies`, `recovery`, `remote-agents`, `read-archive`, `video-frames`, `computer-use-tools`, `shell-permissions` |
+| **Contributor / architecture** (stays put)           |    13 | `testing-strategy`, `type-safety`, `ui-taste`, `e2e-component-migration`, `steer-evals`, `demo-walkthrough`, `decision-log-format`, `thread-store-format`, `hooks`, `prompt-caching`, `acp-capability-probe`, `agent-development`, `remote-agent-demo-debugging`                                                                                                                          |
+| **Release & ops**                                    |     3 | `release-checklist`, `releasing-macos`, `ci-runner-security`                                                                                                                                                                                                                                                                                                                              |
+| **Security & point-in-time audits**                  |     6 | `threat-model`, `supply-chain-security`, `security-review-ga`, `product-definition-of-done-audit`, `acp-support-findings`, `acp-v2-readiness`                                                                                                                                                                                                                                             |
 
 Two structural observations about the "user-facing" bucket:
 
@@ -188,10 +189,10 @@ deploy path, no new hosting, and the docs inherit the `copse.dev` brand.
 
 On the generator, the honest trade-off — none of this has been prototyped:
 
-| Option                                                     | Cost                                                                                                                                                                       | Note                                                                           |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| VitePress / Starlight                                      | New Node toolchain, and its default theme does not match `site/`'s hand-rolled brand (Averia Serif, Pliant, custom `styles.css`). Theming is the real cost, not the build. | What OpenChamber uses. Gets search, sidebar, dark mode, anchors for free.      |
-| Extend `scripts/build.mts` with a small Markdown→HTML step | Full brand control, no new framework, but we own search, nav and anchors.                                                                                                  | Fits the existing hand-rolled site; the site is currently _copied_, not built. |
+| Option                                                     | Cost                                                                                                                                                                       | Note                                                                                   |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| VitePress / Starlight                                      | New Node toolchain, and its default theme does not match `site/`'s hand-rolled brand (Averia Serif, Pliant, custom `styles.css`). Theming is the real cost, not the build. | Starlight is what OpenChamber uses. Gets search, sidebar, dark mode, anchors for free. |
+| Extend `scripts/build.mts` with a small Markdown→HTML step | Full brand control, no new framework, but we own search, nav and anchors.                                                                                                  | Fits the existing hand-rolled site; the site is currently _copied_, not built.         |
 
 Lean VitePress or Starlight if the docs are going to reach ~45 pages, because client-side
 search stops being optional at that size. Either way the portable idea is the **curated
@@ -231,7 +232,7 @@ did not exist when the two options above were weighed.
   value per page in the plan: it is the product's differentiator and it is currently
   undocumented for users.
 - **P3 — The workspace and the agent.** Panes, editor, terminal, git, threads, attachments.
-  Mostly new writing, mostly screenshot-led — `site/screenshots/` already has 17 usable
+  Mostly new writing, mostly screenshot-led — `site/screenshots/` already has 16 usable
   captures.
 - **P4 — Adapt the extension docs.** Rewrite the pack/hook/tool docs into task pages; leave the
   architecture originals in `docs/` and link back to them from each page's footer.
@@ -242,7 +243,7 @@ did not exist when the two options above were weighed.
 ## What we deliberately do not take
 
 - **Localisation.** Nine locales is a pipeline for a manual that does not exist yet.
-- **Moving `docs/` under a docs package.** 362 inbound references say no.
+- **Moving `docs/` under a docs package.** Hundreds of inbound references say no.
 - **Publishing plans and spikes.** `docs/plans/` is design history with its own status ledger;
   it is valuable precisely because it is not a promise to users.
 - **One page per mechanism.** The four-hooks-documents problem is the thing being fixed, not a
