@@ -36,8 +36,9 @@ reaches `release`, not after.
       publisher generates the GitHub Release body from it
       ([`scripts/release-notes.mts`](../scripts/release-notes.mts)) and fails
       closed if it is empty, so write it in the version-bump PR.
-- [ ] Reset `Unreleased` for subsequent work in that same PR — after promotion
-      the release is already cut.
+- [ ] Leave those notes in `Unreleased` through promotion: both tag cutting and
+      packaging read them from the promoted commit and fail closed if the
+      section is empty.
 - [ ] Confirm the generated body reads as release notes: run
       `node scripts/release-notes.mts` and check it. The channel, macOS 26+
       requirement, and `arm64`/`x64` support are added automatically; known
@@ -67,6 +68,9 @@ reaches `release`, not after.
       reviewed notes together. Do not rebuild or publish locally.
 - [ ] Confirm the published artifacts and release notes identify the same
       version, channel, minimum OS, and architectures.
+- [ ] After the GitHub Release exists, reset `Unreleased` for subsequent work in
+      a follow-up PR. Promoting that reset is safe because the unchanged package
+      version is already tagged and `Cut release tag` treats it as a no-op.
 
 ## Channel rehearsal
 

@@ -404,6 +404,24 @@ describe('release-cut.yml workflow invariants', () => {
     assert.match(workflow, /^ {2}contents: write/m)
   })
 
+  it('recovers when tag creation succeeded but dispatch did not', () => {
+    // The tag is immutable release state. If createRef succeeds and dispatch
+    // transiently fails, a rerun must not strand that version behind the
+    // ordinary existing-tag no-op. Running the publisher at the tag gives its
+    // workflow run the release SHA, which also makes duplicate detection exact.
+    assert.match(workflow, /existing\.data\.object\.sha !== sha/)
+    assert.match(workflow, /listWorkflowRuns\(\{/)
+    assert.match(workflow, /head_sha: sha/)
+    assert.match(workflow, /ref: tag/)
+    const sameCommitGuard = workflow.indexOf('existing.data.object.sha !== sha')
+    const existingRunLookup = workflow.indexOf('listWorkflowRuns')
+    const dispatch = workflow.indexOf('createWorkflowDispatch')
+    assert.ok(
+      sameCommitGuard >= 0 && existingRunLookup > sameCommitGuard && dispatch > existingRunLookup,
+      'an exact-tag rerun must check for an existing release run before dispatching',
+    )
+  })
+
   it('classifies the version and proves the notes exist before tagging', () => {
     // Both fail closed in seconds; the same failures after a dispatch would cost
     // a full sign-and-notarize cycle first.

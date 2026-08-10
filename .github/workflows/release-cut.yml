@@ -83,20 +83,41 @@ jobs:
             const tag = process.env.TAG;
 
             // Most promotions carry an already-released version, so finding the
-            // tag is the ordinary outcome and not a failure.
+            // tag at an older commit is the ordinary outcome and not a failure.
+            // Finding it at this exact commit means a previous attempt created
+            // the tag but may have failed before dispatch; continue far enough
+            // to prove that Release (macOS) has a run for the commit.
             try {
               const existing = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
-              core.info(
-                `${tag} already exists at ${existing.data.object.sha}; nothing to cut. ` +
-                  'Bump package.json on `main` to release the next version.',
-              );
-              return;
+              if (existing.data.object.sha !== sha) {
+                core.info(
+                  `${tag} already exists at ${existing.data.object.sha}; nothing to cut. ` +
+                    'Bump package.json on `main` to release the next version.',
+                );
+                return;
+              }
+              core.info(`${tag} already exists at the release commit; checking its release run.`);
             } catch (error) {
               if (error.status !== 404) throw error;
+              await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tag}`, sha });
+              core.info(`Created ${tag} at ${sha}.`);
             }
 
-            await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tag}`, sha });
-            core.info(`Created ${tag} at ${sha}.`);
+            // Make tag creation + dispatch recoverable across a failed job. A
+            // successful dispatch below runs the workflow at the tag, so its
+            // head SHA is the release commit and this lookup identifies it
+            // without confusing it with a run for another version.
+            const existingRuns = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'release-mac.yml',
+              head_sha: sha,
+              per_page: 1,
+            });
+            if (existingRuns.data.total_count > 0) {
+              core.info(`Release (macOS) already has a run for ${tag}; nothing to dispatch.`);
+              return;
+            }
 
             // A tag pushed with GITHUB_TOKEN raises no `push` event, so the
             // `tags: ['v*']` trigger on Release (macOS) would never fire.
@@ -108,7 +129,7 @@ jobs:
               owner,
               repo,
               workflow_id: 'release-mac.yml',
-              ref: context.payload.repository.default_branch,
+              ref: tag,
               inputs: { tag },
             });
             core.info(`Dispatched Release (macOS) for ${tag}.`);

@@ -87,7 +87,8 @@ The version in `package.json` is the trigger. Bumping it is the only manual step
    review and GA-blocker handling.
 2. In one PR into `main`, set `package.json` to the next supported version —
    such as `0.1.0-beta.2` or `0.1.0` — and write that release's notes into
-   `CHANGELOG.md`'s `Unreleased` section, resetting it for subsequent work.
+   `CHANGELOG.md`'s `Unreleased` section. Leave them there through promotion;
+   the release jobs read the notes from that exact commit.
 3. Let [the daily promotion](../.github/workflows/promote-develop.yml) carry
    `main` to `release`, or dispatch it early. Merging requires the full
    `CI Passed` tier.
@@ -104,6 +105,8 @@ The version in `package.json` is the trigger. Bumping it is the only manual step
    with notes generated from `CHANGELOG.md`.
 6. Review the published GitHub Release notes and add known issues before
    announcing the release.
+7. Reset `CHANGELOG.md`'s `Unreleased` section in a follow-up PR. Its unchanged,
+   already-tagged package version makes the next promotion a release-cut no-op.
 
 A version is cut exactly once. If its release run fails, fix forward and bump to
 the next version rather than re-cutting the same one: the publisher refuses to
