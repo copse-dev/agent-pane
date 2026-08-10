@@ -816,6 +816,10 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  ports: {
+    list: () => ipcRenderer.invoke('ports:list'),
+    kill: (port: number) => ipcRenderer.invoke('ports:kill', port),
+  },
   memories: {
     list: () => ipcRenderer.invoke('memories:list'),
     create: (title: string, body: string, tags?: string[]) =>
@@ -1100,6 +1104,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     setSemanticIndexScaleGuard(phase: 'limited' | 'skipped', reason: string) {
       return ipcRenderer.invoke('test:setSemanticIndexScaleGuard', phase, reason)
+    },
+    setPortRows(rows: unknown) {
+      return ipcRenderer.invoke('test:setPortRows', rows)
     },
   })
 }

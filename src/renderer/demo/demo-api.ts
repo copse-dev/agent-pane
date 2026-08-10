@@ -654,6 +654,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
       onStatusChanged: subscribe,
     },
+    ports: {
+      // The browser demo has no host to scan, so the pane shows its empty state.
+      list: () => resolved({ rows: [], tool: 'demo' }),
+      kill: () => resolved({ killed: false, reason: 'Ports are not available in the demo.' }),
+    },
     memories: {
       list: emptyArray,
       create: unsupported,

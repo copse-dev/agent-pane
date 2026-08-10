@@ -29,9 +29,16 @@ export interface TerminalSessionInfo {
   active: boolean
 }
 
+/** A live shell's pid, for attributing listening ports back to the tab that opened them. */
+export interface TerminalProcessInfo {
+  id: string
+  label: string
+  pid: number
+}
+
 export interface TerminalSession {
   id: string
-  pty: Pick<IPty, 'write' | 'resize' | 'kill' | 'onData' | 'onExit'>
+  pty: Pick<IPty, 'pid' | 'write' | 'resize' | 'kill' | 'onData' | 'onExit'>
   /** Identifies the renderer that created the session, for ownership checks. */
   ownerId: number
   listeners?: PtyListeners
@@ -259,6 +266,22 @@ export function hasTerminalSessions(threadId?: string | null): boolean {
 }
 
 /**
+ * Every live shell's pid, across owners and threads — the Ports panel attributes
+ * a listening port to a tab by climbing from the listener to one of these, so it
+ * needs the whole host's worth, not one thread's. Sessions without a real pid
+ * (test injections) are skipped rather than attributing pid 0 to everything.
+ */
+export function listTerminalProcesses(): TerminalProcessInfo[] {
+  const out: TerminalProcessInfo[] = []
+  for (const session of sessions.values()) {
+    const { pid } = session.pty
+    if (!Number.isInteger(pid) || pid <= 0) continue
+    out.push({ id: session.id, label: session.label, pid })
+  }
+  return out
+}
+
+/**
  * Dispose every terminal owned by one thread. This explicit async boundary is
  * used by ordered thread/worktree retirement; unrelated and unscoped terminals
  * remain alive.
@@ -283,8 +306,10 @@ export function __testInjectTerminalSession(opts: {
   output.append(opts.outputText)
   const session: TerminalSession = {
     id,
-    // Minimal IPty stand-in — never written/resized/killed in these tests.
+    // Minimal IPty stand-in — never written/resized/killed in these tests. pid 0
+    // is deliberately not a real pid, so `listTerminalProcesses` skips it.
     pty: {
+      pid: 0,
       write(): void {},
       resize(): void {},
       kill(): void {},

@@ -8,11 +8,20 @@ import {
   lmStudioDetectSchema,
   lmStudioDownloadSchema,
   lmStudioTestSchema,
+  parsePortKillArgs,
   zHttpUrl,
   zModelId,
   zProjectId,
   zThreadId,
 } from './ipc-guards.ts'
+
+describe('ipc-guards ports:kill arguments', () => {
+  it('decodes one positional port instead of treating it as a one-item tuple', () => {
+    assert.equal(parsePortKillArgs([43177]), 43177)
+    assert.throws(() => parsePortKillArgs([[43177]]))
+    assert.throws(() => parsePortKillArgs([43177, 43178]))
+  })
+})
 
 describe('ipc-guards index query', () => {
   it('accepts normal search substrings', () => {
