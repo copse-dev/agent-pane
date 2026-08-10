@@ -449,6 +449,8 @@ describe('migratePackKeysToPlugin', () => {
     'packMigration.automationsEnablement',
     'packMigration.parallelSearchEnablement',
     'pack.demo.plugin.settings',
+    // The nested subtree a real electron-store profile carries.
+    'pack',
   ]
   const NEW_KEYS = [
     'pluginDisabled',
@@ -457,6 +459,7 @@ describe('migratePackKeysToPlugin', () => {
     'pluginMigration.automationsEnablement',
     'pluginMigration.parallelSearchEnablement',
     'plugin.demo.plugin.settings',
+    'plugin',
   ]
 
   function wipe(): void {
@@ -511,6 +514,58 @@ describe('migratePackKeysToPlugin', () => {
     getPluginService()
 
     assert.deepEqual(storageGet('plugin.demo.plugin.settings'), { strictness: 4 })
+  })
+
+  // The case above passes for a reason that does not hold on disk. This shim
+  // stores keys in a flat `Map`, so `pack.demo.plugin.settings` stays a literal
+  // key; electron-store writes it through dot-prop as a nested object, and the
+  // only top-level key a real profile has is `pack`. Seeding the nested shape
+  // is what a real upgrade actually presents — and it is the shape that the
+  // `storageListKeys()` scan alone could never see.
+  it('carries the nested `pack` subtree electron-store actually writes', () => {
+    storageSet('packDisabled', [])
+    storageSet('pack', {
+      demo: {
+        plugin: {
+          settings: { strictness: 4 },
+          storage: [{ id: 'schedule-1' }],
+          threadSessions: { 'thread-1': 'session-1' },
+        },
+      },
+    })
+
+    getPluginService()
+
+    assert.deepEqual(storageGet('plugin'), {
+      demo: {
+        plugin: {
+          settings: { strictness: 4 },
+          storage: [{ id: 'schedule-1' }],
+          threadSessions: { 'thread-1': 'session-1' },
+        },
+      },
+    })
+  })
+
+  it('grafts the subtree leaf by leaf rather than replacing what is there', () => {
+    // A partially-migrated profile: one bag already carried across and since
+    // edited, its sibling not yet moved. Copying the subtree wholesale would
+    // revert the edit; skipping it because the destination exists would strand
+    // the sibling. Both have to survive.
+    storageSet('packDisabled', [])
+    storageSet('pack', {
+      demo: { one: { settings: { strictness: 4 } }, two: { settings: { verbose: true } } },
+    })
+    storageSet('plugin', { demo: { one: { settings: { strictness: 9 } } } })
+
+    getPluginService()
+
+    assert.deepEqual(storageGet('plugin'), {
+      demo: {
+        one: { settings: { strictness: 9 } },
+        two: { settings: { verbose: true } },
+      },
+    })
   })
 
   it('never overwrites a value already written under the new key', () => {

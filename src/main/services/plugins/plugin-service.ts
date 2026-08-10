@@ -174,13 +174,60 @@ function migratePackKeysToPlugin(): void {
   // disable the user made after it first ran.
   copyIfAbsent('packMigration.backgroundTasksStable', BACKGROUND_TASKS_STABLE_MIGRATION_KEY)
 
-  // Per-plugin bags — `pack.<id>.settings`, `.threadSessions`, `.storage`. The
-  // id is opaque and may itself contain dots (`copse.todos`), so this rewrites
-  // the prefix rather than parsing the key into parts.
+  // Per-plugin bags — `pack.<id>.settings`, `.threadSessions`, `.storage`.
+  //
+  // These do NOT appear in `storageListKeys()`. electron-store writes dotted
+  // keys through dot-prop, so `storageSet('pack.copse.todos.settings', …)`
+  // produces `{ pack: { copse: { todos: { settings: … } } } }` on disk and
+  // `Object.keys(store.store)` reports the single top-level `pack`. A
+  // `startsWith('pack.')` scan of that list therefore matches nothing on a real
+  // profile — only in the in-memory test shim, whose flat `Map` keeps dotted
+  // keys verbatim and made an earlier version of this look covered.
+  //
+  // So move the subtree instead. The id is opaque and may itself contain dots
+  // (`copse.todos`), which means no amount of parsing can say which nesting
+  // level is the id boundary — but nothing here needs to know: old and new
+  // share a shape, so grafting `pack` onto `plugin` is exactly the rename.
+  //
+  // The merge keeps copy-if-absent at *leaf* granularity: anything already
+  // under `plugin` wins, so a re-run cannot overwrite a value written since,
+  // and a half-finished run resumes. Arrays are values, not branches to
+  // descend into — `.storage` holds a list, and merging it element-wise would
+  // interleave two histories.
+  const legacyBags = storageGet('pack')
+  if (isRecord(legacyBags)) {
+    const current = storageGet('plugin')
+    storageSet('plugin', graftPreservingExisting(legacyBags, isRecord(current) ? current : {}))
+  }
+
+  // A hand-edited config.json can still hold a literal flat `pack.<id>.…` key,
+  // which dot-prop reads as a path and would otherwise be stranded.
   for (const key of storageListKeys()) {
     if (!key.startsWith('pack.')) continue
     copyIfAbsent(key, `plugin.${key.slice('pack.'.length)}`)
   }
+}
+
+/**
+ * Deep-merge `from` under `onto` with **`onto` winning every conflict**, so the
+ * result adds only what the destination does not already have.
+ */
+function graftPreservingExisting(
+  from: Record<string, unknown>,
+  onto: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...onto }
+  for (const [key, value] of Object.entries(from)) {
+    const existing = merged[key]
+    if (existing === undefined) {
+      merged[key] = value
+      continue
+    }
+    if (isRecord(value) && isRecord(existing)) {
+      merged[key] = graftPreservingExisting(value, existing)
+    }
+  }
+  return merged
 }
 
 /** Read the persisted disable set. */
