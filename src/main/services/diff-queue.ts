@@ -362,13 +362,30 @@ async function canApplyDirectly(
  * A `null` reason means the op was never eligible — shared checkout or the
  * setting off — so the caller keeps the plain staging message rather than
  * explaining a fast path this thread never had.
+ *
+ * `mkdir` skips the git checks entirely. Everything {@link canApplyDirectly}
+ * guards against is destruction of content that is not Copse's to destroy — the
+ * backup it takes, the unowned-changes scan, the stale-content comparison — and
+ * creating a directory destroys nothing. It cannot overwrite a file (the tool
+ * checks existence before it gets here), it cannot conflict, and an empty
+ * directory has no git-status footprint to reconcile. The pending-queue check
+ * still applies, so an op never jumps ahead of diffs the user is reviewing. That
+ * leaves the sweep to the first op that could actually lose work, which is when
+ * it earns its three subprocesses.
  */
 async function canApplyFileOpDirectly(
   state: DiffQueueState,
+  op: DiffOp,
   path: string,
 ): Promise<{ ok: true } | { ok: false; reason: string | null }> {
   if (state.checkoutMode !== 'worktree') return { ok: false, reason: null }
   if (!getSetting<boolean>('worktreeAutoApproveEdits', true)) return { ok: false, reason: null }
+  if (op === 'mkdir') {
+    if (state.queue.length > 0) {
+      return { ok: false, reason: 'there are pending staged diffs waiting for user approval' }
+    }
+    return { ok: true }
+  }
   return canApplyDirectly(state, path)
 }
 
@@ -1026,7 +1043,7 @@ export async function applyOrStageFileOp(entry: FileOpRequest): Promise<string> 
   if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
-  const direct = await canApplyFileOpDirectly(state, entry.path)
+  const direct = await canApplyFileOpDirectly(state, entry.op, entry.path)
   if (!direct.ok) {
     const staged = await stageFileOp(entry)
     return direct.reason ? `${staged}\nReason approval is required: ${direct.reason}.` : staged

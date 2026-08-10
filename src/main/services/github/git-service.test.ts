@@ -13,7 +13,10 @@ import {
   getGitFileDiff,
   getGitPromptState,
   getGitShowText,
+  getGitStatus,
   getGitWorkingFileDiff,
+  invalidateGitWorkTreeProbe,
+  isInsideGitWorkTree,
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
@@ -173,6 +176,55 @@ describe('classifyGitBlob (#130)', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('work-tree probe cache', { skip: !gitOk && 'git not installed' }, () => {
+  let dir = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: dir })
+
+  before(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'copse-git-worktree-probe-'))
+    restore = setWorkspaceRootForTest(dir)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    invalidateGitWorkTreeProbe()
+    restore?.()
+    if (dir) await rm(dir, { recursive: true, force: true })
+  })
+
+  it('does not cache a negative, so a later git init is seen', async () => {
+    // The whole reason only positives are cached: a plain directory becoming a
+    // repo is an ordinary thing for an agent to do, and caching "not a work
+    // tree" would stranded the workspace as permanently git-less.
+    assert.equal(await isInsideGitWorkTree(dir), false)
+
+    git('init', '-q')
+
+    assert.equal(await isInsideGitWorkTree(dir), true)
+  })
+
+  it('caches a positive, and a stale one self-corrects through getGitStatus', async () => {
+    git('init', '-q')
+    assert.equal(await isInsideGitWorkTree(dir), true)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+
+    // Stale positive: the cache still answers true without re-probing...
+    assert.equal(await isInsideGitWorkTree(dir), true)
+    // ...but the `git status` behind it fails on its own, so callers see the
+    // same null the probe would have given them. That is what makes caching
+    // the positive safe without eager invalidation.
+    assert.equal(await getGitStatus(dir), null)
+
+    invalidateGitWorkTreeProbe(dir)
+
+    assert.equal(await isInsideGitWorkTree(dir), false)
+  })
+})
 
 describe('getGitChangeStats', { skip: !gitOk && 'git not installed' }, () => {
   let repo = ''
