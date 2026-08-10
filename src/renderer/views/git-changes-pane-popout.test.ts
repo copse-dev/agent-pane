@@ -206,17 +206,11 @@ describe('#1704 Changes in a pop-out window', () => {
       filesPaneOpen: true,
       rightPanelMode: 'changes',
     })
-    // The pop-out seed replays the parent window's selection. It can arrive
-    // before this window's own queue has hydrated, so the content fetch must not
-    // be gated on the path already being queued.
-    const parentStore = createStore({
-      activeProjectId: 'project-1',
-      activeThreadId: 'thread-1',
-      filesPaneOpen: true,
-      rightPanelMode: 'changes',
-    })
-    parentStore.setState({ stagedDiffs: [{ path: 'x.ts', language: 'typescript' }] })
-
+    // The pop-out seed replays the parent window's selection, and can land
+    // before this window's own queue has hydrated — note `attachDiffState` is
+    // deliberately not started here, so `stagedDiffs` stays empty for the whole
+    // test. The content fetch must not be gated on the path already being
+    // queued, and the seeded selection must survive the first refresh.
     const { api, contentCalls } = makeApi(PROPOSED)
     const { listRoot, viewerRoot } = mountHosts()
     mountGitChangesPane(
