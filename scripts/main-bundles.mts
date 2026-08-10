@@ -44,6 +44,12 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/acp/acp-probe-worker.ts',
     outfile: 'dist/main/acp-probe-worker.js',
   },
+  // Owns ASRT for one long-lived sandboxed ACP session and relays the agent's
+  // stdio, keeping its network allowlist out of the Electron main process.
+  {
+    entry: 'src/main/services/acp/acp-session-host-worker.ts',
+    outfile: 'dist/main/acp-session-host-worker.js',
+  },
   // No esbuild `banner` for this one: askpass-helper.ts already starts with
   // `#!/usr/bin/env node` and esbuild preserves a source hashbang verbatim.
   // Adding the banner too put a second `#!…` on line 2 of the bundle, where it
