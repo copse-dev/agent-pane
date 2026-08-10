@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getSetting } from '../services/storage/settings.ts'
+import { copseWorkspaceDir } from '../services/storage/copse-paths.ts'
 import {
   getChatStoreRootSync,
   getInternalWorkspaceRootRegistration,
@@ -161,7 +162,7 @@ export function uncoveredSiblingDenyPaths(
  * the user's working tree.
  */
 export function workspaceTmpDir(): string {
-  return join(homedir(), '.copse', 'workspace', 'tmp')
+  return join(copseWorkspaceDir(), 'tmp')
 }
 
 /**

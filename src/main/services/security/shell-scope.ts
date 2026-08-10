@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { resolve, sep } from 'node:path'
-import { chatStoreDir } from '../storage/copse-paths.ts'
+import { copseWorkspaceDir } from '../storage/copse-paths.ts'
 import {
   CODE_INTERPRETERS,
   INLINE_CODE_FLAGS,
@@ -398,7 +398,7 @@ const TILDE_PATH_TOKENS = /(?:^|[\s'"=|])(~(?:\/[^\s'"|;&]*)?)/g
  * strictly worse than the truth, which is that the read would have succeeded
  * inside the sandbox untouched.
  *
- * Resolved through the shared {@link chatStoreDir} so the classifier and the
+ * Resolved through the shared {@link copseWorkspaceDir} so the classifier and the
  * seatbelt overlay agree on where the store lives. The overlay additionally
  * realpaths that root; if the store were reached through a symlink the two would
  * differ, but only in the safe direction — the command auto-runs inside seatbelt,
@@ -407,7 +407,7 @@ const TILDE_PATH_TOKENS = /(?:^|[\s'"=|])(~(?:\/[^\s'"|;&]*)?)/g
  */
 function chatStoreReadRoot(command: string): string | null {
   if (!isStructurallyReadOnlyShellCommand(command)) return null
-  return resolve(chatStoreDir())
+  return resolve(copseWorkspaceDir())
 }
 
 function isInsideRoot(absPath: string, root: string): boolean {

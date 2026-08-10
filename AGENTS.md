@@ -52,7 +52,8 @@ for writers before deciding. See
 
 ### State and permissions
 
-Persistent settings live in Electron's `copse-panel` `config.json`, but chat threads do **not**.
+Every Copse store lives under one root, `~/.copse/` (`COPSE_DIR` moves the profile). Persistent
+settings live in `user-data/config.json`, but chat threads do **not**.
 Threads live under `~/.copse/workspace/<projectId>/<threadId>/`; use `writeSeedConfig`
 (`tests/e2e/helpers/seed-config.ts`) so test threads are routed into the native thread store. See
 [`docs/thread-store-format.md`](docs/thread-store-format.md) and

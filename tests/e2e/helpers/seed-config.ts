@@ -25,22 +25,9 @@ import {
   serializeSpineLine,
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
+import { copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 
-/** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
-function copsePanelUserDataDir(): string {
-  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
-  if (override) return override
-  if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
-  }
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
-    return join(appData, 'copse-panel')
-  }
-  return join(homedir(), '.config', 'copse-panel')
-}
-
-const USER_DATA = copsePanelUserDataDir()
+const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
