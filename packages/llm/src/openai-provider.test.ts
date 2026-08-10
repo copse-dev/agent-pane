@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from './internal-utils.ts'
-import type { LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type { ImageDetail, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 
 interface CapturedChatCompletionRequest {
@@ -82,6 +82,101 @@ async function collect(
   }
   return out
 }
+
+/**
+ * Every `image_url` object anywhere in a chat-completions request, in document
+ * order. Walks structurally so the test needs no assertions about the SDK's
+ * deeply-nested message-part unions.
+ */
+function collectImageUrls(
+  value: unknown,
+  found: Record<string, unknown>[] = [],
+): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    for (const child of value) collectImageUrls(child, found)
+    return found
+  }
+  if (value !== null && typeof value === 'object') {
+    const record: Record<string, unknown> = { ...value }
+    const imageUrl = record['image_url']
+    if (record['type'] === 'image_url' && imageUrl !== null && typeof imageUrl === 'object') {
+      found.push({ ...imageUrl })
+    }
+    for (const child of Object.values(record)) collectImageUrls(child, found)
+  }
+  return found
+}
+
+describe('OpenAIProvider image detail', () => {
+  async function capturedImageUrls(
+    ...details: (ImageDetail | undefined)[]
+  ): Promise<Record<string, unknown>[]> {
+    const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })
+    const captured: { request?: { messages?: unknown } } = {}
+    Object.defineProperty(provider, 'client', {
+      value: {
+        chat: {
+          completions: {
+            create: (request: { messages?: unknown }) => {
+              captured.request = request
+              return streamEvents([
+                { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] },
+              ])
+            },
+          },
+        },
+      },
+      configurable: true,
+    })
+    for await (const _ of provider.stream(
+      [
+        {
+          role: 'user',
+          content: details.map((detail, i) => ({
+            type: 'image' as const,
+            dataUrl: `data:image/png;base64,img${String(i)}`,
+            ...(detail ? { detail } : {}),
+          })),
+        },
+      ],
+      [],
+    )) {
+      // drain
+    }
+    const found = collectImageUrls(captured.request?.messages)
+    assert.equal(found.length, details.length, 'expected one image part per requested detail')
+    return found
+  }
+
+  it('omits detail entirely by default, so the request is byte-identical to before', async () => {
+    // Explicitly sending detail:'auto' would be a no-op for OpenAI but a new
+    // unknown field for the OpenAI-compatible servers this adapter also drives.
+    assert.deepEqual(await capturedImageUrls(undefined), [{ url: 'data:image/png;base64,img0' }])
+  })
+
+  it('omits detail when auto is set explicitly on the part', async () => {
+    assert.deepEqual(await capturedImageUrls('auto'), [{ url: 'data:image/png;base64,img0' }])
+  })
+
+  it('sends a non-auto fidelity through on the part that carries it', async () => {
+    assert.deepEqual(await capturedImageUrls('low'), [
+      { url: 'data:image/png;base64,img0', detail: 'low' },
+    ])
+    assert.deepEqual(await capturedImageUrls('high'), [
+      { url: 'data:image/png;base64,img0', detail: 'high' },
+    ])
+  })
+
+  it('keeps each image on its own detail within one message', async () => {
+    // The whole point of moving this off the provider: one request can carry a
+    // screenshot that must stay legible and a frame that need not.
+    assert.deepEqual(await capturedImageUrls('high', 'low', undefined), [
+      { url: 'data:image/png;base64,img0', detail: 'high' },
+      { url: 'data:image/png;base64,img1', detail: 'low' },
+      { url: 'data:image/png;base64,img2' },
+    ])
+  })
+})
 
 describe('OpenAIProvider request options', () => {
   it('asks OpenAI cloud streams to include usage', async () => {
