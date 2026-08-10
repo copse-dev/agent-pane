@@ -13,6 +13,8 @@ export interface MainWindowHandle {
 export interface MainWindowContext<TWindow extends MainWindowHandle = MainWindowHandle> {
   id: string
   window: TWindow
+  /** Cached at register time — Electron throws if `window.webContents` is read after destroy. */
+  webContents: MainWindowWebContents
 }
 
 export class MainWindowRegistry<TWindow extends MainWindowHandle = MainWindowHandle> {
@@ -27,12 +29,13 @@ export class MainWindowRegistry<TWindow extends MainWindowHandle = MainWindowHan
   }
 
   register(window: TWindow): MainWindowContext<TWindow> {
-    const existing = this.fromWebContents(window.webContents)
+    const existing = this.#contextForWindow(window)
     if (existing) return existing
 
-    const context = { id: this.#createId(), window }
+    const webContents = window.webContents
+    const context = { id: this.#createId(), window, webContents }
     this.#contexts.set(context.id, context)
-    this.#idsByWebContents.set(window.webContents, context.id)
+    this.#idsByWebContents.set(webContents, context.id)
     this.#primaryId ??= context.id
     this.#mostRecentId = context.id
     return context
@@ -42,11 +45,11 @@ export class MainWindowRegistry<TWindow extends MainWindowHandle = MainWindowHan
     const context =
       typeof windowOrId === 'string'
         ? this.#contexts.get(windowOrId)
-        : this.fromWebContents(windowOrId.webContents)
+        : this.#contextForWindow(windowOrId)
     if (!context) return
 
     this.#contexts.delete(context.id)
-    this.#idsByWebContents.delete(context.window.webContents)
+    this.#idsByWebContents.delete(context.webContents)
     if (this.#primaryId === context.id) {
       // Existing services still capture the first window as their UI owner.
       // Do not promote another window until owner-routed services land.
@@ -61,7 +64,7 @@ export class MainWindowRegistry<TWindow extends MainWindowHandle = MainWindowHan
     const context =
       typeof windowOrId === 'string'
         ? this.#contexts.get(windowOrId)
-        : this.fromWebContents(windowOrId.webContents)
+        : this.#contextForWindow(windowOrId)
     if (context && !context.window.isDestroyed()) this.#mostRecentId = context.id
   }
 
@@ -95,20 +98,30 @@ export class MainWindowRegistry<TWindow extends MainWindowHandle = MainWindowHan
   }
 
   isPrimary(webContents: MainWindowWebContents): boolean {
-    return this.getPrimary()?.window.webContents === webContents
+    return this.getPrimary()?.webContents === webContents
   }
 
   send(id: string, channel: string, ...args: unknown[]): boolean {
     const context = this.get(id)
     if (!context) return false
-    context.window.webContents.send(channel, ...args)
+    context.webContents.send(channel, ...args)
     return true
   }
 
   broadcast(channel: string, ...args: unknown[]): void {
-    for (const { window } of this.list()) {
-      window.webContents.send(channel, ...args)
+    for (const { webContents } of this.list()) {
+      webContents.send(channel, ...args)
     }
+  }
+
+  #contextForWindow(window: TWindow): MainWindowContext<TWindow> | undefined {
+    if (!window.isDestroyed()) {
+      return this.fromWebContents(window.webContents)
+    }
+    for (const context of this.#contexts.values()) {
+      if (context.window === window) return context
+    }
+    return undefined
   }
 
   #lastLiveContext(): MainWindowContext<TWindow> | undefined {
