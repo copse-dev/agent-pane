@@ -32,8 +32,8 @@
 //     permission-gate still decide. The parse layer additionally strips
 //     native tools, ACP exposure, level-3 UI, and trusted prompt.
 import * as fsp from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { copseDataRoot } from '../storage/copse-paths.ts'
 import {
   AGENT_PLUGIN_MANIFEST_FILE,
   AGENT_PLUGIN_MCP_FILE,
@@ -65,14 +65,20 @@ const MAX_PLUGIN_DIRECTORIES = 512
 
 /**
  * The Copse-owned plugin root. Sits beside the filesystem-native thread store
- * (`~/.copse/workspace/`) rather than under Electron's userData, so a user can
+ * (`copseWorkspaceDir()`) rather than under Electron's userData, so a user can
  * inspect, version, and hand-edit their plugins with ordinary tools — the same
  * reasoning the thread store already applies.
+ *
+ * Resolved from {@link copseDataRoot} rather than `homedir()`: #1703 made
+ * `~/.copse` a single relocatable profile, and hardcoding the home directory
+ * here would leave the plugin root behind whenever `COPSE_DIR` moved everything
+ * else. This file postdates that sweep, so nothing would have caught it — the
+ * default path is unchanged either way, and only the relocated case differs.
  */
 export function userPluginsRoot(): string {
   const override = process.env[COPSE_PLUGINS_DIR_ENV]
   if (override && override.trim() !== '') return resolve(override)
-  return join(homedir(), '.copse', 'plugins')
+  return join(copseDataRoot(), 'plugins')
 }
 
 /**
