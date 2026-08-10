@@ -83,10 +83,15 @@ async function runGitRead(
  *
  * **Only positive results are cached.** A negative is the one answer that
  * legitimately flips — `git init` in a plain directory makes it a work tree —
- * and caching that would strand the workspace as permanently git-less. A stale
- * positive is self-correcting instead: if the checkout is gone, the `git status`
- * that follows fails on its own and the caller sees the same `null` it would
- * have seen from the probe.
+ * and caching that would strand the workspace as permanently git-less.
+ *
+ * **The cache serves {@link getGitStatus}, not {@link isInsideGitWorkTree}.** A
+ * stale positive is safe here because the `git status` that follows fails on its
+ * own, so the caller sees the same `null` the probe would have given it. The bare
+ * boolean has no such backstop, and #1686 pins the case that proves it matters: a
+ * project folder deleted under a running app must answer "no repository" rather
+ * than a cached yes. So that entry point always probes live, and a live negative
+ * evicts any stale entry — the cache heals the moment anything observes the truth.
  */
 const workTreeProbes = new Map<string, { prefix?: string }>()
 
@@ -100,13 +105,19 @@ export function invalidateGitWorkTreeProbe(root?: string): void {
   else workTreeProbes.delete(resolve(root))
 }
 
-/** Cached `rev-parse --is-inside-work-tree`. Assumes git availability is settled. */
-async function confirmInsideWorkTree(root: string): Promise<boolean> {
+/**
+ * `rev-parse --is-inside-work-tree`, live unless `allowCached`. A positive always
+ * populates the cache; a live negative evicts it.
+ */
+async function confirmInsideWorkTree(root: string, allowCached: boolean): Promise<boolean> {
   const key = resolve(root)
-  if (workTreeProbes.has(key)) return true
+  if (allowCached && workTreeProbes.has(key)) return true
   const { stdout, code } = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
-  if (code !== 0 || stdout.trim() !== 'true') return false
-  workTreeProbes.set(key, {})
+  if (code !== 0 || stdout.trim() !== 'true') {
+    workTreeProbes.delete(key)
+    return false
+  }
+  if (!workTreeProbes.has(key)) workTreeProbes.set(key, {})
   return true
 }
 
@@ -470,7 +481,9 @@ export async function isInsideGitWorkTree(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<boolean> {
   if (!(await isGitAvailableForTarget()) || !root) return false
-  return confirmInsideWorkTree(root)
+  // Deliberately uncached: callers gate real work on this answer, and a checkout
+  // that vanished under the app has to say so (#1686).
+  return confirmInsideWorkTree(root, false)
 }
 
 /** `org/repo` from `origin` when the workspace remote is GitHub. */
@@ -625,7 +638,7 @@ export async function pruneWorktreeBackups(
 export async function getGitStatus(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<GitStatusResult | null> {
-  if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root)))
+  if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root, true)))
     return null
   const prefix = await workTreePrefix(root)
   if (prefix === null) return null
