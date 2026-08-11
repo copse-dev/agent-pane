@@ -22,7 +22,8 @@ import { getIntellectScore, resolveIntellectModelId } from '@copse/llm/model-int
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 import { FALLBACK_APP_CHAT_MODEL, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
-import { acpModelValue, enabledClaudeAcpAgent } from '@shared/acp.ts'
+import { acpModelValue, acpModelVersionName, enabledClaudeAcpAgent } from '@shared/acp.ts'
+import type { AcpAgentConfig, AcpModelChoice } from '@shared/types/acp.ts'
 import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
@@ -104,30 +105,42 @@ export function toRoutableModelId(candidate: FrontierCandidate): string {
  * the same model. The agent authenticates against the user's own `claude`
  * login and bills against the Claude subscription, not API credit.
  */
-function acpClaudeFrontierCandidates(): FrontierCandidate[] {
-  const agent = enabledClaudeAcpAgent(listEnabledAcpAgents())
+export function claudeAcpFrontierCandidates(
+  agents: readonly AcpAgentConfig[],
+): FrontierCandidate[] {
+  const agent = enabledClaudeAcpAgent(agents)
   if (!agent) return []
+  const advertised = agent.availableModels ?? []
   const selected = agent.model
-  const probed = agent.availableModels?.map((m) => m.value) ?? []
-  const ids = selected ? [selected, ...probed] : probed
-  let best: { id: string; intellect: number } | null = null
+  const selectedChoice = selected
+    ? advertised.find((choice) => choice.value === selected)
+    : undefined
+  const choices: AcpModelChoice[] = [
+    ...(selected ? [selectedChoice ?? { value: selected, label: selected }] : []),
+    ...advertised.filter((choice) => choice.value !== selected),
+  ]
+  let best: { routeValue: string; intellect: number } | null = null
   let bestPrice = 0
-  for (const value of ids) {
-    const resolved = resolveIntellectModelId(value)
+  for (const choice of choices) {
+    const described = acpModelVersionName(choice.description)
+    const resolved =
+      resolveIntellectModelId(choice.value) ??
+      (described ? resolveIntellectModelId(described) : null) ??
+      resolveIntellectModelId(choice.label)
     if (!resolved) continue
     const score = getIntellectScore(resolved)
     const info = getModelInfo(resolved)
     if (!score || !info) continue
     const price = blendedPricePerMTok(info)
     if (!best || score.value > best.intellect) {
-      best = { id: resolved, intellect: score.value }
+      best = { routeValue: choice.value, intellect: score.value }
       bestPrice = price
     }
   }
   if (!best) return []
   return [
     {
-      id: acpModelValue(agent.id, best.id),
+      id: acpModelValue(agent.id, best.routeValue),
       intellect: best.intellect,
       costPerMTok: bestPrice,
       plan: 'Claude',
@@ -160,7 +173,7 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
     ...localFrontierCandidates(localIds),
     ...extraProviderFrontierCandidates(extraProviders),
     ...openRouterFrontierCandidates(openRouterModels),
-    ...acpClaudeFrontierCandidates(),
+    ...claudeAcpFrontierCandidates(listEnabledAcpAgents()),
   ]
 
   const openRouterZdrOnly = getSetting<boolean>('openRouterZdrOnly', true)

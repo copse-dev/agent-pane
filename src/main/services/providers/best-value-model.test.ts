@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveBestValueFromFrontier } from './best-value-model.ts'
+import { claudeAcpFrontierCandidates, resolveBestValueFromFrontier } from './best-value-model.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 
 describe('resolveBestValueFromFrontier', () => {
@@ -109,5 +109,40 @@ describe('resolveBestValueFromFrontier', () => {
       (c) => c.id.startsWith('openrouter:') || c.id.startsWith('acp:'),
     )
     assert.equal(picked, 'acp:claude-agent-acp#claude-opus-5')
+  })
+})
+
+describe('claudeAcpFrontierCandidates', () => {
+  it('scores the described model but routes with the value the agent advertised', () => {
+    const candidates = claudeAcpFrontierCandidates([
+      {
+        id: 'claude-agent-acp',
+        title: 'Claude',
+        command: 'claude-agent-acp',
+        enabled: true,
+        model: 'default',
+        availableModels: [
+          {
+            value: 'default',
+            label: 'Default (recommended)',
+            description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+          },
+          {
+            value: 'sonnet',
+            label: 'Sonnet',
+            description: 'Sonnet 5 · Efficient for routine tasks',
+          },
+        ],
+      },
+    ])
+
+    assert.deepEqual(candidates, [
+      {
+        id: 'acp:claude-agent-acp#default',
+        intellect: 61,
+        costPerMTok: 9,
+        plan: 'Claude',
+      },
+    ])
   })
 })
