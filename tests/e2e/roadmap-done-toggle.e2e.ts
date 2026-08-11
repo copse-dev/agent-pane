@@ -59,8 +59,11 @@ describe('roadmap done toggle', () => {
 
     await $('.roadmap-prompt-input').setValue('Ship the metrics export command')
     await $('.roadmap-save-btn').click()
-    // The note persists immediately; the row appears without waiting on the
-    // background complexity stamp (which needs a model that may be absent here).
+    // The create notification can render the row before save() finishes its
+    // trailing refresh. Wait for the handler itself to settle so that refresh
+    // cannot race and visually overwrite the independent status flip below.
+    await $('.roadmap-save-btn').waitForEnabled({ timeout: 20_000 })
+    // Background complexity/category stamps may still replace the row later.
     await $('.roadmap-row').waitForExist({ timeout: 20_000 })
 
     // Saving selects the new item into the editor. Deselect first so the
