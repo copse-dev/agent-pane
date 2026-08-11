@@ -118,8 +118,21 @@ describe('Parallel Search plugin settings', function () {
       timeout: 5_000,
       timeoutMsg: 'expected Parallel Search plugin to enable',
     })
-    // The key field sits inside the plugin's closed "Plugin settings" fold.
-    await row.$('.plugin-settings-summary').click()
+    // Re-open the fold: enabling the plugin rebuilds
+    // the whole list (`listEl.innerHTML = ''`), so the `<details>` that
+    // `openPacksSection()` opened no longer exists and its replacement starts
+    // closed. Guard on `open` rather than clicking blind — `<details>` has no
+    // "open it" click, only "flip it", so an unguarded click shuts the fold on
+    // any run where the rebuild has not landed by the time we get here.
+    const settingsFold = row.$('details.plugin-settings-fold')
+    await settingsFold.waitForExist({ timeout: 15_000 })
+    if (!(await settingsFold.getProperty('open'))) {
+      await settingsFold.$('summary.plugin-settings-summary').click()
+    }
+    await browser.waitUntil(async () => Boolean(await settingsFold.getProperty('open')), {
+      timeout: 10_000,
+      timeoutMsg: 'the plugin settings fold never re-opened after enabling the plugin',
+    })
     await browser.execute(() => {
       document
         .querySelector('.parallel-search-plugin-settings')
