@@ -65,8 +65,7 @@ describe('keyboard shortcuts dialog (Cmd/Ctrl+/)', () => {
   it('documents the thread-cycle shortcuts', () => {
     const keysFor = (label: string): string[] => {
       const row = [...dialog.querySelectorAll('.keyboard-shortcuts-row')].find(
-        (candidate) =>
-          candidate.querySelector('.keyboard-shortcuts-label')?.textContent === label,
+        (candidate) => candidate.querySelector('.keyboard-shortcuts-label')?.textContent === label,
       )
       assert.ok(row, `expected shortcut row for ${label}`)
       return [...row.querySelectorAll('kbd.keyboard-shortcuts-key')].map(
