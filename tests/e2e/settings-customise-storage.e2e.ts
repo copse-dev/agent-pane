@@ -6,10 +6,8 @@ import {
   AGENT_PLUGIN_SCHEMA,
   resetAgentPlugins,
   resetUserData,
-  resetUserMcpConfig,
   seedAgentPlugin,
   seedEmptyProject,
-  seedUserMcpConfig,
 } from './helpers/seed-config.ts'
 
 // Settings information architecture: Customise, MCP servers, Storage.
@@ -62,11 +60,6 @@ describe('settings → Customise / MCP / Storage', function () {
       },
     )
 
-    // A user-owned server, so the origin chip has something real to classify.
-    // `false` is a valid command that exits immediately: the row renders with a
-    // connection error rather than leaving a process behind.
-    seedUserMcpConfig({ mine: { command: 'false', args: [] } })
-
     seedEmptyProject(process.cwd(), 'e2e-customise-storage')
     await browser.reloadSession()
   })
@@ -74,7 +67,6 @@ describe('settings → Customise / MCP / Storage', function () {
   after(() => {
     resetUserData()
     resetAgentPlugins()
-    resetUserMcpConfig()
   })
 
   it('offers Customise and Storage instead of Sources and Plugins', async () => {
@@ -133,17 +125,10 @@ describe('settings → Customise / MCP / Storage', function () {
     await saveElementScreenshot('#settings-dialog', 'settings-storage.png')
   })
 
-  it('labels each MCP row with its origin and discloses what a plugin declares', async () => {
+  it('discloses and attributes what a plugin declares', async () => {
     await $('#settings-dialog').$('button[data-section="mcp"]').click()
     const mcp = settingsSection('mcp')
     await expect(mcp).toBeDisplayed()
-
-    // The seeded user server carries an origin chip saying it is the user's own,
-    // not the project's — the distinction the chip exists to draw.
-    const chip = mcp.$('#mcp-server-list .mcp-server-row .mcp-origin-chip')
-    await chip.waitForExist({ timeout: 20_000 })
-    assert.equal(await chip.getAttribute('data-mcp-origin'), 'user')
-    assert.equal(await chip.getText(), 'Your config')
 
     // The disabled plugin's declaration is disclosed, attributed, and inert.
     const declared = mcp.$('#mcp-declared-fieldset')
@@ -153,6 +138,10 @@ describe('settings → Customise / MCP / Storage', function () {
     const text = await declaredRow.getText()
     assert.match(text, /declared_reviewer \(stdio\)/)
     assert.match(text, /not running/)
+    const origin = declaredRow.$('.mcp-origin-chip')
+    await origin.waitForExist({ timeout: 15_000 })
+    assert.equal(await origin.getAttribute('data-mcp-origin'), 'plugin')
+    assert.equal(await origin.getText(), PLUGIN_ID)
     // A declaration is not a control: nothing here implies Copse could start it.
     assert.equal(await declaredRow.$('.toggle-switch').isExisting(), false)
 
