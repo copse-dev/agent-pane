@@ -478,7 +478,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     <div class="settings-shell">
       <header class="settings-header">
         <h2>Settings</h2>
-        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings">✕</button>
+        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings">✕</button>
       </header>
 
       <div class="settings-body">

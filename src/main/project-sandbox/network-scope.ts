@@ -79,7 +79,7 @@ function applyScopes(): void {
 export function acquireSandboxNetworkScope(scope: SandboxNetworkScope): () => void {
   activeScopes.add(scope)
   applyScopes()
-  console.info(
+  console.error(
     `[network-scope] widened for "${scope.label}" (${String(activeScopes.size)} active: ${activeSandboxNetworkScopeLabels().join(', ')})`,
   )
   let released = false
@@ -88,7 +88,7 @@ export function acquireSandboxNetworkScope(scope: SandboxNetworkScope): () => vo
     released = true
     activeScopes.delete(scope)
     applyScopes()
-    console.info(
+    console.error(
       `[network-scope] released "${scope.label}" (${String(activeScopes.size)} still active${
         activeScopes.size > 0 ? `: ${activeSandboxNetworkScopeLabels().join(', ')}` : ''
       })`,

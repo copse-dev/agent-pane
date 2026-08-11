@@ -127,6 +127,19 @@ export function getIndex(root: string): FileIndex | null {
   return indexes.get(resolve(root)) ?? null
 }
 
+/**
+ * Milliseconds since this root was last listed, or null when it has no index.
+ *
+ * `buildIndex` always re-lists — it is the change response, so it must. Callers
+ * that instead *register* a root on every use (a thread switch re-resolves its
+ * execution root through several IPCs, #1694) consult this to skip a listing
+ * that would only reproduce the snapshot already in hand.
+ */
+export function getIndexAgeMs(root: string): number | null {
+  const entry = indexes.get(resolve(root))
+  return entry ? Date.now() - entry.lastBuilt : null
+}
+
 /** Drop the cached index for one root, or every root when called with none. */
 export function invalidateIndex(root?: string): void {
   if (root === undefined) {

@@ -248,6 +248,19 @@ dark-factory poller implementation, and changes to `run_background`.
       or auto-run policy differs from the scheduling snapshot.
 - [x] Supervised process telemetry records the same project-scoped target identity.
 
+### P8 — Durable CI status waits
+
+- [x] `wait_for_ci_checks` registers one supervised `ci_watch` task instead of holding a
+      foreground `gh pr checks --watch` subprocess open.
+- [x] Handler-owned input and self-rescheduling are persisted on the shared supervisor task;
+      consumers decode their own input and the content hash binds the stable watch identity.
+- [x] Pending/no-check states reschedule through the supervisor with bounded error backoff;
+      success, failure, head replacement, PR closure, or expiry dispatches at most one machine
+      continuation through the original turn-tree budget.
+- [x] Startup wakes persisted CI watches immediately, so a transition that happened while the
+      app was closed is reconciled on reopen. Stale epochs and exhausted continuation budgets
+      block visibly instead of starting obsolete work.
+
 ### P6 — Campaigns + authenticated trigger adapters
 
 - Add campaign records and bounded fan-out/fan-in over explicit repository/task sets.

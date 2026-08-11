@@ -139,7 +139,7 @@ export function mountGitChangesPane(
       type: 'button',
       class: 'git-changes-refresh-btn',
       'aria-label': 'Refresh changes',
-      title: 'Refresh',
+      'data-tooltip': 'Refresh changes',
     },
     refreshIcon('ui-icon ui-icon-sm'),
   )
