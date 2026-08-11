@@ -28,12 +28,12 @@ export class MainWindowRegistry<TWindow extends MainWindowHandle = MainWindowHan
     this.#createId = createId
   }
 
-  register(window: TWindow): MainWindowContext<TWindow> {
+  register(window: TWindow, id?: string): MainWindowContext<TWindow> {
     const existing = this.#contextForWindow(window)
     if (existing) return existing
 
     const webContents = window.webContents
-    const context = { id: this.#createId(), window, webContents }
+    const context = { id: id ?? this.#createId(), window, webContents }
     this.#contexts.set(context.id, context)
     this.#idsByWebContents.set(webContents, context.id)
     this.#primaryId ??= context.id
