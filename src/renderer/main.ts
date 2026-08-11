@@ -393,8 +393,8 @@ async function boot(): Promise<void> {
     void addProjectFromPath(store, api, root).then(ensureLayout)
   })
 
-  const { projects, activeProjectId } = await loadProjects(api)
-  store.setState({ projects, activeProjectId })
+  const { projects, projectGroups, activeProjectId } = await loadProjects(api)
+  store.setState({ projects, projectGroups, activeProjectId })
 
   const [firstProject] = projects
   if (firstProject) {

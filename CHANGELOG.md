@@ -71,6 +71,19 @@ every published entry.
   what a profile does and does not isolate — keys are separated by file, not by
   encryption key — and what to expect from the one-time move of the old Electron
   directory.
+- Projects can be dragged into the order you want, and gathered into groups.
+  Drag a project row and an insertion line shows where it will land; drop it and
+  the new order is yours and stays put across relaunches. Groups are the second
+  half: **+ ▸ New group** makes one, or right-click a project and pick
+  **New group…** to wrap it in a fresh group on the spot. Dropping a project on
+  the middle of a group header files it under that group — the header highlights
+  as a container rather than showing an insertion line, so the two drops never
+  look alike — and dropping it on the header's top or bottom edge, or on the
+  empty space below the list, takes it back out. A group header can be dragged
+  too, carrying its projects with it, and it folds away with a click so a
+  sidebar full of repositories collapses to the handful you are working in
+  today. Ungrouping a group never removes a project: they return to the top
+  level where they were.
 - A thread working in its own isolated worktree no longer asks you to approve
   every delete, rename, and new folder. Writes have applied straight to disk
   since the session backup landed, but the three non-content ops still staged

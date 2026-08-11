@@ -16,6 +16,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
   let state: AppState = {
     workspaceRoot: null,
     projects: [],
+    projectGroups: [],
     activeProjectId: null,
     expandedProjectId: null,
     threads: [],

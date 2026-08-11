@@ -1,6 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { Project, Thread } from '@shared/types'
+import type { Project, ProjectGroup, Thread } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
@@ -12,6 +12,7 @@ import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 // instead of rewriting whole threads on every keystroke.
 
 const KEY_PROJECTS = 'projects'
+const KEY_PROJECT_GROUPS = 'projectGroups'
 const KEY_ACTIVE = 'activeProjectId'
 
 // Autosave fires several events per turn and project switches save/load
@@ -155,7 +156,7 @@ export function __resetPersistenceForTest(): void {
 
 export async function loadProjects(
   api: ApiClient,
-): Promise<{ projects: Project[]; activeProjectId: string | null }> {
+): Promise<{ projects: Project[]; projectGroups: ProjectGroup[]; activeProjectId: string | null }> {
   const projects = recordArrayOrEmpty(await api.storage.get(KEY_PROJECTS)).flatMap((value) => {
     const id = value['id']
     const path = value['path']
@@ -164,6 +165,9 @@ export async function loadProjects(
     const project: Project = { id, path, name }
     if (typeof value['sshHost'] === 'string') project.sshHost = value['sshHost']
     if (typeof value['missing'] === 'boolean') project.missing = value['missing']
+    // A groupId naming a group that is not in config reads as top level at
+    // render time (see project-tree.ts), so it is kept rather than dropped.
+    if (typeof value['groupId'] === 'string') project.groupId = value['groupId']
     const worktreeMode = value['worktreeMode']
     // `from-default-branch` predates cutting worktrees from the default branch
     // unconditionally; it now means the same thing as `always`.
@@ -174,9 +178,19 @@ export async function loadProjects(
     }
     return [project]
   })
+  const projectGroups = recordArrayOrEmpty(await api.storage.get(KEY_PROJECT_GROUPS)).flatMap(
+    (value) => {
+      const id = value['id']
+      const name = value['name']
+      if (typeof id !== 'string' || typeof name !== 'string') return []
+      const group: ProjectGroup = { id, name }
+      if (value['collapsed'] === true) group.collapsed = true
+      return [group]
+    },
+  )
   const rawActiveProjectId = await api.storage.get(KEY_ACTIVE)
   const activeProjectId = typeof rawActiveProjectId === 'string' ? rawActiveProjectId : null
-  return { projects, activeProjectId }
+  return { projects, projectGroups, activeProjectId }
 }
 
 export async function saveProjects(
@@ -188,6 +202,15 @@ export async function saveProjects(
     serializedSet(api, KEY_PROJECTS, projects),
     serializedSet(api, KEY_ACTIVE, activeProjectId),
   ])
+}
+
+/**
+ * Persist the sidebar's group list. Kept off {@link saveProjects} because groups
+ * only change through group actions (create / rename / delete / collapse / a
+ * drag), while `saveProjects` runs on every project switch and autosave tick.
+ */
+export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promise<void> {
+  return serializedSet(api, KEY_PROJECT_GROUPS, groups)
 }
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {

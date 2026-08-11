@@ -1,5 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
-import { dismissContextMenu, showContextMenu } from '../dom/context-menu.ts'
+import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
   chevronRightIcon,
@@ -11,7 +11,7 @@ import {
 } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { OrphanProjectStore, Project } from '@shared/types'
+import type { OrphanProjectStore, Project, ProjectGroup } from '@shared/types'
 import {
   archiveThread,
   deleteThread,
@@ -48,6 +48,28 @@ import { forkThread } from '../controller/fork-thread.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
+import {
+  buildProjectTree,
+  projectGroupId,
+  type SidebarNodeRef,
+} from '../controller/project-tree.ts'
+import {
+  createProjectGroup,
+  deleteProjectGroup,
+  moveProjectIntoGroup,
+  renameProjectGroup,
+  reorderSidebarNode,
+  setProjectGroupCollapsed,
+} from '../controller/project-groups.ts'
+import {
+  dropIntent,
+  isSidebarDrag,
+  parseSidebarDrag,
+  serializeSidebarDrag,
+  SIDEBAR_DRAG_MIME,
+  type DropIntent,
+  type SidebarDragPayload,
+} from './projects-drag.ts'
 
 /** Re-fetch PR lifecycle when a cache entry is older than this. */
 const PR_STATUS_CACHE_TTL_MS = 60_000
@@ -259,6 +281,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             },
           ]
         : []),
+      {
+        label: 'New group',
+        onSelect: (): void => {
+          const groupId = createProjectGroup(store, api)
+          const created = store.getState().projectGroups.find((g) => g.id === groupId)
+          if (created) beginGroupRename(groupId, created.name)
+        },
+      },
     ])
   })
 
@@ -286,6 +316,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   // Inline rename state survives `render()` (which rebuilds the chat list).
   let renaming: { threadId: string; draft: string } | null = null
+  // Same, for a group header being renamed inline.
+  let renamingGroup: { groupId: string; draft: string } | null = null
+
+  /**
+   * The sidebar row currently being dragged (issue #1685).
+   *
+   * `dragover` cannot read the drag payload — the browser withholds it until the
+   * drop — so the pane remembers what `dragstart` put there. That is what lets a
+   * hovered row decide whether it is a legal target (a group cannot be dropped
+   * inside itself) before any drop happens.
+   */
+  let activeDrag: SidebarDragPayload | null = null
 
   // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
   // `owner/repo#number`. Fetches are coalesced; a successful (or failed) fetch
@@ -456,17 +498,296 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
   }
 
+  const DROP_CLASSES = ['drop-before', 'drop-after', 'drop-into'] as const
+
+  /** Drop feedback is one line at a time, so clear the whole list before painting. */
+  function clearDropIndicators(): void {
+    for (const marked of list.querySelectorAll('.drop-before, .drop-after, .drop-into')) {
+      marked.classList.remove(...DROP_CLASSES)
+    }
+  }
+
+  function endDrag(): void {
+    activeDrag = null
+    clearDropIndicators()
+    for (const dragging of list.querySelectorAll('.is-dragging')) {
+      dragging.classList.remove('is-dragging')
+    }
+  }
+
+  /** Make `row` the drag handle for `node`, marking `block` as the thing in flight. */
+  function bindDragSource(row: HTMLElement, node: SidebarNodeRef, block: HTMLElement): void {
+    row.draggable = true
+    row.addEventListener('dragstart', (e) => {
+      const payload: SidebarDragPayload = { kind: node.kind, id: node.id }
+      // No `text/plain` alongside it: that would spill an opaque id into every
+      // text drop target in the app (the composer, the URL bar) for a drag that
+      // only the sidebar can act on.
+      e.dataTransfer?.setData(SIDEBAR_DRAG_MIME, serializeSidebarDrag(payload))
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+      activeDrag = payload
+      block.classList.add('is-dragging')
+    })
+    row.addEventListener('dragend', endDrag)
+  }
+
+  /**
+   * Which drop a hovered row would accept, or `null` when it would accept none —
+   * dropping a row onto itself, or a group into its own subtree. Returning null
+   * (and so never calling `preventDefault`) is what makes the pointer show
+   * "no drop" rather than promising a move that would be a no-op.
+   */
+  function resolveDropIntent(
+    drag: SidebarDragPayload,
+    target: SidebarNodeRef & { groupId?: string | null },
+    clientY: number,
+    bounds: { top: number; height: number },
+  ): DropIntent | null {
+    if (drag.kind === target.kind && drag.id === target.id) return null
+    // Groups do not nest, so only a project can be dropped *into* a group.
+    const allowInto = target.kind === 'group' && drag.kind === 'project'
+    if (drag.kind === 'group' && target.kind === 'project' && target.groupId === drag.id) {
+      return null
+    }
+    return dropIntent(clientY, bounds, { allowInto })
+  }
+
+  /**
+   * Wire one sidebar row as a drop target. `row` takes the pointer events (a
+   * tight, predictable hit area) while `block` carries the indicator, so an
+   * expanded project shows the insertion line against its whole block of threads
+   * rather than a line floating between a project and its own chats.
+   */
+  function bindDropTarget(
+    row: HTMLElement,
+    block: HTMLElement,
+    target: SidebarNodeRef & { groupId?: string | null },
+  ): void {
+    const intentAt = (e: DragEvent): DropIntent | null => {
+      if (!isSidebarDrag(e.dataTransfer?.types)) return null
+      const drag = activeDrag
+      if (!drag) return null
+      return resolveDropIntent(drag, target, e.clientY, row.getBoundingClientRect())
+    }
+
+    row.addEventListener('dragover', (e) => {
+      const intent = intentAt(e)
+      if (!intent) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+      clearDropIndicators()
+      block.classList.add(`drop-${intent}`)
+    })
+    row.addEventListener('dragleave', () => {
+      block.classList.remove(...DROP_CLASSES)
+    })
+    row.addEventListener('drop', (e) => {
+      const intent = intentAt(e)
+      // Swallow the drop either way: a rejected sidebar drag must not fall
+      // through to the list's own "move to top level" handler behind this row.
+      e.preventDefault()
+      e.stopPropagation()
+      // Prefer the payload the drop actually carries; `activeDrag` is the
+      // fallback for the (test-only) case of a synthetic event without data.
+      const raw = e.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? ''
+      const payload = parseSidebarDrag(raw) ?? activeDrag
+      endDrag()
+      if (!intent || !payload) return
+      if (intent === 'into') {
+        // `resolveDropIntent` only offers "into" for a project over a group, so
+        // this pairing is the only one that can reach here.
+        if (target.kind === 'group' && payload.kind === 'project') {
+          moveProjectIntoGroup(store, api, payload.id, target.id)
+        }
+        return
+      }
+      reorderSidebarNode(store, api, payload, target.id, intent)
+    })
+  }
+
+  // Empty space below the rows is the way back out of a group: a project dropped
+  // there leaves whatever group it was in and lands at the end of the sidebar.
+  list.addEventListener('dragover', (e) => {
+    if (!isSidebarDrag(e.dataTransfer?.types)) return
+    if (activeDrag?.kind !== 'project') return
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+    clearDropIndicators()
+    list.classList.add('drop-into')
+  })
+  list.addEventListener('dragleave', () => {
+    list.classList.remove(...DROP_CLASSES)
+  })
+  list.addEventListener('drop', (e) => {
+    if (!isSidebarDrag(e.dataTransfer?.types)) return
+    e.preventDefault()
+    const payload = parseSidebarDrag(e.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? '') ?? activeDrag
+    list.classList.remove(...DROP_CLASSES)
+    endDrag()
+    if (payload?.kind !== 'project') return
+    moveProjectIntoGroup(store, api, payload.id, null)
+  })
+
+  function beginGroupRename(groupId: string, currentName: string): void {
+    renamingGroup = { groupId, draft: currentName }
+    render()
+    const input = list.querySelector<HTMLInputElement>(
+      `.project-group[data-group-id="${CSS.escape(groupId)}"] .project-group-rename`,
+    )
+    input?.focus()
+    input?.select()
+  }
+
+  function finishGroupRename(save: boolean): void {
+    if (!renamingGroup) return
+    const { groupId, draft } = renamingGroup
+    renamingGroup = null
+    if (save) renameProjectGroup(store, api, groupId, draft)
+    render()
+  }
+
+  /** The header row for a group: twisty, name (or rename input), member count. */
+  function renderGroupRow(group: ProjectGroup, memberCount: number): HTMLElement {
+    const collapsed = group.collapsed === true
+    const renameState = renamingGroup?.groupId === group.id ? renamingGroup : null
+    let label: HTMLElement
+    if (renameState) {
+      const input = el('input', {
+        type: 'text',
+        class: 'project-group-rename',
+        'aria-label': 'Rename group',
+      })
+      input.value = renameState.draft
+      input.addEventListener('input', () => {
+        if (renamingGroup?.groupId === group.id) renamingGroup.draft = input.value
+      })
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          finishGroupRename(true)
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          finishGroupRename(false)
+        }
+      })
+      bindRenameBlur(input, () => {
+        if (renamingGroup?.groupId !== group.id) return
+        finishGroupRename(true)
+      })
+      for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
+        input.addEventListener(evt, (e) => {
+          e.stopPropagation()
+        })
+      }
+      label = input
+    } else {
+      label = el('span', { class: 'project-group-name' }, group.name)
+    }
+
+    const row = el(
+      'button',
+      {
+        type: 'button',
+        class: 'project-group-row',
+        'aria-expanded': collapsed ? 'false' : 'true',
+        title: group.name,
+      },
+      el(
+        'span',
+        { class: `project-twisty${collapsed ? '' : ' expanded'}` },
+        chevronRightIcon('ui-icon ui-icon-sm'),
+      ),
+      label,
+      el('span', { class: 'project-group-count' }, String(memberCount)),
+    )
+    row.addEventListener('click', () => {
+      if (renamingGroup?.groupId === group.id) return
+      setProjectGroupCollapsed(store, api, group.id, !collapsed)
+    })
+    if (!renameState) {
+      label.addEventListener('dblclick', (e) => {
+        e.stopPropagation()
+        beginGroupRename(group.id, group.name)
+      })
+    }
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Rename group',
+          onSelect: (): void => {
+            beginGroupRename(group.id, group.name)
+          },
+        },
+        {
+          // Deleting a group never deletes projects — they return to the top
+          // level — so the label says what actually happens.
+          label: 'Ungroup projects',
+          onSelect: (): void => {
+            deleteProjectGroup(store, api, group.id)
+          },
+        },
+      ])
+    })
+    return row
+  }
+
+  /** Menu entries for moving one project between groups without a drag. */
+  function groupMenuEntries(project: Project, groups: readonly ProjectGroup[]): ContextMenuEntry[] {
+    const currentGroupId = projectGroupId(project, groups)
+    const entries: ContextMenuEntry[] = [{ heading: 'Group' }]
+    entries.push({
+      label: 'New group…',
+      onSelect: (): void => {
+        const groupId = createProjectGroup(store, api, { withProjectId: project.id })
+        const created = store.getState().projectGroups.find((g) => g.id === groupId)
+        // Land straight in the rename box: a group called "Group" is only useful
+        // once it is called something else.
+        if (created) beginGroupRename(groupId, created.name)
+      },
+    })
+    for (const group of groups) {
+      entries.push({
+        label: group.name,
+        checked: group.id === currentGroupId,
+        onSelect: (): void => {
+          moveProjectIntoGroup(store, api, project.id, group.id)
+        },
+      })
+    }
+    if (currentGroupId !== null) {
+      entries.push({
+        label: 'Remove from group',
+        onSelect: (): void => {
+          moveProjectIntoGroup(store, api, project.id, null)
+        },
+      })
+    }
+    return entries
+  }
+
   function render(): void {
     clear(list)
-    const { projects, activeProjectId, expandedProjectId, activeThreadId } = store.getState()
+    const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
+      store.getState()
     const expandedId = expandedProjectId ?? activeProjectId
 
-    if (projects.length === 0 && orphans.length === 0) {
+    if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
       return
     }
 
-    for (const project of projects) {
+    /**
+     * One project's whole block — header row, quarantine notice, thread list —
+     * as a single element. Wrapping it means a drop indicator can be drawn
+     * against the block rather than squeezed between a project and its own
+     * threads, and it gives a group somewhere to put its members.
+     */
+    function renderProjectEntry(project: Project): HTMLElement {
+      const entry = el('div', { class: 'project-entry', 'data-project-id': project.id })
       const isExpanded = project.id === expandedId
       const projectRow = el(
         'button',
@@ -481,6 +802,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         ),
         el('span', { class: 'project-name' }, projectDisplayName(project)),
       )
+      const node: SidebarNodeRef & { groupId: string | null } = {
+        kind: 'project',
+        id: project.id,
+        groupId: projectGroupId(project, projectGroups),
+      }
+      bindDragSource(projectRow, node, entry)
+      bindDropTarget(projectRow, entry, node)
       // Flag a quarantined project whose folder could not be opened (#997); its
       // threads are preserved on disk and recoverable via the notice below.
       if (project.missing) {
@@ -514,13 +842,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               void removeProject(store, api, project.id)
             },
           },
+          ...groupMenuEntries(project, projectGroups),
         ])
       })
 
       if (isExpanded && project.missing) {
-        list.append(projectRow)
-        list.append(renderMissingNotice(project))
-        continue
+        entry.append(projectRow, renderMissingNotice(project))
+        return entry
       }
 
       if (isExpanded) {
@@ -548,12 +876,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           openNewThread(store)
         })
         projectLine.append(projectRow, newThreadBtn)
-        list.append(projectLine)
+        entry.append(projectLine)
       } else {
-        list.append(projectRow)
+        entry.append(projectRow)
       }
 
-      if (!isExpanded) continue
+      if (!isExpanded) return entry
 
       const sidebarThreads = getSidebarThreads(store, project.id)
       // When a filter is active it narrows the list by thread title and shows
@@ -921,7 +1249,31 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chats.append(group)
       }
 
-      list.append(chats)
+      entry.append(chats)
+      return entry
+    }
+
+    /** A group header plus its member entries, folded away when collapsed. */
+    function renderGroupEntry(group: ProjectGroup, members: readonly Project[]): HTMLElement {
+      const block = el('div', { class: 'project-group', 'data-group-id': group.id })
+      const row = renderGroupRow(group, members.length)
+      const node: SidebarNodeRef = { kind: 'group', id: group.id }
+      bindDragSource(row, node, block)
+      bindDropTarget(row, block, node)
+      block.append(row)
+      if (group.collapsed === true) return block
+      const children = el('div', { class: 'project-group-children' })
+      for (const member of members) children.append(renderProjectEntry(member))
+      if (members.length === 0) {
+        children.append(el('div', { class: 'sidebar-empty' }, 'Drag a project here'))
+      }
+      block.append(children)
+      return block
+    }
+
+    for (const node of buildProjectTree(projects, projectGroups)) {
+      if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
+      else list.append(renderProjectEntry(node.project))
     }
 
     if (orphans.length > 0) list.append(renderOrphansSection())
@@ -953,6 +1305,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     prStatusGeneration += 1
     dismissContextMenu()
     renaming = null
+    renamingGroup = null
+    activeDrag = null
     unsubs.forEach((u) => {
       u()
     })

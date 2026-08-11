@@ -657,6 +657,40 @@ export function seedProjectSwitchFixture(
 }
 
 /**
+ * Three named projects — plus, optionally, a group holding the third — for the
+ * sidebar drag-and-drop specs (issue #1685). Three is the smallest count where
+ * a reorder is unambiguous: with two, "moved up" and "moved down" produce the
+ * same list and a screenshot could not tell a working drag from a broken one.
+ */
+export function seedProjectGroupsFixture(
+  workspaceRoot: string,
+  options?: { withGroup?: boolean },
+): { projectIds: string[]; groupId: string } {
+  const projectIds = ['e2e-drag-alpha', 'e2e-drag-beta', 'e2e-drag-gamma']
+  const groupId = 'e2e-drag-group'
+  const names = ['Alpha', 'Beta', 'Gamma']
+  mkdirSync(USER_DATA, { recursive: true })
+  const projects = projectIds.map((id, index) => ({
+    id,
+    path: workspaceRoot,
+    name: names[index] ?? id,
+    // Only Gamma starts grouped, so the same fixture offers both a project to
+    // drag into the group and a group with something already in it.
+    ...(options?.withGroup === true && index === 2 ? { groupId } : {}),
+  }))
+  writeSeedConfig({
+    projects,
+    activeProjectId: projectIds[0],
+    ...(options?.withGroup === true
+      ? { projectGroups: [{ id: groupId, name: 'Client work' }] }
+      : {}),
+    ...Object.fromEntries(projectIds.map((id) => [`threads:${id}`, []])),
+  })
+  writeSettings({})
+  return { projectIds, groupId }
+}
+
+/**
  * Project with a stored OpenRouter API key, a custom model, and a (test-only)
  * `openRouterApiBase` pointing at a local fixture so the picker fetches a known
  * free/tool-capable model list without hitting the real OpenRouter API. The key

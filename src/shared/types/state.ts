@@ -55,6 +55,25 @@ export interface Project {
   missing?: boolean
   /** Per-thread checkout policy. Defaults to `never` until rollout is complete. */
   worktreeMode?: ProjectWorktreeMode
+  /**
+   * Sidebar group this project sits under (`AppState.projectGroups[].id`), set by
+   * dragging it onto a group (issue #1685). Unset — or naming a group that no
+   * longer exists — means the project renders at the top level.
+   */
+  groupId?: string
+}
+
+/**
+ * A user-created folder in the projects sidebar. Groups carry no member list:
+ * membership is `Project.groupId` and ordering comes from the `projects` array,
+ * so a drag never has to keep two orders in agreement (see
+ * `src/renderer/controller/project-tree.ts`).
+ */
+export interface ProjectGroup {
+  id: string
+  name: string
+  /** Sidebar folded state. Persisted, so a tidied sidebar stays tidy across launches. */
+  collapsed?: boolean
 }
 
 /**
@@ -71,7 +90,10 @@ export interface OrphanProjectStore {
 
 export interface AppState {
   workspaceRoot: string | null
+  /** Sidebar order. Reordered by dragging a project row (issue #1685). */
   projects: Project[]
+  /** User-created sidebar groups; ordering rules live in `project-tree.ts`. */
+  projectGroups: ProjectGroup[]
   activeProjectId: string | null
   /** Sidebar expand state; may lead activeProjectId while a workspace switch is in flight. */
   expandedProjectId: string | null
