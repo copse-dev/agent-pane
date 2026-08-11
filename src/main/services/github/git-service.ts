@@ -1,5 +1,5 @@
 import * as fsp from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
@@ -951,10 +951,25 @@ export async function repositoryHasSubmodules(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<boolean> {
   if (!root) return false
-  const { stdout, code } = await runGit(['rev-parse', '--show-toplevel'], root)
-  if (code !== 0 || !stdout.trim()) return false
+  // Do not mix a sandboxed Git answer with an unsandboxed filesystem probe.
+  // In particular, a project nested beneath another checkout (or mounted into
+  // a sandbox) can make `rev-parse --show-toplevel` name the enclosing repo,
+  // and an unrelated parent .gitmodules then disables worktrees for the child.
+  // The main process can identify the nearest local checkout boundary directly;
+  // `.git` may be either a directory or the indirection file used by worktrees.
+  let repositoryRoot = await fsp.realpath(root).catch(() => resolve(root))
+  for (;;) {
+    try {
+      await fsp.access(join(repositoryRoot, '.git'))
+      break
+    } catch {
+      const parent = dirname(repositoryRoot)
+      if (parent === repositoryRoot) return false
+      repositoryRoot = parent
+    }
+  }
   try {
-    await fsp.access(join(stdout.trim(), '.gitmodules'))
+    await fsp.access(join(repositoryRoot, '.gitmodules'))
     return true
   } catch {
     return false
