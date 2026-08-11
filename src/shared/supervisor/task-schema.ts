@@ -105,6 +105,8 @@ export const supervisedTaskMetaSchema = z.object({
   parentTaskId: z.string().min(1).optional(),
   /** Stable handler kind (e.g. `long_horizon_continue`, `shell_process`). */
   handler: z.string().min(1),
+  /** Handler-owned durable input. Consumers must decode this before use. */
+  handlerInput: z.record(z.string(), z.unknown()).optional(),
   provenance: taskProvenanceSchema,
   state: taskStateSchema,
   createdAt: z.number().int(),
