@@ -69,6 +69,7 @@ function attentionBell(label: string): SVGSVGElement {
   svg.setAttribute('height', '14')
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', label)
+  svg.setAttribute('data-tooltip', label)
   const path = document.createElementNS(SVG_NS, 'path')
   path.setAttribute('fill', 'currentColor')
   path.setAttribute(
@@ -87,6 +88,7 @@ function runningStatus(label: string): SVGSVGElement {
   const svg = runningStatusIcon('ui-icon ui-icon-sm chat-running-status')
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', label)
+  svg.setAttribute('data-tooltip', label)
   svg.removeAttribute('aria-hidden')
   return svg
 }
@@ -102,7 +104,7 @@ function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
       class: `chat-pr-status is-${rollup.kind}`,
       role: 'img',
       'aria-label': label,
-      title: label,
+      'data-tooltip': label,
     },
     icon,
   )
@@ -134,12 +136,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // expanded project's threads in place, the palette jumps across everything.
   const searchToggle = el(
     'button',
-    { class: 'projects-search-btn', 'aria-label': 'Search threads', title: 'Search threads' },
+    {
+      class: 'projects-search-btn',
+      'aria-label': 'Search threads',
+      'data-tooltip': 'Search threads',
+    },
     searchIcon('ui-icon ui-icon-sm'),
   )
   const openRemoteBtn = el(
     'button',
-    { class: 'projects-open-remote-btn', 'aria-label': 'Open remote project', hidden: true },
+    {
+      class: 'projects-open-remote-btn',
+      'aria-label': 'Open remote project',
+      'data-tooltip': 'Open a project on an SSH host',
+      hidden: true,
+    },
     '+ Remote',
   )
   // Single "+" entry point for local projects: opens a context menu with
@@ -147,7 +158,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // an opt-in affordance that only appears once SSH workspaces are enabled.
   const addBtn = el(
     'button',
-    { class: 'projects-add-btn', 'aria-label': 'New project', title: 'New project' },
+    {
+      class: 'projects-add-btn',
+      'aria-label': 'New project',
+      'data-tooltip': 'New project or open a folder',
+    },
     '+',
   )
   const header = el(
@@ -205,7 +220,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const list = el('div', { class: 'projects-list' })
   const settingsBtn = el(
     'button',
-    { class: 'projects-settings-btn', 'aria-label': 'Settings' },
+    { class: 'projects-settings-btn', 'aria-label': 'Settings', 'data-tooltip': 'Open settings' },
     settingsIcon(),
     'Settings',
   )
@@ -501,7 +516,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             type: 'button',
             class: 'project-new-thread-btn',
             'aria-label': 'New thread',
-            title: 'New thread',
+            'data-tooltip': 'New thread',
           },
           '+',
         )
@@ -685,7 +700,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
         const del = el(
           'button',
-          { class: 'chat-delete', 'aria-label': 'Delete thread' },
+          { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
           closeIcon('ui-icon ui-icon-sm'),
         )
         del.addEventListener('click', (e) => {

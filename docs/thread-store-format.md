@@ -27,7 +27,7 @@ describes it to the agent, so changing the layout means updating that preamble.
   catalog.jsonl                      # 1 line/thread index (rebuildable): {id, title,
                                      #   createdAt, updatedAt, digest, path}
   tasks/<taskId>/                    # supervised background tasks (#1081); not a thread
-    meta.json                        # mutable task record (state, trigger, permissions)
+    meta.json                        # mutable task record (state, trigger, handler input, permissions)
     audit.jsonl                      # append-only lifecycle transitions
   task-history/<taskId>.json         # compact terminal-task support summary; no permissions
   <threadId>/
@@ -61,7 +61,9 @@ describes it to the agent, so changing the layout means updating that preamble.
   [`copse-supervisor-task.schema.json`](../schemas/copse-supervisor-task.schema.json).
   Terminal tasks older than the retention window move to `task-history/` before startup
   reconciliation; these summaries retain ownership/outcome/timestamps but omit permission
-  snapshots and detailed audit transitions.
+  snapshots and detailed audit transitions. Consumers may persist bounded, schema-decoded
+  `handlerInput` in the task record so a wait can survive restart without inventing a second
+  registry; `contentHash` binds input that will later authorize tool use or a continuation.
   The reserved directory name `tasks` must not be used as a thread id (thread ids are
   UUIDs). Writers and the main-process singleton land in later phases; P1 is schema +
   pure reconcile only.
