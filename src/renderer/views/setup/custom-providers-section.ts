@@ -9,7 +9,7 @@ import {
 } from '@copse/llm/data-policies.ts'
 import { blendedRate } from '@copse/llm/pareto-frontier.ts'
 import { el, clear } from '../../dom/helpers.ts'
-import { closeIcon } from '../../dom/icons.ts'
+import { closeIcon, plusIcon } from '../../dom/icons.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
 
@@ -229,7 +229,12 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
 
   for (const model of initial) addRow(model)
 
-  const addBtn = el('button', { type: 'button', class: 'provider-add-model' }, '+ Add model')
+  const addBtn = el(
+    'button',
+    { type: 'button', class: 'provider-add-model' },
+    plusIcon('ui-icon ui-icon-sm'),
+    'Add model',
+  )
   addBtn.addEventListener('click', () => {
     addRow()
   })
