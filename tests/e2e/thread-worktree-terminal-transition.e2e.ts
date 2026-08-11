@@ -42,6 +42,11 @@ describe('terminal checkout transition', () => {
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
     projectRoot = join(dirname(worktreesRoot), 'terminal-transition-project')
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
+    // CI retries reuse COPSE_WORKTREES_DIR. Start from a genuinely new repo so
+    // a prior attempt's worktree registration or fixture files cannot change
+    // the checkout policy inspected by this attempt.
+    rmSync(worktreeRoot, { recursive: true, force: true })
+    rmSync(projectRoot, { recursive: true, force: true })
     mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
@@ -76,6 +81,7 @@ describe('terminal checkout transition', () => {
 
   after(() => {
     resetUserData()
+    if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
