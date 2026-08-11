@@ -55,7 +55,7 @@ import {
   shellRequiresOutsideSandbox,
   mcpToolLabel,
   formatGithubWritePrompt,
-  GITHUB_READONLY_CI_TOOLS,
+  GITHUB_NONMUTATING_CI_TOOLS,
   GITHUB_WRITE_TOOLS,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
@@ -1305,10 +1305,9 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
     return checkParallelSearchPermission()
   }
 
-  // Read-only GitHub CI reads (status/logs/wait) reach github.com via the `gh`
-  // CLI but never mutate anything — the same shape as gh_pr_view in SANDBOX_TOOLS.
-  // They auto-run without prompting; nothing they do needs user approval.
-  if (GITHUB_READONLY_CI_TOOLS.has(toolName)) {
+  // GitHub CI tools never mutate remote state. Status/log reads are ephemeral;
+  // wait also persists one bounded local task under the active turn tree.
+  if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
     return true
   }
 
