@@ -111,7 +111,10 @@ describe('automation attention grouping', function () {
 
   it('reveals only the automation run waiting for attention', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.execute(
+    // Keep what `runNow` answered. It reports whether the schedule was found at
+    // all, which is the first fork in the diagnosis below — and the old code
+    // awaited it only to discard it.
+    const runNowResult = await browser.execute(
       async ([projectId, scheduleId]) => {
         const host = window as unknown as {
           api?: {
@@ -119,16 +122,48 @@ describe('automation attention grouping', function () {
           }
         }
         if (!host.api?.automations?.runNow) throw new Error('automations.runNow unavailable')
-        await host.api.automations.runNow(projectId, scheduleId)
+        return await host.api.automations.runNow(projectId, scheduleId)
       },
       [PROJECT_ID, SCHEDULE_ID],
     )
 
     const automationToggle = $('.automation-threads-toggle')
-    await browser.waitUntil(
-      async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
-      { timeout: 30_000, timeoutMsg: 'attention did not reveal the Automations group' },
-    )
+    // `aria-expanded !== 'true'` has at least three causes that the bare
+    // timeout cannot tell apart, and #1719 is open because nobody could say
+    // which one this is: the schedule never reached the automations plugin, so
+    // `runNow` created nothing; the run exists but the sidebar never grouped
+    // it; or the group rendered and simply did not auto-expand for attention.
+    //
+    // So report the state instead of the timeout. This costs nothing on the
+    // passing path and turns one CI run into an answer rather than a fourth
+    // guess. Remove it once the fault is fixed and the spec is green.
+    try {
+      await browser.waitUntil(
+        async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
+        { timeout: 30_000 },
+      )
+    } catch {
+      const [toggleExists, expanded, groupCount, rowCount, bellCount, titles] = await Promise.all([
+        automationToggle.isExisting(),
+        automationToggle.getAttribute('aria-expanded').catch(() => '<unreadable>'),
+        $$('.automation-schedule-group').length,
+        $$('.chats-list .chat-row').length,
+        $$('.chat-attention-bell').length,
+        browser.execute(() =>
+          Array.from(document.querySelectorAll('.chats-list .chat-title'))
+            .map((node) => node.textContent ?? '')
+            .join(' | '),
+        ),
+      ])
+      throw new Error(
+        'attention did not reveal the Automations group — ' +
+          `runNow returned ${JSON.stringify(runNowResult)}, ` +
+          `.automation-threads-toggle ${toggleExists ? 'exists' : 'is ABSENT'} ` +
+          `with aria-expanded=${String(expanded)}, ` +
+          `${String(groupCount)} schedule group(s), ${String(rowCount)} sidebar row(s), ` +
+          `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}`,
+      )
+    }
     assert.equal((await automationToggle.$$('.chat-attention-bell')).length, 0)
 
     const scheduleGroup = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
