@@ -8,7 +8,14 @@ import {
   parseGhOpenPr,
   parseGhOpenPrList,
 } from './github/pr-context-service.ts'
-import { parseModelFollowUpIds } from './follow-up-service.ts'
+import {
+  buildPluginFollowUps,
+  pluginFollowUpConditionMet,
+  parseModelFollowUpIds,
+} from './follow-up-service.ts'
+import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { definePlugin, type RegisteredPlugin } from '@copse/agent/plugins/plugin-manifest.ts'
+import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 
 describe('parseDiffNumstat', () => {
   it('sums additions and deletions', () => {
@@ -116,5 +123,94 @@ describe('parseModelFollowUpIds', () => {
 
   it('returns empty array on invalid JSON', () => {
     assert.deepEqual(parseModelFollowUpIds('no json here'), [])
+  })
+})
+
+describe('pack-contributed follow-up bubbles', () => {
+  const dirty = { changeStats: { additions: 3, deletions: 1 } }
+  const clean = { changeStats: null }
+
+  function withPlugin(plugin: RegisteredPlugin, run: () => void): void {
+    const registry = new PluginRegistry()
+    registry.register(plugin)
+    runWithDefaultPluginRegistry(registry, run)
+  }
+
+  it('offers an enabled plugin’s bubble, mapping its action through', () => {
+    withPlugin(
+      definePlugin(
+        { name: 'copse.test-offers', trust: 'first-party', stability: 'experimental' },
+        {
+          followUps: [
+            { id: 'compare', label: 'Compare models', action: 'model-compare' },
+            { id: 'tidy', label: 'Tidy up', prompt: 'Tidy the diff.' },
+          ],
+        },
+      ),
+      () => {
+        assert.deepEqual(buildPluginFollowUps(dirty), [
+          { id: 'compare', label: 'Compare models', action: 'model-compare' },
+          { id: 'tidy', label: 'Tidy up', action: 'prompt', prompt: 'Tidy the diff.' },
+        ])
+      },
+    )
+  })
+
+  it('honours the `when` condition against the workspace', () => {
+    withPlugin(
+      definePlugin(
+        { name: 'copse.test-gated', trust: 'first-party', stability: 'experimental' },
+        {
+          followUps: [
+            {
+              id: 'gated',
+              label: 'Needs a diff',
+              action: 'model-compare',
+              when: 'workspace-changes',
+            },
+            { id: 'ungated', label: 'Any time', prompt: 'Go on.', when: 'always' },
+          ],
+        },
+      ),
+      () => {
+        assert.deepEqual(
+          buildPluginFollowUps(dirty).map((s) => s.id),
+          ['gated', 'ungated'],
+        )
+        // A clean tree has no working diff for the reviewers to read, so the
+        // gated bubble must not offer a comparison of nothing.
+        assert.deepEqual(
+          buildPluginFollowUps(clean).map((s) => s.id),
+          ['ungated'],
+        )
+      },
+    )
+  })
+
+  it('offers nothing once the owning plugin is disabled', () => {
+    const registry = new PluginRegistry()
+    registry.register(
+      definePlugin(
+        { name: 'copse.test-off', trust: 'first-party', stability: 'experimental' },
+        { followUps: [{ id: 'gone', label: 'Compare models', action: 'model-compare' }] },
+      ),
+    )
+    registry.disable('copse.test-off')
+    runWithDefaultPluginRegistry(registry, () => {
+      assert.deepEqual(buildPluginFollowUps(dirty), [])
+    })
+  })
+})
+
+describe('pluginFollowUpConditionMet', () => {
+  it('treats a null changeStats as a clean tree', () => {
+    assert.equal(pluginFollowUpConditionMet('workspace-changes', { changeStats: null }), false)
+    assert.equal(
+      pluginFollowUpConditionMet('workspace-changes', {
+        changeStats: { additions: 0, deletions: 2 },
+      }),
+      true,
+    )
+    assert.equal(pluginFollowUpConditionMet('always', { changeStats: null }), true)
   })
 })

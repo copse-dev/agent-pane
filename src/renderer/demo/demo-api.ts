@@ -28,6 +28,7 @@ const DEMO_PLUGIN_CONTRIBUTIONS: PluginContributionsSummary = {
   commandHooks: [],
   promptBlocks: [],
   ui: [],
+  followUps: [],
   capabilities: [],
   permissions: [],
 }
@@ -354,6 +355,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runningThreadIds: emptyArray,
       retryReview: resolvedVoid,
       retryComparison: resolvedVoid,
+      comparisonModels: () => resolved({ a: '', b: '', judge: '' }),
       clearHistory: resolvedVoid,
       refreshModelContext: resolvedVoid,
       suggestTitle: () => resolved(null),

@@ -32,6 +32,7 @@ plugin manifest
 ├── hooks      command-hook declarations (user plugins); first-party function hooks are typed runtime contributions
 ├── prompt     skills / steering blocks (with trust framing: trusted vs untrusted)
 ├── ui         contributions — level 1 (cards) / 2 (named panel slot) / 3 (real renderer view)
+├── followUps  bubbles suggested above the composer; the offer-shaped alternative to a modal
 ├── settings   plugin-scoped schema, rendered generically in Settings
 └── storage    namespaced state; survives disable
 ```
@@ -111,6 +112,41 @@ chooser. Each upload operation is capped at eight files and 8 MB decoded total.
 There is still no direct worker network, generic `host.call`, arbitrary IPC, or
 user-plugin renderer code. Renderer contribution machinery remains deferred until
 a concrete behavior needs it rather than landing as an unused slot.
+
+## Follow-up bubbles
+
+A plugin can suggest a **follow-up bubble** — one of the chips above the
+composer, next to "Changes" — rather than interrupting with a modal
+([decision 21](plans/hooks-and-feature-packs.md#decisions-log)). Each declaration
+carries an `id`, a `label`, and two optional fields the host resolves:
+
+| field    | values              | meaning                                                               |
+| -------- | ------------------- | --------------------------------------------------------------------- |
+| `action` | `prompt` (default)  | the click sends the declaration's `prompt` to the agent                 |
+|          | `model-compare`     | the click opens the comparison model picker, then runs the comparison |
+| `when`   | `always` (default)  | offered whenever the plugin is enabled                                |
+|          | `workspace-changes` | offered only while the working tree has uncommitted changes           |
+
+`when` is a bounded vocabulary rather than a predicate, so the manifest stays
+plain JSON: a plugin names a condition the host already computes for its own
+deterministic bubbles, and no plugin code runs at the end of every turn.
+
+A **host action is first-party only.** It drives app UI (and, for
+`model-compare`, spends money) without passing through the agent, so
+`pluginManifestFromPluginJson` forces a discovered manifest's `action` back to
+`prompt`, and `PluginRegistry.register` throws
+`InvalidFollowUpContributionError` for a non-first-party plugin that
+contributes one. It also rejects a `prompt` bubble with no prompt text, which
+would be a dead click.
+
+The shipped example is `copse.model-comparison`, whose "Compare models" bubble
+is gated on `workspace-changes` because the reviewers read the working diff.
+Its picker names all three models before anything runs, which is what lets the
+run behind it skip the spend approval and completion chime: the click was the
+decision. Agent-initiated and auto-on-review runs still prompt.
+
+Disabling the plugin drops its bubbles from `activeFollowUps()` in the same
+atomic flag flip as its tools and hooks.
 
 ## Registry and lifecycle
 

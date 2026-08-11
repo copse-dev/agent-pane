@@ -2546,6 +2546,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           .join(', '),
       })
     }
+    if (contributions.followUps.length > 0) {
+      chips.push({
+        label: 'Follow-ups',
+        count: contributions.followUps.length,
+        title: contributions.followUps.map((f) => `${f.label} (${f.action}, ${f.when})`).join(', '),
+      })
+    }
     if (contributions.capabilities.length > 0) {
       chips.push({
         label: 'Capabilities',

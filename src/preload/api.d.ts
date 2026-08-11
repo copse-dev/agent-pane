@@ -159,6 +159,8 @@ export interface ApiClient {
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
+    /** Defaults for the "Compare models" bubble's picker (settings + defaults, resolved). */
+    comparisonModels: (payload: string) => Promise<{ a: string; b: string; judge: string }>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>

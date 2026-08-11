@@ -113,7 +113,9 @@ import {
   runModelComparison,
   setModelComparisonContext,
   isAutoComparisonEnabled,
+  resolveComparisonModelDefaults,
 } from './model-comparison-runner.ts'
+import type { ComparisonModels } from './model-comparison.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   setAgentRunTodoContext,
@@ -1858,6 +1860,12 @@ export function listRunningThreadIds(): string[] {
 export interface RetryOptions {
   workingBrief?: string
   model?: string
+  /**
+   * Comparison models the user picked in the follow-up bubble's picker. Only
+   * {@link retryModelComparison} reads it; passing it makes the run use exactly
+   * these three and skip the spend prompt the picker already served as.
+   */
+  comparisonModels?: ComparisonModels
 }
 
 /** Register a fresh abort controller for a standalone review/comparison retry,
@@ -1938,13 +1946,32 @@ export async function retryPostTurnReview(
 }
 
 /**
- * Re-run the two-model comparison for a thread on demand — the retry action on a
- * failed comparison card. Like {@link retryPostTurnReview}, it reviews the
- * current working diff, so a fixable failure (a mis-loaded local model, a
- * declined/aborted run) can be retried in place. `runModelComparison` emits its
- * own running/terminal `model_comparison` chunks (and re-asks for spend approval
- * when a model is billable); we bracket it with a `done` so the thread idles.
+ * Run the two-model comparison for a thread on demand — the retry action on a
+ * failed comparison card, and the "Compare models" follow-up bubble. Like
+ * {@link retryPostTurnReview}, it reviews the current working diff, so a fixable
+ * failure (a mis-loaded local model, a declined/aborted run) can be retried in
+ * place. `runModelComparison` emits its own running/terminal `model_comparison`
+ * chunks; we bracket it with a `done` so the thread idles.
+ *
+ * With `options.comparisonModels` — the bubble path — those three models are
+ * used verbatim and no spend prompt is raised; without them the settings-driven
+ * resolution and its approval apply as before.
  */
+/**
+ * The three models the "Compare models" picker opens on: the pack's settings (or
+ * its defaults) expanded to concrete ids, against the same chat model the run
+ * would use for reviewer A. Resolved when the bubble is *clicked* rather than
+ * when it is built — expansion can reach the provider catalogue, and a bubble
+ * nobody clicks should cost nothing.
+ */
+export async function resolveComparisonModelChoices(
+  options?: RetryOptions,
+): Promise<ComparisonModels> {
+  const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const model = (await resolveAgentChatModel(requestedModel)).model
+  return resolveComparisonModelDefaults(model)
+}
+
 export async function retryModelComparison(
   threadId: string,
   priorMessages: LLMMessage[],
@@ -1960,7 +1987,14 @@ export async function retryModelComparison(
   try {
     const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
     await runModelComparison(
-      { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
+      {
+        threadId,
+        parentGoal,
+        registry,
+        chatModel: model,
+        onChunk: sendChunk,
+        ...(options?.comparisonModels ? { models: options.comparisonModels } : {}),
+      },
       controller.signal,
     )
   } finally {

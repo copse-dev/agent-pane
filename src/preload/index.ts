@@ -188,6 +188,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
     retryComparison: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retryComparison', projectId, threadId, payload),
+    comparisonModels: (payload: string) => ipcRenderer.invoke('agent:comparisonModels', payload),
     clearHistory: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('agent:clearHistory', projectId, threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refreshModelContext'),
