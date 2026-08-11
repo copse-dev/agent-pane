@@ -12,7 +12,9 @@ const ASK_PROMPT =
   '[[mcp:ask_user {"questions":[{"question":"Which CI failure should I investigate?","options":["Latest failure","All failures"]}]}]]'
 
 describe('automation attention grouping', function () {
-  this.timeout(120_000)
+  // The attention wait below is 75s on its own — see the comment there. The
+  // rest of the spec then drives a reveal, an expand, and an ask_user dialog.
+  this.timeout(180_000)
   before(async () => {
     resetUserData()
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
@@ -128,19 +130,33 @@ describe('automation attention grouping', function () {
     )
 
     const automationToggle = $('.automation-threads-toggle')
-    // `aria-expanded !== 'true'` has at least three causes that the bare
-    // timeout cannot tell apart, and #1719 is open because nobody could say
-    // which one this is: the schedule never reached the automations plugin, so
-    // `runNow` created nothing; the run exists but the sidebar never grouped
-    // it; or the group rendered and simply did not auto-expand for attention.
+    // This wait is not for a render — it is for a whole agent turn (#1719).
     //
-    // So report the state instead of the timeout. This costs nothing on the
-    // passing path and turns one CI run into an answer rather than a fourth
-    // guess. Remove it once the fault is fixed and the spec is green.
+    // `automationExpanded` in projects-pane.ts is true here only because
+    // `attentionAutomationThreads.length > 0`; no other term in that expression
+    // applies to a freshly booted profile with nothing active. So the reveal
+    // cannot happen until the run `runNow` just started has allocated its
+    // worktree, spawned its task, run a mock turn, and reached the `ask_user`
+    // gate that raises attention. `runNow` resolves as soon as the run is
+    // *started*, so awaiting it covers none of that.
+    //
+    // 30s did not cover it on a contended runner, which is why this spec was
+    // intermittent rather than broken: it passed whenever the turn happened to
+    // land inside the budget. The diagnostics below caught a failing instance
+    // on run 31408123933 and reported `runNow` returning
+    // `{"disposition":"started",…}` with a real thread id, the toggle present
+    // at `aria-expanded=false`, and **0 attention bells** — a run under way
+    // that had not yet asked anything.
+    //
+    // 75s matches `automation-trigger`, which had the same class of bug and
+    // documents its own boundary maths; the mocha budget above rises with it.
+    //
+    // The diagnostics stay. They are what turned this from a fourth guess into
+    // a measurement, and they cost nothing on the passing path.
     try {
       await browser.waitUntil(
         async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
-        { timeout: 30_000 },
+        { timeout: 75_000 },
       )
     } catch {
       const [toggleExists, expanded, groupCount, rowCount, bellCount, titles] = await Promise.all([
