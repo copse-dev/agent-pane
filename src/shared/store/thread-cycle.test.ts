@@ -1,7 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from './store.ts'
-import { addMessage, createThread, nextThreadId, prevThreadId, switchThread } from './thread-helpers.ts'
+import {
+  addMessage,
+  createThread,
+  nextThreadId,
+  prevThreadId,
+  switchThread,
+} from './thread-helpers.ts'
 
 /** Build a store whose thread list is [a, b, c] (newest first) with `a` active. */
 function storeWithThreads(): ReturnType<typeof createStore> {
