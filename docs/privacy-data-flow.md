@@ -149,9 +149,9 @@ forward-recovery guidance is in [recovery.md](recovery.md).
 
 ## One person per installation, deliberately
 
-There is no account, no directory, no sharing, and no concept of a second user. Threads,
-knowledge notes, settings, and credentials belong to the operating-system user running the
-app, and the access control over them is the filesystem's.
+There is no Copse account, no user directory, no sharing, and no concept of a second user.
+Threads, knowledge notes, settings, and credentials belong to the operating-system user
+running the app, and the access control over them is the filesystem's.
 
 This is a **non-goal rather than an unbuilt feature**. Sharing a thread, a plan, or a note
 with another person would require an identity to share with, a channel to share over, and a

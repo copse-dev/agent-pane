@@ -19,8 +19,8 @@ Companions:
 Assistants that run models on the user's own hardware have converged on a recognisable set of
 capabilities, and several are ones we had never written down either way: pooling more than one
 machine on a desk, plans whose steps carry dependencies and per-step verification, named agents
-with their own model and notes, awareness of what the hardware can currently do, voice, a
-notebook the user writes into, and a phone in the same product family.
+with their own model and notes, awareness of what the hardware can currently do, voice, richer
+notebook capture and retrieval, and a phone in the same product family.
 
 Most of those belong to general assistants rather than coding agents, so the question is not
 which of them are features but **which are ours to want, and which of those had nobody written
@@ -47,7 +47,7 @@ findings, and — as the map shows — nine of them belonged inside something we
 | G-03 | Plan steps carry no dependencies, effort, or todo link         | **#1570**; [`plan-mode-and-rewind.md`](plan-mode-and-rewind.md) schema section                                                                          |
 | G-04 | Todo checks resolve against the workspace, not the thread root | **#1571** (defect, unverified; #1439's family)                                                                                                          |
 | G-05 | Voice absent everywhere                                        | [`user-control-surface-gaps.md`](user-control-surface-gaps.md) → Missing                                                                                |
-| G-06 | Notes are agent memory, not a user's notebook                  | [`knowledge-store.md`](knowledge-store.md) Phase 4                                                                                                      |
+| G-06 | Memories lack captured sources and user-directed querying      | [`knowledge-store.md`](knowledge-store.md) Phase 4                                                                                                      |
 | G-07 | No named agent profile                                         | **#1573** (R-05, now filed)                                                                                                                             |
 | G-08 | Non-coding work is unmeasured                                  | [`industry-benchmarks.md`](industry-benchmarks.md) — recorded as a scope decision                                                                       |
 | G-09 | Off-desktop reach has issues but no decision                   | [`user-control-surface-gaps.md`](user-control-surface-gaps.md) R-10 (#802 #659 #1382)                                                                   |
@@ -78,7 +78,7 @@ ahead of the run.
 ### G-02 — Nothing measures the machine
 
 The hardware budget is a declared class (`HARDWARE_CLASSES`, Compact ≈8 GB through Server
-96 GB+, picker still pending). The only runtime instrumentation in main is
+96 GB+, picker still pending). The only runtime resource instrumentation located in main is
 `src/main/services/diagnostics/event-loop-watchdog.ts`; sizing advice links out to a
 third-party VRAM calculator (`src/shared/context-window-advice.ts:22`).
 
@@ -101,16 +101,19 @@ shared checkout. Not reproduced — #1571 carries the repro steps.
 
 ### G-05 — Voice
 
-No occurrence of voice, dictation, microphone, or speech-to-text in `src/`, `packages/`,
-`docs/`, or the open issues. Video attachments never decode audio
-([`video-frames.md:149`](../video-frames.md)).
+At the audited snapshot there was no product path for dictation, microphone input,
+speech-to-text, or read-back in `src/`, `packages/`, `docs/`, or the open issues. ACP capability
+probing can report an agent's prompt-audio support, but Copse exposes no voice surface of its
+own. Video attachments never decode audio ([`video-frames.md:149`](../video-frames.md)).
 
 ### G-06 — Notes
 
 OKF knowledge notes, a Memories pane with tags and inline editing
 (`src/renderer/views/memories-pane.ts`), a Doc type (#871), a Playbook type (#874), prompt-time
-surfacing (#870). Every type is agent-authored; no user-captured kinds, and no user-facing
-retrieval.
+surfacing (#870). The pane already lets a user create, browse, edit, and delete plain Markdown
+memories. What is absent is richer capture — images, transcripts, saved artifacts, or source
+metadata — and a user action that asks or searches across the notes rather than handing them to
+the agent through prompt-time injection.
 
 ### G-07 — Named profiles
 

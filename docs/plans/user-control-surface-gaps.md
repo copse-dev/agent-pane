@@ -119,6 +119,9 @@ rich-text composer; `AGENTS.md` project instructions; Claude Code-compatible hoo
 per-chat draft autosave; thread forking; message queuing; the file tree, Monaco editor and
 terminal; clickable path references; context/token usage metrics.
 
+Configurable native notification, sound, and dock/taskbar attention when a run needs input or
+finishes (`user-alerts.ts`, `user-alerts-electron.ts`; #1458).
+
 ### Partial
 
 | Area                          | State                                                                      |
@@ -147,8 +150,9 @@ set, MCP servers, permission posture, and compaction policy.
 **Model configuration** — system prompt override; hyperparameters; multiple credentials
 for one provider; Copilot and Bedrock adapters.
 
-**Awareness and durability** — notification when a session needs attention; pending tool
-calls persisted across restart; confirm-before-quit; notification sound and format.
+**Awareness and durability** — pending tool calls persisted across restart;
+confirm-before-quit; notification copy and per-event channel choices beyond the shipped
+needs-input / thread-finished controls.
 
 **Observability** — no inspector for how a request was composed; no reviewable artifact
 collection per run.
@@ -168,10 +172,10 @@ different one. See [`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-
 
 ## Ownership
 
-Only six of twenty-two need a new issue, and two of those are decision records. Eight
+Only six of twenty-two originally needed a new issue, and two of those are decision records. Eight
 already have an owner among the open issues, where the correct move is to extend that
 issue rather than file a second one against the same work. R-05 has since been filed as
-#1573, leaving five of the six outstanding.
+#1573, and R-06 shipped in #1458, leaving four of the six outstanding.
 
 | Req  | Repo plan                  | Open issues                | Roadmap                          | Action                                |
 | ---- | -------------------------- | -------------------------- | -------------------------------- | ------------------------------------- |
@@ -180,7 +184,7 @@ issue rather than file a second one against the same work. R-05 has since been f
 | R-03 | long-horizon-tasks         | #558 #1286                 | `ae775062` `4f427281`            | Extend #1286                          |
 | R-04 | —                          | #866 #998                  | `bfa09823` `79b0286f` `00a74fc9` | **New issue** — see `mission-control` |
 | R-05 | model-roles-and-defaults   | **#1573** #1314 #1315 #750 | `19418b60` (name collision)      | Filed as #1573                        |
-| R-06 | —                          | —                          | —                                | **New issue** — see `mission-control` |
+| R-06 | —                          | #1458                      | —                                | Landed                                |
 | R-07 | —                          | #656 #1153 #1222           | —                                | Extend #656                           |
 | R-08 | —                          | —                          | `a6bb72a1` (blocks) `7f284ad5`   | **New issue**                         |
 | R-09 | settings-transparency      | #638 #639                  | —                                | Extend #639                           |
@@ -237,9 +241,9 @@ leads Phase 2 on a dependency.
 
 ### Phase 1 — Awareness, durability, onboarding
 
-- **R-06 — Notify when a session needs attention.** Nothing in `src/main` constructs a
-  `Notification` today; the events already exist on the store. The only requirement here
-  with no prior art anywhere. **Specified in [`mission-control.md`](mission-control.md).**
+- **R-06 — Notify when a session needs attention.** Landed in #1458: native notification,
+  sound, and dock/taskbar attention are independently configurable for needs-input and
+  thread-finished events. The notification is suppressed while Copse is visible (#1587).
 - **R-07 — Pending tool calls persist across restart.** Verify first; if a pending
   approval does not survive a quit, file it as a data-loss defect. Sequence behind #1153
   and #1222.
@@ -328,9 +332,7 @@ useful thing to disagree with.
 
 ## Follow-ups
 
-Six new issues: R-04, R-05, R-06, R-08, R-12, R-21. R-04, R-06, R-20 and R-22 should be
-one issue against [`mission-control.md`](mission-control.md) rather than four, since they
-are one surface. Everything else extends an existing issue.
-
-R-05 is filed as [#1573](https://github.com/copse-dev/agent-pane/issues/1573); the other
-five remain unfiled.
+Six findings originally needed new ownership: R-04, R-05, R-06, R-08, R-12, R-21. R-05 is
+filed as [#1573](https://github.com/copse-dev/agent-pane/issues/1573), and R-06 landed in
+#1458. R-04 should share one issue against [`mission-control.md`](mission-control.md) with
+R-20 and R-22, since they are one surface. R-08, R-12, and R-21 still need their own owners.
