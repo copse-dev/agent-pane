@@ -1,6 +1,7 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
+import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
 
 export class IpcValidationError extends Error {
   constructor(message: string) {
@@ -124,7 +125,10 @@ export function assertFsWriteContent(content: string): void {
   }
 }
 
-const STORAGE_KEY = z.union([z.literal('projects'), z.literal('activeProjectId')])
+// Derived from the shared list rather than restated here: a renderer key that is
+// not in the allowlist fails at runtime during boot, not in any renderer test
+// (see src/shared/storage-keys.ts).
+const STORAGE_KEY = z.enum(RENDERER_STORAGE_KEYS)
 
 export const zProjectId = z.string().regex(/^[\w-]{1,128}$/)
 

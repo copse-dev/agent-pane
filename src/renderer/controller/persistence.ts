@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, ProjectGroup, Thread } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import type { RendererStorageKey } from '@shared/storage-keys.ts'
 
 // On-disk persistence for projects and their chat threads. Projects stay in the
 // shared electron-store (config.json). Threads live in the filesystem-native
@@ -11,9 +12,13 @@ import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 // debounced `updateMeta` for metadata (draft/usage/status/todos/title/…) —
 // instead of rewriting whole threads on every keystroke.
 
-const KEY_PROJECTS = 'projects'
-const KEY_PROJECT_GROUPS = 'projectGroups'
-const KEY_ACTIVE = 'activeProjectId'
+// Named from the shared allowlist: `storage:get` / `storage:set` reject any key
+// main does not know about, and `loadProjects` runs during an un-caught boot
+// await — so a key that only exists here takes the whole layout down at launch
+// rather than failing a test (see src/shared/storage-keys.ts).
+const KEY_PROJECTS: RendererStorageKey = 'projects'
+const KEY_PROJECT_GROUPS: RendererStorageKey = 'projectGroups'
+const KEY_ACTIVE: RendererStorageKey = 'activeProjectId'
 
 // Autosave fires several events per turn and project switches save/load
 // concurrently, so writes to the same key could overlap and land out of order
