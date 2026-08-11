@@ -257,7 +257,7 @@ export function mountRoadmapPane(
       class: 'roadmap-filter-toggle',
       'aria-label': 'Filter roadmap items',
       'aria-expanded': 'false',
-      title: 'Filter by category, complexity, or status',
+      'data-tooltip': 'Filter by category, complexity, or status',
     },
     'Filter',
   )
@@ -275,7 +275,7 @@ export function mountRoadmapPane(
       type: 'button',
       class: 'git-changes-refresh-btn memories-new-btn roadmap-new-btn',
       'aria-label': 'New roadmap item',
-      title: 'New roadmap item',
+      'data-tooltip': 'New roadmap item',
     },
     '+',
   )
@@ -285,7 +285,7 @@ export function mountRoadmapPane(
       type: 'button',
       class: 'git-changes-refresh-btn roadmap-import-btn',
       'aria-label': 'Import from GitHub issues',
-      title: 'Import from GitHub issues',
+      'data-tooltip': 'Import from GitHub issues',
     },
     '⇩',
   )
@@ -295,7 +295,7 @@ export function mountRoadmapPane(
       type: 'button',
       class: 'git-changes-refresh-btn roadmap-review-btn',
       'aria-label': 'Review roadmap resolution',
-      title: 'Review whether roadmap items have been resolved',
+      'data-tooltip': 'Review whether roadmap items have been resolved',
     },
     '◎',
   )
@@ -305,7 +305,7 @@ export function mountRoadmapPane(
       type: 'button',
       class: 'git-changes-refresh-btn roadmap-refresh-btn',
       'aria-label': 'Refresh roadmap',
-      title: 'Refresh',
+      'data-tooltip': 'Refresh roadmap',
     },
     '↻',
   )
@@ -315,7 +315,7 @@ export function mountRoadmapPane(
       type: 'button',
       class: 'git-changes-refresh-btn roadmap-export-btn',
       'aria-label': 'Export roadmap',
-      title: 'Export roadmap as a file',
+      'data-tooltip': 'Export roadmap as a file',
     },
     '⇧',
   )
@@ -845,7 +845,7 @@ export function mountRoadmapPane(
         type: 'button',
         class: 'roadmap-attachment-remove',
         'aria-label': `Remove attachment ${att.name}`,
-        title: 'Remove attachment',
+        'data-tooltip': 'Remove attachment',
       },
       '✕',
     )
@@ -1267,9 +1267,9 @@ export function mountRoadmapPane(
           const isDone = status === 'done'
           const toggle = el('span', {
             class: 'roadmap-done-toggle',
+            'data-tooltip': isDone ? 'Reopen (set ready)' : 'Mark done',
             role: 'button',
             tabindex: '0',
-            title: isDone ? 'Reopen (set ready)' : 'Mark done',
             'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
           })
           toggle.append(

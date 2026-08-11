@@ -22,7 +22,7 @@ function join(parent: string, child: string): string {
 export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const refreshBtn = el(
     'button',
-    { class: 'sidebar-refresh', 'aria-label': 'Refresh' },
+    { class: 'sidebar-refresh', 'aria-label': 'Refresh', 'data-tooltip': 'Refresh the file tree' },
     refreshIcon('ui-icon ui-icon-sm'),
   )
   const header = el(
