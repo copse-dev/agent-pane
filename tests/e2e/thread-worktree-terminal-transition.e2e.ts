@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, realpathSync } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
@@ -40,14 +41,15 @@ describe('terminal checkout transition', () => {
 
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
-    projectRoot = join(dirname(worktreesRoot), 'terminal-transition-project')
+    // Keep the fixture outside the checked-out agent-pane repository. A nested
+    // synthetic repo can otherwise inherit parent repository metadata when a
+    // sandboxed Git probe cannot see its own metadata.
+    projectRoot = mkdtempSync(join(tmpdir(), 'copse-terminal-transition-'))
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
     // CI retries reuse COPSE_WORKTREES_DIR. Start from a genuinely new repo so
     // a prior attempt's worktree registration or fixture files cannot change
     // the checkout policy inspected by this attempt.
     rmSync(worktreeRoot, { recursive: true, force: true })
-    rmSync(projectRoot, { recursive: true, force: true })
-    mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -57,6 +59,10 @@ describe('terminal checkout transition', () => {
     writeFileSync(join(projectRoot, 'README.md'), 'terminal transition fixture\n')
     git(projectRoot, ['add', 'README.md'])
     git(projectRoot, ['commit', '-qm', 'seed'])
+    const discoveredRoot = realpathSync(git(projectRoot, ['rev-parse', '--show-toplevel']))
+    if (discoveredRoot !== realpathSync(projectRoot)) {
+      throw new Error(`fixture repository resolved to ${discoveredRoot}, expected ${projectRoot}`)
+    }
 
     const now = Date.now()
     writeSeedConfig({
