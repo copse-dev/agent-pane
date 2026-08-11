@@ -26,6 +26,7 @@ describe('automation attention grouping', function () {
       git('init', '-q', '-b', 'main')
       git('config', 'user.email', 'e2e@example.invalid')
       git('config', 'user.name', 'Copse E2E')
+      git('config', 'init.defaultBranch', 'main')
       writeFileSync(join(projectRoot, 'README.md'), 'automation attention fixture\n')
       git('add', 'README.md')
       git('commit', '-qm', 'seed')

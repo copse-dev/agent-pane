@@ -71,7 +71,13 @@ describe('roadmap done toggle', () => {
 
     const toggle = await revealDoneToggle()
     assert.equal(await toggle.getAttribute('title'), 'Mark done')
-    await toggle.click()
+    // Complexity/category stamps can replace the row after hover but before a
+    // WebDriver click reaches the cached element. Dispatch on the live control
+    // so this still exercises the ordinary DOM click handler without racing a
+    // detached handle.
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
+    })
 
     // `done` is hidden by default, so the row leaves the list on completion
     // rather than staying struck through.
@@ -129,7 +135,9 @@ describe('roadmap done toggle', () => {
     // The same control now reopens the item.
     const reopen = await revealDoneToggle()
     assert.equal(await reopen.getAttribute('title'), 'Reopen (set ready)')
-    await reopen.click()
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
+    })
     await browser.waitUntil(
       async () =>
         (await $('.roadmap-row').isExisting()) === true &&

@@ -340,11 +340,12 @@ interface TemporaryGitIndex {
  */
 async function createTemporaryGitIndex(root: string): Promise<TemporaryGitIndex> {
   if (!isActiveSshWorkspace()) {
-    const path = join(tmpdir(), `copse-backup-${String(process.pid)}-${String(Date.now())}.index`)
+    const dir = await fsp.mkdtemp(join(tmpdir(), 'copse-backup-'))
+    const path = join(dir, 'index')
     return {
       path,
       cleanup: async (): Promise<void> => {
-        await fsp.rm(path, { force: true }).catch(() => {})
+        await fsp.rm(dir, { recursive: true, force: true }).catch(() => {})
       },
     }
   }

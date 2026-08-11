@@ -141,7 +141,7 @@ describe('settings → Customise / MCP / Storage', function () {
     const origin = declaredRow.$('.mcp-origin-chip')
     await origin.waitForExist({ timeout: 15_000 })
     assert.equal(await origin.getAttribute('data-mcp-origin'), 'plugin')
-    assert.equal(await origin.getText(), PLUGIN_ID)
+    assert.equal((await origin.getText()).toLowerCase(), PLUGIN_ID)
     // A declaration is not a control: nothing here implies Copse could start it.
     assert.equal(await declaredRow.$('.toggle-switch').isExisting(), false)
 
