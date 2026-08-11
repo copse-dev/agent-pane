@@ -73,6 +73,31 @@ function countBlockingQuerySelectorCalls(run: () => void): number {
   return calls
 }
 
+/**
+ * Count synchronous layout reads during the blocking rebuild. jsdom does not
+ * calculate layout, so shadow the list's scrollHeight with a counting getter;
+ * in Chromium each read of the real property can force layout after an append.
+ */
+function countBlockingScrollHeightReads(list: HTMLElement, run: () => void): number {
+  const originalRaf = globalThis.requestAnimationFrame
+  let reads = 0
+  Object.defineProperty(list, 'scrollHeight', {
+    configurable: true,
+    get: () => {
+      reads++
+      return 1_000
+    },
+  })
+  globalThis.requestAnimationFrame = (): number => 0
+  try {
+    run()
+  } finally {
+    Reflect.deleteProperty(list, 'scrollHeight')
+    globalThis.requestAnimationFrame = originalRaf
+  }
+  return reads
+}
+
 afterEach(() => {
   document.body.replaceChildren()
 })
@@ -127,5 +152,21 @@ describe('conversation transcript rebuild', () => {
       largeCalls < smallCalls * 2,
       `rebuild queries grew with thread length: ${String(smallCalls)} → ${String(largeCalls)}`,
     )
+  })
+
+  it('does not read layout once per message during a rebuild', () => {
+    const { store, host, unmount } = mountThread(30)
+    const list = host.querySelector<HTMLElement>('.messages-list')
+    assert.ok(list)
+
+    const reads = countBlockingScrollHeightReads(list, () => {
+      store.emit('threads_changed')
+    })
+
+    // The batched scroll plus the final scroll-button updates need only a few
+    // reads. The old per-message path reads scrollHeight for every one of the 40
+    // messages in the initial render window (and again to update the button).
+    assert.ok(reads < 10, `expected batched layout reads, got ${String(reads)}`)
+    unmount()
   })
 })
