@@ -126,7 +126,7 @@ describe('parseModelFollowUpIds', () => {
   })
 })
 
-describe('pack-contributed follow-up bubbles', () => {
+describe('plugin-contributed follow-up bubbles', () => {
   const dirty = { changeStats: { additions: 3, deletions: 1 } }
   const clean = { changeStats: null }
 

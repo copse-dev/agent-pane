@@ -37,7 +37,6 @@ import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from 
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
-import { syncFilesPaneDom } from './panels.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'

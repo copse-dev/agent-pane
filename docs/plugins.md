@@ -122,7 +122,7 @@ carries an `id`, a `label`, and two optional fields the host resolves:
 
 | field    | values              | meaning                                                               |
 | -------- | ------------------- | --------------------------------------------------------------------- |
-| `action` | `prompt` (default)  | the click sends the declaration's `prompt` to the agent                 |
+| `action` | `prompt` (default)  | the click sends the declaration's `prompt` to the agent               |
 |          | `model-compare`     | the click opens the comparison model picker, then runs the comparison |
 | `when`   | `always` (default)  | offered whenever the plugin is enabled                                |
 |          | `workspace-changes` | offered only while the working tree has uncommitted changes           |

@@ -62,9 +62,28 @@ describe('model comparison follow-up bubble', function () {
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'model-compare-bubble-dialog.png'))
 
-    // Cancel leaves the thread untouched: no comparison card, nothing running.
-    await dialog.$('.comparison-model-dialog-cancel').click()
+    await browser.waitUntil(
+      async () => {
+        const values = await dialog.$$('.approval-model-select').map((select) => select.getValue())
+        return values.length === 3 && values.every((value) => value.length > 0)
+      },
+      { timeout: 30_000, timeoutMsg: 'comparison picker never loaded three concrete models' },
+    )
+
+    // Run is the consent: it must cross the real renderer → IPC → main path
+    // without raising the spend approval that this foreground picker replaces.
+    await dialog.$('.comparison-model-dialog-run').click()
     await expect(dialog).not.toBeDisplayed()
-    await expect($('.comparison-panel')).not.toBeExisting()
+    await expect($('#approval-dialog')).not.toBeDisplayed()
+
+    const card = await $('.comparison-panel')
+    await card.waitForExist({ timeout: 30_000 })
+    await browser.waitUntil(async () => (await card.getAttribute('data-status')) !== 'running', {
+      timeout: 30_000,
+      timeoutMsg: 'comparison card stayed running',
+    })
+    await expect(card).toHaveAttribute('data-status', 'done')
+    await expect($('#approval-dialog')).not.toBeDisplayed()
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'model-compare-bubble-result.png'))
   })
 })
