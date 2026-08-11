@@ -204,7 +204,9 @@ describe('staged diff approval UI', () => {
 
     await browser.waitUntil(
       async () =>
-        browser.execute(() => document.documentElement.getAttribute('data-popout-mode') === 'changes'),
+        browser.execute(
+          () => document.documentElement.getAttribute('data-popout-mode') === 'changes',
+        ),
       {
         timeout: 20_000,
         timeoutMsg: 'pop-out did not boot in changes mode',
