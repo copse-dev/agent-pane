@@ -163,26 +163,25 @@ export function dynamicModelChoices(): DynamicModelChoice[] {
     {
       value: BEST_INTELLECT_MODEL_SELECTOR,
       label: 'Most capable',
-      description: 'Highest Intelligence Index score you can reach today, price aside',
+      description: 'Highest intelligence available, ignoring price',
       group: AUTOMATIC_GROUP,
     },
     {
       value: BEST_LOCAL_MODEL_SELECTOR,
       label: 'Best on-device',
-      description: 'Strongest model loaded on your own machine — nothing leaves the device',
+      description: 'Strongest model loaded on your machine',
       group: AUTOMATIC_GROUP,
     },
     {
       value: CHEAPEST_MODEL_SELECTOR,
       label: 'Cheapest',
-      description: 'Lowest cost per token; plan-covered and local routes count as free',
+      description: 'Lowest token price; plans and local count as free',
       group: AUTOMATIC_GROUP,
     },
     {
       value: BALANCED_MODEL_SELECTOR,
       label: 'Balanced',
-      description:
-        'Strong capability at a fair price — no extreme-priced outliers, plan-friendly bias',
+      description: 'Strong capability at a fair price; favors plans',
       group: AUTOMATIC_GROUP,
     },
   ]
