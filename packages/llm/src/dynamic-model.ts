@@ -40,6 +40,8 @@ export type DynamicModelSelector =
   | { kind: 'best-local' }
   /** Cheapest routable model (plan-covered and local count as free). */
   | { kind: 'cheapest' }
+  /** Intellect/cost trade-off judged on real API price (no plan discount), biased toward plan-covered routes with headroom. */
+  | { kind: 'balanced' }
   /** Cheapest routable model scoring at least `threshold` on the Intelligence Index. */
   | { kind: 'min-intellect'; threshold: number }
   /** Whatever the user assigned to this agent role (Settings → model roles). */
@@ -49,6 +51,7 @@ export const BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`
 export const BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`
 export const BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`
 export const CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`
+export const BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`
 
 const MIN_INTELLECT_INFIX = 'min-intellect:'
 const ROLE_INFIX = 'role:'
@@ -95,6 +98,7 @@ export function parseDynamicModel(value: string | null | undefined): DynamicMode
   if (body === 'best-intellect') return { kind: 'best-intellect' }
   if (body === 'best-local') return { kind: 'best-local' }
   if (body === 'cheapest') return { kind: 'cheapest' }
+  if (body === 'balanced') return { kind: 'balanced' }
   if (body.startsWith(MIN_INTELLECT_INFIX)) {
     const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length))
     if (!Number.isFinite(threshold) || threshold <= 0) return null
@@ -120,6 +124,8 @@ export function dynamicModelLabel(value: string): string | null {
       return 'Best on-device'
     case 'cheapest':
       return 'Cheapest'
+    case 'balanced':
+      return 'Balanced'
     case 'min-intellect':
       return `At least ${String(selector.threshold)} intelligence`
     case 'role':
@@ -170,6 +176,13 @@ export function dynamicModelChoices(): DynamicModelChoice[] {
       value: CHEAPEST_MODEL_SELECTOR,
       label: 'Cheapest',
       description: 'Lowest cost per token; plan-covered and local routes count as free',
+      group: AUTOMATIC_GROUP,
+    },
+    {
+      value: BALANCED_MODEL_SELECTOR,
+      label: 'Balanced',
+      description:
+        'Strong capability at a fair price — no extreme-priced outliers, plan-friendly bias',
       group: AUTOMATIC_GROUP,
     },
   ]

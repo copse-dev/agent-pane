@@ -624,9 +624,15 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { anthropic: true, openai: true } }),
       '',
     )
+    // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
+    // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
+    const opus5 = options.find((o) => o.value === 'claude-opus-5')
+    assert.ok(opus5)
+    assert.equal(opus5.label, `Claude Opus 5 — ${currentCloudIntellectHint('claude-opus-5')}`)
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
     assert.equal(opus.label, `Claude Opus 4.8 — ${currentCloudIntellectHint('claude-opus-4-8')}`)
+    assert.doesNotMatch(opus.label, /frontier/)
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
     assert.equal(haiku.label, `Claude Haiku 4.5 — ${currentCloudIntellectHint('claude-haiku-4-5')}`)

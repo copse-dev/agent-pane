@@ -78,4 +78,36 @@ describe('resolveBestValueFromFrontier', () => {
     // its own model name, so it stays a valid sync pick.
     assert.equal(picked, 'custom:somemodel:batch')
   })
+
+  it('prefers a plan Claude ACP agent over the same model via OpenRouter for best value', () => {
+    const snapshot: PlanUsageSnapshot = {
+      checkedAt: '2026-07-22T00:00:00Z',
+      providers: [
+        {
+          provider: 'claude',
+          status: 'ok',
+          usage: {
+            provider: 'claude',
+            plan: 'Max',
+            checkedAt: '2026-07-22T00:00:00Z',
+            windows: [
+              { id: 'seven_day_opus', label: 'Weekly Opus', usedPercent: 10, resetsAt: null },
+              { id: 'seven_day', label: 'Weekly', usedPercent: 5, resetsAt: null },
+              { id: 'five_hour', label: '5h', usedPercent: 0, resetsAt: null },
+            ],
+          },
+        },
+      ],
+    }
+    // ACP agent running Opus 5 (plan-covered) vs the same model via OpenRouter.
+    const picked = resolveBestValueFromFrontier(
+      [
+        { id: 'openrouter:anthropic/claude-opus-5', intellect: 61, costPerMTok: 9 },
+        { id: 'acp:claude-agent-acp#claude-opus-5', intellect: 61, costPerMTok: 9, plan: 'Claude' },
+      ],
+      snapshot,
+      (c) => c.id.startsWith('openrouter:') || c.id.startsWith('acp:'),
+    )
+    assert.equal(picked, 'acp:claude-agent-acp#claude-opus-5')
+  })
 })

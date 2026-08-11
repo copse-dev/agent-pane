@@ -6,6 +6,7 @@ import {
   localModelIntellectHint,
   modelIntellectHint,
 } from '@copse/llm/intellect-hints.ts'
+import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 import {
   isOpenRouterModel,
   openRouterDisplayLabel,
@@ -250,9 +251,12 @@ async function openRouterOptions(
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    // Intellect-only hint (no catalog pricing for OpenRouter ids), matched via
-    // the measurement alias map. `group` carries the ZDR/retention annotation.
-    const hint = modelIntellectHint(id)
+    // Match the cloud presentation when the OpenRouter id resolves to a tracked
+    // cloud model (e.g. `anthropic/claude-opus-5:batch` -> `claude-opus-5`), so the
+    // OpenRouter row reads the same as the plan/cloud route. `group` carries the
+    // ZDR/retention annotation. Fall back to the intellect-only hint when nothing resolves.
+    const cloudId = resolveIntellectModelId(id)
+    const hint = cloudId ? cloudModelIntellectHint(cloudId) : modelIntellectHint(id)
     entries.push({
       value,
       label: hint ? `${label} — ${hint}` : label,
