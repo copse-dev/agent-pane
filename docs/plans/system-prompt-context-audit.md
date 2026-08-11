@@ -133,7 +133,7 @@ nowhere, including four registered unconditionally at
 **The drift runs the other way too, and that side is worse.** `BASE_SYSTEM_PROMPT` advertises
 `investigate_ci` unconditionally (`agent-prompt.ts:91`), but the tool registers only when the
 `copse.ci-investigator` pack is enabled _and_ `gh` is present (`registry-bootstrap.ts:339-342`) —
-and that pack is default-off (`src/main/services/packs/pack-service.ts:83-95`). On a default install
+and that pack is default-off (`src/main/services/plugins/plugin-service.ts:83-95`). On a default install
 the prompt names a tool the model does not have. The `gh_*` and `get_ci_*` lines have the same
 shape: listed unconditionally, registered only when `gh` is on `PATH`.
 
@@ -339,7 +339,7 @@ Recorded now, not acted on.
   global cut justified by Claude 5 evidence would regress the low end silently.
 - **A capability seam already exists.** `packages/llm/src/model-intellect*.ts` and
   `src/main/services/providers/model-classifier.ts` produce a capability signal, and
-  `packages/agent/src/packs/forced-planning-pack.ts` already varies prompt behaviour below an
+  `packages/agent/src/plugins/forced-planning-pack.ts` already varies prompt behaviour below an
   intellect threshold. That is the natural place to hang a "verbose scaffold for weak models, lean
   prompt for strong ones" split — an intellect threshold rather than a provider check, since the
   axis is capability, not vendor.

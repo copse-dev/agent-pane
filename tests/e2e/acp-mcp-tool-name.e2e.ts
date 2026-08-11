@@ -18,6 +18,7 @@ function seedAcpMcpToolNameFixture(): void {
         id: THREAD_ID,
         title: 'ACP MCP tool name test',
         status: 'idle',
+        usage: { inputTokens: 0, outputTokens: 0 },
         messages: [
           {
             id: 'msg-user-acp-mcp',

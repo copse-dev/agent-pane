@@ -247,7 +247,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
   // P5: the former top-level `postTurnReviewEnabled` boolean is retired —
-  // the `copse.post-turn-review` first-party pack toggle in Settings > Packs
+  // the `copse.post-turn-review` first-party plugin toggle in Settings > Plugins
   // is the atomic master switch consulted by the trigger site in
   // `agent-service.ts`. The threshold below stays a top-level setting.
   //
@@ -327,7 +327,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // section in Settings.
   //
   // The MCP-UI artefacts (canvas) gate moved to the `copse.mcp-ui-canvas`
-  // first-party pack's `mcp-ui-canvas` capability (Settings > Packs), so the
+  // first-party plugin's `mcp-ui-canvas` capability (Settings > Plugins), so the
   // former `mcpUiArtefactsEnabled` top-level boolean is retired.
   modelClassifierEnabled: z.boolean(),
   advisorModel: z.string().max(256),
@@ -338,21 +338,21 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Experimental model comparison harness: run the working-diff review through
   // two models plus a judge that compares their verdicts. See model-comparison.ts.
   // P5: the former top-level `modelComparisonEnabled` boolean is retired —
-  // the `copse.model-comparison` first-party pack toggle in Settings > Packs
+  // the `copse.model-comparison` first-party plugin toggle in Settings > Plugins
   // is the atomic master switch. The sub-toggle below is still top-level.
   modelComparisonAutoOnReview: z.boolean(),
   comparisonModelA: z.string().max(256),
   comparisonModelB: z.string().max(256),
   comparisonJudgeModel: z.string().max(256),
-  // Background tasks moved to the `copse.background-tasks` first-party pack
-  // (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
+  // Background tasks moved to the `copse.background-tasks` first-party plugin
+  // (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
   // relaxation (issue #1190), so the former `backgroundTasksEnabled` top-level
-  // boolean is retired — the pack toggle is the master switch.
+  // boolean is retired — the plugin toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
   developerMode: z.boolean(),
   // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party
-  // pack's `devtools-shortcut` capability (Settings > Packs), so the former
+  // plugin's `devtools-shortcut` capability (Settings > Plugins), so the former
   // `devtoolsShortcutEnabled` top-level boolean is retired.
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),

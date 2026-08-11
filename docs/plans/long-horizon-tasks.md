@@ -19,11 +19,11 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
 
 ## What landed in this scaffold
 
-- **Pack** `copse.long-horizon-tasks` (`packages/agent/src/packs/long-horizon-tasks-pack.ts`)
+- **Pack** `copse.long-horizon-tasks` (`packages/agent/src/plugins/long-horizon-tasks-pack.ts`)
   — first-party pack declaring the `track_long_task` native tool + namespaced storage. The
   Settings → Packs toggle is the atomic master switch (same pattern as P5's
   `copse.model-comparison`). A one-time `migrateLongHorizonTasksEnablement()` bridge in
-  `pack-service.ts` preserves any prior `longHorizonTasksEnabled=true` opt-in and otherwise
+  `plugin-service.ts` preserves any prior `longHorizonTasksEnabled=true` opt-in and otherwise
   seeds the pack into the persisted disabled set (default OFF).
 - **Store** `src/main/services/storage/long-task-tracker.ts` — per-project JSON persistence
   under `~/.copse/long-tasks/<workspace>/tasks.json`, zod-validated. A task has a `goal`

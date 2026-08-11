@@ -123,9 +123,9 @@ describe('cron automation trigger', function () {
           updatedAt: 1_785_913_780_000,
         },
       ],
-      packDisabled: [],
-      packMigration: { automationsEnablement: true },
-      pack: {
+      pluginDisabled: [],
+      pluginMigration: { automationsEnablement: true },
+      plugin: {
         copse: {
           automations: {
             storage: [

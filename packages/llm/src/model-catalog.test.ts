@@ -136,6 +136,6 @@ describe('model catalog', () => {
     // These reach their own turn runners, which own their prompts.
     assert.equal(isOpus5Model('remote-agent:anthropic#claude-opus-5'), false)
     assert.equal(isOpus5Model('acp:claude-code#claude-opus-5'), false)
-    assert.equal(isOpus5Model('pack-model:some-pack:claude-opus-5'), false)
+    assert.equal(isOpus5Model('plugin-model:some-plugin:claude-opus-5'), false)
   })
 })

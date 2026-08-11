@@ -4,11 +4,11 @@ import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { getRoleModels } from './providers/role-models.ts'
 import { resolveDynamicModelId } from './providers/dynamic-model.ts'
-import { readPackSettingValue } from './packs/pack-service.ts'
+import { readPluginSettingValue } from './plugins/plugin-service.ts'
 import {
-  ADVISOR_STRATEGY_PACK_ID,
+  ADVISOR_STRATEGY_PLUGIN_ID,
   ADVISOR_MODEL_SETTING_ID,
-} from '@copse/agent/packs/advisor-strategy-pack.ts'
+} from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
 import { buildAdvisorRepoState, buildAdvisorWorkingDiff } from './advisor-context.ts'
 import { emitAdvisorUsage } from './advisor-usage.ts'
@@ -23,10 +23,10 @@ import {
 
 /**
  * Resolve the configured advisor *selection*: a model assigned to the `advisor`
- * role wins (the model-roles indirection), then the pack-scoped `advisorModel`
- * setting owned by the `copse.advisor-strategy` pack, then the default selector.
- * The pack setting replaced the retired top-level `advisorModel` store key; a
- * one-time migration in `pack-service.ts` lifted any existing value across, so
+ * role wins (the model-roles indirection), then the plugin-scoped `advisorModel`
+ * setting owned by the `copse.advisor-strategy` plugin, then the default selector.
+ * The plugin setting replaced the retired top-level `advisorModel` store key; a
+ * one-time migration in `plugin-service.ts` lifted any existing value across, so
  * behaviour is preserved.
  *
  * The result may be a dynamic selector (`auto:…`) rather than a model id — it is
@@ -38,9 +38,9 @@ import {
 export function resolveAdvisorModelId(): string {
   const assigned = getRoleModels()['advisor']?.trim()
   if (assigned) return assigned
-  const packValue = readPackSettingValue(ADVISOR_STRATEGY_PACK_ID, ADVISOR_MODEL_SETTING_ID)
-  const packModel = typeof packValue === 'string' ? packValue.trim() : ''
-  return packModel || DEFAULT_ADVISOR_MODEL
+  const pluginValue = readPluginSettingValue(ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_MODEL_SETTING_ID)
+  const pluginModel = typeof pluginValue === 'string' ? pluginValue.trim() : ''
+  return pluginModel || DEFAULT_ADVISOR_MODEL
 }
 
 /**

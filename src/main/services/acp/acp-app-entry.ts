@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { serveAcpAgentOverStdio, type AcpTurnRunner } from './acp-agent-server.ts'
 import { checkToolAvailability } from '../tool-availability.ts'
 import { createRegistry, registerSkillTools } from '../registry-bootstrap.ts'
-import { getPackService } from '../packs/pack-service.ts'
+import { getPluginService } from '../plugins/plugin-service.ts'
 import { initSkillsRegistry } from '../skills/skills-registry.ts'
 import { loadMcpServers } from '../mcp/mcp-registry.ts'
 import { runAgent, abortAgent, type RunAgentOptions } from '../agent-service.ts'
@@ -125,10 +125,10 @@ export function createAcpTurnRunner(deps: AcpTurnRunnerDeps): AcpTurnRunner {
 export async function runAcpAgentMode(): Promise<void> {
   // Mirror the GUI bootstrap: gh/git probes must run before createRegistry()
   // gates read-only GitHub tools on isGhAvailable() (#523). P5 mirror: the
-  // pack service must be up before createRegistry() so `syncModelComparisonTools`
-  // reads the persisted `packDisabled` state (not a fresh fallback).
+  // plugin service must be up before createRegistry() so `syncModelComparisonTools`
+  // reads the persisted `pluginDisabled` state (not a fresh fallback).
   await checkToolAvailability()
-  getPackService()
+  getPluginService()
   const registry = createRegistry()
   await initSkillsRegistry()
   registerSkillTools(registry)

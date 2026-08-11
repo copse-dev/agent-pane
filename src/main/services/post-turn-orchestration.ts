@@ -13,7 +13,7 @@ import {
   type ParsedReviewVerdict,
 } from '@copse/agent/review-subagent.ts'
 import { runSubagent } from '@copse/agent/run-subagent.ts'
-import { resolveMaxReviewCycles } from '@copse/agent/packs/post-turn-review-pack.ts'
+import { resolveMaxReviewCycles } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
@@ -276,7 +276,7 @@ export interface RunPostTurnReviewCycleOptions {
   /** Shared auto-continuation budget for this turn tree (decision 5). */
   continuationBudget: ContinuationGrant
   /**
-   * How many review passes this turn may run, from the pack-scoped
+   * How many review passes this turn may run, from the plugin-scoped
    * `maxReviewCycles` setting. A failing verdict (`requestFollowUp`) buys one
    * remediation turn plus a re-review — i.e. the next pass — so `1` reports a
    * failing review and stops without another turn. Omitted → the shipped
@@ -365,7 +365,7 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
 
       // A remediation cycle is a machine-initiated new turn (decision 5): consume
       // one grant from the shared budget before running it. The local cap
-      // (`maxCycles`, from the pack's `maxReviewCycles` setting) tightens inside
+      // (`maxCycles`, from the plugin's `maxReviewCycles` setting) tightens inside
       // the shared cap — once the budget is exhausted, no further remediation runs.
       if (!opts.continuationBudget.tryGrant()) break
 

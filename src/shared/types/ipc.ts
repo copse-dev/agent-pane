@@ -287,7 +287,7 @@ export interface IpcInvokeMap {
     result: import('./worktree.ts').WorktreeRemovalResult
   }
 
-  // Project-scoped automations (copse.automations pack).
+  // Project-scoped automations (copse.automations plugin).
   'automations:list': {
     args: [projectId: string]
     result: import('./automations.ts').AutomationSchedule[]

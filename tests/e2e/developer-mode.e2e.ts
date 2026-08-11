@@ -31,7 +31,7 @@ describe('Developer mode surfaces', function () {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="sources"]').click()
+    await dialog.$('button[data-section="customise"]').click()
     await expect(dialog.$('[data-developer-only="hooks"]')).not.toBeDisplayed()
   })
 
@@ -62,7 +62,7 @@ describe('Developer mode surfaces', function () {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="sources"]').click()
+    await dialog.$('button[data-section="customise"]').click()
     const hooks = dialog.$('[data-developer-only="hooks"]')
     await expect(hooks).toBeDisplayed()
     // This eval covers developer-mode visibility, not the host machine's user

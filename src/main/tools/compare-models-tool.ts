@@ -9,10 +9,10 @@ import { getModelComparisonRunner } from '../services/model-comparison-runner.ts
  * The full side-by-side is also rendered as a card in the conversation. If a
  * billable model is involved it first asks the user to approve the spend.
  *
- * P5: registered only while the `copse.model-comparison` first-party pack is
- * enabled — the tool registration in `registry-bootstrap.ts` reads the pack
- * registry via `syncModelComparisonTools`, and the `packs:setEnabled` IPC
- * handler re-syncs on toggle so the atomic pack disable drops the tool live.
+ * P5: registered only while the `copse.model-comparison` first-party plugin is
+ * enabled — the tool registration in `registry-bootstrap.ts` reads the plugin
+ * registry via `syncModelComparisonTools`, and the `plugins:setEnabled` IPC
+ * handler re-syncs on toggle so the atomic plugin disable drops the tool live.
  */
 export const compareModelsTool = defineTool({
   name: 'compare_models',

@@ -868,7 +868,7 @@ Source: `src/main/windows/create-main-window.ts`, `src/main/windows/web-contents
 
 ## Agents & hooks
 
-Layers: Execution modes · Auxiliary model work · Hook and feature-pack platform
+Layers: Execution modes · Auxiliary model work · Hook and plugin platform
 
 ### Native loop — Core logic
 
@@ -950,13 +950,13 @@ A newly in-progress local todo can be executed by a subagent and verified by a d
 
 Source: `src/main/services/todo-worker-runner.ts`, `src/main/services/todo-verification.ts`, `src/main/services/agent-run-todos.ts`
 
-### Pack registry — Core logic
+### Plugin registry — Core logic
 
 _atomic lifecycle_
 
-Feature packs group tools, hooks, prompts, UI panels, settings, and namespaced storage behind one manifest and atomic enable/disable boundary. Historical rendering never depends on live registration.
+Plugins group tools, hooks, prompts, UI panels, settings, and namespaced storage behind one manifest and atomic enable/disable boundary. Historical rendering never depends on live registration.
 
-Source: `packages/agent/src/packs/pack-manifest.ts`, `packages/agent/src/packs/pack-registry.ts`, `src/renderer/views/pack-panel.ts`
+Source: `packages/agent/src/plugins/plugin-manifest.ts`, `packages/agent/src/plugins/plugin-registry.ts`, `src/renderer/views/plugin-panel.ts`
 
 ### Hook registry — Core logic
 
@@ -1000,26 +1000,26 @@ Source: `src/main/services/hook-run-recorder.ts`, `src/main/services/thread-stor
 
 ### Relationships
 
-| From          | Relationship    | To              |
-| ------------- | --------------- | --------------- |
-| Native loop   | spawns          | Explore         |
-| Native loop   | delegates       | Delegate worker |
-| Native loop   | consults        | Advisor         |
-| Native loop   | verifies        | Reviewers       |
-| Native loop   | routes          | Todo workers    |
-| ACP client    | HTTP MCP        | Native          |
-| Native        | ToolRegistry    | Native loop     |
-| Remote agents | local post-turn | Reviewers       |
-| ACP server    | hosts           | Native loop     |
-| Native loop   | fires           | Hook events     |
-| ACP client    | lifecycle       | Hook events     |
-| Pack registry | contributes     | Hook registry   |
-| Hook registry | subscribes      | Hook events     |
-| Hook events   | dispatch        | Executors       |
-| Executors     | normalize       | Outcomes        |
-| Outcomes      | steer / halt    | Native loop     |
-| Executors     | append          | Recording       |
-| Recording     | live cards      | Native loop     |
+| From            | Relationship    | To              |
+| --------------- | --------------- | --------------- |
+| Native loop     | spawns          | Explore         |
+| Native loop     | delegates       | Delegate worker |
+| Native loop     | consults        | Advisor         |
+| Native loop     | verifies        | Reviewers       |
+| Native loop     | routes          | Todo workers    |
+| ACP client      | HTTP MCP        | Native          |
+| Native          | ToolRegistry    | Native loop     |
+| Remote agents   | local post-turn | Reviewers       |
+| ACP server      | hosts           | Native loop     |
+| Native loop     | fires           | Hook events     |
+| ACP client      | lifecycle       | Hook events     |
+| Plugin registry | contributes     | Hook registry   |
+| Hook registry   | subscribes      | Hook events     |
+| Hook events     | dispatch        | Executors       |
+| Executors       | normalize       | Outcomes        |
+| Outcomes        | steer / halt    | Native loop     |
+| Executors       | append          | Recording       |
+| Recording       | live cards      | Native loop     |
 
 ## Workspace & search
 
@@ -1314,13 +1314,13 @@ Main completed the Copse-native dialect, session and step events, context inject
 
 Source: `docs/hooks.md`, `src/main/services/hooks/copse-adapter.ts`, `packages/agent/src/hooks/step-boundary-hooks.ts`
 
-### Feature packs — Core logic
+### Plugins — Core logic
 
 _manifest + panels_
 
-A pack manifest and registry now atomically group tools, hooks, prompts, UI, settings, and storage; level-2 panels carry declarative list/tree updates without arbitrary renderer code.
+A plugin manifest and registry now atomically group tools, hooks, prompts, UI, settings, and storage; level-2 panels carry declarative list/tree updates without arbitrary renderer code.
 
-Source: `docs/packs.md`, `packages/agent/src/packs/pack-registry.ts`, `src/renderer/views/pack-panel.ts`
+Source: `docs/plugins.md`, `packages/agent/src/plugins/plugin-registry.ts`, `src/renderer/views/plugin-panel.ts`
 
 ### Provider boundary — Safety boundary
 
@@ -1383,12 +1383,12 @@ Source: `package.json`, `packages/llm/src/model-intellect.ts`, `packages/llm/src
 | From              | Relationship | To                |
 | ----------------- | ------------ | ----------------- |
 | main @ cf0a14c2   | hooks        | Hooks             |
-| main @ cf0a14c2   | packs        | Feature packs     |
+| main @ cf0a14c2   | plugins      | Plugins           |
 | main @ cf0a14c2   | egress       | Provider boundary |
 | main @ cf0a14c2   | context      | Terminal context  |
 | main @ cf0a14c2   | routing      | Advisor routing   |
 | Hooks             | cards        | Visible UI states |
-| Feature packs     | panels       | Visible UI states |
+| Plugins           | panels       | Visible UI states |
 | Provider boundary | badges       | Visible UI states |
 | Terminal context  | mentions     | Visible UI states |
 | Advisor routing   | context      | Roadmap knowledge |

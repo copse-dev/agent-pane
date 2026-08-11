@@ -20,6 +20,7 @@ import {
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
+  repositoryHasSubmodules,
   resetDefaultBranchCache,
   resolveWorkspaceRelativeGitPath,
   sumDiffNumstat,
@@ -176,6 +177,38 @@ describe('classifyGitBlob (#130)', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('repositoryHasSubmodules', { skip: !gitOk && 'git not installed' }, () => {
+  it('finds the repository declaration from a nested project root', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'copse-git-submodules-'))
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: repo })
+      const project = join(repo, 'packages', 'widget')
+      await mkdir(project, { recursive: true })
+
+      assert.equal(await repositoryHasSubmodules(project), false)
+      await writeFile(join(repo, '.gitmodules'), '[submodule "fixture"]\n')
+      assert.equal(await repositoryHasSubmodules(project), true)
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('stops at the nearest repository instead of inheriting parent metadata', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-git-parent-submodules-'))
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: parent })
+      await writeFile(join(parent, '.gitmodules'), '[submodule "parent-only"]\n')
+      const child = join(parent, 'child')
+      await mkdir(child)
+      spawnSync('git', ['init', '-q'], { cwd: child })
+
+      assert.equal(await repositoryHasSubmodules(child), false)
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('work-tree probe cache', { skip: !gitOk && 'git not installed' }, () => {
   let dir = ''

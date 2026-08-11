@@ -218,7 +218,7 @@ describe('browser pane requested URLs', () => {
         }>)
       | undefined
     const api = createPendingApi({
-      'browser.onPackTabRequest': (handler: typeof requestTab): (() => void) => {
+      'browser.onPluginTabRequest': (handler: typeof requestTab): (() => void) => {
         requestTab = handler
         return (): void => {}
       },
