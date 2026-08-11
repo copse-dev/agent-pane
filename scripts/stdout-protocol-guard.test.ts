@@ -10,7 +10,7 @@ import { dirname, join, normalize, resolve } from 'node:path'
  * Why a test rather than more ESLint. `console.info` / `console.log` write to
  * stdout, and several spawned helpers reserve stdout byte-for-byte for a framed
  * protocol (ACP NDJSON streams in `acp-session-host-worker.ts`,
- * `acp-probe-worker.ts`, `acp-agent-server.ts`; the sandbox fs worker; the pack
+ * `acp-probe-worker.ts`, `acp-agent-server.ts`; the sandbox fs worker; the plugin
  * tool worker; the ssh askpass helper). A single `console.info` hidden in a
  * shared module those workers import transitively injects one garbage line into
  * the protocol stream — exactly the regression `console.info` in
@@ -28,7 +28,7 @@ const STDOUT_PROTOCOL_ENTRIES: readonly string[] = [
   'src/main/services/acp/acp-probe-worker.ts',
   'src/main/services/acp/acp-agent-server.ts',
   'src/main/project-sandbox/sandbox-fs-worker.ts',
-  'src/main/services/packs/pack-tool-worker.ts',
+  'src/main/services/plugins/plugin-tool-worker.ts',
   'src/main/services/ssh-workspace/askpass-helper.ts',
 ]
 
