@@ -124,6 +124,7 @@
         "threadId": { "type": "string", "minLength": 1 },
         "parentTaskId": { "type": "string", "minLength": 1 },
         "handler": { "type": "string", "minLength": 1 },
+        "handlerInput": { "type": "object", "additionalProperties": true },
         "provenance": { "$ref": "#/$defs/taskProvenance" },
         "state": { "$ref": "#/$defs/taskState" },
         "createdAt": { "type": "integer" },
