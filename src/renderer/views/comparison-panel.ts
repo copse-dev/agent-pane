@@ -41,7 +41,12 @@ function markdownBlock(
 function createDismissButton(onDismiss: () => void): HTMLButtonElement {
   const button = el(
     'button',
-    { type: 'button', class: 'card-dismiss-button', title: 'Dismiss', 'aria-label': 'Dismiss' },
+    {
+      type: 'button',
+      class: 'card-dismiss-button',
+      'data-tooltip': 'Dismiss',
+      'aria-label': 'Dismiss',
+    },
     closeIcon('ui-icon ui-icon-sm'),
   )
   on(button, 'click', () => {

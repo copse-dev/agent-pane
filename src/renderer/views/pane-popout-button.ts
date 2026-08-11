@@ -23,7 +23,9 @@ export function panePopoutButton(
       class: 'pane-popout-btn',
       'data-pane-mode': mode,
       'aria-label': browserDemo ? `Expand ${paneLabel}` : `Pop out ${paneLabel}`,
-      title: browserDemo ? 'Expand pane' : 'Pop out into its own window',
+      'data-tooltip': browserDemo
+        ? `Expand ${paneLabel}`
+        : `Pop out ${paneLabel} into its own window`,
     },
     browserDemo ? '⛶' : '⧉',
   )
