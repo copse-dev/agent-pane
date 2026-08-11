@@ -273,7 +273,7 @@ per-role axes can't provide. Pieces:
   plan-aware frontier among configured/routable providers (`best-value-model.ts`
   - `pickBestValueFrontierModel`) and sets the footer picker to that concrete
     model id. Prefer plan-included / local $0 winners; otherwise maximize
-    intellect per $/MTok. The sentinel stays Settings-only — the chat picker never
+  intellect per $/MTok. The sentinel stays Settings-only — the chat picker never
     lists it.
 - **Follow-ups**: latency/throughput columns; per-axis benchmark sync for cloud
   models (lets the composite stand alone and be calibrated to the index);
