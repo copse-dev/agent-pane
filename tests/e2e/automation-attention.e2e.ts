@@ -130,54 +130,73 @@ describe('automation attention grouping', function () {
     )
 
     const automationToggle = $('.automation-threads-toggle')
-    // This wait is not for a render — it is for a whole agent turn (#1719).
+    // #1719. The reveal here can only come from `attentionAutomationThreads`:
+    // no other term of `automationExpanded` (projects-pane.ts) applies to a
+    // freshly booted profile. So this waits on the run `runNow` started
+    // allocating its worktree, spawning, running a mock turn and reaching the
+    // `ask_user` gate — `runNow` resolves at *started*, covering none of it.
     //
-    // `automationExpanded` in projects-pane.ts is true here only because
-    // `attentionAutomationThreads.length > 0`; no other term in that expression
-    // applies to a freshly booted profile with nothing active. So the reveal
-    // cannot happen until the run `runNow` just started has allocated its
-    // worktree, spawned its task, run a mock turn, and reached the `ask_user`
-    // gate that raises attention. `runNow` resolves as soon as the run is
-    // *started*, so awaiting it covers none of that.
+    // **A duration theory was tried and disproved.** 30s looked like the
+    // problem, so it went to 75s; run 31414645268 then failed with byte-
+    // identical state — `runNow` started with a real thread id, toggle at
+    // `aria-expanded=false`, **0 attention bells**. Two and a half times the
+    // budget changed nothing, so the run is not merely slow. It is left at 75s
+    // because the sibling spec needs that much for its own boundary and it
+    // costs nothing, but it is not the fix and should not be read as one.
     //
-    // 30s did not cover it on a contended runner, which is why this spec was
-    // intermittent rather than broken: it passed whenever the turn happened to
-    // land inside the budget. The diagnostics below caught a failing instance
-    // on run 31408123933 and reported `runNow` returning
-    // `{"disposition":"started",…}` with a real thread id, the toggle present
-    // at `aria-expanded=false`, and **0 attention bells** — a run under way
-    // that had not yet asked anything.
-    //
-    // 75s matches `automation-trigger`, which had the same class of bug and
-    // documents its own boundary maths; the mocha budget above rises with it.
-    //
-    // The diagnostics stay. They are what turned this from a fourth guess into
-    // a measurement, and they cost nothing on the passing path.
+    // What the diagnostics could NOT answer, and now do: automation rows live
+    // in `.automation-thread-rows`, which is built only inside
+    // `if (automationExpanded)`. So the collapsed group hides every row, and
+    // counting `.chats-list .chat-row` was never going to see the new run at
+    // all. The added probes ask whether the thread `runNow` returned reached
+    // the sidebar in any form, and what the group's own count says.
     try {
       await browser.waitUntil(
         async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
         { timeout: 75_000 },
       )
     } catch {
-      const [toggleExists, expanded, groupCount, rowCount, bellCount, titles] = await Promise.all([
-        automationToggle.isExisting(),
-        automationToggle.getAttribute('aria-expanded').catch(() => '<unreadable>'),
-        $$('.automation-schedule-group').length,
-        $$('.chats-list .chat-row').length,
-        $$('.chat-attention-bell').length,
-        browser.execute(() =>
-          Array.from(document.querySelectorAll('.chats-list .chat-title'))
-            .map((node) => node.textContent ?? '')
-            .join(' | '),
-        ),
-      ])
+      const startedThreadId =
+        typeof runNowResult === 'object' && runNowResult !== null && 'threadId' in runNowResult
+          ? String((runNowResult as { threadId?: unknown }).threadId)
+          : ''
+      const [toggleExists, expanded, groupCount, rowCount, bellCount, titles, sidebarState] =
+        await Promise.all([
+          automationToggle.isExisting(),
+          automationToggle.getAttribute('aria-expanded').catch(() => '<unreadable>'),
+          $$('.automation-schedule-group').length,
+          $$('.chats-list .chat-row').length,
+          $$('.chat-attention-bell').length,
+          browser.execute(() =>
+            Array.from(document.querySelectorAll('.chats-list .chat-title'))
+              .map((node) => node.textContent ?? '')
+              .join(' | '),
+          ),
+          // The decisive question the first round could not answer: did the
+          // thread `runNow` created reach the sidebar at all? Every row carries
+          // `data-thread-id`, and the group's own count is rendered even while
+          // collapsed, so both are readable without expanding anything.
+          browser.execute((threadId: string) => {
+            const ids = Array.from(document.querySelectorAll('[data-thread-id]')).map(
+              (node) => node.getAttribute('data-thread-id') ?? '',
+            )
+            return {
+              knownThreadIds: ids.length,
+              startedThreadPresent: threadId !== '' && ids.includes(threadId),
+              groupCountLabel:
+                document.querySelector('.automation-threads-count')?.textContent ?? '<absent>',
+              runningIndicator: document.querySelector('.automation-threads-running') !== null,
+            }
+          }, startedThreadId),
+        ])
       throw new Error(
         'attention did not reveal the Automations group — ' +
           `runNow returned ${JSON.stringify(runNowResult)}, ` +
           `.automation-threads-toggle ${toggleExists ? 'exists' : 'is ABSENT'} ` +
           `with aria-expanded=${String(expanded)}, ` +
           `${String(groupCount)} schedule group(s), ${String(rowCount)} sidebar row(s), ` +
-          `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}`,
+          `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}, ` +
+          `sidebar: ${JSON.stringify(sidebarState)}`,
       )
     }
     assert.equal((await automationToggle.$$('.chat-attention-bell')).length, 0)
