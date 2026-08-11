@@ -141,6 +141,21 @@ function projectRootFor(state: DiffQueueState): string | null {
 }
 
 /**
+ * Refresh the file index for the root an applied edit actually landed in, so
+ * the agent's next `find_files` can see what it just wrote.
+ *
+ * That root is the execution root: `applyDiffEntry` writes through
+ * `executionRootFor`, and `find_files` queries the index for
+ * `getAgentExecutionRoot`. On a worktree thread the project checkout is a
+ * different tree entirely — refreshing it re-listed a tree the edit never
+ * touched and left the index the agent reads to the watcher's debounce.
+ */
+async function reindexAfterApply(state: DiffQueueState): Promise<void> {
+  const root = executionRootFor(state)
+  if (root) await buildIndex(root)
+}
+
+/**
  * Content Copse last wrote directly (bypassing the approval queue) per path.
  * `canApplyDirectly` uses it to tell its own past edits apart from unowned
  * changes in `git status`. The on-disk content check there is the real safety
@@ -211,8 +226,7 @@ async function resolveStagedEntry(path: string): Promise<string> {
   recordOwnershipAfterApply(state, entry)
   recordDecision(state, owner, { path, status: 'approved' })
   removeEntry(state, owner, path)
-  const root = projectRootFor(state)
-  if (root) await buildIndex(root)
+  await reindexAfterApply(state)
   return `Approved and applied change to ${path}.`
 }
 
@@ -792,8 +806,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
         recordDecision(state, owner, { path: entry.path, status: 'error', error: result.error })
         throw new Error(`Failed to write ${entry.path}: ${result.error}`)
       }
-      const root = projectRootFor(state)
-      if (root) await buildIndex(root)
+      await reindexAfterApply(state)
       recordOwnershipAfterApply(state, entry)
       recordDecision(state, owner, { path: entry.path, status: 'approved' })
       removeEntry(state, owner, path)
@@ -899,8 +912,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
     }
   }
   if (appliedEntries.size > 0) {
-    const root = projectRootFor(state)
-    if (root) await buildIndex(root)
+    await reindexAfterApply(state)
     for (let i = state.queue.length - 1; i >= 0; i--) {
       const queued = state.queue[i]
       if (queued && appliedEntries.has(queued)) state.queue.splice(i, 1)
@@ -997,8 +1009,7 @@ export async function applyOrStageDiff(
   if (result.status === 'written') {
     recordDirectAppliedSnapshot(state, path, after)
     recordDecision(state, owner, { path, status: 'applied_directly' })
-    const root = projectRootFor(state)
-    if (root) await buildIndex(root)
+    await reindexAfterApply(state)
     const backup = getSessionBackup()
     const safetyNote = backup
       ? `The worktree had uncommitted changes, so those were backed up to ${backup.ref} first; no approval was required.`
@@ -1070,8 +1081,7 @@ export async function applyOrStageFileOp(entry: FileOpRequest): Promise<string> 
   if (result.status === 'written') {
     recordOwnershipAfterApply(state, queued)
     recordDecision(state, owner, { path: entry.path, status: 'applied_directly' })
-    const root = projectRootFor(state)
-    if (root) await buildIndex(root)
+    await reindexAfterApply(state)
     const backup = getSessionBackup()
     const backupNote = backup
       ? ` The worktree had uncommitted changes, so those were backed up to ${backup.ref} first.`
