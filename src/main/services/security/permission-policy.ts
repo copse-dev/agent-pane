@@ -29,11 +29,10 @@ export const SANDBOX_TOOLS = new Set([
 ])
 
 /**
- * Read-only GitHub CI tools. They reach github.com via the `gh` CLI but only
- * read CI status/logs (no mutation), so the gate auto-runs them without
- * prompting — same treatment as the read-only gh_pr_* tools in SANDBOX_TOOLS.
+ * Non-mutating GitHub CI tools. They only read GitHub state; the wait tool also
+ * records a bounded local supervisor task under the active turn-tree budget.
  */
-export const GITHUB_READONLY_CI_TOOLS = new Set([
+export const GITHUB_NONMUTATING_CI_TOOLS = new Set([
   'get_ci_status',
   'wait_for_ci_checks',
   'get_ci_failure_logs',
