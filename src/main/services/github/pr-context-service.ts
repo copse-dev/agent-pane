@@ -9,8 +9,16 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { ghPrViewListSchema, ghPrViewSchema, type GhPrView } from './gh-json-schemas.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { ghPrHasCiFailures } from './github-ci-service.ts'
+import { createInFlightCoalescer } from '../coalesce-in-flight.ts'
 
 const decodeGhPr = decodeWithSchema(ghPrViewSchema)
+
+/**
+ * Duplicate-suppressor for the open-PR lookup behind `getGitBranchStatus`.
+ * Coalescing only while a lookup is in flight keeps the result live: once it
+ * settles, the next caller runs a fresh `gh` query.
+ */
+const coalesceOpenPrLookup = createInFlightCoalescer<GitOpenPr | null>()
 
 /** Sum line add/delete counts from `git diff --numstat` output. */
 export function parseDiffNumstat(raw: string): { additions: number; deletions: number } {
@@ -181,13 +189,19 @@ export async function getGitBranchStatus(
   // that has a branch (failing nearly every workspace e2e spec via afterTest).
   if (!isGhAvailable()) return { currentBranch, pr: null }
 
-  let pr: GitOpenPr | null
-  if (forBranch && forBranch !== currentBranch) {
-    pr = await getOpenPrForBranch(forBranch, root)
-  } else {
+  // The PR lookup is a live GitHub API round trip, and a single thread switch
+  // asks for the same one twice: the titlebar wants the branch name and the
+  // footer chip wants the branch's PR, and both subscribe to `threads_changed`,
+  // which the store emits synchronously — so the second request is issued before
+  // the first has resolved. Key on the branch actually being looked up (the
+  // titlebar passes no `forBranch`, the footer passes the thread's, and for the
+  // active thread those are the same branch) so the pair collapses into one call.
+  const targetBranch = forBranch && forBranch !== currentBranch ? forBranch : null
+  const pr = await coalesceOpenPrLookup(`${root}\0${targetBranch ?? currentBranch}`, async () => {
+    if (targetBranch) return getOpenPrForBranch(targetBranch, root)
     const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], { cwd: root })
-    pr = ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
-  }
+    return ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
+  })
 
   return { currentBranch, pr }
 }
