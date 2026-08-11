@@ -357,7 +357,10 @@ function setUserMarkdown(el: HTMLElement, content: string): void {
     el.replaceChildren()
     return
   }
-  el.innerHTML = renderMarkdown(userPromptMarkdown(content))
+  // escape-all: angle-bracketed examples (`<cd … && npm test>`) must stay literal.
+  // Default passthrough emits raw tags; the sink sanitizer then strips unknown
+  // elements and the command vanishes from the transcript.
+  el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
   attachCodeBlockCopyButtons(el)
 }
 
