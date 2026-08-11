@@ -62,6 +62,7 @@ import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { registerUiKit } from './ui/index.ts'
+import { installTooltips } from './dom/tooltip.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
 import { mountCloseConfirm } from './views/close-confirm.ts'
 
@@ -212,6 +213,9 @@ async function boot(): Promise<void> {
   // load if DOMPurify had to be lazily pulled in); the highlighter awaits its
   // code-split highlight.js chunk so code blocks get their hljs token spans.
   await Promise.all([sanitizerReady, highlighterReady])
+  // Delegated, so it covers every `[data-tooltip]` mounted later — including
+  // pane contents that render long after boot.
+  installTooltips()
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)

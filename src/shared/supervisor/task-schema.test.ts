@@ -51,6 +51,14 @@ describe('task-schema fixtures validate', () => {
     assert.equal(parseSupervisedTaskMeta({ ...base, trigger: { kind: 'cron' } }), null)
   })
 
+  it('accepts durable handler input and rejects non-record input', () => {
+    const base = readJson('meta-queued.json')
+    assert.ok(base && typeof base === 'object')
+    const parsed = parseSupervisedTaskMeta({ ...base, handlerInput: { prNumber: 42 } })
+    assert.deepEqual(parsed?.handlerInput, { prNumber: 42 })
+    assert.equal(parseSupervisedTaskMeta({ ...base, handlerInput: ['not', 'a', 'record'] }), null)
+  })
+
   it('parses happy-path and reconcile audit JSONL fixtures', () => {
     const happy = parseSupervisedTaskAuditLog(readFileSync(join(fix, 'audit-happy.jsonl'), 'utf8'))
     assert.equal(happy.length, 3)

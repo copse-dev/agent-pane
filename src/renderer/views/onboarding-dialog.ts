@@ -49,7 +49,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     <div class="onboarding-shell settings-shell">
       <header class="settings-header onboarding-header">
         <h2>Welcome to Copse</h2>
-        <button type="button" class="settings-close-btn" id="onboarding-close" aria-label="Close setup"></button>
+        <button type="button" class="settings-close-btn" id="onboarding-close" aria-label="Close setup" data-tooltip="Close setup"></button>
       </header>
 
       <p class="onboarding-tagline">
