@@ -177,6 +177,15 @@ new-prompt injector that surfaces relevant notes without a tool call, and a mode
 filter deciding which notes "land" in the panel — the properties the roadmap feature was
 always missing.
 
+**Phase 4 (unowned) — the user as an author.** Every type so far is written by the agent and
+read by the agent; the Memories pane edits what `remember` produced. Two capabilities are
+absent and belong here rather than in a new store: note kinds the **user** captures directly —
+an image, a transcript, a saved artifact, none of which the current frontmatter contemplates —
+and asking a question of your own notes as a user action. #870 is prompt-time injection into
+the agent's context, which shares this store but is a different feature; neither implies the
+other. Worth scoping only after Phase 3 exists, since the browse surface it assumes is the
+same one. Evidence: [`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-06.
+
 ## Decisions
 
 - **Store at `~/.copse/knowledge/<workspace>`**, per-project namespacing (slug + path hash),

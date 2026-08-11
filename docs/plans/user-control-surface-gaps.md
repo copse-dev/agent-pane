@@ -157,36 +157,46 @@ collection per run.
 view; `Ctrl+R` prompt history search; font family and line height; localization; platform
 reach beyond macOS 26+.
 
+**Voice** — absent everywhere: no dictation, no read-back, and video attachments never
+decode audio (`docs/video-frames.md:149`). Recorded so the absence reads as examined rather
+than overlooked. Note the tension before anyone treats it as a straightforward addition: our
+bet is per-command approval, and approval is the one interaction that should _not_ be
+hands-free — a spoken "yes" across a room is a poor consent signal for a destructive command.
+A voice surface for Copse is dictation into the composer and read-back of a result, with the
+approval queue deliberately excluded. That is a smaller feature than it first appears, and a
+different one. See [`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-05.
+
 ## Ownership
 
 Only six of twenty-two need a new issue, and two of those are decision records. Eight
 already have an owner among the open issues, where the correct move is to extend that
-issue rather than file a second one against the same work.
+issue rather than file a second one against the same work. R-05 has since been filed as
+#1573, leaving five of the six outstanding.
 
-| Req  | Repo plan                  | Open issues          | Roadmap                          | Action                                |
-| ---- | -------------------------- | -------------------- | -------------------------------- | ------------------------------------- |
-| R-01 | plan-mode-and-rewind       | #1080                | `247c1245` `a2739a29`            | Owned — defer entirely                |
-| R-02 | —                          | #658 #745 #746       | `a6bb72a1` `830efc77` `a330dbbf` | Extend #658                           |
-| R-03 | long-horizon-tasks         | #558 #1286           | `ae775062` `4f427281`            | Extend #1286                          |
-| R-04 | —                          | #866 #998            | `bfa09823` `79b0286f` `00a74fc9` | **New issue** — see `mission-control` |
-| R-05 | model-roles-and-defaults   | #1314 #1315 #750     | `19418b60` (name collision)      | **New issue**                         |
-| R-06 | —                          | —                    | —                                | **New issue** — see `mission-control` |
-| R-07 | —                          | #656 #1153 #1222     | —                                | Extend #656                           |
-| R-08 | —                          | —                    | `a6bb72a1` (blocks) `7f284ad5`   | **New issue**                         |
-| R-09 | settings-transparency      | #638 #639            | —                                | Extend #639                           |
-| R-10 | —                          | #659 #802 #507 #806  | —                                | Decide on #802                        |
-| R-11 | settings-transparency      | #750 #638 #745       | `06ac8c21`                       | Fold into #750                        |
-| R-12 | —                          | —                    | —                                | **New issue**                         |
-| R-13 | —                          | #1154                | `e9e8f756` `d7f6de34` `0711ebc0` | Extend #1154                          |
-| R-14 | provider-host-allow-list   | #648                 | `d665d204`                       | Fold into #648                        |
-| R-15 | —                          | #648 #1246           | —                                | Fold into #648                        |
-| R-16 | execution-runtime-security | #656                 | `7ac857cb` (blocked) `a91460d4`  | Extend #656 — leads Phase 2           |
-| R-17 | —                          | #865 #866 #867       | —                                | Extend #865                           |
-| R-18 | thread-referencing         | #1245 #998           | `79b0286f` `6f7b7d13`            | Extend #1245                          |
-| R-19 | terminal-file-links        | #713                 | ~15 UI items                     | Extend #713                           |
-| R-20 | background-supervisor      | #1081 #866 #558 #865 | `0bf7fa5a`                       | Extend #1081 — see `mission-control`  |
-| R-21 | —                          | #656                 | —                                | **New issue** — decision              |
-| R-22 | —                          | #867 #658            | `a2739a29`                       | Extend #867 — see `mission-control`   |
+| Req  | Repo plan                  | Open issues                | Roadmap                          | Action                                |
+| ---- | -------------------------- | -------------------------- | -------------------------------- | ------------------------------------- |
+| R-01 | plan-mode-and-rewind       | #1080                      | `247c1245` `a2739a29`            | Owned — defer entirely                |
+| R-02 | —                          | #658 #745 #746             | `a6bb72a1` `830efc77` `a330dbbf` | Extend #658                           |
+| R-03 | long-horizon-tasks         | #558 #1286                 | `ae775062` `4f427281`            | Extend #1286                          |
+| R-04 | —                          | #866 #998                  | `bfa09823` `79b0286f` `00a74fc9` | **New issue** — see `mission-control` |
+| R-05 | model-roles-and-defaults   | **#1573** #1314 #1315 #750 | `19418b60` (name collision)      | Filed as #1573                        |
+| R-06 | —                          | —                          | —                                | **New issue** — see `mission-control` |
+| R-07 | —                          | #656 #1153 #1222           | —                                | Extend #656                           |
+| R-08 | —                          | —                          | `a6bb72a1` (blocks) `7f284ad5`   | **New issue**                         |
+| R-09 | settings-transparency      | #638 #639                  | —                                | Extend #639                           |
+| R-10 | —                          | #659 #802 #507 #806 #1382  | —                                | Decide on #802                        |
+| R-11 | settings-transparency      | #750 #638 #745             | `06ac8c21`                       | Fold into #750                        |
+| R-12 | —                          | —                          | —                                | **New issue**                         |
+| R-13 | —                          | #1154                      | `e9e8f756` `d7f6de34` `0711ebc0` | Extend #1154                          |
+| R-14 | provider-host-allow-list   | #648                       | `d665d204`                       | Fold into #648                        |
+| R-15 | —                          | #648 #1246                 | —                                | Fold into #648                        |
+| R-16 | execution-runtime-security | #656                       | `7ac857cb` (blocked) `a91460d4`  | Extend #656 — leads Phase 2           |
+| R-17 | —                          | #865 #866 #867             | —                                | Extend #865                           |
+| R-18 | thread-referencing         | #1245 #998                 | `79b0286f` `6f7b7d13`            | Extend #1245                          |
+| R-19 | terminal-file-links        | #713                       | ~15 UI items                     | Extend #713                           |
+| R-20 | background-supervisor      | #1081 #866 #558 #865       | `0bf7fa5a`                       | Extend #1081 — see `mission-control`  |
+| R-21 | —                          | #656                       | —                                | **New issue** — decision              |
+| R-22 | —                          | #867 #658                  | `a2739a29`                       | Extend #867 — see `mission-control`   |
 
 Roadmap identifiers are items from the in-app roadmap, which is local workspace data
 rather than a hosted tracker. They come from the 27 July 2026 export.
@@ -216,7 +226,11 @@ leads Phase 2 on a dependency.
   internally already (#1315 benchmark profiles, #1314 settings-object host), so this is
   mostly exposing and unifying. Must compose with packs and per-thread overrides rather
   than becoming a fourth configuration system. Rename `19418b60`'s dev-environment
-  "profile" first or every ticket is ambiguous.
+  "profile" first or every ticket is ambiguous. **Filed as
+  [#1573](https://github.com/copse-dev/agent-pane/issues/1573)**, which also records the
+  scope question it must not answer by accident: a profile a thread starts from is a
+  settings feature, while a named agent the user returns to changes what a thread and a
+  project are.
 - **R-20 — Delegated task mode.** Hand over a spec, close the window, collect a result.
   Composes with R-01: approve a plan, then delegate its execution. Needs R-06 to be worth
   using. **Specified in [`mission-control.md`](mission-control.md).**
@@ -235,8 +249,11 @@ leads Phase 2 on a dependency.
 - **R-09 — "Use my existing subscription" onboarding.** Already works technically; not
   presented as a path. Adjacent to #639 and #638.
 - **R-10 — Platform reach, record a decision.** GA is macOS 26+. The deliverable is a
-  written, dated decision, not an implementation. #802 owns the distribution channel and
-  #659 proposes off-desktop hand-off. The ACP registry route above is the other option.
+  written, dated decision, not an implementation. #802 owns the distribution channel, #1382
+  tracks Linux and Windows GA readiness beyond packaging, and #659 proposes off-desktop
+  hand-off. The ACP registry route above is the other option, and the one that does not
+  require porting Electron. Three open issues and no document connecting them is why this
+  reads as drift rather than a choice.
 
 ### Phase 2 — Observability and model configuration
 
@@ -314,3 +331,6 @@ useful thing to disagree with.
 Six new issues: R-04, R-05, R-06, R-08, R-12, R-21. R-04, R-06, R-20 and R-22 should be
 one issue against [`mission-control.md`](mission-control.md) rather than four, since they
 are one surface. Everything else extends an existing issue.
+
+R-05 is filed as [#1573](https://github.com/copse-dev/agent-pane/issues/1573); the other
+five remain unfiled.

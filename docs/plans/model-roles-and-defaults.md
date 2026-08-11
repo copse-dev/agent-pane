@@ -177,6 +177,19 @@ class caps the model download at ≈65–70% of memory to leave headroom for the
 cache, OS, and app. `recommendedSetupForClass(id)` sizes the whole role setup to
 the machine. _Done in Phase 0/3 code; UI to pick the class is pending._
 
+**The class is declared, never measured, and nothing reads the live machine.** The only
+runtime instrumentation in main is `diagnostics/event-loop-watchdog.ts`, and the sizing
+advice we already give links out to a third-party VRAM calculator
+(`src/shared/context-window-advice.ts:22`). Three things follow: a recommendation can be
+sized to a machine the user no longer has; "this will not fit" is discovered after a
+download rather than before it (the check belongs with #1246's lifecycle work); and a long
+local run cannot back off under memory or thermal pressure because nothing observes either.
+Reading system telemetry is new privileged local surface and needs a line in
+[`privacy-data-flow.md`](../privacy-data-flow.md) before it is built, even though the data
+never leaves the device — which is why it is recorded here as a later phase rather than
+folded into the class picker. Evidence:
+[`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-02.
+
 ### 4. Classifications in the picker
 
 Extend `model-options.ts` so entries can carry a capability/role badge and,
@@ -253,14 +266,14 @@ per-role axes can't provide. Pieces:
   blend that reproduces AA's published $9/MTok for Opus 4.8). Local models sit
   at $0 flagged `local`. Surfaced as picker hints (`intellect-hints.ts` — e.g.
   `claude-opus-4-8 — intellect 56 · $9/MTok · frontier`) and the settings
-"Model value map" scatter (`intellect-frontier-panel.ts`), whose tooltips
+  "Model value map" scatter (`intellect-frontier-panel.ts`), whose tooltips
   carry the full derivation.
 - **Best-value chat default** (`auto:best-value`): the default Settings chat
   model (including after onboarding). Each new chat window resolves the
   plan-aware frontier among configured/routable providers (`best-value-model.ts`
   - `pickBestValueFrontierModel`) and sets the footer picker to that concrete
     model id. Prefer plan-included / local $0 winners; otherwise maximize
-  intellect per $/MTok. The sentinel stays Settings-only — the chat picker never
+    intellect per $/MTok. The sentinel stays Settings-only — the chat picker never
     lists it.
 - **Follow-ups**: latency/throughput columns; per-axis benchmark sync for cloud
   models (lets the composite stand alone and be calibrated to the index);
