@@ -61,18 +61,28 @@ describe('projects sidebar groups', () => {
     await browser.reloadSession()
     // Wait for the composer, not just for a group row to exist. `main.ts` mounts
     // the panes and only then restores the project, so a group row appears while
-    // the sidebar is still being rebuilt — clicking into that window collapses a
-    // row that the next render replaces, and the assertion below then reports the
-    // half-built sidebar rather than the fold.
+    // the sidebar is still being rebuilt, and a click into that window lands on a
+    // row the next render replaces.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await $('.project-group-row').waitForExist({ timeout: 10_000 })
-    // Settle on the expanded shape first: a transition test has to know it
-    // started from the state it claims to be changing.
-    await waitForSidebarShape(['Alpha', 'Beta', 'Client work > Gamma'])
+    const groupRow = await $('.project-group-row')
+    await groupRow.waitForExist({ timeout: 10_000 })
 
-    await $('.project-group-row').click()
-    await waitForSidebarShape(['Alpha', 'Beta', 'Client work > (empty)'])
-    await expect($('.project-group-row')).toHaveAttribute('aria-expanded', 'false')
+    // Assert the fold against the group's own members rather than the sidebar's
+    // whole contents. The seed above cannot be relied on to decide those
+    // contents: `resetUserData()` runs while the previous test's app is still
+    // live, and that app's own config writes land back on top of the fresh seed
+    // — which is exactly what this spec caught, reporting the previous test's
+    // post-drag sidebar. Collapsing is a statement about one group either way,
+    // so scoping the assertion there makes it true of any starting state.
+    await expect(groupRow).toHaveAttribute('aria-expanded', 'true')
+    await expect($('.project-group-children .project-row')).toBeExisting()
+
+    await groupRow.click()
+    await browser.waitUntil(
+      async () => (await groupRow.getAttribute('aria-expanded')) === 'false',
+      { timeout: 10_000, timeoutMsg: 'group header never reported itself collapsed' },
+    )
+    await expect($('.project-group-children .project-row')).not.toBeExisting()
     await saveElementScreenshot('#pane-projects', 'projects-group-collapsed.png')
   })
 })
