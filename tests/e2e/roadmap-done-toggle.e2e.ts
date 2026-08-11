@@ -37,7 +37,7 @@ describe('roadmap done toggle', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-done-'))
-    knowledgeDir = seedRoadmapNotes(workspaceRoot, [
+    knowledgeDir = seedRoadmapNotes('e2e-roadmap-done', [
       {
         id: 'e2e-roadmap-done-toggle',
         title: 'Ship the metrics export command',

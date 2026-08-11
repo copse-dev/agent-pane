@@ -589,14 +589,15 @@ export function seedEmptyProject(
 }
 
 /**
- * Seed OKF roadmap notes for a workspace, mirroring the knowledge store's
- * on-disk layout (`~/.copse/knowledge/<slug>-<hash8>/roadmap/<id>.md`,
+ * Seed OKF roadmap notes for a project, mirroring the knowledge store's
+ * on-disk layout (`~/.copse/knowledge/<projectId>/roadmap/<id>.md`,
  * `src/main/services/storage/knowledge-store.ts`). No `index.jsonl` is written —
- * the store heals unindexed note files in on first read. Returns the workspace's
- * knowledge dir so specs can remove it in `after`.
+ * the store heals unindexed note files in on first read. Existing fixture data
+ * for the project is cleared first, and the returned directory is removed by
+ * the spec in `after`.
  */
 export function seedRoadmapNotes(
-  workspaceRoot: string,
+  projectId: string,
   notes: {
     id: string
     title: string
@@ -606,18 +607,9 @@ export function seedRoadmapNotes(
     complexity?: string
   }[],
 ): string {
-  const slug =
-    workspaceRoot
-      .split('/')
-      .filter(Boolean)
-      .slice(-1)[0]
-      ?.toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 64) || 'workspace'
-  const hash = createHash('sha1').update(workspaceRoot).digest('hex').slice(0, 8)
-  const knowledgeDir = join(homedir(), '.copse', 'knowledge', `${slug}-${hash}`)
+  const knowledgeDir = join(homedir(), '.copse', 'knowledge', projectId)
   const roadmapDir = join(knowledgeDir, 'roadmap')
+  rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
   const iso = new Date().toISOString()
   for (const note of notes) {
