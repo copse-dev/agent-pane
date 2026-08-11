@@ -1,8 +1,12 @@
-import { buildIndex, getIndexStats, invalidateIndex } from './file-index.ts'
+import { buildIndex, getIndexAgeMs, getIndexStats, invalidateIndex } from './file-index.ts'
 import { ensureSemanticIndex } from './semantic-index.ts'
 import { setSemanticIndexScaleGuarded, setSemanticIndexUnavailable } from './index-status.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { startWorkspaceIndexWatcher, stopWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
+import {
+  isRootWatched,
+  startWorkspaceIndexWatcher,
+  stopWorkspaceIndexWatcher,
+} from './workspace-index-watcher.ts'
 import { stopWatchingExecutionRoot } from './execution-root-watcher.ts'
 
 /** The most recently opened renderer-selected workspace root, if any. */
@@ -28,6 +32,34 @@ export function setWorkspaceIndexPolicyOverrideForTest(override: IndexPolicyOver
 
 function scaleGuardReason(reasons: string[]): string {
   return reasons[0] ?? 'Workspace exceeds the semantic-index scale guard'
+}
+
+/**
+ * How long an *unwatched* root's listing stays good enough to reuse. A watched
+ * root never expires — its watcher re-lists on every change — so this only
+ * bounds the roots that have no change signal at all (fs.watch refused, SSH).
+ */
+const UNWATCHED_INDEX_MAX_AGE_MS = 2 * 60 * 1000
+
+/**
+ * Whether registering `root` should pay for a fresh listing (#1694).
+ *
+ * Registration is not a change signal. `resolveThreadExecutionContext`
+ * re-registers a thread's execution root on every git/fs IPC, so selecting a
+ * thread fires a handful of them (git status, change stats, branch status, the
+ * file tree) before the user has touched anything. Listing the whole checkout on
+ * each one cost ~20s of "Indexing…" per switch on a large repo and produced the
+ * snapshot the watcher was already holding.
+ *
+ * Actual change signals are unaffected: the watcher's own rebuild,
+ * `scheduleIndexRebuild`, and the diff queue after a write all call `buildIndex`
+ * directly and always re-list.
+ */
+function needsFreshListing(root: string): boolean {
+  const age = getIndexAgeMs(root)
+  if (age === null) return true // Never listed — nothing to reuse.
+  if (isRootWatched(root)) return false
+  return age >= UNWATCHED_INDEX_MAX_AGE_MS
 }
 
 /**
@@ -75,7 +107,9 @@ export function startWorkspaceIndexing(root: string): void {
 
 async function runWorkspaceIndexing(root: string): Promise<void> {
   try {
-    await buildIndex(root)
+    // Re-selecting the project you are already on re-runs this; the scale
+    // evidence below reads the existing listing rather than rebuilding it.
+    if (needsFreshListing(root)) await buildIndex(root)
   } catch (err: unknown) {
     console.warn('[copse-panel] file index build failed:', err)
   }
@@ -131,15 +165,19 @@ export function resetWorkspaceIndexingForTest(): void {
  * Semantic queries reuse the project checkout's index and overlay the current
  * worktree delta in `executeSemanticSearch`.
  *
- * Safe to call repeatedly for the same root — both the file-index build and
- * the watcher registration are no-ops once already in place — so callers can
- * fire this on every worktree context resolution rather than tracking whether
- * a given thread has already been registered.
+ * Safe — and cheap — to call repeatedly for the same root, so callers can fire
+ * this on every worktree context resolution rather than tracking whether a
+ * given thread has already been registered. The watcher registration is a
+ * no-op once armed, and the listing is skipped while that watcher is keeping
+ * the index current (#1694); only the first registration of a root, or one
+ * whose watcher never armed and whose listing has gone stale, pays for a walk.
  */
 export function startExecutionRootIndexing(root: string): void {
-  void buildIndex(root).catch((err: unknown) => {
-    console.warn('[copse-panel] execution root index build failed:', err)
-  })
+  if (needsFreshListing(root)) {
+    void buildIndex(root).catch((err: unknown) => {
+      console.warn('[copse-panel] execution root index build failed:', err)
+    })
+  }
   startWorkspaceIndexWatcher(root, { withSemantic: false })
 }
 
