@@ -172,23 +172,50 @@ describe('automation attention grouping', function () {
               .map((node) => node.textContent ?? '')
               .join(' | '),
           ),
-          // The decisive question the first round could not answer: did the
-          // thread `runNow` created reach the sidebar at all? Every row carries
-          // `data-thread-id`, and the group's own count is rendered even while
-          // collapsed, so both are readable without expanding anything.
-          browser.execute((threadId: string) => {
-            const ids = Array.from(document.querySelectorAll('[data-thread-id]')).map(
-              (node) => node.getAttribute('data-thread-id') ?? '',
-            )
-            return {
-              knownThreadIds: ids.length,
-              startedThreadPresent: threadId !== '' && ids.includes(threadId),
-              groupCountLabel:
-                document.querySelector('.automation-threads-count')?.textContent ?? '<absent>',
-              runningIndicator: document.querySelector('.automation-threads-running') !== null,
-            }
-          }, startedThreadId),
+          // Readable while collapsed. `.automation-threads-count` is
+          // `scheduleGroups.size`, and `.automation-threads-running` is set by
+          // any automation thread in `running` status.
+          browser.execute(() => ({
+            groupCountLabel:
+              document.querySelector('.automation-threads-count')?.textContent ?? '<absent>',
+            runningIndicator: document.querySelector('.automation-threads-running') !== null,
+          })),
         ])
+      // Everything above still cannot see an automation *row*: they are built
+      // only inside `if (automationExpanded)`, so the collapsed group hides
+      // exactly what needs inspecting. Round two reported
+      // `knownThreadIds: 1, startedThreadPresent: false` and that was vacuous —
+      // one row is the unrelated chat, and the run could not have appeared
+      // whether it existed or not.
+      //
+      // So expand by hand before reading. Clicking the toggle sets
+      // `expandedAutomationProjects` and re-renders with every run present.
+      // This runs only on the failure path, after the assertion has already
+      // been lost, so it cannot affect a passing run.
+      await automationToggle.click().catch(() => undefined)
+      const revealed = await browser
+        .waitUntil(async () => (await $$('.automation-thread-rows [data-thread-id]').length) > 0, {
+          timeout: 5_000,
+        })
+        .then(() => true)
+        .catch(() => false)
+      const forced = await browser.execute((threadId: string) => {
+        const rows = Array.from(
+          document.querySelectorAll('.automation-thread-rows [data-thread-id]'),
+        )
+        return {
+          automationRows: rows.length,
+          startedThreadPresent:
+            threadId !== '' &&
+            rows.some((node) => node.getAttribute('data-thread-id') === threadId),
+          rowIds: rows
+            .map((node) => (node.getAttribute('data-thread-id') ?? '').slice(0, 8))
+            .join(','),
+          scheduleCounts: Array.from(document.querySelectorAll('.automation-schedule-count'))
+            .map((node) => node.textContent ?? '')
+            .join(' | '),
+        }
+      }, startedThreadId)
       throw new Error(
         'attention did not reveal the Automations group — ' +
           `runNow returned ${JSON.stringify(runNowResult)}, ` +
@@ -196,7 +223,8 @@ describe('automation attention grouping', function () {
           `with aria-expanded=${String(expanded)}, ` +
           `${String(groupCount)} schedule group(s), ${String(rowCount)} sidebar row(s), ` +
           `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}, ` +
-          `sidebar: ${JSON.stringify(sidebarState)}`,
+          `sidebar: ${JSON.stringify(sidebarState)}, ` +
+          `after forcing the group open (revealed=${String(revealed)}): ${JSON.stringify(forced)}`,
       )
     }
     assert.equal((await automationToggle.$$('.chat-attention-bell')).length, 0)
