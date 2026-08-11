@@ -193,6 +193,15 @@ describe('automation attention grouping', function () {
       // This runs only on the failure path, after the assertion has already
       // been lost, so it cannot affect a passing run.
       await automationToggle.click().catch(() => undefined)
+      // Two levels collapse independently. Opening the Automations group still
+      // leaves each *schedule* closed unless it has an active or attention run
+      // (`scheduleRevealed` in projects-pane.ts), and a closed schedule renders
+      // its count but none of its rows — which is why the previous round read
+      // `automationRows: 0` next to `scheduleCounts: "4 runs"`. Open the
+      // schedule too.
+      await $('.automation-schedule-toggle')
+        .click()
+        .catch(() => undefined)
       const revealed = await browser
         .waitUntil(async () => (await $$('.automation-thread-rows [data-thread-id]').length) > 0, {
           timeout: 5_000,
@@ -208,9 +217,16 @@ describe('automation attention grouping', function () {
           startedThreadPresent:
             threadId !== '' &&
             rows.some((node) => node.getAttribute('data-thread-id') === threadId),
-          rowIds: rows
-            .map((node) => (node.getAttribute('data-thread-id') ?? '').slice(0, 8))
-            .join(','),
+          // Each row's id, its classes (status lives there), and its text —
+          // enough to say whether the started run is present and what state the
+          // sidebar thinks it is in.
+          rowDetail: rows
+            .map(
+              (node) =>
+                `${(node.getAttribute('data-thread-id') ?? '').slice(0, 8)}[${node.className}]` +
+                `"${(node.textContent ?? '').slice(0, 40)}"`,
+            )
+            .join(' | '),
           scheduleCounts: Array.from(document.querySelectorAll('.automation-schedule-count'))
             .map((node) => node.textContent ?? '')
             .join(' | '),
