@@ -182,4 +182,38 @@ describe('staged diff approval UI', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-css-accept-no-error.png'))
     await expect(await collectErrorToasts()).toEqual([])
   })
+
+  it('shows Proposed rows in the Changes pop-out (#1718)', async function () {
+    this.timeout(120_000)
+
+    await runWriteFileDirective('src/e2e-staged-popout.ts', 'export const popout = true\n')
+    await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
+
+    const before = await browser.getWindowHandles()
+    const popoutBtn = await $('#git-changes-host .pane-popout-btn')
+    await popoutBtn.waitForClickable({ timeout: 10_000 })
+    await popoutBtn.click()
+
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
+      timeout: 15_000,
+      timeoutMsg: 'Changes pop-out window did not open',
+    })
+    const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
+    if (!popoutHandle) throw new Error('Changes pop-out window handle missing')
+    await browser.switchToWindow(popoutHandle)
+
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => document.documentElement.getAttribute('data-popout-mode') === 'changes'),
+      {
+        timeout: 20_000,
+        timeoutMsg: 'pop-out did not boot in changes mode',
+      },
+    )
+    await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
+    await expect($('.git-change-row-proposed .git-change-path')).toHaveText(
+      'src/e2e-staged-popout.ts',
+    )
+    await saveAppScreenshot('staged-diff-popout-proposed.png')
+  })
 })
