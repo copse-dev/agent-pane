@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { $, $$, browser } from '@wdio/globals'
+import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 // Row-level mark-done toggle on the Roadmap pane: the check icon flips a live
@@ -31,11 +31,20 @@ const revealDoneToggle = async () => {
 
 describe('roadmap done toggle', () => {
   let workspaceRoot: string
+  let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-done-'))
+    knowledgeDir = seedRoadmapNotes(workspaceRoot, [
+      {
+        id: 'e2e-roadmap-done-toggle',
+        title: 'Ship the metrics export command',
+        body: 'Ship the metrics export command',
+        status: 'ready',
+      },
+    ])
     seedEmptyProject(workspaceRoot, 'e2e-roadmap-done', {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
@@ -46,6 +55,7 @@ describe('roadmap done toggle', () => {
   after(() => {
     resetUserData()
     rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(knowledgeDir, { recursive: true, force: true })
   })
 
   it('marks an item done from the list row (hidden by default) and reopens it', async () => {
@@ -53,34 +63,12 @@ describe('roadmap done toggle', () => {
     const roadmapButton = $('.titlebar-text-btn[aria-label="Open roadmap"]')
     await roadmapButton.waitForDisplayed({ timeout: 10_000 })
     await roadmapButton.click()
-    await $('.roadmap-new-btn').waitForDisplayed({ timeout: 10_000 })
-    await $('.roadmap-new-btn').click()
-    await expect($('.roadmap-form')).toBeDisplayed()
-
-    await $('.roadmap-prompt-input').setValue('Ship the metrics export command')
-    await $('.roadmap-save-btn').click()
-    // The create notification can render the row before save() finishes its
-    // trailing refresh. Wait for the handler itself to settle so that refresh
-    // cannot race and visually overwrite the independent status flip below.
-    await $('.roadmap-save-btn').waitForEnabled({ timeout: 20_000 })
-    // Background complexity/category stamps may still replace the row later.
     await $('.roadmap-row').waitForExist({ timeout: 20_000 })
-
-    // Saving selects the new item into the editor. Deselect first so the
-    // editor is at its empty state — the point of the assertion below is that
-    // the toggle flips status *without* selecting the row back into the editor.
-    await $('.roadmap-cancel-btn').click()
     await $('.roadmap-empty').waitForDisplayed({ timeout: 10_000 })
 
     const toggle = await revealDoneToggle()
     assert.equal(await toggle.getAttribute('title'), 'Mark done')
-    // Complexity/category stamps can replace the row after hover but before a
-    // WebDriver click reaches the cached element. Dispatch on the live control
-    // so this still exercises the ordinary DOM click handler without racing a
-    // detached handle.
-    await browser.execute(() => {
-      document.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
-    })
+    await toggle.click()
 
     // `done` is hidden by default, so the row leaves the list on completion
     // rather than staying struck through.
@@ -138,9 +126,7 @@ describe('roadmap done toggle', () => {
     // The same control now reopens the item.
     const reopen = await revealDoneToggle()
     assert.equal(await reopen.getAttribute('title'), 'Reopen (set ready)')
-    await browser.execute(() => {
-      document.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
-    })
+    await reopen.click()
     await browser.waitUntil(
       async () =>
         (await $('.roadmap-row').isExisting()) === true &&
