@@ -21,11 +21,7 @@ const decodeGhPr = decodeWithSchema(ghPrViewSchema)
 const coalesceOpenPrLookup = createInFlightCoalescer<GitOpenPr | null>()
 
 /** Keep process-global in-flight lookups isolated between project identities. */
-export function branchStatusLookupKey(
-  projectId: string,
-  root: string,
-  branch: string,
-): string {
+export function branchStatusLookupKey(projectId: string, root: string, branch: string): string {
   return `${projectId}\0${root}\0${branch}`
 }
 
@@ -213,7 +209,9 @@ export async function getGitBranchStatus(
     branchStatusLookupKey(projectId, root, targetBranch ?? currentBranch),
     async () => {
       if (targetBranch) return getOpenPrForBranch(targetBranch, root)
-      const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], { cwd: root })
+      const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], {
+        cwd: root,
+      })
       return ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
     },
   )
