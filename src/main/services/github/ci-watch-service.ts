@@ -267,7 +267,17 @@ export function installCiWatchConsumer(
       const watch = parseWatch(task)
       return watch?.prNumber === status.prNumber && watch.headSha === status.headSha
     })
-    if (existing) return { status, watching: true, taskId: existing.taskId }
+    if (existing?.turnId === turnTreeId) {
+      return { status, watching: true, taskId: existing.taskId }
+    }
+    // A later human submission starts a new turn tree. Reusing the older task
+    // would eventually dispatch against its stale epoch, so transfer ownership
+    // by replacing a dormant watch. Never abort a running watch here: its
+    // cancellation path may currently be dispatching and abort the newer
+    // foreground turn on this thread.
+    if (existing && existing.state !== 'running') {
+      await supervisor.cancel(existing.projectId, existing.taskId)
+    }
 
     const now = dependencies.now()
     const input: CiWatchInput = {

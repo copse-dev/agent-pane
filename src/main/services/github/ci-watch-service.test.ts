@@ -288,4 +288,45 @@ describe('durable CI watch', () => {
       await supervisor.shutdown()
     }
   })
+
+  it('rebinds an existing watch when a newer human turn takes ownership', async () => {
+    const store = new MemoryStore()
+    const clock = new FixedClock(100)
+    let nextTaskId = 0
+    const supervisor = new TaskSupervisor({
+      store,
+      clock,
+      createId: (): string => `ci-watch-${String(++nextTaskId)}`,
+    })
+    const dispose = installCiWatchConsumer(
+      supervisor,
+      { dispatchMachine: (): Promise<'completed'> => Promise.resolve('completed') },
+      dependencies(clock, [status('pending'), status('pending')]),
+    )
+
+    try {
+      await supervisor.start()
+      await nextTurn()
+      const first = await scheduleCiWatch({
+        context,
+        turnTreeId,
+        timeoutMs: 7_200_000,
+        pollIntervalMs: 60_000,
+      })
+      const secondTurnTreeId = asTurnTreeId('tree-2')
+      const second = await scheduleCiWatch({
+        context,
+        turnTreeId: secondTurnTreeId,
+        timeoutMs: 7_200_000,
+        pollIntervalMs: 60_000,
+      })
+
+      assert.notEqual(second.taskId, first.taskId)
+      assert.equal(store.tasks.get('ci-watch-1')?.state, 'cancelled')
+      assert.equal(store.tasks.get('ci-watch-2')?.turnId, secondTurnTreeId)
+    } finally {
+      dispose()
+      await supervisor.shutdown()
+    }
+  })
 })
