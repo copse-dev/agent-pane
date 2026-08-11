@@ -143,12 +143,7 @@ const INSPECTIONS: Inspection[] = ((): Inspection[] => {
 })()
 
 const CHOICES: Array<WorktreePolicyInput['choice']> = [undefined, 'automatic', 'shared', 'worktree']
-const PROJECT_MODES: Array<WorktreePolicyInput['projectMode']> = [
-  undefined,
-  'from-default-branch',
-  'always',
-  'never',
-]
+const PROJECT_MODES: Array<WorktreePolicyInput['projectMode']> = [undefined, 'always', 'never']
 
 /** The policy's own view of a (choice, projectMode) pair, before any inspection. */
 function settledFor(

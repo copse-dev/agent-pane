@@ -8,7 +8,7 @@ import type {
   ThreadWorktree,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
-import { decideThreadWorktreePolicy } from '@shared/git/worktree-policy.ts'
+import { decideThreadWorktreePolicy, settledCheckoutMode } from '@shared/git/worktree-policy.ts'
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
