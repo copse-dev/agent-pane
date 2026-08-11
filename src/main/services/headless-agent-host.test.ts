@@ -132,7 +132,7 @@ function smokeProfile(workspaceRoot: string): HeadlessAgentProfile {
       skillsEnabled: false,
       subagentsEnabled: false,
     },
-    enabledPackIds: [],
+    enabledPluginIds: [],
     toolAvailability: { rg: false, git: false, gh: false },
     loadMcpServers: false,
     workspaceTrusted: false,
@@ -211,7 +211,7 @@ describe('runHeadlessAgent', () => {
       const result = await runHeadlessAgent(
         {
           ...smokeProfile(workspace),
-          enabledPackIds: ['copse.background-tasks'],
+          enabledPluginIds: ['copse.background-tasks'],
           workspaceTrusted: true,
           interaction: {
             approve: (): Promise<{ approved: boolean; remember: boolean }> =>

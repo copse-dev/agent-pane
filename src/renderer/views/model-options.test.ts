@@ -16,8 +16,8 @@ interface MockOpts {
   openRouterZdrOnlySetting?: boolean
   openRouterAllowTrainingSetting?: boolean
   acpAgents?: AcpAgentConfig[]
-  packModels?: Array<{ id: string; label: string; group?: string }>
-  packEnabled?: boolean
+  pluginModels?: Array<{ id: string; label: string; group?: string }>
+  pluginEnabled?: boolean
 }
 
 // availableProviders() returns explicit booleans for every provider; mirror that
@@ -69,11 +69,11 @@ function mockApi(opts: MockOpts = {}): ApiClient {
         ...base['lmStudio'],
         models: async () => opts.lmStudioModels ?? [],
       },
-      packs: {
-        ...base['packs'],
+      plugins: {
+        ...base['plugins'],
         list: async () => ({
-          packs:
-            opts.packModels === undefined
+          plugins:
+            opts.pluginModels === undefined
               ? []
               : [
                   {
@@ -81,10 +81,10 @@ function mockApi(opts: MockOpts = {}): ApiClient {
                     trust: 'user',
                     stability: 'experimental',
                     name: 'personal.reference-model',
-                    enabled: opts.packEnabled ?? true,
+                    enabled: opts.pluginEnabled ?? true,
                     contributions: {
                       toolNames: [],
-                      modelRoutes: opts.packModels,
+                      modelRoutes: opts.pluginModels,
                       browserOrigins: [],
                       blockingHooks: [],
                       asyncHooks: [],
@@ -505,39 +505,39 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(!options.some((option) => option.value.startsWith('acp:')))
   })
 
-  it('shows enabled selected-pack models only in whole-thread pickers', async () => {
+  it('shows enabled selected-plugin models only in whole-thread pickers', async () => {
     const api = mockApi({
-      packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+      pluginModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
     })
     const options = await fetchModelOptions(api, '')
     assert.deepEqual(
       options.find((option) => option.group === 'Personal models'),
       {
-        value: 'pack-model:personal.reference-model:judge%3Adefault',
+        value: 'plugin-model:personal.reference-model:judge%3Adefault',
         label: 'Reference judge',
         group: 'Personal models',
       },
     )
     assert.equal(
-      modelDisplayLabel('pack-model:personal.reference-model:judge%3Adefault'),
+      modelDisplayLabel('plugin-model:personal.reference-model:judge%3Adefault'),
       'judge:default',
     )
     const roles = await fetchModelOptions(api, '', { includeAgentModels: false })
-    assert.ok(!roles.some((option) => option.value.startsWith('pack-model:')))
+    assert.ok(!roles.some((option) => option.value.startsWith('plugin-model:')))
   })
 
-  it('keeps a disabled pack model visible but unavailable', async () => {
+  it('keeps a disabled plugin model visible but unavailable', async () => {
     const options = await fetchModelOptions(
       mockApi({
-        packEnabled: false,
-        packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+        pluginEnabled: false,
+        pluginModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
       }),
-      'pack-model:personal.reference-model:judge%3Adefault',
+      'plugin-model:personal.reference-model:judge%3Adefault',
     )
-    const selected = options.find((option) => option.value.startsWith('pack-model:'))
+    const selected = options.find((option) => option.value.startsWith('plugin-model:'))
     assert.ok(selected)
     assert.equal(selected.disabled, true)
-    assert.equal(selected.label, 'Reference judge (pack disabled)')
+    assert.equal(selected.label, 'Reference judge (plugin disabled)')
     assert.equal(selected.group, 'Personal models')
   })
 

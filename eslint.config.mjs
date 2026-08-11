@@ -191,7 +191,7 @@ export default ts.config(
       'src/main/services/close-confirm.ts',
       'src/main/services/update-prompt.ts',
       'src/main/services/user-alerts-electron.ts',
-      'src/main/services/packs/pack-browser-panel.ts',
+      'src/main/services/plugins/plugin-browser-panel.ts',
       'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
     ],
     rules: {

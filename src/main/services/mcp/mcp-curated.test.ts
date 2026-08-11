@@ -94,6 +94,7 @@ describe('curated MCP catalog', () => {
         tools: ['search', 'doc', 'compat'],
         userEnabled: true,
         configDisabled: false,
+        origin: 'curated',
         curated: true,
       },
     ]

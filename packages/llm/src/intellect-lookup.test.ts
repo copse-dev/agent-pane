@@ -21,7 +21,7 @@ describe('resolveModelIntellect', () => {
     assert.equal(haiku.value, getIntellectScore('claude-haiku-4-5')?.value)
 
     // The frontier end of the same scale, so a threshold between them separates
-    // "needs help" from "does not" (the forced-planning pack's whole premise).
+    // "needs help" from "does not" (the forced-planning plugin's whole premise).
     const fable = resolveModelIntellect('claude-fable-5')
     assert.ok(fable)
     assert.ok(fable.value > haiku.value)

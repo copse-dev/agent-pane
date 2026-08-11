@@ -6,8 +6,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
+import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
 export type PanelControlId =
   'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser'
@@ -18,13 +18,13 @@ interface PanelControlDef {
   ariaLabel: string
   label: string
   icon: () => SVGSVGElement
-  /** Hide the button until this first-party pack is enabled (read via `packs:list`). */
-  experimentalPack?: string
+  /** Hide the button until this first-party plugin is enabled (read via `plugins:list`). */
+  experimentalPlugin?: string
 }
 
-/** True for a control whose visibility is gated behind an experimental pack. */
+/** True for a control whose visibility is gated behind an experimental plugin. */
 function isGated(def: PanelControlDef): boolean {
-  return !!def.experimentalPack
+  return !!def.experimentalPlugin
 }
 
 function panelIcon(): SVGSVGElement {
@@ -131,7 +131,7 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Open memories',
     label: 'Memories',
     icon: memoriesIcon,
-    experimentalPack: OKF_MEMORIES_PACK_ID,
+    experimentalPlugin: OKF_MEMORIES_PLUGIN_ID,
   },
   {
     id: 'roadmap',
@@ -139,7 +139,7 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Open roadmap',
     label: 'Roadmap',
     icon: roadmapIcon,
-    experimentalPack: ROADMAP_PLANS_PACK_ID,
+    experimentalPlugin: ROADMAP_PLANS_PLUGIN_ID,
   },
   {
     id: 'browser',
@@ -390,19 +390,19 @@ export function mountPanelModeControls(
     for (const def of PANEL_CONTROL_DEFS) {
       const btn = buttons.get(def.id)
       if (!btn) continue
-      if (def.experimentalPack) {
-        // Pack-gated controls (Memories / Roadmap) read the shared host pack
-        // registry via `packs:list`; the button shows iff the pack is enabled.
-        // Toggling the pack in Settings emits `settings_changed`, which re-runs
+      if (def.experimentalPlugin) {
+        // Plugin-gated controls (Memories / Roadmap) read the shared host plugin
+        // registry via `plugins:list`; the button shows iff the plugin is enabled.
+        // Toggling the plugin in Settings emits `settings_changed`, which re-runs
         // this.
-        const packId = def.experimentalPack
+        const pluginId = def.experimentalPlugin
         pending.push(
-          api.packs
+          api.plugins
             .list()
             .then((res) => {
               applyGate(
                 btn,
-                res.packs.some((p) => p.id === packId && p.enabled),
+                res.plugins.some((p) => p.id === pluginId && p.enabled),
               )
             })
             .catch(() => {

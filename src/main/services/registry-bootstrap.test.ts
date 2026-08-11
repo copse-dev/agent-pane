@@ -17,15 +17,15 @@ import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registr
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { deleteApiKey, setApiKey, setSetting } from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
+import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
+import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -140,23 +140,23 @@ describe('createRegistry GitHub tool gating', () => {
 describe('syncOkfMemoryTools', () => {
   afterEach(() => {
     // Restore the fresh first-party-seed fallback for other suites.
-    setDefaultPackRegistry(null)
+    setDefaultPluginRegistry(null)
   })
 
-  it('adds the memory tools when the pack is enabled and removes them when disabled', () => {
+  it('adds the memory tools when the plugin is enabled and removes them when disabled', () => {
     const registry = new ToolRegistry()
-    // Drive the sync through the shared pack registry the host reads: the
-    // `copse.okf-memories` pack is now the master switch (its old
+    // Drive the sync through the shared plugin registry the host reads: the
+    // `copse.okf-memories` plugin is now the master switch (its old
     // `okfMemoriesEnabled` setting is retired).
-    const packs = createFirstPartyPackRegistry()
-    setDefaultPackRegistry(packs)
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
 
-    packs.disable(OKF_MEMORIES_PACK_ID)
+    plugins.disable(OKF_MEMORIES_PLUGIN_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
 
-    packs.enable(OKF_MEMORIES_PACK_ID)
+    plugins.enable(OKF_MEMORIES_PLUGIN_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), true)
     assert.equal(registry.has('recall'), true)
@@ -165,7 +165,7 @@ describe('syncOkfMemoryTools', () => {
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), true)
 
-    packs.disable(OKF_MEMORIES_PACK_ID)
+    plugins.disable(OKF_MEMORIES_PLUGIN_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
@@ -195,24 +195,24 @@ describe('syncReadTerminalTools', () => {
 })
 
 describe('syncRoadmapPlanTools', () => {
-  // Roadmap plans are now gated by the `copse.roadmap-plans` first-party pack,
-  // so drive enablement through the shared pack registry (not the retired
+  // Roadmap plans are now gated by the `copse.roadmap-plans` first-party plugin,
+  // so drive enablement through the shared plugin registry (not the retired
   // `roadmapPlansEnabled` setting). Install a fresh first-party registry per
   // test and restore the fallback afterwards.
   afterEach(() => {
-    setDefaultPackRegistry(null)
+    setDefaultPluginRegistry(null)
   })
 
-  it('adds the roadmap tool when the pack is enabled and removes it when disabled', () => {
-    const packRegistry = createFirstPartyPackRegistry()
-    setDefaultPackRegistry(packRegistry)
+  it('adds the roadmap tool when the plugin is enabled and removes it when disabled', () => {
+    const pluginRegistry = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(pluginRegistry)
     const registry = new ToolRegistry()
 
-    packRegistry.disable(ROADMAP_PLANS_PACK_ID)
+    pluginRegistry.disable(ROADMAP_PLANS_PLUGIN_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
 
-    packRegistry.enable(ROADMAP_PLANS_PACK_ID)
+    pluginRegistry.enable(ROADMAP_PLANS_PLUGIN_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), true)
 
@@ -220,7 +220,7 @@ describe('syncRoadmapPlanTools', () => {
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), true)
 
-    packRegistry.disable(ROADMAP_PLANS_PACK_ID)
+    pluginRegistry.disable(ROADMAP_PLANS_PLUGIN_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
   })
@@ -229,15 +229,15 @@ describe('syncRoadmapPlanTools', () => {
 describe('syncParallelSearchTools', () => {
   afterEach(() => {
     deleteApiKey('parallel')
-    setDefaultPackRegistry(null)
+    setDefaultPluginRegistry(null)
   })
 
-  it('requires both an enabled pack and a configured key', () => {
-    const packs = createFirstPartyPackRegistry()
-    setDefaultPackRegistry(packs)
+  it('requires both an enabled plugin and a configured key', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
 
-    packs.enable(PARALLEL_SEARCH_PACK_ID)
+    plugins.enable(PARALLEL_SEARCH_PLUGIN_ID)
     syncParallelSearchTools(registry)
     assert.equal(registry.has('parallel_search'), false)
 
@@ -245,7 +245,7 @@ describe('syncParallelSearchTools', () => {
     syncParallelSearchTools(registry)
     assert.equal(registry.has('parallel_search'), true)
 
-    packs.disable(PARALLEL_SEARCH_PACK_ID)
+    plugins.disable(PARALLEL_SEARCH_PLUGIN_ID)
     syncParallelSearchTools(registry)
     assert.equal(registry.has('parallel_search'), false)
   })

@@ -15,7 +15,7 @@ function stubApi(skills: SkillSummary[]): ApiClient {
     instructions: { ...base.instructions, list: () => Promise.resolve([]) },
     cursorRules: { ...base.cursorRules, list: () => Promise.resolve([]) },
     skills: { ...base.skills, list: () => Promise.resolve(skills) },
-    plugins: { ...base.plugins, list: () => Promise.resolve([]) },
+    cursorPlugins: { ...base.cursorPlugins, list: () => Promise.resolve([]) },
     hooks: {
       ...base.hooks,
       list: () => Promise.resolve({ hooks: [], warnings: [] }),
@@ -44,7 +44,7 @@ async function openSkillsList(skills: SkillSummary[]): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(createStore(), stubApi(skills))
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
-    '.settings-nav-btn[data-section="sources"]',
+    '.settings-nav-btn[data-section="customise"]',
   )
   assert.ok(sourcesBtn)
   sourcesBtn.click()

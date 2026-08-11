@@ -7,7 +7,12 @@ import * as fs from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shared/types/mcp.ts'
+import type {
+  McpServerConfig,
+  McpServerOrigin,
+  McpServerStatus,
+  McpToolAnnotations,
+} from '@shared/types/mcp.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -25,12 +30,13 @@ import {
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { createBundledMcpServers } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { MCP_UI_CANVAS_CAPABILITY } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { MCP_UI_CANVAS_CAPABILITY } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from '../exec/subprocess-output-cap.ts'
 import {
+  cursorPluginsRoot,
   discoverCursorPluginRoots,
   isCursorPluginMcpSource,
   resolvePluginMcpConfigPath,
@@ -202,6 +208,47 @@ function isUserMcpSource(source: string | undefined): boolean {
   )
 }
 
+/**
+ * Classify a config source for Settings → MCP servers.
+ *
+ * The same knowledge {@link isUserMcpSource} uses to decide env-interpolation
+ * scope also answers "who asked for this server", so it is derived here rather
+ * than re-implemented in the renderer against bare paths. Anything unrecognised
+ * falls back to `project`: an unknown source is repo-supplied until shown
+ * otherwise, which is the safe direction for a label a user reads before
+ * deciding whether to leave a connection running.
+ */
+function classifyMcpOrigin(source: string | undefined): McpServerOrigin {
+  if (source === CURATED_MCP_SOURCE) return 'curated'
+  if (source === undefined) return 'built-in'
+  if (isCursorPluginMcpSource(source)) return 'plugin'
+  if (source === join(homedir(), '.cursor', 'mcp.json')) return 'user'
+  if (source === join(getElectronUserDataPath(), 'mcp.json')) return 'user'
+  return 'project'
+}
+
+/** The short label shown beside the origin — the file or plugin it came from. */
+function mcpOriginDetail(source: string | undefined): string | undefined {
+  if (source === undefined || source === CURATED_MCP_SOURCE) return undefined
+  if (!isCursorPluginMcpSource(source)) return source
+  // `<cursor plugins root>/<publisher>/<plugin>/…/.mcp.json` — the segment
+  // under the root is what a user recognises, not the config filename.
+  const rel = source.slice(cursorPluginsRoot().length).replace(/^[/\\]+/, '')
+  const parts = rel.split(/[/\\]+/).filter(Boolean)
+  return parts.slice(0, 2).join('/') || source
+}
+
+/** Origin fields for a status, spread into the object literal. */
+function originFields(
+  source: string | undefined,
+): Pick<McpServerStatus, 'origin' | 'originDetail'> {
+  const detail = mcpOriginDetail(source)
+  return {
+    origin: classifyMcpOrigin(source),
+    ...(detail === undefined ? {} : { originDetail: detail }),
+  }
+}
+
 /** Env-interpolation allowlist for a config: unrestricted for user sources. */
 function envAllowlistFor(cfg: McpServerConfig): ReadonlySet<string> | undefined {
   return isUserMcpSource(cfg.source) ? undefined : PROJECT_ENV_ALLOWLIST
@@ -339,10 +386,10 @@ async function registerClientTools(
         // Experimental MCP-UI canvas: when enabled, recognised UI resources are
         // rendered as a sandboxed artefact and summarised for the model (raw
         // body kept out of context) rather than inlined as tool output. Gated by
-        // the `copse.mcp-ui-canvas` first-party pack's capability — the pack
-        // toggle in Settings > Packs is the atomic master switch.
+        // the `copse.mcp-ui-canvas` first-party plugin's capability — the plugin
+        // toggle in Settings > Plugins is the atomic master switch.
         const summarizeUiResources =
-          getDefaultPackRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
+          getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
         if (summarizeUiResources) dispatchCanvasArtefacts(result.content)
         const text = flattenMcpContent(result.content, { summarizeUiResources })
         if (result.isError) {
@@ -365,7 +412,7 @@ async function connectBundledServers(
   registry: ToolRegistry,
   generation: number,
 ): Promise<McpServerStatus[]> {
-  if (!getDefaultPackRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)) return []
+  if (!getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)) return []
   const bundled = await createBundledMcpServers()
   if (generation !== loadGeneration) {
     await Promise.allSettled(bundled.map((b) => b.client.close()))
@@ -384,6 +431,7 @@ async function connectBundledServers(
         tools,
         userEnabled: true,
         configDisabled: false,
+        origin: 'built-in',
       })
       console.log(
         `[MCP] Connected bundled "${name}" (in-process) — ${String(tools.length)} tool(s)`,
@@ -399,6 +447,7 @@ async function connectBundledServers(
         tools: [],
         userEnabled: true,
         configDisabled: false,
+        origin: 'built-in',
         error: message,
       })
     }
@@ -424,6 +473,7 @@ async function connectServer(
     userEnabled,
     configDisabled,
     ...(cfg.source !== undefined ? { source: cfg.source } : {}),
+    ...originFields(cfg.source),
     ...(cfg.source === CURATED_MCP_SOURCE ? { curated: true } : {}),
   }
 
@@ -550,6 +600,7 @@ function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>
     configDisabled: cfg.disabled === true,
     error: 'Workspace not trusted — this server is defined by the project and was not started.',
     ...(cfg.source !== undefined ? { source: cfg.source } : {}),
+    ...originFields(cfg.source),
   }
 }
 

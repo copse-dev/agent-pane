@@ -13,7 +13,7 @@ export interface AssembleAcpTurnStartOptions {
   registry: ToolRegistry
   signal: AbortSignal
   resolveGithubRepoSlug?: () => Promise<string | null>
-  resolvePackSetting?: (packId: string, key: string) => unknown
+  resolvePluginSetting?: (pluginId: string, key: string) => unknown
   recordHookRun?: (record: HookRunRecord) => void
 }
 
@@ -54,7 +54,9 @@ export async function assembleAcpTurnStart(
       ...(options.resolveGithubRepoSlug
         ? { resolveGithubRepoSlug: options.resolveGithubRepoSlug }
         : {}),
-      ...(options.resolvePackSetting ? { resolvePackSetting: options.resolvePackSetting } : {}),
+      ...(options.resolvePluginSetting
+        ? { resolvePluginSetting: options.resolvePluginSetting }
+        : {}),
       ...(options.recordHookRun ? { recordHookRun: options.recordHookRun } : {}),
     },
   )

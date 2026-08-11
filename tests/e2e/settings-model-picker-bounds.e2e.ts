@@ -111,7 +111,7 @@ describe('settings model picker bounds', function () {
     expect(opened?.escapesPaneClip).toBe(true)
     await saveAppScreenshot('settings-model-picker-anchored.png')
 
-    // The reported case: a right-aligned field (pack settings put the control
+    // The reported case: a right-aligned field (plugin settings put the control
     // in a `justify-self: end` column) left the menu growing off the surface.
     //
     // `margin-left: auto` alone does not reproduce it. Auto only reaches the

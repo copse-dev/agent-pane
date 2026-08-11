@@ -10,7 +10,7 @@ import {
   siteBuildingSteeringHook,
 } from './turn-start-hooks.ts'
 import {
-  FORCED_PLANNING_PACK_ID,
+  FORCED_PLANNING_PLUGIN_ID,
   FORCED_TODO_PLAN_PROMPT,
   FORCED_WRITTEN_PLAN_PROMPT,
   CANONICAL_THRESHOLD_SETTING,
@@ -32,10 +32,10 @@ const priorTodos: TodoItem[] = [
 ]
 
 describe('TURN_START_HOOKS registration', () => {
-  it('lists the non-pack turn-start hooks after P4 (todos moved to copse.todos)', () => {
+  it('lists the non-plugin turn-start hooks after P4 (todos moved to copse.todos)', () => {
     // The todos turn-start hooks (`todo-steering`, `todo-pin`) moved into the
-    // `copse.todos` first-party pack (P4). Only the non-todos steering hooks
-    // remain in the static list; the pack folds its two hooks in through
+    // `copse.todos` first-party plugin (P4). Only the non-todos steering hooks
+    // remain in the static list; the plugin folds its two hooks in through
     // `createHookRegistry`, restoring the same registration count when
     // enabled.
     assert.deepEqual(
@@ -186,13 +186,13 @@ describe('forced-planning', () => {
     })
   })
 
-  it('reads its threshold from the pack-scoped setting via context', async () => {
+  it('reads its threshold from the plugin-scoped setting via context', async () => {
     const reads: string[] = []
     const outcome = await forcedPlanningHook.run(
       { ...weakModelTurn, model: 'claude-sonnet-5' },
       {
-        resolvePackSetting: (packId, key) => {
-          assert.equal(packId, FORCED_PLANNING_PACK_ID)
+        resolvePluginSetting: (pluginId, key) => {
+          assert.equal(pluginId, FORCED_PLANNING_PLUGIN_ID)
           reads.push(key)
           // Sonnet 5 measures ~53; a 60 threshold pulls it under.
           return key === CANONICAL_THRESHOLD_SETTING ? 60 : undefined
@@ -204,11 +204,11 @@ describe('forced-planning', () => {
   })
 })
 
-describe('turnStart emit — enabled todos pack yields the expected assembly order', () => {
-  it('runs the static steering hook, then the todos pack hooks (steering + pin)', async () => {
+describe('turnStart emit — enabled todos plugin yields the expected assembly order', () => {
+  it('runs the static steering hook, then the todos plugin hooks (steering + pin)', async () => {
     // Post-P4 order: static `TURN_START_HOOKS` (`github`) fire first, then the
-    // `copse.todos` pack's turn-start hooks (`todo-steering`, `todo-pin`) —
-    // the pack fold appends after the static list in `createHookRegistry`.
+    // `copse.todos` plugin's turn-start hooks (`todo-steering`, `todo-pin`) —
+    // the plugin fold appends after the static list in `createHookRegistry`.
     const registry = createHookRegistry()
     const result = await registry.emit(
       'turnStart',

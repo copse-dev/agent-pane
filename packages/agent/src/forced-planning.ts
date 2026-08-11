@@ -10,7 +10,7 @@
 //
 // Owned by `@copse/agent` so the first-party hook can use it without importing
 // the host (execution-guidance rule 4). Pure: no I/O, no settings read — the
-// resolved config is passed in (the hook reads pack settings via its context)
+// resolved config is passed in (the hook reads plugin settings via its context)
 // and the capability number comes from the shared `@copse/llm` lookup.
 //
 // **Two scales, two thresholds.** `resolveModelIntellect` tags every value with
@@ -28,18 +28,18 @@ import {
 } from '@copse/llm/intellect-lookup.ts'
 
 /**
- * Stable id of the pack that owns this policy. Declared here rather than in
- * `packs/forced-planning-pack.ts` because the turn-start hook needs it to read
- * its own pack settings, and the pack module imports that hook — putting the id
- * in the pack would make the two modules a cycle.
+ * Stable id of the plugin that owns this policy. Declared here rather than in
+ * `plugins/forced-planning-plugin.ts` because the turn-start hook needs it to read
+ * its own plugin settings, and the plugin module imports that hook — putting the id
+ * in the plugin would make the two modules a cycle.
  */
-export const FORCED_PLANNING_PACK_ID = 'copse.forced-planning'
+export const FORCED_PLANNING_PLUGIN_ID = 'copse.forced-planning'
 
 /**
  * The plan tool the todos-tool variant of the steering names. Deliberately a
- * literal rather than an import of `TODOS_TOOL_NAME`: `packs/todos-pack.ts`
+ * literal rather than an import of `TODOS_TOOL_NAME`: `plugins/todos-plugin.ts`
  * imports the turn-start hooks that consume this module, so importing it back
- * would close an import cycle. `forced-planning-pack.test.ts` asserts the two
+ * would close an import cycle. `forced-planning-plugin.test.ts` asserts the two
  * strings stay equal, which is what keeps the duplication honest.
  */
 export const PLAN_TOOL_NAME = 'update_todos'
@@ -48,7 +48,7 @@ export const PLAN_TOOL_NAME = 'update_todos'
  * Default canonical-scale threshold. Sits between Haiku-4.5-class models (24)
  * and the mid-tier open weights that clear 44 — i.e. "plan when the model is
  * meaningfully below the models that can improvise reliably". Users retune it
- * per workspace from Settings → Packs.
+ * per workspace from Settings → Plugins.
  */
 export const DEFAULT_CANONICAL_INTELLECT_THRESHOLD = 40
 
@@ -70,7 +70,7 @@ export const DEFAULT_COMPOSITE_INTELLECT_THRESHOLD = 60
  */
 export type UnmeasuredModelPolicy = 'plan' | 'skip'
 
-/** Resolved configuration for one decision (the hook maps pack settings onto this). */
+/** Resolved configuration for one decision (the hook maps plugin settings onto this). */
 export interface ForcedPlanningConfig {
   /** Force a plan below this value on the canonical Intelligence Index scale. */
   canonicalThreshold: number
@@ -87,7 +87,7 @@ export const DEFAULT_FORCED_PLANNING_CONFIG: ForcedPlanningConfig = {
   unmeasured: 'skip',
 }
 
-/** Pack-setting keys, shared by the manifest schema and the hook that reads them. */
+/** Plugin-setting keys, shared by the manifest schema and the hook that reads them. */
 export const CANONICAL_THRESHOLD_SETTING = 'canonicalIntellectThreshold'
 export const COMPOSITE_THRESHOLD_SETTING = 'compositeIntellectThreshold'
 export const UNMEASURED_MODELS_SETTING = 'unmeasuredModels'
@@ -115,8 +115,8 @@ function readUnmeasuredPolicy(
 }
 
 /**
- * Project the pack's persisted settings onto a {@link ForcedPlanningConfig}.
- * `read` is the pack-scoped reader the hook receives from its context; an absent
+ * Project the plugin's persisted settings onto a {@link ForcedPlanningConfig}.
+ * `read` is the plugin-scoped reader the hook receives from its context; an absent
  * reader (or an absent value) yields the manifest defaults, so the policy
  * behaves identically in pure package tests and on a fresh install.
  */
@@ -163,7 +163,7 @@ export interface ForcedPlanningDecision {
 /**
  * Below this many characters a request is treated as too small to plan —
  * "yes", "continue", "now run the tests". Deliberately a *lower* bar than
- * `shouldSteerTodos`: the entire point of this pack is that a weaker model needs
+ * `shouldSteerTodos`: the entire point of this plugin is that a weaker model needs
  * a plan for work a frontier model would one-shot, so the keyword heuristics
  * that gate the ordinary todo nudge would defeat it.
  */
@@ -198,10 +198,10 @@ This workspace requires an explicit, tracked plan for a request of this size.
 4. Do not report the task finished while any item is still \`pending\` or \`in_progress\` — either complete it or mark it \`cancelled\` and say why.`
 
 /**
- * The fallback for a turn where `update_todos` is not offered (the todos pack is
+ * The fallback for a turn where `update_todos` is not offered (the todos plugin is
  * disabled, or read-only mode dropped the tool). The plan is still mandatory —
  * it just lives in the reply instead of the plan panel, which is what makes this
- * pack useful independently of the todos pack.
+ * plugin useful independently of the todos plugin.
  */
 export const FORCED_WRITTEN_PLAN_PROMPT = `## Plan before acting (required for this turn)
 
@@ -215,7 +215,7 @@ This workspace requires an explicit plan for a request of this size, and no plan
 /**
  * Decide whether this turn must open with a plan, and with what steering text.
  * Null means abstain — the turn is assembled exactly as it would have been
- * without this pack.
+ * without this plugin.
  *
  * Abstains when: no model id is known; the request is too short to be worth
  * planning; a plan is already live from a prior turn (the todo-pin hook carries

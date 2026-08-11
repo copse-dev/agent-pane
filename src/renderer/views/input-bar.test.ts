@@ -160,14 +160,14 @@ function createApi(options: {
         get: async () => undefined,
         set: async (): Promise<void> => {},
       },
-      packs: {
-        ...base['packs'],
-        // Memories / Roadmap are gated on first-party packs after migration off
-        // their retired settings; the panel controls read `packs:list` on mount.
+      plugins: {
+        ...base['plugins'],
+        // Memories / Roadmap are gated on first-party plugins after migration off
+        // their retired settings; the panel controls read `plugins:list` on mount.
         // Default OFF (empty list) keeps those panes hidden.
-        list: async () => ({ packs: [] }),
-        setEnabled: async () => ({ packs: [] }),
-        setSetting: async () => ({ packs: [] }),
+        list: async () => ({ plugins: [] }),
+        setEnabled: async () => ({ plugins: [] }),
+        setSetting: async () => ({ plugins: [] }),
       },
       skills: {
         ...base['skills'],

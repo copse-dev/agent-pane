@@ -74,25 +74,25 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:share-image', listener)
       }
     },
-    onPackTabRequest: (
+    onPluginTabRequest: (
       handler: (
-        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+        request: import('@shared/types/plugin-browser.ts').PluginBrowserTabRequest,
       ) => Promise<{ tabId: string; webContentsId: number }>,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+        request: import('@shared/types/plugin-browser.ts').PluginBrowserTabRequest,
       ): void => {
         void handler(request).then(
           (ready) => {
-            ipcRenderer.send('packs:browser-tab-ready', {
+            ipcRenderer.send('plugins:browser-tab-ready', {
               requestId: request.requestId,
               ok: true,
               ...ready,
             })
           },
           (error: unknown) => {
-            ipcRenderer.send('packs:browser-tab-ready', {
+            ipcRenderer.send('plugins:browser-tab-ready', {
               requestId: request.requestId,
               ok: false,
               error: error instanceof Error ? error.message : String(error),
@@ -100,9 +100,9 @@ contextBridge.exposeInMainWorld('api', {
           },
         )
       }
-      ipcRenderer.on('packs:browser-tab-request', listener)
+      ipcRenderer.on('plugins:browser-tab-request', listener)
       return (): void => {
-        ipcRenderer.off('packs:browser-tab-request', listener)
+        ipcRenderer.off('plugins:browser-tab-request', listener)
       }
     },
   },
@@ -519,6 +519,7 @@ contextBridge.exposeInMainWorld('api', {
     setEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setEnabled', name, enabled),
     listCurated: () => ipcRenderer.invoke('mcp:listCurated'),
+    listDeclared: () => ipcRenderer.invoke('mcp:listDeclared'),
     setCuratedEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setCuratedEnabled', name, enabled),
     onStatusChanged: (handler: (statuses: unknown) => void) => {
@@ -915,8 +916,11 @@ contextBridge.exposeInMainWorld('api', {
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },
-  plugins: {
-    list: () => ipcRenderer.invoke('plugins:list'),
+  // Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin
+  // registry) until C1 merges the two Settings surfaces; the channel is named
+  // for its source so the two cannot collide in the meantime.
+  cursorPlugins: {
+    list: () => ipcRenderer.invoke('cursorPlugins:list'),
   },
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
@@ -924,13 +928,13 @@ contextBridge.exposeInMainWorld('api', {
     runDetail: (projectId: string, threadId: string, runId: string) =>
       ipcRenderer.invoke('hooks:runDetail', projectId, threadId, runId),
   },
-  packs: {
-    list: () => ipcRenderer.invoke('packs:list'),
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
     setEnabled: (id: string, enabled: boolean) =>
-      ipcRenderer.invoke('packs:setEnabled', id, enabled),
+      ipcRenderer.invoke('plugins:setEnabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
-      ipcRenderer.invoke('packs:setSetting', id, key, value),
-    addSource: () => ipcRenderer.invoke('packs:addSource'),
+      ipcRenderer.invoke('plugins:setSetting', id, key, value),
+    addSource: () => ipcRenderer.invoke('plugins:addSource'),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),

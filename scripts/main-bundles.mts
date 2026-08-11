@@ -9,7 +9,7 @@
  *
  * They live in one list because the two builders drifted: `build.mts` emitted
  * all four, `dev.mts` emitted none of them (`sandbox-fs-worker.js` had no build
- * context at all, and `pack-tool-worker.js` had one that was never rebuilt or
+ * context at all, and `plugin-tool-worker.js` had one that was never rebuilt or
  * watched). A `dist/` filled only by `npm run dev` — a fresh worktree, a clean
  * clone — therefore shipped a main process whose sandboxed `fs:*` calls could
  * not work: every file-tree listing and file preview failed, and each attempt
@@ -32,8 +32,8 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     outfile: 'dist/main/sandbox-fs-worker.js',
   },
   {
-    entry: 'src/main/services/packs/pack-tool-worker.ts',
-    outfile: 'dist/main/pack-tool-worker.js',
+    entry: 'src/main/services/plugins/plugin-tool-worker.ts',
+    outfile: 'dist/main/plugin-tool-worker.js',
   },
   // Runs the ACP model/mode probe under its OWN SandboxManager so a background
   // probe cannot widen the app's process-global network allowlist (see

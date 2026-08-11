@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { runWithActiveRunIdentity, setActiveRunThread } from '../services/thread-models.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import {
@@ -40,16 +40,16 @@ const signal = new AbortController().signal
 describe('reveal_pii tool', () => {
   beforeEach(async () => {
     setRampartLoaderForTest(() => Promise.resolve(fakeModule))
-    // A fresh first-party registry has the `copse.pii-redaction` pack enabled,
+    // A fresh first-party registry has the `copse.pii-redaction` plugin enabled,
     // which is what arms the input rewrite below.
-    setDefaultPackRegistry(createFirstPartyPackRegistry())
+    setDefaultPluginRegistry(createFirstPartyPluginRegistry())
     await redactUserContent('thread-1', 'email john@example.com')
   })
 
   afterEach(() => {
     setApprovalHandler(null)
     setRampartLoaderForTest(null)
-    setDefaultPackRegistry(null)
+    setDefaultPluginRegistry(null)
   })
 
   it('reveals the value after the user approves', async () => {

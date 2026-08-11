@@ -9,7 +9,7 @@ import type {
   HookTestRequest,
   HookTestResult,
 } from '@shared/types/hooks.ts'
-import type { PacksListResult } from '@shared/types/packs.ts'
+import type { PluginsListResult } from '@shared/types/plugins.ts'
 import type {
   AutomationSchedule,
   AutomationScheduleInput,
@@ -32,7 +32,11 @@ import type {
   GhPrSummary,
   PrActionResult,
 } from '@shared/types/git.ts'
-import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
+import type {
+  McpServerStatus,
+  CuratedMcpServerStatus,
+  DeclaredMcpServer,
+} from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
@@ -53,7 +57,7 @@ import type {
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
-import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 export type { DetectedAcpAgent }
@@ -98,9 +102,9 @@ export interface ApiClient {
     shareScreenshot: (webContentsId: number) => Promise<void>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
     onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
-    onPackTabRequest: (
+    onPluginTabRequest: (
       handler: (
-        request: PackBrowserTabRequest,
+        request: PluginBrowserTabRequest,
       ) => Promise<{ tabId: string; webContentsId: number }>,
     ) => () => void
   }
@@ -305,6 +309,8 @@ export interface ApiClient {
     reload: () => Promise<McpServerStatus[]>
     setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
     listCurated: () => Promise<CuratedMcpServerStatus[]>
+    /** Plugin-declared servers nothing is running. See {@link DeclaredMcpServer}. */
+    listDeclared: () => Promise<DeclaredMcpServer[]>
     setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
@@ -755,7 +761,12 @@ export interface ApiClient {
   skills: {
     list: () => Promise<SkillSummary[]>
   }
-  plugins: {
+  /**
+   * Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin
+   * registry) until C1 merges the two Settings surfaces; named for its source
+   * so the two keys cannot collide in the meantime.
+   */
+  cursorPlugins: {
     list: () => Promise<CursorPluginSummary[]>
   }
   hooks: {
@@ -765,15 +776,15 @@ export interface ApiClient {
     /** Read the raw record behind one hook card — payload, streams, applied outcome. */
     runDetail: (projectId: string, threadId: string, runId: string) => Promise<HookRunDetail>
   }
-  packs: {
-    /** Enumerate every registered pack with contributions + enablement + settings values (P3). */
-    list: () => Promise<PacksListResult>
+  plugins: {
+    /** Enumerate every registered plugin with contributions + enablement + settings values (P3). */
+    list: () => Promise<PluginsListResult>
     /** Atomic enable/disable (P1 contract) — persists and flips the shared registry flag. */
-    setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
-    /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
-    setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
-    /** Choose and register one pack directory through a native host dialog. */
-    addSource: () => Promise<PacksListResult>
+    setEnabled: (id: string, enabled: boolean) => Promise<PluginsListResult>
+    /** Persist one plugin-scoped setting value under the manifest's declared schema (P3). */
+    setSetting: (id: string, key: string, value: unknown) => Promise<PluginsListResult>
+    /** Choose and register one plugin directory through a native host dialog. */
+    addSource: () => Promise<PluginsListResult>
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>

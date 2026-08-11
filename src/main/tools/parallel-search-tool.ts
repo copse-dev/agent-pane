@@ -3,10 +3,10 @@ import { defineTool } from '@shared/types'
 import {
   PARALLEL_SEARCH_MODE_SETTING_ID,
   PARALLEL_SEARCH_MODES,
-  PARALLEL_SEARCH_PACK_ID,
+  PARALLEL_SEARCH_PLUGIN_ID,
   resolveParallelSearchMode,
-} from '@copse/agent/packs/parallel-search-pack.ts'
-import { getPackService } from '../services/packs/pack-service.ts'
+} from '@copse/agent/plugins/parallel-search-plugin.ts'
+import { getPluginService } from '../services/plugins/plugin-service.ts'
 import { resolveApiKey } from '../services/storage/settings.ts'
 import {
   formatParallelSearchResponse,
@@ -39,10 +39,10 @@ export const parallelSearchTool = defineTool({
   async execute({ objective, search_queries, mode }, signal) {
     const apiKey = resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID)
     if (!apiKey) {
-      return 'Parallel Search is not configured. Add a Parallel API key in Settings → Packs → copse.parallel-search.'
+      return 'Parallel Search is not configured. Add a Parallel API key in Settings → Plugins → copse.parallel-search.'
     }
     const configuredMode = resolveParallelSearchMode(
-      getPackService().getSetting(PARALLEL_SEARCH_PACK_ID, PARALLEL_SEARCH_MODE_SETTING_ID),
+      getPluginService().getSetting(PARALLEL_SEARCH_PLUGIN_ID, PARALLEL_SEARCH_MODE_SETTING_ID),
     )
     const response = await requestParallelSearch(
       apiKey,
