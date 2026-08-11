@@ -53,8 +53,9 @@ findings, and — as the map shows — nine of them belonged inside something we
 | G-09 | Off-desktop reach has issues but no decision                   | [`user-control-surface-gaps.md`](user-control-surface-gaps.md) R-10 (#802 #659 #1382)                                                                   |
 | G-10 | Single-user by construction                                    | [`privacy-data-flow.md`](../privacy-data-flow.md) — recorded as a non-goal                                                                              |
 
-Four new issues, five amendments to existing plans, one non-goal written down. Nothing was
-left as an entry in this document alone.
+Four new issues and eight amended documents — seven plans plus
+[`privacy-data-flow.md`](../privacy-data-flow.md), which is where the single-user non-goal
+belongs. Nothing was left as an entry in this document alone.
 
 ## The evidence
 
