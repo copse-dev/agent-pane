@@ -38,6 +38,9 @@ describe('nextThreadId / prevThreadId', () => {
   it('is forward through the list, wrapping from the last back to the first', () => {
     const store = storeWithThreads()
     const [a, b, c] = store.getState().threads.map((t) => t.id)
+    assert.ok(a)
+    assert.ok(b)
+    assert.ok(c)
 
     assert.equal(nextThreadId(store), b)
     switchThread(store, b)
@@ -49,6 +52,9 @@ describe('nextThreadId / prevThreadId', () => {
   it('is backward through the list, wrapping from the first back to the last', () => {
     const store = storeWithThreads()
     const [a, b, c] = store.getState().threads.map((t) => t.id)
+    assert.ok(a)
+    assert.ok(b)
+    assert.ok(c)
 
     assert.equal(prevThreadId(store), c)
     switchThread(store, c)
