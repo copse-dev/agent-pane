@@ -145,16 +145,16 @@ describe('fetchModelOptions visibility', () => {
     assert.equal(option.disabled, true)
   })
 
-  it('offers best-value only when includeBestValue is set (Settings chat model)', async () => {
+  it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    assert.equal(options.length, 2)
-    const [bestValue, empty] = options
-    assert.ok(bestValue)
-    assert.equal(bestValue.value, 'auto:best-value')
+    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    const values = options.map((o) => o.value)
+    assert.ok(values.includes('auto:best-value'))
+    assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    const bestValue = options.find((o) => o.value === 'auto:best-value')
+    assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)
-    assert.ok(empty)
-    assert.match(empty.label, /No models available/)
-    assert.equal(empty.disabled, true)
+    assert.ok(options.some((o) => o.disabled && /No models available/.test(o.label)))
     assert.ok(!(await fetchModelOptions(mockApi(), '')).some((o) => o.value === 'auto:best-value'))
   })
 
