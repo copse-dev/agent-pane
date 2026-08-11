@@ -68,9 +68,7 @@ describe('keyboard shortcuts dialog (Cmd/Ctrl+/)', () => {
         (candidate) => candidate.querySelector('.keyboard-shortcuts-label')?.textContent === label,
       )
       assert.ok(row, `expected shortcut row for ${label}`)
-      return [...row.querySelectorAll('kbd.keyboard-shortcuts-key')].map(
-        (key) => key.textContent ?? '',
-      )
+      return [...row.querySelectorAll('kbd.keyboard-shortcuts-key')].map((key) => key.textContent)
     }
 
     assert.deepEqual(keysFor('Next thread'), ['Ctrl', 'Tab'])
