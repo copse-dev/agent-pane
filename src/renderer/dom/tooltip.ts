@@ -126,8 +126,18 @@ export function computeTooltipPosition(input: TooltipPositionInput): TooltipPosi
  * the `el()` call.
  */
 export function setTooltip(node: Element, text: string | null): void {
-  if (text) node.setAttribute('data-tooltip', text)
+  const trimmed = text?.trim()
+  const next = trimmed === undefined || trimmed === '' ? null : trimmed
+  if (next) node.setAttribute('data-tooltip', next)
   else node.removeAttribute('data-tooltip')
+
+  // State-bearing anchors (CI status, pending-diff counts, branch chips) can
+  // change while the pointer remains over them. Keep the visible label and its
+  // geometry in sync instead of leaving a stale snapshot until pointerout.
+  if (activeAnchor === node) {
+    if (next) show(node)
+    else hide()
+  }
 }
 
 let tipNode: HTMLElement | null = null
@@ -310,6 +320,9 @@ export function installTooltips(): () => void {
   // Capture-phase scroll catches scrolling panes, which don't bubble.
   document.addEventListener('scroll', dismiss, true)
   window.addEventListener('blur', dismiss)
+  // A resize invalidates the viewport-relative geometry. Dismiss and let the
+  // next pointer/focus event place it against the new window bounds.
+  window.addEventListener('resize', dismiss)
 
   uninstall = (): void => {
     uninstall = null
@@ -322,6 +335,7 @@ export function installTooltips(): () => void {
     document.removeEventListener('keydown', onKeyDown, true)
     document.removeEventListener('scroll', dismiss, true)
     window.removeEventListener('blur', dismiss)
+    window.removeEventListener('resize', dismiss)
     tipNode?.remove()
     tipNode = null
   }

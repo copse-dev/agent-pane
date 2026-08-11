@@ -1,5 +1,7 @@
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 
 /**
  * The titlebar panel toggles are icon-only in narrow chrome, so the hover
@@ -23,6 +25,7 @@ describe('titlebar tooltips', () => {
     await terminalBtn.waitForDisplayed({ timeout: 30_000 })
     await expect(terminalBtn).toHaveAttribute('data-tooltip', 'Open terminal')
 
+    await prepareE2eScreenshot()
     await terminalBtn.moveTo()
     const tip = await $('.app-tooltip')
     await expect(tip).toBeDisplayed({ wait: 5_000 })
@@ -37,6 +40,7 @@ describe('titlebar tooltips', () => {
     // The native title is suppressed while ours is up, so the OS tooltip can't
     // stack on top of it a second later.
     expect(await terminalBtn.getAttribute('title')).toBeFalsy()
+    await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, 'titlebar-tooltip.png'))
 
     // The titlebar's own drag region is always present, whatever the layout.
     await $('.titlebar-drag').moveTo()

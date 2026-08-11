@@ -172,6 +172,32 @@ describe('installTooltips', () => {
     assert.equal(tooltipEl()?.hidden, true)
   })
 
+  it('refreshes an active state-bearing label and hides it when cleared', () => {
+    const status = button('CI running')
+
+    hover(status)
+    mock.timers.tick(400)
+    assert.equal(tooltipEl()?.textContent, 'CI running')
+
+    setTooltip(status, 'CI passing')
+    assert.equal(tooltipEl()?.textContent, 'CI passing')
+    assert.equal(tooltipEl()?.hidden, false)
+
+    setTooltip(status, null)
+    assert.equal(tooltipEl()?.hidden, true)
+  })
+
+  it('dismisses on resize so stale viewport geometry is never retained', () => {
+    const btn = button('Open terminal')
+
+    hover(btn)
+    mock.timers.tick(400)
+    assert.equal(tooltipEl()?.hidden, false)
+
+    window.dispatchEvent(new Event('resize'))
+    assert.equal(tooltipEl()?.hidden, true)
+  })
+
   it('shows immediately on keyboard focus and hides on blur', () => {
     const btn = button('Open changes')
 
