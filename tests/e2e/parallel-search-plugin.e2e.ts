@@ -63,6 +63,19 @@ describe('Parallel Search plugin settings', function () {
     await expect(row.$('.parallel-search-save-btn')).toBeExisting()
     await expect(row.$('.parallel-search-clear-btn')).toBeExisting()
 
+    // The notice lives inside the collapsed "Pack settings" fold (#1557), and
+    // `getText()` returns only *visible* text — so it read the manifest blurb
+    // and never the notice. Set `open` rather than clicking the summary: the
+    // three tests here share one dialog, so a click would shut a fold that an
+    // earlier test had already opened.
+    await browser.execute(() => {
+      const fold = document.querySelector<HTMLDetailsElement>(
+        '.pack-row[data-pack-id="copse.parallel-search"] .pack-settings-fold',
+      )
+      if (fold) fold.open = true
+    })
+    await expect(row.$('.parallel-search-notice')).toBeDisplayed()
+
     const text = await row.getText()
     assert.match(text, /no MCP server/i)
     assert.match(text, /Search objectives and queries leave this device/i)
