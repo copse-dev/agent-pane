@@ -28,6 +28,12 @@ export interface SupervisedTaskHandlerContext {
 export interface SupervisedTaskHandlerResult {
   resultRef?: TaskResultRef
   blockedReason?: string
+  /** Persist new handler input and suspend this task until the next trigger. */
+  reschedule?: {
+    trigger: Exclude<TaskTrigger, { kind: 'immediate' }>
+    handlerInput?: Record<string, unknown>
+    reason?: string
+  }
 }
 
 export type SupervisedTaskHandler = (
@@ -40,6 +46,7 @@ export interface EnqueueSupervisedTaskInput {
   threadId: string
   parentTaskId?: string
   handler: string
+  handlerInput?: Record<string, unknown>
   provenance: TaskProvenance
   trigger: TaskTrigger
   permissionSnapshot: PermissionSnapshot
@@ -249,6 +256,7 @@ export class TaskSupervisor {
       threadId: input.threadId,
       ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
       handler: input.handler,
+      ...(input.handlerInput ? { handlerInput: input.handlerInput } : {}),
       provenance: input.provenance,
       state,
       createdAt: now,
@@ -309,6 +317,19 @@ export class TaskSupervisor {
     return woken
   }
 
+  /** Wake one durable waiter immediately, for startup reconciliation or an external signal. */
+  async wake(projectId: string, taskId: string, reason = 'manual wake'): Promise<boolean> {
+    await this.start()
+    const key = taskKey(projectId, taskId)
+    const task = this.tasks.get(key)
+    if (!task || task.state !== 'waiting') return false
+    this.clearTimer(key)
+    this.removeEventWaiter(key, task)
+    const queued = await this.transition(task, 'queued', 'wake', reason)
+    this.enqueueReady(taskKey(queued.projectId, queued.taskId))
+    return true
+  }
+
   async adoptRunning(
     input: EnqueueSupervisedTaskInput,
     processHandle: string,
@@ -325,6 +346,7 @@ export class TaskSupervisor {
       threadId: input.threadId,
       ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
       handler: input.handler,
+      ...(input.handlerInput ? { handlerInput: input.handlerInput } : {}),
       provenance: input.provenance,
       state: 'queued',
       createdAt: now,
@@ -599,6 +621,24 @@ export class TaskSupervisor {
       if (!current || current.state !== 'running' || controller.signal.aborted) return
       if (result.blockedReason) {
         await this.transition(current, 'blocked', 'block', result.blockedReason)
+        return
+      }
+      if (result.reschedule) {
+        const waiting = await this.transition(
+          {
+            ...current,
+            trigger: result.reschedule.trigger,
+            attempt: 0,
+            ...(result.reschedule.handlerInput
+              ? { handlerInput: result.reschedule.handlerInput }
+              : {}),
+            ...(result.resultRef ? { resultRef: result.resultRef } : {}),
+          },
+          'waiting',
+          'suspend',
+          result.reschedule.reason ?? 'waiting for next trigger',
+        )
+        this.arm(waiting)
         return
       }
       if (current.trigger.kind === 'cron') {
