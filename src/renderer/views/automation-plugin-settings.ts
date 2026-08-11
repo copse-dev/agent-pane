@@ -36,11 +36,16 @@ function liveWorktreeLimit(value: string): AutomationLiveWorktreeLimit {
  * First-party level-3 `settings-plugin-detail` view for copse.automations.
  * The plugin declares the slot; this shipped renderer supplies the executable UI
  * that a user-trust plugin is intentionally not allowed to inject.
+ *
+ * `revealScheduleId` is the schedule a sidebar automation heading linked to: it
+ * opens for editing as soon as the list loads, so the click lands on that
+ * schedule's setup rather than on the list it sits in.
  */
 export function createAutomationPluginSettings(
   store: AppStore,
   api: ModelOptionsApi & Pick<ApiClient, 'automations'>,
   pluginEnabled: boolean,
+  revealScheduleId?: string,
 ): HTMLElement {
   const root = el('section', {
     class: 'automation-plugin-settings',
@@ -156,6 +161,9 @@ export function createAutomationPluginSettings(
 
   let schedules: AutomationSchedule[] = []
   let editingId: string | null = null
+  // Consumed by the first successful load; later refreshes (a save, a delete)
+  // must not re-open the editor behind the user.
+  let pendingReveal = revealScheduleId
 
   function showStatus(message: string, error = false): void {
     status.hidden = false
@@ -283,11 +291,31 @@ export function createAutomationPluginSettings(
     }
   }
 
+  /**
+   * Open the schedule a sidebar heading linked to. A schedule can be deleted
+   * while its finished runs stay in the sidebar, so a link with nowhere to land
+   * says so instead of silently showing the list.
+   */
+  function revealLinkedSchedule(): void {
+    const scheduleId = pendingReveal
+    if (!scheduleId) return
+    pendingReveal = undefined
+    const schedule = schedules.find((candidate) => candidate.id === scheduleId)
+    if (!schedule) {
+      showStatus('That automation is no longer scheduled. Its finished runs stay in the sidebar.')
+      return
+    }
+    void openForm(schedule).then(() => {
+      form.scrollIntoView({ block: 'center' })
+    })
+  }
+
   async function refresh(): Promise<void> {
     if (!projectId) return
     try {
       schedules = await api.automations.list(projectId)
       renderList()
+      revealLinkedSchedule()
     } catch (error) {
       showStatus(cleanIpcError(error), true)
     }
