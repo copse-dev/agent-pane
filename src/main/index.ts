@@ -12,9 +12,11 @@ import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import {
   assertPrimaryMainWindow,
+  beginMainWindowQuit,
   createMainWindow,
   getFocusedMainWindow,
   getMainWindow,
+  getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
@@ -293,7 +295,8 @@ app
     await initProjectSandbox()
 
     recordStartupPhase('window-create')
-    const win = createMainWindow()
+    const windows = getRestorableMainWindowRecords().map((record) => createMainWindow(record))
+    const win = windows[0] ?? createMainWindow()
     // The shell tool streams child output through a sink rather than reaching
     // for the window itself, so `createRegistry()` stays importable without
     // Electron (#1313). Read the window per chunk rather than capturing `win`,
@@ -301,7 +304,7 @@ app
     setShellOutputSink((chunk, taskId) => {
       getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
     })
-    applyAppIcon([win])
+    applyAppIcon(windows.length > 0 ? windows : [win])
     const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
     buildAppMenu(
       {
@@ -813,6 +816,7 @@ app.on('before-quit', (event) => {
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
   if (deferQuitForCloseConfirmation(event)) return
+  beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
   // The hidden video-decoder window is not the main window, so nothing else

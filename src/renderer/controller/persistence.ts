@@ -12,7 +12,6 @@ import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 // instead of rewriting whole threads on every keystroke.
 
 const KEY_PROJECTS = 'projects'
-const KEY_ACTIVE = 'activeProjectId'
 
 // Autosave fires several events per turn and project switches save/load
 // concurrently, so writes to the same key could overlap and land out of order
@@ -50,6 +49,13 @@ function serializedWrite(key: string, write: () => Promise<void>): Promise<void>
     if (writeChains.get(key) === next) writeChains.delete(key)
   })
   return next
+}
+
+function serializedNavigation(
+  api: ApiClient,
+  navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
+): Promise<void> {
+  return serializedWrite('mainWindow:navigation', () => api.windowState.setNavigation(navigation))
 }
 
 // All writes for one thread (create / appendMessage / updateMeta / delete) share
@@ -153,9 +159,11 @@ export function __resetPersistenceForTest(): void {
   activeAutosave = null
 }
 
-export async function loadProjects(
-  api: ApiClient,
-): Promise<{ projects: Project[]; activeProjectId: string | null }> {
+export async function loadProjects(api: ApiClient): Promise<{
+  projects: Project[]
+  activeProjectId: string | null
+  activeThreadId: string | null
+}> {
   const projects = recordArrayOrEmpty(await api.storage.get(KEY_PROJECTS)).flatMap((value) => {
     const id = value['id']
     const path = value['path']
@@ -174,19 +182,19 @@ export async function loadProjects(
     }
     return [project]
   })
-  const rawActiveProjectId = await api.storage.get(KEY_ACTIVE)
-  const activeProjectId = typeof rawActiveProjectId === 'string' ? rawActiveProjectId : null
-  return { projects, activeProjectId }
+  const navigation = await api.windowState.getNavigation()
+  return { projects, ...navigation }
 }
 
 export async function saveProjects(
   api: ApiClient,
   projects: Project[],
   activeProjectId: string | null,
+  activeThreadId: string | null,
 ): Promise<void> {
   await Promise.all([
     serializedSet(api, KEY_PROJECTS, projects),
-    serializedSet(api, KEY_ACTIVE, activeProjectId),
+    serializedNavigation(api, { activeProjectId, activeThreadId }),
   ])
 }
 
@@ -271,12 +279,13 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
   }
 
   const flushNow = (): Promise<void> => {
-    const { activeProjectId, projects } = store.getState()
+    const { activeProjectId, activeThreadId, projects } = store.getState()
     const writes: Array<Promise<void>> = []
     if (projectsDirty) {
       projectsDirty = false
-      writes.push(saveProjects(api, projects, activeProjectId))
+      writes.push(serializedSet(api, KEY_PROJECTS, projects))
     }
+    writes.push(serializedNavigation(api, { activeProjectId, activeThreadId }))
     if (activeProjectId) writes.push(reconcile(activeProjectId))
     const done = Promise.all(writes).then(() => undefined)
     inflightFlush = Promise.all([inflightFlush.catch(() => undefined), done]).then(() => undefined)

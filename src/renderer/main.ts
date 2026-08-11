@@ -400,7 +400,7 @@ async function boot(): Promise<void> {
     void addProjectFromPath(store, api, root).then(ensureLayout)
   })
 
-  const { projects, activeProjectId } = await loadProjects(api)
+  const { projects, activeProjectId, activeThreadId } = await loadProjects(api)
   store.setState({ projects, activeProjectId })
 
   const [firstProject] = projects
@@ -411,7 +411,7 @@ async function boot(): Promise<void> {
     // while, and every mounted pane already renders its own empty/loading state
     // and updates reactively once workspace_changed/threads_changed fire below.
     ensureLayout()
-    await restoreProject(store, api, active.id)
+    await restoreProject(store, api, active.id, activeThreadId)
   } else {
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
     const unsubWelcome = store.on('workspace_changed', () => {

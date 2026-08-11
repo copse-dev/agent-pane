@@ -183,6 +183,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   ])
   let workspaceRoot = scenario.project.path
   let threads: Thread[] = structuredClone(scenario.threads)
+  let navigation: import('@shared/types/main-window.ts').MainWindowNavigation = {
+    activeProjectId: scenario.project.id,
+    activeThreadId: threads[0]?.id ?? null,
+  }
   let currentBranch = threads[0]?.gitBranch ?? 'demo/browser-renderer'
   const chunkHandlers = new Set<(threadId: string, chunk: StreamChunk) => void>()
   const showDiffHandlers = new Set<ShowDiffHandler>()
@@ -243,6 +247,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    windowState: {
+      getNavigation: () => resolved(structuredClone(navigation)),
+      setNavigation: (next) => {
+        navigation = structuredClone(next)
+        return resolvedVoid()
+      },
+    },
     workspace: {
       open: () => resolved(workspaceRoot),
       get: () => resolved(workspaceRoot),

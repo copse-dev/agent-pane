@@ -50,6 +50,7 @@ import {
   zPathString,
   zProjectId,
   zThreadId,
+  mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
@@ -92,6 +93,7 @@ import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/pr
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
+import { getMainWindowNavigation, setMainWindowNavigation } from '../windows/create-main-window.ts'
 import {
   loadProjectThreads,
   createThread,
@@ -416,6 +418,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         // Stale workspaceRoot in config — ignore until user picks a folder.
       }
     }
+  })
+
+  ipcMain.handle('mainWindow:getNavigation', (event) => {
+    assertMainFrameSender(event, win)
+    return getMainWindowNavigation(event.sender)
+  })
+
+  ipcMain.handle('mainWindow:setNavigation', (event, rawNavigation: unknown) => {
+    assertMainFrameSender(event, win)
+    const navigation = parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])
+    setMainWindowNavigation(event.sender, navigation)
   })
 
   ipcMain.handle('workspace:open', async () => {

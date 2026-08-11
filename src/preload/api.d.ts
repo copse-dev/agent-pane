@@ -92,6 +92,12 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  windowState: {
+    getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
+    setNavigation: (
+      navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
+    ) => Promise<void>
+  }
   workspace: {
     open: () => Promise<string | null>
     get: () => Promise<string | null>

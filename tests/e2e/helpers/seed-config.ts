@@ -642,7 +642,10 @@ export function seedRoadmapNotes(
 /** Two projects on the same workspace root for project-switch e2e (#502). */
 export function seedProjectSwitchFixture(
   workspaceRoot: string,
-  options?: { activeProjectId?: 'project-a' | 'project-b' },
+  options?: {
+    activeProjectId?: 'project-a' | 'project-b'
+    windowBounds?: { width: number; height: number }
+  },
 ): { projectAId: string; projectBId: string } {
   const projectAId = 'e2e-project-switch-a'
   const projectBId = 'e2e-project-switch-b'
@@ -654,6 +657,7 @@ export function seedProjectSwitchFixture(
       { id: projectBId, path: workspaceRoot, name: 'Project B' },
     ],
     activeProjectId,
+    ...(options?.windowBounds ? { windowBounds: options.windowBounds } : {}),
     [`threads:${projectAId}`]: [],
     [`threads:${projectBId}`]: [],
   })

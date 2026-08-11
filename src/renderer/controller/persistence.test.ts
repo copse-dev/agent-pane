@@ -28,6 +28,7 @@ const pagehideHandlers = new Set<() => void>()
 
 interface FakeApiCalls {
   storageSets: Array<[string, unknown]>
+  navigations: import('@shared/types/main-window.ts').MainWindowNavigation[]
   creates: Array<{ projectId: string; thread: Thread }>
   appends: Array<{ projectId: string; threadId: string; message: Message }>
   metas: Array<{ projectId: string; threadId: string; patch: unknown }>
@@ -42,6 +43,7 @@ function fakeApi(
 ): { api: ApiClient; calls: FakeApiCalls } {
   const calls: FakeApiCalls = {
     storageSets: [],
+    navigations: [],
     creates: [],
     appends: [],
     metas: [],
@@ -51,6 +53,12 @@ function fakeApi(
     const base = createFakeApi()
     return {
       ...base,
+      windowState: {
+        ...base['windowState'],
+        setNavigation: async (navigation): Promise<void> => {
+          calls.navigations.push(structuredClone(navigation))
+        },
+      },
       storage: {
         ...base['storage'],
         get: async (): Promise<unknown> => null,
@@ -190,7 +198,14 @@ test('debounces a metadata burst into one projects save after the immediate crea
 
   assert.equal(calls.creates.length, 1)
   assert.deepEqual(calls.metas, [])
-  assert.deepEqual(calls.storageSets.map((c) => c[0]).sort(), ['activeProjectId', 'projects'])
+  assert.deepEqual(
+    calls.storageSets.map((call) => call[0]),
+    ['projects'],
+  )
+  assert.deepEqual(calls.navigations.at(-1), {
+    activeProjectId: 'p1',
+    activeThreadId: null,
+  })
   autosave.detach()
 })
 
