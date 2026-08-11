@@ -1,11 +1,11 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { getWorkspaceIndexStatus, resetWorkspaceIndexStatusForTest } from './index-status.ts'
-import { invalidateIndex } from './file-index.ts'
+import { getIndex, invalidateIndex } from './file-index.ts'
 import {
   semanticIndexAllowed,
   semanticIndexPending,
@@ -14,9 +14,15 @@ import {
 import {
   resetWorkspaceIndexingForTest,
   setWorkspaceIndexPolicyOverrideForTest,
+  startExecutionRootIndexing,
   startWorkspaceIndexing,
 } from './workspace-indexing.ts'
-import { stopWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
+import {
+  flushScheduledIndexRebuild,
+  isRootWatched,
+  scheduleIndexRebuild,
+  stopWorkspaceIndexWatcher,
+} from './workspace-index-watcher.ts'
 import { setSemanticBackendForTest } from './semantic-index.ts'
 
 async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
@@ -75,5 +81,62 @@ describe('workspace-indexing scale gate (#795)', () => {
     )
     assert.equal(semanticIndexAllowed(root), false)
     assert.equal(watchIndexAllowed(root), false)
+  })
+})
+
+describe('execution root registration (#1694)', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-exec-root-index-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+    setSemanticBackendForTest(null)
+    invalidateIndex()
+    resetWorkspaceIndexStatusForTest()
+    await writeFile(join(tempRoot, 'main.ts'), 'export {}\n', 'utf-8')
+  })
+
+  afterEach(async () => {
+    stopWorkspaceIndexWatcher()
+    setSemanticBackendForTest(null)
+    resetWorkspaceIndexStatusForTest()
+    invalidateIndex()
+    restoreWorkspace?.()
+    restoreWorkspace = undefined
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+    tempRoot = ''
+  })
+
+  it('lists a root once, then reuses that listing on every later registration', async () => {
+    // A registration starts its listing synchronously (`indexBuildStarted` runs
+    // before `buildIndex`'s first await), so the phase read straight after the
+    // call reports whether this registration paid for a walk.
+    startExecutionRootIndexing(tempRoot)
+    assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'building')
+    await waitFor(() => getWorkspaceIndexStatus().fileIndex.phase === 'ready')
+    const listing = getIndex(tempRoot)
+    assert.ok(listing)
+    assert.equal(isRootWatched(tempRoot), true)
+
+    // Selecting a thread re-resolves its execution root through several git/fs
+    // IPCs, each of which registers the root again. Re-listing the whole
+    // checkout on each one cost ~20s per switch on a large repo, and the
+    // watcher above was already keeping this listing current.
+    startExecutionRootIndexing(tempRoot)
+    startExecutionRootIndexing(tempRoot)
+    assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'ready')
+    assert.equal(getIndex(tempRoot), listing)
+  })
+
+  it('still picks up disk changes, so the reused listing is never stale', async () => {
+    startExecutionRootIndexing(tempRoot)
+    await waitFor(() => getWorkspaceIndexStatus().fileIndex.phase === 'ready')
+
+    await writeFile(join(tempRoot, 'added-later.ts'), 'export {}\n', 'utf-8')
+    scheduleIndexRebuild(tempRoot)
+    await flushScheduledIndexRebuild(tempRoot)
+
+    assert.ok(getIndex(tempRoot)?.paths.includes('added-later.ts'))
   })
 })

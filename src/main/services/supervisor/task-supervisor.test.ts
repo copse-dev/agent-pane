@@ -228,6 +228,44 @@ describe('TaskSupervisor', () => {
     )
   })
 
+  it('persists handler input while rescheduling one task and supports an immediate reconcile wake', async () => {
+    const store = new MemoryTaskStore()
+    const clock = new FakeClock(100)
+    const supervisor = new TaskSupervisor({
+      store,
+      clock,
+      createId: (): string => 'task-1',
+    })
+    supervisor.registerHandler('test', (task): Promise<SupervisedTaskHandlerResult> => {
+      const count = task.handlerInput?.['count']
+      if (count === 0) {
+        return Promise.resolve({
+          reschedule: {
+            trigger: { kind: 'wake_at', wakeAt: 1_000 },
+            handlerInput: { count: 1 },
+            reason: 'still waiting',
+          },
+        })
+      }
+      return Promise.resolve({ resultRef: { kind: 'handler', ref: 'done' } })
+    })
+
+    const task = await supervisor.enqueue({ ...input(), handlerInput: { count: 0 } })
+    await supervisor.waitForIdle()
+
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'waiting')
+    assert.deepEqual(supervisor.get(task.projectId, task.taskId)?.handlerInput, { count: 1 })
+    assert.equal(await supervisor.wake(task.projectId, task.taskId, 'startup reconcile'), true)
+    await supervisor.waitForIdle()
+
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'completed')
+    assert.equal(await supervisor.wake(task.projectId, task.taskId), false)
+    assert.deepEqual(
+      store.audit.map((event) => event.action),
+      ['enqueue', 'start', 'suspend', 'wake', 'start', 'complete'],
+    )
+  })
+
   it('persists event waiters and delivers each matching task exactly once', async () => {
     const waiting = persistedTask({
       state: 'waiting',

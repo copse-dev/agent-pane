@@ -761,7 +761,7 @@ describe('roadmap pane', () => {
       await flush()
       const toggle = list.querySelector<HTMLElement>('.roadmap-done-toggle')
       assert.ok(toggle)
-      assert.equal(toggle.title, 'Mark done')
+      assert.equal(toggle.dataset['tooltip'], 'Mark done')
       assert.equal(toggle.tabIndex, 0, 'the non-nested row action must be keyboard focusable')
       toggle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       await flush()
@@ -778,7 +778,7 @@ describe('roadmap pane', () => {
       doneOption?.querySelector<HTMLInputElement>('input')?.click()
       await flush()
       assert.equal(
-        list.querySelector<HTMLElement>('.roadmap-done-toggle')?.title,
+        list.querySelector<HTMLElement>('.roadmap-done-toggle')?.dataset['tooltip'],
         'Reopen (set ready)',
       )
     } finally {

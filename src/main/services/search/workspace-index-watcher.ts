@@ -59,6 +59,18 @@ export function startWorkspaceIndexWatcher(
   }
 }
 
+/**
+ * Whether a live recursive watcher is re-listing this root on disk changes.
+ *
+ * A watched root's index is current by construction, so re-registering it never
+ * needs a fresh listing (#1694). False when `fs.watch` never armed — an SSH
+ * workspace, or a platform that refused the recursive watch — and those roots
+ * fall back to an age check instead.
+ */
+export function isRootWatched(root: string): boolean {
+  return states.get(resolve(root))?.watcher != null
+}
+
 /** Stop watching one root, or every watched root when called with none (app quit / workspace switch). */
 export function stopWorkspaceIndexWatcher(root?: string): void {
   if (root === undefined) {

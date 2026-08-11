@@ -175,7 +175,7 @@ function prSelector(prNumber: number | undefined): string[] {
   return prNumber === undefined ? [] : [String(prNumber)]
 }
 
-async function loadOpenPr(prNumber?: number): Promise<GhPrView | null> {
+async function loadOpenPr(prNumber?: number, cwd?: string): Promise<GhPrView | null> {
   const args = [
     'pr',
     'view',
@@ -183,7 +183,7 @@ async function loadOpenPr(prNumber?: number): Promise<GhPrView | null> {
     '--json',
     'state,number,title,url,headRefName,headRefOid,statusCheckRollup',
   ]
-  const result = await runGh(args)
+  const result = await runGh(args, cwd ? { cwd } : {})
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr view failed')
   }
@@ -202,7 +202,7 @@ interface PrChecksResult {
   pending: boolean
 }
 
-async function loadPrChecks(prNumber?: number): Promise<PrChecksResult> {
+async function loadPrChecks(prNumber?: number, cwd?: string): Promise<PrChecksResult> {
   const args = [
     'pr',
     'checks',
@@ -210,7 +210,7 @@ async function loadPrChecks(prNumber?: number): Promise<PrChecksResult> {
     '--json',
     'name,state,bucket,link,workflow',
   ]
-  const result = await runGh(args)
+  const result = await runGh(args, cwd ? { cwd } : {})
   if (result.code !== 0 && result.code !== 8) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr checks failed')
   }
@@ -220,18 +220,22 @@ async function loadPrChecks(prNumber?: number): Promise<PrChecksResult> {
 async function loadLatestRun(
   branch: string | null,
   headSha: string | null,
+  cwd?: string,
 ): Promise<GhWorkflowRun | null> {
   if (!branch) return null
-  const result = await runGh([
-    'run',
-    'list',
-    '--branch',
-    branch,
-    '--limit',
-    '10',
-    '--json',
-    'databaseId,headSha,conclusion,status,url,name,displayTitle',
-  ])
+  const result = await runGh(
+    [
+      'run',
+      'list',
+      '--branch',
+      branch,
+      '--limit',
+      '10',
+      '--json',
+      'databaseId,headSha,conclusion,status,url,name,displayTitle',
+    ],
+    cwd ? { cwd } : {},
+  )
   if (result.code !== 0) return null
   const runs = parseGhJson(result.stdout, decodeWithSchema(ghWorkflowRunsSchema))
   if (!Array.isArray(runs)) return null
@@ -258,8 +262,8 @@ function buildCiStatus(
   }
 }
 
-export async function getCiStatus(prNumber?: number): Promise<CiStatus> {
-  const pr = await loadOpenPr(prNumber)
+export async function getCiStatus(prNumber?: number, cwd?: string): Promise<CiStatus> {
+  const pr = await loadOpenPr(prNumber, cwd)
   if (!pr) {
     return {
       prNumber: prNumber ?? null,
@@ -273,50 +277,49 @@ export async function getCiStatus(prNumber?: number): Promise<CiStatus> {
       latestRunUrl: null,
     }
   }
-  const prChecks = await loadPrChecks(prNumber)
-  const latestRun = await loadLatestRun(pr.headRefName ?? null, pr.headRefOid ?? null)
+  const prChecks = await loadPrChecks(prNumber, cwd)
+  const latestRun = await loadLatestRun(pr.headRefName ?? null, pr.headRefOid ?? null, cwd)
   return buildCiStatus(pr, prChecks, latestRun)
 }
 
-export async function waitForCiChecks(
-  opts: {
-    prNumber?: number | undefined
-    timeoutMs?: number | undefined
-    pollIntervalSec?: number | undefined
-  },
-  signal: AbortSignal,
+/** One-call status read for durable watches; detailed tools can enrich after the wake. */
+export async function getCiWatchStatus(
+  prNumber: number | undefined,
+  cwd: string,
 ): Promise<CiStatus> {
-  const timeoutMs = opts.timeoutMs ?? COMMAND_RUNNER_LONG_TIMEOUT_MS
-  const pollIntervalSec = opts.pollIntervalSec ?? 15
-  const watchArgs = [
-    'pr',
-    'checks',
-    ...prSelector(opts.prNumber),
-    '--watch',
-    '--interval',
-    String(pollIntervalSec),
-  ]
-  const watch = await runGh(watchArgs, { timeout_ms: timeoutMs, signal })
-  if (watch.code !== 0 && watch.code !== 8) {
-    throw new Error(watch.stderr.trim() || watch.stdout.trim() || 'gh pr checks --watch failed')
+  const pr = await loadOpenPr(prNumber, cwd)
+  if (!pr) {
+    return {
+      prNumber: prNumber ?? null,
+      prTitle: null,
+      prUrl: null,
+      branch: null,
+      headSha: null,
+      overall: 'no_checks',
+      checks: [],
+      latestRunId: null,
+      latestRunUrl: null,
+    }
   }
-  return getCiStatus(opts.prNumber)
+  const checks = rollupToCiChecks(pr.statusCheckRollup)
+  return buildCiStatus(pr, { checks, pending: false }, null)
 }
 
 export async function getCiFailureLogs(opts: {
   prNumber?: number | undefined
   runId?: number | undefined
   maxBytes?: number | undefined
+  cwd?: string | undefined
 }): Promise<string> {
   const maxBytes = opts.maxBytes ?? COMMAND_OUTPUT_MAX_BYTES
-  const pr = await loadOpenPr(opts.prNumber)
+  const pr = await loadOpenPr(opts.prNumber, opts.cwd)
   if (!pr && opts.runId === undefined) {
     throw new Error('No open pull request found for this branch.')
   }
 
   let runId = opts.runId
   if (runId === undefined) {
-    const latestRun = await loadLatestRun(pr?.headRefName ?? null, pr?.headRefOid ?? null)
+    const latestRun = await loadLatestRun(pr?.headRefName ?? null, pr?.headRefOid ?? null, opts.cwd)
     if (!latestRun?.databaseId) {
       throw new Error('No workflow run found for the pull request head commit.')
     }
@@ -325,6 +328,7 @@ export async function getCiFailureLogs(opts: {
 
   const result = await runGh(['run', 'view', String(runId), '--log-failed'], {
     timeout_ms: COMMAND_RUNNER_LONG_TIMEOUT_MS,
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
   })
   if (result.code !== 0) {
     throw new Error(

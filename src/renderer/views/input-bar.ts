@@ -143,7 +143,14 @@ export function mountInputBar(
   const submitBtn = el('button', { class: 'submit-btn', type: 'button' }, 'Send')
   const stopBtn = el(
     'button',
-    { class: 'stop-btn', type: 'button', hidden: '', 'aria-label': 'Stop agent' },
+    {
+      class: 'stop-btn',
+      type: 'button',
+      hidden: '',
+      'aria-label': 'Stop agent',
+      'data-tooltip': 'Stop the running agent',
+      'data-tooltip-placement': 'top',
+    },
     'Stop',
   )
   // Hidden native file picker driven by the paperclip button — gives an
@@ -158,7 +165,13 @@ export function mountInputBar(
   })
   const attachBtn = el(
     'button',
-    { class: 'attach-btn', type: 'button', 'aria-label': 'Attach files', title: 'Attach files' },
+    {
+      class: 'attach-btn',
+      type: 'button',
+      'aria-label': 'Attach files',
+      'data-tooltip': 'Attach files',
+      'data-tooltip-placement': 'top',
+    },
     outlineIcon(
       'attach',
       [

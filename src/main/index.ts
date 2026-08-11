@@ -144,6 +144,7 @@ import { getAutomationService } from './services/automations/automation-service.
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
+import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
@@ -349,6 +350,7 @@ app
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
+    disposeCiWatchConsumer = installCiWatchConsumer(taskSupervisor, agentDispatcher)
     disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
@@ -728,6 +730,7 @@ let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
 let disposeLongTaskWake: (() => void) | undefined
+let disposeCiWatchConsumer: (() => void) | undefined
 let disposeBackgroundProcessSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
@@ -745,6 +748,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeBackgroundProcessSupervisor = undefined
   disposeLongTaskWake?.()
   disposeLongTaskWake = undefined
+  disposeCiWatchConsumer?.()
+  disposeCiWatchConsumer = undefined
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()

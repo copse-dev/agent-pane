@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { lstat, mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
@@ -26,6 +26,11 @@ import {
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
+import { getIndex, invalidateIndex } from './search/file-index.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from './thread-execution-context.ts'
 import { ownedIt, worktreeIt, TEST_THREAD_OWNER } from './thread-execution-context.test-support.ts'
 import { setSetting } from './storage/settings.ts'
 
@@ -873,5 +878,51 @@ describe('awaitStagedDiffDecision (ACP client write blocking)', () => {
     await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
 
     assert.equal(await decision, 'rejected')
+  })
+})
+
+describe('index refresh after an applied edit', () => {
+  let projectRoot = ''
+  let worktreeRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    invalidateIndex()
+    projectRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-index-project-'))
+    worktreeRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-index-worktree-'))
+    restoreWorkspace = setWorkspaceRootForTest(projectRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    clearDiffQueueForTest()
+    invalidateIndex()
+    if (projectRoot) await rm(projectRoot, { recursive: true, force: true })
+    if (worktreeRoot) await rm(worktreeRoot, { recursive: true, force: true })
+    projectRoot = ''
+    worktreeRoot = ''
+  })
+
+  void it('refreshes the checkout the edit landed in, not the project tree', async () => {
+    // A worktree thread is the case where the two roots diverge: the write goes
+    // to the isolated checkout while the project tree is untouched.
+    const context: ThreadExecutionContext = {
+      ...TEST_THREAD_OWNER,
+      projectRoot,
+      root: worktreeRoot,
+      checkoutMode: 'worktree',
+      branch: null,
+    }
+
+    await runWithThreadExecutionContext(context, async () => {
+      await stageDiff('created-in-worktree.ts', '', 'export {}\n', 'typescript')
+      await approveAllStagedDiffs()
+    })
+
+    // `find_files` queries the execution root's index, so that is the index
+    // that has to know about the file the agent just wrote. Refreshing the
+    // project tree instead re-listed a checkout the edit never touched.
+    assert.ok(getIndex(worktreeRoot)?.paths.includes('created-in-worktree.ts'))
   })
 })
