@@ -6,6 +6,12 @@ import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 
 export const CONTEXT_TRIM_ACTIVITY = 'Shortened earlier messages'
 
+export function promptProgressLabel(fraction: number): string {
+  if (!Number.isFinite(fraction)) return 'Processing prompt…'
+  const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100)
+  return `Processing prompt… ${percent.toString()}%`
+}
+
 export function runningToolName(thread: Thread): string | null {
   for (let i = thread.messages.length - 1; i >= 0; i--) {
     const m = thread.messages[i]

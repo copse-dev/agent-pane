@@ -32,7 +32,7 @@ import {
   finishSubagent,
 } from '@shared/store/subagent-helpers.ts'
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
-import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
+import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY, promptProgressLabel } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
@@ -289,6 +289,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         }
         recordUsageToLedger(api, store, threadId, delta)
         addUsageDelta(store, threadId, delta)
+        break
+      }
+      case 'prompt_progress': {
+        store.emit('agent_activity', threadId, promptProgressLabel(chunk.fraction))
         break
       }
       case 'context_pressure': {

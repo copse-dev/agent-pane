@@ -59,6 +59,16 @@ export class MockLLMProvider implements LLMProvider {
     // `__COPSE_TEST_DIRECTIVES__` is `false` in release builds, so esbuild
     // dead-code-eliminates this whole block and the parser never ships (#DSL).
     if (__COPSE_TEST_DIRECTIVES__) {
+      const promptProgressDirective = fullUserText.match(
+        /\[\[mock:prompt_progress\s+([^\]\s]+)\]\]/,
+      )
+      if (promptProgressDirective?.[1] && awaitingAssistantReply) {
+        const fraction = Number.parseFloat(promptProgressDirective[1])
+        if (Number.isFinite(fraction)) {
+          yield { type: 'prompt_progress', fraction: Math.min(1, Math.max(0, fraction)) }
+        }
+      }
+
       const delayDirective = fullUserText.match(/\[\[mock:delay_ms\s+(\d+)\]\]/)
       if (delayDirective?.[1]) {
         const requestedDelay = Number.parseInt(delayDirective[1], 10)

@@ -167,6 +167,11 @@ export type ProviderStreamChunk =
        */
       usageSource?: 'advisor'
     }
+  /**
+   * Progress while a local model processes the prompt before its first output
+   * token. `fraction` is a provider-reported value from 0 to 1.
+   */
+  | { type: 'prompt_progress'; fraction: number }
   | { type: 'done'; stopReason?: string }
 
 // ── The provider contract ────────────────────────────────────────────────────

@@ -434,6 +434,7 @@ async function streamTextOnlyTurn(
         assistantText += chunk.text
         onChunk(chunk)
       }
+      if (chunk.type === 'prompt_progress') onChunk(chunk)
       if (chunk.type === 'usage') {
         streamUsage = {
           inputTokens: chunk.inputTokens,
@@ -560,6 +561,7 @@ async function runToolEnabledNudgeTurn(
         pendingToolCalls.push(chunk.toolCall)
         onChunk(chunk)
       }
+      if (chunk.type === 'prompt_progress') onChunk(chunk)
       if (chunk.type === 'usage') {
         streamUsage = {
           inputTokens: chunk.inputTokens,
@@ -1123,6 +1125,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           pendingToolCalls.push(chunk.toolCall)
           onChunk(chunk)
         }
+        if (chunk.type === 'prompt_progress') onChunk(chunk)
         if (chunk.type === 'usage') {
           streamUsage = {
             inputTokens: chunk.inputTokens,
