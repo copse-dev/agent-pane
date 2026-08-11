@@ -12,7 +12,7 @@ describe('model comparison approval', function () {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     // The experimental `compare_models` tool ships off, so this flow must seed
-    // the `copse.model-comparison` pack on.
+    // the `copse.model-comparison` plugin on.
     seedEmptyProject(process.cwd(), 'e2e-model-compare-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',

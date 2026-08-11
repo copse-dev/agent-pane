@@ -1,6 +1,6 @@
-import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
+import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import type { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import type { TaskSupervisor } from './task-supervisor.ts'
 
 export const DARK_FACTORY_FLEET_SOURCE = 'dark-factory:fleet'
@@ -39,7 +39,7 @@ function jitteredDelay(baseMs: number, random: () => number): number {
 
 export class DarkFactorySensorController {
   private readonly supervisor: TaskSupervisor
-  private readonly packRegistry: PackRegistry
+  private readonly pluginRegistry: PluginRegistry
   private readonly clock: DarkFactorySensorClock
   private readonly readUrgency: () => FleetPollUrgency
   private readonly random: () => number
@@ -47,18 +47,18 @@ export class DarkFactorySensorController {
 
   constructor(
     supervisor: TaskSupervisor,
-    packRegistry: PackRegistry,
+    pluginRegistry: PluginRegistry,
     dependencies: DarkFactorySensorDependencies = {},
   ) {
     this.supervisor = supervisor
-    this.packRegistry = packRegistry
+    this.pluginRegistry = pluginRegistry
     this.clock = dependencies.clock ?? systemClock
     this.readUrgency = dependencies.readUrgency ?? ((): FleetPollUrgency => 'idle')
     this.random = dependencies.random ?? Math.random
   }
 
   sync(): void {
-    const enabled = this.packRegistry.isEnabled(DARK_FACTORY_PACK_ID)
+    const enabled = this.pluginRegistry.isEnabled(DARK_FACTORY_PLUGIN_ID)
     if (!enabled) {
       this.releaseSource?.()
       this.releaseSource = undefined
@@ -98,10 +98,10 @@ let installedController: DarkFactorySensorController | undefined
 
 export function installDarkFactorySensor(
   supervisor: TaskSupervisor,
-  packRegistry = getDefaultPackRegistry(),
+  pluginRegistry = getDefaultPluginRegistry(),
 ): () => void {
   installedController?.dispose()
-  const controller = new DarkFactorySensorController(supervisor, packRegistry)
+  const controller = new DarkFactorySensorController(supervisor, pluginRegistry)
   installedController = controller
   controller.sync()
   return () => {

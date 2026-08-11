@@ -121,7 +121,7 @@ Run tests, review changes and pull requests, or exercise a local site beside the
 
 Keep durable project knowledge and multi-step plans beside the conversation.
 
-### Skills and feature packs
+### Skills and plugins
 
 Add reusable instructions, tools, hooks, panels, and focused agent behaviours.
 

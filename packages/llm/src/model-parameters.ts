@@ -118,7 +118,7 @@ export interface ModelParameterSupport {
   upstreamDecides?: boolean
   /**
    * Set when the selection takes no parameters at all, explaining why. Agents
-   * (device, cloud, pack routes) run the whole turn themselves and are
+   * (device, cloud, plugin routes) run the whole turn themselves and are
    * configured where they live, not here.
    */
   unavailableReason?: string
@@ -150,7 +150,11 @@ const ANTHROPIC_SAMPLING: readonly SamplingField[] = ['temperature', 'topP', 'to
 const UNIVERSAL_SAMPLING: readonly SamplingField[] = ['temperature', 'topP']
 
 /** Namespaces that hand the whole turn to something owning its own settings. */
-const AGENT_NAMESPACES: ReadonlySet<ModelNamespace> = new Set(['acp', 'remote-agent', 'pack-model'])
+const AGENT_NAMESPACES: ReadonlySet<ModelNamespace> = new Set([
+  'acp',
+  'remote-agent',
+  'plugin-model',
+])
 
 /**
  * Claude families that removed `temperature` / `top_p` (a 400, not a no-op) and

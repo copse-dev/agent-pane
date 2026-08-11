@@ -1,5 +1,5 @@
-/* Plan panel (P4: rendered by the generic level-2 pack panel, sourced from the
-   `copse.todos` pack. Kept together with the plan-pane / review / comparison
+/* Plan panel (P4: rendered by the generic level-2 plugin panel, sourced from the
+   `copse.todos` plugin. Kept together with the plan-pane / review / comparison
    panel styles because it shares their card-in-transcript aesthetic.) */
 .conversation-todos-host {
   flex-shrink: 0;
@@ -7,7 +7,7 @@
   margin-inline: auto;
   padding: var(--spacing-sm) 0 0;
 }
-.pack-panel {
+.plugin-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-elevated);
@@ -15,7 +15,7 @@
   margin-bottom: var(--spacing-sm);
   font-size: 13px;
 }
-.pack-panel-header {
+.plugin-panel-header {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -26,11 +26,11 @@
   letter-spacing: 0.04em;
   color: var(--text-secondary);
 }
-.pack-panel-title {
+.plugin-panel-title {
   display: inline-flex;
   align-items: center;
 }
-.pack-panel-summary {
+.plugin-panel-summary {
   margin-left: auto;
   font-weight: 400;
   text-transform: none;
@@ -38,11 +38,11 @@
   color: var(--text-muted);
   font-size: 11px;
 }
-/* Zero padding on the inner lists only — not `section.pack-panel.pack-panel-list`
-   (createPackPanelEl also puts pack-panel-${kind} on the section). */
-.pack-panel > .pack-panel-list,
-.pack-panel > .pack-panel-tree,
-.pack-panel-tree-children {
+/* Zero padding on the inner lists only — not `section.plugin-panel.plugin-panel-list`
+   (createPluginPanelEl also puts plugin-panel-${kind} on the section). */
+.plugin-panel > .plugin-panel-list,
+.plugin-panel > .plugin-panel-tree,
+.plugin-panel-tree-children {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -50,32 +50,32 @@
   flex-direction: column;
   gap: 4px;
 }
-.pack-panel-tree-children {
+.plugin-panel-tree-children {
   padding-left: var(--spacing-md);
 }
-.pack-panel-row,
-.pack-panel-tree-row {
+.plugin-panel-row,
+.plugin-panel-tree-row {
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-sm);
   padding: 2px 0;
   color: var(--text-primary);
 }
-.pack-panel-row-completed .pack-panel-row-label,
-.pack-panel-tree-node[data-status='completed'] .pack-panel-row-label {
+.plugin-panel-row-completed .plugin-panel-row-label,
+.plugin-panel-tree-node[data-status='completed'] .plugin-panel-row-label {
   color: var(--text-muted);
   text-decoration: line-through;
 }
-.pack-panel-row-cancelled .pack-panel-row-label,
-.pack-panel-tree-node[data-status='cancelled'] .pack-panel-row-label {
+.plugin-panel-row-cancelled .plugin-panel-row-label,
+.plugin-panel-tree-node[data-status='cancelled'] .plugin-panel-row-label {
   color: var(--text-muted);
   opacity: 0.65;
 }
-.pack-panel-row-in_progress .pack-panel-row-label,
-.pack-panel-tree-node[data-status='in_progress'] .pack-panel-row-label {
+.plugin-panel-row-in_progress .plugin-panel-row-label,
+.plugin-panel-tree-node[data-status='in_progress'] .plugin-panel-row-label {
   font-weight: 500;
 }
-.pack-panel-status-icon {
+.plugin-panel-status-icon {
   flex-shrink: 0;
   width: 1rem;
   display: inline-flex;
@@ -83,24 +83,24 @@
   justify-content: center;
   color: var(--text-muted);
 }
-.pack-panel-row-in_progress .pack-panel-status-icon,
-.pack-panel-tree-node[data-status='in_progress'] .pack-panel-status-icon {
+.plugin-panel-row-in_progress .plugin-panel-status-icon,
+.plugin-panel-tree-node[data-status='in_progress'] .plugin-panel-status-icon {
   color: var(--accent);
 }
-.pack-panel-row-completed .pack-panel-status-icon,
-.pack-panel-tree-node[data-status='completed'] .pack-panel-status-icon {
+.plugin-panel-row-completed .plugin-panel-status-icon,
+.plugin-panel-tree-node[data-status='completed'] .plugin-panel-status-icon {
   color: var(--success, #3fb950);
 }
-.pack-panel-row-label {
+.plugin-panel-row-label {
   flex: 1;
   min-width: 0;
   word-break: break-word;
 }
-.pack-panel-row-detail {
+.plugin-panel-row-detail {
   color: var(--text-muted);
   font-size: 12px;
 }
-.pack-panel-badge {
+.plugin-panel-badge {
   flex-shrink: 0;
   font-size: 10px;
   padding: 1px 5px;
@@ -109,7 +109,7 @@
   color: var(--text-muted);
   text-transform: uppercase;
 }
-.pack-panel-badge[data-badge-kind='assigned-model'] {
+.plugin-panel-badge[data-badge-kind='assigned-model'] {
   color: var(--accent);
 }
 .plan-pane-host {

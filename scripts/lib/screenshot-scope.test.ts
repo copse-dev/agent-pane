@@ -13,24 +13,27 @@ function scope(affected: string[], branchOwned: string[] = []): ScreenshotScope 
 
 describe('screenshotName', () => {
   it('reduces a repo-relative path to its basename', () => {
-    assert.equal(screenshotName('tests/e2e/screenshots/settings-packs.png'), 'settings-packs.png')
+    assert.equal(
+      screenshotName('tests/e2e/screenshots/settings-plugins.png'),
+      'settings-plugins.png',
+    )
   })
 
   it('passes a bare basename through', () => {
-    assert.equal(screenshotName('settings-packs.png'), 'settings-packs.png')
+    assert.equal(screenshotName('settings-plugins.png'), 'settings-plugins.png')
   })
 })
 
 describe('ownsScreenshot', () => {
   it('owns a shot the oracle maps to this diff', () => {
-    const s = scope(['settings-packs.png'])
-    assert.equal(ownsScreenshot(s, 'tests/e2e/screenshots/settings-packs.png'), true)
+    const s = scope(['settings-plugins.png'])
+    assert.equal(ownsScreenshot(s, 'tests/e2e/screenshots/settings-plugins.png'), true)
   })
 
   it('disowns a shot no selected spec renders', () => {
     // The release-smoke case: a main-process fix re-renders Settings shots it
     // cannot have moved a pixel of.
-    const s = scope(['settings-packs.png'])
+    const s = scope(['settings-plugins.png'])
     assert.equal(ownsScreenshot(s, 'tests/e2e/screenshots/portrait-panel-controls.png'), false)
   })
 
@@ -50,6 +53,6 @@ describe('ownsScreenshot', () => {
   it('disowns everything for a diff that maps to no shots at all', () => {
     // A lockfile or benchmark-only PR: `computeScreenshotGate` filters to
     // render-affecting files first, so `affected` is empty and nothing commits.
-    assert.equal(ownsScreenshot(scope([]), 'tests/e2e/screenshots/settings-packs.png'), false)
+    assert.equal(ownsScreenshot(scope([]), 'tests/e2e/screenshots/settings-plugins.png'), false)
   })
 })

@@ -7,10 +7,10 @@
 // here — it fires mid-loop under context pressure and stays for E1.
 //
 // **P4 note.** `todoFinalizeCloseoutHook` is exported here but has moved into
-// the `copse.todos` first-party pack (`../packs/todos-pack.ts`). It is
+// the `copse.todos` first-party plugin (`../plugins/todos-plugin.ts`). It is
 // **removed from the static {@link BEFORE_FINALIZE_HOOKS} list** so it is not
-// double-registered when the pack folds its hooks into `createHookRegistry`
-// (P4 trap). The list is now empty; when the todos pack is enabled the pack
+// double-registered when the plugin folds its hooks into `createHookRegistry`
+// (P4 trap). The list is now empty; when the todos plugin is enabled the plugin
 // contributes the hook, matching the original registration count and behavior.
 import type { BlockingHook } from './canonical-events.ts'
 import {
@@ -44,9 +44,9 @@ export const todoFinalizeCloseoutHook: BlockingHook<'beforeFinalize'> = {
  * Changing this order (or the attempt→nudge mapping) is a behavior change.
  *
  * `todoFinalizeCloseoutHook` used to be the sole entry here (M0.3). It now
- * belongs to the `copse.todos` pack, so the static list is empty by design —
- * the pack contributes the hook via `createHookRegistry`'s pack fold, which
- * keeps the total registration count identical while disabling the pack
+ * belongs to the `copse.todos` plugin, so the static list is empty by design —
+ * the plugin contributes the hook via `createHookRegistry`'s plugin fold, which
+ * keeps the total registration count identical while disabling the plugin
  * atomically drops the closeout policy (decision 15).
  */
 export const BEFORE_FINALIZE_HOOKS: readonly BlockingHook<'beforeFinalize'>[] = []

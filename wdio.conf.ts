@@ -185,6 +185,11 @@ export const config: Options.Testrunner = {
       // can then seed and validate isolated thread roots without touching the
       // developer's real ~/.copse/worktrees directory.
       COPSE_WORKTREES_DIR: join(e2eUserDataDir, 'worktrees'),
+      // Agent Plugins discovery root. Isolating it matters beyond the discovery
+      // spec: without the override the app would walk the *developer's* real
+      // ~/.copse/plugins, so whatever they happen to have installed would leak
+      // into every Settings → Packs assertion and screenshot.
+      COPSE_PLUGINS_DIR: join(e2eUserDataDir, 'plugins'),
       // Blank every provider key the app recognises so e2e is deterministic:
       // the mock LLM is used (no real key), and the env-key-detection scan
       // (Settings → General) finds nothing from the runner's environment.

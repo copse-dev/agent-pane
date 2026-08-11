@@ -1,4 +1,4 @@
-/** A project-owned recurring schedule persisted by the automations pack. */
+/** A project-owned recurring schedule persisted by the automations plugin. */
 export type AutomationLiveWorktreeLimit = 1 | 2 | 3
 
 export interface AutomationSchedule {

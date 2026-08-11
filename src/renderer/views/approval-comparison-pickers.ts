@@ -21,7 +21,7 @@ function modelRow(label: string, select: HTMLSelectElement): HTMLElement {
 /**
  * Model pickers for the "Compare models on this diff?" approval prompt.
  *
- * These offer *concrete* models, unlike the pack settings that feed them. The
+ * These offer *concrete* models, unlike the plugin settings that feed them. The
  * settings choose a rule because they are set once and read much later; this
  * dialog is the opposite — the run is about to start, its models have already
  * been resolved (and de-duplicated) by `resolveDistinctDynamicModelIds`, and the

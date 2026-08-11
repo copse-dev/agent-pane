@@ -6,13 +6,13 @@ Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
 contract for Copse-native pack distribution (discover → install → pin → update →
 disable → uninstall) before a public index, signing ceremony, or Settings chrome.
 Implementation PRs should link here and keep [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md),
-[`../packs.md`](../packs.md), and Cursor plugin import
+[`../plugins.md`](../plugins.md), and Cursor plugin import
 ([`../cursor-plugins.md`](../cursor-plugins.md)) as **foundations/consumers**, not
 alternate runtimes or a second "plugin" product.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related trust/supply-chain: [`../supply-chain-security.md`](../supply-chain-security.md),
-[`../adding-a-pack.md`](../adding-a-pack.md). Pack contribution growth that marketplace
+[`../adding-a-plugin.md`](../adding-a-plugin.md). Pack contribution growth that marketplace
 must not bypass: open pack-framework work such as
 [#1197](https://github.com/copse-dev/agent-pane/pull/1197) (capability / permission /
 model setting kinds).
@@ -25,14 +25,14 @@ not have is a Copse-owned distribution lifecycle: a signed/indexed way for users
 who never open Cursor IDE to install, pin, update, roll back, and conflict-report
 packs whose runtime unit is still a feature pack.
 
-| Surface                                    | Role today                                           | Gap versus a Copse marketplace                                     |
-| ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------ |
-| First-party packs (`FIRST_PARTY_PACKS`)    | Shipped in-app; Settings → Packs enable/disable      | Not third-party distribution                                       |
-| Pack manifest + JSON schema                | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry for **user** packs is not wired yet |
-| Cursor plugin cache (`~/.cursor/plugins/`) | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace           |
-| `skillPluginPaths` / local symlinks        | Power-user overlay                                   | Manual; no pin, signature, or update channel                       |
-| Hooks dialect files / custom `tools/*.mjs` | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass     |
-| Grok Build-style plugin install UX         | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust        |
+| Surface                                    | Role today                                           | Gap versus a Copse marketplace                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| First-party packs (`FIRST_PARTY_PLUGINS`)  | Shipped in-app; Settings → Packs enable/disable      | Not third-party distribution                                                                                       |
+| Pack manifest + JSON schema                | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry landed for Agent Plugins packages (P1); install records, pinning, and update remain |
+| Cursor plugin cache (`~/.cursor/plugins/`) | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace                                                           |
+| `skillPluginPaths` / local symlinks        | Power-user overlay                                   | Manual; no pin, signature, or update channel                                                                       |
+| Hooks dialect files / custom `tools/*.mjs` | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass                                                     |
+| Grok Build-style plugin install UX         | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust                                                        |
 
 #1078's ownership map assigns Copse-native distribution to #1082 and requires
 reusing feature packs as the runtime unit. This plan defines the binding
@@ -60,8 +60,8 @@ verification work.
    do. Manifest self-description never expands authority beyond host policy.
 5. **User packs cannot smuggle first-party power.** No in-process function hooks,
    native Copse tools, or level-3 renderer views via marketplace install (same
-   two-capability-tiers bar as [`../packs.md`](../packs.md) /
-   [`../adding-a-pack.md`](../adding-a-pack.md)).
+   two-capability-tiers bar as [`../plugins.md`](../plugins.md) /
+   [`../adding-a-plugin.md`](../adding-a-plugin.md)).
 6. **Prompt trust is forced for user packs.** Marketplace-installed prompt blocks
    are always untrusted data framing, even if the pack file claims `"trust":
 "trusted"`.
@@ -164,7 +164,7 @@ was closed unmerged; its follow-up is preserved on
 
 - Wire host disk discovery so an Agent Plugins manifest on a configured local root
   registers as a **user** pack row in Settings → Packs (closes the gap documented
-  in [`../adding-a-pack.md`](../adding-a-pack.md)).
+  in [`../adding-a-plugin.md`](../adding-a-plugin.md)).
 - Exit gate: unit/integration test registers a fixture user pack, enable/disable
   is atomic, prompt trust forced untrusted; no network.
 
@@ -228,8 +228,8 @@ host rather than importing code into Electron main.
 - [#1082](https://github.com/copse-dev/agent-pane/issues/1082) — product tracker
 - [#1078](https://github.com/copse-dev/agent-pane/pull/1078) — Grok Build comparison
 - [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) — binding pack/hook decisions
-- [`../packs.md`](../packs.md) — landed pack registry lifecycle
-- [`../adding-a-pack.md`](../adding-a-pack.md) — authoring guide; discovery gap
+- [`../plugins.md`](../plugins.md) — landed pack registry lifecycle
+- [`../adding-a-plugin.md`](../adding-a-plugin.md) — authoring guide; discovery gap
 - [`../cursor-plugins.md`](../cursor-plugins.md) — Cursor import path (not Copse install)
 - [`../supply-chain-security.md`](../supply-chain-security.md) — trust boundaries
 - [#1197](https://github.com/copse-dev/agent-pane/pull/1197) — pack contribution kinds in flight

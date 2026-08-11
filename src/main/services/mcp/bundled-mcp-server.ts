@@ -7,7 +7,7 @@
  *
  * Today this hosts the experimental canvas: a `render_html_artefact` tool that
  * returns a `text/html` MCP-UI resource for the host to render as a sandboxed
- * artefact. Gated by the `copse.mcp-ui-canvas` first-party pack's `mcp-ui-canvas`
+ * artefact. Gated by the `copse.mcp-ui-canvas` first-party plugin's `mcp-ui-canvas`
  * capability (the connect site in `mcp-registry.ts` reads
  * `isCapabilityActive('mcp-ui-canvas')`).
  */

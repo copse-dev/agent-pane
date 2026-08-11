@@ -30,7 +30,7 @@ export const DEFAULT_SCW_REMOTE_USER = 'root'
 // The e2e tier is CPU-bound (Chromium-under-Xvfb) and wants ~4 vCPU + ~6 GiB per
 // runner (~1.5 GiB/vCPU). The High-CPU POP2-HC line (2 GiB/vCPU) matches that
 // profile at ~half the €/vCPU of the general PRO2 line (4 GiB/vCPU), whose extra
-// RAM the runner never uses. 8C-16G packs two runners (4 vCPU + a 6 GiB
+// RAM the runner never uses. 8C-16G plugins two runners (4 vCPU + a 6 GiB
 // mem_limit each) behind one shared image build — the Scaleway analogue of the
 // AWS c7i.2xlarge/2-runner default. The earlier PLAY2-MICRO default (4 vCPU /
 // 8 GiB, shared vCPU, no SLA) split 4 vCPU across contending suites and its CPU

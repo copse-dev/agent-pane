@@ -6,7 +6,7 @@ import { expectRecord } from '@shared/unknown-value.ts'
  * Content-addressed fingerprint of the toolset offered to the model (decision 6
  * of docs/plans/hooks-and-feature-packs.md). The blob body lists the sorted
  * tool names with a per-tool schema hash; its own hash is what spine lines
- * reference. Toolsets change rarely (pack toggle, MCP connect, readonly mode),
+ * reference. Toolsets change rarely (plugin toggle, MCP connect, readonly mode),
  * so the dedupe makes storing one per LLM call near-free while supporting
  * "prove tool X was offered at call time" debugging and eval reproducibility.
  *

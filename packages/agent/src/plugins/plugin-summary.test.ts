@@ -1,0 +1,280 @@
+// Plugin-summary projection — P3 (docs/plans/hooks-and-feature-packs.md).
+//
+// The Settings plugin list renders `PluginSummaryOut` snapshots that
+// `summarizePlugins` produces from the shared `PluginRegistry` + a per-key reader.
+// The invariants this pins:
+//  - contributions carry through with the right shapes (tools / models / hooks / prompt
+//    / panel-kind / storage namespace);
+//  - the `enabled` flag reflects the registry's current state;
+//  - setting values are coerced to their declared kind, falling back to the
+//    declared default when nothing is stored.
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { PluginRegistry } from './plugin-registry.ts'
+import {
+  definePlugin,
+  type PluginSettingsSchema,
+  type RegisteredPlugin,
+} from './plugin-manifest.ts'
+import type { BlockingHook } from '../hooks/canonical-events.ts'
+import { normalizePluginSettingValue, pluginToSummary, summarizePlugins } from './plugin-summary.ts'
+
+const stepHook: BlockingHook<'turnStart'> = {
+  id: 'demo-turn-start',
+  event: 'turnStart',
+  run() {
+    return undefined
+  },
+}
+
+const demoSettings: PluginSettingsSchema = {
+  enabled: { kind: 'boolean', title: 'Enabled', default: true },
+  budgetPerTurn: {
+    kind: 'number',
+    title: 'Budget per turn',
+    default: 3,
+  },
+  mode: {
+    kind: 'enum',
+    title: 'Mode',
+    default: 'strict',
+    options: ['strict', 'relaxed'],
+  },
+  label: { kind: 'string', title: 'Label', default: 'hello' },
+}
+
+function demoPlugin(id: string): RegisteredPlugin {
+  return definePlugin(
+    {
+      name: id,
+      trust: 'first-party',
+      stability: 'stable',
+      description: `demo ${id}`,
+      version: '1.2.3',
+      storage: { namespace: id },
+      settings: demoSettings,
+      tools: { native: [`${id}_tool`] },
+      hooks: [{ event: 'toolGate', command: './noop.sh' }],
+    },
+    {
+      toolNames: [`${id}_tool`],
+      modelRoutes: [
+        {
+          id: `${id}-judge`,
+          label: 'Reference judge',
+          group: 'Personal models',
+          supportsImages: true,
+        },
+      ],
+      browserOrigins: ['https://example.test'],
+      blockingHooks: [stepHook],
+      promptBlocks: [{ id: `${id}-prompt`, text: 'steer', trust: 'trusted' }],
+      uiContributions: [
+        { id: `${id}-panel`, level: 2, slot: 'sidebar', title: 'Sidebar', panel: { kind: 'list' } },
+      ],
+      capabilities: [
+        { name: `${id}-cap`, title: 'Demo capability', description: 'a pure behaviour flag' },
+      ],
+      permissions: [
+        {
+          name: `${id}-bind`,
+          title: 'Demo bind',
+          description: 'a sandbox relaxation',
+          scope: 'project',
+        },
+      ],
+    },
+  )
+}
+
+describe('pluginToSummary', () => {
+  it('enumerates contributions and manifest metadata', () => {
+    const plugin = demoPlugin('alpha')
+    const summary = pluginToSummary(plugin, true, () => undefined)
+    assert.equal(summary.id, 'alpha')
+    assert.equal(summary.trust, 'first-party')
+    assert.equal(summary.stability, 'stable')
+    assert.equal(summary.enabled, true)
+    assert.equal(summary.version, '1.2.3')
+    assert.equal(summary.description, 'demo alpha')
+    assert.deepEqual(summary.contributions.toolNames, ['alpha_tool'])
+    assert.deepEqual(summary.contributions.modelRoutes, [
+      {
+        id: 'alpha-judge',
+        label: 'Reference judge',
+        group: 'Personal models',
+        supportsImages: true,
+      },
+    ])
+    assert.deepEqual(summary.contributions.browserOrigins, ['https://example.test'])
+    assert.deepEqual(summary.contributions.blockingHooks, [
+      { id: 'demo-turn-start', event: 'turnStart' },
+    ])
+    assert.deepEqual(summary.contributions.commandHooks, [
+      { event: 'toolGate', command: './noop.sh' },
+    ])
+    assert.deepEqual(summary.contributions.promptBlocks, [{ id: 'alpha-prompt', trust: 'trusted' }])
+    assert.deepEqual(summary.contributions.ui, [
+      { id: 'alpha-panel', level: 2, slot: 'sidebar', title: 'Sidebar', panelKind: 'list' },
+    ])
+    assert.deepEqual(summary.contributions.capabilities, [
+      { name: 'alpha-cap', title: 'Demo capability', description: 'a pure behaviour flag' },
+    ])
+    assert.deepEqual(summary.contributions.permissions, [
+      {
+        name: 'alpha-bind',
+        title: 'Demo bind',
+        description: 'a sandbox relaxation',
+        scope: 'project',
+      },
+    ])
+    assert.equal(summary.contributions.storageNamespace, 'alpha')
+  })
+
+  it('projects a capability without a description as name + title only', () => {
+    const plugin = definePlugin(
+      { name: 'cap-only', trust: 'first-party', stability: 'stable' },
+      { capabilities: [{ name: 'flag-x', title: 'Flag X' }] },
+    )
+    const summary = pluginToSummary(plugin, true, () => undefined)
+    assert.deepEqual(summary.contributions.capabilities, [{ name: 'flag-x', title: 'Flag X' }])
+  })
+
+  it('projects a permission without description/scope as name + title only', () => {
+    const plugin = definePlugin(
+      { name: 'perm-only', trust: 'first-party', stability: 'stable' },
+      { permissions: [{ name: 'bind-x', title: 'Bind X' }] },
+    )
+    const summary = pluginToSummary(plugin, true, () => undefined)
+    assert.deepEqual(summary.contributions.permissions, [{ name: 'bind-x', title: 'Bind X' }])
+  })
+
+  it('falls values back to declared defaults when nothing is stored', () => {
+    const plugin = demoPlugin('alpha')
+    const summary = pluginToSummary(plugin, true, () => undefined)
+    const byId = Object.fromEntries(summary.settings.map((f) => [f.id, f.value]))
+    assert.deepEqual(byId, {
+      enabled: true,
+      budgetPerTurn: 3,
+      mode: 'strict',
+      label: 'hello',
+    })
+  })
+
+  it('surfaces persisted values in the correct kind', () => {
+    const plugin = demoPlugin('alpha')
+    const stored: Record<string, unknown> = {
+      enabled: false,
+      budgetPerTurn: 7,
+      mode: 'relaxed',
+      label: 'from-disk',
+    }
+    const summary = pluginToSummary(plugin, true, (key) => stored[key])
+    const byId = Object.fromEntries(summary.settings.map((f) => [f.id, f.value]))
+    assert.deepEqual(byId, {
+      enabled: false,
+      budgetPerTurn: 7,
+      mode: 'relaxed',
+      label: 'from-disk',
+    })
+  })
+
+  it('coerces the wrong stored kind back to its default (defensive)', () => {
+    const plugin = demoPlugin('alpha')
+    const stored: Record<string, unknown> = {
+      enabled: 'not-a-bool',
+      budgetPerTurn: 'seven',
+      mode: 'unknown',
+    }
+    const summary = pluginToSummary(plugin, true, (key) => stored[key])
+    const byId = Object.fromEntries(summary.settings.map((f) => [f.id, f.value]))
+    assert.equal(byId['enabled'], true)
+    assert.equal(byId['budgetPerTurn'], 3)
+    assert.equal(byId['mode'], 'strict')
+  })
+})
+
+describe('summarizePlugins', () => {
+  it('reflects disable → enabled=false on the summary', () => {
+    const registry = new PluginRegistry()
+    registry.register(demoPlugin('alpha'))
+    registry.register(demoPlugin('beta'))
+    registry.disable('beta')
+
+    const plugins = summarizePlugins(registry, () => undefined)
+    const byId = Object.fromEntries(plugins.map((p) => [p.id, p.enabled]))
+    assert.deepEqual(byId, { alpha: true, beta: false })
+  })
+
+  it('threads (pluginId, key) into the reader per plugin', () => {
+    const registry = new PluginRegistry()
+    registry.register(demoPlugin('alpha'))
+    registry.register(demoPlugin('beta'))
+    const seen: string[] = []
+    summarizePlugins(registry, (pluginId, key) => {
+      seen.push(`${pluginId}.${key}`)
+      return undefined
+    })
+    // Each plugin asks its own reader for each declared field, so key namespaces
+    // stay plugin-scoped (no aliasing possible on the persistence backend).
+    assert.ok(seen.includes('alpha.enabled'))
+    assert.ok(seen.includes('beta.enabled'))
+  })
+})
+
+describe('normalizePluginSettingValue', () => {
+  it('picks the first enum option when default is missing and stored is wrong', () => {
+    const value = normalizePluginSettingValue(
+      { kind: 'enum', title: 'x', options: ['a', 'b'] },
+      'not-in-list',
+    )
+    assert.equal(value, 'a')
+  })
+
+  it('honours any stored model id (no static option gate)', () => {
+    // A `model` field's options are the live catalogue resolved renderer-side,
+    // so any stored id — including one not in the default's shortlist — is kept.
+    const value = normalizePluginSettingValue(
+      { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
+      'lmstudio:qwen3-32b',
+    )
+    assert.equal(value, 'lmstudio:qwen3-32b')
+  })
+
+  it('falls a model field back to its default when nothing is stored', () => {
+    const value = normalizePluginSettingValue(
+      { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
+      undefined,
+    )
+    assert.equal(value, 'claude-opus-4-8')
+  })
+
+  it('falls a defaultless model field back to blank (use chat model)', () => {
+    const value = normalizePluginSettingValue({ kind: 'model', title: 'Reviewer A' }, undefined)
+    assert.equal(value, '')
+  })
+})
+
+describe('pluginToSummary (model field)', () => {
+  it('projects a model field as kind "model" with its stored / default value', () => {
+    const plugin = definePlugin({
+      name: 'gamma',
+      trust: 'first-party',
+      stability: 'stable',
+      settings: {
+        advisorModel: { kind: 'model', title: 'Advisor model', default: 'claude-opus-4-8' },
+      },
+    })
+    const withStored = pluginToSummary(plugin, true, () => 'openrouter:zai-org/glm-5.2')
+    const storedField = withStored.settings.find((f) => f.id === 'advisorModel')
+    assert.ok(storedField)
+    assert.equal(storedField.kind, 'model')
+    assert.equal(storedField.value, 'openrouter:zai-org/glm-5.2')
+    assert.equal(storedField.default, 'claude-opus-4-8')
+    // A model field ships no static options — the catalogue is resolved live.
+    assert.equal(storedField.options, undefined)
+
+    const unset = pluginToSummary(plugin, true, () => undefined)
+    assert.equal(unset.settings.find((f) => f.id === 'advisorModel')?.value, 'claude-opus-4-8')
+  })
+})

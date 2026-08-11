@@ -53,11 +53,11 @@ and gains portability for the two that other clients can actually load.
    top-level `dev.copse/` directory for files (spec §8). Reverse domain of
    `copse.dev`, matching the existing `copse.dev` schema `$id`.
 3. **`copse-pack.json` survives only for selected development directories.**
-   `pack-tool-source.ts` reads an explicitly chosen folder that is never
+   `plugin-tool-source.ts` reads an explicitly chosen folder that is never
    distributed, so portability buys it nothing. It stays as-is and stays outside
    discovery, exactly as the marketplace plan already scopes it.
-4. **`PackManifest` stays the internal normalized type.** Agent Plugins is a parse
-   target, not an internal representation. `PackRegistry` never learns whether a
+4. **`PluginManifest` stays the internal normalized type.** Agent Plugins is a parse
+   target, not an internal representation. `PluginRegistry` never learns whether a
    manifest came from disk, from an AP parse, or from a first-party code literal.
 5. **The spec is a packaging contract, never an authorization boundary.** Agent
    Plugins v1.0.0 defines no trust model, permissions, sandboxing, provenance, or
@@ -90,7 +90,7 @@ load-bearing in both directions:
   worst one to do twice.
 
 The cost of this order is that Stage A writes new modules into
-`packages/agent/src/packs/`, which Stage C then renames. That is a path change in a
+`packages/agent/src/plugins/`, which Stage C then renames. That is a path change in a
 mechanical rename PR — cheap, and cheaper than authoring sixteen manifests twice.
 
 Each stage is independently shippable and leaves the product working. Nothing here
@@ -182,12 +182,15 @@ register it. That distinction matters for the error message.
 
 ## Stage A — AP-native user-plugin discovery
 
+**Status: landed.** A1, A2, and the pure half of A3 are on `main`; what remains
+of A3/A4 is listed at the end of this section.
+
 This is #1342's intent, re-expressed. Scope is unchanged from marketplace P1:
 discovery and Settings rows only. No install records, no network, no index.
 
-**A1 — Parse.** `agentPluginManifest()` in `packages/agent/src/packs/` parses a root
-`plugin.json` into `PackManifest`, alongside the existing
-`packManifestFromPluginJson()` (Cursor) and the selected-directory path. Enforces
+**A1 — Parse.** `agentPluginManifest()` in `packages/agent/src/plugins/` parses a root
+`plugin.json` into `PluginManifest`, alongside the existing
+`pluginManifestFromCursorJson()` (Cursor) and the selected-directory path. Enforces
 §5.5 names, §5.2 closed-schema handling, and the two-stage validation above.
 Path containment per §4.1: reject anything resolving outside the plugin root.
 
@@ -222,10 +225,35 @@ resolved by _source_, not by racing manifest names in one directory:
 A directory carrying both `plugin.json` and `copse-pack.json` prefers `plugin.json`
 and warns — one rule, stated once.
 
-**Exit gate.** A fixture AP plugin registers as a user row; enable/disable is atomic;
-prompt trust is forced untrusted; a malformed sibling is skipped without affecting
-it; no network; `PLUGIN_ROOT`/`PLUGIN_DATA` are set and expanded; a `../` escape in
-`mcp.json` fails that server entry and no more.
+**Exit gate — met.** A fixture AP plugin registers as a user row; enable/disable is
+atomic; prompt trust is forced untrusted; a malformed sibling is skipped without
+affecting it; no network; `PLUGIN_ROOT`/`PLUGIN_DATA` are set and expanded; a `../`
+escape in `mcp.json` fails that server entry and no more. Pinned by
+`agent-plugin-manifest.test.ts`, `agent-plugin-mcp.test.ts`, and
+`discover-user-plugins.test.ts`.
+
+### What Stage A deliberately left
+
+Two things the landed slice validates but does not yet run, both because
+discovering bytes must not be what activates behavior:
+
+- **Runtime wiring.** A discovered plugin's command hooks and MCP servers are
+  parsed, validated, and held on the candidate — not registered into
+  `createHookRegistry` or spawned by `mcp-registry.ts`. That wiring is the
+  natural next slice, and it needs the consent step the #1082 follow-up asks for
+  ("derive review/consent from requested behaviors before contributions become
+  live"), not just a flag flip.
+- **`PLUGIN_DATA` on disk.** `userPluginDataDir()` computes the path and
+  `resolveStdioServer()` expands it, but nothing creates the directory yet —
+  §9.1 requires it to exist and be writable _before_ a subprocess launches, so
+  it belongs with the spawn, not ahead of it.
+
+One seam Stage A added that the plan did not anticipate: a `pluginsSeen`
+storage key. `packDisabled` cannot express "never seen before" — an id absent
+from it means both "the user enabled this" and "this appeared a moment ago" —
+so a separate record is what lets a new plugin be seeded off exactly once
+without ever re-seeding a plugin the user later enabled. Stage C renames it
+alongside the other persisted keys.
 
 ## Stage C — packs become plugins
 
@@ -235,11 +263,19 @@ A rename with two real collisions to resolve first.
 renders `<legend>Plugins</legend>` under **Sources** for the Cursor plugin list.
 Renaming **Packs** → **Plugins** puts two differently-shaped things under one word.
 
-Resolution: they converge. After Stage A both are plugin directories with skills and
-MCP; the Copse-native one additionally has a `dev.copse` block and a registry row.
-**Settings → Plugins** becomes the single section, with a source column
-distinguishing shipped / installed / Cursor / selected folder. The read-only Cursor
-list stops being its own concept.
+Resolution as landed: **the registry section becomes Settings → Plugins, and the
+Sources fieldset is renamed to "Cursor plugins"** — which is what it has always
+listed. Two things sharing one word is the whole collision; naming the read-only
+one for its source dissolves it.
+
+The fuller convergence this plan first sketched — one list with a source column,
+Cursor entries appearing as rows — is **deferred, deliberately**. It is not a
+rename: Cursor plugins are not registry members, so giving them rows means
+synthesizing registry-shaped entries for a different data model, inventing
+toggle-less row states, and changing what the section _is_. Binding decision 8
+says a Stage C PR changes names and not semantics, and decision 8 wins over the
+sketch. When the convergence happens it should be its own change, judged on
+whether one list genuinely serves users better than two honestly-named ones.
 
 **Collision 2 — `plugins:list` IPC is taken.** `api.plugins.list()` already resolves
 to the Cursor summary (`preload/index.ts:904`), and `api.packs.*` is the registry
@@ -253,16 +289,16 @@ cross-references at `settings-dialog.ts:676` and `:1277`, and `model-options.ts:
 packs", and the architecture-diagram nodes in `site/architecture.html`. Visual evals
 required per AGENTS.md — Settings and the site both change what a user sees.
 
-**C2 — Identifiers.** `PackRegistry` → `PluginRegistry`, `PackManifest` →
-`PluginManifest`, `RegisteredPack` → `RegisteredPlugin`, `packages/agent/src/packs/`
-→ `plugins/`, `src/main/services/packs/` → `plugins/`. Mechanical, one PR, no
+**C2 — Identifiers.** `PluginRegistry` → `PluginRegistry`, `PluginManifest` →
+`PluginManifest`, `RegisteredPlugin` → `RegisteredPlugin`, `packages/agent/src/plugins/`
+→ `plugins/`, `src/main/services/plugins/` → `plugins/`. Mechanical, one PR, no
 behavior change.
 
 **C3 — Persisted keys, with migration.** `packDisabled` → `pluginDisabled` and
 `pack.<packId>.settings` → `plugin.<pluginId>.settings`. **This is user data.** A
 user's disable set and per-pack settings must survive the rename: read the new key,
 fall back to the old key when absent, write the new key, and leave the old one in
-place for one release. `pack-service.ts:79` already documents "once `packDisabled`
+place for one release. `plugin-service.ts:79` already documents "once `packDisabled`
 exists it is the user's own and is never re-seeded" — the migration must preserve
 that, including an _empty_ disable set, which is meaningfully different from absent.
 A user who explicitly enabled an experimental pack must not find it off after
@@ -271,6 +307,64 @@ updating.
 **Exit gate.** A seeded profile with `packDisabled` and pack settings reads back
 identically under the new keys; no pack silently changes enablement across the
 migration; visual evals cover Settings and the site; `npm run check` clean.
+
+### What C3 found that the plan did not anticipate
+
+**A third contract was hiding in plain sight: `copse-pack.json`.** The C2 sweep
+renamed it to `copse-plugin.json`, and that name lives on the _user's_ disk in
+whatever folder they selected — outside anything Copse can migrate. Every
+already-selected directory would have silently stopped loading, the only symptom
+being a plugin quietly missing from Settings. `discoverPluginToolSource` now
+prefers the new name and falls back to the old one. The lesson generalises: the
+question is not "is this string a storage key" but "does someone else already
+have this string written down".
+
+`schemas/copse-pack.schema.json` keeps its filename **and** its `$id`
+(`https://copse.dev/schemas/copse-pack.schema.json`) for the same reason — a
+published schema identifier is a URL other people may reference, and reassigning
+it is worse than an inconsistent filename.
+
+**The migration is guarded by the destination key, not a migration flag.** Every
+other one-shot in `plugin-service.ts` uses a `*Migration.*` marker, but a marker
+can be written when the copy half-failed, and there is no second chance at user
+data. Keying on "has the new key been written" makes a partial run resume and a
+completed run a no-op.
+
+### C4 — the convergence C1 deferred
+
+C1 deferred "one list with a source column" on decision 8's authority: it is not a
+rename. That was right, and it is why this is a separate change rather than a
+larger C1.
+
+Three lists each answered a slice of "what is extending Copse" — Sources, Plugins,
+and the Cursor-plugins fieldset inside Sources — so answering the whole question
+meant knowing which of three places held which kind. They are one section now,
+**Customise**, and Cursor plugins are rows in the single plugin list, badged
+`Cursor` and toggle-less because Cursor owns their lifecycle. **Worktrees left with
+them**: managing disk is not customising behaviour, so it is its own nav item,
+**Storage**.
+
+**MCP stayed separate**, because outbound connections are a different question from
+what is installed — but it became a _lens_ on both:
+
+- `McpServerStatus.origin` classifies each server's config source. The renderer
+  cannot do this: `source` is a bare path, and telling `~/.cursor/mcp.json` from a
+  plugin's bundled `mcp.json` means knowing where each root lives. It is derived in
+  `mcp-registry.ts` beside `isUserMcpSource`, which already needs the same
+  knowledge to scope env interpolation. An unrecognised source falls back to
+  `project` — repo-supplied until shown otherwise is the safe direction for a label
+  someone reads before deciding what to leave running.
+- `PluginService.declaredMcpServers()` reports servers a discovered plugin's
+  `mcp.json` names that nothing is running. Stage A validated these declarations
+  and deliberately stopped short of wiring them into the loop; a disabled plugin's
+  servers would not run either way. Both are states the section has to disclose,
+  because the alternative is "No servers configured" displayed over a package on
+  disk naming three. The rows carry no toggle — offering one would imply Copse
+  could start the server, which is the opposite of what the row exists to say.
+
+**What C4 does not do.** It does not start plugin MCP servers. Nothing about the
+discovery-is-not-activation split from Stage A changes here; C4 only stops the UI
+from being silent about it.
 
 ## Stage B — built-ins become plugins
 
@@ -314,11 +408,20 @@ tests pass unchanged.
 | ----------------------------- | ---------------------------------------------------------------------------- |
 | `feature-pack-marketplace.md` | P1 targets AP; verify row becomes two-stage; open question 2 gains an answer |
 | `packs.md`                    | Manifest section describes the AP envelope + `dev.copse`; renamed in C       |
-| `adding-a-pack.md`            | Authoring guide becomes AP-first; renamed `adding-a-plugin.md` in C          |
+| `adding-a-plugin.md`          | Authoring guide becomes AP-first; renamed `adding-a-plugin.md` in C          |
 | `cursor-plugins.md`           | Records the narrowed env-expansion contrast and the merged Settings section  |
 | `supply-chain-security.md`    | Notes that AP defines no trust model; Copse's boundaries are unchanged       |
 | `hooks-and-feature-packs.md`  | Decisions log entry for the format adoption                                  |
 | `AGENTS.md`                   | The hooks/feature-pack pointer keeps its path accurate through C             |
+
+**Only the two reference docs are renamed and revoiced** (`packs.md` →
+`plugins.md`, `adding-a-pack.md` → `adding-a-plugin.md`). Historical plan
+documents keep their filenames and their original vocabulary on purpose: they
+record what shipped under the name it shipped under, and a sweep across them
+rewrites quoted issue comments and landed-PR titles into things nobody ever
+said. `hooks-and-feature-packs.md` and `feature-pack-marketplace.md` stay put
+for the same reason — AGENTS.md cites the first as binding, and inbound links
+from a dozen sibling plans point at both.
 
 ## Open questions
 
@@ -354,6 +457,6 @@ tests pass unchanged.
 - [#1342](https://github.com/copse-dev/agent-pane/pull/1342) — closed unmerged P1 attempt
 - [`feature-pack-marketplace.md`](feature-pack-marketplace.md) — install lifecycle this plan amends
 - [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) — binding pack/hook decisions
-- [`../packs.md`](../packs.md) — landed registry lifecycle
+- [`../plugins.md`](../plugins.md) — landed registry lifecycle
 - [`../cursor-plugins.md`](../cursor-plugins.md) — Cursor import path
 - [`../supply-chain-security.md`](../supply-chain-security.md) — trust boundaries

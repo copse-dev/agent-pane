@@ -150,7 +150,7 @@ export function supportsMidConversationSystem(model: string): boolean {
  *
  * The rest cannot: `lmstudio` serves local weights, where a GGUF may be named
  * after a model it is merely distilled from, and `remote-agent` / `acp` /
- * `pack-model` hand the turn to something that owns its own prompt.
+ * `plugin-model` hand the turn to something that owns its own prompt.
  */
 const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter', 'extra-provider'])
 
