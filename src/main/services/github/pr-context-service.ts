@@ -20,6 +20,15 @@ const decodeGhPr = decodeWithSchema(ghPrViewSchema)
  */
 const coalesceOpenPrLookup = createInFlightCoalescer<GitOpenPr | null>()
 
+/** Keep process-global in-flight lookups isolated between project identities. */
+export function branchStatusLookupKey(
+  projectId: string,
+  root: string,
+  branch: string,
+): string {
+  return `${projectId}\0${root}\0${branch}`
+}
+
 /** Sum line add/delete counts from `git diff --numstat` output. */
 export function parseDiffNumstat(raw: string): { additions: number; deletions: number } {
   let additions = 0
@@ -172,6 +181,7 @@ export async function getPrWorkspaceContext(
 
 /** Branch name and open PR (when `gh` is available) for the status bar. */
 export async function getGitBranchStatus(
+  projectId: string,
   forBranch?: string,
   root: string | null = getWorkspaceRoot(),
 ): Promise<GitBranchStatus> {
@@ -196,12 +206,17 @@ export async function getGitBranchStatus(
   // the first has resolved. Key on the branch actually being looked up (the
   // titlebar passes no `forBranch`, the footer passes the thread's, and for the
   // active thread those are the same branch) so the pair collapses into one call.
+  // Include trusted project identity as well: local and SSH projects can share
+  // the same path and branch strings, but must never share a GitHub result.
   const targetBranch = forBranch && forBranch !== currentBranch ? forBranch : null
-  const pr = await coalesceOpenPrLookup(`${root}\0${targetBranch ?? currentBranch}`, async () => {
-    if (targetBranch) return getOpenPrForBranch(targetBranch, root)
-    const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], { cwd: root })
-    return ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
-  })
+  const pr = await coalesceOpenPrLookup(
+    branchStatusLookupKey(projectId, root, targetBranch ?? currentBranch),
+    async () => {
+      if (targetBranch) return getOpenPrForBranch(targetBranch, root)
+      const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], { cwd: root })
+      return ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
+    },
+  )
 
   return { currentBranch, pr }
 }
