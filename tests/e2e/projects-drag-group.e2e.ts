@@ -59,7 +59,16 @@ describe('projects sidebar groups', () => {
     resetUserData()
     seedProjectGroupsFixture(process.cwd(), { withGroup: true })
     await browser.reloadSession()
-    await $('.project-group-row').waitForExist({ timeout: 30_000 })
+    // Wait for the composer, not just for a group row to exist. `main.ts` mounts
+    // the panes and only then restores the project, so a group row appears while
+    // the sidebar is still being rebuilt — clicking into that window collapses a
+    // row that the next render replaces, and the assertion below then reports the
+    // half-built sidebar rather than the fold.
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('.project-group-row').waitForExist({ timeout: 10_000 })
+    // Settle on the expanded shape first: a transition test has to know it
+    // started from the state it claims to be changing.
+    await waitForSidebarShape(['Alpha', 'Beta', 'Client work > Gamma'])
 
     await $('.project-group-row').click()
     await waitForSidebarShape(['Alpha', 'Beta', 'Client work > (empty)'])

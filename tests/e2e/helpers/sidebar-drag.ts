@@ -107,17 +107,41 @@ export function readSidebarShape(): Promise<string[]> {
   })
 }
 
-/** Wait until the sidebar settles into `expected`, reporting what it showed instead. */
+/**
+ * Wait until the sidebar settles into `expected`.
+ *
+ * An empty `got []` is ambiguous on its own — it reads the same whether the
+ * sidebar rendered the wrong rows, has not mounted yet, or fell back to its
+ * "No projects yet" state — so the message carries the pane's own markup when
+ * the shape is empty. A CI-only failure is expensive to reproduce; the log has
+ * to be enough to diagnose it without another run.
+ */
 export async function waitForSidebarShape(expected: string[]): Promise<void> {
   let seen: string[] = []
-  await browser.waitUntil(
-    async () => {
-      seen = await readSidebarShape()
-      return seen.length === expected.length && seen.every((row, i) => row === expected[i])
-    },
-    {
-      timeout: 10_000,
-      timeoutMsg: `expected sidebar ${JSON.stringify(expected)}, got ${JSON.stringify(seen)}`,
-    },
-  )
+  try {
+    await browser.waitUntil(
+      async () => {
+        seen = await readSidebarShape()
+        return seen.length === expected.length && seen.every((row, i) => row === expected[i])
+      },
+      { timeout: 10_000 },
+    )
+  } catch {
+    throw new Error(
+      `expected sidebar ${JSON.stringify(expected)}, got ${JSON.stringify(seen)}` +
+        (seen.length === 0 ? `\nprojects pane markup: ${await describeProjectsPane()}` : ''),
+    )
+  }
+}
+
+/** A bounded snapshot of the projects pane, for diagnosing an empty sidebar. */
+function describeProjectsPane(): Promise<string> {
+  return browser.execute(() => {
+    const pane = document.getElementById('pane-projects')
+    if (!pane) return '#pane-projects is not in the DOM (layout not mounted?)'
+    const list = pane.querySelector('.projects-list')
+    if (!list) return `no .projects-list; pane html: ${pane.innerHTML.slice(0, 800)}`
+    const children = Array.from(list.children).map((c) => `${c.tagName}.${c.className}`)
+    return `.projects-list children: ${JSON.stringify(children)}`
+  })
 }
