@@ -387,7 +387,7 @@ export function mountBrowserPane(
       type: 'button',
       class: 'browser-tabs-new-btn',
       'aria-label': 'New browser tab',
-      title: 'New tab',
+      'data-tooltip': 'New browser tab',
     },
     '+',
   )
@@ -681,7 +681,7 @@ export function mountBrowserPane(
         class: 'browser-tabs-tab-close',
         role: 'button',
         'aria-label': 'Close tab',
-        title: 'Close',
+        'data-tooltip': 'Close tab',
       },
       '×',
     )
@@ -698,7 +698,7 @@ export function mountBrowserPane(
         type: 'button',
         class: 'browser-nav-btn',
         'aria-label': 'Back',
-        title: 'Back',
+        'data-tooltip': 'Back',
         disabled: true,
       },
       arrowLeftIcon('ui-icon ui-icon-sm'),
@@ -709,14 +709,19 @@ export function mountBrowserPane(
         type: 'button',
         class: 'browser-nav-btn',
         'aria-label': 'Forward',
-        title: 'Forward',
+        'data-tooltip': 'Forward',
         disabled: true,
       },
       arrowRightIcon('ui-icon ui-icon-sm'),
     )
     const reloadBtn = el(
       'button',
-      { type: 'button', class: 'browser-nav-btn', 'aria-label': 'Reload', title: 'Reload' },
+      {
+        type: 'button',
+        class: 'browser-nav-btn',
+        'aria-label': 'Reload',
+        'data-tooltip': 'Reload',
+      },
       refreshIcon('ui-icon ui-icon-sm'),
     )
     const urlInput = el('input', {
@@ -727,7 +732,7 @@ export function mountBrowserPane(
     })
     const goBtn = el(
       'button',
-      { type: 'button', class: 'browser-go-btn', 'aria-label': 'Go', title: 'Go' },
+      { type: 'button', class: 'browser-go-btn', 'aria-label': 'Go', 'data-tooltip': 'Go' },
       'Go',
     )
 
@@ -737,7 +742,7 @@ export function mountBrowserPane(
         type: 'button',
         class: 'browser-nav-btn browser-menu-btn',
         'aria-label': 'More actions',
-        title: 'More actions',
+        'data-tooltip': 'More actions',
         'aria-haspopup': 'menu',
         'aria-expanded': 'false',
       },

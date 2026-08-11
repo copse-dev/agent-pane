@@ -316,6 +316,15 @@ every published entry.
   the same feed, which means it now walks every page rather than reading only
   the first, so a keyed refresh sees the whole model list instead of the first
   200 rows. API keys are unchanged.
+- Icon-only controls now name themselves on hover. The titlebar panel toggles,
+  pane header actions, composer buttons, browser navigation, and the PR
+  lifecycle and CI glyphs all get a small label after a short hover — the plain
+  kind you'd expect on the web, not a panel. It arrives faster than the OS
+  tooltip it replaces, follows the app theme, flips above the anchor when there
+  is no room below, and stays inside the window near an edge. Keyboard focus
+  shows the same label; the click that follows a hover dismisses it. Where the
+  glyph encodes state the label decodes it: "Open changes — 3 pending diffs",
+  "CI failing", "Auto-merge is on — merges itself once checks pass".
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to

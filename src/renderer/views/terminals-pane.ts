@@ -89,7 +89,7 @@ export function mountTerminalsPane(
       type: 'button',
       class: 'terminals-new-btn',
       'aria-label': 'New terminal',
-      title: 'New terminal',
+      'data-tooltip': 'New terminal',
     },
     '+',
   )
@@ -398,7 +398,7 @@ export function mountTerminalsPane(
         class: 'terminals-tab-close',
         role: 'button',
         'aria-label': 'Close terminal',
-        title: 'Close',
+        'data-tooltip': 'Close terminal',
       },
       '×',
     )

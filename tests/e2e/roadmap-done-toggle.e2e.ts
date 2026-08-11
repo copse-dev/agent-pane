@@ -67,7 +67,7 @@ describe('roadmap done toggle', () => {
     await $('.roadmap-empty').waitForDisplayed({ timeout: 10_000 })
 
     const toggle = await revealDoneToggle()
-    assert.equal(await toggle.getAttribute('title'), 'Mark done')
+    assert.equal(await toggle.getAttribute('data-tooltip'), 'Mark done')
     await toggle.click()
 
     // `done` is hidden by default, so the row leaves the list on completion
@@ -125,7 +125,7 @@ describe('roadmap done toggle', () => {
 
     // The same control now reopens the item.
     const reopen = await revealDoneToggle()
-    assert.equal(await reopen.getAttribute('title'), 'Reopen (set ready)')
+    assert.equal(await reopen.getAttribute('data-tooltip'), 'Reopen (set ready)')
     await reopen.click()
     await browser.waitUntil(
       async () =>
