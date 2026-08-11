@@ -177,6 +177,14 @@ export function switchThread(store: AppStore, id: string): void {
   const state = store.getState()
   const pruned = state.threads.filter((t) => !isPrunableBlankThread(t) || t.id === id)
   const threads = pruned.length > 0 ? pruned : state.threads
+  // Only announce the panel reset when there was something to reset. Its
+  // subscribers answer it with real work — the Changes pane re-reads git state,
+  // the context panel refetches the working diff — and `threads_changed` (which
+  // they also subscribe to, and which supersedes the reset) fires immediately
+  // after. With no file or diff open, the emit is a pure no-op announcement that
+  // buys a second round of that work on every click.
+  const panelWasPopulated =
+    state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0
   store.setState({
     activeThreadId: id,
     threads,
@@ -184,7 +192,7 @@ export function switchThread(store: AppStore, id: string): void {
     activeDiff: null,
     stagedDiffs: [],
   })
-  store.emit('panel_changed')
+  if (panelWasPopulated) store.emit('panel_changed')
   store.emit('threads_changed')
 }
 
