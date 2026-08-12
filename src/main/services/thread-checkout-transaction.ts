@@ -8,7 +8,7 @@ import type {
   ThreadWorktree,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
-import { decideThreadWorktreePolicy } from '@shared/git/worktree-policy.ts'
+import { decideThreadWorktreePolicy, settledCheckoutMode } from '@shared/git/worktree-policy.ts'
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -180,6 +180,14 @@ export function createThreadCheckoutPreview(
   return async (input) => {
     const project = dependencies.getProject(input.projectId)
     if (!project) return { checkoutMode: 'shared' }
+    // Avoid four Git queries when the choice or explicit project setting
+    // already determines the preview. An absent project mode deliberately uses
+    // the policy's `always` default and still inspects repository support.
+    const settled = settledCheckoutMode({
+      choice: input.choice,
+      ...(project.worktreeMode ? { projectMode: project.worktreeMode } : {}),
+    })
+    if (settled) return { checkoutMode: settled }
     const isLocal = !project.sshHost && !(input.model && isRemoteAgentModel(input.model))
     const inspection = await dependencies.inspect(project, isLocal)
     const decision = decideThreadWorktreePolicy({
