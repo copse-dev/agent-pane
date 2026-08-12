@@ -42,7 +42,7 @@ import {
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
-import { openSettingsDialog } from './settings-dialog.ts'
+import { openAutomationSettings, openSettingsDialog } from './settings-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
@@ -110,9 +110,9 @@ function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
   )
 }
 
-function settingsIcon(): SVGSVGElement {
+function settingsIcon(className = 'titlebar-btn-icon'): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg')
-  svg.setAttribute('class', 'titlebar-btn-icon')
+  svg.setAttribute('class', className)
   svg.setAttribute('viewBox', '0 0 24 24')
   svg.setAttribute('width', ICON_SIZE)
   svg.setAttribute('height', ICON_SIZE)
@@ -127,6 +127,25 @@ function settingsIcon(): SVGSVGElement {
   )
   svg.append(path)
   return svg
+}
+
+/**
+ * Trailing link on an automation heading through to that automation's setup in
+ * Settings — the sidebar owns run history, the schedule editor owns the
+ * configuration, and this is the seam between them. Quiet until its heading is
+ * hovered or the button takes focus, like the row actions beside it.
+ */
+function automationSetupBtn(label: string, open: () => void): HTMLElement {
+  const btn = el(
+    'button',
+    { type: 'button', class: 'automation-setup-btn', 'aria-label': label, title: label },
+    settingsIcon('ui-icon ui-icon-sm'),
+  )
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    open()
+  })
+  return btn
 }
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -594,12 +613,27 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
       }
 
+      /**
+       * Open a schedule's setup (or, with no id, this project's schedule list).
+       * Schedules are project-scoped, so a heading under a project that isn't
+       * open lands on the project first — the same one-click-to-switch the New
+       * thread button uses rather than editing another project's automations.
+       */
+      function openAutomationSetup(scheduleId?: string): void {
+        if (project.id !== store.getState().activeProjectId) {
+          switchProject(store, api, project.id)
+          return
+        }
+        openAutomationSettings(scheduleId)
+      }
+
       function renderThreadRow(
         thread: SidebarThread,
         options: { displayTitle?: string; allowRename?: boolean } = {},
       ): HTMLElement {
         const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
         const allowRename = options.allowRename ?? true
+        const scheduleId = thread.automation?.scheduleId
         const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null
         let title: HTMLElement
         if (renameState) {
@@ -679,6 +713,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 archiveProjectThread(project.id, thread.id)
               },
             },
+            // A schedule with a single run has no heading of its own, and a
+            // historical run is several rows below the one that does, so every
+            // automation row carries the way out to its setup.
+            ...(scheduleId
+              ? [
+                  {
+                    label: 'Automation setup…',
+                    onSelect: (): void => {
+                      openAutomationSetup(scheduleId)
+                    },
+                  },
+                ]
+              : []),
           ])
         })
 
@@ -777,7 +824,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           }
           render()
         })
-        group.append(toggle)
+        group.append(
+          el(
+            'div',
+            { class: 'automation-threads-header' },
+            toggle,
+            automationSetupBtn('Automation settings', () => {
+              openAutomationSetup()
+            }),
+          ),
+        )
         if (automationExpanded) {
           const automationRows = el('div', { class: 'automation-thread-rows' })
           for (const [scheduleId, runs] of scheduleGroups) {
@@ -794,6 +850,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             const showingAllRuns =
               isFiltering || expandedAutomationSchedules.has(scheduleKey) || hasActiveRun
             const scheduleRevealed = showingAllRuns || attentionRuns.length > 0
+            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
             const scheduleGroup = el('div', {
               class: 'automation-schedule-group',
               'data-schedule-id': scheduleId,
@@ -812,11 +869,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 },
                 chevronRightIcon('ui-icon ui-icon-sm'),
               ),
-              el(
-                'span',
-                { class: 'automation-schedule-title' },
-                firstRun.automation?.scheduleName ?? firstRun.title,
-              ),
+              el('span', { class: 'automation-schedule-title' }, scheduleName),
               el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
             )
             if (runs.some((thread) => thread.status === 'running')) {
@@ -834,7 +887,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               }
               render()
             })
-            scheduleGroup.append(scheduleToggle)
+            scheduleGroup.append(
+              el(
+                'div',
+                { class: 'automation-schedule-header' },
+                scheduleToggle,
+                automationSetupBtn(`${scheduleName} setup`, () => {
+                  openAutomationSetup(scheduleId)
+                }),
+              ),
+            )
             if (scheduleRevealed) {
               const runRows = el('div', { class: 'automation-schedule-runs' })
               const visibleRuns = showingAllRuns ? runs : attentionRuns
