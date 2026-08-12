@@ -321,11 +321,19 @@ export interface Message {
    */
   toolSummary?: string
   /**
-   * Primary-chat model that produced this assistant message (picker id for the
-   * turn). Surfaced in the transcript only when the thread used more than one
-   * primary model — subagent models live on {@link SubagentSession.model}.
+   * Primary-chat model that produced this assistant message — the concrete
+   * route actually run, after a dynamic selector (`auto:…`) was expanded.
+   * Surfaced in the transcript only when the thread used more than one primary
+   * model — subagent models live on {@link SubagentSession.model}.
    */
   model?: string
+  /**
+   * The model the user asked for for this turn — the picker/requested
+   * selection, which may be a dynamic selector (`auto:…`) rather than a
+   * concrete route. The resolved route the turn actually ran on lives on
+   * {@link Message.model}. Absent on messages written before this was captured.
+   */
+  requestedModel?: string
   /**
    * Generation parameters this turn actually ran with — resolved, not
    * configured: the model's saved values after sanitizing for what it accepts,

@@ -165,7 +165,7 @@ import {
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
-import { isEmptyModelParameters, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
@@ -1146,9 +1146,11 @@ export async function runAgent(
     // caps it, and the settings can change afterwards. Silent for the common
     // case of an untuned model, which sends nothing.
     const turnParameters = resolveTurnParameters(model, providerOptions)
-    if (!isEmptyModelParameters(turnParameters)) {
-      sendChunk({ type: 'turn_parameters', model, parameters: turnParameters })
-    }
+    // Always sent now — carries the resolved model (the concrete route actually
+    // run) plus the user's picker selection (`requestedModel`, possibly a
+    // dynamic selector like `auto:…`), so the renderer can stamp both onto the
+    // assistant message.
+    sendChunk({ type: 'turn_parameters', model, parameters: turnParameters, requestedModel })
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local

@@ -97,10 +97,18 @@ export interface SpineMessageLine {
   /** Display metadata is inline; text snapshots are referenced blob files. */
   attachments?: SpineTranscriptAttachment[]
   /**
-   * Primary-chat model for this assistant message (picker id). Optional for
-   * legacy spines written before per-message provenance existed.
+   * Primary-chat model for this assistant message — the concrete route the turn
+   * ran on. Optional for legacy spines written before per-message provenance
+   * existed.
    */
   model?: string
+  /**
+   * The picker/requested selection for this message (possibly a dynamic
+   * selector like `auto:…`). The resolved route the turn actually ran on lives
+   * on {@link SpineMessageLine.model}. Absent on spines written before this was
+   * captured.
+   */
+  requestedModel?: string
   /**
    * Resolved generation parameters the turn ran with — see `Message.parameters`.
    * Absent for a turn that sent none (the common case) and for spines written
