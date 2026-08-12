@@ -751,6 +751,18 @@ Do not create a second permanent pane or one sidebar section per schedule. The
 schedule editor owns configuration; the collapsed project disclosure owns task
 history.
 
+That split needs a seam, or the editor is something you have to go and find:
+each automation heading carries a trailing settings glyph
+(`.automation-setup-btn`) out to its own setup — the **Automations** heading to
+the project's schedule list, a schedule heading to that schedule opened for
+editing. It stays `opacity: 0` until its heading is hovered or the button takes
+focus, exactly like the row actions beside it, and the heading itself keeps
+doing what a disclosure does. A single-run schedule has no heading of its own,
+so every automation row's context menu offers the same **Automation setup…**
+destination. Schedules are project-scoped, so a heading under a project that
+isn't open lands on the project first rather than editing another project's
+automations. Spec: [`tests/e2e/automation-settings-link.e2e.ts`](../tests/e2e/automation-settings-link.e2e.ts).
+
 ## Settings → Usage worth-it card
 
 The plan worth-it block sits between subscription bars and the local ledger: one short verdict, one
