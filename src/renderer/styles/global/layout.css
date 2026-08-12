@@ -252,19 +252,48 @@
   flex-direction: column;
   border-top: 1px solid var(--border);
 }
+/* An automation heading is a disclosure plus a link out to its setup, so the
+   hover wash belongs to the row rather than to the twisty half of it. */
+.automation-threads-header,
+.automation-schedule-header {
+  display: flex;
+  align-items: stretch;
+}
+.automation-threads-header:hover,
+.automation-schedule-header:hover {
+  background: var(--bg-hover);
+}
 .automation-threads-toggle {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: var(--spacing-sm) var(--spacing-md);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   text-align: left;
 }
-.automation-threads-toggle:hover {
+.automation-threads-header:hover .automation-threads-toggle {
   color: var(--text-secondary);
-  background: var(--bg-hover);
+}
+/* Quiet until the heading is hovered or the button itself takes focus — the
+   same reveal as the row-level thread actions. */
+.automation-setup-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  padding-inline: var(--spacing-sm);
+  color: var(--text-muted);
+}
+.automation-threads-header:hover .automation-setup-btn,
+.automation-schedule-header:hover .automation-setup-btn,
+.automation-setup-btn:focus-visible {
+  opacity: 1;
+}
+.automation-setup-btn:hover {
+  color: var(--text-primary);
 }
 .automation-threads-twisty {
   display: inline-flex;
@@ -302,15 +331,15 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) calc(28px + var(--spacing-sm));
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   text-align: left;
 }
-.automation-schedule-toggle:hover {
+.automation-schedule-header:hover .automation-schedule-toggle {
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 .automation-schedule-title {
   min-width: 0;

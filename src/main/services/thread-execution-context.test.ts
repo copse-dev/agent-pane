@@ -109,7 +109,7 @@ describe('thread execution context', () => {
     })
   })
 
-  it('registers a resolved worktree execution root with the file index (#1400)', async () => {
+  it('does not index a worktree during generic UI context resolution (#1728)', async () => {
     const validated: ValidatedThreadWorktree = {
       path: '/validated/root',
       branch: 'copse/thread-1',
@@ -140,7 +140,7 @@ describe('thread execution context', () => {
       },
     })
 
-    assert.deepEqual(indexedRoots, ['/validated/root'])
+    assert.deepEqual(indexedRoots, [])
   })
 
   it('never registers a shared checkout with the worktree indexer', async () => {
@@ -152,6 +152,42 @@ describe('thread execution context', () => {
     })
 
     assert.deepEqual(indexedRoots, [])
+  })
+
+  it('prewarms a resolved worktree index when preparing an agent turn (#1400)', async () => {
+    const persisted = {
+      path: '/diagnostic/path',
+      branch: 'copse/thread-1',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    const validated: ValidatedThreadWorktree = {
+      ...persisted,
+      path: '/validated/root',
+      root: '/validated/root',
+      gitDir: '/repo/.git/worktrees/thread-1',
+      commonGitDir: '/repo/.git',
+    }
+    const indexedRoots: string[] = []
+
+    const context = await prepareThreadExecutionContext(
+      'project-1',
+      'thread-1',
+      { emit: () => {} },
+      {
+        getProjectRoot: () => '/project',
+        getThreadMeta: async () => ({ id: 'thread-1', worktree: persisted }),
+        validateWorktree: async () => validated,
+        startWorktreeIndexing: (root) => {
+          indexedRoots.push(root)
+        },
+      },
+    )
+
+    assert.equal(context?.root, '/validated/root')
+    assert.deepEqual(indexedRoots, ['/validated/root'])
   })
 
   it('persists an adopted live branch when Git HEAD drifted inside the worktree', async () => {

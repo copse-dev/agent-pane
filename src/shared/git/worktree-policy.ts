@@ -62,6 +62,34 @@ function unsupportedReason(
 }
 
 /**
+ * The `checkoutMode` `decideThreadWorktreePolicy` will reach without
+ * inspecting the repository, or null when the repository genuinely decides.
+ *
+ * An explicit shared choice always settles to `shared`. An automatic choice
+ * also settles to `shared` when the project has worktrees disabled. With no
+ * project mode, use the policy's default (`always`), which still requires the
+ * repository inspection because an unsupported repository falls back to the
+ * shared checkout.
+ *
+ * Callers that only need the mode — such as the composer's checkout preview,
+ * which the footer re-runs on every thread switch — can use this to skip four
+ * Git queries, including `getDefaultBranch`'s possible network fallback.
+ *
+ * `worktree-policy.test.ts` pins the agreement exhaustively: wherever this
+ * returns a mode, `decideThreadWorktreePolicy` must return the same one for
+ * every combination of inspection inputs.
+ */
+export function settledCheckoutMode(
+  input: Pick<WorktreePolicyInput, 'choice' | 'projectMode'>,
+): WorktreePolicyDecision['checkoutMode'] | null {
+  const choice = input.choice ?? 'automatic'
+  const projectMode = input.projectMode ?? DEFAULT_PROJECT_WORKTREE_MODE
+  if (choice === 'shared') return 'shared'
+  if (choice === 'automatic' && projectMode === 'never') return 'shared'
+  return null
+}
+
+/**
  * Whether the project's uncommitted work can be carried into the new worktree.
  *
  * Seeding restores a snapshot of the project checkout over the worktree

@@ -12,7 +12,9 @@ const ASK_PROMPT =
   '[[mcp:ask_user {"questions":[{"question":"Which CI failure should I investigate?","options":["Latest failure","All failures"]}]}]]'
 
 describe('automation attention grouping', function () {
-  this.timeout(120_000)
+  // The attention wait below is 75s on its own — see the comment there. The
+  // rest of the spec then drives a reveal, an expand, and an ask_user dialog.
+  this.timeout(180_000)
   before(async () => {
     resetUserData()
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
@@ -111,7 +113,10 @@ describe('automation attention grouping', function () {
 
   it('reveals only the automation run waiting for attention', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.execute(
+    // Keep what `runNow` answered. It reports whether the schedule was found at
+    // all, which is the first fork in the diagnosis below — and the old code
+    // awaited it only to discard it.
+    const runNowResult = await browser.execute(
       async ([projectId, scheduleId]) => {
         const host = window as unknown as {
           api?: {
@@ -119,16 +124,125 @@ describe('automation attention grouping', function () {
           }
         }
         if (!host.api?.automations?.runNow) throw new Error('automations.runNow unavailable')
-        await host.api.automations.runNow(projectId, scheduleId)
+        return await host.api.automations.runNow(projectId, scheduleId)
       },
       [PROJECT_ID, SCHEDULE_ID],
     )
 
     const automationToggle = $('.automation-threads-toggle')
-    await browser.waitUntil(
-      async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
-      { timeout: 30_000, timeoutMsg: 'attention did not reveal the Automations group' },
-    )
+    // #1719. The reveal here can only come from `attentionAutomationThreads`:
+    // no other term of `automationExpanded` (projects-pane.ts) applies to a
+    // freshly booted profile. So this waits on the run `runNow` started
+    // allocating its worktree, spawning, running a mock turn and reaching the
+    // `ask_user` gate — `runNow` resolves at *started*, covering none of it.
+    //
+    // **A duration theory was tried and disproved.** 30s looked like the
+    // problem, so it went to 75s; run 31414645268 then failed with byte-
+    // identical state — `runNow` started with a real thread id, toggle at
+    // `aria-expanded=false`, **0 attention bells**. Two and a half times the
+    // budget changed nothing, so the run is not merely slow. It is left at 75s
+    // because the sibling spec needs that much for its own boundary and it
+    // costs nothing, but it is not the fix and should not be read as one.
+    //
+    // What the diagnostics could NOT answer, and now do: automation rows live
+    // in `.automation-thread-rows`, which is built only inside
+    // `if (automationExpanded)`. So the collapsed group hides every row, and
+    // counting `.chats-list .chat-row` was never going to see the new run at
+    // all. The added probes ask whether the thread `runNow` returned reached
+    // the sidebar in any form, and what the group's own count says.
+    try {
+      await browser.waitUntil(
+        async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
+        { timeout: 75_000 },
+      )
+    } catch {
+      const startedThreadId =
+        typeof runNowResult === 'object' && runNowResult !== null && 'threadId' in runNowResult
+          ? String((runNowResult as { threadId?: unknown }).threadId)
+          : ''
+      const [toggleExists, expanded, groupCount, rowCount, bellCount, titles, sidebarState] =
+        await Promise.all([
+          automationToggle.isExisting(),
+          automationToggle.getAttribute('aria-expanded').catch(() => '<unreadable>'),
+          $$('.automation-schedule-group').length,
+          $$('.chats-list .chat-row').length,
+          $$('.chat-attention-bell').length,
+          browser.execute(() =>
+            Array.from(document.querySelectorAll('.chats-list .chat-title'))
+              .map((node) => node.textContent ?? '')
+              .join(' | '),
+          ),
+          // Readable while collapsed. `.automation-threads-count` is
+          // `scheduleGroups.size`, and `.automation-threads-running` is set by
+          // any automation thread in `running` status.
+          browser.execute(() => ({
+            groupCountLabel:
+              document.querySelector('.automation-threads-count')?.textContent ?? '<absent>',
+            runningIndicator: document.querySelector('.automation-threads-running') !== null,
+          })),
+        ])
+      // Everything above still cannot see an automation *row*: they are built
+      // only inside `if (automationExpanded)`, so the collapsed group hides
+      // exactly what needs inspecting. Round two reported
+      // `knownThreadIds: 1, startedThreadPresent: false` and that was vacuous —
+      // one row is the unrelated chat, and the run could not have appeared
+      // whether it existed or not.
+      //
+      // So expand by hand before reading. Clicking the toggle sets
+      // `expandedAutomationProjects` and re-renders with every run present.
+      // This runs only on the failure path, after the assertion has already
+      // been lost, so it cannot affect a passing run.
+      await automationToggle.click().catch(() => undefined)
+      // Two levels collapse independently. Opening the Automations group still
+      // leaves each *schedule* closed unless it has an active or attention run
+      // (`scheduleRevealed` in projects-pane.ts), and a closed schedule renders
+      // its count but none of its rows — which is why the previous round read
+      // `automationRows: 0` next to `scheduleCounts: "4 runs"`. Open the
+      // schedule too.
+      await $('.automation-schedule-toggle')
+        .click()
+        .catch(() => undefined)
+      const revealed = await browser
+        .waitUntil(async () => (await $$('.automation-thread-rows [data-thread-id]').length) > 0, {
+          timeout: 5_000,
+        })
+        .then(() => true)
+        .catch(() => false)
+      const forced = await browser.execute((threadId: string) => {
+        const rows = Array.from(
+          document.querySelectorAll('.automation-thread-rows [data-thread-id]'),
+        )
+        return {
+          automationRows: rows.length,
+          startedThreadPresent:
+            threadId !== '' &&
+            rows.some((node) => node.getAttribute('data-thread-id') === threadId),
+          // Each row's id, its classes (status lives there), and its text —
+          // enough to say whether the started run is present and what state the
+          // sidebar thinks it is in.
+          rowDetail: rows
+            .map(
+              (node) =>
+                `${(node.getAttribute('data-thread-id') ?? '').slice(0, 8)}[${node.className}]` +
+                `"${(node.textContent ?? '').slice(0, 40)}"`,
+            )
+            .join(' | '),
+          scheduleCounts: Array.from(document.querySelectorAll('.automation-schedule-count'))
+            .map((node) => node.textContent ?? '')
+            .join(' | '),
+        }
+      }, startedThreadId)
+      throw new Error(
+        'attention did not reveal the Automations group — ' +
+          `runNow returned ${JSON.stringify(runNowResult)}, ` +
+          `.automation-threads-toggle ${toggleExists ? 'exists' : 'is ABSENT'} ` +
+          `with aria-expanded=${String(expanded)}, ` +
+          `${String(groupCount)} schedule group(s), ${String(rowCount)} sidebar row(s), ` +
+          `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}, ` +
+          `sidebar: ${JSON.stringify(sidebarState)}, ` +
+          `after forcing the group open (revealed=${String(revealed)}): ${JSON.stringify(forced)}`,
+      )
+    }
     assert.equal((await automationToggle.$$('.chat-attention-bell')).length, 0)
 
     const scheduleGroup = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
