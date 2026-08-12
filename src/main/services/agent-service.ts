@@ -39,6 +39,8 @@ import {
   setActiveRunThread,
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -628,6 +630,14 @@ export async function runAgent(
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
+  // Persist the resolved model so a turn that fails before any usage (e.g. a
+  // provider rejecting the model) still leaves the concrete id in meta.json —
+  // the live byModel map only fills from usage chunks. Best-effort: a thread
+  // that is not persisted yet must not block the turn.
+  const runContext = getThreadExecutionContext()
+  if (runContext) {
+    await updateMeta(runContext.projectId, threadId, { resolvedModel: model }).catch(() => {})
+  }
   // The model actually running this turn — stamped on Cursor hook agent-session
   // payloads (B4). Set before any hook can fire (beforeSubmitPrompt below, the
   // tool gate, afterFileEdit, stop) so every one reports the real model.

@@ -188,6 +188,13 @@ export interface Thread {
   /** Per-thread model override; absent means "use the global default". */
   model?: string
   /**
+   * The concrete model a turn's `model` selector expanded to (e.g.
+   * `auto:…` → `gpt-5.6-terra`). Recorded at resolution time so it survives a
+   * turn that fails before any usage, unlike the live `byModel` usage map.
+   * Absent on threads written before this was captured.
+   */
+  resolvedModel?: string
+  /**
    * Per-chat reasoning dial, set from the composer footer. Overrides the level
    * saved against the model in Settings for this chat's turns only, so "this
    * one's hard, think harder" does not permanently re-tune the model. Absent
