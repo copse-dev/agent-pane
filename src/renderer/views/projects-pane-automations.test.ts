@@ -2,11 +2,18 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { Thread } from '@shared/types'
-import { createFakeApi } from '../fake-api.test-support.ts'
+import type { AutomationSchedule, Thread } from '@shared/types'
+import type { PluginSummary } from '@shared/types/plugins.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
 import { resetAttention, setAttentionThreads } from '../controller/attention.ts'
 import { mountProjectsPane } from './projects-pane.ts'
+import {
+  closeSettingsDialog,
+  isSettingsDialogOpen,
+  mountSettingsDialog,
+} from './settings-dialog.ts'
 
 function thread(id: string, title: string, scheduleId?: string, triggeredAt = 10): Thread {
   return {
@@ -44,7 +51,75 @@ function mount(threads: Thread[], activeThreadId: string): HTMLElement {
   return host
 }
 
+const schedule: AutomationSchedule = {
+  id: 'schedule-docs',
+  projectId: 'a',
+  name: 'Docs freshness',
+  cron: '0 9 * * 1-5',
+  prompt: 'Check the docs against the code.',
+  model: 'gpt-5.4',
+  enabled: true,
+  createdAt: 1,
+  updatedAt: 1,
+}
+
+const automationsPlugin: PluginSummary = {
+  id: AUTOMATIONS_PLUGIN_ID,
+  trust: 'first-party',
+  stability: 'experimental',
+  name: AUTOMATIONS_PLUGIN_ID,
+  enabled: true,
+  contributions: {
+    toolNames: [],
+    modelRoutes: [],
+    browserOrigins: [],
+    blockingHooks: [],
+    asyncHooks: [],
+    commandHooks: [],
+    promptBlocks: [],
+    ui: [
+      {
+        id: 'schedule-editor',
+        level: 3,
+        slot: 'settings-plugin-detail',
+        title: 'Automation schedules',
+      },
+    ],
+    capabilities: [],
+    permissions: [],
+    storageNamespace: AUTOMATIONS_PLUGIN_ID,
+  },
+  settings: [],
+}
+
+/**
+ * Sidebar plus the settings dialog it links into, sharing one API stub: the
+ * click-through crosses both, and anything the stub doesn't answer stays pending
+ * rather than resolving into a shape the dialog would then read.
+ */
+function mountWithSettings(threads: Thread[], activeThreadId: string): HTMLElement {
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads,
+    activeThreadId,
+  })
+  const api = createPendingApi({
+    'plugins.list': () => Promise.resolve({ plugins: [automationsPlugin] }),
+    'cursorPlugins.list': () => Promise.resolve([]),
+    'automations.list': () => Promise.resolve([schedule]),
+  })
+  const host = document.createElement('div')
+  document.body.append(host)
+  mountSettingsDialog(store, api)
+  mountProjectsPane(host, store, api)
+  return host
+}
+
 afterEach(() => {
+  if (isSettingsDialogOpen()) closeSettingsDialog()
   document.body.replaceChildren()
   resetProjectSwitchStateForTest()
   resetAttention()
@@ -180,5 +255,93 @@ describe('projects pane automation group', () => {
       'true',
     )
     assert.equal(host.querySelectorAll('.automation-schedule-runs .chat-row').length, 3)
+  })
+})
+
+describe('projects pane automation setup links', () => {
+  it('opens the linked schedule’s editor from its heading', async () => {
+    const host = mountWithSettings(
+      [
+        thread('chat', 'Regular conversation'),
+        thread('docs-latest', 'Docs freshness', 'schedule-docs', 20),
+        thread('docs-previous', 'Docs freshness', 'schedule-docs', 10),
+      ],
+      'chat',
+    )
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+
+    const header = host.querySelector('.automation-schedule-header')
+    assert.ok(header)
+    const setup = header.querySelector<HTMLButtonElement>('.automation-setup-btn')
+    assert.ok(setup)
+    assert.equal(setup.getAttribute('aria-label'), 'Docs freshness setup')
+    setup.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(isSettingsDialogOpen(), true)
+    const pluginsSection = document.querySelector('.settings-section[data-section="customise"]')
+    assert.ok(pluginsSection?.classList.contains('active'))
+    // The plugin's detail sits inside a fold that is closed by default; a deep
+    // link that left it closed would land on the card, not on the schedule.
+    const pluginRow = document.querySelector(
+      `.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`,
+    )
+    assert.ok(pluginRow)
+    assert.equal(pluginRow.querySelector<HTMLDetailsElement>('.plugin-settings-fold')?.open, true)
+    const form = pluginRow.querySelector<HTMLFormElement>('.automation-form')
+    assert.ok(form)
+    assert.equal(form.hidden, false)
+    assert.equal(
+      pluginRow.querySelector<HTMLInputElement>('.automation-name-input')?.value,
+      schedule.name,
+    )
+
+    // Expansion still belongs to the heading itself.
+    assert.equal(
+      host.querySelector('.automation-schedule-toggle')?.getAttribute('aria-expanded'),
+      'false',
+    )
+  })
+
+  it('opens the project’s schedule list from the Automations heading', async () => {
+    const host = mountWithSettings([thread('docs', 'Docs freshness', 'schedule-docs')], 'docs')
+
+    const setup = host.querySelector<HTMLButtonElement>(
+      '.automation-threads-header .automation-setup-btn',
+    )
+    assert.ok(setup)
+    assert.equal(setup.getAttribute('aria-label'), 'Automation settings')
+    setup.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(isSettingsDialogOpen(), true)
+    const pluginRow = document.querySelector(
+      `.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`,
+    )
+    assert.ok(pluginRow)
+    assert.match(pluginRow.querySelector('.automation-list')?.textContent ?? '', /Docs freshness/)
+    // No schedule was named, so the list stays the destination.
+    assert.equal(pluginRow.querySelector<HTMLFormElement>('.automation-form')?.hidden, true)
+  })
+
+  it('offers the setup on an automation row, where a single run has no heading', () => {
+    const host = mountWithSettings(
+      [thread('chat', 'Regular conversation'), thread('docs', 'Docs freshness', 'schedule-docs')],
+      'docs',
+    )
+    const labelsFor = (row: Element): (string | null)[] => {
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+      const items = Array.from(document.querySelectorAll('.context-menu-item')).map(
+        (item) => item.textContent,
+      )
+      document.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+      return items
+    }
+
+    const automationRow = host.querySelector('.chat-row.is-automation')
+    const conversationRow = host.querySelector('.chat-row:not(.is-automation)')
+    assert.ok(automationRow && conversationRow)
+    assert.deepEqual(labelsFor(automationRow), ['Rename', 'Fork', 'Archive', 'Automation setup…'])
+    assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive'])
   })
 })

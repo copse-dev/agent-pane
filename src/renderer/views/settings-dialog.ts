@@ -431,10 +431,22 @@ function parseApprovedProviderHosts(value: FormDataEntryValue | null): string[] 
     .filter(Boolean)
 }
 
+/**
+ * A plugin's level-3 detail view to reveal on the next open (Settings → Customise →
+ * <plugin>), plus the row inside it the caller was pointing at — a schedule id for
+ * the automations detail.
+ */
+interface PluginDetailTarget {
+  pluginId: string
+  detailId?: string
+}
+
 let overlayEl: HTMLDialogElement | null = null
 // Section to reveal on the next open (e.g. a deep-link from the low-context
 // warning). Read and cleared by the `settings-open` handler; null → General.
 let pendingSection: SettingsSection | null = null
+// Plugin detail to reveal on the next open. Same lifecycle as `pendingSection`.
+let pendingPluginDetail: PluginDetailTarget | null = null
 
 export function openSettingsDialog(section?: SettingsSection): void {
   if (!overlayEl || overlayEl.open) return
@@ -444,6 +456,23 @@ export function openSettingsDialog(section?: SettingsSection): void {
   // hand-rolled overlay + manual `hidden` toggle.
   overlayEl.showModal()
   overlayEl.dispatchEvent(new Event('settings-open'))
+}
+
+/**
+ * Open Settings on the automations plugin's schedule editor — the configuration
+ * behind an automation heading in the projects sidebar. With a schedule id, that
+ * schedule opens for editing; without one, the project's schedule list is shown.
+ *
+ * The editor is scoped to the open project, so callers must already be on the
+ * project that owns the schedule.
+ */
+export function openAutomationSettings(scheduleId?: string): void {
+  if (!overlayEl || overlayEl.open) return
+  pendingPluginDetail = {
+    pluginId: AUTOMATIONS_PLUGIN_ID,
+    ...(scheduleId ? { detailId: scheduleId } : {}),
+  }
+  openSettingsDialog('customise')
 }
 
 export function closeSettingsDialog(): void {
@@ -2318,6 +2347,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // can re-grade its pairing hint once the selected value has settled.
   const modelFieldPopulated = new WeakMap<HTMLSelectElement, Promise<void>>()
 
+  // The plugin detail this open was deep-linked to, held from `settings-open`
+  // until `revealPluginDetail()` has rendered the list and opened the fold. Rows
+  // are rebuilt on every `refreshPlugins()`, so the target lives out here rather
+  // than in a row that a later refresh would replace.
+  let pluginDetail: PluginDetailTarget | null = null
+
   /**
    * Render one plugin row for the Settings → Plugins list (P3 of
    * docs/plans/hooks-and-feature-packs.md). Each row shows the plugin's name and
@@ -2659,7 +2694,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           contribution.level === 3 && contribution.slot === 'settings-plugin-detail',
       )
     ) {
-      settingsFold.append(createAutomationPluginSettings(store, api, plugin.enabled))
+      settingsFold.append(
+        createAutomationPluginSettings(
+          store,
+          api,
+          plugin.enabled,
+          pluginDetail?.pluginId === plugin.id ? pluginDetail.detailId : undefined,
+        ),
+      )
     }
     if (
       plugin.id === PARALLEL_SEARCH_PLUGIN_ID &&
@@ -3057,6 +3099,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     chip.textContent = s.originDetail && s.origin === 'plugin' ? s.originDetail : labels[s.origin]
     chip.title = s.originDetail ? `${labels[s.origin]} — ${s.originDetail}` : labels[s.origin]
     return chip
+  }
+
+  /**
+   * Render the Plugins list, then bring the deep-linked plugin's detail into view:
+   * its settings fold is closed by default, so a link that only scrolled would
+   * land on a card with the thing it linked to still folded away. The detail
+   * itself opens the linked row (see `createAutomationPluginSettings`).
+   */
+  async function revealPluginDetail(): Promise<void> {
+    const target = pluginDetail
+    await refreshPlugins()
+    pluginDetail = null
+    if (!target) return
+    const row = overlay.querySelector<HTMLElement>(
+      `.plugin-row[data-plugin-id="${target.pluginId}"]`,
+    )
+    if (!row) return
+    const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
+    if (fold) fold.open = true
+    row.scrollIntoView({ block: 'start' })
   }
 
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
@@ -3462,13 +3524,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const openedSection = pendingSection ?? 'general'
     showSection(openedSection)
     pendingSection = null
-    // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
-    // lazy section content here too.
+    pluginDetail = pendingPluginDetail
+    pendingPluginDetail = null
+    // Deep-links (e.g. status banner → SSH, an automation heading → Packs) skip
+    // the nav click path, so refresh lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'customise') {
       void refreshSources()
-      void refreshPlugins()
+      void revealPluginDetail()
     }
     if (openedSection === 'storage') void refreshWorktrees()
     searchInput.focus()
