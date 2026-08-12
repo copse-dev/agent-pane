@@ -179,6 +179,59 @@ describe('automation plugin settings detail', () => {
     ])
   })
 
+  it('opens the schedule a sidebar heading linked to', async () => {
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: 'gpt-5.4',
+      enabled: true,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const { api } = stubApi([{ ...schedule, id: 'schedule-other', name: 'Nightly docs' }, schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true, 'schedule-a')
+    document.body.append(root)
+    await tick()
+
+    const form = root.querySelector<HTMLFormElement>('.automation-form')
+    assert.ok(form)
+    assert.equal(form.hidden, false)
+    assert.equal(
+      root.querySelector<HTMLInputElement>('.automation-name-input')?.value,
+      schedule.name,
+    )
+    assert.equal(
+      root.querySelector<HTMLInputElement>('.automation-cron-input')?.value,
+      schedule.cron,
+    )
+  })
+
+  it('says so when the linked schedule has since been deleted', async () => {
+    // Deleting a schedule leaves its finished runs in the sidebar, so their
+    // heading can still link to a schedule that no longer exists.
+    const { api } = stubApi([])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true, 'schedule-gone')
+    document.body.append(root)
+    await tick()
+
+    const status = root.querySelector<HTMLElement>('.automation-status')
+    assert.ok(status)
+    assert.equal(status.hidden, false)
+    assert.match(status.textContent, /no longer scheduled/i)
+    assert.equal(root.querySelector<HTMLFormElement>('.automation-form')?.hidden, true)
+  })
+
   it('keeps editing a schedule that still pins a concrete model', async () => {
     // Schedules written before dynamic selection stay exactly as saved — the
     // picker surfaces the pinned id rather than silently swapping in a rule.

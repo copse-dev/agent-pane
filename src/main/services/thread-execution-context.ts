@@ -63,9 +63,10 @@ export interface ThreadExecutionContextDependencies {
     worktree: ThreadWorktree,
   ) => Promise<void>
   /**
-   * Register a resolved worktree's execution root with the file index and its
-   * rebuild watcher (#1400) — fire-and-forget, never awaited, so a slow index
-   * build never delays the turn it was resolved for.
+   * Register an agent turn's resolved worktree root with the file index and its
+   * rebuild watcher (#1400). Generic context resolution deliberately does not
+   * call this: renderer file/Git IPCs only need the validated root, and selecting
+   * a thread must not start a full checkout listing as a side effect (#1728).
    */
   startWorktreeIndexing?: (root: string) => void
 }
@@ -139,7 +140,6 @@ export async function resolveThreadExecutionContext(
       }
       await dependencies.syncWorktreeBranch?.(projectId, threadId, adopted)
     }
-    dependencies.startWorktreeIndexing?.(worktree.root)
     return Object.freeze({
       projectId,
       threadId,
@@ -171,7 +171,12 @@ export async function prepareThreadExecutionContext(
   dependencies: ThreadExecutionContextDependencies = defaultDependencies,
 ): Promise<ThreadExecutionContext | null> {
   try {
-    return await resolveThreadExecutionContext(projectId, threadId, dependencies)
+    const context = await resolveThreadExecutionContext(projectId, threadId, dependencies)
+    // Agent turns may invoke find_files immediately. Prewarm the execution
+    // root here so that index-dependent tools can ride the in-flight build,
+    // while read-only renderer selection stays indexing-free (#1728).
+    if (context.checkoutMode === 'worktree') dependencies.startWorktreeIndexing?.(context.root)
+    return context
   } catch (error) {
     host.emit(threadId, { type: 'text', text: classifyAgentError(error) })
     host.emit(threadId, { type: 'done' })

@@ -191,7 +191,35 @@ describe('cron automation trigger', function () {
     await scheduledRow.click()
 
     const userMessage = $('.msg-user .message-text')
-    await expect(userMessage).toHaveText(PROMPT, { wait: 15_000 })
+    // Same reasoning as the sibling diagnostic in automation-attention (#1719):
+    // "element wasn't found" cannot distinguish a row whose click selected
+    // nothing, a thread that opened empty, and a thread whose prompt rendered
+    // under a different role. Say which one it is.
+    try {
+      await expect(userMessage).toHaveText(PROMPT, { wait: 15_000 })
+    } catch {
+      const [msgCount, userCount, activeThread, transcript] = await Promise.all([
+        $$('.msg').length,
+        $$('.msg-user').length,
+        browser.execute(
+          () =>
+            document
+              .querySelector('.chats-list .chat-row.is-active')
+              ?.getAttribute('data-thread-id') ?? '<none active>',
+        ),
+        browser.execute(() =>
+          Array.from(document.querySelectorAll('.msg'))
+            .slice(0, 4)
+            .map((node) => `${node.className}:${(node.textContent ?? '').slice(0, 60)}`)
+            .join(' || '),
+        ),
+      ])
+      throw new Error(
+        `the scheduled run's prompt never rendered — ${String(msgCount)} message(s), ` +
+          `${String(userCount)} user message(s), active thread ${activeThread}, ` +
+          `transcript: ${transcript || '<empty>'}`,
+      )
+    }
 
     const expectedResponse = `Mock response to: ${PROMPT}`
     await browser.waitUntil(
