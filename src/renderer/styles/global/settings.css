@@ -1616,6 +1616,11 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 
+.storage-project-path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 /* Worktrees: same row shape as the loaded-source lists, plus the two things
    only this list has — a measured size that arrives after the row, and a
    destructive per-row action. The size keeps its own colour so it reads as a
