@@ -1377,7 +1377,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // template above; a miss throws a loud error (template/code drift) rather than a
   // silent non-null assertion.
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
-    // Live-persist toggles must wake listeners (e.g. projects "+ Remote" button)
+    // Live-persist toggles must wake listeners (e.g. the projects add menu)
     // without requiring the dialog Save button.
     onChanged: (): void => {
       store.emit('settings_changed')

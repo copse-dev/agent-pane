@@ -162,36 +162,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     },
     searchIcon('ui-icon ui-icon-sm'),
   )
-  const openRemoteBtn = el(
-    'button',
-    {
-      class: 'projects-open-remote-btn',
-      'aria-label': 'Open remote project',
-      'data-tooltip': 'Open a project on an SSH host',
-      hidden: true,
-    },
-    '+ Remote',
-  )
-  // Single "+" entry point for local projects: opens a context menu with
-  // New project / Open folder. Remote keeps its own header button because it is
-  // an opt-in affordance that only appears once SSH workspaces are enabled.
+  // One "+" entry point for every way to add a project. The remote action is
+  // included only while SSH workspaces are enabled.
   const addBtn = el(
     'button',
     {
       class: 'projects-add-btn',
-      'aria-label': 'New project',
+      'aria-label': 'Add project',
       'data-tooltip': 'New project or open a folder',
     },
     '+',
   )
-  const header = el(
-    'div',
-    { class: 'pane-projects-header' },
-    title,
-    searchToggle,
-    addBtn,
-    openRemoteBtn,
-  )
+  const header = el('div', { class: 'pane-projects-header' }, title, searchToggle, addBtn)
 
   // Filter input for the expanded project's threads. It lives outside `list`
   // (which render() clears on every update) so its focus and value survive
@@ -248,11 +230,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   root.append(header, searchRow, list, settingsBtn)
 
-  openRemoteBtn.addEventListener('click', () => {
-    void addRemoteProject(store, api).catch((err: unknown) => {
-      showErrorToast('Could not open remote folder', err)
-    })
-  })
+  let sshWorkspaceEnabled = false
 
   addBtn.addEventListener('click', () => {
     const rect = addBtn.getBoundingClientRect()
@@ -269,16 +247,34 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           void addProject(store, api)
         },
       },
+      ...(sshWorkspaceEnabled
+        ? [
+            {
+              label: 'Open remote project',
+              onSelect: (): void => {
+                void addRemoteProject(store, api).catch((err: unknown) => {
+                  showErrorToast('Could not open remote folder', err)
+                })
+              },
+            },
+          ]
+        : []),
     ])
   })
 
-  const syncRemoteOpenVisibility = (): void => {
+  const syncRemoteOpenAvailability = (): void => {
     void isSshWorkspaceEnabled(api).then((enabled) => {
-      openRemoteBtn.hidden = !enabled
+      sshWorkspaceEnabled = enabled
+      addBtn.setAttribute(
+        'data-tooltip',
+        enabled
+          ? 'New project, open a folder, or connect remotely'
+          : 'New project or open a folder',
+      )
     })
   }
-  syncRemoteOpenVisibility()
-  store.on('settings_changed', syncRemoteOpenVisibility)
+  syncRemoteOpenAvailability()
+  store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
   // Automation history is intentionally tucked away from ordinary conversation
@@ -466,7 +462,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const expandedId = expandedProjectId ?? activeProjectId
 
     if (projects.length === 0 && orphans.length === 0) {
-      list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+ Open".'))
+      list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
       return
     }
 
