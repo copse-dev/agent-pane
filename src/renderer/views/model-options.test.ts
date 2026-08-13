@@ -363,6 +363,38 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(!acp.some((o) => o.value === 'acp:cursor'))
   })
 
+  it('normalises raw GPT model ids advertised by an ACP agent', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'codex-acp',
+            title: 'Codex',
+            command: 'codex-acp',
+            enabled: true,
+            availableModels: [
+              { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
+              { value: 'gpt-5.1', label: 'gpt-5.1' },
+              { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+              { value: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+
+    assert.deepEqual(
+      options.filter((option) => option.group === 'Codex on this device').map((o) => o.label),
+      [
+        'GPT-5.4 nano',
+        'GPT-5.1',
+        `GPT-5 mini${intellectSuffix('gpt-5-mini')}`,
+        `GPT-5.6 Sol${intellectSuffix('gpt-5.6-sol')}`,
+      ],
+    )
+  })
+
   it('shows the version an agent keeps in the model description, and scores it', async () => {
     const options = await fetchModelOptions(
       mockApi({
