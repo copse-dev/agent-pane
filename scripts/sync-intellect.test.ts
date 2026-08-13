@@ -3,8 +3,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { check, resolveConfig } from 'prettier'
 import {
   detectPayloadVersion,
+  formatDataFile,
   graduateWanted,
   mergeApiModels,
   requestAaModels,
@@ -30,6 +32,28 @@ const BASE: DataFile = {
   equatingPairs: [],
   equating: [],
 }
+
+describe('formatDataFile', () => {
+  it('formats API-expanded JSON for the repository Prettier gate', async () => {
+    const path = resolve('scripts/data/intellect-scores.json')
+    const formatted = await formatDataFile({
+      ...BASE,
+      wanted: [
+        {
+          modelId: 'deepseek/deepseek-v4-reasoning',
+          aliases: [
+            'deepseek-v4-reasoning',
+            'DeepSeek V4 (Reasoning)',
+            'openrouter:deepseek/deepseek-v4-reasoning',
+          ],
+        },
+      ],
+    })
+    const config = await resolveConfig(path)
+    assert.equal(await check(formatted, { ...config, filepath: path }), true)
+    assert.match(formatted, /"modelId": "deepseek\/deepseek-v4-reasoning"/)
+  })
+})
 
 describe('mergeApiModels', () => {
   it('populates a WANTED catalog model from the feed, matched by alias', () => {
