@@ -144,7 +144,9 @@ function ensureElectronDist(): void {
     if (existsSync(ELECTRON_DIST) && lstatSync(ELECTRON_DIST).isSymbolicLink()) {
       unlinkSync(ELECTRON_DIST)
     }
-    console.log(`[patch-dev-name] fetching Electron ${pkgVersion} dist (Electron 42+ lazy download)`)
+    console.log(
+      `[patch-dev-name] fetching Electron ${pkgVersion} dist (Electron 42+ lazy download)`,
+    )
     execFileSync(process.execPath, [ELECTRON_INSTALL_JS], { stdio: 'inherit' })
   }
 
@@ -193,11 +195,7 @@ if (isPatchApplied() && process.env['COPSE_PANEL_REFRESH_DOCK'] !== '1') {
   process.exit(0)
 }
 
-if (
-  process.env['COPSE_PANEL_REFRESH_DOCK'] !== '1' &&
-  adoptSharedCopseApp() &&
-  isPatchApplied()
-) {
+if (process.env['COPSE_PANEL_REFRESH_DOCK'] !== '1' && adoptSharedCopseApp() && isPatchApplied()) {
   console.log(
     `[patch-dev-name] ${APP_BUNDLE} reused from shared Electron dist (${readDistVersion() ?? 'unknown'})`,
   )

@@ -24,7 +24,11 @@ const e2eEnvFile = join(electronShell, '.e2e-env.json')
 const requireFromProject = createRequire(join(process.cwd(), 'package.json'))
 const chromedriverBinary =
   process.env.COPSE_E2E_CHROMEDRIVER_BINARY?.trim() ||
-  join(dirname(requireFromProject.resolve('electron-chromedriver/package.json')), 'bin', 'chromedriver')
+  join(
+    dirname(requireFromProject.resolve('electron-chromedriver/package.json')),
+    'bin',
+    'chromedriver',
+  )
 
 let e2eUserDataDir: string | null = null
 
