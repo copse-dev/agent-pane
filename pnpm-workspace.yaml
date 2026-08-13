@@ -1,3 +1,5 @@
+# Project-level pnpm config (allowBuilds + overrides). npm's package.json
+# "overrides" field is not applied by pnpm — keep security pins here.
 allowBuilds:
   ddg-search: true
   edgedriver: true
@@ -10,3 +12,21 @@ allowBuilds:
   onnxruntime-node: true
   protobufjs: true
   sharp: true
+
+overrides:
+  '@hono/node-server': 2.0.11
+  adm-zip: ^0.6.0
+  brace-expansion: 5.0.9
+  minimatch: 10.2.5
+  dompurify: ^3.4.13
+  js-yaml@4: 4.3.1
+  serialize-javascript: ^7.0.7
+  tar: ^7.5.22
+  sharp: 0.35.3
+  fast-xml-parser: 5.10.1
+  fast-uri: 3.1.5
+  hono: 4.12.34
+  ip-address: 10.3.1
+  extract-zip: file:packages/extract-zip
+  undici@6: 6.28.0
+  undici@7: 7.29.0
