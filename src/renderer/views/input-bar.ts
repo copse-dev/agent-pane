@@ -385,7 +385,10 @@ export function mountInputBar(
     const resolved =
       thread.resolvedModel ??
       [...thread.messages].reverse().find((m) => m.role === 'assistant' && m.model)?.model
-    return resolved ?? current
+    // Run the resolved route through the same label formatter the picker uses
+    // (OpenRouter/cloud friendly), so `openrouter:minimax/minimax-m3` renders
+    // as "MiniMax M3" rather than the raw id.
+    return resolved ? modelDisplayLabel(resolved) : current
   }
 
   function footerRecentModels(): string[] {
