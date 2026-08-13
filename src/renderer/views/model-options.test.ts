@@ -493,7 +493,12 @@ describe('fetchModelOptions visibility', () => {
     )
     assert.deepEqual(
       options.filter((o) => o.group === 'Cursor Cloud Agent').map((o) => o.label),
-      ['Default', 'Claude Opus 5', 'Claude Sonnet 4.6 (Thinking)', 'Composer 2'],
+      [
+        'Default',
+        `Claude Opus 5${intellectSuffix('claude-opus-5')}`,
+        'Claude Sonnet 4.6 (Thinking)',
+        'Composer 2',
+      ],
     )
   })
 

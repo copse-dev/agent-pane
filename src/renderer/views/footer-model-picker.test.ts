@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
 
 function createApi(): ApiClient {
   const base = createFakeApi()
@@ -146,9 +147,11 @@ describe('footer model picker', () => {
     )
     await settle()
 
+    const hint = cloudModelIntellectHint('claude-sonnet-4-6')
+    assert.ok(hint)
     assert.equal(
       root.querySelector('.model-picker-label')?.textContent,
-      'Claude Sonnet 4.6 — intellect 35.9 · $5.40/MTok',
+      `Claude Sonnet 4.6 — ${hint}`,
     )
   })
 })

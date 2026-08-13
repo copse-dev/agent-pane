@@ -288,18 +288,18 @@ describe('CLI entry guard', () => {
   })
 
   it('leaves the generated file alone when merely imported', () => {
-    // Importing above already happened. If the guard were absent, the sync would
-    // have run during module load and rewritten this file before we read it.
-    const generated = readFileSync(resolve('packages/llm/src/model-intellect.generated.ts'), 'utf8')
-    const committed = execFileSync(
-      'git',
-      ['show', 'HEAD:packages/llm/src/model-intellect.generated.ts'],
-      {
-        encoding: 'utf8',
-        maxBuffer: 32 * 1024 * 1024,
-      },
+    // Compare the file around a fresh import. Comparing with HEAD is invalid in
+    // the scheduled workflow because the sync is deliberately uncommitted when
+    // validation runs.
+    const generatedPath = resolve('packages/llm/src/model-intellect.generated.ts')
+    const before = readFileSync(generatedPath, 'utf8')
+    execFileSync(
+      process.execPath,
+      ['--input-type=module', '--eval', "await import('./scripts/sync-intellect.mts')"],
+      { cwd: resolve('.'), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
     )
-    assert.equal(generated, committed, 'the unit suite must not rewrite a tracked generated file')
+    const after = readFileSync(generatedPath, 'utf8')
+    assert.equal(after, before, 'importing the module must not rewrite the generated file')
   })
 })
 
@@ -316,10 +316,13 @@ describe('sync-intellect workflow', () => {
     assert.match(workflow, /run: npm run sync:intellect -- --from-api/)
   })
 
-  it('uses the sync token to open a CI-triggering PR after validation', () => {
+  it('opens a review PR before propagating validation failures', () => {
     const validate = workflow.indexOf('run: npm run check')
     const pullRequest = workflow.indexOf('uses: peter-evans/create-pull-request@v8')
+    const propagateFailure = workflow.indexOf("steps.validate.outcome == 'failure'")
     assert.ok(validate >= 0 && pullRequest > validate)
+    assert.ok(propagateFailure > pullRequest)
+    assert.match(workflow, /id: validate\s+continue-on-error: true/)
     assert.match(workflow, /token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
     assert.match(workflow, /branch: chore\/sync-intellect/)
   })
