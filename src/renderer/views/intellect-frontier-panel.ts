@@ -656,13 +656,14 @@ export function renderFrontierSvg(
     MARGIN.top + plotH - ((intellect - minIntellect) / (maxIntellect - minIntellect)) * plotH
 
   // Prices near zero project to the same narrow column. Splay columns of three
-  // or more points a few pixels horizontally so their marks and hover regions
-  // remain individually legible. A faint stem drawn below reconnects every
-  // moved mark to its true data coordinate on the frontier/grid.
+  // or more non-frontier points a few pixels horizontally so their marks and
+  // hover regions remain individually legible. Frontier marks stay at their
+  // true data coordinate because moving one away from its path makes the value
+  // line and point appear to disagree.
   const displayX = new Map<string, number>(points.map((p) => [p.id, x(p.costPerMTok)]))
-  const byRawX = [...points].sort(
-    (a, b) => x(a.costPerMTok) - x(b.costPerMTok) || y(a.intellect) - y(b.intellect),
-  )
+  const byRawX = points
+    .filter((point) => !point.onFrontier)
+    .sort((a, b) => x(a.costPerMTok) - x(b.costPerMTok) || y(a.intellect) - y(b.intellect))
   for (let start = 0; start < byRawX.length;) {
     const first = byRawX[start]
     if (!first) break
@@ -997,7 +998,6 @@ export function renderFrontierSvg(
 
   // Points, with a larger transparent hit target and a rich hover card.
   for (const p of points) {
-    const rawCx = x(p.costPerMTok)
     const displayedCx = pointX(p)
     const cx = String(displayedCx)
     const cy = String(y(p.intellect))
@@ -1034,21 +1034,6 @@ export function renderFrontierSvg(
           class: cls,
           'data-model-id': p.id,
         })
-    if (Math.abs(displayedCx - rawCx) > 0.5) {
-      svg.append(
-        svgEl('line', {
-          x1: String(rawCx),
-          y1: cy,
-          x2: cx,
-          y2: cy,
-          stroke: 'var(--border-strong)',
-          'stroke-width': '0.75',
-          'stroke-opacity': '0.5',
-          class: 'frontier-point-splay',
-          'data-model-id': p.id,
-        }),
-      )
-    }
     if (p.plan) {
       svg.append(
         svgEl('circle', {

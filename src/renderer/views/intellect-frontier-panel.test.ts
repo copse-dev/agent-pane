@@ -201,21 +201,27 @@ describe('renderFrontierSvg', () => {
     assert.ok(expanded.querySelector('line.frontier-label-leader'))
   })
 
-  it('splays dense price columns and keeps hover targets centred on their visible dots', () => {
+  it('splays dense non-frontier columns without detaching frontier points or hover targets', () => {
     const points: FrontierPoint[] = [
-      { id: 'low-a', costPerMTok: 0, intellect: 30, onFrontier: true },
-      { id: 'low-b', costPerMTok: 0.02, intellect: 35, onFrontier: true },
-      { id: 'low-c', costPerMTok: 0.04, intellect: 40, onFrontier: true },
-      { id: 'low-d', costPerMTok: 0.06, intellect: 45, onFrontier: true },
+      { id: 'frontier-zero', costPerMTok: 0, intellect: 45, onFrontier: true },
+      { id: 'low-a', costPerMTok: 0, intellect: 30, onFrontier: false },
+      { id: 'low-b', costPerMTok: 0.02, intellect: 35, onFrontier: false },
+      { id: 'low-c', costPerMTok: 0.04, intellect: 40, onFrontier: false },
+      { id: 'low-d', costPerMTok: 0.06, intellect: 42, onFrontier: false },
       { id: 'far', costPerMTok: 10, intellect: 60, onFrontier: true },
     ]
     const svg = renderFrontierSvg(points)
+    const frontierZero = svg.querySelector<SVGCircleElement>(
+      'circle.frontier-point[data-model-id="frontier-zero"]',
+    )
+    assert.ok(frontierZero)
+    assert.equal(frontierZero.getAttribute('cx'), '40')
     const lowDots = [...svg.querySelectorAll<SVGCircleElement>('circle.frontier-point')].filter(
       (dot) => dot.dataset['modelId']?.startsWith('low-'),
     )
     assert.equal(lowDots.length, 4)
     assert.ok(new Set(lowDots.map((dot) => dot.getAttribute('cx'))).size > 2)
-    assert.ok(svg.querySelectorAll('line.frontier-point-splay').length >= 2)
+    assert.equal(svg.querySelectorAll('line.frontier-point-splay').length, 0)
 
     for (const dot of lowDots) {
       const id = dot.dataset['modelId']
