@@ -117,10 +117,7 @@ describe('settings → Storage → worktree actions', function () {
     await browser.pause(50)
     const heightOnHover = await row.getSize('height')
     assert.equal(heightOnHover, heightAtRest, 'hover must not change the worktree row height')
-    assert.equal(
-      (await row.$('.sources-row-title').getCSSProperty('white-space')).value,
-      'nowrap',
-    )
+    assert.equal((await row.$('.sources-row-title').getCSSProperty('white-space')).value, 'nowrap')
 
     await saveElementScreenshot('#settings-dialog', 'settings-worktree-actions.png')
 
