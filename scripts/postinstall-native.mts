@@ -35,9 +35,7 @@ function ensureNodePtySpawnHelperExecutable(): void {
     }
   }
   if (fixed.length > 0) {
-    console.log(
-      `[postinstall] node-pty spawn-helper executable (${String(fixed.length)} path(s))`,
-    )
+    console.log(`[postinstall] node-pty spawn-helper executable (${String(fixed.length)} path(s))`)
   }
 }
 
