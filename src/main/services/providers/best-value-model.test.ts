@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { claudeAcpFrontierCandidates, resolveBestValueFromFrontier } from './best-value-model.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
+import { getIntellectScore } from '@copse/llm/model-intellect.ts'
 
 describe('resolveBestValueFromFrontier', () => {
   it('routes a local winner with the lmstudio: prefix', () => {
@@ -114,6 +115,8 @@ describe('resolveBestValueFromFrontier', () => {
 
 describe('claudeAcpFrontierCandidates', () => {
   it('scores the described model but routes with the value the agent advertised', () => {
+    const opus5Score = getIntellectScore('claude-opus-5')
+    assert.ok(opus5Score)
     const candidates = claudeAcpFrontierCandidates([
       {
         id: 'claude-agent-acp',
@@ -139,7 +142,7 @@ describe('claudeAcpFrontierCandidates', () => {
     assert.deepEqual(candidates, [
       {
         id: 'acp:claude-agent-acp#default',
-        intellect: 61,
+        intellect: opus5Score.value,
         costPerMTok: 9,
         plan: 'Claude',
       },
