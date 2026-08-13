@@ -118,6 +118,47 @@ describe('worktree inventory', () => {
     assert.ok(entry.createdAt !== null && entry.createdAt > 0)
   })
 
+  it('uses a surviving checkout under the project parent when the selected worktree is gone', async () => {
+    const { repo, worktreePath } = await setup()
+    await createThread('project-1', thread('thread-2', 'Keep the repository reachable'))
+    const sibling = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-2',
+      projectRoot: worktreePath,
+      prompt: 'Keep the repository reachable',
+      baseBranch: 'main',
+    })
+    await updateMeta('project-1', 'thread-2', { worktree: sibling, gitBranch: sibling.branch })
+
+    // Reproduce a project opened from a linked checkout that was removed behind
+    // Copse's back. Its Git registration may already have been pruned, while
+    // the per-project parent and another child remain available.
+    await rm(worktreePath, { recursive: true, force: true })
+    git(repo, ['worktree', 'prune'])
+
+    const entries = await listWorktreeInventory({
+      projectId: 'project-1',
+      projectRoot: worktreePath,
+      runningThreadIds: NO_RUNS,
+    })
+
+    assert.ok(entries.some((entry) => entry.path === sibling.path))
+    assert.ok(
+      !entries.some((entry) => entry.path === worktreePath),
+      'the selected checkout is not storage the project can delete',
+    )
+    assert.ok(
+      !entries.some((entry) => entry.path === repo),
+      'the primary checkout is the parent project, never a removable worktree',
+    )
+    const size = await measureWorktreeSize({
+      projectId: 'project-1',
+      projectRoot: worktreePath,
+      path: sibling.path,
+    })
+    assert.equal(size.path, sibling.path)
+  })
+
   it('reports a checkout whose thread no longer points at it as released', async () => {
     const { repo, worktreePath } = await setup()
     await updateMeta('project-1', 'thread-1', {
