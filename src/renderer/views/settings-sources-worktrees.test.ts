@@ -7,6 +7,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { Project } from '@shared/types/state.ts'
 import type {
   WorktreeInventoryEntry,
+  WorktreePackageCleanupResult,
   WorktreeRemovalResult,
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
@@ -25,6 +26,12 @@ interface RemoveCall {
   projectId: string
   path: string
   force: boolean
+}
+
+interface CleanupCall {
+  projectId: string
+  path: string
+  remove: boolean
 }
 
 const USAGE = {
@@ -62,10 +69,14 @@ function stubApi(
     calls?: RemoveCall[]
     projectCalls?: string[]
     size?: WorktreeSizeResult
+    cleanupResults?: WorktreePackageCleanupResult[]
+    cleanupCalls?: CleanupCall[]
+    terminalCalls?: Array<{ projectId: string; path: string }>
   } = {},
 ): ApiClient {
   const base = createFakeApi()
   const removals = [...(options.removals ?? [])]
+  const cleanupResults = [...(options.cleanupResults ?? [])]
   return {
     ...base,
     instructions: { ...base.instructions, list: () => Promise.resolve([]) },
@@ -82,6 +93,26 @@ function stubApi(
         Promise.resolve(
           options.size ?? { path, bytes: 12 * 1024 * 1024, fileCount: 42, truncated: false },
         ),
+      cleanupPackages: (
+        projectId: string,
+        path: string,
+        remove: boolean,
+      ): Promise<WorktreePackageCleanupResult> => {
+        options.cleanupCalls?.push({ projectId, path, remove })
+        return Promise.resolve(
+          cleanupResults.shift() ?? {
+            status: 'ready',
+            path,
+            directories: [],
+            bytes: 0,
+            truncated: false,
+          },
+        )
+      },
+      openTerminal: (projectId: string, path: string): Promise<void> => {
+        options.terminalCalls?.push({ projectId, path })
+        return Promise.resolve()
+      },
       remove: (projectId: string, path: string, force: boolean): Promise<WorktreeRemovalResult> => {
         options.calls?.push({ projectId, path, force })
         const next = removals.shift()
@@ -179,11 +210,72 @@ describe('settings sources → worktrees list', () => {
       'copse/fix-the-flicker-thread-1',
     )
     assert.equal(row.querySelector('.sources-badge')?.textContent, 'thread')
+    const threadButton = row.querySelector<HTMLButtonElement>('.sources-worktree-thread-btn')
+    assert.ok(threadButton)
+    assert.equal(threadButton.title, 'Open thread “Fix the flicker”')
     const detail = row.querySelector('.sources-row-detail')?.textContent ?? ''
     assert.match(detail, /Thread “Fix the flicker”/)
     assert.match(detail, /last used 3h ago/)
     assert.equal(row.querySelector('.sources-worktree-size')?.textContent, '12 MB')
     assert.equal(row.querySelector('.sources-row-hover-detail')?.textContent, entry().path)
+  })
+
+  it('opens the owning thread from its badge', async () => {
+    const list = await openWorktrees(stubApi([entry()]))
+    const threadButton = list.querySelector<HTMLButtonElement>('.sources-worktree-thread-btn')
+    assert.ok(threadButton)
+    threadButton.click()
+    const dialog = document.querySelector<HTMLDialogElement>('#settings-dialog')
+    assert.equal(dialog?.open, false)
+  })
+
+  it('opens the system terminal at the registered checkout', async () => {
+    const terminalCalls: Array<{ projectId: string; path: string }> = []
+    const list = await openWorktrees(stubApi([entry()], { terminalCalls }))
+    const button = list.querySelector<HTMLButtonElement>('.sources-worktree-terminal-btn')
+    assert.ok(button)
+    button.click()
+    await flush()
+    assert.deepEqual(terminalCalls, [{ projectId: 'project-1', path: entry().path }])
+    assert.match(
+      document.getElementById('sources-worktrees-status')?.textContent ?? '',
+      /Opened a terminal/,
+    )
+  })
+
+  it('previews package cleanup and removes it only after confirmation', async () => {
+    const cleanupCalls: CleanupCall[] = []
+    const result: WorktreePackageCleanupResult = {
+      status: 'ready',
+      path: entry().path,
+      directories: [
+        { path: 'node_modules', bytes: 12 * 1024 * 1024, truncated: false },
+        { path: 'packages/app/.venv', bytes: 4 * 1024 * 1024, truncated: false },
+      ],
+      bytes: 16 * 1024 * 1024,
+      truncated: false,
+    }
+    const cleaned: WorktreePackageCleanupResult = { ...result, status: 'cleaned' }
+    const list = await openWorktrees(
+      stubApi([entry()], { cleanupCalls, cleanupResults: [result, cleaned] }),
+    )
+    const button = list.querySelector<HTMLButtonElement>('.sources-worktree-cleanup-btn')
+    assert.ok(button)
+    button.click()
+    await flush()
+
+    const dialog = document.querySelector<HTMLDialogElement>('#confirm-dialog')
+    assert.ok(dialog?.open)
+    assert.match(dialog.querySelector('.confirm-dialog-message')?.textContent ?? '', /2 package/)
+    assert.match(dialog.querySelector('.confirm-dialog-detail')?.textContent ?? '', /node_modules/)
+    assert.deepEqual(cleanupCalls, [{ projectId: 'project-1', path: entry().path, remove: false }])
+
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.deepEqual(cleanupCalls, [
+      { projectId: 'project-1', path: entry().path, remove: false },
+      { projectId: 'project-1', path: entry().path, remove: true },
+    ])
   })
 
   it('badges a checkout its thread has let go of, and one with no thread at all', async () => {
@@ -209,6 +301,10 @@ describe('settings sources → worktrees list', () => {
     const badges = [...list.querySelectorAll('.sources-badge')].map((b) => b.textContent)
     assert.deepEqual(badges, ['in use', '3 uncommitted', 'unmerged'])
     assert.equal(deleteButton(list).disabled, true)
+    assert.equal(
+      list.querySelector<HTMLButtonElement>('.sources-worktree-cleanup-btn')?.disabled,
+      true,
+    )
   })
 
   it('deletes a clean checkout after one confirmation', async () => {

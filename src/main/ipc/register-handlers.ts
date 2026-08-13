@@ -117,8 +117,10 @@ import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
 import {
   listWorktreeInventory,
+  cleanupWorktreePackages,
   measureWorktreeSize,
   removeWorktree,
+  resolveRegisteredWorktreePath,
 } from '../services/worktree-inventory.ts'
 import {
   requestAcpPackageInstallApproval,
@@ -1596,6 +1598,38 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!target) throw new IpcValidationError('That project is no longer available')
     return measureWorktreeSize({ ...target, path })
   })
+
+  ipcMain.handle(
+    'worktrees:cleanupPackages',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawRemove: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, remove] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawRemove,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return cleanupWorktreePackages({
+        ...target,
+        path,
+        remove,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
+
+  ipcMain.handle(
+    'worktrees:openTerminal',
+    async (event, rawProjectId: unknown, rawPath: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      const root = await resolveRegisteredWorktreePath({ ...target, path })
+      return openWorkspaceInExternalEditor('terminal', root)
+    },
+  )
 
   ipcMain.handle(
     'worktrees:remove',
