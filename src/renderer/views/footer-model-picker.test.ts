@@ -131,4 +131,24 @@ describe('footer model picker', () => {
     )
     assert.equal(current, 'auto:min-intellect:40')
   })
+
+  it('preserves the catalog label when the override has no resolved route', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    mountFooterModelPicker(
+      root,
+      createApi(),
+      () => 'claude-sonnet-4-6',
+      () => {},
+      {
+        formatCurrentLabel: () => undefined,
+      },
+    )
+    await settle()
+
+    assert.equal(
+      root.querySelector('.model-picker-label')?.textContent,
+      'Claude Sonnet 4.6 — intellect 35.9 · $5.40/MTok',
+    )
+  })
 })

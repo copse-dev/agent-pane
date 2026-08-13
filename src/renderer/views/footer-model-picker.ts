@@ -15,7 +15,7 @@ export interface FooterModelPickerOptions {
   /** Most-recent-first model values from prior threads. */
   getRecentModels?: () => readonly string[]
   /** Override the trigger label for the current picker value (resolved route). */
-  formatCurrentLabel?: (current: string) => string
+  formatCurrentLabel?: (current: string) => string | undefined
 }
 
 // Composer adapter for the app-wide picker. The trigger stays compact while the

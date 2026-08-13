@@ -83,6 +83,7 @@ import {
   FALLBACK_APP_CHAT_MODEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
+import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -379,16 +380,17 @@ export function mountInputBar(
    * on so the picker shows a real model instead of the opaque selector; fall
    * back to the selector's display label otherwise.
    */
-  function footerModelDisplayLabel(current: string): string {
+  function footerModelDisplayLabel(current: string): string | undefined {
+    if (!isDynamicModel(current)) return undefined
     const thread = getActiveThread(store)
-    if (!thread) return current
+    if (!thread) return undefined
     const resolved =
       thread.resolvedModel ??
       [...thread.messages].reverse().find((m) => m.role === 'assistant' && m.model)?.model
     // Run the resolved route through the same label formatter the picker uses
     // (OpenRouter/cloud friendly), so `openrouter:minimax/minimax-m3` renders
     // as "MiniMax M3" rather than the raw id.
-    return resolved ? modelDisplayLabel(resolved) : current
+    return resolved ? modelDisplayLabel(resolved) : undefined
   }
 
   function footerRecentModels(): string[] {
