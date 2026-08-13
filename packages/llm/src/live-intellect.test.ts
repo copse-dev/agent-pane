@@ -7,14 +7,30 @@ import {
   verifyLiveCohort,
   type LiveAaModel,
 } from './live-intellect.ts'
+import { getIntellectScore } from './model-intellect.ts'
 
-// A live feed on the canonical scale: anchors match the curated measurements
-// (Fable 60, Opus 56), plus models we never curated.
+function currentIntellect(modelId: string): number {
+  const score = getIntellectScore(modelId)
+  assert.ok(score, `expected a synced intellect score for ${modelId}`)
+  return score.value
+}
+
+function liveAnchor(modelId: string, drift = 0): LiveAaModel {
+  return { id: modelId, intellect: currentIntellect(modelId) + drift }
+}
+
+// A live feed on the current canonical scale, plus synthetic models which a
+// future API import cannot accidentally turn into curated measurements.
 const CANONICAL_FEED: LiveAaModel[] = [
-  { id: 'claude-fable-5', intellect: 60 },
-  { id: 'claude-opus-4-8', intellect: 56.4 }, // rerun jitter within tolerance
-  { id: 'mimo-v2-5-pro', intellect: 53, inputPricePerMTok: 0.5, outputPricePerMTok: 2 },
-  { id: 'grok-5-fast', intellect: 44 }, // no pricing reported
+  liveAnchor('claude-fable-5'),
+  liveAnchor('claude-opus-4-8'),
+  {
+    id: 'fixture-live-priced-model',
+    intellect: 53,
+    inputPricePerMTok: 0.5,
+    outputPricePerMTok: 2,
+  },
+  { id: 'fixture-live-unpriced-model', intellect: 44 },
 ]
 
 describe('verifyLiveCohort', () => {
@@ -28,8 +44,8 @@ describe('verifyLiveCohort', () => {
 
   it('rejects a renormalised feed — the v4.0-style cohort must never mix in', () => {
     const v = verifyLiveCohort([
-      { id: 'claude-opus-4-8', intellect: 61 },
-      { id: 'GPT-5.5', intellect: 60 },
+      liveAnchor('claude-opus-4-8', LIVE_ANCHOR_TOLERANCE + 1),
+      liveAnchor('GPT-5.5', LIVE_ANCHOR_TOLERANCE + 1),
       { id: 'new-model', intellect: 50 },
     ])
     assert.equal(v.verified, false)
@@ -38,7 +54,7 @@ describe('verifyLiveCohort', () => {
 
   it('stays unverified with too few anchors — unknown scale is not a pass', () => {
     const v = verifyLiveCohort([
-      { id: 'claude-opus-4-8', intellect: 56 },
+      liveAnchor('claude-opus-4-8'),
       { id: 'unknown-model', intellect: 40 },
     ])
     assert.equal(v.verified, false)
@@ -57,17 +73,16 @@ describe('verifyLiveCohort', () => {
   })
 
   it('trusts a canonical feed despite a minority of stale anchors', () => {
-    // Six anchors agree; one curated value is stale (our 24 vs a live 20). A
-    // lone outlier is stale data, not a renormalised scale, so the feed still
-    // verifies — with the outlier reported.
+    // Six anchors agree and one fixture is deliberately outside tolerance. A
+    // lone outlier is stale data, not a renormalised scale.
     const v = verifyLiveCohort([
-      { id: 'claude-opus-4-8', intellect: 55.7 },
-      { id: 'claude-fable-5', intellect: 59.9 },
-      { id: 'claude-sonnet-4-6', intellect: 35.9 },
-      { id: 'claude-sonnet-5', intellect: 53.4 },
-      { id: 'gpt-4o', intellect: 11.2 },
-      { id: 'gpt-5', intellect: 34.7 },
-      { id: 'claude-haiku-4-5', intellect: 20 },
+      liveAnchor('claude-opus-4-8'),
+      liveAnchor('claude-fable-5'),
+      liveAnchor('claude-sonnet-4-6'),
+      liveAnchor('claude-sonnet-5'),
+      liveAnchor('gpt-4o'),
+      liveAnchor('gpt-5'),
+      liveAnchor('claude-haiku-4-5', LIVE_ANCHOR_TOLERANCE + 1),
     ])
     assert.equal(v.verified, true)
     assert.equal(v.agreeingAnchors, 6)
@@ -78,10 +93,10 @@ describe('verifyLiveCohort', () => {
   it('still refuses when diverging anchors are not a minority (a real renorm)', () => {
     // Half the anchors shift — that is a scale change, not stale data.
     const v = verifyLiveCohort([
-      { id: 'claude-opus-4-8', intellect: 55.7 },
-      { id: 'claude-fable-5', intellect: 59.9 },
-      { id: 'claude-sonnet-4-6', intellect: 41 },
-      { id: 'gpt-4o', intellect: 18 },
+      liveAnchor('claude-opus-4-8'),
+      liveAnchor('claude-fable-5'),
+      liveAnchor('claude-sonnet-4-6', LIVE_ANCHOR_TOLERANCE + 1),
+      liveAnchor('gpt-4o', LIVE_ANCHOR_TOLERANCE + 1),
     ])
     assert.equal(v.verified, false)
     assert.equal(v.mismatches.length, 2)
@@ -91,8 +106,8 @@ describe('verifyLiveCohort', () => {
     // A feed claiming v4.1 whose anchor values are v4.0-shaped is refused.
     const v = verifyLiveCohort(
       [
-        { id: 'claude-opus-4-8', intellect: 61 },
-        { id: 'claude-fable-5', intellect: 65 },
+        liveAnchor('claude-opus-4-8', LIVE_ANCHOR_TOLERANCE + 1),
+        liveAnchor('claude-fable-5', LIVE_ANCHOR_TOLERANCE + 1),
       ],
       '4.1',
     )
@@ -107,36 +122,41 @@ describe('liveIntellectCandidates', () => {
     assert.equal(verification.verified, true)
     // Curated anchors never re-enter via the feed.
     assert.ok(!candidates.some((c) => c.id.startsWith('claude-')))
-    assert.deepEqual(hintOnly, [{ id: 'grok-5-fast', intellect: 44 }])
+    assert.deepEqual(hintOnly, [{ id: 'fixture-live-unpriced-model', intellect: 44 }])
     assert.equal(candidates.length, 1)
-    const [mimo] = candidates
-    assert.ok(mimo)
-    assert.equal(mimo.id, 'mimo-v2-5-pro')
-    assert.equal(mimo.intellectEstimated, true)
+    const [fixture] = candidates
+    assert.ok(fixture)
+    assert.equal(fixture.id, 'fixture-live-priced-model')
+    assert.equal(fixture.intellectEstimated, true)
     // 0.8·0.5 + 0.2·2 = $0.80/MTok blended.
-    assert.equal(mimo.costPerMTok, 0.8)
+    assert.equal(fixture.costPerMTok, 0.8)
   })
 
   it('prices a curated model from the feed without displacing its reviewed score', () => {
     const { candidates, pricedCurated } = liveIntellectCandidates([
       ...CANONICAL_FEED,
-      // AA's bare slug for our curated moonshotai/kimi-k3 (57.1), with pricing.
-      { id: 'kimi-k3', intellect: 57.4, inputPricePerMTok: 3, outputPricePerMTok: 15 },
+      // AA's bare slug for our curated moonshotai/kimi-k3, with pricing.
+      {
+        id: 'kimi-k3',
+        intellect: currentIntellect('moonshotai/kimi-k3'),
+        inputPricePerMTok: 3,
+        outputPricePerMTok: 15,
+      },
     ])
     // Not a live candidate (it resolves to a curated measurement)…
     assert.ok(!candidates.some((c) => c.id.includes('kimi')))
     // …but it becomes a plottable point: curated score, live price.
     const kimi = pricedCurated.find((c) => c.id === 'moonshotai/kimi-k3')
     assert.ok(kimi)
-    assert.equal(kimi.intellect, 57.1)
+    assert.equal(kimi.intellect, currentIntellect('moonshotai/kimi-k3'))
     assert.equal(kimi.intellectEstimated, false)
     assert.equal(kimi.costPerMTok, 5.4)
   })
 
   it('treats a zero or absent price as unpriced, not as a $0 candidate', () => {
     const { candidates, hintOnly } = liveIntellectCandidates([
-      { id: 'claude-fable-5', intellect: 60 },
-      { id: 'claude-opus-4-8', intellect: 56 },
+      liveAnchor('claude-fable-5'),
+      liveAnchor('claude-opus-4-8'),
       // AA free tier reports these with no usable price → belong in hintOnly,
       // never plotted at $0 where all but one would be dominated.
       { id: 'zero-priced', intellect: 40, inputPricePerMTok: 0, outputPricePerMTok: 0 },
@@ -153,8 +173,8 @@ describe('liveIntellectCandidates', () => {
 
   it('returns nothing at all from an unverified cohort', () => {
     const { candidates, hintOnly, verification } = liveIntellectCandidates([
-      { id: 'claude-opus-4-8', intellect: 61 },
-      { id: 'claude-fable-5', intellect: 65 },
+      liveAnchor('claude-opus-4-8', LIVE_ANCHOR_TOLERANCE + 1),
+      liveAnchor('claude-fable-5', LIVE_ANCHOR_TOLERANCE + 1),
       { id: 'new-model', intellect: 50, inputPricePerMTok: 1 },
     ])
     assert.equal(verification.verified, false)
