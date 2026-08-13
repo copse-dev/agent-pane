@@ -53,6 +53,7 @@ import type {
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
   WorktreeInventoryEntry,
+  WorktreePackageCleanupResult,
   WorktreeRemovalResult,
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
@@ -751,6 +752,14 @@ export interface ApiClient {
     list: (projectId: string) => Promise<WorktreeInventoryEntry[]>
     /** Walk one checkout for its on-disk size — separate from `list`, which stays fast. */
     size: (projectId: string, path: string) => Promise<WorktreeSizeResult>
+    /** Preview or remove ignored dependency directories inside one registered checkout. */
+    cleanupPackages: (
+      projectId: string,
+      path: string,
+      remove: boolean,
+    ) => Promise<WorktreePackageCleanupResult>
+    /** Open the system terminal at one registered checkout. */
+    openTerminal: (projectId: string, path: string) => Promise<void>
     /**
      * Delete one checkout. Without `force` a checkout holding uncommitted,
      * untracked, or ignored files is reported back rather than removed, so the

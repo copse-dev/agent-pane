@@ -1625,11 +1625,29 @@ dialog.settings-overlay::backdrop {
    only this list has — a measured size that arrives after the row, and a
    destructive per-row action. The size keeps its own colour so it reads as a
    value rather than more of the sentence around it. */
+.sources-row[data-worktree-path] .sources-row-title {
+  /* Worktree headers also hold status chips and three actions. Keep a long
+     branch/path on one ellipsized line at rest so revealing the hover path
+     cannot collapse a previously wrapped row and visibly change its shape. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
 .sources-worktree-size {
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
-.sources-worktree-delete-btn {
+.sources-worktree-thread-btn {
+  background: transparent;
+  cursor: pointer;
+}
+.sources-worktree-thread-btn:hover,
+.sources-worktree-thread-btn:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+.sources-worktree-action-btn {
   flex: none;
   font-size: 11px;
   font-weight: 600;
@@ -1640,12 +1658,15 @@ dialog.settings-overlay::backdrop {
   padding: 1px var(--spacing-sm);
   cursor: pointer;
 }
-.sources-worktree-delete-btn:hover:not(:disabled) {
+.sources-worktree-action-btn:hover:not(:disabled) {
   background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sources-worktree-delete-btn:hover:not(:disabled) {
   border-color: var(--error);
   color: var(--error);
 }
-.sources-worktree-delete-btn:disabled {
+.sources-worktree-action-btn:disabled {
   opacity: 0.6;
   cursor: default;
 }

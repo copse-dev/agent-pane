@@ -15,10 +15,12 @@
  * before anything touches it, so the delete button cannot be steered at an
  * arbitrary directory.
  */
-import { lstat, readdir, stat } from 'node:fs/promises'
+import { lstat, readdir, rm, stat } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import type {
   WorktreeInventoryEntry,
+  WorktreePackageCleanupResult,
+  WorktreePackageDirectory,
   WorktreeRemovalResult,
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
@@ -66,6 +68,30 @@ export interface RemoveWorktreeInput extends WorktreePathInput {
    */
   force: boolean
 }
+
+export interface CleanupWorktreePackagesInput extends WorktreeInventoryInput {
+  path: string
+  /** False previews the exact eligible directories; true rescans and removes them. */
+  remove: boolean
+}
+
+/**
+ * Dependency trees created by common package managers. Generic build folders
+ * (`dist`, `build`, `target`) are deliberately absent: they can hold authored
+ * or irreplaceable output. Every match must also be ignored by Git before it is
+ * offered, so a checked-in `vendor` or `Pods` tree is never touched.
+ */
+const PACKAGE_DIRECTORY_NAMES = new Set([
+  'node_modules',
+  'bower_components',
+  '.pnpm-store',
+  '.venv',
+  'venv',
+  'vendor',
+  'Pods',
+  '.gradle',
+])
+const PACKAGE_DIRECTORY_PATHS = new Set(['.yarn/cache', 'vendor/bundle', 'Carthage/Build'])
 
 function branchRef(branch: string): string {
   return `refs/heads/${branch}`
@@ -347,6 +373,11 @@ async function requireRegisteredWorktree(
   return { repositoryRoot, projectRelativePath, record }
 }
 
+/** Canonical root for a renderer-named checkout, after repository validation. */
+export async function resolveRegisteredWorktreePath(input: WorktreePathInput): Promise<string> {
+  return (await requireRegisteredWorktree(input)).record.path
+}
+
 /**
  * Bytes held by one checkout's working tree. Symlinks are counted as links, not
  * followed, so a link out of the checkout can neither inflate the total nor
@@ -388,6 +419,98 @@ async function measureTree(root: string): Promise<{
     }
   }
   return { bytes, fileCount, truncated: false }
+}
+
+function isPackageDirectory(relativePath: string, name: string): boolean {
+  const portablePath = relativePath.split(sep).join('/')
+  return (
+    PACKAGE_DIRECTORY_NAMES.has(name) ||
+    [...PACKAGE_DIRECTORY_PATHS].some(
+      (path) => portablePath === path || portablePath.endsWith(`/${path}`),
+    )
+  )
+}
+
+/**
+ * Find dependency directories without descending into them. A Git ignore check
+ * is the final eligibility test: known names narrow the search, while ignore
+ * state proves the checkout itself treats the contents as reproducible.
+ */
+async function findPackageDirectories(root: string): Promise<string[]> {
+  const found: string[] = []
+  const stack: Array<{ absolute: string; relative: string }> = [{ absolute: root, relative: '' }]
+  let visited = 0
+  while (stack.length > 0 && visited < SIZE_ENTRY_BUDGET) {
+    const current = stack.pop()
+    if (!current) break
+    const entries = await readdir(current.absolute, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (++visited > SIZE_ENTRY_BUDGET) break
+      if (!entry.isDirectory() || entry.name === '.git') continue
+      const childRelative = current.relative ? join(current.relative, entry.name) : entry.name
+      if (isPackageDirectory(childRelative, entry.name)) {
+        const ignored = await runWorktreeGit(root, [
+          'check-ignore',
+          '--quiet',
+          '--',
+          childRelative,
+        ]).catch(() => null)
+        if (ignored?.code === 0) {
+          found.push(childRelative)
+          // The whole dependency tree is eligible, so nothing below it needs
+          // a separate listing (and walking node_modules would be enormous).
+          continue
+        }
+        // A tracked `vendor` may still contain ignored `vendor/bundle`; keep
+        // walking a known-but-ineligible parent so the narrower match appears.
+      }
+      stack.push({ absolute: join(current.absolute, entry.name), relative: childRelative })
+    }
+  }
+  return found.sort((a, b) => a.localeCompare(b))
+}
+
+async function describePackageDirectories(
+  root: string,
+  paths: string[],
+): Promise<WorktreePackageDirectory[]> {
+  const directories: WorktreePackageDirectory[] = []
+  // Like the row-size queue in the renderer, walk one tree at a time. A large
+  // monorepo can have dozens of workspace-level node_modules directories;
+  // parallel walks would turn a cleanup preview into an I/O spike.
+  for (const path of paths) {
+    const measured = await measureTree(join(root, path))
+    directories.push({ path, bytes: measured.bytes, truncated: measured.truncated })
+  }
+  return directories
+}
+
+/** Preview or remove reproducible package-manager directories from one checkout. */
+export async function cleanupWorktreePackages(
+  input: CleanupWorktreePackagesInput,
+): Promise<WorktreePackageCleanupResult> {
+  const { repositoryRoot, record } = await requireRegisteredWorktree(input)
+  const threadId = managedThreadIdForPath(input.projectId, record.path)
+  if (threadId && input.runningThreadIds.has(threadId)) {
+    return { status: 'blocked-running', path: record.path, threadId }
+  }
+
+  return runSerialized(`worktree-manager:${repositoryRoot}`, async () => {
+    const paths = await findPackageDirectories(record.path)
+    const directories = await describePackageDirectories(record.path, paths)
+    const bytes = directories.reduce((total, directory) => total + directory.bytes, 0)
+    const truncated = directories.some((directory) => directory.truncated)
+    if (input.remove) {
+      for (const path of paths) await rm(join(record.path, path), { recursive: true, force: true })
+    }
+    return {
+      status: input.remove ? 'cleaned' : 'ready',
+      path: record.path,
+      directories,
+      bytes,
+      truncated,
+    }
+  })
 }
 
 /** On-demand footprint for one checkout — the list renders without it, then fills it in. */

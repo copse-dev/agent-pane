@@ -73,6 +73,7 @@ import {
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
+import { switchProjectThread } from '../controller/projects.ts'
 
 export type SettingsSection =
   | 'general'
@@ -1101,8 +1102,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="settings-fieldset-desc">
                 Linked Git checkouts of this project. Copse creates one per isolated thread so
                 agents can work without touching your checkout; each row shows the thread it was
-                created for, when it was last used, and what it costs on disk. Deleting one removes
-                the directory and, when the branch is fully merged, the branch with it.
+                created for, when it was last used, and what it costs on disk. Open its thread or a
+                terminal there, remove ignored package-manager directories, or delete the whole
+                checkout. Deleting one also removes its branch when the branch is fully merged.
               </p>
               <div id="sources-worktrees-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -2129,6 +2131,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })
     row.dataset['worktreePath'] = entry.path
 
+    // A known owner turns the status badge into the shortest possible route
+    // back to its conversation. This also handles a Storage project other than
+    // the active one: switchProjectThread loads that project before selecting it.
+    if (entry.usage) {
+      const usage = entry.usage
+      const badgeEl = row.querySelector<HTMLElement>('.sources-badge')
+      if (badgeEl) {
+        const threadBtn = document.createElement('button')
+        threadBtn.type = 'button'
+        threadBtn.className = badgeEl.className
+        threadBtn.classList.add('sources-worktree-thread-btn')
+        threadBtn.textContent = badge.text
+        threadBtn.title = `Open thread “${usage.title}”`
+        threadBtn.setAttribute('aria-label', `Open thread ${usage.title}`)
+        threadBtn.addEventListener('click', () => {
+          switchProjectThread(store, api, projectId, usage.threadId)
+          closeSettingsDialog()
+        })
+        badgeEl.replaceWith(threadBtn)
+      }
+    }
+
     // Size arrives from a second call per row (`worktrees:size` walks the whole
     // checkout), so the row reserves its slot rather than reflowing later.
     const size = document.createElement('span')
@@ -2136,9 +2160,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     size.textContent = 'sizing…'
     row.querySelector('.sources-row-detail')?.append(' · ', size)
 
+    const terminalBtn = document.createElement('button')
+    terminalBtn.type = 'button'
+    terminalBtn.className = 'sources-worktree-action-btn sources-worktree-terminal-btn'
+    terminalBtn.textContent = 'Terminal'
+    terminalBtn.title = 'Open the system terminal in this checkout'
+    terminalBtn.addEventListener('click', () => {
+      void openWorktreeTerminal(projectId, entry, terminalBtn)
+    })
+
+    const cleanupBtn = document.createElement('button')
+    cleanupBtn.type = 'button'
+    cleanupBtn.className = 'sources-worktree-action-btn sources-worktree-cleanup-btn'
+    cleanupBtn.textContent = 'Clean up…'
+    if (entry.usage?.running) {
+      cleanupBtn.disabled = true
+      cleanupBtn.title = 'Package directories cannot be removed while an agent turn is running'
+    } else {
+      cleanupBtn.title = 'Remove ignored package-manager directories from this checkout'
+    }
+    cleanupBtn.addEventListener('click', () => {
+      void cleanupWorktreePackages(projectId, entry, cleanupBtn)
+    })
+
     const removeBtn = document.createElement('button')
     removeBtn.type = 'button'
-    removeBtn.className = 'sources-worktree-delete-btn'
+    removeBtn.className = 'sources-worktree-action-btn sources-worktree-delete-btn'
     removeBtn.textContent = 'Delete'
     if (entry.usage?.running) {
       removeBtn.disabled = true
@@ -2149,8 +2196,85 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     removeBtn.addEventListener('click', () => {
       void removeWorktree(projectId, entry, removeBtn)
     })
-    row.querySelector('.sources-row-header')?.append(removeBtn)
+    row.querySelector('.sources-row-header')?.append(terminalBtn, cleanupBtn, removeBtn)
     return { row, size }
+  }
+
+  async function openWorktreeTerminal(
+    projectId: string,
+    entry: WorktreeInventoryEntry,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    button.disabled = true
+    statusEl.textContent = 'Opening terminal…'
+    try {
+      await api.worktrees.openTerminal(projectId, entry.path)
+      statusEl.textContent = `Opened a terminal in ${entry.branch ?? entry.path}.`
+    } catch (error) {
+      statusEl.textContent = errorMessage(error)
+    } finally {
+      button.disabled = false
+    }
+  }
+
+  async function cleanupWorktreePackages(
+    projectId: string,
+    entry: WorktreeInventoryEntry,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    button.disabled = true
+    statusEl.textContent = 'Looking for package directories…'
+    try {
+      const preview = await api.worktrees.cleanupPackages(projectId, entry.path, false)
+      if (preview.status === 'blocked-running') {
+        statusEl.textContent = 'That worktree has an agent turn running in it.'
+        return
+      }
+      if (preview.directories.length === 0) {
+        statusEl.textContent = 'No ignored package-manager directories found.'
+        return
+      }
+      const size = preview.truncated
+        ? `at least ${formatByteSize(preview.bytes)}`
+        : formatByteSize(preview.bytes)
+      const shown = preview.directories.slice(0, 12)
+      const remaining = preview.directories.length - shown.length
+      const confirmed = await showConfirmDialog({
+        message: `Remove ${String(preview.directories.length)} package director${
+          preview.directories.length === 1 ? 'y' : 'ies'
+        }?`,
+        detail: [
+          ...shown.map((directory) => directory.path),
+          ...(remaining > 0 ? [`…and ${String(remaining)} more`] : []),
+          '',
+          `This will reclaim ${size}. Your package manager can recreate these directories.`,
+        ].join('\n'),
+        confirmLabel: 'Clean up',
+        danger: true,
+      })
+      if (!confirmed) {
+        statusEl.textContent = 'Kept.'
+        return
+      }
+      statusEl.textContent = 'Cleaning up package directories…'
+      const result = await api.worktrees.cleanupPackages(projectId, entry.path, true)
+      if (result.status === 'blocked-running') {
+        statusEl.textContent = 'That worktree has an agent turn running in it.'
+        return
+      }
+      const reclaimed = result.truncated
+        ? `at least ${formatByteSize(result.bytes)}`
+        : formatByteSize(result.bytes)
+      await refreshWorktrees(
+        `Cleaned up ${String(result.directories.length)} directories (${reclaimed}).`,
+      )
+    } catch (error) {
+      statusEl.textContent = errorMessage(error)
+    } finally {
+      if (button.isConnected) button.disabled = false
+    }
   }
 
   /** Fill in each row's on-disk size, one checkout at a time so the walks don't pile up. */
