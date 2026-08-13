@@ -64,6 +64,9 @@ const MARGIN = { top: 14, right: 20, bottom: 34, left: 40 }
 /** Clearance kept between a lifted frontier label and the frontier line. */
 const LABEL_LINE_GAP = 3
 
+/** Beyond this, text no longer reads as a direct label for its point. */
+const MAX_DIRECT_LABEL_SHIFT = 18
+
 /** Card links warmed per render. Matches the `modelCards:resolve` batch cap. */
 const MAX_CARD_PREFETCH = 128
 
@@ -829,8 +832,12 @@ export function renderFrontierSvg(
   // Frontier labels lift UP to clear the line, so they are placed bottom-first
   // (each rises into space the lower ones haven't claimed); the rest cascade
   // DOWN, so they are placed top-first.
+  const frontierMidpointId = frontierByX[Math.floor((frontierByX.length - 1) / 2)]?.id
   const labelledPoints = [...points].sort(
     (a, b) =>
+      (labelMode === 'summary'
+        ? Number(b.id === frontierMidpointId) - Number(a.id === frontierMidpointId)
+        : 0) ||
       Number(b.onFrontier) - Number(a.onFrontier) ||
       (a.onFrontier ? y(b.intellect) - y(a.intellect) : y(a.intellect) - y(b.intellect)),
   )
@@ -840,11 +847,7 @@ export function renderFrontierSvg(
   const labelY = new Map<string, number>()
   const labelX = new Map<string, number>()
   const labelAnchor = new Map<string, string>()
-  // When a dense frontier cluster runs out of room above the plot, compact mode
-  // keeps the cost-median frontier label as its representative instead of
-  // clamping every label onto the same top baseline. The expanded chart asks
-  // for `all` and uses the larger canvas to cascade the overflow below the line.
-  const frontierMidpointId = frontierByX[Math.floor((frontierByX.length - 1) / 2)]?.id
+  const labelLeader = new Map<string, { x1: number; y1: number; x2: number; y2: number }>()
   // Dots are obstacles too — a label must not sit under another point's mark.
   const placed: Array<{ x0: number; x1: number; py: number }> = points.map((p) => ({
     x0: x(p.costPerMTok) - 7,
@@ -875,7 +878,8 @@ export function renderFrontierSvg(
     } else {
       continue
     }
-    let py = y(p.intellect) + 3
+    const naturalY = y(p.intellect) + 3
+    let py = naturalY
     // A frontier point sits ON the line, so the adjacent segment can run through
     // its side label. When it does, lift the label clear ABOVE the line — the
     // Pareto-empty upper region — rather than leave the line crossing the text.
@@ -912,7 +916,7 @@ export function renderFrontierSvg(
     }
     py = nudgeClear(py, prefersUp ? -1 : 1)
     if (prefersUp && py - 8 < MARGIN.top) {
-      if (labelMode === 'summary' && p.id !== frontierMidpointId) continue
+      if (labelMode === 'summary') continue
       // Put the representative/all-mode overflow below the line, then cascade
       // downward through dots and labels. Starting under the whole segment span
       // means the frontier cannot run through the text on this fallback side.
@@ -922,6 +926,16 @@ export function renderFrontierSvg(
     if (py > plotBottom) {
       // Drop a label that can only land below the plot — hover still has it.
       continue
+    }
+    const shift = Math.abs(py - naturalY)
+    if (labelMode === 'summary' && shift > MAX_DIRECT_LABEL_SHIFT) continue
+    if (labelMode === 'all' && shift > MAX_DIRECT_LABEL_SHIFT) {
+      labelLeader.set(p.id, {
+        x1: px,
+        y1: y(p.intellect),
+        x2: anchor === 'start' ? tx - 2 : tx + 2,
+        y2: py - 3,
+      })
     }
     placed.push({ x0, x1, py })
     labelText.set(p.id, text)
@@ -993,6 +1007,22 @@ export function renderFrontierSvg(
     else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
     const text = labelText.get(p.id)
     if (text !== undefined) {
+      const leader = labelLeader.get(p.id)
+      if (leader) {
+        svg.append(
+          svgEl('line', {
+            x1: String(leader.x1),
+            y1: String(leader.y1),
+            x2: String(leader.x2),
+            y2: String(leader.y2),
+            stroke: 'var(--border-strong)',
+            'stroke-width': '0.75',
+            'stroke-opacity': '0.65',
+            class: 'frontier-label-leader',
+            'data-model-id': p.id,
+          }),
+        )
+      }
       svg.append(
         svgEl(
           'text',

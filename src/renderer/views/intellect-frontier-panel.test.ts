@@ -172,6 +172,19 @@ describe('renderFrontierSvg', () => {
       compactText.includes('frontier-model-with-long-name-7'),
       `expected midpoint label, saw ${JSON.stringify(compactText)}`,
     )
+    assert.equal(compact.querySelectorAll('line.frontier-label-leader').length, 0)
+    for (const label of compactLabels) {
+      const id = label.textContent
+      assert.ok(id)
+      const point = compact.querySelector<SVGCircleElement>(
+        `circle.frontier-point[data-model-id="${id}"]`,
+      )
+      assert.ok(point)
+      assert.ok(
+        Math.abs(Number(label.getAttribute('y')) - (Number(point.getAttribute('cy')) + 3)) <= 18,
+        `${id} label detached from its point`,
+      )
+    }
 
     const expanded = renderFrontierSvg(
       points,
@@ -183,6 +196,7 @@ describe('renderFrontierSvg', () => {
     )
     assert.equal(expanded.getAttribute('data-label-mode'), 'all')
     assert.equal(expanded.querySelectorAll('text.frontier-label').length, points.length)
+    assert.ok(expanded.querySelector('line.frontier-label-leader'))
   })
 })
 
@@ -592,9 +606,14 @@ describe('createIntellectFrontierPanel', () => {
     btn.click()
     svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.match(svg.textContent, /cheap-smart-oss/)
-    const ghost = svg.querySelector('circle.frontier-point.discovery')
+    const ghost = svg.querySelector(
+      'circle.frontier-point.discovery[data-model-id="cheap-smart-oss"]',
+    )
     assert.ok(ghost)
+    assert.ok(
+      svg.querySelector('circle.frontier-hit[data-model-id="cheap-smart-oss"]'),
+      'hover target stays available when the direct label is suppressed',
+    )
   })
 
   it('shows plan badge and AA cost-per-task in the tooltip', async () => {
