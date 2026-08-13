@@ -23,12 +23,12 @@ services:
       args:
         # Which consumer repo's dependency tree to bake for a warm start, and at
         # which ref ("thread in main"). Point at your heaviest consumer; other
-        # repos still run here, they just fall back to npm ci at job time.
+        # repos still run here, they just fall back to pnpm install at job time.
         TARGET_REPO: ${TARGET_REPO:-copse-dev/agent-pane}
         TARGET_REF: ${TARGET_REF:-main}
       secrets:
         # Read token used ONLY at build time to clone TARGET_REPO and let its
-        # `npm ci` fetch the private @copse/streaming-markdown git dependency.
+        # `pnpm install` fetch the private @copse/streaming-markdown git dependency.
         # BuildKit keeps it on tmpfs — it is never written into an image layer.
         - gh_token
     image: copse-ci-runner:latest
@@ -136,7 +136,7 @@ services:
     shm_size: '2gb'
 
 volumes:
-  # Host-local dependency store, keyed by package-lock.json hash. The runner
+  # Host-local dependency store, keyed by pnpm-lock.yaml hash. The runner
   # containers are ephemeral (one job each), so without somewhere persistent to
   # put an installed tree every job re-restored ~590 MB from the Actions cache
   # service — 2.5-3.5 min apiece, times ~16 jobs per CI run, all in parallel and

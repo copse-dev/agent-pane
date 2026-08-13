@@ -15,7 +15,7 @@
 #     other is saturated.
 #
 #   * It is repo-agnostic. The old images baked THIS repo's dependency tree by
-#     using the repo root as the build context (COPY package*.json + npm ci).
+#     using the repo root as the build context (COPY package*.json + pnpm install).
 #     That couples the image to one repo. Here we instead CLONE the target
 #     repo's branch at build time ("thread in main") and bake its deps — so the
 #     image lives in its own repo (future copse-dev/ci-runners) and is pointed
@@ -44,7 +44,7 @@ ARG TARGETARCH
 # Which consumer repo's dependency tree to bake, and at which ref. Override per
 # consumer; defaults to the heavy consumer (agent-pane) whose warm start matters
 # most. A repo with a trivial install (e.g. streaming-markdown) can be left to
-# fall back to `npm ci` at job time — see the bake step below.
+# fall back to `pnpm install` at job time — see the bake step below.
 ARG TARGET_REPO=copse-dev/agent-pane
 ARG TARGET_REF=main
 
@@ -141,12 +141,12 @@ RUN apt-get update \
 #    Unlike the old per-repo images (which COPYed from a repo-root build
 #    context), this CLONES ${TARGET_REPO}@${TARGET_REF} at build time and runs
 #    its install once, stashing node_modules (+ vendor/gortex if present) under
-#    /opt/deps/tree with the package-lock.json hash in .lockhash. The consumer
+#    /opt/deps/tree with the pnpm-lock.yaml hash in .lockhash. The consumer
 #    repo's setup action seeds a job's workspace from this layer when the
 #    checked-out lockfile still matches (COPSE_BAKED_DEPS), else falls back to
-#    the Actions cache / npm ci — so the layer is never used stale.
+#    the Actions cache / pnpm install — so the layer is never used stale.
 #
-#    The clone AND agent-pane's `npm ci` (which pulls the PRIVATE git dependency
+#    The clone AND agent-pane's `pnpm install` (which pulls the PRIVATE git dependency
 #    @copse/streaming-markdown) both need a read token. It is provided as a
 #    BuildKit secret (tmpfs, never written to an image layer) and consumed only
 #    inside this RUN via GIT_CONFIG_* env vars (no token ever touches disk).
@@ -154,7 +154,7 @@ RUN apt-get update \
 #    https and attach the token as an http extraheader.
 #
 #    Non-fatal: if the clone or install fails the image still builds (no .ready
-#    marker) and runners fall back to npm ci at job time. A repo with a trivial
+#    marker) and runners fall back to pnpm install at job time. A repo with a trivial
 #    install can be built with no token at all — the bake just no-ops.
 WORKDIR /opt/deps
 RUN --mount=type=secret,id=gh_token \
@@ -173,9 +173,11 @@ RUN --mount=type=secret,id=gh_token \
     if git clone --depth=1 --branch "${TARGET_REF}" \
          "https://github.com/${TARGET_REPO}.git" tree 2>/dev/null; then \
       cd tree; \
-      if npm_config_ignore_scripts=false npm ci --include=optional --no-audit --no-fund; then \
-        sha256sum package-lock.json | awk '{ print $1 }' > .lockhash; \
-        npm cache clean --force >/dev/null 2>&1 || true; \
+      corepack enable; \
+      corepack prepare --activate; \
+      if CI=true pnpm install --frozen-lockfile; then \
+        sha256sum pnpm-lock.yaml | awk '{ print $1 }' > .lockhash; \
+        pnpm store prune >/dev/null 2>&1 || true; \
         find . -maxdepth 1 -mindepth 1 \
           ! -name node_modules ! -name vendor \
           ! -name .lockhash -exec rm -rf {} + ; \
@@ -183,7 +185,7 @@ RUN --mount=type=secret,id=gh_token \
         touch .ready; \
         echo "==> baked ${TARGET_REPO}@${TARGET_REF} ($(du -sh node_modules 2>/dev/null | cut -f1) node_modules)"; \
       else \
-        echo "==> WARNING: npm ci failed for ${TARGET_REPO} — runners fall back to cache / npm ci"; \
+        echo "==> WARNING: pnpm install failed for ${TARGET_REPO} — runners fall back to cache / pnpm install"; \
       fi; \
     else \
       echo "==> WARNING: could not clone ${TARGET_REPO}@${TARGET_REF} (no/insufficient token?) — skipping bake"; \

@@ -458,9 +458,9 @@ export function dockerRunCommand(args: {
 // Registry helpers (Scaleway Container Registry — no secrets in image layers)
 // ---------------------------------------------------------------------------
 
-/** sha256 of package-lock.json — same contract the image bake writes to .lockhash. */
+/** sha256 of pnpm-lock.yaml — same contract the image bake writes to .lockhash. */
 export function packageLockHash(cwd: string = process.cwd()): string {
-  const lockPath = join(cwd, 'package-lock.json')
+  const lockPath = join(cwd, 'pnpm-lock.yaml')
   if (!existsSync(lockPath)) die(`missing ${lockPath} (needed for registry image tag)`)
   return createHash('sha256').update(readFileSync(lockPath)).digest('hex')
 }

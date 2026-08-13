@@ -114,12 +114,12 @@ fi
 
 # Seed dependencies from the image's baked layer when the lockfile still
 # matches (same contract as .github/actions/setup). On drift, fall back to
-# npm ci — which needs network and, for the private @copse/streaming-markdown
-# git dep, a token this container deliberately does not have. Rebake instead:
-#   npm run e2e:remote -- rebake
+# pnpm install — which needs network and, for private deps, a token this
+# container may not have. Rebake instead:
+#   pnpm run e2e:remote -- rebake
 seeded=false
 if [[ -n "${COPSE_BAKED_DEPS:-}" && -f "${COPSE_BAKED_DEPS}/.ready" ]]; then
-  want="$(sha256sum package-lock.json 2>/dev/null | awk '{ print $1 }' || echo want)"
+  want="$(sha256sum pnpm-lock.yaml 2>/dev/null | awk '{ print $1 }' || echo want)"
   have="$(cat "${COPSE_BAKED_DEPS}/.lockhash" 2>/dev/null || echo have)"
   if [[ "${want}" == "${have}" ]]; then
     if cp -a "${COPSE_BAKED_DEPS}/node_modules" node_modules \
@@ -131,14 +131,16 @@ if [[ -n "${COPSE_BAKED_DEPS:-}" && -f "${COPSE_BAKED_DEPS}/.ready" ]]; then
       rm -rf node_modules
     fi
   else
-    echo "WARNING: package-lock.json differs from the baked layer — falling back to npm ci." >&2
-    echo "         This is slow and fails for the private git dep without a token;" >&2
-    echo "         rebake the host image instead: npm run e2e:remote -- rebake" >&2
+    echo "WARNING: pnpm-lock.yaml differs from the baked layer — falling back to pnpm install." >&2
+    echo "         This is slow and fails for private deps without a token;" >&2
+    echo "         rebake the host image instead: pnpm run e2e:remote -- rebake" >&2
   fi
 fi
 if [[ "${seeded}" != "true" ]]; then
-  if ! npm ci --include=optional --no-audit --no-fund; then
-    echo "ERROR: npm ci fallback failed (lockfile drift + no clone token in this container)" >&2
+  corepack enable
+  corepack prepare --activate
+  if ! CI=true pnpm install --frozen-lockfile; then
+    echo "ERROR: pnpm install fallback failed (lockfile drift + no clone token in this container)" >&2
     finish 1
   fi
 fi
@@ -154,8 +156,8 @@ fi
 # recovers, so cap each attempt with `timeout` and retry the whole run.
 TIMEOUT="$(command -v timeout || true)"
 for attempt in 1 2 3; do
-  echo "==> e2e attempt ${attempt}: npm run test:e2e:ci -- $*"
-  if ${TIMEOUT:+${TIMEOUT} -k 15 480} npm run test:e2e:ci -- "$@"; then
+  echo "==> e2e attempt ${attempt}: pnpm run test:e2e:ci -- $*"
+  if ${TIMEOUT:+${TIMEOUT} -k 15 480} pnpm run test:e2e:ci -- "$@"; then
     finish 0
   fi
   echo "==> attempt ${attempt} failed or timed out"
