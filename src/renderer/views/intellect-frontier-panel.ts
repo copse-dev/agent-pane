@@ -33,7 +33,8 @@ import {
   openRouterFrontierCandidates,
   type OpenRouterPricedModel,
 } from '@copse/llm/frontier-candidates.ts'
-import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
+import { TRACKED_MODELS, cloudModelDisplayLabel, getModelInfo } from '@copse/llm/model-catalog.ts'
+import { parseModelSelection } from '@copse/llm/model-selection.ts'
 import { requestModelCards, resolvedModelCard } from './model-card-cache.ts'
 import {
   getIntellectScore,
@@ -72,12 +73,16 @@ const MAX_CARD_PREFETCH = 128
  * GLM-5.2:deepinfra` reads as `GLM-5.2:deepinfra`. Tooltips keep the full id.
  */
 export function displayModelLabel(id: string): string {
-  let s = id
+  const resolved = resolveIntellectModelId(id)
+  if (resolved !== null && TRACKED_MODELS.some((tracked) => tracked === resolved)) {
+    return cloudModelDisplayLabel(resolved)
+  }
+  let s = resolved ?? id
   const sep = s.indexOf(':')
   if (sep > 0 && !s.slice(0, sep).includes('/')) s = s.slice(sep + 1)
   const slash = s.lastIndexOf('/')
   if (slash >= 0) s = s.slice(slash + 1)
-  return s || id
+  return cloudModelDisplayLabel(s || id)
 }
 
 /** Rough label width for collision purposes (9px font ≈ 5.2px/char). */
@@ -1420,6 +1425,12 @@ export function createIntellectFrontierPanel(
   loadLiveModels?: () => Promise<LiveModelsFetch>,
   loadPlanUsage?: () => Promise<PlanUsageSnapshot>,
   loadOpenRouter?: () => Promise<OpenRouterFrontierSource>,
+  /**
+   * The model selections the real picker currently offers. Absent preserves
+   * the standalone/test helper's catalog-wide behaviour; production supplies
+   * this so the default map never advertises an unavailable route.
+   */
+  loadRoutableModelSelections?: () => Promise<readonly string[]>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
   const liveNotes = el('div', { class: 'field-hint frontier-live-notes' })
@@ -1434,6 +1445,7 @@ export function createIntellectFrontierPanel(
     liveFetch: LiveModelsFetch
     planUsage: PlanUsageSnapshot | null
     openRouter: OpenRouterFrontierSource
+    routableSelections: readonly string[] | null
   } | null = null
   let discover = false
   let showUnpriced = false
@@ -1744,11 +1756,29 @@ export function createIntellectFrontierPanel(
     } catch {
       openRouter = { models: [], zdrOnly: true, allowTraining: false }
     }
+    let routableSelections: readonly string[] | null = null
+    if (loadRoutableModelSelections) {
+      try {
+        routableSelections = await loadRoutableModelSelections()
+      } catch {
+        // Fail closed: a picker load failure must not turn the static catalog
+        // into a list of models that only look available.
+        routableSelections = []
+      }
+    }
     // The gate: live models join ONLY when the feed's declared index version
     // matches the canonical one (when declared) AND its values agree with our
     // curated anchors — a renormalised feed must never share the axis.
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion)
-    state = { localIds, extraProviders, live, liveFetch, planUsage, openRouter }
+    state = {
+      localIds,
+      extraProviders,
+      live,
+      liveFetch,
+      planUsage,
+      openRouter,
+      routableSelections,
+    }
     render()
   }
 
@@ -1792,15 +1822,8 @@ export function createIntellectFrontierPanel(
 
   function render(): void {
     if (!state) return
-    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter } = state
-    const applyDiscover = (btn: HTMLButtonElement | null): void => {
-      if (!btn) return
-      btn.hidden = live.candidates.length === 0
-      btn.textContent = discover ? 'Hide discoverable' : 'Discover models'
-      btn.classList.toggle('active', discover)
-    }
-    applyDiscover(discoverBtn)
-    applyDiscover(expandDiscoverBtn)
+    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter, routableSelections } =
+      state
     const liveNoteParts: Array<string | HTMLElement> = []
     if (liveFetch.models.length > 0 && live.verification.verified) {
       const stale = live.verification.mismatches
@@ -1877,16 +1900,81 @@ export function createIntellectFrontierPanel(
       ...extraProviderFrontierCandidates(extraProviders),
       ...openRouterFrontierCandidates(openRouter.models),
     ]
+    const exactRoutes = routableSelections === null ? null : new Set(routableSelections)
+    const delegatedModelIds = new Set<string>()
+    const routableModelIds = new Set<string>()
+    for (const selection of routableSelections ?? []) {
+      const resolved = resolveIntellectModelId(selection)
+      if (resolved !== null) routableModelIds.add(resolved)
+      const namespace = parseModelSelection(selection).namespace
+      if (namespace !== 'acp' && namespace !== 'remote-agent' && namespace !== 'plugin-model') {
+        continue
+      }
+      if (resolved !== null) delegatedModelIds.add(resolved)
+    }
+    const modelIdentityHasRoute = (id: string): boolean => {
+      if (exactRoutes === null) return true
+      const resolved = resolveIntellectModelId(id) ?? id
+      return routableModelIds.has(resolved)
+    }
+    const isTrackedCloudCandidate = (candidate: FrontierCandidate): boolean =>
+      TRACKED_MODELS.some((id) => id === candidate.id)
+    const candidateHasRoute = (candidate: FrontierCandidate): boolean => {
+      if (exactRoutes === null) return true
+      if (exactRoutes.has(candidate.id)) return true
+      if (candidate.local === true && exactRoutes.has(`lmstudio:${candidate.id}`)) return true
+      if (!isTrackedCloudCandidate(candidate)) return false
+      const resolved = resolveIntellectModelId(candidate.id) ?? candidate.id
+      return delegatedModelIds.has(resolved)
+    }
+    const routableBaseCandidates = baseCandidates.filter(candidateHasRoute)
     const coveredResolved = new Set(
-      baseCandidates.map((c) => resolveIntellectModelId(c.id) ?? c.id),
+      routableBaseCandidates.map((c) => resolveIntellectModelId(c.id) ?? c.id),
     )
     const livePricedCurated = live.pricedCurated.filter(
       (c) => !coveredResolved.has(c.id) && getModelInfo(c.id) === null,
     )
-    // Discovery models (uncurated live) join the frontier computation only when
-    // the Discover toggle is on — so by default the map shows what the user can
-    // actually route to, and the toggle overlays what they could set up.
-    const discoveryCandidates = discover ? live.candidates : []
+    // A reviewed score does not make a model routable. The full AA sync curates
+    // hundreds of measurements, so a priced curated row with no catalog or
+    // configured-provider route is still a discovery opportunity. Keeping it
+    // behind the same toggle prevents historical/configuration variants from
+    // flooding the default map; dominated discoveries collapse below, so an
+    // expensive legacy model cannot stretch the price axis either.
+    const liveDiscoverableCandidates: FrontierCandidate[] = [
+      ...live.candidates,
+      ...livePricedCurated.map((candidate) => ({ ...candidate, discovery: true })),
+    ]
+    const trackedDiscoverableCandidates: FrontierCandidate[] = []
+    if (exactRoutes !== null) {
+      for (const id of TRACKED_MODELS) {
+        const info = getModelInfo(id)
+        const score = getIntellectScore(id)
+        if (!info || !score) continue
+        const candidate: FrontierCandidate = {
+          id,
+          intellect: score.value,
+          intellectEstimated: score.estimated === true,
+          costPerMTok: blendedPricePerMTok(info),
+          discovery: true,
+        }
+        if (!candidateHasRoute(candidate)) trackedDiscoverableCandidates.push(candidate)
+      }
+    }
+    const discoverableCandidates = [...liveDiscoverableCandidates, ...trackedDiscoverableCandidates]
+    const applyDiscover = (btn: HTMLButtonElement | null): void => {
+      if (!btn) return
+      btn.hidden = discoverableCandidates.length === 0
+      btn.textContent = discover ? 'Hide discoverable' : 'Discover models'
+      btn.classList.toggle('active', discover)
+      btn.setAttribute('aria-pressed', discover ? 'true' : 'false')
+    }
+    applyDiscover(discoverBtn)
+    applyDiscover(expandDiscoverBtn)
+    // Discovery models join the frontier computation only when requested — by
+    // default the map shows models the user can actually route to.
+    // Tracked catalog models are already supplied by frontierForKnownModels;
+    // only live/feed discoveries need to join the extra-candidate list here.
+    const discoveryCandidates = discover ? liveDiscoverableCandidates : []
     // Live AA cost-per-task attaches to curated catalog models too (the feed
     // otherwise only prices models missing from the catalog).
     const costPerTaskById = new Map<string, number>()
@@ -1905,12 +1993,27 @@ export function createIntellectFrontierPanel(
     // drops to $0 (best price → wins the frontier) with a plan badge; a model
     // whose plan window is spent keeps its real price and carries a
     // limit-reached note. Applied per grouped identity inside the frontier.
-    const allRouteCandidates = [...baseCandidates, ...livePricedCurated, ...discoveryCandidates]
-    const adjustCandidate = (candidate: FrontierCandidate): FrontierCandidate =>
-      applyPlanCoverage(enrichTaskCost(candidate), planUsage, {
-        mode: planCoverageMode,
-        windowExhaustion,
-      })
+    const allRouteCandidates = [...baseCandidates, ...discoveryCandidates]
+    const trackedCandidateIsDiscovery = (candidate: FrontierCandidate): boolean =>
+      exactRoutes !== null && isTrackedCloudCandidate(candidate) && !candidateHasRoute(candidate)
+    const candidateIsIncluded = (candidate: FrontierCandidate): boolean =>
+      candidateHasRoute(candidate) ||
+      candidate.discovery === true ||
+      (discover && trackedCandidateIsDiscovery(candidate))
+    const adjustCandidate = (candidate: FrontierCandidate): FrontierCandidate => {
+      const surfaced = trackedCandidateIsDiscovery(candidate)
+        ? { ...candidate, discovery: true }
+        : candidate
+      const enriched = enrichTaskCost(surfaced)
+      // A setup opportunity is not covered by a route the user owns today,
+      // even if a broad subscription snapshot mentions the same family.
+      return enriched.discovery === true
+        ? enriched
+        : applyPlanCoverage(enriched, planUsage, {
+            mode: planCoverageMode,
+            windowExhaustion,
+          })
+    }
     const routePolicy = {
       providers: extraProviders,
       openRouterZdrOnly: openRouter.zdrOnly,
@@ -1935,27 +2038,43 @@ export function createIntellectFrontierPanel(
         })
       )
     }
-    const unfilteredBlendedPoints = frontierForKnownModels(allRouteCandidates, adjustCandidate)
+    const unfilteredBlendedPoints = frontierForKnownModels(
+      allRouteCandidates,
+      adjustCandidate,
+      candidateIsIncluded,
+    )
     const privacyBlendedPoints =
       zdrOnly || noTrainingOnly
-        ? frontierForKnownModels(allRouteCandidates, adjustCandidate, routeAllowed)
+        ? frontierForKnownModels(
+            allRouteCandidates,
+            adjustCandidate,
+            (candidate) => candidateIsIncluded(candidate) && routeAllowed(candidate),
+          )
         : unfilteredBlendedPoints
     const hiddenByZdr = zdrOnly
       ? unfilteredBlendedPoints.length -
-        frontierForKnownModels(allRouteCandidates, adjustCandidate, (candidate) =>
-          isZeroRetentionModelPath(candidate.id, {
-            ...routePolicy,
-            ...(candidate.local === true ? { local: true } : {}),
-          }),
+        frontierForKnownModels(
+          allRouteCandidates,
+          adjustCandidate,
+          (candidate) =>
+            candidateIsIncluded(candidate) &&
+            isZeroRetentionModelPath(candidate.id, {
+              ...routePolicy,
+              ...(candidate.local === true ? { local: true } : {}),
+            }),
         ).length
       : 0
     const hiddenByNoTraining = noTrainingOnly
       ? unfilteredBlendedPoints.length -
-        frontierForKnownModels(allRouteCandidates, adjustCandidate, (candidate) =>
-          isNoTrainingModelPath(candidate.id, {
-            ...routePolicy,
-            ...(candidate.local === true ? { local: true } : {}),
-          }),
+        frontierForKnownModels(
+          allRouteCandidates,
+          adjustCandidate,
+          (candidate) =>
+            candidateIsIncluded(candidate) &&
+            isNoTrainingModelPath(candidate.id, {
+              ...routePolicy,
+              ...(candidate.local === true ? { local: true } : {}),
+            }),
         ).length
       : 0
     const blendedPoints = privacyBlendedPoints
@@ -1984,16 +2103,25 @@ export function createIntellectFrontierPanel(
     syncZdrBtn(expandZdrBtn)
     syncNoTrainingBtn(noTrainingBtn)
     syncNoTrainingBtn(expandNoTrainingBtn)
-    // A verified feed can carry a hundred-plus priced models; the map's job is
-    // the frontier, so dominated LIVE points collapse into a disclosure rather
-    // than each claiming a labelled dot. Curated/local/provider points always
-    // plot — the user chose to hold those. Dropping dominated points cannot
-    // change the frontier.
-    const liveIds = new Set(discoveryCandidates.map((c) => c.id))
-    const dominatedLive = allPoints.filter((p) => liveIds.has(p.id) && !p.onFrontier)
-    const points = allPoints.filter((p) => !liveIds.has(p.id) || p.onFrontier)
-    const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
-    const unpricedModels = unpricedCanonicalModels(plottedIds, live.hintOnly).filter((u) => {
+    // Discovery can carry a hundred-plus priced models; the map's job is the
+    // frontier, so dominated setup opportunities collapse into a disclosure
+    // rather than each claiming a labelled dot. Dropping dominated points
+    // cannot change the frontier.
+    const dominatedLive = allPoints.filter((p) => p.discovery === true && !p.onFrontier)
+    const points = allPoints.filter((p) => p.discovery !== true || p.onFrontier)
+    // Discoverable points are deliberately absent from the default chart, but
+    // the feed still supplied their price. Exclude them from the "no price"
+    // disclosure without pretending they are routable or plotting them. Use
+    // the blended-price candidates rather than the current projected points:
+    // a model missing AA task cost is still priced and belongs in the task-axis
+    // note, not the generic no-price list.
+    const pricedIds = new Set(
+      [...blendedPoints, ...discoverableCandidates].map(
+        (p) => resolveIntellectModelId(p.id) ?? p.id,
+      ),
+    )
+    const unpricedModels = unpricedCanonicalModels(pricedIds, live.hintOnly).filter((u) => {
+      if (!modelIdentityHasRoute(u.id)) return false
       if (zdrOnly && !isZeroRetentionModelPath(u.id, routePolicy)) return false
       return !noTrainingOnly || isNoTrainingModelPath(u.id, routePolicy)
     })
@@ -2018,6 +2146,15 @@ export function createIntellectFrontierPanel(
     applyUnpriced(expandUnpricedBtn)
     const unscoredAll = unscoredPricedModels(extraProviders)
     const filteredUnscored = unscoredAll.filter((model) => {
+      if (
+        !candidateHasRoute({
+          id: model.id,
+          intellect: 0,
+          costPerMTok: model.costPerMTok,
+        })
+      ) {
+        return false
+      }
       if (zdrOnly && !isZeroRetentionModelPath(model.id, routePolicy)) return false
       return !noTrainingOnly || isNoTrainingModelPath(model.id, routePolicy)
     })
@@ -2026,12 +2163,13 @@ export function createIntellectFrontierPanel(
       unscored: filteredUnscored,
     }
     // When discovery is OFF, tell the user how many models the toggle reveals.
-    if (!discover && live.candidates.length > 0) {
+    if (!discover && discoverableCandidates.length > 0) {
+      const modelCount = discoverableCandidates.length
       liveNoteParts.push(
         el(
           'span',
           {},
-          `${String(live.candidates.length)} more models are available via Artificial Analysis — press “Discover models” to overlay where they'd sit on your frontier. `,
+          `${String(modelCount)} more priced and scored model${modelCount === 1 ? ' is' : 's are'} not currently available in your model picker — press “Discover models” to overlay where they'd sit on your frontier. `,
         ),
       )
     }

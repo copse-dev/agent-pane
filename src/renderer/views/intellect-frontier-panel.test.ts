@@ -221,6 +221,32 @@ describe('createIntellectFrontierPanel', () => {
     assert.doesNotMatch(panel.root.textContent, /own composite scale/)
   })
 
+  it('matches the default chart to picker routes and uses picker-style labels', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async () => ['acp:fixture-agent#gpt-5.6-luna'],
+    )
+    await panel.refresh()
+
+    let svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.ok(svg.querySelector('[data-model-id="gpt-5.6-luna"]'))
+    assert.match(svg.textContent, /GPT-5\.6 Luna/)
+    assert.equal(svg.querySelector('[data-model-id="gpt-5.6-sol"]'), null)
+    assert.doesNotMatch(svg.textContent, /gpt-5\.6-luna/)
+    assert.match(panel.root.textContent, /not currently available in your model picker/)
+    assert.equal(panel.root.querySelector('details.frontier-unpriced-list'), null)
+
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')?.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.match(panel.root.textContent, /GPT-5\.6 Sol/)
+  })
+
   it('keys the chart with a swatch per mark, in plain words', () => {
     const panel = createIntellectFrontierPanel(async () => [])
     const items = [...panel.root.querySelectorAll('.frontier-key .frontier-key-item')]
@@ -376,7 +402,7 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(details.textContent, /model-19/)
   })
 
-  it('plots a feed-priced curated model exactly once — no gutter duplicate', async () => {
+  it('keeps a feed-priced curated model out of the unpriced list and reveals it once', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],
       undefined,
@@ -395,10 +421,19 @@ describe('createIntellectFrontierPanel', () => {
       }),
     )
     await panel.refresh()
-    const svg = panel.root.querySelector('.frontier-chart svg')
+    let svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    // Exactly one kimi-k3 label: the main-chart point (curated 57 + live
-    // price), not an extra "no price yet" gutter entry.
+    // It has a score and a price, but no route: absent from the default chart
+    // and also absent from the misleading "no price yet" disclosure.
+    assert.equal(svg.querySelector('[data-model-id="moonshotai/kimi-k3"]'), null)
+    const unpriced = panel.root.querySelector('details.frontier-unpriced-list')
+    assert.ok(unpriced)
+    assert.doesNotMatch(unpriced.textContent, /kimi-k3 \(/)
+
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')?.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    // Exactly one Kimi label after discovery: the curated score + live price.
     const labels = [...svg.querySelectorAll('text')].filter((t) =>
       t.textContent.includes('kimi-k3'),
     )
@@ -447,6 +482,50 @@ describe('createIntellectFrontierPanel', () => {
     )
   })
 
+  it('keeps priced curated models without a route discoverable and off the price axis', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({
+        ok: true,
+        indexVersion: '4.1',
+        models: [
+          ...verifiedLiveAnchors(),
+          // Regression fixture for the synced-data failure: this score is
+          // reviewed, but there is no catalog/provider route. Its legacy price
+          // must not stretch the default chart, and because it is dominated it
+          // must remain off the chart even while discovery is enabled.
+          {
+            id: 'o1-pro',
+            intellect: currentIntellect('o1-pro'),
+            inputPricePerMTok: 150,
+            outputPricePerMTok: 600,
+          },
+        ],
+      }),
+    )
+    await panel.refresh()
+
+    const btn = panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')
+    assert.ok(btn)
+    assert.equal(btn.hidden, false)
+    let svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.equal(svg.querySelector('[data-model-id="o1-pro"]'), null)
+    assert.match(
+      panel.root.textContent,
+      /1 more priced and scored model is not currently available/,
+    )
+
+    btn.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.equal(svg.querySelector('[data-model-id="o1-pro"]'), null)
+    const dominated = panel.root.querySelector('details.frontier-dominated-live')
+    assert.ok(dominated)
+    assert.match(dominated.textContent, /o1-pro/)
+  })
+
   it('hides discoverable models until the Discover toggle is pressed', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],
@@ -469,7 +548,10 @@ describe('createIntellectFrontierPanel', () => {
     let svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
     assert.doesNotMatch(svg.textContent, /cheap-smart-oss/)
-    assert.match(panel.root.textContent, /1 more models are available via Artificial Analysis/)
+    assert.match(
+      panel.root.textContent,
+      /1 more priced and scored model is not currently available/,
+    )
     // Toggle on: it plots (ghosted) and its tooltip frames it as a setup opportunity.
     btn.click()
     svg = panel.root.querySelector('.frontier-chart svg')
@@ -541,7 +623,7 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     let svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.match(svg.textContent || '', /claude-opus-4-8|claude-fable-5/)
+    assert.match(svg.textContent || '', /Claude Opus 4\.8|Claude Fable 5/)
     assert.match(svg.textContent || '', /MiniMax-M3/)
     const zdrBtn = panel.root.querySelector<HTMLButtonElement>('button.frontier-zdr-toggle')
     assert.ok(zdrBtn)
@@ -549,7 +631,7 @@ describe('createIntellectFrontierPanel', () => {
     assert.equal(zdrBtn.classList.contains('active'), true)
     svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.doesNotMatch(svg.textContent || '', /claude-opus-4-8|claude-fable-5|gpt-5\.5/)
+    assert.doesNotMatch(svg.textContent || '', /Claude Opus 4\.8|Claude Fable 5|GPT-5\.5/)
     assert.match(svg.textContent || '', /MiniMax-M3|qwen2\.5-coder/)
     assert.match(panel.root.textContent || '', /ZDR only: hiding/)
   })
@@ -577,8 +659,8 @@ describe('createIntellectFrontierPanel', () => {
     panel.root.querySelector<HTMLButtonElement>('button.frontier-zdr-toggle')?.click()
     const svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.match(svg.textContent || '', /gpt-4o/)
-    assert.doesNotMatch(svg.textContent || '', /gpt-5\.5/)
+    assert.match(svg.textContent || '', /GPT-4o/)
+    assert.doesNotMatch(svg.textContent || '', /GPT-5\.5/)
     const point = svg.querySelector<SVGElement>('circle.frontier-point')
     assert.ok(point)
   })
@@ -618,7 +700,7 @@ describe('createIntellectFrontierPanel', () => {
     svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
     assert.doesNotMatch(svg.textContent || '', /MiniMax-M3/)
-    assert.match(svg.textContent || '', /claude-|gpt-/)
+    assert.match(svg.textContent || '', /Claude |GPT-/)
     assert.match(panel.root.textContent || '', /No training: hiding/)
   })
 
