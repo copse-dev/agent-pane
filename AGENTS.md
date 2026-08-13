@@ -9,7 +9,7 @@ no backend service; the main process talks directly to LLM providers. Prefer the
 
 Use Node **22.22.2 or newer** and **pnpm** (via Corepack). The repo pins `22.22.2` in
 `.nvmrc` and `pnpm@10.34.5` via `packageManager`. Installs use pnpm’s isolated
-`node_modules` (package symlinks into `.pnpm`) with `package-import-method=clone`
+`node_modules` (package symlinks into `.pnpm`) with `package-import-method=auto`
 so worktrees share store bytes on APFS. Electron’s extracted `dist/` and the
 vendored gortex binary are shared under `~/.copse/cache/electron-dist/` and
 `~/.copse/cache/gortex/` (worktrees symlink into those caches). Environment setup, headless GUI notes, mock-model

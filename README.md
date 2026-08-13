@@ -43,11 +43,11 @@ pnpm install
 pnpm run dev
 ```
 
-pnpm uses a content-addressable store with APFS clones (`package-import-method=clone`)
-so additional git worktrees reuse package bytes. Electron’s extracted app bundle and
-the vendored gortex binary are shared under `~/.copse/cache/electron-dist/` and
-`~/.copse/cache/gortex/`. Each worktree still needs its own `pnpm install` to link
-`node_modules` and those caches.
+pnpm uses a content-addressable store with `package-import-method=auto` (clone on
+APFS, then hardlink, then copy) so additional git worktrees reuse package bytes.
+Electron’s extracted app bundle and the vendored gortex binary are shared under
+`~/.copse/cache/electron-dist/` and `~/.copse/cache/gortex/`. Each worktree still
+needs its own `pnpm install` to link `node_modules` and those caches.
 Then:
 
 1. Open a project folder.
