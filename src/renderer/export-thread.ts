@@ -38,6 +38,6 @@ export async function downloadThreadArchive(
   projectId: string,
   thread: Thread,
 ): Promise<void> {
-  const bytes = await api.threads.exportArchive(projectId, thread.id)
+  const { bytes } = await api.threads.exportArchive(projectId, thread.id)
   download(new Blob([bytes], { type: 'application/zip' }), `${threadExportBaseName(thread)}.zip`)
 }
