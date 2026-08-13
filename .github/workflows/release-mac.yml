@@ -149,9 +149,13 @@ jobs:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: actions/setup-node@v7
         with: { node-version-file: '.nvmrc' }
+      - run: |
+          corepack enable
+          corepack prepare --activate
       - name: Verify clean release build
-        run: npm ci --ignore-scripts && npm run build:release
-
+        run: pnpm install --frozen-lockfile --config.ignore-scripts=true && pnpm run build:release
+        env:
+          CI: true
   build-test:
     needs: [preflight, verify-clean-release-build]
     # The runtime smoke test below is the only gate that actually launches the
@@ -173,7 +177,7 @@ jobs:
       - name: Ensure Rosetta can run the x64 bundle
         run: softwareupdate --install-rosetta --agree-to-license
       - name: Build a universal bundled gortex
-        run: npm run prepare:gortex:mac
+        run: pnpm run prepare:gortex:mac
       # The credentials themselves were asserted in preflight, before this
       # runner was provisioned.
       - name: Build, sign, and notarize without publishing
@@ -186,8 +190,8 @@ jobs:
           UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
         run: |
           set -euo pipefail
-          npm run build:release
-          npx electron-builder --mac -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
+          pnpm run build:release
+          pnpm exec electron-builder --mac -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
           node scripts/finalize-release-metadata.mts
       - name: Verify signatures, notarization, metadata, and packaged runtime
         env:

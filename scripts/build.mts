@@ -259,7 +259,9 @@ cpSync('assets', 'dist/assets', { recursive: true })
 const bundledGortex = resolve('vendor/gortex', bundledGortexName)
 try {
   accessSync(bundledGortex)
-  cpSync('vendor/gortex', 'dist/resources/gortex', { recursive: true })
+  // Dereference so a worktree symlink into ~/.copse/cache/gortex becomes a
+  // real binary inside the packaged app (symlinks would escape the bundle).
+  cpSync('vendor/gortex', 'dist/resources/gortex', { recursive: true, dereference: true })
 } catch {
   // Optional — postinstall may be skipped on unsupported platforms.
 }
