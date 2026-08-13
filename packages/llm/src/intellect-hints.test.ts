@@ -5,20 +5,26 @@ import {
   localModelIntellectHint,
   modelIntellectHint,
 } from './intellect-hints.ts'
+import { getIntellectScore } from './model-intellect.ts'
+
+function intellectHint(modelId: string): string {
+  const score = getIntellectScore(modelId)
+  assert.ok(score, `expected a synced intellect score for ${modelId}`)
+  return `intellect ${score.estimated ? '~' : ''}${String(score.value)}`
+}
 
 describe('cloudModelIntellectHint', () => {
   it('shows intellect, blended price, and frontier for a scored tracked model', () => {
-    // Opus 4.8: measured 55.7 on canonical, $5/$25 → $9/MTok blended, and on the
-    // cost/intellect frontier.
-    assert.equal(cloudModelIntellectHint('claude-opus-4-8'), 'intellect 55.7 · $9/MTok · frontier')
+    const hint = cloudModelIntellectHint('claude-opus-4-8')
+    assert.ok(hint)
+    assert.match(hint, new RegExp(`^${intellectHint('claude-opus-4-8')} · \\$9/MTok`))
+    assert.match(hint, /frontier/)
   })
 
   it('shows intellect and price but no frontier tag for a dominated tracked model', () => {
-    // gpt-4o is scored (11.2) but neither cheapest nor smartest, so it's off the
-    // frontier — the hint carries intellect and price without the frontier tag.
     const hint = cloudModelIntellectHint('gpt-4o')
     assert.ok(hint)
-    assert.match(hint, /^intellect 11\.2 · \$[\d.]+\/MTok$/)
+    assert.match(hint, new RegExp(`^${intellectHint('gpt-4o')} · \\$[\\d.]+/MTok$`))
     assert.doesNotMatch(hint, /frontier/)
   })
 
@@ -29,11 +35,14 @@ describe('cloudModelIntellectHint', () => {
 
 describe('modelIntellectHint', () => {
   it('gives an intellect-only hint for alias and vendor id forms', () => {
-    assert.equal(modelIntellectHint('Opus 4.8'), 'intellect 55.7')
-    assert.equal(modelIntellectHint('claude-fable-5[1m]'), 'intellect 59.9')
+    assert.equal(modelIntellectHint('Opus 4.8'), intellectHint('claude-opus-4-8'))
+    assert.equal(modelIntellectHint('claude-fable-5[1m]'), intellectHint('claude-fable-5'))
     // Both carry a direct v4.1 reading now, so the hint is a fact, not an estimate.
-    assert.equal(modelIntellectHint('moonshotai/kimi-k2.6'), 'intellect 44.2')
-    assert.equal(modelIntellectHint('MiniMaxAI/MiniMax-M3:novita'), 'intellect 44.4')
+    assert.equal(modelIntellectHint('moonshotai/kimi-k2.6'), intellectHint('moonshotai/kimi-k2.6'))
+    assert.equal(
+      modelIntellectHint('MiniMaxAI/MiniMax-M3:novita'),
+      intellectHint('MiniMaxAI/MiniMax-M3'),
+    )
     assert.equal(modelIntellectHint('totally-unknown'), null)
   })
 })

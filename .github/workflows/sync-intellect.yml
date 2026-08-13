@@ -34,6 +34,8 @@ jobs:
       # Covers the sync unit tests, generated-table contracts, typecheck, lint,
       # formatting, and the rest of the repository's pre-commit gate.
       - name: Validate
+        id: validate
+        continue-on-error: true
         run: npm run check
 
       - name: Open PR if intellect scores changed
@@ -57,4 +59,12 @@ jobs:
             for the intended model/configuration and that the API index version still matches
             `canonicalVersion` before merging.
 
-            `npm run check` already passed on this branch.
+            Pre-PR validation outcome: `${{ steps.validate.outcome }}`. The normal PR checks are
+            the source of truth; a failed validation keeps this workflow red while still leaving
+            the generated diff available for review and repair.
+
+      - name: Propagate validation failure
+        if: steps.validate.outcome == 'failure'
+        run: |
+          echo 'Validation failed; see the generated sync PR for the reviewable diff.'
+          exit 1
