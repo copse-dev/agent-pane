@@ -87,13 +87,35 @@ describe('mergeApiModels', () => {
     assert.deepEqual(scores, BASE.scores)
   })
 
-  it('never introduces a model that is neither scored nor wanted', () => {
+  it('imports an unlisted AA model under its exact slug', () => {
     const api: AaApiModel[] = [
-      { slug: 'some-random-model', evaluations: { artificial_analysis_intelligence_index: 30 } },
+      {
+        id: 'aa-deepseek-v4-reasoning',
+        slug: 'deepseek-v4-reasoning',
+        name: 'DeepSeek V4 (Reasoning)',
+        evaluations: { artificial_analysis_intelligence_index: 58 },
+      },
+    ]
+    const { scores, matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
+    assert.equal(matched, 1)
+    const added = scores.find((m) => m.modelId === 'deepseek-v4-reasoning')
+    assert.ok(added)
+    assert.equal(added.value, 58)
+    assert.equal(added.indexVersion, 'v4.1')
+    assert.match(added.source, /model 'deepseek-v4-reasoning'/)
+    assert.equal(added.aliases, undefined)
+  })
+
+  it('ignores measured rows without any usable model identifier', () => {
+    const api: AaApiModel[] = [
+      {
+        slug: '   ',
+        evaluations: { artificial_analysis_intelligence_index: 30 },
+      },
     ]
     const { scores, matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
     assert.equal(matched, 0)
-    assert.equal(scores.length, BASE.scores.length)
+    assert.deepEqual(scores, BASE.scores)
   })
 
   it('ignores feed models with no index value', () => {
