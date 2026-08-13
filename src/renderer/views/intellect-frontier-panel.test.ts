@@ -22,6 +22,18 @@ import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-fr
 import type { ExtraProvider, ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 
+const LIVE_ANCHOR_IDS = ['claude-fable-5', 'claude-opus-4-8'] as const
+
+function currentIntellect(modelId: string): number {
+  const score = getIntellectScore(modelId)
+  assert.ok(score, `expected a sourced intellect score for ${modelId}`)
+  return score.value
+}
+
+function verifiedLiveAnchors(): Array<{ id: string; intellect: number }> {
+  return LIVE_ANCHOR_IDS.map((id) => ({ id, intellect: currentIntellect(id) }))
+}
+
 function testExtraProvider(models: readonly ExtraProviderModel[]): ExtraProvider {
   return {
     id: 'huggingface',
@@ -55,7 +67,10 @@ describe('renderFrontierSvg', () => {
     // The measured Opus point explains itself from its citation.
     const opus = titleTexts.find((t) => /claude-opus-4-8/.test(t))
     assert.ok(opus)
-    assert.match(opus, /measured: 55\.7 on index v4\.1/)
+    assert.ok(
+      opus.includes(`measured: ${String(currentIntellect('claude-opus-4-8'))} on index v4.1`),
+      opus,
+    )
     // One frontier polyline, no dual axes: exactly one rotated y-axis label.
     assert.equal(svg.querySelectorAll('polyline.frontier-line').length, 1)
     assert.equal(svg.querySelectorAll('text[transform^="rotate"]').length, 1)
@@ -188,7 +203,7 @@ describe('extraProviderFrontierCandidates', () => {
     const [m3] = candidates
     assert.ok(m3)
     assert.equal(m3.id, 'huggingface:MiniMaxAI/MiniMax-M3')
-    assert.equal(m3.intellect, 44.4)
+    assert.equal(m3.intellect, currentIntellect('MiniMaxAI/MiniMax-M3'))
     assert.equal(m3.intellectEstimated, false)
     // 0.8·1 + 0.2·4 = $1.60/MTok blended.
     assert.equal(m3.costPerMTok, 1.6)
@@ -223,8 +238,7 @@ describe('createIntellectFrontierPanel', () => {
     const verifiedFeed = {
       ok: true,
       models: [
-        { id: 'claude-fable-5', intellect: 60 },
-        { id: 'claude-opus-4-8', intellect: 56 },
+        ...verifiedLiveAnchors(),
         { id: 'brand-new-model', intellect: 45, inputPricePerMTok: 2, outputPricePerMTok: 8 },
       ],
     }
@@ -236,7 +250,10 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     // Verified attribution shows immediately; the uncurated model is discovery,
     // revealed by the toggle.
-    assert.match(panel.root.textContent, /verified against 2 curated anchors/)
+    assert.match(
+      panel.root.textContent,
+      new RegExp(`verified against ${String(LIVE_ANCHOR_IDS.length)} curated anchors`),
+    )
     assert.match(panel.root.textContent, /Artificial Analysis/)
     panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')?.click()
     assert.match(panel.root.textContent, /brand-new-model/)
@@ -247,8 +264,10 @@ describe('createIntellectFrontierPanel', () => {
       async () => ({
         ok: true,
         models: [
-          { id: 'claude-fable-5', intellect: 65 },
-          { id: 'claude-opus-4-8', intellect: 61 },
+          ...verifiedLiveAnchors().map((model) => ({
+            ...model,
+            intellect: model.intellect + 5,
+          })),
           { id: 'brand-new-model', intellect: 50, inputPricePerMTok: 2 },
         ],
       }),
@@ -270,11 +289,7 @@ describe('createIntellectFrontierPanel', () => {
       undefined,
       async () => ({
         ok: true,
-        models: [
-          { id: 'claude-fable-5', intellect: 60 },
-          { id: 'claude-opus-4-8', intellect: 56 },
-          { id: 'live-unpriced-model', intellect: 41 },
-        ],
+        models: [...verifiedLiveAnchors(), { id: 'live-unpriced-model', intellect: 41 }],
       }),
     )
     await panel.refresh()
@@ -294,7 +309,10 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(svg)
     assert.match(svg.textContent, /no price yet/)
     assert.ok(svg.querySelector('circle.gutter-unpriced'))
-    assert.match(svg.textContent, /kimi-k3 · 57/)
+    assert.ok(
+      svg.textContent.includes(`kimi-k3 · ${String(currentIntellect('kimi-k3'))}`),
+      svg.textContent,
+    )
   })
 
   it('puts priced-but-unscored models in the bottom gutter at their true price', async () => {
@@ -366,9 +384,13 @@ describe('createIntellectFrontierPanel', () => {
         ok: true,
         indexVersion: '4.1',
         models: [
-          { id: 'claude-fable-5', intellect: 60 },
-          { id: 'claude-opus-4-8', intellect: 56 },
-          { id: 'kimi-k3', intellect: 57.4, inputPricePerMTok: 3, outputPricePerMTok: 15 },
+          ...verifiedLiveAnchors(),
+          {
+            id: 'kimi-k3',
+            intellect: currentIntellect('kimi-k3'),
+            inputPricePerMTok: 3,
+            outputPricePerMTok: 15,
+          },
         ],
       }),
     )
@@ -394,8 +416,7 @@ describe('createIntellectFrontierPanel', () => {
         ok: true,
         indexVersion: '4.1',
         models: [
-          { id: 'claude-fable-5', intellect: 60 },
-          { id: 'claude-opus-4-8', intellect: 56 },
+          ...verifiedLiveAnchors(),
           // 60 uncurated priced models, almost all dominated.
           ...Array.from({ length: 60 }, (_, i) => ({
             id: `live-model-${String(i)}`,
@@ -420,7 +441,10 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(details)
     assert.match(details.textContent, /dominated/)
     // Verified-feed attribution still present.
-    assert.match(panel.root.textContent, /verified against 2 curated anchors/)
+    assert.match(
+      panel.root.textContent,
+      new RegExp(`verified against ${String(LIVE_ANCHOR_IDS.length)} curated anchors`),
+    )
   })
 
   it('hides discoverable models until the Discover toggle is pressed', async () => {
@@ -431,8 +455,7 @@ describe('createIntellectFrontierPanel', () => {
         ok: true,
         indexVersion: '4.1',
         models: [
-          { id: 'claude-fable-5', intellect: 60 },
-          { id: 'claude-opus-4-8', intellect: 56 },
+          ...verifiedLiveAnchors(),
           // Uncurated + cheaper-than-frontier: would extend the frontier if set up.
           { id: 'cheap-smart-oss', intellect: 55, inputPricePerMTok: 0.2, outputPricePerMTok: 0.8 },
         ],
@@ -607,11 +630,19 @@ describe('createIntellectFrontierPanel', () => {
         ok: true,
         indexVersion: '4.1',
         models: [
-          { id: 'claude-fable-5', intellect: 59.9, costPerTask: 2.4 },
-          { id: 'claude-opus-4-8', intellect: 55.7, costPerTask: 3.1 },
+          {
+            id: 'claude-fable-5',
+            intellect: currentIntellect('claude-fable-5'),
+            costPerTask: 2.4,
+          },
+          {
+            id: 'claude-opus-4-8',
+            intellect: currentIntellect('claude-opus-4-8'),
+            costPerTask: 3.1,
+          },
           {
             id: 'claude-sonnet-4-6',
-            intellect: 35.9,
+            intellect: currentIntellect('claude-sonnet-4-6'),
             inputPricePerMTok: 3,
             outputPricePerMTok: 15,
             costPerTask: 0.9,
