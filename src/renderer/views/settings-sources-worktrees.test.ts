@@ -4,6 +4,7 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { Project } from '@shared/types/state.ts'
 import type {
   WorktreeInventoryEntry,
   WorktreeRemovalResult,
@@ -21,6 +22,7 @@ import { mountSettingsDialog } from './settings-dialog.ts'
 const HOUR = 60 * 60 * 1000
 
 interface RemoveCall {
+  projectId: string
   path: string
   force: boolean
 }
@@ -58,6 +60,7 @@ function stubApi(
   options: {
     removals?: WorktreeRemovalResult[]
     calls?: RemoveCall[]
+    projectCalls?: string[]
     size?: WorktreeSizeResult
   } = {},
 ): ApiClient {
@@ -71,17 +74,16 @@ function stubApi(
     cursorPlugins: { ...base.cursorPlugins, list: () => Promise.resolve([]) },
     hooks: { ...base.hooks, list: () => Promise.resolve({ hooks: [], warnings: [] }) },
     worktrees: {
-      list: () => Promise.resolve(entries),
+      list: (projectId: string): Promise<WorktreeInventoryEntry[]> => {
+        options.projectCalls?.push(projectId)
+        return Promise.resolve(entries)
+      },
       size: (_projectId: string, path: string) =>
         Promise.resolve(
           options.size ?? { path, bytes: 12 * 1024 * 1024, fileCount: 42, truncated: false },
         ),
-      remove: (
-        _projectId: string,
-        path: string,
-        force: boolean,
-      ): Promise<WorktreeRemovalResult> => {
-        options.calls?.push({ path, force })
+      remove: (projectId: string, path: string, force: boolean): Promise<WorktreeRemovalResult> => {
+        options.calls?.push({ projectId, path, force })
         const next = removals.shift()
         return Promise.resolve(
           next ?? { status: 'removed', path, branch: null, branchDeleted: false },
@@ -96,10 +98,14 @@ async function flush(): Promise<void> {
   for (let tick = 0; tick < 6; tick++) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-async function openWorktrees(api: ApiClient): Promise<HTMLElement> {
+async function openWorktrees(
+  api: ApiClient,
+  projects: Project[] = [{ id: 'project-1', name: 'Copse', path: '/home/dev/copse' }],
+  activeProjectId = 'project-1',
+): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountConfirmDialog()
-  mountSettingsDialog(createStore({ activeProjectId: 'project-1' }), api)
+  mountSettingsDialog(createStore({ activeProjectId, projects }), api)
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="storage"]',
   )
@@ -130,6 +136,38 @@ describe('settings sources → worktrees list', () => {
     const list = await openWorktrees(stubApi([]))
     assert.match(list.textContent, /No worktrees\./)
     assert.equal(list.querySelectorAll('.sources-row').length, 0)
+  })
+
+  it('lets the user inspect a different local project without switching workspaces', async () => {
+    const projectCalls: string[] = []
+    const calls: RemoveCall[] = []
+    const list = await openWorktrees(stubApi([entry()], { calls, projectCalls }), [
+      { id: 'project-1', name: 'Copse', path: '/home/dev/copse' },
+      { id: 'project-2', name: 'Website', path: '/home/dev/website' },
+    ])
+
+    const select = document.querySelector<HTMLSelectElement>('#storage-project-select')
+    assert.ok(select)
+    assert.deepEqual(
+      [...select.options].map((option) => [option.value, option.textContent]),
+      [
+        ['project-1', 'Copse — /home/dev/copse'],
+        ['project-2', 'Website — /home/dev/website'],
+      ],
+    )
+    assert.equal(select.value, 'project-1')
+    select.value = 'project-2'
+    select.dispatchEvent(new Event('change'))
+    await flush()
+
+    assert.deepEqual(projectCalls, ['project-1', 'project-2'])
+    assert.equal(document.getElementById('storage-project-path')?.textContent, '/home/dev/website')
+
+    deleteButton(list).click()
+    await flush()
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.deepEqual(calls, [{ projectId: 'project-2', path: entry().path, force: false }])
   })
 
   it('names the owning thread, when it was last used, and its size on disk', async () => {
@@ -195,7 +233,7 @@ describe('settings sources → worktrees list', () => {
     clickActiveConfirmDialogConfirm()
     await flush()
 
-    assert.deepEqual(calls, [{ path: entry().path, force: false }])
+    assert.deepEqual(calls, [{ projectId: 'project-1', path: entry().path, force: false }])
     assert.match(
       document.getElementById('sources-worktrees-status')?.textContent ?? '',
       /Deleted .* and its branch\./,
@@ -226,7 +264,11 @@ describe('settings sources → worktrees list', () => {
 
     clickActiveConfirmDialogCancel()
     await flush()
-    assert.deepEqual(calls, [{ path: entry().path, force: false }], 'no forced delete was sent')
+    assert.deepEqual(
+      calls,
+      [{ projectId: 'project-1', path: entry().path, force: false }],
+      'no forced delete was sent',
+    )
     assert.equal(document.getElementById('sources-worktrees-status')?.textContent, 'Kept.')
     assert.equal(deleteButton(list).disabled, false, 'the row stays actionable')
   })
@@ -251,8 +293,8 @@ describe('settings sources → worktrees list', () => {
     await flush()
 
     assert.deepEqual(calls, [
-      { path: entry().path, force: false },
-      { path: entry().path, force: true },
+      { projectId: 'project-1', path: entry().path, force: false },
+      { projectId: 'project-1', path: entry().path, force: true },
     ])
   })
 })
