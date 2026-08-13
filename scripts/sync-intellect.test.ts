@@ -78,6 +78,15 @@ describe('mergeApiModels', () => {
     assert.equal(opus[0]?.value, 57)
   })
 
+  it('preserves an unchanged measurement so scheduled refreshes do not create date-only PRs', () => {
+    const api: AaApiModel[] = [
+      { slug: 'Opus 4.8', evaluations: { artificial_analysis_intelligence_index: 56 } },
+    ]
+    const { scores, matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
+    assert.equal(matched, 1)
+    assert.deepEqual(scores, BASE.scores)
+  })
+
   it('never introduces a model that is neither scored nor wanted', () => {
     const api: AaApiModel[] = [
       { slug: 'some-random-model', evaluations: { artificial_analysis_intelligence_index: 30 } },
@@ -245,5 +254,27 @@ describe('CLI entry guard', () => {
       },
     )
     assert.equal(generated, committed, 'the unit suite must not rewrite a tracked generated file')
+  })
+})
+
+describe('sync-intellect workflow', () => {
+  const workflow = readFileSync(resolve('.github/workflows/sync-intellect.yml'), 'utf8')
+
+  it('runs the API refresh on a schedule or by hand with the required secret', () => {
+    assert.match(workflow, /schedule:/)
+    assert.match(workflow, /workflow_dispatch:/)
+    assert.match(
+      workflow,
+      /ARTIFICIAL_ANALYSIS_API_KEY: \$\{\{ secrets\.ARTIFICIAL_ANALYSIS_API_KEY \}\}/,
+    )
+    assert.match(workflow, /run: npm run sync:intellect -- --from-api/)
+  })
+
+  it('uses the sync token to open a CI-triggering PR after validation', () => {
+    const validate = workflow.indexOf('run: npm run check')
+    const pullRequest = workflow.indexOf('uses: peter-evans/create-pull-request@v8')
+    assert.ok(validate >= 0 && pullRequest > validate)
+    assert.match(workflow, /token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
+    assert.match(workflow, /branch: chore\/sync-intellect/)
   })
 })
