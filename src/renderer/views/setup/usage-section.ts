@@ -15,6 +15,7 @@ import {
   setModelCardApi,
   type OpenRouterFrontierSource,
 } from '../intellect-frontier-panel.ts'
+import { fetchModelOptions } from '../model-options.ts'
 import type { PlanCoverageMode } from '@shared/plan-inclusion.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
@@ -541,6 +542,10 @@ export function createUsageSection(
     () => api.intellect.liveModels(),
     () => api.usage.getPlanUsage(),
     loadOpenRouter,
+    async () =>
+      (await fetchModelOptions(api, ''))
+        .filter((option) => option.value !== '' && option.disabled !== true)
+        .map((option) => option.value),
   )
   root.append(frontierPanel.root)
 
