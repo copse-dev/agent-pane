@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-08-07
+// Last synced: 2026-08-13
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -30,18 +30,262 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-06-18',
     },
     {
-      value: 44.4,
+      value: 45.4,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'minimax-m3', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'QwQ-32B-Preview': [
+    {
+      value: 9.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'QwQ-32B-Preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'a-x-k2': [
+    {
+      value: 35,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'a-x-k2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'agnes-2-5-pro-alpha': [
+    {
+      value: 39.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'agnes-2-5-pro-alpha', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'apertus-70b-instruct': [
+    {
+      value: 2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'apertus-70b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'apertus-8b-instruct': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'apertus-8b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'apriel-v1-5-15b-thinker': [
+    {
+      value: 21.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'apriel-v1-5-15b-thinker', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'apriel-v1-6-15b-thinker': [
+    {
+      value: 20.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'apriel-v1-6-15b-thinker', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'arctic-instruct': [
+    {
+      value: 3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'arctic-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'celeris-1': [
+    {
+      value: 12.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'celeris-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-2': [
+    {
+      value: 3.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-21': [
+    {
+      value: 3.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-21', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-3-5-haiku': [
+    {
+      value: 12.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-3-5-haiku', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-3-7-sonnet': [
+    {
+      value: 23.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-3-7-sonnet', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-3-7-sonnet-thinking': [
+    {
+      value: 27.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-3-7-sonnet-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-3-haiku': [
+    {
+      value: 3.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-3-haiku', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-3-opus': [
+    {
+      value: 11.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-3-opus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-3-sonnet': [
+    {
+      value: 4.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-3-sonnet', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-35-sonnet': [
+    {
+      value: 9.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-35-sonnet', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-35-sonnet-june-24': [
+    {
+      value: 8.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-35-sonnet-june-24', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-1-opus': [
+    {
+      value: 28.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-4-1-opus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-1-opus-thinking': [
+    {
+      value: 34.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-4-1-opus-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-5-haiku': [
+    {
+      value: 24.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-4-5-haiku', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-5-haiku-reasoning': [
+    {
+      value: 29.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-4-5-haiku-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-5-sonnet': [
+    {
+      value: 29.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-4-5-sonnet', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-5-sonnet-thinking': [
+    {
+      value: 37.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-4-5-sonnet-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-opus': [
+    {
+      value: 26,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-4-opus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-opus-thinking': [
+    {
+      value: 31.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-4-opus-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-sonnet': [
+    {
+      value: 26,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-4-sonnet', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-4-sonnet-thinking': [
+    {
+      value: 29.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-4-sonnet-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'claude-fable-5': [
     {
-      value: 59.9,
+      value: 62.1,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-fable-5', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'claude-fable-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'claude-haiku-4-5': [
@@ -53,6 +297,65 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-07-18',
     },
   ],
+  'claude-instant': [
+    {
+      value: 1.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-instant', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-4-5': [
+    {
+      value: 35.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-4-5-thinking': [
+    {
+      value: 41.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-opus-4-5-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-4-6': [
+    {
+      value: 38.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-6', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-4-6-adaptive': [
+    {
+      value: 44.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-opus-4-6-adaptive', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-4-7': [
+    {
+      value: 55,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-7', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-4-7-non-reasoning': [
+    {
+      value: 43.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-opus-4-7-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
   'claude-opus-4-8': [
     {
       value: 61,
@@ -62,35 +365,1232 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-06-18',
     },
     {
-      value: 55.7,
+      value: 57.3,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-8', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-8', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-5': [
+    {
+      value: 63.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-opus-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-5-high': [
+    {
+      value: 61.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-opus-5-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-5-low': [
+    {
+      value: 52.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'claude-opus-5-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-5-medium': [
+    {
+      value: 58.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-opus-5-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-opus-5-xhigh': [
+    {
+      value: 62.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-opus-5-xhigh', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'claude-sonnet-4-6': [
     {
-      value: 35.9,
+      value: 36.8,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-sonnet-4-6-adaptive': [
+    {
+      value: 48.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6-adaptive', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-sonnet-4-6-non-reasoning-low-effort': [
+    {
+      value: 35.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6-non-reasoning-low-effort', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'claude-sonnet-5': [
     {
-      value: 53.4,
+      value: 55.3,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-5', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'claude-sonnet-5-non-reasoning': [
+    {
+      value: 42.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'claude-sonnet-5-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'command-a': [
+    {
+      value: 7.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'command-a', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'command-a-plus': [
+    {
+      value: 22.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'command-a-plus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'command-r-03-2024': [
+    {
+      value: 1.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'command-r-03-2024', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'command-r-plus-04-2024': [
+    {
+      value: 2.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'command-r-plus-04-2024', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  dbrx: [
+    {
+      value: 2.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'dbrx', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deephermes-3-llama-3-1-8b-preview': [
+    {
+      value: 1.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deephermes-3-llama-3-1-8b-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deephermes-3-mistral-24b-preview': [
+    {
+      value: 5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deephermes-3-mistral-24b-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-coder-v2': [
+    {
+      value: 4.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-llm-67b-chat': [
+    {
+      value: 2.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-llm-67b-chat', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1': [
+    {
+      value: 20.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-r1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1-0120': [
+    {
+      value: 18.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-0120', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1-distill-llama-70b': [
+    {
+      value: 9.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-llama-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1-distill-llama-8b': [
+    {
+      value: 6.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-llama-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1-distill-qwen-1-5b': [
+    {
+      value: 3.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-qwen-1-5b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1-distill-qwen-14b': [
+    {
+      value: 9.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-qwen-14b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1-distill-qwen-32b': [
+    {
+      value: 11,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-qwen-32b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-r1-qwen3-8b': [
+    {
+      value: 10.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-r1-qwen3-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v2': [
+    {
+      value: 3.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v2-5': [
+    {
+      value: 6.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v2-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v2-5-sep-2024': [
+    {
+      value: 6.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v2-5-sep-2024', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3': [
+    {
+      value: 14.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-0324': [
+    {
+      value: 15.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-0324', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-1': [
+    {
+      value: 21.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-1-reasoning': [
+    {
+      value: 21,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-1-terminus': [
+    {
+      value: 21.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-terminus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-1-terminus-reasoning': [
+    {
+      value: 31.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-2': [
+    {
+      value: 25.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-2-0925': [
+    {
+      value: 21.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-0925', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-2-reasoning': [
+    {
+      value: 32.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-2-reasoning-0925': [
+    {
+      value: 25.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-reasoning-0925', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v3-2-speciale': [
+    {
+      value: 22.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-speciale', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-flash': [
+    {
+      value: 51.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-flash-0420': [
+    {
+      value: 42.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-0420', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-flash-0420-high': [
+    {
+      value: 39,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-0420-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-flash-non-reasoning': [
+    {
+      value: 29.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-pro': [
+    {
+      value: 53.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-pro-0424': [
+    {
+      value: 45.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro-0424', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-pro-0424-high': [
+    {
+      value: 43.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro-0424-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'deepseek-v4-pro-0424-non-reasoning': [
+    {
+      value: 31.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro-0424-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'deepseek/deepseek-coder-v2-lite': [
     {
-      value: 3.1,
+      value: 2.7,
       indexVersion: 'v4.1',
       source:
-        "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2-lite', fetched 2026-07-19",
-      asOf: '2026-07-19',
+        "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2-lite', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'devstral-2': [
+    {
+      value: 19.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'devstral-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'devstral-medium': [
+    {
+      value: 12.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'devstral-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'devstral-small': [
+    {
+      value: 9.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'devstral-small', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'devstral-small-2': [
+    {
+      value: 17.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'devstral-small-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'devstral-small-2505': [
+    {
+      value: 11.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'devstral-small-2505', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'diffusiongemma-26b-a4b': [
+    {
+      value: 13.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'diffusiongemma-26b-a4b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'doubao-seed-code': [
+    {
+      value: 26.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'doubao-seed-code', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ernie-4-5-300b-a47b': [
+    {
+      value: 8.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'ernie-4-5-300b-a47b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ernie-5-0-thinking-preview': [
+    {
+      value: 22.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'ernie-5-0-thinking-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'exaone-4-0-1-2b': [
+    {
+      value: 2.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'exaone-4-0-1-2b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'exaone-4-0-1-2b-reasoning': [
+    {
+      value: 2.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'exaone-4-0-1-2b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'exaone-4-0-32b': [
+    {
+      value: 5.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'exaone-4-0-32b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'exaone-4-0-32b-reasoning': [
+    {
+      value: 10.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'exaone-4-0-32b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'exaone-4-5-33b': [
+    {
+      value: 20.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'exaone-4-5-33b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'falcon-h1r-7b': [
+    {
+      value: 9.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'falcon-h1r-7b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'g9v3-39a5b': [
+    {
+      value: 31.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'g9v3-39a5b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'g9v3-3b': [
+    {
+      value: 16.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'g9v3-3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-1-0-pro': [
+    {
+      value: 2.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-1-0-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-1-0-ultra': [
+    {
+      value: 4.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-1-0-ultra', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-1-5-flash': [
+    {
+      value: 7.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-1-5-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-1-5-flash-8b': [
+    {
+      value: 5.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-1-5-flash-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-1-5-flash-may-2024': [
+    {
+      value: 4.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-1-5-flash-may-2024', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-1-5-pro': [
+    {
+      value: 9.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-1-5-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-1-5-pro-may-2024': [
+    {
+      value: 6.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-1-5-pro-may-2024', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-0-flash': [
+    {
+      value: 12.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-0-flash-experimental': [
+    {
+      value: 10.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-experimental', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-0-flash-lite-001': [
+    {
+      value: 8.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-lite-001', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-0-flash-lite-preview': [
+    {
+      value: 8.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-lite-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-0-flash-thinking-exp-0121': [
+    {
+      value: 13.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-thinking-exp-0121', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-0-flash-thinking-exp-1219': [
+    {
+      value: 6.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-thinking-exp-1219', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-0-pro-experimental-02-05': [
+    {
+      value: 11.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-0-pro-experimental-02-05', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash': [
+    {
+      value: 14.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-04-2025': [
+    {
+      value: 11.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-04-2025', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-lite': [
+    {
+      value: 6.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-lite-preview-09-2025': [
+    {
+      value: 13.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite-preview-09-2025', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-lite-preview-09-2025-reasoning': [
+    {
+      value: 15.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite-preview-09-2025-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-lite-reasoning': [
+    {
+      value: 11.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-preview-09-2025': [
+    {
+      value: 19.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-preview-09-2025', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-preview-09-2025-reasoning': [
+    {
+      value: 24.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-preview-09-2025-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-reasoning': [
+    {
+      value: 20.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-flash-reasoning-04-2025': [
+    {
+      value: 17.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-reasoning-04-2025', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-pro': [
+    {
+      value: 25.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-pro-03-25': [
+    {
+      value: 23.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-pro-03-25', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-2-5-pro-05-06': [
+    {
+      value: 22.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-2-5-pro-05-06', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-1-flash-lite-preview': [
+    {
+      value: 25.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-1-flash-lite-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-1-pro-preview': [
+    {
+      value: 47.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-1-pro-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-5-flash': [
+    {
+      value: 52,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-5-flash-lite': [
+    {
+      value: 37.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash-lite', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-5-flash-medium': [
+    {
+      value: 46.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-5-flash-minimal': [
+    {
+      value: 35.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash-minimal', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-6-flash': [
+    {
+      value: 51.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-3-6-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-7-flash': [
+    {
+      value: 56,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-3-7-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-7-flash-low': [
+    {
+      value: 50.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-7-flash-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-7-flash-medium': [
+    {
+      value: 53.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-7-flash-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-flash': [
+    {
+      value: 27.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-3-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-flash-reasoning': [
+    {
+      value: 38.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemini-3-flash-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-pro': [
+    {
+      value: 40.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-3-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemini-3-pro-low': [
+    {
+      value: 33.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemini-3-pro-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-3-1b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-3-1b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-3-270m': [
+    {
+      value: 2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-3-270m', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-3-27b': [
+    {
+      value: 7.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-3-27b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-3-4b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-3-4b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-3n-e2b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-3n-e2b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-3n-e4b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-3n-e4b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-3n-e4b-preview-0520': [
+    {
+      value: 4.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemma-3n-e4b-preview-0520', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-12b': [
+    {
+      value: 22.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-4-12b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-12b-non-reasoning': [
+    {
+      value: 13.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemma-4-12b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-26b-a4b': [
+    {
+      value: 26.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-4-26b-a4b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-26b-a4b-non-reasoning': [
+    {
+      value: 20.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemma-4-26b-a4b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-31b': [
+    {
+      value: 29.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-4-31b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-31b-non-reasoning': [
+    {
+      value: 22.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemma-4-31b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-e2b': [
+    {
+      value: 9.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-4-e2b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-e2b-non-reasoning': [
+    {
+      value: 6.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemma-4-e2b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gemma-4-e4b-non-reasoning': [
+    {
+      value: 8.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gemma-4-e4b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-5-air': [
+    {
+      value: 16.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4-5-air', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-5v': [
+    {
+      value: 6.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4-5v', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-5v-reasoning': [
+    {
+      value: 9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'glm-4-5v-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-6': [
+    {
+      value: 23.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4-6', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-6-reasoning': [
+    {
+      value: 29.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4-6-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-6v': [
+    {
+      value: 10.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4-6v', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-6v-reasoning': [
+    {
+      value: 16.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'glm-4-6v-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-7': [
+    {
+      value: 34.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4-7', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-7-flash': [
+    {
+      value: 23.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4-7-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-7-flash-non-reasoning': [
+    {
+      value: 15.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'glm-4-7-flash-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4-7-non-reasoning': [
+    {
+      value: 27.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'glm-4-7-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-4.5': [
+    {
+      value: 19.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-4.5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-5': [
+    {
+      value: 40.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-5-1': [
+    {
+      value: 41,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-5-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-5-1-non-reasoning': [
+    {
+      value: 36.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'glm-5-1-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-5-2-non-reasoning': [
+    {
+      value: 34.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'glm-5-2-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-5-non-reasoning': [
+    {
+      value: 33.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'glm-5-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-5-turbo': [
+    {
+      value: 39.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-5-turbo', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'glm-5v-turbo': [
+    {
+      value: 35.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-5v-turbo', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'google/gemma-3-12b': [
@@ -103,42 +1603,569 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'google/gemma-4-e4b': [
     {
-      value: 12.5,
+      value: 12.2,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gemma-4-e4b', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-4-e4b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-35-turbo': [
+    {
+      value: 3.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-35-turbo', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4': [
+    {
+      value: 6.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4-1': [
+    {
+      value: 19.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4-1-mini': [
+    {
+      value: 14.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4-1-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4-1-nano': [
+    {
+      value: 9.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4-1-nano', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4-5': [
+    {
+      value: 13.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4-turbo': [
+    {
+      value: 7.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4-turbo', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'gpt-4o': [
     {
-      value: 11.2,
+      value: 11.1,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-4o', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4o', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4o-2024-05-13': [
+    {
+      value: 8.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4o-2024-05-13', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4o-2024-08-06': [
+    {
+      value: 9.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4o-2024-08-06', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4o-chatgpt': [
+    {
+      value: 8.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4o-chatgpt', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-4o-chatgpt-03-25': [
+    {
+      value: 12.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-4o-chatgpt-03-25', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'gpt-4o-mini': [
     {
-      value: 6.9,
+      value: 6.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-4o-mini', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4o-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'gpt-5': [
     {
-      value: 34.7,
+      value: 35.3,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-5', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-1': [
+    {
+      value: 37.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-1-codex': [
+    {
+      value: 35.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-1-codex', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-1-codex-mini': [
+    {
+      value: 31.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-1-codex-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-1-non-reasoning': [
+    {
+      value: 20.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-1-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-2': [
+    {
+      value: 43.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-2-codex': [
+    {
+      value: 41.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-2-codex', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-2-medium': [
+    {
+      value: 38.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-2-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-2-non-reasoning': [
+    {
+      value: 26.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-2-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-3-codex': [
+    {
+      value: 45.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-3-codex', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4': [
+    {
+      value: 53.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-4', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-low': [
+    {
+      value: 40.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-mini': [
+    {
+      value: 40.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-mini-medium': [
+    {
+      value: 30.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-4-mini-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-mini-non-reasoning': [
+    {
+      value: 16.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-4-mini-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-nano': [
+    {
+      value: 39.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-nano', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-nano-medium': [
+    {
+      value: 30.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-4-nano-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-nano-non-reasoning': [
+    {
+      value: 17.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-4-nano-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-4-non-reasoning': [
+    {
+      value: 28.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-4-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-5': [
+    {
+      value: 56.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-5-high': [
+    {
+      value: 54.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-5-instant-05-26': [
+    {
+      value: 34.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-5-instant-05-26', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-5-instant-06-26': [
+    {
+      value: 29.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-5-instant-06-26', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-5-low': [
+    {
+      value: 44.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-5-medium': [
+    {
+      value: 51.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-5-non-reasoning': [
+    {
+      value: 35.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-5-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-luna-high': [
+    {
+      value: 47,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-luna-low': [
+    {
+      value: 33.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-luna-medium': [
+    {
+      value: 38.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-luna-non-reasoning': [
+    {
+      value: 26.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-luna-xhigh': [
+    {
+      value: 50.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-xhigh', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-sol': [
+    {
+      value: 60.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-sol-high': [
+    {
+      value: 57.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-sol-low': [
+    {
+      value: 50.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-sol-medium': [
+    {
+      value: 55.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-sol-non-reasoning': [
+    {
+      value: 41.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-sol-xhigh': [
+    {
+      value: 59,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-xhigh', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-terra': [
+    {
+      value: 56.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-terra-high': [
+    {
+      value: 50.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-terra-low': [
+    {
+      value: 41.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-terra-medium': [
+    {
+      value: 46.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-terra-non-reasoning': [
+    {
+      value: 34.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-6-terra-xhigh': [
+    {
+      value: 52.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-xhigh', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-chatgpt': [
+    {
+      value: 15.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-chatgpt', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-codex': [
+    {
+      value: 37,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-codex', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-low': [
+    {
+      value: 31.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-medium': [
+    {
+      value: 34.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'gpt-5-mini': [
     {
-      value: 25.3,
+      value: 25.8,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-mini-medium': [
+    {
+      value: 31.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-mini-minimal': [
+    {
+      value: 14.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-mini-minimal', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-minimal': [
+    {
+      value: 17.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-minimal', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-nano': [
+    {
+      value: 20.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-nano', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-nano-medium': [
+    {
+      value: 19.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-nano-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-5-nano-minimal': [
+    {
+      value: 7.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'gpt-5-nano-minimal', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'gpt-5.5': [
@@ -155,6 +2182,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         'Artificial Analysis Intelligence Index v4.1 (July 2026 leaderboard): Fable 5 = 60, GPT-5.6 Sol = 59, Opus 4.8 = 56, GPT-5.5 = 55; see https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-1',
       asOf: '2026-07-18',
+    },
+  ],
+  'gpt-5.6-luna': [
+    {
+      value: 52.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'gpt-5.6-sol': [
@@ -175,28 +2210,1398 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-07-18',
     },
   ],
+  'gpt-oss-120b': [
+    {
+      value: 24.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-oss-120b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-oss-120b-low': [
+    {
+      value: 14.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-oss-120b-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-oss-20b': [
+    {
+      value: 15.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-oss-20b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'gpt-oss-20b-low': [
+    {
+      value: 14.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-oss-20b-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-3-3-8b-instruct': [
+    {
+      value: 1.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'granite-3-3-8b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-0-350m': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'granite-4-0-350m', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-0-h-350m': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'granite-4-0-h-350m', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-0-h-nano-1b': [
+    {
+      value: 2.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'granite-4-0-h-nano-1b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-0-h-small': [
+    {
+      value: 4.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'granite-4-0-h-small', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-0-micro': [
+    {
+      value: 2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'granite-4-0-micro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-0-nano-1b': [
+    {
+      value: 1.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'granite-4-0-nano-1b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-1-30b': [
+    {
+      value: 8.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'granite-4-1-30b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-1-3b': [
+    {
+      value: 4.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'granite-4-1-3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'granite-4-1-8b': [
+    {
+      value: 6.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'granite-4-1-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-1': [
+    {
+      value: 5.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-2-1212': [
+    {
+      value: 7.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-2-1212', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-3': [
+    {
+      value: 18.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-3-mini-reasoning': [
+    {
+      value: 22.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'grok-3-mini-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-3-reasoning': [
+    {
+      value: 15.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-3-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4': [
+    {
+      value: 34.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-1-fast': [
+    {
+      value: 17,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-1-fast', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-1-fast-reasoning': [
+    {
+      value: 31.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'grok-4-1-fast-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-20': [
+    {
+      value: 38,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-20', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-20-0309': [
+    {
+      value: 37.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-20-0309', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-20-0309-non-reasoning': [
+    {
+      value: 22.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'grok-4-20-0309-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-20-non-reasoning': [
+    {
+      value: 22.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'grok-4-20-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-3': [
+    {
+      value: 37.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-3-low': [
+    {
+      value: 36.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-3-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-3-medium': [
+    {
+      value: 36.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-3-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-3-non-reasoning': [
+    {
+      value: 25,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'grok-4-3-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-6': [
+    {
+      value: 60.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-6', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-fast': [
+    {
+      value: 16.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-fast', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-4-fast-reasoning': [
+    {
+      value: 27.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'grok-4-fast-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
   'grok-4.5': [
     {
-      value: 53.8,
+      value: 55.8,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'grok-4-5', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-beta': [
+    {
+      value: 7.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-beta', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-build-0-1-06-16': [
+    {
+      value: 40.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'grok-build-0-1-06-16', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'grok-code-fast-1': [
+    {
+      value: 22,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-code-fast-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hermes-3-llama-3-1-70b': [
+    {
+      value: 4.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'hermes-3-llama-3-1-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hermes-4-llama-3-1-405b': [
+    {
+      value: 8.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-405b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hermes-4-llama-3-1-405b-reasoning': [
+    {
+      value: 8.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-405b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hermes-4-llama-3-1-70b': [
+    {
+      value: 6.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hermes-4-llama-3-1-70b-reasoning': [
+    {
+      value: 9.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-70b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  hy3: [
+    {
+      value: 42.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'hy3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hy3-non-reasoning': [
+    {
+      value: 26.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'hy3-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hy3-preview': [
+    {
+      value: 34.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'hy3-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hyperclova-x-seed-think-32b': [
+    {
+      value: 17.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'hyperclova-x-seed-think-32b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'hypernova-60b': [
+    {
+      value: 18.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'hypernova-60b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  inkling: [
+    {
+      value: 42.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'inkling', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'inkling-small': [
+    {
+      value: 41.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'inkling-small', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'intellect-3': [
+    {
+      value: 15.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'intellect-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jamba-1-5-large': [
+    {
+      value: 4.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jamba-1-5-large', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jamba-1-5-mini': [
+    {
+      value: 2.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jamba-1-5-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jamba-1-6-large': [
+    {
+      value: 4.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jamba-1-6-large', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jamba-1-6-mini': [
+    {
+      value: 2.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jamba-1-6-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jamba-1-7-large': [
+    {
+      value: 5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jamba-1-7-large', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jamba-1-7-mini': [
+    {
+      value: 2.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jamba-1-7-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jamba-reasoning-3b': [
+    {
+      value: 3.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'jamba-reasoning-3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jt-35b-flash': [
+    {
+      value: 29,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jt-35b-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jt-4-1-flash-236b-a21b': [
+    {
+      value: 39.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'jt-4-1-flash-236b-a21b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'jt-mini': [
+    {
+      value: 18.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'jt-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'k-exaone': [
+    {
+      value: 22.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'k-exaone', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'k-exaone-2-0-0803': [
+    {
+      value: 31,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'k-exaone-2-0-0803', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'k-exaone-non-reasoning': [
+    {
+      value: 16.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'k-exaone-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'k2-think-v2': [
+    {
+      value: 17.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'k2-think-v2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'k2-v2': [
+    {
+      value: 14.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'k2-v2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'k2-v2-low': [
+    {
+      value: 8.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'k2-v2-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'k2-v2-medium': [
+    {
+      value: 12.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'k2-v2-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kat-coder-pro-v1': [
+    {
+      value: 28.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kat-coder-pro-v2': [
+    {
+      value: 34.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k2': [
+    {
+      value: 19.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k2-0905': [
+    {
+      value: 24,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-0905', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k2-5': [
+    {
+      value: 36,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k2-5-non-reasoning': [
+    {
+      value: 30.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'kimi-k2-5-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k2-6-non-reasoning': [
+    {
+      value: 35.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'kimi-k2-6-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k2-7-code': [
+    {
+      value: 43,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-7-code', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k2-thinking': [
+    {
+      value: 33.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-k3-low': [
+    {
+      value: 48.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k3-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'kimi-linear-48b-a3b-instruct': [
+    {
+      value: 8.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'kimi-linear-48b-a3b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm-40b': [
+    {
+      value: 3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm-40b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-1-2b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm2-1-2b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-2-6b': [
+    {
+      value: 2.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm2-2-6b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-24b-a2b': [
+    {
+      value: 4.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm2-24b-a2b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-5-1-2b-instruct': [
+    {
+      value: 2.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'lfm2-5-1-2b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-5-1-2b-thinking': [
+    {
+      value: 2.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'lfm2-5-1-2b-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-5-8b-a1b': [
+    {
+      value: 8.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm2-5-8b-a1b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-5-vl-1-6b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm2-5-vl-1-6b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-8b-a1b': [
+    {
+      value: 1.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm2-8b-a1b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ling-1t': [
+    {
+      value: 12.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ling-1t', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ling-2-6-1t': [
+    {
+      value: 26.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ling-2-6-1t', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ling-2-6-flash': [
+    {
+      value: 14.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ling-2-6-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ling-3-0-flash': [
+    {
+      value: 37.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ling-3-0-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ling-3-0-tiny': [
+    {
+      value: 24.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ling-3-0-tiny', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ling-flash-2-0': [
+    {
+      value: 9.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ling-flash-2-0', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ling-mini-2-0': [
+    {
+      value: 3.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ling-mini-2-0', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-2-chat-13b': [
+    {
+      value: 2.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'llama-2-chat-13b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-2-chat-70b': [
+    {
+      value: 2.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'llama-2-chat-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-2-chat-7b': [
+    {
+      value: 3.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'llama-2-chat-7b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-1-instruct-405b': [
+    {
+      value: 8.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-1-instruct-405b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-1-instruct-70b': [
+    {
+      value: 6.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-1-instruct-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-1-instruct-8b': [
+    {
+      value: 7.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-1-instruct-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-1-nemotron-instruct-70b': [
+    {
+      value: 7.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-1-nemotron-instruct-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-1-nemotron-nano-4b-reasoning': [
+    {
+      value: 8.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-1-nemotron-nano-4b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-1-nemotron-ultra-253b-v1-reasoning': [
+    {
+      value: 8.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-1-nemotron-ultra-253b-v1-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-2-instruct-11b-vision': [
+    {
+      value: 3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-11b-vision', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-2-instruct-1b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-1b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-2-instruct-3b': [
+    {
+      value: 3.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-2-instruct-90b-vision': [
+    {
+      value: 6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-90b-vision', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-3-instruct-70b': [
+    {
+      value: 9.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-3-instruct-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-3-nemotron-super-49b': [
+    {
+      value: 8.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-3-nemotron-super-49b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-3-nemotron-super-49b-reasoning': [
+    {
+      value: 12.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-3-nemotron-super-49b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-instruct-70b': [
+    {
+      value: 3.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-instruct-70b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-3-instruct-8b': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-3-instruct-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-4-maverick': [
+    {
+      value: 14.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'llama-4-maverick', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-4-scout': [
+    {
+      value: 10.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'llama-4-scout', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-65b': [
+    {
+      value: 1.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'llama-65b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-nemotron-super-49b-v1-5': [
+    {
+      value: 8.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-nemotron-super-49b-v1-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'llama-nemotron-super-49b-v1-5-reasoning': [
+    {
+      value: 12.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'llama-nemotron-super-49b-v1-5-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'longcat-2-0': [
+    {
+      value: 34.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'longcat-2-0', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'longcat-flash-lite': [
+    {
+      value: 17.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'longcat-flash-lite', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'magistral-medium': [
+    {
+      value: 12.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'magistral-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'magistral-medium-2509': [
+    {
+      value: 18,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'magistral-medium-2509', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'magistral-small': [
+    {
+      value: 10.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'magistral-small', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'magistral-small-2509': [
+    {
+      value: 11.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'magistral-small-2509', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mercury-2': [
+    {
+      value: 21.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mercury-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mi-dm-k-2-5-pro-dec28': [
+    {
+      value: 16.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mi-dm-k-2-5-pro-dec28', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'microsoft/phi-4': [
     {
-      value: 4.9,
+      value: 4.6,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'phi-4', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'phi-4', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-0206': [
+    {
+      value: 34,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mimo-v2-0206', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-5-0424': [
+    {
+      value: 38,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mimo-v2-5-0424', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-5-pro': [
+    {
+      value: 42.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mimo-v2-5-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-5-pro-non-reasoning': [
+    {
+      value: 28.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-flash': [
+    {
+      value: 25.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mimo-v2-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-flash-reasoning': [
+    {
+      value: 31.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mimo-v2-flash-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-omni': [
+    {
+      value: 35.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mimo-v2-omni', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-omni-0327': [
+    {
+      value: 37.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mimo-v2-omni-0327', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mimo-v2-pro': [
+    {
+      value: 41.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mimo-v2-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minicpm-v4-6-1-3b': [
+    {
+      value: 3.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minicpm-v4-6-1-3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minicpm5-1b': [
+    {
+      value: 11.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minicpm5-1b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minicpm5-1b-non-reasoning': [
+    {
+      value: 11.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'minicpm5-1b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minimax-m1-40k': [
+    {
+      value: 14.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m1-40k', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minimax-m1-80k': [
+    {
+      value: 17.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m1-80k', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minimax-m2': [
+    {
+      value: 28.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minimax-m2-1': [
+    {
+      value: 32.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m2-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minimax-m2-5': [
+    {
+      value: 34.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m2-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'minimax-m2-7': [
+    {
+      value: 38.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m2-7', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ministral-3-14b': [
+    {
+      value: 11.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ministral-3-14b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ministral-3-3b': [
+    {
+      value: 7.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ministral-3-3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ministral-3-8b': [
+    {
+      value: 9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ministral-3-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-7b-instruct': [
+    {
+      value: 1.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mistral-7b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-8x22b-instruct': [
+    {
+      value: 4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mistral-8x22b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-large': [
+    {
+      value: 4.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-large', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-large-2': [
+    {
+      value: 9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-large-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-large-2407': [
+    {
+      value: 7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mistral-large-2407', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-large-3': [
+    {
+      value: 15.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-large-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-medium': [
+    {
+      value: 3.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-medium-3': [
+    {
+      value: 12.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-medium-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-medium-3-1': [
+    {
+      value: 14.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mistral-medium-3-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-medium-3-5': [
+    {
+      value: 30.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mistral-medium-3-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-saba': [
+    {
+      value: 6.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-saba', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-small': [
+    {
+      value: 4.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-small', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-small-2402': [
+    {
+      value: 3.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mistral-small-2402', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-small-3-2': [
+    {
+      value: 10.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-small-4': [
+    {
+      value: 19.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-small-4', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mistral-small-4-non-reasoning': [
+    {
+      value: 12.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mistral-small-4-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'mistralai/mistral-small-24b': [
     {
-      value: 14.7,
+      value: 6.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3-1', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'mixtral-8x7b-instruct': [
+    {
+      value: 2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'mixtral-8x7b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'molmo-7b-d': [
+    {
+      value: 3.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'molmo-7b-d', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'molmo2-8b': [
+    {
+      value: 1.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'molmo2-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'moonshotai/kimi-k2.6': [
@@ -208,43 +3613,1482 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-06-18',
     },
     {
-      value: 44.2,
+      value: 45.1,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-6', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-6', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'moonshotai/kimi-k3': [
     {
-      value: 57.1,
+      value: 59.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'kimi-k3', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'motif-0714': [
+    {
+      value: 45.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'motif-0714', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'motif-2-12-7b': [
+    {
+      value: 12.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'motif-2-12-7b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'motif-3': [
+    {
+      value: 47.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'motif-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'muse-glimmer': [
+    {
+      value: 35.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'muse-glimmer', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'muse-spark': [
+    {
+      value: 44.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'muse-spark', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'muse-spark-1-1': [
+    {
+      value: 53.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'muse-spark-1-1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'muse-spark-1-2': [
+    {
+      value: 56.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'muse-spark-1-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nanbeige4-1-3b': [
+    {
+      value: 11,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nanbeige4-1-3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nemotron-3-5-lightning': [
+    {
+      value: 23.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nemotron-3-5-lightning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nemotron-3-nano-omni-30b-a3b': [
+    {
+      value: 15,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nemotron-3-nano-omni-30b-a3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nemotron-cascade-2-30b-a3b': [
+    {
+      value: 17.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nemotron-cascade-2-30b-a3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nex-n2-pro': [
+    {
+      value: 42.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nex-n2-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'north-mini-code': [
+    {
+      value: 20.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'north-mini-code', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-lite': [
+    {
+      value: 11.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nova-2-0-lite', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-lite-reasoning': [
+    {
+      value: 20.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nova-2-0-lite-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-lite-reasoning-low': [
+    {
+      value: 18,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nova-2-0-lite-reasoning-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-lite-reasoning-medium': [
+    {
+      value: 19.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nova-2-0-lite-reasoning-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-omni': [
+    {
+      value: 10.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nova-2-0-omni', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-omni-reasoning-low': [
+    {
+      value: 16.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nova-2-0-omni-reasoning-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-omni-reasoning-medium': [
+    {
+      value: 21.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nova-2-0-omni-reasoning-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-pro': [
+    {
+      value: 14.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nova-2-0-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-pro-reasoning-low': [
+    {
+      value: 19.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nova-2-0-pro-reasoning-low', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-2-0-pro-reasoning-medium': [
+    {
+      value: 22.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nova-2-0-pro-reasoning-medium', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-lite': [
+    {
+      value: 6.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nova-lite', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-micro': [
+    {
+      value: 4.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nova-micro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-premier': [
+    {
+      value: 12.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nova-premier', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nova-pro': [
+    {
+      value: 7.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'nova-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-3-nano-30b-a3b': [
+    {
+      value: 7.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-nano-30b-a3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-3-nano-30b-a3b-reasoning': [
+    {
+      value: 14.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-nano-30b-a3b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-3-nano-4b': [
+    {
+      value: 8.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-nano-4b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-3-super-120b-a12b': [
+    {
+      value: 25.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-super-120b-a12b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-3-ultra-550b-a55b': [
+    {
+      value: 38.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-nano-12b-v2-vl': [
+    {
+      value: 4.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-12b-v2-vl', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-nano-12b-v2-vl-reasoning': [
+    {
+      value: 8.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-12b-v2-vl-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-nano-9b-v2': [
+    {
+      value: 7.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-9b-v2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'nvidia-nemotron-nano-9b-v2-reasoning': [
+    {
+      value: 8.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-9b-v2-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  o1: [
+    {
+      value: 23.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o1', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'o1-mini': [
+    {
+      value: 14,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o1-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'o1-preview': [
+    {
+      value: 17.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o1-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'o1-pro': [
+    {
+      value: 19.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o1-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  o3: [
+    {
+      value: 31.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'o3-mini': [
+    {
+      value: 19.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o3-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'o3-mini-high': [
+    {
+      value: 15.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o3-mini-high', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'o3-pro': [
+    {
+      value: 33.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o3-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'o4-mini': [
+    {
+      value: 26.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'o4-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'olmo-2-32b': [
+    {
+      value: 4.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'olmo-2-32b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'olmo-2-7b': [
+    {
+      value: 3.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'olmo-2-7b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'olmo-3-1-32b-instruct': [
+    {
+      value: 6.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'olmo-3-1-32b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'olmo-3-1-32b-think': [
+    {
+      value: 7.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'olmo-3-1-32b-think', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'olmo-3-32b-think': [
+    {
+      value: 6.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'olmo-3-32b-think', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'olmo-3-7b-instruct': [
+    {
+      value: 2.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'olmo-3-7b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'olmo-3-7b-think': [
+    {
+      value: 3.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'olmo-3-7b-think', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'openchat-35': [
+    {
+      value: 2.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'openchat-35', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'palm-2': [
+    {
+      value: 2.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'palm-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'phi-3-mini': [
+    {
+      value: 4.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'phi-3-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'phi-4-mini': [
+    {
+      value: 5.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'phi-4-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'phi-4-multimodal': [
+    {
+      value: 4.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'phi-4-multimodal', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'pixtral-large-2411': [
+    {
+      value: 8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'pixtral-large-2411', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen-2-5-max': [
+    {
+      value: 10.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen-2-5-max', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen-chat-14b': [
+    {
+      value: 1.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen-chat-14b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen-chat-72b': [
+    {
+      value: 3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen-chat-72b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen-turbo': [
+    {
+      value: 6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen-turbo', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'qwen/qwen2.5-coder-32b': [
     {
-      value: 7.1,
+      value: 6.9,
       indexVersion: 'v4.1',
       source:
-        "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-32b-instruct', fetched 2026-07-19",
-      asOf: '2026-07-19',
+        "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-32b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'qwen/qwen3.6-35b-a3b': [
     {
-      value: 31.6,
+      value: 32.1,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen1.5-110b-chat': [
+    {
+      value: 3.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen1.5-110b-chat', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen2-5-72b-instruct': [
+    {
+      value: 9.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen2-5-72b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen2-5-coder-7b-instruct': [
+    {
+      value: 4.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-7b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen2-72b-instruct': [
+    {
+      value: 5.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen2-72b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen2.5-32b-instruct': [
+    {
+      value: 7.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen2.5-32b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-0.6b-instruct': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-0.6b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-0.6b-instruct-reasoning': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-0.6b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-1.7b-instruct': [
+    {
+      value: 1.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-1.7b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-1.7b-instruct-reasoning': [
+    {
+      value: 2.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-1.7b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-14b-instruct': [
+    {
+      value: 6.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-14b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-14b-instruct-reasoning': [
+    {
+      value: 10.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-14b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-235b-a22b-instruct': [
+    {
+      value: 10.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-235b-a22b-instruct-2507': [
+    {
+      value: 18.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct-2507', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-235b-a22b-instruct-2507-reasoning': [
+    {
+      value: 19.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct-2507-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-235b-a22b-instruct-reasoning': [
+    {
+      value: 13.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-30b-a3b-2507': [
+    {
+      value: 8.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-2507', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-30b-a3b-2507-reasoning': [
+    {
+      value: 14.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-2507-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-30b-a3b-instruct': [
+    {
+      value: 6.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-30b-a3b-instruct-reasoning': [
+    {
+      value: 9.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-32b-instruct': [
+    {
+      value: 8.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-32b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-32b-instruct-reasoning': [
+    {
+      value: 11.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-32b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-4b-2507-instruct': [
+    {
+      value: 6.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-4b-2507-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-4b-2507-instruct-reasoning': [
+    {
+      value: 11.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-4b-2507-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-4b-instruct': [
+    {
+      value: 6.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-4b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-4b-instruct-reasoning': [
+    {
+      value: 8.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-4b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-0-8b': [
+    {
+      value: 5.2,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-0-8b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-0-8b-non-reasoning': [
+    {
+      value: 2.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-0-8b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-122b-a10b': [
+    {
+      value: 32.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-122b-a10b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-122b-a10b-non-reasoning': [
+    {
+      value: 28.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-122b-a10b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-27b': [
+    {
+      value: 34.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-27b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-27b-non-reasoning': [
+    {
+      value: 30,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-27b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-2b': [
+    {
+      value: 7.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-2b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-2b-non-reasoning': [
+    {
+      value: 5.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-2b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-35b-a3b': [
+    {
+      value: 29.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-35b-a3b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-35b-a3b-non-reasoning': [
+    {
+      value: 24.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-35b-a3b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-397b-a17b': [
+    {
+      value: 34.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-397b-a17b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-397b-a17b-non-reasoning': [
+    {
+      value: 32.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-397b-a17b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-4b': [
+    {
+      value: 20.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-4b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-4b-non-reasoning': [
+    {
+      value: 16.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-4b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-9b': [
+    {
+      value: 21.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-9b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-9b-non-reasoning': [
+    {
+      value: 20.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-9b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-omni-flash': [
+    {
+      value: 19.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-5-omni-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-5-omni-plus': [
+    {
+      value: 31.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-5-omni-plus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-6-27b': [
+    {
+      value: 37.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-6-27b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-6-27b-non-reasoning': [
+    {
+      value: 31.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-6-27b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-6-35b-a3b-non-reasoning': [
+    {
+      value: 24.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b-non-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-6-max': [
+    {
+      value: 41.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-6-max', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-6-plus': [
+    {
+      value: 40.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-6-plus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-7-max': [
+    {
+      value: 46.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-7-max', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-7-plus': [
+    {
+      value: 39.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-7-plus', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-8-max': [
+    {
+      value: 58.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-8-max', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-8b-instruct': [
+    {
+      value: 4.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-8b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-8b-instruct-reasoning': [
+    {
+      value: 8.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-8b-instruct-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-coder-30b-a3b-instruct': [
+    {
+      value: 13.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-coder-30b-a3b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-coder-480b-a35b-instruct': [
+    {
+      value: 18.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-coder-480b-a35b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-coder-next': [
+    {
+      value: 21.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-coder-next', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-max': [
+    {
+      value: 24.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-max', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-max-preview': [
+    {
+      value: 19.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-max-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-max-thinking': [
+    {
+      value: 32.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-max-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-max-thinking-preview': [
+    {
+      value: 25.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-max-thinking-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-next-80b-a3b-instruct': [
+    {
+      value: 13.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-next-80b-a3b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-next-80b-a3b-reasoning': [
+    {
+      value: 16.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-next-80b-a3b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-omni-30b-a3b-instruct': [
+    {
+      value: 4.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-omni-30b-a3b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-omni-30b-a3b-reasoning': [
+    {
+      value: 9.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-omni-30b-a3b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-235b-a22b-instruct': [
+    {
+      value: 14.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-235b-a22b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-235b-a22b-reasoning': [
+    {
+      value: 20.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-235b-a22b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-30b-a3b-instruct': [
+    {
+      value: 9.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-30b-a3b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-30b-a3b-reasoning': [
+    {
+      value: 13.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-30b-a3b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-32b-instruct': [
+    {
+      value: 11,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-32b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-32b-reasoning': [
+    {
+      value: 18.1,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-32b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-4b-instruct': [
+    {
+      value: 3.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-4b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-4b-reasoning': [
+    {
+      value: 7.7,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-4b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-8b-instruct': [
+    {
+      value: 8.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-8b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwen3-vl-8b-reasoning': [
+    {
+      value: 10.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-vl-8b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'qwq-32b': [
+    {
+      value: 13.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwq-32b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'r1-1776': [
+    {
+      value: 6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'r1-1776', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'reka-flash': [
+    {
+      value: 6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'reka-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'reka-flash-3': [
+    {
+      value: 3.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'reka-flash-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ring-1t': [
+    {
+      value: 16.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ring-1t', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ring-2-6-1t': [
+    {
+      value: 31.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ring-2-6-1t', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'ring-flash-2-0': [
+    {
+      value: 8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'ring-flash-2-0', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'sarvam-105b': [
+    {
+      value: 11.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'sarvam-105b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'sarvam-30b': [
+    {
+      value: 6.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'sarvam-30b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'sarvam-m-reasoning': [
+    {
+      value: 2.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'sarvam-m-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'seed-oss-36b-instruct': [
+    {
+      value: 18.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'seed-oss-36b-instruct', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-mini': [
+    {
+      value: 6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'solar-mini', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-open-100b-reasoning': [
+    {
+      value: 15.2,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'solar-open-100b-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-open2-250b': [
+    {
+      value: 37.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'solar-open2-250b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-pro-2': [
+    {
+      value: 7.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'solar-pro-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-pro-2-preview': [
+    {
+      value: 9.9,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'solar-pro-2-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-pro-2-preview-reasoning': [
+    {
+      value: 12.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'solar-pro-2-preview-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-pro-2-reasoning': [
+    {
+      value: 8.8,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'solar-pro-2-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-pro-3': [
+    {
+      value: 14.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'solar-pro-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'solar-pro4': [
+    {
+      value: 41.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'solar-pro4', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  sonar: [
+    {
+      value: 9.4,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'sonar', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'sonar-pro': [
+    {
+      value: 9.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'sonar-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'sonar-reasoning': [
+    {
+      value: 11.6,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'sonar-reasoning', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'sonar-reasoning-pro': [
+    {
+      value: 18,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'sonar-reasoning-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'step-3-5-flash': [
+    {
+      value: 26.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'step-3-5-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'step-3-5-flash-0202': [
+    {
+      value: 26,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'step-3-5-flash-0202', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'step-3-7-flash': [
+    {
+      value: 30.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'step-3-7-flash', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'step-3-vl-10b': [
+    {
+      value: 9.3,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'step-3-vl-10b', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'tiny-aya-global': [
+    {
+      value: 1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'tiny-aya-global', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'tri-21b-think-preview': [
+    {
+      value: 13.6,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'tri-21b-think-preview', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'tri-21b-think-v0-5': [
+    {
+      value: 12.3,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'tri-21b-think-v0-5', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'trinity-large-thinking': [
+    {
+      value: 18.4,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'trinity-large-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
+    },
+  ],
+  'tulu3-405b': [
+    {
+      value: 8.1,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'tulu3-405b', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'zai-org/GLM-5.2': [
     {
-      value: 51.1,
+      value: 52.6,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'glm-5-2', fetched 2026-07-19",
-      asOf: '2026-07-19',
+      source: "Artificial Analysis API (index v4.1), model 'glm-5-2', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
 }
@@ -277,7 +5121,11 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'glm-5-2': 'zai-org/GLM-5.2',
   'glm-5.2': 'zai-org/GLM-5.2',
   'GLM-5.2': 'zai-org/GLM-5.2',
+  'GPT-5 nano': 'gpt-5-nano',
+  'GPT-5 Nano': 'gpt-5-nano',
+  'gpt-5-6-luna': 'gpt-5.6-luna',
   'GPT-5.5': 'gpt-5.5',
+  'GPT-5.6 Luna': 'gpt-5.6-luna',
   'GPT-5.6 Sol': 'gpt-5.6-sol',
   'GPT-5.6 Terra': 'gpt-5.6-terra',
   'GPT-5.6-Terra': 'gpt-5.6-terra',
@@ -303,7 +5151,9 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'openai/gpt-4o-mini': 'gpt-4o-mini',
   'openai/gpt-5': 'gpt-5',
   'openai/gpt-5-mini': 'gpt-5-mini',
+  'openai/gpt-5-nano': 'gpt-5-nano',
   'openai/gpt-5.5': 'gpt-5.5',
+  'openai/gpt-5.6-luna': 'gpt-5.6-luna',
   'openai/gpt-5.6-sol': 'gpt-5.6-sol',
   'openai/gpt-5.6-terra': 'gpt-5.6-terra',
   'Opus 4.8': 'claude-opus-4-8',
