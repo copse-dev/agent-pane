@@ -31,6 +31,9 @@
   min-height: 0;
 }
 .pane-projects {
+  --projects-action-size: 24px;
+  --projects-action-inset: var(--spacing-xs);
+
   width: var(--projects-width, 240px);
   flex-shrink: 0;
   display: flex;
@@ -62,7 +65,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--projects-action-inset) var(--spacing-sm) var(--spacing-md);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -70,13 +73,11 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-/* Projects header "+" — at least as large as the per-project "+" (new thread)
-   so the two affordances read as one family, with extra room around it so the
-   primary create affordance is comfortable to hit. */
+/* Header add, project add, and thread close share one trailing action column. */
 .projects-add-btn {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -84,7 +85,7 @@
   font-size: 20px;
   line-height: 1;
   color: var(--text-secondary);
-  margin: 0 2px 0 6px;
+  margin-left: 6px;
 }
 .projects-add-btn:hover {
   color: var(--text-primary);
@@ -136,7 +137,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding-right: var(--spacing-xs);
+  padding-right: var(--projects-action-inset);
 }
 .project-line .project-row {
   flex: 1;
@@ -144,8 +145,8 @@
 }
 .project-new-thread-btn {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
   border-radius: var(--radius);
   font-size: 18px;
   line-height: 1;
@@ -367,9 +368,9 @@
   margin-inline: 0;
   border-radius: 0;
   text-align: left;
-  /* Left 28px keeps the running-status gutter; roomier vertical/trailing
-     padding so dense thread lists don't feel cramped. */
-  padding: var(--spacing-md) var(--spacing-md) var(--spacing-md) 28px;
+  /* Left 28px keeps the running-status gutter; roomier vertical padding keeps
+     dense thread lists legible while actions use the shared trailing inset. */
+  padding: var(--spacing-md) var(--projects-action-inset) var(--spacing-md) 28px;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -404,12 +405,14 @@
 }
 .chat-delete {
   flex-shrink: 0;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
   opacity: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  padding: 0 4px;
+  padding: 0;
 }
 .chat-row:hover .chat-delete {
   opacity: 1;
