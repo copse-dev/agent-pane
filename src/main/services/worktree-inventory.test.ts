@@ -257,10 +257,10 @@ describe('worktree inventory', () => {
     })
     assert.equal(preview.status, 'ready')
     assert.deepEqual(
-      preview.status === 'ready' ? preview.directories.map((directory) => directory.path) : [],
+      preview.directories.map((directory) => directory.path),
       ['.venv', join('packages', 'app', 'node_modules'), join('vendor', 'bundle')],
     )
-    assert.ok(preview.status === 'ready' && preview.bytes >= 2054)
+    assert.ok(preview.bytes >= 2054)
     assert.ok(existsSync(join(worktreePath, '.venv')), 'preview does not remove anything')
 
     const cleaned = await cleanupWorktreePackages({
