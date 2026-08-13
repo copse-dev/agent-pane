@@ -1,5 +1,5 @@
 /**
- * The management surface behind Settings → Sources → Worktrees.
+ * The management surface behind Settings → Storage → Worktrees.
  *
  * `worktree-manager.ts` owns the lifecycle a thread drives — allocate on first
  * message, validate on reopen, retire only when provably safe. This module is
@@ -16,17 +16,18 @@
  * arbitrary directory.
  */
 import { lstat, readdir, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import type {
   WorktreeInventoryEntry,
   WorktreeRemovalResult,
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
-import { getDefaultBranch, isInsideGitWorkTree } from './github/git-service.ts'
+import { getDefaultBranch } from './github/git-service.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { clearThreadWorktree, getThreadMeta } from './thread-store.ts'
 import {
   changedPaths,
+  expectedThreadWorktreePath,
   listProjectWorktrees,
   managedThreadIdForPath,
   releaseWorktreeRoot,
@@ -97,7 +98,10 @@ async function birthtimeOf(path: string): Promise<number | null> {
  * than the checkout root's mtime, which only moves when a top-level entry does.
  */
 async function lastGitActivity(worktreePath: string): Promise<number | null> {
-  const gitDir = await runWorktreeGit(worktreePath, ['rev-parse', '--absolute-git-dir'])
+  const gitDir = await runWorktreeGit(worktreePath, ['rev-parse', '--absolute-git-dir']).catch(
+    () => null,
+  )
+  if (!gitDir) return null
   if (gitDir.code !== 0) return null
   const dir = gitDir.stdout.trim()
   if (!dir) return null
@@ -112,7 +116,8 @@ async function inspectChanges(worktreePath: string): Promise<string[] | null> {
     '--porcelain=v1',
     '-z',
     '--ignored=matching',
-  ])
+  ]).catch(() => null)
+  if (!status) return null
   if (status.code !== 0) return null
   return changedPaths(status.stdout)
 }
@@ -135,16 +140,107 @@ async function isMerged(
   return result.code === 0 ? true : result.code === 1 ? false : null
 }
 
-/** Linked checkouts only: the project's own checkout and any bare entry are not "worktrees" to manage. */
-function linkedRecords(records: WorktreeRecord[], repositoryRoot: string): WorktreeRecord[] {
+/** Linked checkouts only: the primary and selected project checkouts are never storage to manage. */
+function linkedRecords(
+  records: WorktreeRecord[],
+  excludedCheckoutRoots: readonly string[],
+): WorktreeRecord[] {
   return records.filter((record) => {
     if (record.bare) return false
     try {
-      return resolve(record.path) !== resolve(repositoryRoot)
+      const path = resolve(record.path)
+      return excludedCheckoutRoots.every((root) => path !== resolve(root))
     } catch {
       return false
     }
   })
+}
+
+interface InventoryRepository {
+  /** The primary checkout Git uses to inspect the repository. */
+  repositoryRoot: string
+  /** The selected project's offset inside its own checkout. */
+  projectRelativePath: string
+  /** The checkout represented by the selected project, also omitted from the managed list. */
+  projectCheckoutRoot: string
+  records: WorktreeRecord[]
+}
+
+function relativeInside(parent: string, child: string): string | null {
+  const value = relative(resolve(parent), resolve(child))
+  if (value === '..' || value.startsWith(`..${sep}`)) return null
+  return value
+}
+
+async function repositoryFromLiveProject(projectRoot: string): Promise<InventoryRepository | null> {
+  try {
+    const location = await repositoryLocation(projectRoot)
+    const records = await listProjectWorktrees(location.repositoryRoot)
+    const primaryCheckout = records.find((record) => !record.bare)?.path
+    if (!primaryCheckout) return null
+    return {
+      repositoryRoot: primaryCheckout,
+      projectRelativePath: location.projectRelativePath,
+      projectCheckoutRoot: location.repositoryRoot,
+      records,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Find a repository anchor without depending on the selected checkout still
+ * existing. Copse owns a stable per-project parent directory for its linked
+ * checkouts; any surviving child can ask Git for the whole repository's
+ * inventory. The saved project path is then matched back to the checkout Git
+ * registered for it, preserving nested-project offsets without trusting a
+ * renderer-supplied fallback path.
+ */
+async function resolveInventoryRepository(
+  projectId: string,
+  projectRoot: string,
+): Promise<InventoryRepository | null> {
+  const live = await repositoryFromLiveProject(projectRoot)
+  if (live) return live
+
+  const managedParent = dirname(expectedThreadWorktreePath(projectId, 'inventory-anchor'))
+  const savedProjectLocation = relativeInside(managedParent, projectRoot)
+  const [savedCheckoutName, ...savedProjectParts] = savedProjectLocation?.split(sep) ?? []
+  const savedProjectRelativePath = savedProjectParts.join(sep)
+  const children = await readdir(managedParent, { withFileTypes: true }).catch(() => [])
+  for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!child.isDirectory()) continue
+    const candidate = join(managedParent, child.name)
+    if (managedThreadIdForPath(projectId, candidate) === null) continue
+    const repository = await repositoryFromLiveProject(candidate)
+    if (!repository) continue
+    const projectRecord = repository.records.find(
+      (record) => !record.bare && relativeInside(record.path, projectRoot) !== null,
+    )
+    if (projectRecord) {
+      const projectRelativePath = relativeInside(projectRecord.path, projectRoot)
+      if (projectRelativePath === null) continue
+      return {
+        repositoryRoot: repository.repositoryRoot,
+        projectRelativePath,
+        projectCheckoutRoot: projectRecord.path,
+        records: repository.records,
+      }
+    }
+    // `git worktree prune` can remove the missing checkout's record before the
+    // user opens Storage. Its saved path still carries the layout Copse owns:
+    // `<project parent>/<thread id>/<project-relative path>`. A surviving child
+    // under that same project-scoped parent is therefore a sufficient anchor.
+    if (!savedCheckoutName) continue
+    return {
+      repositoryRoot: repository.repositoryRoot,
+      projectRelativePath: savedProjectRelativePath,
+      projectCheckoutRoot: join(managedParent, savedCheckoutName),
+      records: repository.records,
+    }
+  }
+  return null
 }
 
 async function describeRecord(
@@ -214,9 +310,13 @@ async function describeRecord(
 export async function listWorktreeInventory(
   input: WorktreeInventoryInput,
 ): Promise<WorktreeInventoryEntry[]> {
-  if (!(await isInsideGitWorkTree(input.projectRoot))) return []
-  const { repositoryRoot } = await repositoryLocation(input.projectRoot)
-  const records = linkedRecords(await listProjectWorktrees(repositoryRoot), repositoryRoot)
+  const repository = await resolveInventoryRepository(input.projectId, input.projectRoot)
+  if (!repository) return []
+  const { repositoryRoot } = repository
+  const records = linkedRecords(repository.records, [
+    repository.repositoryRoot,
+    repository.projectCheckoutRoot,
+  ])
   if (records.length === 0) return []
   const defaultBranch = await getDefaultBranch(repositoryRoot)
   const entries = await Promise.all(
@@ -229,17 +329,20 @@ export async function listWorktreeInventory(
 async function requireRegisteredWorktree(
   input: WorktreePathInput,
 ): Promise<{ repositoryRoot: string; projectRelativePath: string; record: WorktreeRecord }> {
-  const { repositoryRoot, projectRelativePath } = await repositoryLocation(input.projectRoot)
+  const repository = await resolveInventoryRepository(input.projectId, input.projectRoot)
+  if (!repository) throw new Error('That project repository is no longer available')
+  const { repositoryRoot, projectRelativePath } = repository
   const target = resolve(input.path)
-  const record = linkedRecords(await listProjectWorktrees(repositoryRoot), repositoryRoot).find(
-    (candidate) => {
-      try {
-        return resolve(candidate.path) === target
-      } catch {
-        return false
-      }
-    },
-  )
+  const record = linkedRecords(repository.records, [
+    repository.repositoryRoot,
+    repository.projectCheckoutRoot,
+  ]).find((candidate) => {
+    try {
+      return resolve(candidate.path) === target
+    } catch {
+      return false
+    }
+  })
   if (!record) throw new Error('That worktree is not registered with this repository')
   return { repositoryRoot, projectRelativePath, record }
 }

@@ -1085,10 +1085,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              What Copse keeps on disk for this project, and what it costs. Nothing here changes
-              how the agent behaves — it is where you go to see what has accumulated and reclaim
-              space.
+              What Copse keeps on disk for each local project, and what it costs. Nothing here
+              changes how the agent behaves — it is where you go to see what has accumulated and
+              reclaim space.
             </p>
+
+            <label class="storage-project-field">
+              <span>Project</span>
+              <select id="storage-project-select" aria-label="Storage project"></select>
+            </label>
+            <p class="field-hint storage-project-path" id="storage-project-path"></p>
 
             <fieldset>
               <legend>Worktrees</legend>
@@ -2090,7 +2096,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   /** The row, plus the slot its measured size lands in once `worktrees:size` answers. */
-  function makeWorktreeRow(entry: WorktreeInventoryEntry): {
+  function makeWorktreeRow(
+    projectId: string,
+    entry: WorktreeInventoryEntry,
+  ): {
     row: HTMLElement
     size: HTMLElement
   } {
@@ -2138,7 +2147,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       removeBtn.title = 'Remove this linked checkout from disk'
     }
     removeBtn.addEventListener('click', () => {
-      void removeWorktree(entry, removeBtn)
+      void removeWorktree(projectId, entry, removeBtn)
     })
     row.querySelector('.sources-row-header')?.append(removeBtn)
     return { row, size }
@@ -2171,12 +2180,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
    * checkout the agent dirtied since the list rendered still stops here.
    */
   async function removeWorktree(
+    projectId: string,
     entry: WorktreeInventoryEntry,
     button: HTMLButtonElement,
   ): Promise<void> {
-    const projectId = store.getState().activeProjectId
     const statusEl = qsRequired(overlay, '#sources-worktrees-status')
-    if (!projectId) return
     const name = entry.branch ?? entry.path
     const consequences = [entry.path]
     if (entry.usage?.linked) {
@@ -2234,21 +2242,57 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  let storageProjectId: string | null = null
+  let worktreeRefreshGeneration = 0
+
+  function syncStorageProjectSelect(preferActiveProject = false): string | null {
+    const select = qsRequired<HTMLSelectElement>(overlay, '#storage-project-select')
+    const path = qsRequired(overlay, '#storage-project-path')
+    const state = store.getState()
+    const projects = state.projects.filter((project) => project.sshHost === undefined)
+    const availableIds = new Set(projects.map((project) => project.id))
+    const preferred = preferActiveProject ? state.activeProjectId : storageProjectId
+    storageProjectId =
+      (preferred && availableIds.has(preferred) ? preferred : null) ??
+      (state.activeProjectId && availableIds.has(state.activeProjectId)
+        ? state.activeProjectId
+        : null) ??
+      projects[0]?.id ??
+      null
+
+    select.replaceChildren()
+    for (const project of projects) {
+      const option = document.createElement('option')
+      option.value = project.id
+      option.textContent = `${project.name} — ${project.path}`
+      option.title = project.path
+      select.append(option)
+    }
+    select.disabled = projects.length === 0
+    select.value = storageProjectId ?? ''
+    const selected = projects.find((project) => project.id === storageProjectId)
+    path.textContent = selected?.path ?? 'Open a local project to manage its storage.'
+    return storageProjectId
+  }
+
   /**
    * `status` survives the reload that follows a delete — the list re-renders
    * without the row, and the line saying what happened to it has to outlive
    * that, or the only feedback for a destructive action flashes and is gone.
    */
-  async function refreshWorktrees(status = ''): Promise<void> {
+  async function refreshWorktrees(status = '', preferActiveProject = false): Promise<void> {
     const statusEl = qsRequired(overlay, '#sources-worktrees-status')
-    const projectId = store.getState().activeProjectId
+    const projectId = syncStorageProjectSelect(preferActiveProject)
+    const generation = ++worktreeRefreshGeneration
     if (!projectId) {
       fillSourceList('#sources-worktrees-list', [], 'Open a project to see its worktrees.')
+      statusEl.textContent = ''
       return
     }
     try {
       const entries = await api.worktrees.list(projectId)
-      const rendered = entries.map((entry) => ({ entry, ...makeWorktreeRow(entry) }))
+      if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
+      const rendered = entries.map((entry) => ({ entry, ...makeWorktreeRow(projectId, entry) }))
       fillSourceList(
         '#sources-worktrees-list',
         rendered.map((item) => item.row),
@@ -2257,6 +2301,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       statusEl.textContent = status
       await fillWorktreeSizes(projectId, rendered)
     } catch (error) {
+      if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
       fillSourceList('#sources-worktrees-list', [], 'Could not list worktrees.')
       statusEl.textContent = errorMessage(error)
     }
@@ -3456,6 +3501,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
   })
 
+  const storageProjectSelect = qsRequired<HTMLSelectElement>(overlay, '#storage-project-select')
+  storageProjectSelect.addEventListener('change', () => {
+    storageProjectId = storageProjectSelect.value || null
+    void refreshWorktrees()
+  })
+
   // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
@@ -3514,6 +3565,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       searchInput.value = ''
     }
     applySearch('')
+    storageProjectId = null
     const openedSection = pendingSection ?? 'general'
     showSection(openedSection)
     pendingSection = null
@@ -3527,7 +3579,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void refreshSources()
       void revealPluginDetail()
     }
-    if (openedSection === 'storage') void refreshWorktrees()
+    if (openedSection === 'storage') void refreshWorktrees('', true)
     searchInput.focus()
     void (async (): Promise<void> => {
       // These stages used to be one unbroken `await` chain inside this
