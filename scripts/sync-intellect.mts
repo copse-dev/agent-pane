@@ -21,6 +21,7 @@
 //
 // Run locally:  npm run sync:intellect            (validate + emit, reuse fits)
 //               npm run sync:intellect -- --refit (deliberately refit all hops)
+// Run in CI:    .github/workflows/sync-intellect.yml (weekly + manual)
 //
 // API refresh (the scalable data channel):
 //   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api
@@ -519,8 +520,15 @@ export function mergeApiModels(
       ...(aliases ? { aliases } : {}),
     }
     const existing = next.findIndex((m) => m.modelId === modelId && m.indexVersion === indexVersion)
-    if (existing >= 0) next[existing] = { ...next[existing], ...measurement }
-    else next.push(measurement)
+    if (existing >= 0) {
+      const current = next[existing]
+      // Keep an unchanged measurement byte-stable. Besides making local
+      // refreshes idempotent, this prevents the scheduled workflow from
+      // opening a date-only PR every week merely because `today` moved.
+      if (current?.value !== value) next[existing] = { ...current, ...measurement }
+    } else {
+      next.push(measurement)
+    }
     matched += 1
   }
   return { scores: next, matched }
