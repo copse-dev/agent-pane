@@ -158,6 +158,7 @@
     "fast-uri": "3.1.5",
     "hono": "4.12.34",
     "ip-address": "10.3.1",
+    "extract-zip": "$extract-zip",
     "undici@6": "6.28.0",
     "undici@7": "7.29.0"
   },
@@ -213,6 +214,7 @@
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.5",
     "expect-webdriverio": "^5.7.0",
+    "extract-zip": "file:packages/extract-zip",
     "fast-check": "^4.9.0",
     "happy-dom": "^20.11.1",
     "pixelmatch": "^7.2.0",

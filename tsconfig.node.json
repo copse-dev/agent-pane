@@ -40,6 +40,7 @@
     "src/shared/**/*",
     "scripts/**/*",
     "packages/agent/src/**/*",
+    "packages/extract-zip/**/*",
     "packages/llm/src/**/*",
     "packages/plan-usage/src/**/*"
   ]
