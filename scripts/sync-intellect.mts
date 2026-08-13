@@ -43,7 +43,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { writeGeneratedFile } from './lib/generated-file.mts'
+import { formatGenerated, writeGeneratedFile } from './lib/generated-file.mts'
 import {
   MIN_RECOMMENDED_ANCHORS,
   fitLinearEquating,
@@ -91,6 +91,11 @@ export interface DataFile {
   equatingPairs: Array<{ from: string; to: string }>
   /** Crystallised fits — written back by this script, reused on later runs. */
   equating: EquatingMap[]
+}
+
+/** Serialize the reviewed data file in the same shape the repository gate expects. */
+export async function formatDataFile(data: DataFile): Promise<string> {
+  return await formatGenerated(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`)
 }
 
 const measurementSchema: z.ZodType<Measurement> = z.object({
@@ -568,7 +573,7 @@ async function main(): Promise<void> {
     const wanted = graduateWanted(data.wanted ?? [], scores)
     data = { ...data, scores, wanted }
     validate(data)
-    await writeFile(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+    await writeFile(DATA_PATH, await formatDataFile(data), 'utf8')
   }
 
   const maps = resolveEquating(data, today, refit)
@@ -578,7 +583,7 @@ async function main(): Promise<void> {
   const nextJson = JSON.stringify(maps)
   if (storedJson !== nextJson) {
     const updated: DataFile = { ...data, equating: maps }
-    await writeFile(DATA_PATH, `${JSON.stringify(updated, null, 2)}\n`, 'utf8')
+    await writeFile(DATA_PATH, await formatDataFile(updated), 'utf8')
     console.log(
       `[sync-intellect] Crystallised ${String(maps.length)} equating fit(s) into ${DATA_PATH}.`,
     )
