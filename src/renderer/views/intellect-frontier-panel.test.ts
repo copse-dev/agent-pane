@@ -89,6 +89,12 @@ describe('renderFrontierSvg', () => {
     const dot = svg.querySelector('circle.frontier-point.estimated')
     assert.ok(dot)
     assert.equal(dot.getAttribute('fill'), 'var(--bg-base)')
+    assert.equal(dot.getAttribute('r'), '4')
+    assert.equal(
+      Number(dot.getAttribute('r')) + Number(dot.getAttribute('stroke-width')) / 2,
+      5,
+      'hollow point has the same outer radius as a filled point',
+    )
     const label = svg.querySelector('text.frontier-label')
     assert.ok(label)
     assert.match(label.textContent, /\(~\)/)
@@ -219,18 +225,17 @@ describe('renderFrontierSvg', () => {
       const id = dot.dataset['modelId']
       assert.ok(id)
       const hit = svg.querySelector<SVGCircleElement>(`circle.frontier-hit[data-model-id="${id}"]`)
-      const halo = svg.querySelector<SVGCircleElement>(
-        `circle.frontier-hover-halo[data-model-id="${id}"]`,
-      )
       assert.ok(hit)
-      assert.ok(halo)
       assert.equal(hit.getAttribute('cx'), dot.getAttribute('cx'))
       assert.equal(hit.getAttribute('cy'), dot.getAttribute('cy'))
+      assert.equal(hit.getAttribute('fill'), 'none')
+      assert.equal(hit.getAttribute('pointer-events'), 'all')
       assert.ok(Number(hit.getAttribute('r')) <= 11)
+      const restingRadius = dot.getAttribute('r')
       hit.dispatchEvent(new MouseEvent('mouseenter'))
-      assert.equal(halo.getAttribute('opacity'), '1')
+      assert.equal(dot.getAttribute('r'), '6.5')
       hit.dispatchEvent(new MouseEvent('mouseleave'))
-      assert.equal(halo.getAttribute('opacity'), '0')
+      assert.equal(dot.getAttribute('r'), restingRadius)
     }
   })
 })

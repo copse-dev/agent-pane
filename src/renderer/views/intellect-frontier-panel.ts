@@ -1010,7 +1010,9 @@ export function renderFrontierSvg(
       ? svgEl('circle', {
           cx,
           cy,
-          r: '5',
+          // A 2px stroke is centred on the path: r=4 gives the same 10px
+          // outside diameter as a filled r=5 point.
+          r: '4',
           fill: 'var(--bg-base)',
           stroke: emphasis,
           'stroke-width': '2',
@@ -1064,31 +1066,21 @@ export function renderFrontierSvg(
       )
     }, Infinity)
     const hitRadius = Math.max(5, Math.min(11, nearestDistance / 2 - 0.5))
-    const hoverHalo = svgEl('circle', {
-      cx,
-      cy,
-      r: '8',
-      fill: 'none',
-      stroke: 'var(--accent)',
-      'stroke-width': '2',
-      opacity: '0',
-      'pointer-events': 'none',
-      class: 'frontier-hover-halo',
-      'data-model-id': p.id,
-    })
     const hit = svgEl('circle', {
       cx,
       cy,
       r: String(hitRadius),
-      fill: 'transparent',
+      fill: 'none',
+      'pointer-events': 'all',
       class: 'frontier-hit',
       'data-model-id': p.id,
     })
+    const restingRadius = dot.getAttribute('r') ?? '5'
     hit.addEventListener('mouseenter', () => {
-      hoverHalo.setAttribute('opacity', '1')
+      dot.setAttribute('r', '6.5')
     })
     hit.addEventListener('mouseleave', () => {
-      hoverHalo.setAttribute('opacity', '0')
+      dot.setAttribute('r', restingRadius)
     })
     if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis), p.id)
     else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
@@ -1125,7 +1117,7 @@ export function renderFrontierSvg(
         ),
       )
     }
-    svg.append(dot, hoverHalo, hit)
+    svg.append(dot, hit)
   }
 
   // LEFT gutter: scored-but-unpriced models at their TRUE y on the shared
