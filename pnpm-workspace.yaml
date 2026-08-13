@@ -1,0 +1,12 @@
+allowBuilds:
+  ddg-search: true
+  edgedriver: true
+  electron-chromedriver: true
+  electron-winstaller: true
+  esbuild: true
+  geckodriver: true
+  lzma-native: true
+  node-pty: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true

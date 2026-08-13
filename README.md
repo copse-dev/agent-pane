@@ -33,15 +33,21 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
 
 ## Get started
 
-You need [Node.js](https://nodejs.org/) 22.18 or newer. On macOS, install the Xcode command-line tools too.
+You need [Node.js](https://nodejs.org/) 22.22.2 or newer and [pnpm](https://pnpm.io/) 10 (enable with `corepack enable`; the repo pins `pnpm@10.34.5` via `packageManager`). On macOS, install the Xcode command-line tools too.
 
 ```bash
 git clone https://github.com/copse-dev/agent-pane.git
 cd agent-pane
-npm ci
-npm run dev
+corepack enable
+pnpm install
+pnpm run dev
 ```
 
+pnpm uses a content-addressable store with APFS clones (`package-import-method=clone`)
+so additional git worktrees reuse package bytes. Electron’s extracted app bundle and
+the vendored gortex binary are shared under `~/.copse/cache/electron-dist/` and
+`~/.copse/cache/gortex/`. Each worktree still needs its own `pnpm install` to link
+`node_modules` and those caches.
 Then:
 
 1. Open a project folder.
@@ -68,7 +74,7 @@ No model key is required to explore the development build: when no provider is c
 Before submitting a change, run:
 
 ```bash
-npm run check
+pnpm run check
 ```
 
 Changes to the Electron UI should also be built and covered by a focused end-to-end visual test. See [AGENTS.md](AGENTS.md) and the [testing strategy](docs/testing-strategy.md) for the full contributor workflow.
@@ -76,27 +82,28 @@ Changes to the Electron UI should also be built and covered by a focused end-to-
 <details>
 <summary><strong>Common development commands</strong></summary>
 
-| Command            | Purpose                                                      |
-| ------------------ | ------------------------------------------------------------ |
-| `npm run dev`      | Build in watch mode and launch Electron                      |
-| `npm run build`    | Create the application bundle in `dist/`                     |
-| `npm start`        | Launch an existing build                                     |
-| `npm test`         | Run unit and component tests                                 |
-| `npm run test:e2e` | Run Electron end-to-end tests                                |
-| `npm run check`    | Run typecheck, lint, formatting, dead-code checks, and tests |
+| Command             | Purpose                                                      |
+| ------------------- | ------------------------------------------------------------ |
+| `pnpm run dev`      | Build in watch mode and launch Electron                      |
+| `pnpm run build`    | Create the application bundle in `dist/`                     |
+| `pnpm start`        | Launch an existing build                                     |
+| `pnpm test`         | Run unit and component tests                                 |
+| `pnpm run test:e2e` | Run Electron end-to-end tests                                |
+| `pnpm run check`    | Run typecheck, lint, formatting, dead-code checks, and tests |
 
 </details>
 
 <details>
 <summary><strong>Install troubleshooting</strong></summary>
 
-Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. If npm is configured with `ignore-scripts=true`, allow scripts for this install:
+Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. Project [`.npmrc`](.npmrc) sets `ignore-scripts=false`. An inherited `npm_config_ignore_scripts=true` still wins over `.npmrc` — `make deps` forces scripts on for that reason. To install without scripts and finish natives manually:
 
 ```bash
-npm ci --ignore-scripts=false
+pnpm install --config.ignore-scripts=true
+SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
 ```
 
-Or run the native setup manually after installing dependencies:
+Or run the native setup alone after a normal install:
 
 ```bash
 SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts

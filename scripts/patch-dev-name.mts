@@ -1,48 +1,61 @@
 // Dev-only: macOS menu + Dock labels come from the running .app bundle (name +
-// Info.plist), not app.setName(). Unpackaged `electron .` uses
-// node_modules/electron/dist/Electron.app, so the Dock tooltip stays "Electron"
-// even when CFBundleDisplayName is patched — Launch Services keys off the bundle
-// path/filename. Spaces in the .app name break Chromium helper lookup (icudtl.dat /
-// GPU process). Use Copse.app on disk; CFBundleDisplayName stays "Copse".
+// Info.plist), not app.setName(). Unpackaged `electron .` uses the Electron
+// package dist (resolved via require, not a hardcoded node_modules path), so
+// the Dock tooltip stays "Electron" even when CFBundleDisplayName is patched —
+// Launch Services keys off the bundle path/filename. Spaces in the .app name
+// break Chromium helper lookup (icudtl.dat / GPU process). Use Copse.app on
+// disk; CFBundleDisplayName stays "Copse".
 //
 // Electron 42+ no longer downloads its macOS binary during the package's own
 // install hook — the dist is fetched lazily on first `electron` CLI use. Root
 // postinstall must therefore call install.js here before patching, or the first
-// `npm start` launches stock Electron.app with a Dock label of "Electron".
+// `pnpm start` launches stock Electron.app with a Dock label of "Electron".
 //
-// Runs on postinstall so it survives `npm install`. Does NOT rename
+// Across git worktrees, the extracted dist (~550MB with Copse.app) is shared
+// under ~/.copse/cache/electron-dist/<ver>-<platform>-<arch>/; each worktree's
+// electron/dist is a symlink into that cache. Copse.app is an APFS clone of
+// Electron.app (cp -cR), not a full ditto copy.
+//
+// Runs on postinstall so it survives `pnpm install`. Does NOT rename
 // CFBundleExecutable (the binary must stay "Electron").
 import { createHash } from 'node:crypto'
 import { execFileSync, execSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
+  lstatSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expectRecord, expectString, parseJsonUnknown } from '../src/shared/unknown-value.mts'
+import { resolveDepRoot } from './resolve-dep.mts'
 
-const ELECTRON_DIST = join('node_modules', 'electron', 'dist')
-const SOURCE_APP = join(ELECTRON_DIST, 'Electron.app')
 const APP_BUNDLE = 'Copse.app'
-const TARGET_APP = join(ELECTRON_DIST, APP_BUNDLE)
 const DISPLAY_NAME = 'Copse'
-const PATH_TXT = join('node_modules', 'electron', 'path.txt')
 const EXEC_REL = `${APP_BUNDLE}/Contents/MacOS/Electron`
 /** Must stay in sync with electron/install.js getPlatformPath() for darwin. */
 const ELECTRON_EXEC_REL = 'Electron.app/Contents/MacOS/Electron'
-const ELECTRON_INSTALL_JS = join('node_modules', 'electron', 'install.js')
-const ELECTRON_VERSION_FILE = join(ELECTRON_DIST, 'version')
-const ELECTRON_PKG_JSON = join('node_modules', 'electron', 'package.json')
 
 if (process.platform !== 'darwin') {
   process.exit(0)
 }
 
+const electronRoot = resolveDepRoot('electron')
+const ELECTRON_PKG_JSON = join(electronRoot, 'package.json')
+const ELECTRON_INSTALL_JS = join(electronRoot, 'install.js')
+const PATH_TXT = join(electronRoot, 'path.txt')
+const ELECTRON_DIST = join(electronRoot, 'dist')
+const SOURCE_APP = join(ELECTRON_DIST, 'Electron.app')
+const TARGET_APP = join(ELECTRON_DIST, APP_BUNDLE)
 const sourcePlist = join(SOURCE_APP, 'Contents', 'Info.plist')
 
 function readElectronPackageVersion(): string {
@@ -53,9 +66,59 @@ function readElectronPackageVersion(): string {
   return expectString(packageJson['version'], 'electron package version')
 }
 
+function readDistVersionAt(distDir: string): string | undefined {
+  const versionFile = join(distDir, 'version')
+  if (!existsSync(versionFile)) return undefined
+  return readFileSync(versionFile, 'utf8').replace(/^v/, '').trim()
+}
+
 function readDistVersion(): string | undefined {
-  if (!existsSync(ELECTRON_VERSION_FILE)) return undefined
-  return readFileSync(ELECTRON_VERSION_FILE, 'utf8').replace(/^v/, '').trim()
+  return readDistVersionAt(ELECTRON_DIST)
+}
+
+function sharedElectronDistDir(pkgVersion: string): string {
+  const override = process.env['COPSE_ELECTRON_DIST_CACHE']?.trim()
+  const root = override ?? join(homedir(), '.copse', 'cache', 'electron-dist')
+  return join(root, `${pkgVersion}-${process.platform}-${process.arch}`)
+}
+
+function sharedDistReady(sharedDist: string, pkgVersion: string): boolean {
+  const plist = join(sharedDist, 'Electron.app', 'Contents', 'Info.plist')
+  return existsSync(plist) && readDistVersionAt(sharedDist) === pkgVersion
+}
+
+/** Point electron/dist at the machine-wide cache (symlink). */
+function linkDistToShared(sharedDist: string): void {
+  mkdirSync(join(sharedDist, '..'), { recursive: true })
+
+  if (!sharedDistReady(sharedDist, readElectronPackageVersion())) {
+    if (!existsSync(ELECTRON_DIST) || lstatSync(ELECTRON_DIST).isSymbolicLink()) {
+      throw new Error(
+        `[patch-dev-name] shared Electron dist missing at ${sharedDist} and no local extract to promote`,
+      )
+    }
+    if (existsSync(sharedDist)) {
+      rmSync(sharedDist, { recursive: true, force: true })
+    }
+    renameSync(ELECTRON_DIST, sharedDist)
+    console.log(`[patch-dev-name] promoted Electron dist → ${sharedDist}`)
+  }
+
+  if (existsSync(ELECTRON_DIST)) {
+    const st = lstatSync(ELECTRON_DIST)
+    if (st.isSymbolicLink()) {
+      try {
+        if (realpathSync(ELECTRON_DIST) === realpathSync(sharedDist)) return
+      } catch {
+        /* broken symlink — replace */
+      }
+      unlinkSync(ELECTRON_DIST)
+    } else {
+      rmSync(ELECTRON_DIST, { recursive: true, force: true })
+    }
+  }
+  symlinkSync(sharedDist, ELECTRON_DIST, 'dir')
+  console.log(`[patch-dev-name] electron/dist → ${sharedDist}`)
 }
 
 function ensureElectronDist(): void {
@@ -65,14 +128,25 @@ function ensureElectronDist(): void {
   }
 
   const pkgVersion = readElectronPackageVersion()
+  const sharedDist = sharedElectronDistDir(pkgVersion)
+
+  if (sharedDistReady(sharedDist, pkgVersion)) {
+    linkDistToShared(sharedDist)
+    return
+  }
+
   const distVersion = readDistVersion()
   const needsDownload =
     !existsSync(sourcePlist) || distVersion === undefined || distVersion !== pkgVersion
 
-  if (!needsDownload) return
-
-  console.log(`[patch-dev-name] fetching Electron ${pkgVersion} dist (Electron 42+ lazy download)`)
-  execFileSync(process.execPath, [ELECTRON_INSTALL_JS], { stdio: 'inherit' })
+  if (needsDownload) {
+    // install.js writes into electron/dist; if dist is a stale symlink, remove it first.
+    if (existsSync(ELECTRON_DIST) && lstatSync(ELECTRON_DIST).isSymbolicLink()) {
+      unlinkSync(ELECTRON_DIST)
+    }
+    console.log(`[patch-dev-name] fetching Electron ${pkgVersion} dist (Electron 42+ lazy download)`)
+    execFileSync(process.execPath, [ELECTRON_INSTALL_JS], { stdio: 'inherit' })
+  }
 
   if (!existsSync(sourcePlist)) {
     console.log('[patch-dev-name] Electron.app not found after install.js, skipping')
@@ -80,11 +154,13 @@ function ensureElectronDist(): void {
   }
 
   const pathTxt = existsSync(PATH_TXT) ? readFileSync(PATH_TXT, 'utf8').trim() : ''
-  if (pathTxt !== ELECTRON_EXEC_REL) {
+  if (pathTxt !== ELECTRON_EXEC_REL && pathTxt !== EXEC_REL) {
     console.warn(
       `[patch-dev-name] expected path.txt → ${ELECTRON_EXEC_REL}, got ${pathTxt || '(missing)'}`,
     )
   }
+
+  linkDistToShared(sharedDist)
 }
 
 function isPatchApplied(): boolean {
@@ -92,6 +168,20 @@ function isPatchApplied(): boolean {
   if (readFileSync(PATH_TXT, 'utf8').trim() !== EXEC_REL) return false
   const distVersion = readDistVersion()
   return distVersion !== undefined && distVersion === readElectronPackageVersion()
+}
+
+/** Shared cache already has Copse.app — only need per-worktree path.txt. */
+function adoptSharedCopseApp(): boolean {
+  if (!existsSync(TARGET_APP)) return false
+  const distVersion = readDistVersion()
+  if (distVersion === undefined || distVersion !== readElectronPackageVersion()) return false
+  writeFileSync(PATH_TXT, EXEC_REL)
+  return true
+}
+
+/** APFS clone (copy-on-write) — avoids a second full ~275MB Electron.app copy. */
+function cloneAppBundle(source: string, target: string): void {
+  execFileSync('cp', ['-cR', source, target], { stdio: 'inherit' })
 }
 
 ensureElectronDist()
@@ -103,10 +193,21 @@ if (isPatchApplied() && process.env['COPSE_PANEL_REFRESH_DOCK'] !== '1') {
   process.exit(0)
 }
 
+if (
+  process.env['COPSE_PANEL_REFRESH_DOCK'] !== '1' &&
+  adoptSharedCopseApp() &&
+  isPatchApplied()
+) {
+  console.log(
+    `[patch-dev-name] ${APP_BUNDLE} reused from shared Electron dist (${readDistVersion() ?? 'unknown'})`,
+  )
+  process.exit(0)
+}
+
 for (const legacy of ['Agent Pane.app', 'AgentPane.app', APP_BUNDLE]) {
   rmSync(join(ELECTRON_DIST, legacy), { recursive: true, force: true })
 }
-execSync(`ditto "${SOURCE_APP}" "${TARGET_APP}"`, { stdio: 'inherit' })
+cloneAppBundle(SOURCE_APP, TARGET_APP)
 
 const targetPlist = join(TARGET_APP, 'Contents', 'Info.plist')
 for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
@@ -148,6 +249,7 @@ if (existsSync(ICNS)) {
   cpSync(ICNS, join(resourcesDir, `${iconBase}.icns`))
   const stockIcns = join(resourcesDir, 'electron.icns')
   if (existsSync(stockIcns)) unlinkSync(stockIcns)
+
   try {
     execFileSync('plutil', ['-replace', 'CFBundleIconFile', '-string', iconBase, targetPlist])
     execFileSync('plutil', ['-replace', 'CFBundleVersion', '-string', icnsHash, targetPlist])
@@ -166,7 +268,7 @@ if (existsSync(ICNS)) {
   }
 } else {
   console.warn(
-    '[patch-dev-name] assets/icons/app.icns missing — run `npm run generate:icon` on macOS for a HIG-compliant Dock icon',
+    '[patch-dev-name] assets/icons/app.icns missing — run `pnpm run generate:icon` on macOS for a HIG-compliant Dock icon',
   )
 }
 
@@ -214,6 +316,6 @@ if (process.env['COPSE_PANEL_REFRESH_DOCK'] === '1') {
   console.log('[patch-dev-name] quit app if running; restarted Dock + IconServices cache')
 } else {
   console.log(
-    '[patch-dev-name] Cmd+Q Copse, then npm start. For Dock refresh: COPSE_PANEL_REFRESH_DOCK=1 npm run icons:mac',
+    '[patch-dev-name] Cmd+Q Copse, then pnpm start. For Dock refresh: COPSE_PANEL_REFRESH_DOCK=1 pnpm run icons:mac',
   )
 }

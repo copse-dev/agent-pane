@@ -1,13 +1,25 @@
-import { chmodSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { accessSync, chmodSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { resolveDepRoot } from './resolve-dep.mts'
 
-/** node-pty prebuilds ship spawn-helper without the executable bit; PTY spawn fails with posix_spawnp. */
+/**
+ * node-pty ships spawn-helper without the executable bit (prebuilds); PTY spawn
+ * then fails with posix_spawnp. After electron-rebuild, loadNativeModule prefers
+ * `build/Release`, so chmod both trees. Verify X_OK so a skipped/no-op chmod
+ * fails the install instead of shipping a broken terminal.
+ */
 function ensureNodePtySpawnHelperExecutable(): void {
-  const prebuildsRoot = join(process.cwd(), 'node_modules', 'node-pty', 'prebuilds')
-  if (!existsSync(prebuildsRoot)) return
+  let nodePtyRoot: string
+  try {
+    nodePtyRoot = resolveDepRoot('node-pty')
+  } catch {
+    return
+  }
+  if (!existsSync(nodePtyRoot)) return
 
-  const queue = [prebuildsRoot]
+  const fixed: string[] = []
+  const queue = [nodePtyRoot]
   for (let dir = queue.pop(); dir !== undefined; dir = queue.pop()) {
     for (const entry of readdirSync(dir)) {
       const path = join(dir, entry)
@@ -16,10 +28,16 @@ function ensureNodePtySpawnHelperExecutable(): void {
         queue.push(path)
         continue
       }
-      if (entry === 'spawn-helper') {
-        chmodSync(path, 0o755)
-      }
+      if (entry !== 'spawn-helper') continue
+      chmodSync(path, 0o755)
+      accessSync(path, constants.X_OK)
+      fixed.push(path)
     }
+  }
+  if (fixed.length > 0) {
+    console.log(
+      `[postinstall] node-pty spawn-helper executable (${String(fixed.length)} path(s))`,
+    )
   }
 }
 
@@ -30,30 +48,34 @@ if (process.env['SKIP_ELECTRON_REBUILD'] === '1') {
   process.exit(0)
 }
 
-// Invoke the LOCAL electron-rebuild binary (pinned devDependency) instead of
+// Invoke the LOCAL electron-rebuild CLI (pinned devDependency) instead of
 // `npx electron-rebuild`. `npx` would implicitly fetch-and-execute an unpinned
 // version from the network if it were ever missing locally; resolving the
-// already-installed bin avoids any implicit network fetch and arbitrary
+// already-installed package avoids any implicit network fetch and arbitrary
 // lifecycle-script execution (supply-chain hardening, finding L5).
-const rebuildBin = join(
-  process.cwd(),
-  'node_modules',
-  '.bin',
-  process.platform === 'win32' ? 'electron-rebuild.cmd' : 'electron-rebuild',
-)
-
-if (!existsSync(rebuildBin)) {
+let rebuildCli: string
+try {
+  rebuildCli = join(resolveDepRoot('electron-rebuild'), 'lib', 'src', 'cli.js')
+} catch {
   console.error(
-    `[postinstall] electron-rebuild not found at ${rebuildBin}. ` +
-      'It is a pinned devDependency — run a full `npm install` first, ' +
+    '[postinstall] electron-rebuild package not found. ' +
+      'It is a pinned devDependency — run a full `pnpm install` first, ' +
       'or set SKIP_ELECTRON_REBUILD=1 to skip the native rebuild.',
   )
   process.exit(1)
 }
 
-const result = spawnSync(rebuildBin, ['-f', '-w', 'node-pty'], {
+if (!existsSync(rebuildCli)) {
+  console.error(
+    `[postinstall] electron-rebuild CLI not found at ${rebuildCli}. ` +
+      'It is a pinned devDependency — run a full `pnpm install` first, ' +
+      'or set SKIP_ELECTRON_REBUILD=1 to skip the native rebuild.',
+  )
+  process.exit(1)
+}
+
+const result = spawnSync(process.execPath, [rebuildCli, '-f', '-w', 'node-pty'], {
   stdio: 'inherit',
-  shell: process.platform === 'win32',
 })
 
 if (result.status !== 0) {

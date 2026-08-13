@@ -10,9 +10,17 @@ Copse is an Electron desktop app with no backend service. The standard scripts l
 `package.json`; use `dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
 and `check` rather than recreating their behavior.
 
-The repo pins Node `22.18.0` in `.nvmrc` and requires Node `>=22.18`. Tooling under `scripts/*.mts`
-uses native TypeScript type stripping. An older Node 22 can fail at `check:dead-code` with
-`ERR_UNKNOWN_FILE_EXTENSION` for `.mts` files.
+The repo pins Node `22.22.2` in `.nvmrc` and requires Node `>=22.22.2` plus pnpm
+(`packageManager`: `pnpm@10.34.5`; enable with `corepack enable`). Tooling under
+`scripts/*.mts` uses native TypeScript type stripping.
+
+Installs use pnpm’s default isolated linker with `package-import-method=clone`
+(`.npmrc`) so packages are symlinked through `node_modules/.pnpm` while file
+bytes are copy-on-write from the content-addressable store. Electron’s macOS
+`dist/` is shared under `~/.copse/cache/electron-dist/` (see
+`scripts/patch-dev-name.mts`); gortex is shared under `~/.copse/cache/gortex/`
+(see `scripts/fetch-gortex.mts`). Each worktree still runs `pnpm install` to link
+its own `node_modules` and symlink those caches.
 
 Cursor Cloud setup normally installs the pinned version through `.cursor/cloud-setup.sh`. If an
 older executable still shadows it, activate the repo version:

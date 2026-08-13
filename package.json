@@ -22,7 +22,7 @@
     "probe:acp:long": "node scripts/run-probe-acp-long-run.mts",
     "probe:plan-usage": "node scripts/probe-plan-usage.mts",
     "icons:mac": "node scripts/generate-icon.mts && COPSE_PANEL_REFRESH_DOCK=1 node scripts/patch-dev-name.mts",
-    "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
+    "start:mac": "pnpm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
     "prestart": "node scripts/patch-dev-name.mts",
     "start": "electron dist/main/index.js",
     "preinstall": "node scripts/check-node-version.cjs",
@@ -37,7 +37,7 @@
     "coverage": "node scripts/run-tests.mts --bundle-only && c8 node scripts/run-tests.mts --test-only",
     "coverage:check": "node scripts/coverage-gate.mts",
     "coverage:update": "node scripts/coverage-gate.mts --update",
-    "coverage:ci": "npm run coverage && npm run coverage:check",
+    "coverage:ci": "pnpm run coverage && pnpm run coverage:check",
     "bench:thread-store": "node scripts/bench-thread-store.mts",
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "bench:agent": "node scripts/run-bench-agent.mts",
@@ -87,10 +87,10 @@
     "sync:model-cards": "node scripts/sync-model-cards.mts",
     "sync:cursor-skills": "node scripts/fetch-bundled-cursor-skills.mts",
     "prepare:gortex:mac": "node scripts/prepare-macos-gortex.mts",
-    "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
-    "dist:mac": "npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run demo:site:check && npm run site:md:check && npm run check:dead-code && npm run check:oracle && npm test"
+    "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
+    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run site:md:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm test"
   },
   "build": {
     "appId": "app.copse-panel",
@@ -225,7 +225,8 @@
     "typescript-eslint": "^8.66.0",
     "webdriverio": "^9.29.0"
   },
+  "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.22.2"
   }
 }
