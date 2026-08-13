@@ -189,9 +189,19 @@ function createApi(options: {
         exportArchive: async (
           projectId: string,
           threadId: string,
-        ): Promise<Uint8Array<ArrayBuffer>> => {
+        ): ReturnType<ApiClient['threads']['exportArchive']> => {
           options.onExportArchive?.(projectId, threadId)
-          return new Uint8Array([80, 75, 3, 4])
+          return {
+            bytes: new Uint8Array([80, 75, 3, 4]),
+            build: {
+              version: '1.2.3',
+              buildCommit: '0123456789abcdef0123456789abcdef01234567',
+              buildDirty: false,
+              packaged: true,
+              platform: 'darwin',
+              capturedAt: '2026-08-14T09:30:00.000Z',
+            },
+          }
         },
       },
       archive: {
@@ -842,6 +852,9 @@ describe('input bar debug trace', () => {
     assert.equal(debugThread.messages.length, 0, 'nothing is sent on the user’s behalf')
     assert.equal(runs, 0, 'no agent run is dispatched')
     assert.match(debugThread.draftPrompt ?? '', /thread-1/)
+    assert.match(debugThread.draftPrompt ?? '', /Copse version: 1\.2\.3/)
+    assert.match(debugThread.draftPrompt ?? '', /Build commit: 0123456789abcdef/)
+    assert.match(debugThread.draftPrompt ?? '', /OBSERVED.*CODE-VERIFIED.*INFERRED.*UNKNOWN/)
 
     // The prompt is sitting in the composer, waiting to be added to and sent.
     const composer = host.querySelector<HTMLElement>('.prompt-input')

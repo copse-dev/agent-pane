@@ -341,7 +341,10 @@ export interface ApiClient {
      * subagents) for download. The JSONL export stays the portable single-file
      * transcript; this is the full-fidelity copy of the store directory.
      */
-    exportArchive: (projectId: string, threadId: string) => Promise<Uint8Array<ArrayBuffer>>
+    exportArchive: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/debug-trace-prompt.ts').DebugTraceArchiveExport>
     /**
      * Seed a fork's provider-format history from the thread it branched off.
      * Omit `throughMessageId` (or pass the source's last message id) to copy the

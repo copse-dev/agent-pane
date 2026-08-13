@@ -98,6 +98,12 @@ import {
 } from '../services/thread-store.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
+  getElectronAppVersion,
+  getElectronBuildCommit,
+  getElectronBuildDirty,
+  isElectronAppPackaged,
+} from '../services/electron-app-runtime.ts'
+import {
   describeWorkspaceArchive,
   storeArchiveAttachment,
 } from '../services/archive/archive-attachment-store.ts'
@@ -1479,10 +1485,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // The whole thread directory, zipped — the archive counterpart to the
   // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
   // download and saves it, exactly as it does for the `.jsonl`.
-  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:exportArchive', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return buildThreadArchive(pid, tid)
+    return {
+      bytes: await buildThreadArchive(pid, tid),
+      build: {
+        version: getElectronAppVersion(),
+        buildCommit: getElectronBuildCommit(),
+        buildDirty: getElectronBuildDirty(),
+        packaged: isElectronAppPackaged(),
+        platform: process.platform,
+        capturedAt: new Date().toISOString(),
+      },
+    }
   })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
