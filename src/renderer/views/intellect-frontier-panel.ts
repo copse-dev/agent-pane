@@ -605,6 +605,8 @@ export interface FrontierGutters {
   unscored?: readonly { id: string; costPerMTok: number }[]
 }
 
+export type FrontierLabelMode = 'summary' | 'all'
+
 const UNPRICED_GUTTER_W = 150
 
 /**
@@ -623,6 +625,7 @@ export function renderFrontierSvg(
   gutters: FrontierGutters = {},
   tooltip?: FrontierTooltip,
   costAxis: FrontierCostAxis = 'blended',
+  labelMode: FrontierLabelMode = 'summary',
 ): SVGSVGElement {
   const unpriced = gutters.unpriced ?? []
   // Bottom gutter (priced, no intellect) only applies on the blended axis — on
@@ -689,6 +692,7 @@ export function renderFrontierSvg(
     role: 'img',
     'aria-label': ariaLabel,
     'data-cost-axis': costAxis,
+    'data-label-mode': labelMode,
     style: 'width:100%;height:auto;display:block',
   })
 
@@ -836,6 +840,11 @@ export function renderFrontierSvg(
   const labelY = new Map<string, number>()
   const labelX = new Map<string, number>()
   const labelAnchor = new Map<string, string>()
+  // When a dense frontier cluster runs out of room above the plot, compact mode
+  // keeps the cost-median frontier label as its representative instead of
+  // clamping every label onto the same top baseline. The expanded chart asks
+  // for `all` and uses the larger canvas to cascade the overflow below the line.
+  const frontierMidpointId = frontierByX[Math.floor((frontierByX.length - 1) / 2)]?.id
   // Dots are obstacles too — a label must not sit under another point's mark.
   const placed: Array<{ x0: number; x1: number; py: number }> = points.map((p) => ({
     x0: x(p.costPerMTok) - 7,
@@ -870,9 +879,11 @@ export function renderFrontierSvg(
     // A frontier point sits ON the line, so the adjacent segment can run through
     // its side label. When it does, lift the label clear ABOVE the line — the
     // Pareto-empty upper region — rather than leave the line crossing the text.
-    const up = p.onFrontier
-    if (up) {
+    const prefersUp = p.onFrontier
+    let lineRange: { min: number; max: number } | null = null
+    if (prefersUp) {
       const range = frontierYRange(x0, x1)
+      lineRange = range
       // Text band is roughly [py - 8, py + 2] (9px glyphs above the baseline).
       if (range && py - 8 < range.max + LABEL_LINE_GAP && py + 2 > range.min - LABEL_LINE_GAP) {
         py = range.min - LABEL_LINE_GAP
@@ -883,22 +894,32 @@ export function renderFrontierSvg(
     // The strict-progress guard (a move must change py in the chosen direction)
     // avoids a floating-point fixed point where the step is a no-op yet `moved`
     // stays true forever.
-    let moved = true
-    while (moved) {
-      moved = false
-      for (const prev of placed) {
-        if (Math.abs(py - prev.py) >= 10 || x0 >= prev.x1 || x1 <= prev.x0) continue
-        const next = up ? prev.py - 10 : prev.py + 10
-        if (up ? next < py : next > py) {
-          py = next
-          moved = true
+    const nudgeClear = (start: number, direction: -1 | 1): number => {
+      let nextY = start
+      let moved = true
+      while (moved) {
+        moved = false
+        for (const prev of placed) {
+          if (Math.abs(nextY - prev.py) >= 10 || x0 >= prev.x1 || x1 <= prev.x0) continue
+          const next = prev.py + direction * 10
+          if (direction < 0 ? next < nextY : next > nextY) {
+            nextY = next
+            moved = true
+          }
         }
       }
+      return nextY
     }
-    if (up) {
-      // Keep a lifted frontier label inside the plot rather than dropping it.
-      if (py - 8 < MARGIN.top) py = MARGIN.top + 8
-    } else if (py > plotBottom) {
+    py = nudgeClear(py, prefersUp ? -1 : 1)
+    if (prefersUp && py - 8 < MARGIN.top) {
+      if (labelMode === 'summary' && p.id !== frontierMidpointId) continue
+      // Put the representative/all-mode overflow below the line, then cascade
+      // downward through dots and labels. Starting under the whole segment span
+      // means the frontier cannot run through the text on this fallback side.
+      const belowLine = (lineRange?.max ?? y(p.intellect)) + LABEL_LINE_GAP + 9
+      py = nudgeClear(Math.max(y(p.intellect) + 12, belowLine), 1)
+    }
+    if (py > plotBottom) {
       // Drop a label that can only land below the plot — hover still has it.
       continue
     }
@@ -1341,10 +1362,11 @@ function renderChart(
   tooltip: FrontierTooltip | undefined,
   size: { width?: number; height?: number } = {},
   costAxis: FrontierCostAxis = 'blended',
+  labelMode: FrontierLabelMode = 'summary',
 ): SVGSVGElement | HTMLElement {
   try {
     return points.length > 0
-      ? renderFrontierSvg(points, size, gutters, tooltip, costAxis)
+      ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode)
       : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
   } catch (err) {
     return el(
@@ -1797,6 +1819,7 @@ export function createIntellectFrontierPanel(
           height: 680,
         },
         costAxis,
+        'all',
       ),
       ...buildAuxLists(lastUnpriced, lastUnscored),
     )

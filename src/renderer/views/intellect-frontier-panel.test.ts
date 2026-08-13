@@ -97,13 +97,20 @@ describe('renderFrontierSvg', () => {
   it('lifts frontier labels clear of the frontier line instead of letting it run through them', () => {
     // A shallow, rising frontier: each point's side label would otherwise be
     // crossed by the segment to its neighbour.
-    const svg = renderFrontierSvg([
-      { id: 'cheap-a', costPerMTok: 1, intellect: 40, onFrontier: true },
-      { id: 'mid-b', costPerMTok: 3, intellect: 52, onFrontier: true },
-      { id: 'mid-c', costPerMTok: 6, intellect: 58, onFrontier: true },
-      { id: 'top-d', costPerMTok: 10, intellect: 63, onFrontier: true },
-      { id: 'dom-e', costPerMTok: 4, intellect: 44, onFrontier: false },
-    ])
+    const svg = renderFrontierSvg(
+      [
+        { id: 'cheap-a', costPerMTok: 1, intellect: 40, onFrontier: true },
+        { id: 'mid-b', costPerMTok: 3, intellect: 52, onFrontier: true },
+        { id: 'mid-c', costPerMTok: 6, intellect: 58, onFrontier: true },
+        { id: 'top-d', costPerMTok: 10, intellect: 63, onFrontier: true },
+        { id: 'dom-e', costPerMTok: 4, intellect: 44, onFrontier: false },
+      ],
+      {},
+      {},
+      undefined,
+      'blended',
+      'all',
+    )
 
     const poly = svg.querySelector('polyline.frontier-line')
     assert.ok(poly)
@@ -147,6 +154,35 @@ describe('renderFrontierSvg', () => {
         assert.ok(lineY <= ly - 8 || lineY >= ly + 2, `frontier line runs through label "${text}"`)
       }
     }
+  })
+
+  it('summarises a ceiling-colliding frontier cluster and expands to label every point', () => {
+    const points: FrontierPoint[] = Array.from({ length: 15 }, (_, index) => ({
+      id: `frontier-model-with-long-name-${String(index)}`,
+      costPerMTok: 1 + index * 0.03,
+      intellect: 58 + index * 0.1,
+      onFrontier: true,
+    }))
+    const compact = renderFrontierSvg(points)
+    const compactLabels = [...compact.querySelectorAll('text.frontier-label')]
+    const compactText = compactLabels.map((label) => label.textContent)
+    assert.equal(compact.getAttribute('data-label-mode'), 'summary')
+    assert.ok(compactLabels.length < points.length)
+    assert.ok(
+      compactText.includes('frontier-model-with-long-name-7'),
+      `expected midpoint label, saw ${JSON.stringify(compactText)}`,
+    )
+
+    const expanded = renderFrontierSvg(
+      points,
+      { width: 1200, height: 680 },
+      {},
+      undefined,
+      'blended',
+      'all',
+    )
+    assert.equal(expanded.getAttribute('data-label-mode'), 'all')
+    assert.equal(expanded.querySelectorAll('text.frontier-label').length, points.length)
   })
 })
 
@@ -773,6 +809,7 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(svg)
     // 1200 wide + the 150px left unpriced gutter; height grows with bottom rows.
     assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 1350 \d+$/)
+    assert.equal(svg.getAttribute('data-label-mode'), 'all')
     assert.match(svg.textContent, /no price yet/)
     // The pop-out carries its own controls and the same "below the chart" list,
     // so its gutter overflow note ("in the list below") is accurate in place.
