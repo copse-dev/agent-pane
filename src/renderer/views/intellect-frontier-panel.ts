@@ -67,6 +67,11 @@ const LABEL_LINE_GAP = 3
 /** Beyond this, text no longer reads as a direct label for its point. */
 const MAX_DIRECT_LABEL_SHIFT = 18
 
+/** Screen-space grouping/offset for near-zero price columns. */
+const POINT_SPLAY_COLUMN_PX = 7
+const POINT_SPLAY_STEP_PX = 6
+const POINT_SPLAY_MAX_PX = 18
+
 /** Card links warmed per render. Matches the `modelCards:resolve` batch cap. */
 const MAX_CARD_PREFETCH = 128
 
@@ -653,6 +658,45 @@ export function renderFrontierSvg(
   const y = (intellect: number): number =>
     MARGIN.top + plotH - ((intellect - minIntellect) / (maxIntellect - minIntellect)) * plotH
 
+  // Prices near zero project to the same narrow column. Splay columns of three
+  // or more points a few pixels horizontally so their marks and hover regions
+  // remain individually legible. A faint stem drawn below reconnects every
+  // moved mark to its true data coordinate on the frontier/grid.
+  const displayX = new Map<string, number>(points.map((p) => [p.id, x(p.costPerMTok)]))
+  const byRawX = [...points].sort(
+    (a, b) => x(a.costPerMTok) - x(b.costPerMTok) || y(a.intellect) - y(b.intellect),
+  )
+  for (let start = 0; start < byRawX.length;) {
+    const first = byRawX[start]
+    if (!first) break
+    const columnX = x(first.costPerMTok)
+    let end = start + 1
+    while (end < byRawX.length) {
+      const candidate = byRawX[end]
+      if (!candidate || x(candidate.costPerMTok) - columnX > POINT_SPLAY_COLUMN_PX) break
+      end++
+    }
+    const column = byRawX.slice(start, end)
+    if (column.length >= 3) {
+      column.sort((a, b) => y(a.intellect) - y(b.intellect))
+      const nearLeft = columnX - POINT_SPLAY_MAX_PX < plotLeft
+      column.forEach((point, index) => {
+        const centered = (index - (column.length - 1) / 2) * POINT_SPLAY_STEP_PX
+        const fanPhase = index % 6
+        const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase
+        const offset = nearLeft
+          ? fanStep * POINT_SPLAY_STEP_PX
+          : Math.max(-POINT_SPLAY_MAX_PX, Math.min(POINT_SPLAY_MAX_PX, centered))
+        displayX.set(
+          point.id,
+          Math.max(plotLeft, Math.min(plotLeft + plotW, x(point.costPerMTok) + offset)),
+        )
+      })
+    }
+    start = end
+  }
+  const pointX = (point: FrontierPoint): number => displayX.get(point.id) ?? x(point.costPerMTok)
+
   // Bottom-gutter rows assigned greedily so labels never overlap within a row.
   // Past UNSCORED_ROW_LIMIT the band collapses to one label-less density row.
   const dense = unscored.length > UNSCORED_ROW_LIMIT
@@ -850,15 +894,15 @@ export function renderFrontierSvg(
   const labelLeader = new Map<string, { x1: number; y1: number; x2: number; y2: number }>()
   // Dots are obstacles too — a label must not sit under another point's mark.
   const placed: Array<{ x0: number; x1: number; py: number }> = points.map((p) => ({
-    x0: x(p.costPerMTok) - 7,
-    x1: x(p.costPerMTok) + 7,
+    x0: pointX(p) - 7,
+    x1: pointX(p) + 7,
     py: y(p.intellect) + 3,
   }))
   for (const p of labelledPoints) {
     const suffix = p.plan ? ' · plan' : p.local ? ' · free' : ''
     const text = `${displayModelLabel(p.id)}${p.quant ? ` @${p.quant}` : ''}${p.intellectEstimated ? ' (~)' : ''}${suffix}`
     const w = approxLabelWidth(text)
-    const px = x(p.costPerMTok)
+    const px = pointX(p)
     // Prefer a right-hand label; flip to the left for points near the right
     // edge. Drop only when neither side fits horizontally.
     let x0: number
@@ -946,7 +990,9 @@ export function renderFrontierSvg(
 
   // Points, with a larger transparent hit target and a rich hover card.
   for (const p of points) {
-    const cx = String(x(p.costPerMTok))
+    const rawCx = x(p.costPerMTok)
+    const displayedCx = pointX(p)
+    const cx = String(displayedCx)
     const cy = String(y(p.intellect))
     const emphasis = p.onFrontier ? 'var(--accent)' : 'var(--border-strong)'
     // Discovery points (not configured) are ghosted so they read as "could
@@ -981,6 +1027,21 @@ export function renderFrontierSvg(
           class: cls,
           'data-model-id': p.id,
         })
+    if (Math.abs(displayedCx - rawCx) > 0.5) {
+      svg.append(
+        svgEl('line', {
+          x1: String(rawCx),
+          y1: cy,
+          x2: cx,
+          y2: cy,
+          stroke: 'var(--border-strong)',
+          'stroke-width': '0.75',
+          'stroke-opacity': '0.5',
+          class: 'frontier-point-splay',
+          'data-model-id': p.id,
+        }),
+      )
+    }
     if (p.plan) {
       svg.append(
         svgEl('circle', {
@@ -995,13 +1056,39 @@ export function renderFrontierSvg(
         }),
       )
     }
+    const nearestDistance = points.reduce((nearest, other) => {
+      if (other === p) return nearest
+      return Math.min(
+        nearest,
+        Math.hypot(pointX(other) - displayedCx, y(other.intellect) - y(p.intellect)),
+      )
+    }, Infinity)
+    const hitRadius = Math.max(5, Math.min(11, nearestDistance / 2 - 0.5))
+    const hoverHalo = svgEl('circle', {
+      cx,
+      cy,
+      r: '8',
+      fill: 'none',
+      stroke: 'var(--accent)',
+      'stroke-width': '2',
+      opacity: '0',
+      'pointer-events': 'none',
+      class: 'frontier-hover-halo',
+      'data-model-id': p.id,
+    })
     const hit = svgEl('circle', {
       cx,
       cy,
-      r: '11',
+      r: String(hitRadius),
       fill: 'transparent',
       class: 'frontier-hit',
       'data-model-id': p.id,
+    })
+    hit.addEventListener('mouseenter', () => {
+      hoverHalo.setAttribute('opacity', '1')
+    })
+    hit.addEventListener('mouseleave', () => {
+      hoverHalo.setAttribute('opacity', '0')
     })
     if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis), p.id)
     else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
@@ -1027,7 +1114,7 @@ export function renderFrontierSvg(
         svgEl(
           'text',
           {
-            x: String(labelX.get(p.id) ?? x(p.costPerMTok) + 8),
+            x: String(labelX.get(p.id) ?? pointX(p) + 8),
             y: String(labelY.get(p.id) ?? y(p.intellect) + 3),
             'text-anchor': labelAnchor.get(p.id) ?? 'start',
             'font-size': '9',
@@ -1038,7 +1125,7 @@ export function renderFrontierSvg(
         ),
       )
     }
-    svg.append(dot, hit)
+    svg.append(dot, hoverHalo, hit)
   }
 
   // LEFT gutter: scored-but-unpriced models at their TRUE y on the shared

@@ -198,6 +198,41 @@ describe('renderFrontierSvg', () => {
     assert.equal(expanded.querySelectorAll('text.frontier-label').length, points.length)
     assert.ok(expanded.querySelector('line.frontier-label-leader'))
   })
+
+  it('splays dense price columns and keeps hover targets centred on their visible dots', () => {
+    const points: FrontierPoint[] = [
+      { id: 'low-a', costPerMTok: 0, intellect: 30, onFrontier: true },
+      { id: 'low-b', costPerMTok: 0.02, intellect: 35, onFrontier: true },
+      { id: 'low-c', costPerMTok: 0.04, intellect: 40, onFrontier: true },
+      { id: 'low-d', costPerMTok: 0.06, intellect: 45, onFrontier: true },
+      { id: 'far', costPerMTok: 10, intellect: 60, onFrontier: true },
+    ]
+    const svg = renderFrontierSvg(points)
+    const lowDots = [...svg.querySelectorAll<SVGCircleElement>('circle.frontier-point')].filter(
+      (dot) => dot.dataset['modelId']?.startsWith('low-'),
+    )
+    assert.equal(lowDots.length, 4)
+    assert.ok(new Set(lowDots.map((dot) => dot.getAttribute('cx'))).size > 2)
+    assert.ok(svg.querySelectorAll('line.frontier-point-splay').length >= 2)
+
+    for (const dot of lowDots) {
+      const id = dot.dataset['modelId']
+      assert.ok(id)
+      const hit = svg.querySelector<SVGCircleElement>(`circle.frontier-hit[data-model-id="${id}"]`)
+      const halo = svg.querySelector<SVGCircleElement>(
+        `circle.frontier-hover-halo[data-model-id="${id}"]`,
+      )
+      assert.ok(hit)
+      assert.ok(halo)
+      assert.equal(hit.getAttribute('cx'), dot.getAttribute('cx'))
+      assert.equal(hit.getAttribute('cy'), dot.getAttribute('cy'))
+      assert.ok(Number(hit.getAttribute('r')) <= 11)
+      hit.dispatchEvent(new MouseEvent('mouseenter'))
+      assert.equal(halo.getAttribute('opacity'), '1')
+      hit.dispatchEvent(new MouseEvent('mouseleave'))
+      assert.equal(halo.getAttribute('opacity'), '0')
+    }
+  })
 })
 
 describe('local candidates and the composite strip', () => {
