@@ -14,6 +14,8 @@ export interface FooterModelPickerOptions {
   onClose?: () => void
   /** Most-recent-first model values from prior threads. */
   getRecentModels?: () => readonly string[]
+  /** Override the trigger label for the current picker value (resolved route). */
+  formatCurrentLabel?: (current: string) => string
 }
 
 // Composer adapter for the app-wide picker. The trigger stays compact while the
@@ -66,6 +68,9 @@ export function mountFooterModelPicker(
       onSelectGroupValue: persistGroupValue,
       ...(pickerOpts.onClose ? { onClose: pickerOpts.onClose } : {}),
       ...(pickerOpts.getRecentModels ? { getRecentValues: pickerOpts.getRecentModels } : {}),
+      ...(pickerOpts.formatCurrentLabel
+        ? { formatCurrentLabel: pickerOpts.formatCurrentLabel }
+        : {}),
     },
   )
 

@@ -102,4 +102,33 @@ describe('footer model picker', () => {
     assert.equal(trigger.getAttribute('aria-expanded'), 'false')
     assert.equal(document.activeElement, composer)
   })
+
+  it('shows the resolved route on the trigger when a dynamic selector is current', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    let current = 'auto:min-intellect:40'
+    mountFooterModelPicker(
+      root,
+      createApi(),
+      () => current,
+      (model) => {
+        current = model
+      },
+      {
+        formatCurrentLabel: (sel) =>
+          sel === 'auto:min-intellect:40' ? 'openrouter:minimax/minimax-m3' : sel,
+      },
+    )
+    await settle()
+
+    const trigger = root.querySelector<HTMLButtonElement>('.model-picker-trigger')
+    assert.ok(trigger)
+    // The trigger shows the resolved route (not the selector) even though the
+    // stored value stays the dynamic selector.
+    assert.equal(
+      trigger.querySelector('.model-picker-label')?.textContent,
+      'openrouter:minimax/minimax-m3',
+    )
+    assert.equal(current, 'auto:min-intellect:40')
+  })
 })

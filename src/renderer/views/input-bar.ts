@@ -373,6 +373,21 @@ export function mountInputBar(
     return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
   }
 
+  /**
+   * The label for the footer picker trigger. When the active model is a dynamic
+   * selector (`auto:…`), prefer the concrete route the last turn actually ran
+   * on so the picker shows a real model instead of the opaque selector; fall
+   * back to the selector's display label otherwise.
+   */
+  function footerModelDisplayLabel(current: string): string {
+    const thread = getActiveThread(store)
+    if (!thread) return current
+    const resolved =
+      thread.resolvedModel ??
+      [...thread.messages].reverse().find((m) => m.role === 'assistant' && m.model)?.model
+    return resolved ?? current
+  }
+
   function footerRecentModels(): string[] {
     const { threads, settings } = store.getState()
     return [...threads]
@@ -435,6 +450,7 @@ export function mountInputBar(
   )
 
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
+    formatCurrentLabel: footerModelDisplayLabel,
     isSshWorkspace: (): boolean => {
       const { activeProjectId, projects } = store.getState()
       if (!activeProjectId) return false
