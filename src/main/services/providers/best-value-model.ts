@@ -130,6 +130,13 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
 
   const keepRoute = (candidate: FrontierCandidate): boolean => {
     if (!isRoutableCandidate(candidate, availableCloud)) return false
+    // OpenRouter serves some routes async-only via `/v1/batches`. A `:batch`
+    // suffix marks one of those, which the sync streaming transport cannot
+    // call — exclude it so a value pick never lands on a route the request
+    // will reject (e.g. `minimax/minimax-m3:batch`). Scoped to OpenRouter ids:
+    // the suffix is OpenRouter's own convention, and a non-OpenRouter model id
+    // ending in `:batch` may be a legitimate, sync-callable model.
+    if (candidate.id.startsWith('openrouter:') && candidate.id.endsWith(':batch')) return false
     const local = candidate.local === true
     // Honor the same OpenRouter privacy defaults the picker / request path use.
     if (candidate.id.startsWith('openrouter:')) {
@@ -183,10 +190,15 @@ export function resolveBestValueFromFrontier(
   planUsage: PlanUsageSnapshot | null,
   keepRoute?: (candidate: FrontierCandidate) => boolean,
 ): string | null {
+  // The `:batch` guard also applies to the pure seam, so tests exercising the
+  // route filter see the same behaviour as the real frontier. Any caller-provided
+  // keepRoute runs first; the batch exclusion is always enforced for OpenRouter.
   const points = frontierForKnownModels(
     extras,
     (candidate) => applyPlanCoverage(candidate, planUsage),
-    keepRoute,
+    (candidate) =>
+      (keepRoute ? keepRoute(candidate) : true) &&
+      !(candidate.id.startsWith('openrouter:') && candidate.id.endsWith(':batch')),
   )
   const best = pickBestValueFrontierModel(points)
   return best ? toRoutableModelId(best) : null
