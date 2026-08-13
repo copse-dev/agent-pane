@@ -83,6 +83,7 @@ import {
   FALLBACK_APP_CHAT_MODEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
+import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -373,6 +374,25 @@ export function mountInputBar(
     return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
   }
 
+  /**
+   * The label for the footer picker trigger. When the active model is a dynamic
+   * selector (`auto:…`), prefer the concrete route the last turn actually ran
+   * on so the picker shows a real model instead of the opaque selector; fall
+   * back to the selector's display label otherwise.
+   */
+  function footerModelDisplayLabel(current: string): string | undefined {
+    if (!isDynamicModel(current)) return undefined
+    const thread = getActiveThread(store)
+    if (!thread) return undefined
+    const resolved =
+      thread.resolvedModel ??
+      [...thread.messages].reverse().find((m) => m.role === 'assistant' && m.model)?.model
+    // Run the resolved route through the same label formatter the picker uses
+    // (OpenRouter/cloud friendly), so `openrouter:minimax/minimax-m3` renders
+    // as "MiniMax M3" rather than the raw id.
+    return resolved ? modelDisplayLabel(resolved) : undefined
+  }
+
   function footerRecentModels(): string[] {
     const { threads, settings } = store.getState()
     return [...threads]
@@ -435,6 +455,7 @@ export function mountInputBar(
   )
 
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
+    formatCurrentLabel: footerModelDisplayLabel,
     isSshWorkspace: (): boolean => {
       const { activeProjectId, projects } = store.getState()
       if (!activeProjectId) return false

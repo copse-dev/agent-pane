@@ -54,4 +54,28 @@ describe('resolveBestValueFromFrontier', () => {
       null,
     )
   })
+
+  it('excludes a batch-only OpenRouter route from the interactive pool', () => {
+    const picked = resolveBestValueFromFrontier(
+      [
+        { id: 'openrouter:minimax/minimax-m3:batch', intellect: 60, costPerMTok: 1 },
+        { id: 'openrouter:openai/gpt-4o', intellect: 48, costPerMTok: 6 },
+      ],
+      null,
+      (c) => c.id.startsWith('openrouter:'),
+    )
+    // `:batch` is async-only; the value pick falls through to the sync route.
+    assert.equal(picked, 'openrouter:openai/gpt-4o')
+  })
+
+  it("keeps a non-OpenRouter model whose id ends in :batch (not OpenRouter's convention)", () => {
+    const picked = resolveBestValueFromFrontier(
+      [{ id: 'custom:somemodel:batch', intellect: 60, costPerMTok: 1 }],
+      null,
+      (c) => c.id.startsWith('custom:'),
+    )
+    // The gated filter only drops openrouter: ids; this provider's `:batch` is
+    // its own model name, so it stays a valid sync pick.
+    assert.equal(picked, 'custom:somemodel:batch')
+  })
 })

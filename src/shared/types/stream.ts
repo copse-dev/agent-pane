@@ -89,4 +89,4 @@ export type StreamChunk =
    * (a stale value is dropped, a per-chat dial overrides the level, a cheap
    * role caps it). Emitted only when the turn actually sent parameters.
    */
-  | { type: 'turn_parameters'; model: string; parameters: ModelParameters }
+  | { type: 'turn_parameters'; model: string; parameters: ModelParameters; requestedModel?: string }
