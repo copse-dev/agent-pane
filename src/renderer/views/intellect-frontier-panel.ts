@@ -64,9 +64,6 @@ const MARGIN = { top: 14, right: 20, bottom: 34, left: 40 }
 /** Clearance kept between a lifted frontier label and the frontier line. */
 const LABEL_LINE_GAP = 3
 
-/** Beyond this, text no longer reads as a direct label for its point. */
-const MAX_DIRECT_LABEL_SHIFT = 18
-
 /** Screen-space grouping/offset for near-zero price columns. */
 const POINT_SPLAY_COLUMN_PX = 7
 const POINT_SPLAY_STEP_PX = 6
@@ -929,7 +926,7 @@ export function renderFrontierSvg(
     // Pareto-empty upper region — rather than leave the line crossing the text.
     const prefersUp = p.onFrontier
     let lineRange: { min: number; max: number } | null = null
-    if (prefersUp) {
+    if (prefersUp && labelMode === 'all') {
       const range = frontierYRange(x0, x1)
       lineRange = range
       // Text band is roughly [py - 8, py + 2] (9px glyphs above the baseline).
@@ -958,9 +955,16 @@ export function renderFrontierSvg(
       }
       return nextY
     }
-    py = nudgeClear(py, prefersUp ? -1 : 1)
-    if (prefersUp && py - 8 < MARGIN.top) {
-      if (labelMode === 'summary') continue
+    if (labelMode === 'summary') {
+      const blocked = placed.some(
+        (prev) => Math.abs(naturalY - prev.py) < 10 && x0 < prev.x1 && x1 > prev.x0,
+      )
+      if (blocked) continue
+      py = naturalY
+    } else {
+      py = nudgeClear(py, prefersUp ? -1 : 1)
+    }
+    if (labelMode === 'all' && prefersUp && py - 8 < MARGIN.top) {
       // Put the representative/all-mode overflow below the line, then cascade
       // downward through dots and labels. Starting under the whole segment span
       // means the frontier cannot run through the text on this fallback side.
@@ -972,8 +976,11 @@ export function renderFrontierSvg(
       continue
     }
     const shift = Math.abs(py - naturalY)
-    if (labelMode === 'summary' && shift > MAX_DIRECT_LABEL_SHIFT) continue
-    if (labelMode === 'all' && shift > MAX_DIRECT_LABEL_SHIFT) {
+    // Inline labels are truly direct: their baseline stays tied to the dot.
+    // If collision/line avoidance requires movement, omit that label and leave
+    // identification to hover. The expanded chart may move it, but always adds
+    // a leader once the association would otherwise become ambiguous.
+    if (labelMode === 'all' && shift > 6) {
       labelLeader.set(p.id, {
         x1: px,
         y1: y(p.intellect),
@@ -1010,9 +1017,7 @@ export function renderFrontierSvg(
       ? svgEl('circle', {
           cx,
           cy,
-          // A 2px stroke is centred on the path: r=4 gives the same 10px
-          // outside diameter as a filled r=5 point.
-          r: '4',
+          r: '5',
           fill: 'var(--bg-base)',
           stroke: emphasis,
           'stroke-width': '2',
@@ -1111,6 +1116,13 @@ export function renderFrontierSvg(
             'text-anchor': labelAnchor.get(p.id) ?? 'start',
             'font-size': '9',
             fill: 'var(--text-secondary)',
+            ...(labelMode === 'summary'
+              ? {
+                  stroke: 'var(--bg-base)',
+                  'stroke-width': '3',
+                  'paint-order': 'stroke',
+                }
+              : {}),
             class: 'frontier-label',
           },
           text,

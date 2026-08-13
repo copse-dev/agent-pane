@@ -89,12 +89,7 @@ describe('renderFrontierSvg', () => {
     const dot = svg.querySelector('circle.frontier-point.estimated')
     assert.ok(dot)
     assert.equal(dot.getAttribute('fill'), 'var(--bg-base)')
-    assert.equal(dot.getAttribute('r'), '4')
-    assert.equal(
-      Number(dot.getAttribute('r')) + Number(dot.getAttribute('stroke-width')) / 2,
-      5,
-      'hollow point has the same outer radius as a filled point',
-    )
+    assert.equal(dot.getAttribute('r'), '5')
     const label = svg.querySelector('text.frontier-label')
     assert.ok(label)
     assert.match(label.textContent, /\(~\)/)
@@ -175,8 +170,8 @@ describe('renderFrontierSvg', () => {
     assert.equal(compact.getAttribute('data-label-mode'), 'summary')
     assert.ok(compactLabels.length < points.length)
     assert.ok(
-      compactText.includes('frontier-model-with-long-name-7'),
-      `expected midpoint label, saw ${JSON.stringify(compactText)}`,
+      compactText.some((text) => text.startsWith('frontier-model-with-long-name-')),
+      `expected a representative label, saw ${JSON.stringify(compactText)}`,
     )
     assert.equal(compact.querySelectorAll('line.frontier-label-leader').length, 0)
     for (const label of compactLabels) {
@@ -186,9 +181,10 @@ describe('renderFrontierSvg', () => {
         `circle.frontier-point[data-model-id="${id}"]`,
       )
       assert.ok(point)
-      assert.ok(
-        Math.abs(Number(label.getAttribute('y')) - (Number(point.getAttribute('cy')) + 3)) <= 18,
-        `${id} label detached from its point`,
+      assert.equal(
+        Number(label.getAttribute('y')),
+        Number(point.getAttribute('cy')) + 3,
+        `${id} label baseline detached from its point`,
       )
     }
 
@@ -718,16 +714,31 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     let svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.match(svg.textContent || '', /Claude Opus 4\.8|Claude Fable 5/)
-    assert.match(svg.textContent || '', /MiniMax-M3/)
+    assert.ok(
+      svg.querySelector(
+        'circle.frontier-point[data-model-id="claude-opus-4-8"], circle.frontier-point[data-model-id="claude-fable-5"]',
+      ),
+    )
+    assert.ok(
+      svg.querySelector('circle.frontier-point[data-model-id="fireworks:MiniMaxAI/MiniMax-M3"]'),
+    )
     const zdrBtn = panel.root.querySelector<HTMLButtonElement>('button.frontier-zdr-toggle')
     assert.ok(zdrBtn)
     zdrBtn.click()
     assert.equal(zdrBtn.classList.contains('active'), true)
     svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.doesNotMatch(svg.textContent || '', /Claude Opus 4\.8|Claude Fable 5|GPT-5\.5/)
-    assert.match(svg.textContent || '', /MiniMax-M3|qwen2\.5-coder/)
+    assert.equal(
+      svg.querySelector(
+        'circle.frontier-point[data-model-id="claude-opus-4-8"], circle.frontier-point[data-model-id="claude-fable-5"], circle.frontier-point[data-model-id="gpt-5-5"]',
+      ),
+      null,
+    )
+    assert.ok(
+      svg.querySelector(
+        'circle.frontier-point[data-model-id="fireworks:MiniMaxAI/MiniMax-M3"], circle.frontier-point[data-model-id="qwen/qwen2.5-coder-32b"]',
+      ),
+    )
     assert.match(panel.root.textContent || '', /ZDR only: hiding/)
   })
 
@@ -788,13 +799,18 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     let svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.match(svg.textContent || '', /MiniMax-M3/)
+    assert.ok(
+      svg.querySelector('circle.frontier-point[data-model-id="deepseek:MiniMaxAI/MiniMax-M3"]'),
+    )
     const button = panel.root.querySelector<HTMLButtonElement>('button.frontier-no-training-toggle')
     assert.ok(button)
     button.click()
     svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    assert.doesNotMatch(svg.textContent || '', /MiniMax-M3/)
+    assert.equal(
+      svg.querySelector('circle.frontier-point[data-model-id="deepseek:MiniMaxAI/MiniMax-M3"]'),
+      null,
+    )
     assert.match(svg.textContent || '', /Claude |GPT-/)
     assert.match(panel.root.textContent || '', /No training: hiding/)
   })
