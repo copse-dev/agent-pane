@@ -261,6 +261,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onOpened: subscribe,
     },
     browser: {
+      workspaceFileUrl: (_projectId, _threadId, path) =>
+        resolved(`http://localhost:4173/${encodeURI(path)}`),
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
@@ -815,7 +817,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       enableAutoMerge: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
     },
-    shell: { openExternal: resolvedVoid },
+    shell: { openExternal: resolvedVoid, openWorkspaceFileInBrowser: resolvedVoid },
     editors: {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid,

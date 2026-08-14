@@ -382,6 +382,14 @@ export interface IpcInvokeMap {
 
   // Shell
   'shell:openExternal': { args: [url: string]; result: undefined }
+  'shell:openWorkspaceFileInBrowser': {
+    args: [projectId: string, threadId: string, path: string]
+    result: undefined
+  }
+  'browser:workspaceFileUrl': {
+    args: [projectId: string, threadId: string, path: string]
+    result: string
+  }
 
   // External editors ("Open in …" titlebar dropdown)
   'editors:list': { args: []; result: import('./editors.ts').ExternalEditorList }

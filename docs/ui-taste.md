@@ -622,6 +622,11 @@ Pin to `clientX`/`clientY`, clamp into the viewport, and dismiss on outside poin
 window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
 [`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
+File rows and the file viewer use the same menu for **Open in browser**, but only for local
+workspaces. The global “Open links in the built-in browser” setting applies here too: on (the
+default), Copse serves the file through its loopback-only static preview; off, it hands a local
+`file:` URL to the system browser. Remote SSH paths have no safe local equivalent. Visual eval:
+[`tests/e2e/file-viewer-changes.e2e.ts`](../tests/e2e/file-viewer-changes.e2e.ts).
 
 In-app **browser guest pages** (`<webview>`) use a native Electron `Menu` from the main-process
 `context-menu` event instead — guest content cannot host our DOM menu. Standard items live in
