@@ -37,16 +37,20 @@ export const MODEL_CLASSIFIER_ENABLED_SETTING = 'modelClassifierEnabled'
  * unknown, so it is not an auto-routing candidate until it is measured. It
  * stays fully selectable by hand in the picker.
  */
-function bandOf(model: TrackedModel): IntellectBand | null {
-  const intellect = modelIntellect(model)
-  return intellect === null ? null : intellectBand(intellect)
+export function groupModelsByIntellectBand<T extends string>(
+  models: readonly T[],
+  intellectFor: (model: T) => number | null,
+  scale?: readonly number[],
+): Record<IntellectBand, readonly T[]> {
+  const grouped: Record<IntellectBand, T[]> = { low: [], mid: [], top: [] }
+  for (const model of models) {
+    const intellect = intellectFor(model)
+    if (intellect !== null) grouped[intellectBand(intellect, scale)].push(model)
+  }
+  return grouped
 }
 
-export const BAND_CANDIDATES: Record<IntellectBand, readonly TrackedModel[]> = {
-  low: TRACKED_MODELS.filter((model) => bandOf(model) === 'low'),
-  mid: TRACKED_MODELS.filter((model) => bandOf(model) === 'mid'),
-  top: TRACKED_MODELS.filter((model) => bandOf(model) === 'top'),
-}
+export const BAND_CANDIDATES = groupModelsByIntellectBand(TRACKED_MODELS, modelIntellect)
 
 export interface ClassifyModelInput {
   /** The task / prompt to route. */

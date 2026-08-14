@@ -154,7 +154,7 @@ describe('registry helpers', () => {
     }
   })
 
-  it('hashes package-lock.json the same way the image bake writes .lockhash', () => {
+  it('hashes pnpm-lock.yaml the same way the image bake writes .lockhash', () => {
     const hash = packageLockHash()
     assert.match(hash, /^[a-f0-9]{64}$/)
     const again = packageLockHash()

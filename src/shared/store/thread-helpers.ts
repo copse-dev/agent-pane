@@ -296,6 +296,7 @@ export function addMessage(
   attachments?: TranscriptAttachment[],
   opts?: {
     model?: string
+    requestedModel?: string
     parameters?: ModelParameters
     startingCommit?: string
     dirty?: boolean
@@ -317,6 +318,9 @@ export function addMessage(
               ...(images?.length ? { images } : {}),
               ...(attachments?.length ? { attachments } : {}),
               ...(opts?.model !== undefined ? { model: opts.model } : {}),
+              ...(opts?.requestedModel !== undefined
+                ? { requestedModel: opts.requestedModel }
+                : {}),
               ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
               ...(opts?.startingCommit !== undefined
                 ? { startingCommit: opts.startingCommit }

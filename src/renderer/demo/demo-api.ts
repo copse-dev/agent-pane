@@ -710,6 +710,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: emptyArray,
       size: (_projectId: string, path: string) =>
         resolved({ path, bytes: 0, fileCount: 0, truncated: false }),
+      cleanupPackages: (_projectId: string, path: string) =>
+        resolved({
+          status: 'ready',
+          path,
+          directories: [],
+          bytes: 0,
+          truncated: false,
+        }),
+      openTerminal: resolvedVoid,
       remove: unsupported,
     },
     skills: { list: emptyArray },

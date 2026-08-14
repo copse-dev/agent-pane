@@ -9,11 +9,15 @@ import {
 } from './best-value-default.ts'
 
 function mockApi(resolved = 'claude-sonnet-4-6'): {
-  models: Pick<ApiClient['models'], 'bestValueDefault'>
+  models: Pick<ApiClient['models'], 'bestValueDefault' | 'resolveDynamic'>
 } {
   return {
     models: {
       bestValueDefault: async () => resolved,
+      resolveDynamic: async (value: string): Promise<string> => {
+        if (value === 'auto:balanced') return 'claude-sonnet-5'
+        return resolved
+      },
     },
   }
 }
@@ -48,5 +52,16 @@ describe('resolveBestValueForActiveBlankThread', () => {
 
     assert.equal(getActiveThread(store)?.model, 'claude-opus-4-8')
     unsubscribe()
+  })
+
+  it('resolves a blank thread carrying auto:balanced to its concrete model', async () => {
+    const store = createStore()
+    store.setState({ settings: { model: 'auto:balanced' } })
+    createThread(store)
+    assert.equal(getActiveThread(store)?.model, 'auto:balanced')
+
+    await resolveBestValueForActiveBlankThread(store, mockApi('claude-sonnet-4-6'))
+    // resolveDynamic('auto:balanced') returns claude-sonnet-5, not best-value.
+    assert.equal(getActiveThread(store)?.model, 'claude-sonnet-5')
   })
 })
