@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveBestValueFromFrontier } from './best-value-model.ts'
+import { claudeAcpFrontierCandidates, resolveBestValueFromFrontier } from './best-value-model.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
+import { getIntellectScore } from '@copse/llm/model-intellect.ts'
 
 describe('resolveBestValueFromFrontier', () => {
   it('routes a local winner with the lmstudio: prefix', () => {
@@ -77,5 +78,74 @@ describe('resolveBestValueFromFrontier', () => {
     // The gated filter only drops openrouter: ids; this provider's `:batch` is
     // its own model name, so it stays a valid sync pick.
     assert.equal(picked, 'custom:somemodel:batch')
+  })
+
+  it('prefers a plan Claude ACP agent over the same model via OpenRouter for best value', () => {
+    const snapshot: PlanUsageSnapshot = {
+      checkedAt: '2026-07-22T00:00:00Z',
+      providers: [
+        {
+          provider: 'claude',
+          status: 'ok',
+          usage: {
+            provider: 'claude',
+            plan: 'Max',
+            checkedAt: '2026-07-22T00:00:00Z',
+            windows: [
+              { id: 'seven_day_opus', label: 'Weekly Opus', usedPercent: 10, resetsAt: null },
+              { id: 'seven_day', label: 'Weekly', usedPercent: 5, resetsAt: null },
+              { id: 'five_hour', label: '5h', usedPercent: 0, resetsAt: null },
+            ],
+          },
+        },
+      ],
+    }
+    // ACP agent running Opus 5 (plan-covered) vs the same model via OpenRouter.
+    const picked = resolveBestValueFromFrontier(
+      [
+        { id: 'openrouter:anthropic/claude-opus-5', intellect: 61, costPerMTok: 9 },
+        { id: 'acp:claude-agent-acp#claude-opus-5', intellect: 61, costPerMTok: 9, plan: 'Claude' },
+      ],
+      snapshot,
+      (c) => c.id.startsWith('openrouter:') || c.id.startsWith('acp:'),
+    )
+    assert.equal(picked, 'acp:claude-agent-acp#claude-opus-5')
+  })
+})
+
+describe('claudeAcpFrontierCandidates', () => {
+  it('scores the described model but routes with the value the agent advertised', () => {
+    const opus5Score = getIntellectScore('claude-opus-5')
+    assert.ok(opus5Score)
+    const candidates = claudeAcpFrontierCandidates([
+      {
+        id: 'claude-agent-acp',
+        title: 'Claude',
+        command: 'claude-agent-acp',
+        enabled: true,
+        model: 'default',
+        availableModels: [
+          {
+            value: 'default',
+            label: 'Default (recommended)',
+            description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+          },
+          {
+            value: 'sonnet',
+            label: 'Sonnet',
+            description: 'Sonnet 5 · Efficient for routine tasks',
+          },
+        ],
+      },
+    ])
+
+    assert.deepEqual(candidates, [
+      {
+        id: 'acp:claude-agent-acp#default',
+        intellect: opus5Score.value,
+        costPerMTok: 9,
+        plan: 'Claude',
+      },
+    ])
   })
 })

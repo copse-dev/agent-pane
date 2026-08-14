@@ -121,7 +121,10 @@ describe('validateAdvisorPair', () => {
   })
 
   it('recommends a local executor with a frontier cloud advisor (the flagship pairing)', () => {
-    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-fable-5')
+    // Fable is no longer the top-band flagship now that Opus 5 tops the scale;
+    // the pairing check uses the band representative, so Opus 5 is what earns
+    // the 'frontier advisor' recommendation. Fable is now a mid advisor.
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-opus-5')
     assert.equal(a.ok, true)
     assert.equal(a.native, false)
     assert.equal(a.level, 'good')
