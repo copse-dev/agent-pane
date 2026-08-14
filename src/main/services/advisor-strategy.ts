@@ -220,6 +220,42 @@ function annotationFor(model: string): CapabilityAnnotation {
   return intellect !== null ? { kind: 'cloud', intellect } : { kind: 'unknown' }
 }
 
+/** Compare two scores on the shared cloud scale using the parity tolerance. */
+export function cloudAdvisorAddsLift(executorIntellect: number, advisorIntellect: number): boolean {
+  return advisorIntellect >= executorIntellect - INTELLECT_PARITY
+}
+
+/**
+ * Grade two cloud-model scores without consulting the generated model table.
+ * Keeping this boundary pure lets behavioral tests use stable score fixtures,
+ * while `validateAdvisorPair` remains the integration with live synced data.
+ */
+export function assessCloudAdvisorPair(
+  executorIntellect: number,
+  advisorIntellect: number,
+): Omit<AdvisorPairAssessment, 'native'> {
+  const diff = advisorIntellect - executorIntellect
+  if (diff > INTELLECT_PARITY) {
+    return {
+      ok: true,
+      level: 'good',
+      reason: `Advisor is stronger than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}).`,
+    }
+  }
+  if (Math.abs(diff) <= INTELLECT_PARITY) {
+    return {
+      ok: true,
+      level: 'info',
+      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}) — expect a second opinion rather than stronger guidance.`,
+    }
+  }
+  return {
+    ok: true,
+    level: 'warn',
+    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}) — its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`,
+  }
+}
+
 /**
  * Whether the `advisor` tool is worth offering for this (executor, advisor)
  * pairing — used to hide the tool when a stronger executor would gain nothing
@@ -242,7 +278,7 @@ export function advisorAddsLift(executorModel: string, advisorModel: string): bo
   const executor = annotationFor(executorModel)
   const advisor = annotationFor(advisorModel)
   if (executor.kind === 'cloud' && advisor.kind === 'cloud') {
-    return advisor.intellect >= executor.intellect - INTELLECT_PARITY
+    return cloudAdvisorAddsLift(executor.intellect, advisor.intellect)
   }
   if (
     executor.kind === 'local' &&
@@ -338,29 +374,7 @@ export function validateAdvisorPair(
   }
 
   if (advisor.kind === 'cloud' && executor.kind === 'cloud') {
-    const diff = advisor.intellect - executor.intellect
-    if (diff > INTELLECT_PARITY) {
-      return {
-        ok: true,
-        native,
-        level: 'good',
-        reason: `Advisor is stronger than the executor (intellect ${formatIntellect(advisor.intellect)} vs ${formatIntellect(executor.intellect)}).`,
-      }
-    }
-    if (Math.abs(diff) <= INTELLECT_PARITY) {
-      return {
-        ok: true,
-        native,
-        level: 'info',
-        reason: `Advisor and executor are at the same intellect (${formatIntellect(advisor.intellect)}) — expect a second opinion rather than stronger guidance.`,
-      }
-    }
-    return {
-      ok: true,
-      native,
-      level: 'warn',
-      reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisor.intellect)} vs ${formatIntellect(executor.intellect)}) — its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`,
-    }
+    return { native, ...assessCloudAdvisorPair(executor.intellect, advisor.intellect) }
   }
 
   if (advisor.kind === 'cloud') {

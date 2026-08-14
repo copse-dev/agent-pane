@@ -292,15 +292,24 @@ test('text chunks create one assistant message and accumulate tokens', () => {
   assert.equal(at(messages(), 0).content, 'Hello world')
 })
 
-test('assistant messages stamp the thread primary-chat model', () => {
+test('assistant messages record the requested (picker) model', () => {
   const { send, messages } = setup([
     {
       ...thread('t1'),
-      model: 'claude-sonnet-4-6',
+      model: 'auto:min-intellect:40',
     },
   ])
+  send({
+    type: 'turn_parameters',
+    model: 'openrouter:minimax/minimax-m3',
+    parameters: {},
+    requestedModel: 'auto:min-intellect:40',
+  })
   send({ type: 'text', text: 'Hello' })
-  assert.equal(at(messages(), 0).model, 'claude-sonnet-4-6')
+  // `model` is the concrete resolved route actually run; `requestedModel` is the
+  // user's picker selection (the dynamic selector).
+  assert.equal(at(messages(), 0).model, 'openrouter:minimax/minimax-m3')
+  assert.equal(at(messages(), 0).requestedModel, 'auto:min-intellect:40')
 })
 
 test('whitespace-only text before any message is ignored', () => {

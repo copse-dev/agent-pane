@@ -1,4 +1,4 @@
-// Regenerates packages/llm/src/model-intellect.generated.ts from the curated
+// Regenerates packages/llm/src/model-intellect.generated.ts from the reviewed
 // measurement file scripts/data/intellect-scores.json. Companion to
 // sync-model-catalog.mts (cloud pricing) and sync-local-models.mts (local
 // benchmark scores); this one carries the single composite "intellect" axis
@@ -21,18 +21,19 @@
 //
 // Run locally:  npm run sync:intellect            (validate + emit, reuse fits)
 //               npm run sync:intellect -- --refit (deliberately refit all hops)
+// Run in CI:    .github/workflows/sync-intellect.yml (weekly + manual)
 //
 // API refresh (the scalable data channel):
 //   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api
 // Fetches Artificial Analysis' model list from the supported free-tier language
 // feed (`/api/v2/language/models/free` — the documented replacement for the
 // legacy `/api/v2/data/llms/models`, which returns 410 Gone after 2026-11-04)
-// and refreshes/adds measurements for models we support: those already in
-// `scores`, PLUS the `wanted` allowlist of catalog models we don't have a value
-// for yet (local models, extra tracked cloud models). Every page of the feed is
-// walked. Matched by id or alias — the API never introduces a model id
-// that isn't scored or wanted, so every plotted model remains a reviewed
-// decision, and nobody hand-enters a mis-configured number. The index version
+// and refreshes/adds every directly measured model configuration. Every page of
+// the feed is walked. Known models are matched by id or alias so Copse keeps its
+// canonical catalog ids; new models use AA's exact slug (falling back to id or
+// name) so variants such as reasoning-effort configurations are never merged.
+// `wanted` remains useful for mapping a not-yet-measured catalog id onto the
+// spelling AA will eventually publish. The index version
 // is read from the payload's declared version field when present, else defaults
 // to the data file's canonicalVersion (the AA API always reports the current
 // index, so "the latest" is canonical) with a warning; pass --index-version=
@@ -42,7 +43,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { writeGeneratedFile } from './lib/generated-file.mts'
+import { formatGenerated, writeGeneratedFile } from './lib/generated-file.mts'
 import {
   MIN_RECOMMENDED_ANCHORS,
   fitLinearEquating,
@@ -73,8 +74,7 @@ export interface Measurement {
 /**
  * A model we support (in a catalog) and want AA data for, but don't have a
  * value for yet. `--from-api` matches these by id/alias against the feed and
- * ADDS a measurement — so "get data for the models we support" is one keyed
- * sync, with no hand-entered (and easily mis-configured) numbers.
+ * adds the measurement under our canonical catalog id instead of AA's slug.
  */
 export interface WantedModel {
   modelId: string
@@ -91,6 +91,11 @@ export interface DataFile {
   equatingPairs: Array<{ from: string; to: string }>
   /** Crystallised fits — written back by this script, reused on later runs. */
   equating: EquatingMap[]
+}
+
+/** Serialize the reviewed data file in the same shape the repository gate expects. */
+export async function formatDataFile(data: DataFile): Promise<string> {
+  return await formatGenerated(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`)
 }
 
 const measurementSchema: z.ZodType<Measurement> = z.object({
@@ -432,11 +437,11 @@ export async function requestAaModels(
 }
 
 /**
- * Refresh measurements from the Artificial Analysis API for models the seed
- * file already knows (by modelId or alias). Returns the updated score list;
- * never invents a new model id. The index version comes from the payload's own
- * version field; a `--index-version=` pin, when passed, must agree with it
- * (and covers a payload that omits the field).
+ * Refresh measurements from the Artificial Analysis API. Known models retain
+ * their canonical ids; every other measured configuration is added under its
+ * exact AA identifier. The index version comes from the payload's own version
+ * field; a `--index-version=` pin, when passed, must agree with it (and covers
+ * a payload that omits the field).
  */
 async function refreshFromApi(
   data: DataFile,
@@ -468,18 +473,18 @@ async function refreshFromApi(
 
   const merged = mergeApiModels(data, apiModels, indexVersion, today)
   console.log(
-    `[sync-intellect] API refresh: ${String(merged.matched)} measurement(s) matched supported ` +
-      `models (${String(apiModels.length)} in the feed; unmatched models are ignored by design).`,
+    `[sync-intellect] API refresh: ${String(merged.matched)} measured model configuration(s) ` +
+      `imported or refreshed (${String(apiModels.length)} rows in the feed).`,
   )
   return merged.scores
 }
 
 /**
  * Pure merge of an API model list into the seed's measurements. A feed model is
- * matched (by id/slug/name) against known measurements AND the `wanted`
- * allowlist of catalog models; a match refreshes an existing same-version entry
- * or adds a new one. Never introduces a model id that isn't already known or
- * wanted. Deterministic — no I/O, no clock (today is passed in).
+ * matched (by id/slug/name) against known measurements and the `wanted`
+ * canonicalisation list. Otherwise its exact AA slug becomes the model id
+ * (falling back to id, then name). Each directly measured configuration is kept
+ * distinct. Deterministic — no I/O, no clock (today is passed in).
  */
 export function mergeApiModels(
   data: DataFile,
@@ -505,11 +510,17 @@ export function mergeApiModels(
   for (const api of apiModels) {
     const value = api.evaluations?.artificial_analysis_intelligence_index
     if (typeof value !== 'number' || !Number.isFinite(value)) continue
-    const modelId = [api.id, api.slug, api.name]
+    const knownModelId = [api.id, api.slug, api.name]
       .map((k) => (k ? aliasToId.get(k) : undefined))
       .find((id) => id !== undefined)
+    const modelId =
+      knownModelId ??
+      [api.slug, api.id, api.name].find(
+        (candidate): candidate is string =>
+          typeof candidate === 'string' && candidate.trim().length > 0,
+      )
     if (!modelId) continue
-    const aliases = aliasesFor.get(modelId)
+    const aliases = knownModelId ? aliasesFor.get(modelId) : undefined
     const measurement: Measurement = {
       modelId,
       value,
@@ -519,8 +530,15 @@ export function mergeApiModels(
       ...(aliases ? { aliases } : {}),
     }
     const existing = next.findIndex((m) => m.modelId === modelId && m.indexVersion === indexVersion)
-    if (existing >= 0) next[existing] = { ...next[existing], ...measurement }
-    else next.push(measurement)
+    if (existing >= 0) {
+      const current = next[existing]
+      // Keep an unchanged measurement byte-stable. Besides making local
+      // refreshes idempotent, this prevents the scheduled workflow from
+      // opening a date-only PR every week merely because `today` moved.
+      if (current?.value !== value) next[existing] = { ...current, ...measurement }
+    } else {
+      next.push(measurement)
+    }
     matched += 1
   }
   return { scores: next, matched }
@@ -555,7 +573,7 @@ async function main(): Promise<void> {
     const wanted = graduateWanted(data.wanted ?? [], scores)
     data = { ...data, scores, wanted }
     validate(data)
-    await writeFile(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+    await writeFile(DATA_PATH, await formatDataFile(data), 'utf8')
   }
 
   const maps = resolveEquating(data, today, refit)
@@ -565,7 +583,7 @@ async function main(): Promise<void> {
   const nextJson = JSON.stringify(maps)
   if (storedJson !== nextJson) {
     const updated: DataFile = { ...data, equating: maps }
-    await writeFile(DATA_PATH, `${JSON.stringify(updated, null, 2)}\n`, 'utf8')
+    await writeFile(DATA_PATH, await formatDataFile(updated), 'utf8')
     console.log(
       `[sync-intellect] Crystallised ${String(maps.length)} equating fit(s) into ${DATA_PATH}.`,
     )

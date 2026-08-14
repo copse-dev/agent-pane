@@ -1,8 +1,9 @@
 import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
+import { createRequire } from 'node:module'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   forceKillWedgedE2eSession,
   installDeleteSessionSafety,
@@ -20,9 +21,14 @@ const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
+const requireFromProject = createRequire(join(process.cwd(), 'package.json'))
 const chromedriverBinary =
   process.env.COPSE_E2E_CHROMEDRIVER_BINARY?.trim() ||
-  join(process.cwd(), 'node_modules/electron-chromedriver/bin/chromedriver')
+  join(
+    dirname(requireFromProject.resolve('electron-chromedriver/package.json')),
+    'bin',
+    'chromedriver',
+  )
 
 let e2eUserDataDir: string | null = null
 

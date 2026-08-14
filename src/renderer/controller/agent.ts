@@ -42,21 +42,37 @@ import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 
 /**
- * Resolved generation parameters for the turn currently streaming, keyed by
- * thread. Main reports them once before the first token, which is before the
- * assistant bubble exists — so they are held here and stamped onto the bubble
- * the moment it is created, alongside the model. Cleared when consumed so a
- * later turn on an untuned model cannot inherit them.
+ * Resolved generation parameters, resolved model, and requested model for the
+ * turn currently streaming, keyed by thread. Main reports them once before the
+ * first token, which is before the assistant bubble exists — so they are held
+ * here and stamped onto the bubble the moment it is created. Cleared when
+ * consumed so a later turn on an untuned model cannot inherit them.
  */
-const pendingTurnParameters = new Map<string, ModelParameters>()
+interface PendingTurn {
+  parameters: ModelParameters
+  /** The concrete route the turn actually ran on (after `auto:…` resolution). */
+  model?: string
+  /** The user's picker/requested selection (possibly a dynamic selector). */
+  requestedModel?: string
+}
+const pendingTurn = new Map<string, PendingTurn>()
 
-/** Stamp the thread's picker model onto a new primary-chat assistant bubble. */
+/**
+ * Stamp a new primary-chat assistant bubble. The resolved model (the concrete
+ * route actually run) becomes the message `model`; the picker/requested
+ * selection — which may be a dynamic selector like `auto:…` — is recorded
+ * separately as `requestedModel`.
+ */
 function addAssistantMessage(store: AppStore, threadId: string): string {
-  const model = getThreadById(store, threadId)?.model ?? store.getState().settings?.model
-  const parameters = pendingTurnParameters.get(threadId)
+  const held = pendingTurn.get(threadId)
+  const requested =
+    held?.requestedModel ??
+    getThreadById(store, threadId)?.model ??
+    store.getState().settings?.model
   return addMessage(store, threadId, 'assistant', '', undefined, undefined, {
-    ...(model !== undefined ? { model } : {}),
-    ...(parameters !== undefined ? { parameters } : {}),
+    ...(requested !== undefined ? { requestedModel: requested } : {}),
+    ...(held?.model !== undefined ? { model: held.model } : {}),
+    ...(held?.parameters !== undefined ? { parameters: held.parameters } : {}),
   })
 }
 
@@ -252,7 +268,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'turn_parameters': {
         // Held rather than applied: the bubble this belongs to is created by the
         // first text/tool chunk, which has not arrived yet.
-        pendingTurnParameters.set(threadId, chunk.parameters)
+        pendingTurn.set(threadId, {
+          parameters: chunk.parameters,
+          model: chunk.model,
+          ...(chunk.requestedModel !== undefined ? { requestedModel: chunk.requestedModel } : {}),
+        })
         break
       }
       case 'usage': {
@@ -415,7 +435,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (st.msgId) store.emit('message_done', st.msgId)
         state.delete(threadId)
         // The turn is over; the next one resolves its own parameters (or none).
-        pendingTurnParameters.delete(threadId)
+        pendingTurn.delete(threadId)
         setThreadStatus(store, threadId, 'idle')
         store.emit('agent_activity', threadId, null)
         // The turn may have ended on a different branch than it started.
