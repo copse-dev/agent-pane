@@ -3,8 +3,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { check, resolveConfig } from 'prettier'
 import {
   detectPayloadVersion,
+  formatDataFile,
   graduateWanted,
   mergeApiModels,
   requestAaModels,
@@ -30,6 +32,28 @@ const BASE: DataFile = {
   equatingPairs: [],
   equating: [],
 }
+
+describe('formatDataFile', () => {
+  it('formats API-expanded JSON for the repository Prettier gate', async () => {
+    const path = resolve('scripts/data/intellect-scores.json')
+    const formatted = await formatDataFile({
+      ...BASE,
+      wanted: [
+        {
+          modelId: 'deepseek/deepseek-v4-reasoning',
+          aliases: [
+            'deepseek-v4-reasoning',
+            'DeepSeek V4 (Reasoning)',
+            'openrouter:deepseek/deepseek-v4-reasoning',
+          ],
+        },
+      ],
+    })
+    const config = await resolveConfig(path)
+    assert.equal(await check(formatted, { ...config, filepath: path }), true)
+    assert.match(formatted, /"modelId": "deepseek\/deepseek-v4-reasoning"/)
+  })
+})
 
 describe('mergeApiModels', () => {
   it('populates a WANTED catalog model from the feed, matched by alias', () => {
@@ -78,13 +102,44 @@ describe('mergeApiModels', () => {
     assert.equal(opus[0]?.value, 57)
   })
 
-  it('never introduces a model that is neither scored nor wanted', () => {
+  it('preserves an unchanged measurement so scheduled refreshes do not create date-only PRs', () => {
     const api: AaApiModel[] = [
-      { slug: 'some-random-model', evaluations: { artificial_analysis_intelligence_index: 30 } },
+      { slug: 'Opus 4.8', evaluations: { artificial_analysis_intelligence_index: 56 } },
+    ]
+    const { scores, matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
+    assert.equal(matched, 1)
+    assert.deepEqual(scores, BASE.scores)
+  })
+
+  it('imports an unlisted AA model under its exact slug', () => {
+    const api: AaApiModel[] = [
+      {
+        id: 'aa-deepseek-v4-reasoning',
+        slug: 'deepseek-v4-reasoning',
+        name: 'DeepSeek V4 (Reasoning)',
+        evaluations: { artificial_analysis_intelligence_index: 58 },
+      },
+    ]
+    const { scores, matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
+    assert.equal(matched, 1)
+    const added = scores.find((m) => m.modelId === 'deepseek-v4-reasoning')
+    assert.ok(added)
+    assert.equal(added.value, 58)
+    assert.equal(added.indexVersion, 'v4.1')
+    assert.match(added.source, /model 'deepseek-v4-reasoning'/)
+    assert.equal(added.aliases, undefined)
+  })
+
+  it('ignores measured rows without any usable model identifier', () => {
+    const api: AaApiModel[] = [
+      {
+        slug: '   ',
+        evaluations: { artificial_analysis_intelligence_index: 30 },
+      },
     ]
     const { scores, matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
     assert.equal(matched, 0)
-    assert.equal(scores.length, BASE.scores.length)
+    assert.deepEqual(scores, BASE.scores)
   })
 
   it('ignores feed models with no index value', () => {
@@ -233,17 +288,42 @@ describe('CLI entry guard', () => {
   })
 
   it('leaves the generated file alone when merely imported', () => {
-    // Importing above already happened. If the guard were absent, the sync would
-    // have run during module load and rewritten this file before we read it.
-    const generated = readFileSync(resolve('packages/llm/src/model-intellect.generated.ts'), 'utf8')
-    const committed = execFileSync(
-      'git',
-      ['show', 'HEAD:packages/llm/src/model-intellect.generated.ts'],
-      {
-        encoding: 'utf8',
-        maxBuffer: 32 * 1024 * 1024,
-      },
+    // Compare the file around a fresh import. Comparing with HEAD is invalid in
+    // the scheduled workflow because the sync is deliberately uncommitted when
+    // validation runs.
+    const generatedPath = resolve('packages/llm/src/model-intellect.generated.ts')
+    const before = readFileSync(generatedPath, 'utf8')
+    execFileSync(
+      process.execPath,
+      ['--input-type=module', '--eval', "await import('./scripts/sync-intellect.mts')"],
+      { cwd: resolve('.'), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
     )
-    assert.equal(generated, committed, 'the unit suite must not rewrite a tracked generated file')
+    const after = readFileSync(generatedPath, 'utf8')
+    assert.equal(after, before, 'importing the module must not rewrite the generated file')
+  })
+})
+
+describe('sync-intellect workflow', () => {
+  const workflow = readFileSync(resolve('.github/workflows/sync-intellect.yml'), 'utf8')
+
+  it('runs the API refresh on a schedule or by hand with the required secret', () => {
+    assert.match(workflow, /schedule:/)
+    assert.match(workflow, /workflow_dispatch:/)
+    assert.match(
+      workflow,
+      /ARTIFICIAL_ANALYSIS_API_KEY: \$\{\{ secrets\.ARTIFICIAL_ANALYSIS_API_KEY \}\}/,
+    )
+    assert.match(workflow, /run: npm run sync:intellect -- --from-api/)
+  })
+
+  it('opens a review PR before propagating validation failures', () => {
+    const validate = workflow.indexOf('run: npm run check')
+    const pullRequest = workflow.indexOf('uses: peter-evans/create-pull-request@v8')
+    const propagateFailure = workflow.indexOf("steps.validate.outcome == 'failure'")
+    assert.ok(validate >= 0 && pullRequest > validate)
+    assert.ok(propagateFailure > pullRequest)
+    assert.match(workflow, /id: validate\s+continue-on-error: true/)
+    assert.match(workflow, /token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
+    assert.match(workflow, /branch: chore\/sync-intellect/)
   })
 })

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
 
 function createApi(): ApiClient {
   const base = createFakeApi()
@@ -101,5 +102,56 @@ describe('footer model picker', () => {
     assert.deepEqual(selected, ['claude-opus-4-8'])
     assert.equal(trigger.getAttribute('aria-expanded'), 'false')
     assert.equal(document.activeElement, composer)
+  })
+
+  it('shows the resolved route on the trigger when a dynamic selector is current', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    let current = 'auto:min-intellect:40'
+    mountFooterModelPicker(
+      root,
+      createApi(),
+      () => current,
+      (model) => {
+        current = model
+      },
+      {
+        formatCurrentLabel: (sel) =>
+          sel === 'auto:min-intellect:40' ? 'openrouter:minimax/minimax-m3' : sel,
+      },
+    )
+    await settle()
+
+    const trigger = root.querySelector<HTMLButtonElement>('.model-picker-trigger')
+    assert.ok(trigger)
+    // The trigger shows the resolved route (not the selector) even though the
+    // stored value stays the dynamic selector.
+    assert.equal(
+      trigger.querySelector('.model-picker-label')?.textContent,
+      'openrouter:minimax/minimax-m3',
+    )
+    assert.equal(current, 'auto:min-intellect:40')
+  })
+
+  it('preserves the catalog label when the override has no resolved route', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    mountFooterModelPicker(
+      root,
+      createApi(),
+      () => 'claude-sonnet-4-6',
+      () => {},
+      {
+        formatCurrentLabel: () => undefined,
+      },
+    )
+    await settle()
+
+    const hint = cloudModelIntellectHint('claude-sonnet-4-6')
+    assert.ok(hint)
+    assert.equal(
+      root.querySelector('.model-picker-label')?.textContent,
+      `Claude Sonnet 4.6 — ${hint}`,
+    )
   })
 })

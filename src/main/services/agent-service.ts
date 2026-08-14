@@ -39,6 +39,8 @@ import {
   setActiveRunThread,
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -163,7 +165,7 @@ import {
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
-import { isEmptyModelParameters, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
@@ -628,6 +630,14 @@ export async function runAgent(
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
+  // Persist the resolved model so a turn that fails before any usage (e.g. a
+  // provider rejecting the model) still leaves the concrete id in meta.json —
+  // the live byModel map only fills from usage chunks. Best-effort: a thread
+  // that is not persisted yet must not block the turn.
+  const runContext = getThreadExecutionContext()
+  if (runContext) {
+    await updateMeta(runContext.projectId, threadId, { resolvedModel: model }).catch(() => {})
+  }
   // The model actually running this turn — stamped on Cursor hook agent-session
   // payloads (B4). Set before any hook can fire (beforeSubmitPrompt below, the
   // tool gate, afterFileEdit, stop) so every one reports the real model.
@@ -1136,9 +1146,11 @@ export async function runAgent(
     // caps it, and the settings can change afterwards. Silent for the common
     // case of an untuned model, which sends nothing.
     const turnParameters = resolveTurnParameters(model, providerOptions)
-    if (!isEmptyModelParameters(turnParameters)) {
-      sendChunk({ type: 'turn_parameters', model, parameters: turnParameters })
-    }
+    // Always sent now — carries the resolved model (the concrete route actually
+    // run) plus the user's picker selection (`requestedModel`, possibly a
+    // dynamic selector like `auto:…`), so the renderer can stamp both onto the
+    // assistant message.
+    sendChunk({ type: 'turn_parameters', model, parameters: turnParameters, requestedModel })
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local

@@ -1,0 +1,15 @@
+{
+  "name": "extract-zip",
+  "version": "2.0.1-copse.1",
+  "private": true,
+  "description": "CommonJS compatibility adapter for Electron's maintained ZIP extractor",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "license": "BSD-2-Clause",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@electron-internal/extract-zip": "1.0.4"
+  }
+}

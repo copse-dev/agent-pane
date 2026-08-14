@@ -4,6 +4,7 @@
 // single best-value point via {@link pickBestValueFrontierModel}.
 
 import {
+  blendedPricePerMTok,
   frontierForKnownModels,
   pickBestValueFrontierModel,
   type FrontierCandidate,
@@ -14,12 +15,16 @@ import {
   localFrontierCandidates,
   openRouterFrontierCandidates,
 } from '@copse/llm/frontier-candidates.ts'
-import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
+import { CLOUD_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import { LMSTUDIO_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
+import { getIntellectScore, resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 import { FALLBACK_APP_CHAT_MODEL, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
+import { acpModelValue, acpModelVersionName, enabledClaudeAcpAgent } from '@shared/acp.ts'
+import type { AcpAgentConfig, AcpModelChoice } from '@shared/types/acp.ts'
+import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
 import { fetchOpenRouterModelsCached } from './openrouter-models.ts'
@@ -64,6 +69,7 @@ function isRoutableCandidate(
 ): boolean {
   if (candidate.discovery) return false
   if (candidate.local) return true
+  if (candidate.id.startsWith('acp:')) return true
   if (candidate.id.startsWith('openrouter:')) return isProviderAvailable('openrouter')
   const colon = candidate.id.indexOf(':')
   if (colon > 0 && !candidate.id.slice(0, colon).includes('/')) {
@@ -94,6 +100,55 @@ export function toRoutableModelId(candidate: FrontierCandidate): string {
 }
 
 /**
+ * The enabled Claude ACP agent as a plan-covered candidate, so an automatic
+ * selector (best-value / balanced) can prefer it over an OpenRouter route for
+ * the same model. The agent authenticates against the user's own `claude`
+ * login and bills against the Claude subscription, not API credit.
+ */
+export function claudeAcpFrontierCandidates(
+  agents: readonly AcpAgentConfig[],
+): FrontierCandidate[] {
+  const agent = enabledClaudeAcpAgent(agents)
+  if (!agent) return []
+  const advertised = agent.availableModels ?? []
+  const selected = agent.model
+  const selectedChoice = selected
+    ? advertised.find((choice) => choice.value === selected)
+    : undefined
+  const choices: AcpModelChoice[] = [
+    ...(selected ? [selectedChoice ?? { value: selected, label: selected }] : []),
+    ...advertised.filter((choice) => choice.value !== selected),
+  ]
+  let best: { routeValue: string; intellect: number } | null = null
+  let bestPrice = 0
+  for (const choice of choices) {
+    const described = acpModelVersionName(choice.description)
+    const resolved =
+      resolveIntellectModelId(choice.value) ??
+      (described ? resolveIntellectModelId(described) : null) ??
+      resolveIntellectModelId(choice.label)
+    if (!resolved) continue
+    const score = getIntellectScore(resolved)
+    const info = getModelInfo(resolved)
+    if (!score || !info) continue
+    const price = blendedPricePerMTok(info)
+    if (!best || score.value > best.intellect) {
+      best = { routeValue: choice.value, intellect: score.value }
+      bestPrice = price
+    }
+  }
+  if (!best) return []
+  return [
+    {
+      id: acpModelValue(agent.id, best.routeValue),
+      intellect: best.intellect,
+      costPerMTok: bestPrice,
+      plan: 'Claude',
+    },
+  ]
+}
+
+/**
  * Every model the user can actually route to today, scored on the canonical
  * Intelligence Index and priced with plan coverage applied — the candidate pool
  * every dynamic selector picks from (`dynamic-model.ts`), and the frontier the
@@ -118,6 +173,7 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
     ...localFrontierCandidates(localIds),
     ...extraProviderFrontierCandidates(extraProviders),
     ...openRouterFrontierCandidates(openRouterModels),
+    ...claudeAcpFrontierCandidates(listEnabledAcpAgents()),
   ]
 
   const openRouterZdrOnly = getSetting<boolean>('openRouterZdrOnly', true)
@@ -130,6 +186,13 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
 
   const keepRoute = (candidate: FrontierCandidate): boolean => {
     if (!isRoutableCandidate(candidate, availableCloud)) return false
+    // OpenRouter serves some routes async-only via `/v1/batches`. A `:batch`
+    // suffix marks one of those, which the sync streaming transport cannot
+    // call — exclude it so a value pick never lands on a route the request
+    // will reject (e.g. `minimax/minimax-m3:batch`). Scoped to OpenRouter ids:
+    // the suffix is OpenRouter's own convention, and a non-OpenRouter model id
+    // ending in `:batch` may be a legitimate, sync-callable model.
+    if (candidate.id.startsWith('openrouter:') && candidate.id.endsWith(':batch')) return false
     const local = candidate.local === true
     // Honor the same OpenRouter privacy defaults the picker / request path use.
     if (candidate.id.startsWith('openrouter:')) {
@@ -183,10 +246,15 @@ export function resolveBestValueFromFrontier(
   planUsage: PlanUsageSnapshot | null,
   keepRoute?: (candidate: FrontierCandidate) => boolean,
 ): string | null {
+  // The `:batch` guard also applies to the pure seam, so tests exercising the
+  // route filter see the same behaviour as the real frontier. Any caller-provided
+  // keepRoute runs first; the batch exclusion is always enforced for OpenRouter.
   const points = frontierForKnownModels(
     extras,
     (candidate) => applyPlanCoverage(candidate, planUsage),
-    keepRoute,
+    (candidate) =>
+      (keepRoute ? keepRoute(candidate) : true) &&
+      !(candidate.id.startsWith('openrouter:') && candidate.id.endsWith(':batch')),
   )
   const best = pickBestValueFrontierModel(points)
   return best ? toRoutableModelId(best) : null

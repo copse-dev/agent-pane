@@ -612,6 +612,21 @@ describe('thread-store', () => {
       )
     })
 
+    it('updateMeta persists the resolved model as a distinct field next to the selector', async () => {
+      await createThread(
+        'proj-1',
+        thread('t1', { title: 'Main check', model: 'auto:min-intellect:40' }),
+      )
+      await updateMeta('proj-1', 't1', { resolvedModel: 'gpt-5.6-terra', updatedAt: 500 })
+
+      const meta = await getThreadMeta('proj-1', 't1')
+      assert.ok(meta)
+      assert.equal(meta.model, 'auto:min-intellect:40')
+      assert.equal(meta.resolvedModel, 'gpt-5.6-terra')
+      const onDisk = readFileSync(join(root, 'proj-1', 't1', 'meta.json'), 'utf8')
+      assert.match(onDisk, /"resolvedModel":"gpt-5\.6-terra"/)
+    })
+
     it('updateMeta refreshes the catalog line (title, updatedAt, first-user digest)', async () => {
       await createThread('proj-1', thread('t1', { title: 'Draft' }))
       await appendMessage('proj-1', 't1', userMsg('u1', 'how do I parse JSON'))

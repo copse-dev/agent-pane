@@ -85,4 +85,57 @@ describe('pickDynamicModel', () => {
     // A single dominated-looking candidate still has to resolve to something.
     assert.equal(pick('auto:best-value', [{ id: 'only', intellect: 10, costPerMTok: 4 }]), 'only')
   })
+
+  describe('balanced', () => {
+    it('judges a plan-covered model at its real API price, not $0', () => {
+      const planned: FrontierCandidate[] = [
+        { id: 'sonnet', intellect: 53, costPerMTok: 3.6 },
+        {
+          id: 'fable-on-plan',
+          intellect: 60,
+          costPerMTok: 0,
+          plan: 'Claude Max',
+          planDetail: { usedPercent: 30, resetsAt: null, apiPricePerMTok: 18 },
+        },
+      ]
+      // Fable would win "cheapest" (free, smarter) but loses "balanced": its
+      // real $18/MTok penalty outweighs the +7 intellect over Sonnet.
+      assert.equal(pick('auto:balanced', planned), 'sonnet')
+    })
+
+    it('avoids the extreme-priced frontier model even when it is the smartest', () => {
+      const frontierLike: FrontierCandidate[] = [
+        { id: 'haiku', intellect: 24, costPerMTok: 1.6 },
+        { id: 'sonnet', intellect: 53, costPerMTok: 3.6 },
+        { id: 'opus', intellect: 61, costPerMTok: 9 },
+      ]
+      assert.equal(pick('auto:balanced', frontierLike), 'sonnet')
+    })
+
+    it('still takes the smartest model when prices are close', () => {
+      const flatPrices: FrontierCandidate[] = [
+        { id: 'sonnet', intellect: 53, costPerMTok: 3.6 },
+        { id: 'opus', intellect: 61, costPerMTok: 4 },
+      ]
+      assert.equal(pick('auto:balanced', flatPrices), 'opus')
+    })
+
+    it('prefers a plan-covered route over a same-priced paid one', () => {
+      const withCoverage: FrontierCandidate[] = [
+        { id: 'sonnet-paid', intellect: 53, costPerMTok: 3.6 },
+        {
+          id: 'sonnet-on-plan',
+          intellect: 53,
+          costPerMTok: 0,
+          plan: 'Claude Max',
+          planDetail: { usedPercent: 10, resetsAt: null, apiPricePerMTok: 3.6 },
+        },
+      ]
+      assert.equal(pick('auto:balanced', withCoverage), 'sonnet-on-plan')
+    })
+
+    it('degrades to a sensible pick for a single-candidate pool', () => {
+      assert.equal(pick('auto:balanced', [{ id: 'only', intellect: 40, costPerMTok: 5 }]), 'only')
+    })
+  })
 })

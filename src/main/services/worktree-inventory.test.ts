@@ -10,7 +10,12 @@ import { setGitAvailableForTest } from './tool-availability.ts'
 import { clearAllowedWorkspaceRootsForTest } from './workspace.ts'
 import { createThread, getThreadMeta, updateMeta } from './thread-store.ts'
 import { allocateThreadWorktree } from './worktree-manager.ts'
-import { listWorktreeInventory, measureWorktreeSize, removeWorktree } from './worktree-inventory.ts'
+import {
+  cleanupWorktreePackages,
+  listWorktreeInventory,
+  measureWorktreeSize,
+  removeWorktree,
+} from './worktree-inventory.ts'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, {
@@ -118,6 +123,47 @@ describe('worktree inventory', () => {
     assert.ok(entry.createdAt !== null && entry.createdAt > 0)
   })
 
+  it('uses a surviving checkout under the project parent when the selected worktree is gone', async () => {
+    const { repo, worktreePath } = await setup()
+    await createThread('project-1', thread('thread-2', 'Keep the repository reachable'))
+    const sibling = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-2',
+      projectRoot: worktreePath,
+      prompt: 'Keep the repository reachable',
+      baseBranch: 'main',
+    })
+    await updateMeta('project-1', 'thread-2', { worktree: sibling, gitBranch: sibling.branch })
+
+    // Reproduce a project opened from a linked checkout that was removed behind
+    // Copse's back. Its Git registration may already have been pruned, while
+    // the per-project parent and another child remain available.
+    await rm(worktreePath, { recursive: true, force: true })
+    git(repo, ['worktree', 'prune'])
+
+    const entries = await listWorktreeInventory({
+      projectId: 'project-1',
+      projectRoot: worktreePath,
+      runningThreadIds: NO_RUNS,
+    })
+
+    assert.ok(entries.some((entry) => entry.path === sibling.path))
+    assert.ok(
+      !entries.some((entry) => entry.path === worktreePath),
+      'the selected checkout is not storage the project can delete',
+    )
+    assert.ok(
+      !entries.some((entry) => entry.path === repo),
+      'the primary checkout is the parent project, never a removable worktree',
+    )
+    const size = await measureWorktreeSize({
+      projectId: 'project-1',
+      projectRoot: worktreePath,
+      path: sibling.path,
+    })
+    assert.equal(size.path, sibling.path)
+  })
+
   it('reports a checkout whose thread no longer points at it as released', async () => {
     const { repo, worktreePath } = await setup()
     await updateMeta('project-1', 'thread-1', {
@@ -183,6 +229,68 @@ describe('worktree inventory', () => {
     assert.equal(size.truncated, false)
     assert.ok(size.bytes >= 4096, `expected the log to count, got ${String(size.bytes)}`)
     assert.ok(size.fileCount >= 2)
+  })
+
+  it('previews and removes only ignored package-manager directories', async () => {
+    const { repo, worktreePath } = await setup()
+    await writeFile(join(worktreePath, '.gitignore'), 'node_modules/\n.venv/\nvendor/bundle/\n')
+    await mkdir(join(worktreePath, 'packages', 'app', 'node_modules', 'dependency'), {
+      recursive: true,
+    })
+    await writeFile(
+      join(worktreePath, 'packages', 'app', 'node_modules', 'dependency', 'index.js'),
+      'x'.repeat(2048),
+    )
+    await mkdir(join(worktreePath, '.venv', 'bin'), { recursive: true })
+    await writeFile(join(worktreePath, '.venv', 'bin', 'python'), 'python')
+    await mkdir(join(worktreePath, 'vendor', 'authored'), { recursive: true })
+    await writeFile(join(worktreePath, 'vendor', 'authored', 'source.rb'), 'kept')
+    await mkdir(join(worktreePath, 'vendor', 'bundle', 'gems'), { recursive: true })
+    await writeFile(join(worktreePath, 'vendor', 'bundle', 'gems', 'installed.rb'), 'gem')
+
+    const preview = await cleanupWorktreePackages({
+      projectId: 'project-1',
+      projectRoot: repo,
+      path: worktreePath,
+      remove: false,
+      runningThreadIds: NO_RUNS,
+    })
+    assert.equal(preview.status, 'ready')
+    assert.deepEqual(
+      preview.directories.map((directory) => directory.path),
+      ['.venv', join('packages', 'app', 'node_modules'), join('vendor', 'bundle')],
+    )
+    assert.ok(preview.bytes >= 2054)
+    assert.ok(existsSync(join(worktreePath, '.venv')), 'preview does not remove anything')
+
+    const cleaned = await cleanupWorktreePackages({
+      projectId: 'project-1',
+      projectRoot: repo,
+      path: worktreePath,
+      remove: true,
+      runningThreadIds: NO_RUNS,
+    })
+    assert.equal(cleaned.status, 'cleaned')
+    assert.equal(existsSync(join(worktreePath, '.venv')), false)
+    assert.equal(existsSync(join(worktreePath, 'packages', 'app', 'node_modules')), false)
+    assert.equal(existsSync(join(worktreePath, 'vendor', 'bundle')), false)
+    assert.ok(existsSync(join(worktreePath, 'vendor', 'authored')), 'tracked-shaped vendor is kept')
+  })
+
+  it('does not clean package directories while the owning thread is running', async () => {
+    const { repo, worktreePath } = await setup()
+    const result = await cleanupWorktreePackages({
+      projectId: 'project-1',
+      projectRoot: repo,
+      path: worktreePath,
+      remove: true,
+      runningThreadIds: new Set(['thread-1']),
+    })
+    assert.deepEqual(result, {
+      status: 'blocked-running',
+      path: worktreePath,
+      threadId: 'thread-1',
+    })
   })
 
   it('refuses a path this repository has not registered', async () => {
