@@ -75,6 +75,12 @@ describe('settings usage model value map ZDR filter', () => {
     // allowed normally but trains; privacy filters must choose Fireworks before
     // grouping equivalent weights, just like OpenRouter vs direct API routes.
     await browser.execute(async () => {
+      await window.api.settings.setKey('fireworks', 'e2e-fireworks-key', {
+        allowPlaintext: true,
+      })
+      await window.api.settings.setKey('deepseek', 'sk-e2e-deepseek-key', {
+        allowPlaintext: true,
+      })
       await window.api.settings.saveExtraProvider({
         slug: 'fireworks',
         models: [
