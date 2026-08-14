@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { AUTOMATIONS_PACK_ID } from '../../packages/agent/src/packs/automations-pack.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '../../packages/agent/src/plugins/automations-plugin.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
@@ -131,7 +131,7 @@ describe('automation setup links', function () {
 
     // The detail sits inside a fold that is closed by default; the link opens it
     // and the schedule it named.
-    const row = dialog.$(`.pack-row[data-pack-id="${AUTOMATIONS_PACK_ID}"]`)
+    const row = dialog.$(`.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`)
     await row.waitForExist({ timeout: 15_000 })
     const form = row.$('.automation-form')
     await expect(form).toBeDisplayed()
