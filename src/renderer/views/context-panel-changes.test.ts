@@ -96,9 +96,16 @@ type FsChangedHandler = (
   newContent: string | null,
 ) => void
 
+interface ContextPanelCapture {
+  fsChanged?: FsChangedHandler
+  previewRequests?: Array<{ projectId: string; threadId: string; path: string }>
+  externalRequests?: Array<{ projectId: string; threadId: string; path: string }>
+  openedBrowserUrls?: string[]
+}
+
 function makeApi(
   diffByPath: Record<string, GitFileDiff | null>,
-  capture?: { fsChanged?: FsChangedHandler },
+  capture?: ContextPanelCapture,
 ): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -119,6 +126,19 @@ function makeApi(
         unwatch: async (): Promise<void> => {},
         readFile: async () => '',
         writeFile: async (): Promise<void> => {},
+      },
+      browser: {
+        ...base['browser'],
+        workspaceFileUrl: async (projectId, threadId, path): Promise<string> => {
+          capture?.previewRequests?.push({ projectId, threadId, path })
+          return `http://localhost:4173/${path}`
+        },
+      },
+      shell: {
+        ...base['shell'],
+        openWorkspaceFileInBrowser: async (projectId, threadId, path): Promise<void> => {
+          capture?.externalRequests?.push({ projectId, threadId, path })
+        },
       },
     } satisfies ApiClient
   })()
@@ -150,14 +170,26 @@ afterEach(() => {
 function mount(
   diffByPath: Record<string, GitFileDiff | null>,
   openFile: OpenFile,
-  capture?: { fsChanged?: FsChangedHandler },
+  capture?: ContextPanelCapture,
+  sshHost?: string,
+  openLinksInBuiltInBrowser = true,
 ): HTMLElement {
   const store = createStore({
     activeProjectId: 'project-1',
     activeThreadId: 'thread-1',
+    projects: [
+      {
+        id: 'project-1',
+        name: 'workspace',
+        path: '/workspace',
+        ...(sshHost ? { sshHost } : {}),
+      },
+    ],
     openFile,
     filesPaneOpen: true,
+    openLinksInBuiltInBrowser,
   })
+  store.on('browser_url_requested', (url) => capture?.openedBrowserUrls?.push(url))
   const root = document.createElement('div')
   document.body.append(root)
   mountContextPanel(root, store, makeApi(diffByPath, capture), makeMonacoStub())
@@ -171,6 +203,67 @@ function query(root: HTMLElement, selector: string): HTMLElement {
 }
 
 describe('file viewer Changes view', () => {
+  it('opens a local file in the built-in browser by default from the viewer context menu', async () => {
+    const capture: ContextPanelCapture = { previewRequests: [], openedBrowserUrls: [] }
+    const root = mount({}, openFileState('docs/guide.html', '<h1>Guide</h1>\n', 'html'), capture)
+
+    const contextMenuEvent = new window.MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 32,
+      clientY: 48,
+    })
+    root.dispatchEvent(contextMenuEvent)
+
+    assert.equal(contextMenuEvent.defaultPrevented, true)
+    const menuItem = query(document.body, '.context-menu-item')
+    assert.equal(menuItem.textContent, 'Open in browser')
+    menuItem.click()
+    await flushAsync()
+    assert.deepEqual(capture.previewRequests, [
+      { projectId: 'project-1', threadId: 'thread-1', path: 'docs/guide.html' },
+    ])
+    assert.deepEqual(capture.openedBrowserUrls, ['http://localhost:4173/docs/guide.html'])
+  })
+
+  it('uses the default browser when built-in link opening is disabled', async () => {
+    const capture: ContextPanelCapture = { externalRequests: [], openedBrowserUrls: [] }
+    const root = mount(
+      {},
+      openFileState('docs/guide.html', '<h1>Guide</h1>\n', 'html'),
+      capture,
+      undefined,
+      false,
+    )
+
+    root.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    query(document.body, '.context-menu-item').click()
+    await flushAsync()
+
+    assert.deepEqual(capture.externalRequests, [
+      { projectId: 'project-1', threadId: 'thread-1', path: 'docs/guide.html' },
+    ])
+    assert.deepEqual(capture.openedBrowserUrls, [])
+  })
+
+  it('does not offer a local browser action for an SSH workspace file', () => {
+    const root = mount(
+      {},
+      openFileState('docs/guide.html', '<h1>Guide</h1>\n', 'html'),
+      undefined,
+      'devbox',
+    )
+
+    const contextMenuEvent = new window.MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+    })
+    root.dispatchEvent(contextMenuEvent)
+
+    assert.equal(contextMenuEvent.defaultPrevented, false)
+    assert.equal(document.querySelector('.context-menu'), null)
+  })
+
   it('shows a Changes button for a file with uncommitted changes', async () => {
     const diff: GitFileDiff = {
       path: 'src/app.ts',

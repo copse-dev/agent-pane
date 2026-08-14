@@ -97,6 +97,7 @@ export interface ApiClient {
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
+    workspaceFileUrl: (projectId: string, threadId: string, path: string) => Promise<string>
     onOpenTab: (handler: (url: string) => void) => () => void
     onShowTab?: (handler: (url: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
@@ -891,6 +892,7 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
+    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) => Promise<void>
   }
   editors: {
     /** Installed external editors plus the sticky last-used default. */

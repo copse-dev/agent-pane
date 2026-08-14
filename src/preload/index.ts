@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   browser: {
+    workspaceFileUrl: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('browser:workspaceFileUrl', projectId, threadId, path),
     sharePageText: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
@@ -1058,6 +1060,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('shell:openWorkspaceFileInBrowser', projectId, threadId, path),
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),
