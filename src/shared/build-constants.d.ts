@@ -9,3 +9,9 @@
  * directive parser is stripped from packaged apps rather than merely unreachable.
  */
 declare const __COPSE_TEST_DIRECTIVES__: boolean
+
+/** Exact Git commit embedded in desktop bundles; absent for unversioned test builds. */
+declare const __COPSE_BUILD_COMMIT__: string
+
+/** Whether working-tree changes were present when the desktop bundle was built. */
+declare const __COPSE_BUILD_DIRTY__: boolean | null
