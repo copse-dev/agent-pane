@@ -288,9 +288,19 @@ describe('downloadThreadArchive', () => {
             exportArchive: (
               projectId: string,
               threadId: string,
-            ): Promise<Uint8Array<ArrayBuffer>> => {
+            ): ReturnType<typeof api.threads.exportArchive> => {
               calls.push([projectId, threadId])
-              return Promise.resolve(new Uint8Array([80, 75, 5, 6]))
+              return Promise.resolve({
+                bytes: new Uint8Array([80, 75, 5, 6]),
+                build: {
+                  version: '1.2.3',
+                  buildCommit: null,
+                  buildDirty: null,
+                  packaged: false,
+                  platform: 'test',
+                  capturedAt: '2026-08-14T09:30:00.000Z',
+                },
+              })
             },
           },
         },
