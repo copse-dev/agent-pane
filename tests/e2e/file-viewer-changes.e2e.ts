@@ -95,6 +95,24 @@ describe('file viewer Changes view', () => {
     if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
+  it('offers browser opening from the file tree before opening a file', async () => {
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
+    await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
+
+    const row = await $(`.tree-row[title="${CLEAN_FILE}"]`)
+    await row.waitForDisplayed({ timeout: 30_000 })
+    await row.click({ button: 'right' })
+
+    const menu = await $('.context-menu')
+    await menu.waitForDisplayed({ timeout: 5_000 })
+    await expect($('.context-menu-item')).toHaveText('Open in browser')
+    await saveAppScreenshot('file-tree-open-in-browser-menu.png')
+
+    await browser.keys('Escape')
+    await expect(menu).not.toBeExisting()
+  })
+
   it('shows a Changes toggle for a modified file and renders its diff', async () => {
     await openFileFromTree(CHANGED_FILE)
 
@@ -136,6 +154,19 @@ describe('file viewer Changes view', () => {
     await expect(diffWrap).not.toBeDisplayed()
 
     await saveAppScreenshot('file-viewer-changes-source.png')
+  })
+
+  it('offers to open the viewed file in the browser on right-click', async () => {
+    const editor = await $('#file-viewer .monaco-container')
+    await editor.click({ button: 'right' })
+
+    const menu = await $('.context-menu')
+    await menu.waitForDisplayed({ timeout: 5_000 })
+    await expect($('.context-menu-item')).toHaveText('Open in browser')
+    await saveAppScreenshot('file-viewer-default-browser-menu.png')
+
+    await browser.keys('Escape')
+    await expect(menu).not.toBeExisting()
   })
 
   it('shows no toolbar for a clean file', async () => {
