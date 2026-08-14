@@ -32,6 +32,18 @@ export function getElectronAppVersion(): string {
   return runtime?.version ?? 'headless'
 }
 
+/** Source revision embedded by scripts/build.mts; null for unversioned test/headless runs. */
+export function getElectronBuildCommit(): string | null {
+  const commit =
+    typeof __COPSE_BUILD_COMMIT__ === 'string' ? __COPSE_BUILD_COMMIT__.trim() : undefined
+  return commit && commit !== 'unknown' ? commit : null
+}
+
+/** Whether working-tree changes were present when the bundle was built. */
+export function getElectronBuildDirty(): boolean | null {
+  return typeof __COPSE_BUILD_DIRTY__ === 'boolean' ? __COPSE_BUILD_DIRTY__ : null
+}
+
 export function isElectronAppPackaged(): boolean {
   return runtime?.isPackaged ?? false
 }

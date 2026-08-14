@@ -1,5 +1,5 @@
 import * as esbuild from 'esbuild'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { cpSync, copyFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
@@ -76,8 +76,20 @@ function startElectron(): void {
   })
 }
 
-// Dev builds always keep the MockLLMProvider test directives (never shipped).
-const define = { __COPSE_TEST_DIRECTIVES__: 'true' }
+function gitOutput(args: string[]): string | null {
+  const result = spawnSync('git', args, { encoding: 'utf8' })
+  return result.status === 0 ? result.stdout.trim() : null
+}
+
+// Dev builds always keep the MockLLMProvider test directives (never shipped),
+// while still identifying the source revision behind Debug trace exports.
+const devBuildCommit = gitOutput(['rev-parse', 'HEAD']) ?? 'unknown'
+const devBuildStatus = gitOutput(['status', '--porcelain', '--untracked-files=normal'])
+const define = {
+  __COPSE_TEST_DIRECTIVES__: 'true',
+  __COPSE_BUILD_COMMIT__: JSON.stringify(devBuildCommit),
+  __COPSE_BUILD_DIRTY__: JSON.stringify(devBuildStatus === null ? null : devBuildStatus.length > 0),
+}
 
 const nodeOpts = {
   bundle: true,

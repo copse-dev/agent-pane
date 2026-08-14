@@ -524,11 +524,11 @@ export function mountInputBar(
     if (projectId === null || !threadHasExportableContent(thread)) return
     // Zip before switching away: a failed export should leave the user on the
     // thread they were reading, not on an empty one with nothing attached.
-    const bytes = await api.threads.exportArchive(projectId, thread.id)
+    const { bytes, build } = await api.threads.exportArchive(projectId, thread.id)
     const name = `${threadExportBaseName(thread)}.zip`
     // Persist whatever is in the composer to its own thread before switching.
     store.emit('composer_draft_flush')
-    const debugThreadId = createThread(store, buildDebugTracePrompt(thread, name))
+    const debugThreadId = createThread(store, buildDebugTracePrompt(thread, name, build))
     // A title now, rather than one auto-suggested from the first message later:
     // the sidebar should say which thread this is about before it is ever sent.
     setThreadTitle(store, debugThreadId, debugTraceThreadTitle(thread))

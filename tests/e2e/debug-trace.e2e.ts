@@ -95,6 +95,12 @@ describe('Debug trace', function () {
     const drafted = await composerText()
     await expect(drafted).toContain('Something went wrong in another Copse thread')
     await expect(drafted).toContain(THREAD_ID)
+    await expect(drafted).toContain('Copse version:')
+    await expect(drafted).toContain('Build commit')
+    await expect(drafted).toContain('Evidence boundary:')
+    await expect(drafted).toContain('OBSERVED')
+    await expect(drafted).toContain('CODE-VERIFIED')
+    await expect(drafted).toContain('Timestamps establish order, not causation')
     // The draft ends on an open line: the symptom is the one thing the trace
     // cannot hold, so the prompt asks the user for it before they send.
     await expect(drafted).toContain('What I saw:')
