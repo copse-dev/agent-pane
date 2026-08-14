@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 
 function settingsSection(section: 'ssh') {
@@ -13,8 +17,8 @@ describe('SSH settings section', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-ssh')
-    // Start disabled so we can prove the live toggle reveals "+ Remote"
-    // without clicking Save.
+    // Start disabled so we can prove the live toggle adds the remote action
+    // to the project menu without clicking Save.
     seedSshWorkspaceSettings({ enabled: false })
     await browser.reloadSession()
   })
@@ -26,8 +30,11 @@ describe('SSH settings section', () => {
   it('shows SSH workspace host CRUD and enable toggle under Settings → SSH', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const remoteBefore = $('.projects-open-remote-btn')
-    assert.equal(await remoteBefore.isDisplayed(), false)
+    const addProjectButton = $('.projects-add-btn')
+    await expect(addProjectButton).toHaveAttribute('data-tooltip', 'New project or open a folder')
+    await addProjectButton.click()
+    await expect($('.context-menu-item*=Open remote project')).not.toBeExisting()
+    await browser.keys('Escape')
 
     await $('[aria-label="Settings"]').click()
 
@@ -66,10 +73,14 @@ describe('SSH settings section', () => {
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-workspace.png')
 
     // Cancel closes without the form Save path — the live toggle must still
-    // have emitted settings_changed so the projects pane shows "+ Remote".
+    // have emitted settings_changed so the project menu gains its remote action.
     await $('#settings-cancel').click()
-    const remoteAfter = $('.projects-open-remote-btn')
-    await expect(remoteAfter).toBeDisplayed()
-    await saveElementScreenshot('#pane-projects', 'ssh-projects-pane-after-enable.png')
+    await expect(addProjectButton).toHaveAttribute(
+      'data-tooltip',
+      'New project, open a folder, or connect remotely',
+    )
+    await addProjectButton.click()
+    await expect($('.context-menu-item*=Open remote project')).toBeDisplayed()
+    await saveAppScreenshot('ssh-projects-pane-after-enable.png')
   })
 })

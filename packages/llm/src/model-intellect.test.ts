@@ -8,16 +8,25 @@ import {
   intellectBand,
   modelIntellect,
   topAnnotatedIntellect,
+  type IntellectMeasurement,
 } from './model-intellect.ts'
 import { MODEL_INTELLECT_RAW } from './model-intellect.generated.ts'
 import { LOCAL_MODEL_CATALOG } from './local-model-catalog.ts'
 import { TRACKED_MODELS } from './model-catalog.ts'
 
+function canonicalMeasurement(modelId: string): IntellectMeasurement {
+  const measurement = MODEL_INTELLECT_RAW[modelId]?.find(
+    (entry) => entry.indexVersion === CANONICAL_INTELLECT_VERSION,
+  )
+  assert.ok(measurement, `expected a canonical measurement for ${modelId}`)
+  return measurement
+}
+
 describe('getIntellectScore', () => {
   it('returns the canonical measurement as a fact, not an estimate', () => {
     const score = getIntellectScore('claude-opus-4-8')
     assert.ok(score)
-    assert.equal(score.value, 55.7)
+    assert.equal(score.value, canonicalMeasurement('claude-opus-4-8').value)
     assert.equal(score.estimated, undefined)
     assert.equal(score.measuredBitsPerWeight, 16)
     assert.ok(score.source.length > 10)
@@ -32,7 +41,7 @@ describe('getIntellectScore', () => {
   it('resolves alias and structurally-wrapped forms to the same measurement', () => {
     const direct = getIntellectScore('claude-fable-5')
     assert.ok(direct)
-    assert.equal(direct.value, 59.9)
+    assert.equal(direct.value, canonicalMeasurement('claude-fable-5').value)
     // ACP picker label, OpenRouter id, provider prefix, option suffix, agent
     // segment, and serving-route tag all resolve to the one measurement.
     assert.deepEqual(getIntellectScore('Fable 5'), direct)
@@ -50,18 +59,23 @@ describe('getIntellectScore', () => {
   })
 
   it('prefers a direct canonical measurement over equating a June-cohort reading', () => {
-    // MiniMax-M3 carries both a v4.0 reading (55) and a direct v4.1 reading
-    // (44.4). The canonical scale is v4.1, so the direct measurement wins as a
-    // fact — no equating hop, not flagged estimated.
+    // MiniMax-M3 carries both an older reading and a direct canonical reading.
+    // The direct measurement wins as a fact — no equating hop or estimate.
+    const canonical = canonicalMeasurement('MiniMaxAI/MiniMax-M3')
+    assert.ok(
+      MODEL_INTELLECT_RAW['MiniMaxAI/MiniMax-M3']?.some(
+        (entry) => entry.indexVersion !== CANONICAL_INTELLECT_VERSION,
+      ),
+    )
     const m3 = getIntellectScore('MiniMaxAI/MiniMax-M3')
     assert.ok(m3)
-    assert.equal(m3.value, 44.4)
+    assert.equal(m3.value, canonical.value)
     assert.equal(m3.estimated, undefined)
     const explanation = explainIntellectScore('MiniMaxAI/MiniMax-M3')
     assert.ok(explanation)
     assert.equal(explanation.steps.length, 1)
     assert.equal(explanation.steps[0]?.step, 'measured')
-    assert.equal(explanation.steps[0].value, 44.4)
+    assert.equal(explanation.steps[0].value, canonical.value)
   })
 
   it('every synced measurement carries a citation and version', () => {
@@ -80,7 +94,7 @@ describe('explainIntellectScore', () => {
   it('derives a canonical measurement in one cited step', () => {
     const explanation = explainIntellectScore('claude-sonnet-4-6')
     assert.ok(explanation)
-    assert.equal(explanation.value, 35.9)
+    assert.equal(explanation.value, canonicalMeasurement('claude-sonnet-4-6').value)
     assert.equal(explanation.estimated, false)
     assert.match(explanation.scale, new RegExp(CANONICAL_INTELLECT_VERSION.replace('.', '\\.')))
     assert.equal(explanation.steps.length, 1)

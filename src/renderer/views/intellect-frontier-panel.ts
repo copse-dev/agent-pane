@@ -33,7 +33,8 @@ import {
   openRouterFrontierCandidates,
   type OpenRouterPricedModel,
 } from '@copse/llm/frontier-candidates.ts'
-import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
+import { TRACKED_MODELS, cloudModelDisplayLabel, getModelInfo } from '@copse/llm/model-catalog.ts'
+import { parseModelSelection } from '@copse/llm/model-selection.ts'
 import { requestModelCards, resolvedModelCard } from './model-card-cache.ts'
 import {
   getIntellectScore,
@@ -63,6 +64,11 @@ const MARGIN = { top: 14, right: 20, bottom: 34, left: 40 }
 /** Clearance kept between a lifted frontier label and the frontier line. */
 const LABEL_LINE_GAP = 3
 
+/** Screen-space grouping/offset for near-zero price columns. */
+const POINT_SPLAY_COLUMN_PX = 7
+const POINT_SPLAY_STEP_PX = 6
+const POINT_SPLAY_MAX_PX = 18
+
 /** Card links warmed per render. Matches the `modelCards:resolve` batch cap. */
 const MAX_CARD_PREFETCH = 128
 
@@ -72,12 +78,16 @@ const MAX_CARD_PREFETCH = 128
  * GLM-5.2:deepinfra` reads as `GLM-5.2:deepinfra`. Tooltips keep the full id.
  */
 export function displayModelLabel(id: string): string {
-  let s = id
+  const resolved = resolveIntellectModelId(id)
+  if (resolved !== null && TRACKED_MODELS.some((tracked) => tracked === resolved)) {
+    return cloudModelDisplayLabel(resolved)
+  }
+  let s = resolved ?? id
   const sep = s.indexOf(':')
   if (sep > 0 && !s.slice(0, sep).includes('/')) s = s.slice(sep + 1)
   const slash = s.lastIndexOf('/')
   if (slash >= 0) s = s.slice(slash + 1)
-  return s || id
+  return cloudModelDisplayLabel(s || id)
 }
 
 /** Rough label width for collision purposes (9px font ≈ 5.2px/char). */
@@ -600,6 +610,8 @@ export interface FrontierGutters {
   unscored?: readonly { id: string; costPerMTok: number }[]
 }
 
+export type FrontierLabelMode = 'summary' | 'all'
+
 const UNPRICED_GUTTER_W = 150
 
 /**
@@ -618,6 +630,7 @@ export function renderFrontierSvg(
   gutters: FrontierGutters = {},
   tooltip?: FrontierTooltip,
   costAxis: FrontierCostAxis = 'blended',
+  labelMode: FrontierLabelMode = 'summary',
 ): SVGSVGElement {
   const unpriced = gutters.unpriced ?? []
   // Bottom gutter (priced, no intellect) only applies on the blended axis — on
@@ -641,6 +654,46 @@ export function renderFrontierSvg(
   const x = (cost: number): number => plotLeft + (cost / maxCost) * plotW
   const y = (intellect: number): number =>
     MARGIN.top + plotH - ((intellect - minIntellect) / (maxIntellect - minIntellect)) * plotH
+
+  // Prices near zero project to the same narrow column. Splay columns of three
+  // or more non-frontier points a few pixels horizontally so their marks and
+  // hover regions remain individually legible. Frontier marks stay at their
+  // true data coordinate because moving one away from its path makes the value
+  // line and point appear to disagree.
+  const displayX = new Map<string, number>(points.map((p) => [p.id, x(p.costPerMTok)]))
+  const byRawX = points
+    .filter((point) => !point.onFrontier)
+    .sort((a, b) => x(a.costPerMTok) - x(b.costPerMTok) || y(a.intellect) - y(b.intellect))
+  for (let start = 0; start < byRawX.length;) {
+    const first = byRawX[start]
+    if (!first) break
+    const columnX = x(first.costPerMTok)
+    let end = start + 1
+    while (end < byRawX.length) {
+      const candidate = byRawX[end]
+      if (!candidate || x(candidate.costPerMTok) - columnX > POINT_SPLAY_COLUMN_PX) break
+      end++
+    }
+    const column = byRawX.slice(start, end)
+    if (column.length >= 3) {
+      column.sort((a, b) => y(a.intellect) - y(b.intellect))
+      const nearLeft = columnX - POINT_SPLAY_MAX_PX < plotLeft
+      column.forEach((point, index) => {
+        const centered = (index - (column.length - 1) / 2) * POINT_SPLAY_STEP_PX
+        const fanPhase = index % 6
+        const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase
+        const offset = nearLeft
+          ? fanStep * POINT_SPLAY_STEP_PX
+          : Math.max(-POINT_SPLAY_MAX_PX, Math.min(POINT_SPLAY_MAX_PX, centered))
+        displayX.set(
+          point.id,
+          Math.max(plotLeft, Math.min(plotLeft + plotW, x(point.costPerMTok) + offset)),
+        )
+      })
+    }
+    start = end
+  }
+  const pointX = (point: FrontierPoint): number => displayX.get(point.id) ?? x(point.costPerMTok)
 
   // Bottom-gutter rows assigned greedily so labels never overlap within a row.
   // Past UNSCORED_ROW_LIMIT the band collapses to one label-less density row.
@@ -684,6 +737,7 @@ export function renderFrontierSvg(
     role: 'img',
     'aria-label': ariaLabel,
     'data-cost-axis': costAxis,
+    'data-label-mode': labelMode,
     style: 'width:100%;height:auto;display:block',
   })
 
@@ -820,8 +874,12 @@ export function renderFrontierSvg(
   // Frontier labels lift UP to clear the line, so they are placed bottom-first
   // (each rises into space the lower ones haven't claimed); the rest cascade
   // DOWN, so they are placed top-first.
+  const frontierMidpointId = frontierByX[Math.floor((frontierByX.length - 1) / 2)]?.id
   const labelledPoints = [...points].sort(
     (a, b) =>
+      (labelMode === 'summary'
+        ? Number(b.id === frontierMidpointId) - Number(a.id === frontierMidpointId)
+        : 0) ||
       Number(b.onFrontier) - Number(a.onFrontier) ||
       (a.onFrontier ? y(b.intellect) - y(a.intellect) : y(a.intellect) - y(b.intellect)),
   )
@@ -831,17 +889,18 @@ export function renderFrontierSvg(
   const labelY = new Map<string, number>()
   const labelX = new Map<string, number>()
   const labelAnchor = new Map<string, string>()
+  const labelLeader = new Map<string, { x1: number; y1: number; x2: number; y2: number }>()
   // Dots are obstacles too — a label must not sit under another point's mark.
   const placed: Array<{ x0: number; x1: number; py: number }> = points.map((p) => ({
-    x0: x(p.costPerMTok) - 7,
-    x1: x(p.costPerMTok) + 7,
+    x0: pointX(p) - 7,
+    x1: pointX(p) + 7,
     py: y(p.intellect) + 3,
   }))
   for (const p of labelledPoints) {
     const suffix = p.plan ? ' · plan' : p.local ? ' · free' : ''
     const text = `${displayModelLabel(p.id)}${p.quant ? ` @${p.quant}` : ''}${p.intellectEstimated ? ' (~)' : ''}${suffix}`
     const w = approxLabelWidth(text)
-    const px = x(p.costPerMTok)
+    const px = pointX(p)
     // Prefer a right-hand label; flip to the left for points near the right
     // edge. Drop only when neither side fits horizontally.
     let x0: number
@@ -861,13 +920,16 @@ export function renderFrontierSvg(
     } else {
       continue
     }
-    let py = y(p.intellect) + 3
+    const naturalY = y(p.intellect) + 3
+    let py = naturalY
     // A frontier point sits ON the line, so the adjacent segment can run through
     // its side label. When it does, lift the label clear ABOVE the line — the
     // Pareto-empty upper region — rather than leave the line crossing the text.
-    const up = p.onFrontier
-    if (up) {
+    const prefersUp = p.onFrontier
+    let lineRange: { min: number; max: number } | null = null
+    if (prefersUp && labelMode === 'all') {
       const range = frontierYRange(x0, x1)
+      lineRange = range
       // Text band is roughly [py - 8, py + 2] (9px glyphs above the baseline).
       if (range && py - 8 < range.max + LABEL_LINE_GAP && py + 2 > range.min - LABEL_LINE_GAP) {
         py = range.min - LABEL_LINE_GAP
@@ -878,24 +940,54 @@ export function renderFrontierSvg(
     // The strict-progress guard (a move must change py in the chosen direction)
     // avoids a floating-point fixed point where the step is a no-op yet `moved`
     // stays true forever.
-    let moved = true
-    while (moved) {
-      moved = false
-      for (const prev of placed) {
-        if (Math.abs(py - prev.py) >= 10 || x0 >= prev.x1 || x1 <= prev.x0) continue
-        const next = up ? prev.py - 10 : prev.py + 10
-        if (up ? next < py : next > py) {
-          py = next
-          moved = true
+    const nudgeClear = (start: number, direction: -1 | 1): number => {
+      let nextY = start
+      let moved = true
+      while (moved) {
+        moved = false
+        for (const prev of placed) {
+          if (Math.abs(nextY - prev.py) >= 10 || x0 >= prev.x1 || x1 <= prev.x0) continue
+          const next = prev.py + direction * 10
+          if (direction < 0 ? next < nextY : next > nextY) {
+            nextY = next
+            moved = true
+          }
         }
       }
+      return nextY
     }
-    if (up) {
-      // Keep a lifted frontier label inside the plot rather than dropping it.
-      if (py - 8 < MARGIN.top) py = MARGIN.top + 8
-    } else if (py > plotBottom) {
+    if (labelMode === 'summary') {
+      const blocked = placed.some(
+        (prev) => Math.abs(naturalY - prev.py) < 10 && x0 < prev.x1 && x1 > prev.x0,
+      )
+      if (blocked) continue
+      py = naturalY
+    } else {
+      py = nudgeClear(py, prefersUp ? -1 : 1)
+    }
+    if (labelMode === 'all' && prefersUp && py - 8 < MARGIN.top) {
+      // Put the representative/all-mode overflow below the line, then cascade
+      // downward through dots and labels. Starting under the whole segment span
+      // means the frontier cannot run through the text on this fallback side.
+      const belowLine = (lineRange?.max ?? y(p.intellect)) + LABEL_LINE_GAP + 9
+      py = nudgeClear(Math.max(y(p.intellect) + 12, belowLine), 1)
+    }
+    if (py > plotBottom) {
       // Drop a label that can only land below the plot — hover still has it.
       continue
+    }
+    const shift = Math.abs(py - naturalY)
+    // Inline labels are truly direct: their baseline stays tied to the dot.
+    // If collision/line avoidance requires movement, omit that label and leave
+    // identification to hover. The expanded chart may move it, but always adds
+    // a leader once the association would otherwise become ambiguous.
+    if (labelMode === 'all' && shift > 6) {
+      labelLeader.set(p.id, {
+        x1: px,
+        y1: y(p.intellect),
+        x2: anchor === 'start' ? tx - 2 : tx + 2,
+        y2: py - 3,
+      })
     }
     placed.push({ x0, x1, py })
     labelText.set(p.id, text)
@@ -906,7 +998,8 @@ export function renderFrontierSvg(
 
   // Points, with a larger transparent hit target and a rich hover card.
   for (const p of points) {
-    const cx = String(x(p.costPerMTok))
+    const displayedCx = pointX(p)
+    const cx = String(displayedCx)
     const cy = String(y(p.intellect))
     const emphasis = p.onFrontier ? 'var(--accent)' : 'var(--border-strong)'
     // Discovery points (not configured) are ghosted so they read as "could
@@ -955,27 +1048,66 @@ export function renderFrontierSvg(
         }),
       )
     }
+    const nearestDistance = points.reduce((nearest, other) => {
+      if (other === p) return nearest
+      return Math.min(
+        nearest,
+        Math.hypot(pointX(other) - displayedCx, y(other.intellect) - y(p.intellect)),
+      )
+    }, Infinity)
+    const hitRadius = Math.max(5, Math.min(11, nearestDistance / 2 - 0.5))
     const hit = svgEl('circle', {
       cx,
       cy,
-      r: '11',
-      fill: 'transparent',
+      r: String(hitRadius),
+      fill: 'none',
+      'pointer-events': 'all',
       class: 'frontier-hit',
       'data-model-id': p.id,
+    })
+    const restingRadius = dot.getAttribute('r') ?? '5'
+    hit.addEventListener('mouseenter', () => {
+      dot.setAttribute('r', '6.5')
+    })
+    hit.addEventListener('mouseleave', () => {
+      dot.setAttribute('r', restingRadius)
     })
     if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis), p.id)
     else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
     const text = labelText.get(p.id)
     if (text !== undefined) {
+      const leader = labelLeader.get(p.id)
+      if (leader) {
+        svg.append(
+          svgEl('line', {
+            x1: String(leader.x1),
+            y1: String(leader.y1),
+            x2: String(leader.x2),
+            y2: String(leader.y2),
+            stroke: 'var(--border-strong)',
+            'stroke-width': '0.75',
+            'stroke-opacity': '0.65',
+            class: 'frontier-label-leader',
+            'data-model-id': p.id,
+          }),
+        )
+      }
       svg.append(
         svgEl(
           'text',
           {
-            x: String(labelX.get(p.id) ?? x(p.costPerMTok) + 8),
+            x: String(labelX.get(p.id) ?? pointX(p) + 8),
             y: String(labelY.get(p.id) ?? y(p.intellect) + 3),
             'text-anchor': labelAnchor.get(p.id) ?? 'start',
             'font-size': '9',
             fill: 'var(--text-secondary)',
+            ...(labelMode === 'summary'
+              ? {
+                  stroke: 'var(--bg-base)',
+                  'stroke-width': '3',
+                  'paint-order': 'stroke',
+                }
+              : {}),
             class: 'frontier-label',
           },
           text,
@@ -1336,10 +1468,11 @@ function renderChart(
   tooltip: FrontierTooltip | undefined,
   size: { width?: number; height?: number } = {},
   costAxis: FrontierCostAxis = 'blended',
+  labelMode: FrontierLabelMode = 'summary',
 ): SVGSVGElement | HTMLElement {
   try {
     return points.length > 0
-      ? renderFrontierSvg(points, size, gutters, tooltip, costAxis)
+      ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode)
       : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
   } catch (err) {
     return el(
@@ -1420,6 +1553,12 @@ export function createIntellectFrontierPanel(
   loadLiveModels?: () => Promise<LiveModelsFetch>,
   loadPlanUsage?: () => Promise<PlanUsageSnapshot>,
   loadOpenRouter?: () => Promise<OpenRouterFrontierSource>,
+  /**
+   * The model selections the real picker currently offers. Absent preserves
+   * the standalone/test helper's catalog-wide behaviour; production supplies
+   * this so the default map never advertises an unavailable route.
+   */
+  loadRoutableModelSelections?: () => Promise<readonly string[]>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
   const liveNotes = el('div', { class: 'field-hint frontier-live-notes' })
@@ -1434,6 +1573,7 @@ export function createIntellectFrontierPanel(
     liveFetch: LiveModelsFetch
     planUsage: PlanUsageSnapshot | null
     openRouter: OpenRouterFrontierSource
+    routableSelections: readonly string[] | null
   } | null = null
   let discover = false
   let showUnpriced = false
@@ -1744,11 +1884,29 @@ export function createIntellectFrontierPanel(
     } catch {
       openRouter = { models: [], zdrOnly: true, allowTraining: false }
     }
+    let routableSelections: readonly string[] | null = null
+    if (loadRoutableModelSelections) {
+      try {
+        routableSelections = await loadRoutableModelSelections()
+      } catch {
+        // Fail closed: a picker load failure must not turn the static catalog
+        // into a list of models that only look available.
+        routableSelections = []
+      }
+    }
     // The gate: live models join ONLY when the feed's declared index version
     // matches the canonical one (when declared) AND its values agree with our
     // curated anchors — a renormalised feed must never share the axis.
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion)
-    state = { localIds, extraProviders, live, liveFetch, planUsage, openRouter }
+    state = {
+      localIds,
+      extraProviders,
+      live,
+      liveFetch,
+      planUsage,
+      openRouter,
+      routableSelections,
+    }
     render()
   }
 
@@ -1767,6 +1925,7 @@ export function createIntellectFrontierPanel(
           height: 680,
         },
         costAxis,
+        'all',
       ),
       ...buildAuxLists(lastUnpriced, lastUnscored),
     )
@@ -1792,15 +1951,8 @@ export function createIntellectFrontierPanel(
 
   function render(): void {
     if (!state) return
-    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter } = state
-    const applyDiscover = (btn: HTMLButtonElement | null): void => {
-      if (!btn) return
-      btn.hidden = live.candidates.length === 0
-      btn.textContent = discover ? 'Hide discoverable' : 'Discover models'
-      btn.classList.toggle('active', discover)
-    }
-    applyDiscover(discoverBtn)
-    applyDiscover(expandDiscoverBtn)
+    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter, routableSelections } =
+      state
     const liveNoteParts: Array<string | HTMLElement> = []
     if (liveFetch.models.length > 0 && live.verification.verified) {
       const stale = live.verification.mismatches
@@ -1877,16 +2029,81 @@ export function createIntellectFrontierPanel(
       ...extraProviderFrontierCandidates(extraProviders),
       ...openRouterFrontierCandidates(openRouter.models),
     ]
+    const exactRoutes = routableSelections === null ? null : new Set(routableSelections)
+    const delegatedModelIds = new Set<string>()
+    const routableModelIds = new Set<string>()
+    for (const selection of routableSelections ?? []) {
+      const resolved = resolveIntellectModelId(selection)
+      if (resolved !== null) routableModelIds.add(resolved)
+      const namespace = parseModelSelection(selection).namespace
+      if (namespace !== 'acp' && namespace !== 'remote-agent' && namespace !== 'plugin-model') {
+        continue
+      }
+      if (resolved !== null) delegatedModelIds.add(resolved)
+    }
+    const modelIdentityHasRoute = (id: string): boolean => {
+      if (exactRoutes === null) return true
+      const resolved = resolveIntellectModelId(id) ?? id
+      return routableModelIds.has(resolved)
+    }
+    const isTrackedCloudCandidate = (candidate: FrontierCandidate): boolean =>
+      TRACKED_MODELS.some((id) => id === candidate.id)
+    const candidateHasRoute = (candidate: FrontierCandidate): boolean => {
+      if (exactRoutes === null) return true
+      if (exactRoutes.has(candidate.id)) return true
+      if (candidate.local === true && exactRoutes.has(`lmstudio:${candidate.id}`)) return true
+      if (!isTrackedCloudCandidate(candidate)) return false
+      const resolved = resolveIntellectModelId(candidate.id) ?? candidate.id
+      return delegatedModelIds.has(resolved)
+    }
+    const routableBaseCandidates = baseCandidates.filter(candidateHasRoute)
     const coveredResolved = new Set(
-      baseCandidates.map((c) => resolveIntellectModelId(c.id) ?? c.id),
+      routableBaseCandidates.map((c) => resolveIntellectModelId(c.id) ?? c.id),
     )
     const livePricedCurated = live.pricedCurated.filter(
       (c) => !coveredResolved.has(c.id) && getModelInfo(c.id) === null,
     )
-    // Discovery models (uncurated live) join the frontier computation only when
-    // the Discover toggle is on — so by default the map shows what the user can
-    // actually route to, and the toggle overlays what they could set up.
-    const discoveryCandidates = discover ? live.candidates : []
+    // A reviewed score does not make a model routable. The full AA sync curates
+    // hundreds of measurements, so a priced curated row with no catalog or
+    // configured-provider route is still a discovery opportunity. Keeping it
+    // behind the same toggle prevents historical/configuration variants from
+    // flooding the default map; dominated discoveries collapse below, so an
+    // expensive legacy model cannot stretch the price axis either.
+    const liveDiscoverableCandidates: FrontierCandidate[] = [
+      ...live.candidates,
+      ...livePricedCurated.map((candidate) => ({ ...candidate, discovery: true })),
+    ]
+    const trackedDiscoverableCandidates: FrontierCandidate[] = []
+    if (exactRoutes !== null) {
+      for (const id of TRACKED_MODELS) {
+        const info = getModelInfo(id)
+        const score = getIntellectScore(id)
+        if (!info || !score) continue
+        const candidate: FrontierCandidate = {
+          id,
+          intellect: score.value,
+          intellectEstimated: score.estimated === true,
+          costPerMTok: blendedPricePerMTok(info),
+          discovery: true,
+        }
+        if (!candidateHasRoute(candidate)) trackedDiscoverableCandidates.push(candidate)
+      }
+    }
+    const discoverableCandidates = [...liveDiscoverableCandidates, ...trackedDiscoverableCandidates]
+    const applyDiscover = (btn: HTMLButtonElement | null): void => {
+      if (!btn) return
+      btn.hidden = discoverableCandidates.length === 0
+      btn.textContent = discover ? 'Hide discoverable' : 'Discover models'
+      btn.classList.toggle('active', discover)
+      btn.setAttribute('aria-pressed', discover ? 'true' : 'false')
+    }
+    applyDiscover(discoverBtn)
+    applyDiscover(expandDiscoverBtn)
+    // Discovery models join the frontier computation only when requested — by
+    // default the map shows models the user can actually route to.
+    // Tracked catalog models are already supplied by frontierForKnownModels;
+    // only live/feed discoveries need to join the extra-candidate list here.
+    const discoveryCandidates = discover ? liveDiscoverableCandidates : []
     // Live AA cost-per-task attaches to curated catalog models too (the feed
     // otherwise only prices models missing from the catalog).
     const costPerTaskById = new Map<string, number>()
@@ -1905,12 +2122,27 @@ export function createIntellectFrontierPanel(
     // drops to $0 (best price → wins the frontier) with a plan badge; a model
     // whose plan window is spent keeps its real price and carries a
     // limit-reached note. Applied per grouped identity inside the frontier.
-    const allRouteCandidates = [...baseCandidates, ...livePricedCurated, ...discoveryCandidates]
-    const adjustCandidate = (candidate: FrontierCandidate): FrontierCandidate =>
-      applyPlanCoverage(enrichTaskCost(candidate), planUsage, {
-        mode: planCoverageMode,
-        windowExhaustion,
-      })
+    const allRouteCandidates = [...baseCandidates, ...discoveryCandidates]
+    const trackedCandidateIsDiscovery = (candidate: FrontierCandidate): boolean =>
+      exactRoutes !== null && isTrackedCloudCandidate(candidate) && !candidateHasRoute(candidate)
+    const candidateIsIncluded = (candidate: FrontierCandidate): boolean =>
+      candidateHasRoute(candidate) ||
+      candidate.discovery === true ||
+      (discover && trackedCandidateIsDiscovery(candidate))
+    const adjustCandidate = (candidate: FrontierCandidate): FrontierCandidate => {
+      const surfaced = trackedCandidateIsDiscovery(candidate)
+        ? { ...candidate, discovery: true }
+        : candidate
+      const enriched = enrichTaskCost(surfaced)
+      // A setup opportunity is not covered by a route the user owns today,
+      // even if a broad subscription snapshot mentions the same family.
+      return enriched.discovery === true
+        ? enriched
+        : applyPlanCoverage(enriched, planUsage, {
+            mode: planCoverageMode,
+            windowExhaustion,
+          })
+    }
     const routePolicy = {
       providers: extraProviders,
       openRouterZdrOnly: openRouter.zdrOnly,
@@ -1935,27 +2167,43 @@ export function createIntellectFrontierPanel(
         })
       )
     }
-    const unfilteredBlendedPoints = frontierForKnownModels(allRouteCandidates, adjustCandidate)
+    const unfilteredBlendedPoints = frontierForKnownModels(
+      allRouteCandidates,
+      adjustCandidate,
+      candidateIsIncluded,
+    )
     const privacyBlendedPoints =
       zdrOnly || noTrainingOnly
-        ? frontierForKnownModels(allRouteCandidates, adjustCandidate, routeAllowed)
+        ? frontierForKnownModels(
+            allRouteCandidates,
+            adjustCandidate,
+            (candidate) => candidateIsIncluded(candidate) && routeAllowed(candidate),
+          )
         : unfilteredBlendedPoints
     const hiddenByZdr = zdrOnly
       ? unfilteredBlendedPoints.length -
-        frontierForKnownModels(allRouteCandidates, adjustCandidate, (candidate) =>
-          isZeroRetentionModelPath(candidate.id, {
-            ...routePolicy,
-            ...(candidate.local === true ? { local: true } : {}),
-          }),
+        frontierForKnownModels(
+          allRouteCandidates,
+          adjustCandidate,
+          (candidate) =>
+            candidateIsIncluded(candidate) &&
+            isZeroRetentionModelPath(candidate.id, {
+              ...routePolicy,
+              ...(candidate.local === true ? { local: true } : {}),
+            }),
         ).length
       : 0
     const hiddenByNoTraining = noTrainingOnly
       ? unfilteredBlendedPoints.length -
-        frontierForKnownModels(allRouteCandidates, adjustCandidate, (candidate) =>
-          isNoTrainingModelPath(candidate.id, {
-            ...routePolicy,
-            ...(candidate.local === true ? { local: true } : {}),
-          }),
+        frontierForKnownModels(
+          allRouteCandidates,
+          adjustCandidate,
+          (candidate) =>
+            candidateIsIncluded(candidate) &&
+            isNoTrainingModelPath(candidate.id, {
+              ...routePolicy,
+              ...(candidate.local === true ? { local: true } : {}),
+            }),
         ).length
       : 0
     const blendedPoints = privacyBlendedPoints
@@ -1984,16 +2232,25 @@ export function createIntellectFrontierPanel(
     syncZdrBtn(expandZdrBtn)
     syncNoTrainingBtn(noTrainingBtn)
     syncNoTrainingBtn(expandNoTrainingBtn)
-    // A verified feed can carry a hundred-plus priced models; the map's job is
-    // the frontier, so dominated LIVE points collapse into a disclosure rather
-    // than each claiming a labelled dot. Curated/local/provider points always
-    // plot — the user chose to hold those. Dropping dominated points cannot
-    // change the frontier.
-    const liveIds = new Set(discoveryCandidates.map((c) => c.id))
-    const dominatedLive = allPoints.filter((p) => liveIds.has(p.id) && !p.onFrontier)
-    const points = allPoints.filter((p) => !liveIds.has(p.id) || p.onFrontier)
-    const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
-    const unpricedModels = unpricedCanonicalModels(plottedIds, live.hintOnly).filter((u) => {
+    // Discovery can carry a hundred-plus priced models; the map's job is the
+    // frontier, so dominated setup opportunities collapse into a disclosure
+    // rather than each claiming a labelled dot. Dropping dominated points
+    // cannot change the frontier.
+    const dominatedLive = allPoints.filter((p) => p.discovery === true && !p.onFrontier)
+    const points = allPoints.filter((p) => p.discovery !== true || p.onFrontier)
+    // Discoverable points are deliberately absent from the default chart, but
+    // the feed still supplied their price. Exclude them from the "no price"
+    // disclosure without pretending they are routable or plotting them. Use
+    // the blended-price candidates rather than the current projected points:
+    // a model missing AA task cost is still priced and belongs in the task-axis
+    // note, not the generic no-price list.
+    const pricedIds = new Set(
+      [...blendedPoints, ...discoverableCandidates].map(
+        (p) => resolveIntellectModelId(p.id) ?? p.id,
+      ),
+    )
+    const unpricedModels = unpricedCanonicalModels(pricedIds, live.hintOnly).filter((u) => {
+      if (!modelIdentityHasRoute(u.id)) return false
       if (zdrOnly && !isZeroRetentionModelPath(u.id, routePolicy)) return false
       return !noTrainingOnly || isNoTrainingModelPath(u.id, routePolicy)
     })
@@ -2018,6 +2275,15 @@ export function createIntellectFrontierPanel(
     applyUnpriced(expandUnpricedBtn)
     const unscoredAll = unscoredPricedModels(extraProviders)
     const filteredUnscored = unscoredAll.filter((model) => {
+      if (
+        !candidateHasRoute({
+          id: model.id,
+          intellect: 0,
+          costPerMTok: model.costPerMTok,
+        })
+      ) {
+        return false
+      }
       if (zdrOnly && !isZeroRetentionModelPath(model.id, routePolicy)) return false
       return !noTrainingOnly || isNoTrainingModelPath(model.id, routePolicy)
     })
@@ -2026,12 +2292,13 @@ export function createIntellectFrontierPanel(
       unscored: filteredUnscored,
     }
     // When discovery is OFF, tell the user how many models the toggle reveals.
-    if (!discover && live.candidates.length > 0) {
+    if (!discover && discoverableCandidates.length > 0) {
+      const modelCount = discoverableCandidates.length
       liveNoteParts.push(
         el(
           'span',
           {},
-          `${String(live.candidates.length)} more models are available via Artificial Analysis — press “Discover models” to overlay where they'd sit on your frontier. `,
+          `${String(modelCount)} more priced and scored model${modelCount === 1 ? ' is' : 's are'} not currently available in your model picker — press “Discover models” to overlay where they'd sit on your frontier. `,
         ),
       )
     }

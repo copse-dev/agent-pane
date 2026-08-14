@@ -73,6 +73,7 @@ import {
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
+import { switchProjectThread } from '../controller/projects.ts'
 
 export type SettingsSection =
   | 'general'
@@ -431,10 +432,22 @@ function parseApprovedProviderHosts(value: FormDataEntryValue | null): string[] 
     .filter(Boolean)
 }
 
+/**
+ * A plugin's level-3 detail view to reveal on the next open (Settings → Customise →
+ * <plugin>), plus the row inside it the caller was pointing at — a schedule id for
+ * the automations detail.
+ */
+interface PluginDetailTarget {
+  pluginId: string
+  detailId?: string
+}
+
 let overlayEl: HTMLDialogElement | null = null
 // Section to reveal on the next open (e.g. a deep-link from the low-context
 // warning). Read and cleared by the `settings-open` handler; null → General.
 let pendingSection: SettingsSection | null = null
+// Plugin detail to reveal on the next open. Same lifecycle as `pendingSection`.
+let pendingPluginDetail: PluginDetailTarget | null = null
 
 export function openSettingsDialog(section?: SettingsSection): void {
   if (!overlayEl || overlayEl.open) return
@@ -444,6 +457,23 @@ export function openSettingsDialog(section?: SettingsSection): void {
   // hand-rolled overlay + manual `hidden` toggle.
   overlayEl.showModal()
   overlayEl.dispatchEvent(new Event('settings-open'))
+}
+
+/**
+ * Open Settings on the automations plugin's schedule editor — the configuration
+ * behind an automation heading in the projects sidebar. With a schedule id, that
+ * schedule opens for editing; without one, the project's schedule list is shown.
+ *
+ * The editor is scoped to the open project, so callers must already be on the
+ * project that owns the schedule.
+ */
+export function openAutomationSettings(scheduleId?: string): void {
+  if (!overlayEl || overlayEl.open) return
+  pendingPluginDetail = {
+    pluginId: AUTOMATIONS_PLUGIN_ID,
+    ...(scheduleId ? { detailId: scheduleId } : {}),
+  }
+  openSettingsDialog('customise')
 }
 
 export function closeSettingsDialog(): void {
@@ -1056,18 +1086,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              What Copse keeps on disk for this project, and what it costs. Nothing here changes
-              how the agent behaves — it is where you go to see what has accumulated and reclaim
-              space.
+              What Copse keeps on disk for each local project, and what it costs. Nothing here
+              changes how the agent behaves — it is where you go to see what has accumulated and
+              reclaim space.
             </p>
+
+            <label class="storage-project-field">
+              <span>Project</span>
+              <select id="storage-project-select" aria-label="Storage project"></select>
+            </label>
+            <p class="field-hint storage-project-path" id="storage-project-path"></p>
 
             <fieldset>
               <legend>Worktrees</legend>
               <p class="settings-fieldset-desc">
                 Linked Git checkouts of this project. Copse creates one per isolated thread so
                 agents can work without touching your checkout; each row shows the thread it was
-                created for, when it was last used, and what it costs on disk. Deleting one removes
-                the directory and, when the branch is fully merged, the branch with it.
+                created for, when it was last used, and what it costs on disk. Open its thread or a
+                terminal there, remove ignored package-manager directories, or delete the whole
+                checkout. Deleting one also removes its branch when the branch is fully merged.
               </p>
               <div id="sources-worktrees-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -1348,7 +1385,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // template above; a miss throws a loud error (template/code drift) rather than a
   // silent non-null assertion.
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
-    // Live-persist toggles must wake listeners (e.g. projects "+ Remote" button)
+    // Live-persist toggles must wake listeners (e.g. the projects add menu)
     // without requiring the dialog Save button.
     onChanged: (): void => {
       store.emit('settings_changed')
@@ -2061,7 +2098,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   /** The row, plus the slot its measured size lands in once `worktrees:size` answers. */
-  function makeWorktreeRow(entry: WorktreeInventoryEntry): {
+  function makeWorktreeRow(
+    projectId: string,
+    entry: WorktreeInventoryEntry,
+  ): {
     row: HTMLElement
     size: HTMLElement
   } {
@@ -2091,6 +2131,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })
     row.dataset['worktreePath'] = entry.path
 
+    // A known owner turns the status badge into the shortest possible route
+    // back to its conversation. This also handles a Storage project other than
+    // the active one: switchProjectThread loads that project before selecting it.
+    if (entry.usage) {
+      const usage = entry.usage
+      const badgeEl = row.querySelector<HTMLElement>('.sources-badge')
+      if (badgeEl) {
+        const threadBtn = document.createElement('button')
+        threadBtn.type = 'button'
+        threadBtn.className = badgeEl.className
+        threadBtn.classList.add('sources-worktree-thread-btn')
+        threadBtn.textContent = badge.text
+        threadBtn.title = `Open thread “${usage.title}”`
+        threadBtn.setAttribute('aria-label', `Open thread ${usage.title}`)
+        threadBtn.addEventListener('click', () => {
+          switchProjectThread(store, api, projectId, usage.threadId)
+          closeSettingsDialog()
+        })
+        badgeEl.replaceWith(threadBtn)
+      }
+    }
+
     // Size arrives from a second call per row (`worktrees:size` walks the whole
     // checkout), so the row reserves its slot rather than reflowing later.
     const size = document.createElement('span')
@@ -2098,9 +2160,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     size.textContent = 'sizing…'
     row.querySelector('.sources-row-detail')?.append(' · ', size)
 
+    const terminalBtn = document.createElement('button')
+    terminalBtn.type = 'button'
+    terminalBtn.className = 'sources-worktree-action-btn sources-worktree-terminal-btn'
+    terminalBtn.textContent = 'Terminal'
+    terminalBtn.title = 'Open the system terminal in this checkout'
+    terminalBtn.addEventListener('click', () => {
+      void openWorktreeTerminal(projectId, entry, terminalBtn)
+    })
+
+    const cleanupBtn = document.createElement('button')
+    cleanupBtn.type = 'button'
+    cleanupBtn.className = 'sources-worktree-action-btn sources-worktree-cleanup-btn'
+    cleanupBtn.textContent = 'Clean up…'
+    if (entry.usage?.running) {
+      cleanupBtn.disabled = true
+      cleanupBtn.title = 'Package directories cannot be removed while an agent turn is running'
+    } else {
+      cleanupBtn.title = 'Remove ignored package-manager directories from this checkout'
+    }
+    cleanupBtn.addEventListener('click', () => {
+      void cleanupWorktreePackages(projectId, entry, cleanupBtn)
+    })
+
     const removeBtn = document.createElement('button')
     removeBtn.type = 'button'
-    removeBtn.className = 'sources-worktree-delete-btn'
+    removeBtn.className = 'sources-worktree-action-btn sources-worktree-delete-btn'
     removeBtn.textContent = 'Delete'
     if (entry.usage?.running) {
       removeBtn.disabled = true
@@ -2109,10 +2194,87 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       removeBtn.title = 'Remove this linked checkout from disk'
     }
     removeBtn.addEventListener('click', () => {
-      void removeWorktree(entry, removeBtn)
+      void removeWorktree(projectId, entry, removeBtn)
     })
-    row.querySelector('.sources-row-header')?.append(removeBtn)
+    row.querySelector('.sources-row-header')?.append(terminalBtn, cleanupBtn, removeBtn)
     return { row, size }
+  }
+
+  async function openWorktreeTerminal(
+    projectId: string,
+    entry: WorktreeInventoryEntry,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    button.disabled = true
+    statusEl.textContent = 'Opening terminal…'
+    try {
+      await api.worktrees.openTerminal(projectId, entry.path)
+      statusEl.textContent = `Opened a terminal in ${entry.branch ?? entry.path}.`
+    } catch (error) {
+      statusEl.textContent = errorMessage(error)
+    } finally {
+      button.disabled = false
+    }
+  }
+
+  async function cleanupWorktreePackages(
+    projectId: string,
+    entry: WorktreeInventoryEntry,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    const statusEl = qsRequired(overlay, '#sources-worktrees-status')
+    button.disabled = true
+    statusEl.textContent = 'Looking for package directories…'
+    try {
+      const preview = await api.worktrees.cleanupPackages(projectId, entry.path, false)
+      if (preview.status === 'blocked-running') {
+        statusEl.textContent = 'That worktree has an agent turn running in it.'
+        return
+      }
+      if (preview.directories.length === 0) {
+        statusEl.textContent = 'No ignored package-manager directories found.'
+        return
+      }
+      const size = preview.truncated
+        ? `at least ${formatByteSize(preview.bytes)}`
+        : formatByteSize(preview.bytes)
+      const shown = preview.directories.slice(0, 12)
+      const remaining = preview.directories.length - shown.length
+      const confirmed = await showConfirmDialog({
+        message: `Remove ${String(preview.directories.length)} package director${
+          preview.directories.length === 1 ? 'y' : 'ies'
+        }?`,
+        detail: [
+          ...shown.map((directory) => directory.path),
+          ...(remaining > 0 ? [`…and ${String(remaining)} more`] : []),
+          '',
+          `This will reclaim ${size}. Your package manager can recreate these directories.`,
+        ].join('\n'),
+        confirmLabel: 'Clean up',
+        danger: true,
+      })
+      if (!confirmed) {
+        statusEl.textContent = 'Kept.'
+        return
+      }
+      statusEl.textContent = 'Cleaning up package directories…'
+      const result = await api.worktrees.cleanupPackages(projectId, entry.path, true)
+      if (result.status === 'blocked-running') {
+        statusEl.textContent = 'That worktree has an agent turn running in it.'
+        return
+      }
+      const reclaimed = result.truncated
+        ? `at least ${formatByteSize(result.bytes)}`
+        : formatByteSize(result.bytes)
+      await refreshWorktrees(
+        `Cleaned up ${String(result.directories.length)} directories (${reclaimed}).`,
+      )
+    } catch (error) {
+      statusEl.textContent = errorMessage(error)
+    } finally {
+      if (button.isConnected) button.disabled = false
+    }
   }
 
   /** Fill in each row's on-disk size, one checkout at a time so the walks don't pile up. */
@@ -2142,12 +2304,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
    * checkout the agent dirtied since the list rendered still stops here.
    */
   async function removeWorktree(
+    projectId: string,
     entry: WorktreeInventoryEntry,
     button: HTMLButtonElement,
   ): Promise<void> {
-    const projectId = store.getState().activeProjectId
     const statusEl = qsRequired(overlay, '#sources-worktrees-status')
-    if (!projectId) return
     const name = entry.branch ?? entry.path
     const consequences = [entry.path]
     if (entry.usage?.linked) {
@@ -2205,21 +2366,57 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  let storageProjectId: string | null = null
+  let worktreeRefreshGeneration = 0
+
+  function syncStorageProjectSelect(preferActiveProject = false): string | null {
+    const select = qsRequired<HTMLSelectElement>(overlay, '#storage-project-select')
+    const path = qsRequired(overlay, '#storage-project-path')
+    const state = store.getState()
+    const projects = state.projects.filter((project) => project.sshHost === undefined)
+    const availableIds = new Set(projects.map((project) => project.id))
+    const preferred = preferActiveProject ? state.activeProjectId : storageProjectId
+    storageProjectId =
+      (preferred && availableIds.has(preferred) ? preferred : null) ??
+      (state.activeProjectId && availableIds.has(state.activeProjectId)
+        ? state.activeProjectId
+        : null) ??
+      projects[0]?.id ??
+      null
+
+    select.replaceChildren()
+    for (const project of projects) {
+      const option = document.createElement('option')
+      option.value = project.id
+      option.textContent = `${project.name} — ${project.path}`
+      option.title = project.path
+      select.append(option)
+    }
+    select.disabled = projects.length === 0
+    select.value = storageProjectId ?? ''
+    const selected = projects.find((project) => project.id === storageProjectId)
+    path.textContent = selected?.path ?? 'Open a local project to manage its storage.'
+    return storageProjectId
+  }
+
   /**
    * `status` survives the reload that follows a delete — the list re-renders
    * without the row, and the line saying what happened to it has to outlive
    * that, or the only feedback for a destructive action flashes and is gone.
    */
-  async function refreshWorktrees(status = ''): Promise<void> {
+  async function refreshWorktrees(status = '', preferActiveProject = false): Promise<void> {
     const statusEl = qsRequired(overlay, '#sources-worktrees-status')
-    const projectId = store.getState().activeProjectId
+    const projectId = syncStorageProjectSelect(preferActiveProject)
+    const generation = ++worktreeRefreshGeneration
     if (!projectId) {
       fillSourceList('#sources-worktrees-list', [], 'Open a project to see its worktrees.')
+      statusEl.textContent = ''
       return
     }
     try {
       const entries = await api.worktrees.list(projectId)
-      const rendered = entries.map((entry) => ({ entry, ...makeWorktreeRow(entry) }))
+      if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
+      const rendered = entries.map((entry) => ({ entry, ...makeWorktreeRow(projectId, entry) }))
       fillSourceList(
         '#sources-worktrees-list',
         rendered.map((item) => item.row),
@@ -2228,6 +2425,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       statusEl.textContent = status
       await fillWorktreeSizes(projectId, rendered)
     } catch (error) {
+      if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
       fillSourceList('#sources-worktrees-list', [], 'Could not list worktrees.')
       statusEl.textContent = errorMessage(error)
     }
@@ -2317,6 +2515,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // shared searchable picker. Its refresh promise is stashed so the advisor row
   // can re-grade its pairing hint once the selected value has settled.
   const modelFieldPopulated = new WeakMap<HTMLSelectElement, Promise<void>>()
+
+  // The plugin detail this open was deep-linked to, held from `settings-open`
+  // until `revealPluginDetail()` has rendered the list and opened the fold. Rows
+  // are rebuilt on every `refreshPlugins()`, so the target lives out here rather
+  // than in a row that a later refresh would replace.
+  let pluginDetail: PluginDetailTarget | null = null
 
   /**
    * Render one plugin row for the Settings → Plugins list (P3 of
@@ -2652,7 +2856,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           contribution.level === 3 && contribution.slot === 'settings-plugin-detail',
       )
     ) {
-      settingsFold.append(createAutomationPluginSettings(store, api, plugin.enabled))
+      settingsFold.append(
+        createAutomationPluginSettings(
+          store,
+          api,
+          plugin.enabled,
+          pluginDetail?.pluginId === plugin.id ? pluginDetail.detailId : undefined,
+        ),
+      )
     }
     if (
       plugin.id === PARALLEL_SEARCH_PLUGIN_ID &&
@@ -3052,6 +3263,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     return chip
   }
 
+  /**
+   * Render the Plugins list, then bring the deep-linked plugin's detail into view:
+   * its settings fold is closed by default, so a link that only scrolled would
+   * land on a card with the thing it linked to still folded away. The detail
+   * itself opens the linked row (see `createAutomationPluginSettings`).
+   */
+  async function revealPluginDetail(): Promise<void> {
+    const target = pluginDetail
+    await refreshPlugins()
+    pluginDetail = null
+    if (!target) return
+    const row = overlay.querySelector<HTMLElement>(
+      `.plugin-row[data-plugin-id="${target.pluginId}"]`,
+    )
+    if (!row) return
+    const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
+    if (fold) fold.open = true
+    row.scrollIntoView({ block: 'start' })
+  }
+
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
     const listEl = qsRequired(overlay, '#mcp-server-list')
     // Curated ("Copse reviewed") servers have their own section below.
@@ -3394,6 +3625,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
   })
 
+  const storageProjectSelect = qsRequired<HTMLSelectElement>(overlay, '#storage-project-select')
+  storageProjectSelect.addEventListener('change', () => {
+    storageProjectId = storageProjectSelect.value || null
+    void refreshWorktrees()
+  })
+
   // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
@@ -3452,18 +3689,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       searchInput.value = ''
     }
     applySearch('')
+    storageProjectId = null
     const openedSection = pendingSection ?? 'general'
     showSection(openedSection)
     pendingSection = null
-    // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
-    // lazy section content here too.
+    pluginDetail = pendingPluginDetail
+    pendingPluginDetail = null
+    // Deep-links (e.g. status banner → SSH, an automation heading → Packs) skip
+    // the nav click path, so refresh lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'customise') {
       void refreshSources()
-      void refreshPlugins()
+      void revealPluginDetail()
     }
-    if (openedSection === 'storage') void refreshWorktrees()
+    if (openedSection === 'storage') void refreshWorktrees('', true)
     searchInput.focus()
     void (async (): Promise<void> => {
       // These stages used to be one unbroken `await` chain inside this

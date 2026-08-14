@@ -25,8 +25,22 @@ describe('canonicalModelLabel', () => {
     assert.equal(canonicalModelLabel('opus-4-8'), 'Claude Opus 4.8')
   })
 
+  it('spells GPT ids and agent labels in the tracked-model house style', () => {
+    assert.equal(canonicalModelLabel('gpt-5.4-nano'), 'GPT-5.4 nano')
+    assert.equal(canonicalModelLabel('gpt-5.1'), 'GPT-5.1')
+    assert.equal(canonicalModelLabel('gpt-5-mini'), 'GPT-5 mini')
+    assert.equal(canonicalModelLabel('GPT-5.6-Sol'), 'GPT-5.6 Sol')
+    assert.equal(canonicalModelLabel('gpt-4o-mini'), 'GPT-4o mini')
+  })
+
   it('is idempotent on names already in house style', () => {
-    for (const label of ['Claude Opus 4.8', 'Claude Sonnet 4.6 (Thinking)', 'Claude Fable 5']) {
+    for (const label of [
+      'Claude Opus 4.8',
+      'Claude Sonnet 4.6 (Thinking)',
+      'Claude Fable 5',
+      'GPT-5.6 Sol',
+      'GPT-5 mini',
+    ]) {
       assert.equal(canonicalModelLabel(label), label)
       assert.equal(canonicalModelLabel(canonicalModelLabel(label)), label)
     }
@@ -36,9 +50,7 @@ describe('canonicalModelLabel', () => {
     // Other vendors, Cursor's own models, local weights: not ours to rename.
     for (const label of [
       'Composer 2',
-      'GPT-5.6 Sol',
       'Grok 4.5',
-      'gpt-5-mini',
       'qwen3.6-35b-a3b',
       'Auto',
       'Default (recommended)',
@@ -53,6 +65,7 @@ describe('canonicalModelLabel', () => {
     assert.equal(canonicalModelLabel('claude-haiku-4-5-20251001'), 'claude-haiku-4-5-20251001')
     assert.equal(canonicalModelLabel('claude-opus-4-8-latest'), 'claude-opus-4-8-latest')
     assert.equal(canonicalModelLabel('claude-fable-5[1m]'), 'claude-fable-5[1m]')
+    assert.equal(canonicalModelLabel('gpt-5-2025-08-07'), 'gpt-5-2025-08-07')
   })
 })
 

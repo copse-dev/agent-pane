@@ -65,8 +65,8 @@ describe('acp model values', () => {
       },
     ]
     assert.equal(acpModelDisplayLabel('acp:cursor#opus[]', agents), 'Cursor — Claude Opus 4.8')
-    // Unknown model value falls back to the raw value after the title.
-    assert.equal(acpModelDisplayLabel('acp:cursor#gpt-5.5', agents), 'Cursor — gpt-5.5')
+    // A known raw id is normalized to the same house style as picker labels.
+    assert.equal(acpModelDisplayLabel('acp:cursor#gpt-5.5', agents), 'Cursor — GPT-5.5')
   })
 
   it('folds a description-only version into the label', () => {
@@ -124,7 +124,7 @@ describe('acp model choice labels', () => {
     // choices without a description keep their own shape.
     assert.equal(label('Opus 5', 'Opus 5 · Best'), 'Claude Opus 5')
     assert.equal(label('Opusine', 'Opus 5 · Best'), 'Opusine — Claude Opus 5')
-    assert.equal(label('gpt-5.5'), 'gpt-5.5')
+    assert.equal(label('gpt-5.5'), 'GPT-5.5')
   })
 })
 

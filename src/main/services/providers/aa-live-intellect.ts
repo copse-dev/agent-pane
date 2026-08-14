@@ -365,6 +365,16 @@ function mockLiveIntellectFetch(): LiveIntellectFetch {
       outputPricePerMTok: 0.6,
       costPerTask: 0.12,
     },
+    // A curated score outside the routable catalog. This intentionally mirrors
+    // the high-price legacy outlier in the AA cohort so renderer e2e proves it
+    // stays in the discovery disclosure instead of stretching the chart axis.
+    {
+      id: 'o1-pro',
+      intellect: 19.1,
+      inputPricePerMTok: 150,
+      outputPricePerMTok: 600,
+      costPerTask: 12,
+    },
     {
       id: 'cheap-smart-oss',
       intellect: 50,
