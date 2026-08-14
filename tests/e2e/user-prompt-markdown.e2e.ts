@@ -28,8 +28,9 @@ describe('user prompt markdown in transcript', () => {
     await expect(textEl.$('strong')).toExist()
     await expect(textEl.$('br')).toExist()
     await expect(textEl).toHaveText(
-      expect.stringMatching(/line one[\s\S]*line two[\s\S]*bold item/),
+      expect.stringMatching(/line one[\s\S]*line two[\s\S]*bold item[\s\S]*<placeholder command>/),
     )
+    await expect(textEl.$('placeholder')).not.toExist()
 
     await saveAppScreenshot('user-prompt-markdown.png')
   })
