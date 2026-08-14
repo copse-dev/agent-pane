@@ -127,7 +127,9 @@ describe('automation setup links', function () {
     await setup.click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await expect(dialog.$('.settings-nav-btn[data-section="packs"]')).toHaveElementClass('active')
+    await expect(dialog.$('.settings-nav-btn[data-section="customise"]')).toHaveElementClass(
+      'active',
+    )
 
     // The detail sits inside a fold that is closed by default; the link opens it
     // and the schedule it named.
