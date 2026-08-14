@@ -340,3 +340,12 @@ one recoverable or terminal state without corrupting the workspace.
 - [`background-agents-capability-map.md`](background-agents-capability-map.md) assigns
   device independence, trigger identity, campaign isolation, and production feedback to
   their existing owners; this plan owns enforcement identity and effects.
+- [`provider-host-allowlist.md`](provider-host-allowlist.md) owns which hosts may receive a
+  credentialed provider request. One case sits above it and belongs here:
+  [#1572](https://github.com/copse-dev/agent-pane/issues/1572) asks whether a machine on the
+  user's own network may serve models at all. Today it cannot — private and link-local hosts
+  are refused before approval is consulted — and answering yes would introduce a peer that
+  receives full prompt context without being an execution target, which is a trust
+  relationship none of the contracts above currently describes. Whichever way it is decided,
+  the capability, credential, and egress model is this plan's, not the allow-list's.
+  Evidence: [`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-01.
