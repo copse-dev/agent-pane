@@ -123,12 +123,16 @@ describe('settings usage model value map ZDR filter', () => {
       timeoutMsg: 'ZDR only toggle did not activate',
     })
 
-    const filteredText = await chart.getText()
+    const filteredChart = fieldset.$('.frontier-chart svg')
+    await filteredChart
+      .$(`circle.frontier-point[data-model-id="fireworks:MiniMaxAI/MiniMax-M3"]`)
+      .waitForExist({ timeout: 5000, timeoutMsg: 'ZDR route never appeared in the value map' })
+    const filteredText = await filteredChart.getText()
     assert.doesNotMatch(filteredText, /claude-opus-4-8|claude-fable-5|gpt-5\.5/)
     assert.match(filteredText, /MiniMax-M3/)
     assert.match(filteredText, /gpt-4o/)
     await expect(
-      chart.$('circle.frontier-point[data-model-id="openrouter:openai/gpt-4o"]'),
+      filteredChart.$('circle.frontier-point[data-model-id="openrouter:openai/gpt-4o"]'),
     ).toExist()
     assert.match(await fieldset.getText(), /ZDR only: hiding/)
 
@@ -146,12 +150,19 @@ describe('settings usage model value map ZDR filter', () => {
       async () => (await noTrainingBtn.getAttribute('aria-pressed')) === 'true',
       { timeout: 5000, timeoutMsg: 'No training toggle did not activate' },
     )
-    assert.match(await chart.getText(), /claude-|gpt-/i)
+    const noTrainingChart = fieldset.$('.frontier-chart svg')
+    await noTrainingChart
+      .$(`circle.frontier-point[data-model-id="fireworks:MiniMaxAI/MiniMax-M3"]`)
+      .waitForExist({
+        timeout: 5000,
+        timeoutMsg: 'no-training route never appeared in the value map',
+      })
+    assert.match(await noTrainingChart.getText(), /claude-|gpt-/i)
     assert.equal(
-      await chart.$('circle.frontier-point[data-model-id^="deepseek:"]').isExisting(),
+      await noTrainingChart.$('circle.frontier-point[data-model-id^="deepseek:"]').isExisting(),
       false,
     )
-    await expect(chart.$('circle.frontier-point[data-model-id^="fireworks:"]')).toExist()
+    await expect(noTrainingChart.$('circle.frontier-point[data-model-id^="fireworks:"]')).toExist()
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-privacy.png')
