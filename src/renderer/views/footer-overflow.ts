@@ -20,6 +20,8 @@ export function mountFooterOverflow(
       'aria-haspopup': 'menu',
       'aria-expanded': 'false',
       'aria-label': 'More footer actions',
+      'data-tooltip': 'More footer actions',
+      'data-tooltip-placement': 'top',
     },
     moreHorizontalIcon('ui-icon ui-icon-sm'),
   )

@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   browser: {
+    workspaceFileUrl: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('browser:workspaceFileUrl', projectId, threadId, path),
     sharePageText: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
@@ -35,6 +37,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('browser:open-tab', listener)
       return (): void => {
         ipcRenderer.off('browser:open-tab', listener)
+      }
+    },
+    onShowTab: (handler: (url: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
+        handler(url)
+      }
+      ipcRenderer.on('browser:show-tab', listener)
+      return (): void => {
+        ipcRenderer.off('browser:show-tab', listener)
       }
     },
     onShareText: (
@@ -65,25 +76,25 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:share-image', listener)
       }
     },
-    onPackTabRequest: (
+    onPluginTabRequest: (
       handler: (
-        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+        request: import('@shared/types/plugin-browser.ts').PluginBrowserTabRequest,
       ) => Promise<{ tabId: string; webContentsId: number }>,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        request: import('@shared/types/pack-browser.ts').PackBrowserTabRequest,
+        request: import('@shared/types/plugin-browser.ts').PluginBrowserTabRequest,
       ): void => {
         void handler(request).then(
           (ready) => {
-            ipcRenderer.send('packs:browser-tab-ready', {
+            ipcRenderer.send('plugins:browser-tab-ready', {
               requestId: request.requestId,
               ok: true,
               ...ready,
             })
           },
           (error: unknown) => {
-            ipcRenderer.send('packs:browser-tab-ready', {
+            ipcRenderer.send('plugins:browser-tab-ready', {
               requestId: request.requestId,
               ok: false,
               error: error instanceof Error ? error.message : String(error),
@@ -91,9 +102,9 @@ contextBridge.exposeInMainWorld('api', {
           },
         )
       }
-      ipcRenderer.on('packs:browser-tab-request', listener)
+      ipcRenderer.on('plugins:browser-tab-request', listener)
       return (): void => {
-        ipcRenderer.off('packs:browser-tab-request', listener)
+        ipcRenderer.off('plugins:browser-tab-request', listener)
       }
     },
   },
@@ -174,6 +185,7 @@ contextBridge.exposeInMainWorld('api', {
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', projectId, threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    runningThreadIds: () => ipcRenderer.invoke('agent:runningThreadIds'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
     retryComparison: (projectId: string, threadId: string, payload: string) =>
@@ -187,8 +199,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:suggestCommandSummary', commands),
     suggestToolTurnSummary: (actions: string[]) =>
       ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
-    suggestFollowUps: (contextJson: string) =>
-      ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
+    suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown): void => {
         handler(tid, chunk)
@@ -209,6 +221,8 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
@@ -228,6 +242,8 @@ contextBridge.exposeInMainWorld('api', {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          collapseDetails?: boolean
+          approveOnceLabel?: string
           comparisonModels?: { a: string; b: string; judge: string }
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
@@ -321,6 +337,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('diff:rejectAll', projectId, threadId),
     content: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('diff:content', projectId, threadId, path),
+    queue: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('diff:queue', projectId, threadId),
     onShowDiff: (
       handler: (
         projectId: string,
@@ -458,6 +476,19 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) =>
+      ipcRenderer.invoke('close-confirm:respond', id, confirmed),
+    onRequest: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('app:close_confirm_request', listener)
+      return (): void => {
+        ipcRenderer.off('app:close_confirm_request', listener)
+      }
+    },
+  },
   sshWorkspace: {
     listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
     listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
@@ -490,6 +521,7 @@ contextBridge.exposeInMainWorld('api', {
     setEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setEnabled', name, enabled),
     listCurated: () => ipcRenderer.invoke('mcp:listCurated'),
+    listDeclared: () => ipcRenderer.invoke('mcp:listDeclared'),
     setCuratedEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setCuratedEnabled', name, enabled),
     onStatusChanged: (handler: (statuses: unknown) => void) => {
@@ -573,6 +605,9 @@ contextBridge.exposeInMainWorld('api', {
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
   },
+  modelCards: {
+    resolve: (modelIds: string[]) => ipcRenderer.invoke('modelCards:resolve', modelIds),
+  },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),
@@ -587,8 +622,8 @@ contextBridge.exposeInMainWorld('api', {
     models: () => ipcRenderer.invoke('openrouter:models'),
   },
   models: {
-    chatDefaultContextHealth: () => ipcRenderer.invoke('models:chatDefaultContextHealth'),
     bestValueDefault: () => ipcRenderer.invoke('models:bestValueDefault'),
+    resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolveDynamic', value),
   },
   menu: {
     onSettings: (handler: () => void) => {
@@ -786,6 +821,10 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  ports: {
+    list: () => ipcRenderer.invoke('ports:list'),
+    kill: (port: number) => ipcRenderer.invoke('ports:kill', port),
+  },
   memories: {
     list: () => ipcRenderer.invoke('memories:list'),
     create: (title: string, body: string, tags?: string[]) =>
@@ -869,23 +908,39 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  worktrees: {
+    list: (projectId: string) => ipcRenderer.invoke('worktrees:list', projectId),
+    size: (projectId: string, path: string) =>
+      ipcRenderer.invoke('worktrees:size', projectId, path),
+    cleanupPackages: (projectId: string, path: string, remove: boolean) =>
+      ipcRenderer.invoke('worktrees:cleanupPackages', projectId, path, remove),
+    openTerminal: (projectId: string, path: string) =>
+      ipcRenderer.invoke('worktrees:openTerminal', projectId, path),
+    remove: (projectId: string, path: string, force: boolean) =>
+      ipcRenderer.invoke('worktrees:remove', projectId, path, force),
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },
-  plugins: {
-    list: () => ipcRenderer.invoke('plugins:list'),
+  // Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin
+  // registry) until C1 merges the two Settings surfaces; the channel is named
+  // for its source so the two cannot collide in the meantime.
+  cursorPlugins: {
+    list: () => ipcRenderer.invoke('cursorPlugins:list'),
   },
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
+    runDetail: (projectId: string, threadId: string, runId: string) =>
+      ipcRenderer.invoke('hooks:runDetail', projectId, threadId, runId),
   },
-  packs: {
-    list: () => ipcRenderer.invoke('packs:list'),
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
     setEnabled: (id: string, enabled: boolean) =>
-      ipcRenderer.invoke('packs:setEnabled', id, enabled),
+      ipcRenderer.invoke('plugins:setEnabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
-      ipcRenderer.invoke('packs:setSetting', id, key, value),
-    addSource: () => ipcRenderer.invoke('packs:addSource'),
+      ipcRenderer.invoke('plugins:setSetting', id, key, value),
+    addSource: () => ipcRenderer.invoke('plugins:addSource'),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
@@ -1005,6 +1060,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('shell:openWorkspaceFileInBrowser', projectId, threadId, path),
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),
@@ -1044,6 +1101,12 @@ if (process.env['COPSE_E2E'] === '1') {
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
     },
+    requestCloseConfirm() {
+      return ipcRenderer.invoke('test:requestCloseConfirm')
+    },
+    createMainWindow() {
+      return ipcRenderer.invoke('test:createMainWindow')
+    },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
@@ -1055,6 +1118,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     setSemanticIndexScaleGuard(phase: 'limited' | 'skipped', reason: string) {
       return ipcRenderer.invoke('test:setSemanticIndexScaleGuard', phase, reason)
+    },
+    setPortRows(rows: unknown) {
+      return ipcRenderer.invoke('test:setPortRows', rows)
     },
   })
 }

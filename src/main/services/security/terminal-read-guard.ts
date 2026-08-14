@@ -48,7 +48,9 @@ export async function classifyTerminalSnapshot(text: string): Promise<TerminalRe
   if (!model) return null
 
   try {
-    const provider = await buildProvider(model)
+    // Screening a terminal read is a one-shot judgement — same cap as the
+    // shell-command classifier.
+    const provider = await buildProvider(model, undefined, { maxReasoning: 'low' })
     const { text: content, usage } = await completeMessagesWithUsage(
       provider,
       [
@@ -102,6 +104,7 @@ async function gateImpl(
   const decision = await requestApproval({
     type: 'shell',
     title: 'Share terminal output with the agent?',
+    cause: 'terminal-output-share',
     body:
       `The agent wants to read recent output from your "${label}" shell. ${why} ` +
       'Approve to share this snapshot with the agent (and, on the next step, the model provider).',

@@ -77,11 +77,11 @@ describe('parseModelSelection', () => {
     assert.equal(parseModelSelection('remote-agent:cursor#claude-opus-5').id, 'claude-opus-5')
   })
 
-  it('splits a pack route without decoding it', () => {
-    // Decoding is the pack namespace's own convention, applied by its parser.
-    assert.deepEqual(parseModelSelection('pack-model:my%3Apack:route-1'), {
-      namespace: 'pack-model',
-      slug: 'pack-model',
+  it('splits a plugin route without decoding it', () => {
+    // Decoding is the plugin namespace's own convention, applied by its parser.
+    assert.deepEqual(parseModelSelection('plugin-model:my%3Apack:route-1'), {
+      namespace: 'plugin-model',
+      slug: 'plugin-model',
       agent: 'my%3Apack',
       id: 'route-1',
       modelId: 'route-1',
@@ -95,9 +95,22 @@ describe('parseModelSelection', () => {
       ['lmstudio:x', 'lmstudio'],
       ['remote-agent:cursor', 'remote-agent'],
       ['acp:gemini', 'acp'],
-      ['pack-model:p:r', 'pack-model'],
+      ['plugin-model:p:r', 'plugin-model'],
+      ['auto:best-value', 'auto'],
     ] as const) {
       assert.equal(parseModelSelection(model).namespace, namespace)
     }
+  })
+
+  it('carries a dynamic rule body through as the id', () => {
+    // `auto:` names no route — the id is the rule `dynamic-model.ts` reads,
+    // and the vendor-stripping that aggregator ids get must not touch it.
+    assert.deepEqual(parseModelSelection('auto:min-intellect:45'), {
+      namespace: 'auto',
+      slug: 'auto',
+      agent: '',
+      id: 'min-intellect:45',
+      modelId: 'min-intellect:45',
+    })
   })
 })

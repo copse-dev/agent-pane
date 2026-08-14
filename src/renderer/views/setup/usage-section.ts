@@ -12,8 +12,10 @@ import { qsRequired } from '../../dom/helpers.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
 import {
   createIntellectFrontierPanel,
+  setModelCardApi,
   type OpenRouterFrontierSource,
 } from '../intellect-frontier-panel.ts'
+import { fetchModelOptions } from '../model-options.ts'
 import type { PlanCoverageMode } from '@shared/plan-inclusion.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
@@ -531,12 +533,19 @@ export function createUsageSection(
     }
     return { models, zdrOnly, allowTraining }
   }
+  // The value map resolves each model's card link through the main process
+  // (probe + cache). Without a bridge nothing resolves and no card links show.
+  setModelCardApi(api.modelCards)
   const frontierPanel = createIntellectFrontierPanel(
     () => api.lmStudio.models(),
     () => api.settings.extraProviders(),
     () => api.intellect.liveModels(),
     () => api.usage.getPlanUsage(),
     loadOpenRouter,
+    async () =>
+      (await fetchModelOptions(api, ''))
+        .filter((option) => option.value !== '' && option.disabled !== true)
+        .map((option) => option.value),
   )
   root.append(frontierPanel.root)
 

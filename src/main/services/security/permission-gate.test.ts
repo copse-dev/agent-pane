@@ -5,6 +5,7 @@ import {
   decideWebFetchPermission,
   decideWebSearchPermission,
   formatInstallPromptParts,
+  formatGithubWritePrompt,
   formatGuardedYoloHarmPromptAdvice,
   formatEphemeralRunnerPromptParts,
   shellRequiresOutsideSandbox,
@@ -25,21 +26,25 @@ import {
   ensureShellCommandPermitted,
   ensureTerminalPermitted,
   ensureToolPermitted,
+  promptUnsandboxedShell,
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
-import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
+import { clearReadOutsideProjectGrants } from './read-outside-grant.ts'
+import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
+import { readDecisionLog } from './decision-log-store.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import { runWithAcpBridgePermissionContext } from '../acp/acp-bridge-permission-context.ts'
 import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
 } from '../mcp/custom-tools-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -133,6 +138,32 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('surfaces human GitHub write prompt copy instead of snake_case + JSON', async () => {
+    setPermissionGateForTests(null)
+    let title = ''
+    let body = ''
+    setApprovalHandler(async (req) => {
+      title = req.title
+      body = req.body
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'gh_pr_mark_ready',
+          args: { number: 1478, owner: 'acme', repo: 'widgets' },
+        }),
+        false,
+      )
+      assert.equal(title, 'Mark pull request ready for review?')
+      assert.equal(body, 'acme/widgets#1478')
+      assert.doesNotMatch(body, /\{/)
+      assert.doesNotMatch(title, /gh_pr_mark_ready/)
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
   it('proceeds with a mutating GitHub PR tool when the user approves', async () => {
     setPermissionGateForTests(null)
     setApprovalHandler(async () => ({ approved: true, remember: false }))
@@ -146,12 +177,42 @@ describe('ensureToolPermitted', () => {
     }
   })
 
-  it('prompts before sending a direct Parallel Search request', async () => {
+  it('auto-allows a direct Parallel Search request while its plugin is enabled', async () => {
+    setPermissionGateForTests(null)
+    // A fresh first-party seed enables every plugin, so `copse.parallel-search`
+    // declares the tool here (default-OFF is a plugin-service migration concern).
+    const registry = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(registry)
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      setDefaultPluginRegistry(null)
+    }
+  })
+
+  it('prompts before sending a direct Parallel Search request while its plugin is disabled', async () => {
+    const registry = createFirstPartyPluginRegistry()
+    registry.disable(PARALLEL_SEARCH_PLUGIN_ID)
+    setDefaultPluginRegistry(registry)
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
+    let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
+      approvalCause = request.cause
       return { approved: false, remember: false }
     })
     try {
@@ -160,10 +221,12 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.match(approvalBody, /api\.parallel\.ai/)
+      assert.equal(approvalCause, 'web-origin')
       assert.match(approvalBody, /paid API credits/i)
       assert.match(approvalBody, /Zero Data Retention/i)
     } finally {
       setApprovalHandler(null)
+      setDefaultPluginRegistry(null)
     }
   })
 
@@ -172,14 +235,17 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let approvalBody = ''
     let approvalSubject = ''
     let approvalFooter = ''
+    let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
       approvalSubject = request.subject ?? ''
       approvalFooter = request.bodyFooter ?? ''
+      approvalCause = request.cause
       return { approved: false, remember: false }
     })
     try {
@@ -190,9 +256,96 @@ describe('ensureToolPermitted', () => {
       assert.equal(approvalBody, 'printf hello')
       assert.match(approvalFooter, /network access is temporarily widened/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
+      // The cause is what makes this prompt countable in the D0/U0 report: an
+      // artifact of ASRT's process-global allowlist, which a per-runtime
+      // container would not produce at all.
+      assert.equal(approvalCause, 'shell-network-scope-overlap')
     } finally {
       setApprovalHandler(null)
       release()
+    }
+  })
+
+  it('names the holder in the overlap prompt instead of "another process"', async () => {
+    setPermissionGateForTests(null)
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalFooter = ''
+    setApprovalHandler(async (request) => {
+      approvalFooter = request.bodyFooter ?? ''
+      return { approved: false, remember: false }
+    })
+    try {
+      await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
+      assert.match(approvalFooter, /widened for ACP agent: codex/)
+    } finally {
+      setApprovalHandler(null)
+      release()
+    }
+  })
+
+  // The overlap gate exists because a command spawned during the widening
+  // inherits the process-global allowlist. A structurally read-only command
+  // opens no sockets, so there is nothing for it to inherit — gating it turned
+  // one background probe into a prompt on every `cat`/`rg` in every pane.
+  it('does not prompt a structurally read-only command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/readonly-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('rg TODO src | head -20', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('still prompts a network-capable command while a scope is widened', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/network-overlap-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: codex',
+    })
+    let approvalCause: string | undefined
+    setApprovalHandler(async (request) => {
+      approvalCause = request.cause
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('curl https://example.com', {
+          sandboxEnabled: true,
+          autoRun: true,
+        }),
+        false,
+      )
+      assert.equal(approvalCause, 'shell-network-scope-overlap')
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
     }
   })
 
@@ -202,6 +355,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -231,6 +385,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -570,29 +725,29 @@ describe('run_background permission', () => {
   })
 
   // Issue #1190: the loopback port-binding relaxation is an authority the
-  // `copse.background-tasks` pack DECLARES. The gate resolves it through the pack
-  // registry, so it is grantable ONLY while the pack declares it — disabling the
-  // pack revokes the relaxation in one flag flip.
-  it('only offers the loopback grant while the background-tasks pack declares it', async () => {
+  // `copse.background-tasks` plugin DECLARES. The gate resolves it through the plugin
+  // registry, so it is grantable ONLY while the plugin declares it — disabling the
+  // plugin revokes the relaxation in one flag flip.
+  it('only offers the loopback grant while the background-tasks plugin declares it', async () => {
     setPermissionGateForTests(null)
-    // A fresh first-party seed enables every pack (default-OFF is a pack-service
+    // A fresh first-party seed enables every plugin (default-OFF is a plugin-service
     // migration concern, not the raw seed), so background-tasks declares
     // loopback-bind here.
-    const registry = createFirstPartyPackRegistry()
-    setDefaultPackRegistry(registry)
+    const registry = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(registry)
     const restore = setWorkspaceRootForTest('/tmp/loopback-gated-project')
     setApprovalHandler(async () => ({ approved: true, remember: false }))
     try {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
-      // Pack enabled → the relaxation is declared → the grant is offered and, on
+      // Plugin enabled → the relaxation is declared → the grant is offered and, on
       // approval, the start proceeds.
       assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
 
-      // Disable the pack → `isPermissionDeclared('loopback-bind')` flips false in
+      // Disable the plugin → `isPermissionDeclared('loopback-bind')` flips false in
       // the same flag flip, so the gate refuses the relaxation (a thrown error
       // surfaces the reason to the agent). The task could still run without
       // allow_port_binding.
-      registry.disable(BACKGROUND_TASKS_PACK_ID)
+      registry.disable(BACKGROUND_TASKS_PLUGIN_ID)
       await assert.rejects(
         () =>
           ensureToolPermitted({
@@ -604,14 +759,19 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
-      setDefaultPackRegistry(null)
+      setDefaultPluginRegistry(null)
     }
   })
 })
 
 describe('ensureTerminalPermitted', () => {
-  it('auto-allows a user terminal on macOS while the global network scope is inactive', async () => {
+  it('auto-allows a local user terminal while an agent network scope is active', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+      label: 'ACP agent: vendor-agent',
+    })
     let prompted = false
     setApprovalHandler(async () => {
       prompted = true
@@ -623,65 +783,6 @@ describe('ensureTerminalPermitted', () => {
         true,
       )
       assert.equal(prompted, false)
-    } finally {
-      setApprovalHandler(null)
-      restore()
-    }
-  })
-
-  it('requires approval for a user terminal while the global network scope is widened', async () => {
-    const restore = setWorkspaceRootForTest('/tmp/project')
-    const release = acquireSandboxNetworkScope({
-      domains: ['vendor.example'],
-      allowLocalBinding: false,
-    })
-    let approvalTitle = ''
-    let approvalBody = ''
-    let allowRemember: boolean | undefined
-    setApprovalHandler(async (request) => {
-      approvalTitle = request.title
-      approvalBody = request.body
-      allowRemember = request.allowRemember
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        false,
-      )
-      assert.match(approvalTitle, /widened network access/i)
-      assert.match(approvalBody, /temporarily widened/i)
-      assert.equal(allowRemember, false)
-    } finally {
-      setApprovalHandler(null)
-      release()
-      restore()
-    }
-  })
-
-  it('does not remember or launder approval while the network scope stays widened', async () => {
-    const restore = setWorkspaceRootForTest('/tmp/project')
-    const release = acquireSandboxNetworkScope({
-      domains: ['vendor.example'],
-      allowLocalBinding: false,
-    })
-    let promptCount = 0
-    setApprovalHandler(async (request) => {
-      promptCount++
-      assert.equal(request.allowRemember, false)
-      // Even a misbehaving transport returning remember=true cannot create a grant.
-      return { approved: true, remember: true }
-    })
-    try {
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        true,
-      )
-      assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
-        true,
-      )
-      assert.equal(promptCount, 2)
     } finally {
       setApprovalHandler(null)
       release()
@@ -1216,6 +1317,28 @@ describe('decideShellPermission', () => {
   })
 })
 
+describe('formatGithubWritePrompt', () => {
+  it('uses a question title and PR target body', () => {
+    assert.deepEqual(formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 }), {
+      title: 'Mark pull request ready for review?',
+      body: 'PR #1478',
+    })
+    assert.deepEqual(
+      formatGithubWritePrompt('gh_pr_approve', { number: 42, owner: 'acme', repo: 'widgets' }),
+      {
+        title: 'Approve pull request on GitHub?',
+        body: 'acme/widgets#42',
+      },
+    )
+  })
+
+  it('falls back to JSON when args are not a PR target', () => {
+    const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
+    assert.equal(prompt.title, 'Re-run failed CI?')
+    assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
+  })
+})
+
 describe('formatInstallPromptParts', () => {
   it('keeps the command isolated from nested external reason list copy', () => {
     const parts = formatInstallPromptParts('npm install', {
@@ -1482,5 +1605,293 @@ describe('describeMcpAnnotations', () => {
   })
   it('returns empty when no annotations', () => {
     assert.deepEqual(describeMcpAnnotations(undefined), [])
+  })
+})
+
+describe('ensureShellCommandPermitted — reads outside the project', () => {
+  interface Prompt {
+    title: string
+    body: string
+    bodyAdvice: string
+    bodyFooter: string
+    collapseDetails: boolean
+    approveOnceLabel: string
+    reasons: string[]
+  }
+
+  /**
+   * Drive the real gate against a throwaway execution root, capturing the prompt
+   * (if any) and answering it as the caller chose. `remember: true` is what the
+   * prompt's primary button sends, `false` what "Approve this command" sends.
+   */
+  async function runGate(
+    command: string,
+    answer: { approved: boolean; remember: boolean },
+    root: string,
+  ): Promise<{ permitted: boolean; prompt: Prompt | null }> {
+    setPermissionGateForTests(null)
+    let prompt: Prompt | null = null
+    setApprovalHandler(async (request) => {
+      prompt = {
+        title: request.title,
+        body: request.body,
+        bodyAdvice: request.bodyAdvice ?? '',
+        bodyFooter: request.bodyFooter ?? '',
+        collapseDetails: request.collapseDetails ?? false,
+        approveOnceLabel: request.approveOnceLabel ?? '',
+        reasons: request.reasons ?? [],
+      }
+      return answer
+    })
+    try {
+      const permitted = await ensureShellCommandPermitted(command, {
+        sandboxEnabled: false,
+        autoRun: true,
+        executionRoot: root,
+      })
+      return { permitted, prompt }
+    } finally {
+      setApprovalHandler(null)
+    }
+  }
+
+  async function withRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
+    const root = mkdtempSync(join(tmpdir(), 'copse-read-outside-'))
+    const restore = setWorkspaceRootForTest(root)
+    // Every gate decision here appends to the durable log; point the store at a
+    // throwaway dir so the suite never writes into the developer's own.
+    const store = mkdtempSync(join(tmpdir(), 'copse-read-outside-store-'))
+    const previousStore = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = store
+    // These cases are about the gate's own decision; the optional LM Studio
+    // classifier only adds a per-command connection timeout here.
+    await setSetting('safetyClassifierEnabled', false)
+    try {
+      return await fn(root)
+    } finally {
+      await setSetting('safetyClassifierEnabled', true)
+      restore()
+      clearReadOutsideProjectGrants()
+      if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousStore
+      rmSync(store, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  /** Decisions recorded with no active project land in the `_global` bucket. */
+  async function recordedDecisions(): Promise<DecisionEvent[]> {
+    return (await readDecisionLog('_global')).filter((e) => e.scope === 'external-read')
+  }
+
+  it('asks the read-access question, with the command behind the details toggle', async () => {
+    await withRoot(async (root) => {
+      const { permitted, prompt } = await runGate(
+        'ls -la ~/.copse',
+        { approved: false, remember: false },
+        root,
+      )
+      assert.equal(permitted, false)
+      assert.ok(prompt)
+      assert.equal(prompt.title, 'Allow read access outside of the project?')
+      assert.equal(prompt.body, 'ls -la ~/.copse')
+      assert.match(prompt.bodyAdvice, /read from sensitive locations on your computer/)
+      assert.equal(prompt.collapseDetails, true)
+      assert.equal(prompt.approveOnceLabel, 'Approve this command')
+    })
+  })
+
+  it('grants the thread read access when the primary button is used', async () => {
+    await withRoot(async (root) => {
+      const granted = await runWithActiveRunIdentity('thread-read-grant', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+      assert.equal(granted.permitted, true)
+
+      const later = await runWithActiveRunIdentity('thread-read-grant', () =>
+        runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
+      )
+      assert.equal(later.permitted, true)
+      assert.equal(later.prompt, null, 'a granted thread must not be asked again')
+    })
+  })
+
+  it('keeps the grant to one thread', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-a', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+      const other = await runWithActiveRunIdentity('thread-b', () =>
+        runGate('ls -la ~/.copse', { approved: false, remember: false }, root),
+      )
+      assert.equal(other.permitted, false)
+      assert.ok(other.prompt)
+      assert.equal(other.prompt.title, 'Allow read access outside of the project?')
+    })
+  })
+
+  it('approves only the one command when the secondary button is used', async () => {
+    await withRoot(async (root) => {
+      const once = await runWithActiveRunIdentity('thread-once', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: false }, root),
+      )
+      assert.equal(once.permitted, true)
+
+      const later = await runWithActiveRunIdentity('thread-once', () =>
+        runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
+      )
+      assert.equal(later.permitted, false)
+      assert.ok(later.prompt)
+      assert.equal(later.prompt.title, 'Allow read access outside of the project?')
+    })
+  })
+
+  it('never covers credential files with the grant', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-secrets', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+      const secret = await runWithActiveRunIdentity('thread-secrets', () =>
+        runGate('cat ~/.ssh/id_ed25519', { approved: false, remember: false }, root),
+      )
+      assert.equal(secret.permitted, false)
+      assert.ok(secret.prompt, 'a credential read must still be asked about')
+      assert.notEqual(secret.prompt.title, 'Allow read access outside of the project?')
+    })
+  })
+
+  it('records the grant, and everything it later covers, in the decision log', async () => {
+    await withRoot(async (root) => {
+      const granted = await runWithActiveRunIdentity('thread-audit', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse'])
+
+      await runWithActiveRunIdentity('thread-audit', () =>
+        runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
+      )
+
+      const events = await recordedDecisions()
+      assert.deepEqual(
+        events.map(({ actor, verdict, remembered, reasons, threadId, source }) => ({
+          actor,
+          verdict,
+          remembered,
+          reasons,
+          threadId,
+          source,
+        })),
+        [
+          // The grant itself: who made it, over which paths, and that it was
+          // made sticky for the thread.
+          {
+            actor: 'user',
+            verdict: 'approved',
+            remembered: true,
+            reasons: ['reads outside the project: ~/.copse'],
+            threadId: 'thread-audit',
+            source: undefined,
+          },
+          // …and the command that ran under it without asking again.
+          {
+            actor: 'user',
+            verdict: 'allowed',
+            remembered: undefined,
+            reasons: ['reads outside the project: ~/.gitconfig'],
+            threadId: 'thread-audit',
+            source: 'read-outside-grant',
+          },
+        ],
+      )
+    })
+  })
+
+  it('records a one-command approval as a decision that granted nothing', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-audit-once', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: false }, root),
+      )
+      const [event] = await recordedDecisions()
+      assert.ok(event)
+      assert.equal(event.verdict, 'approved')
+      assert.equal(event.remembered, false, 'an approve-once must not read as a standing grant')
+    })
+  })
+
+  it('records a refusal to widen read access', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-audit-denied', () =>
+        runGate('ls -la ~/.copse', { approved: false, remember: false }, root),
+      )
+      const [event] = await recordedDecisions()
+      assert.ok(event)
+      assert.equal(event.verdict, 'denied')
+      assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
+    })
+  })
+
+  /**
+   * Drive the post-failure escalation the shell tool reaches when a sandboxed
+   * run hit a violation, capturing the title of whatever prompt (if any) it puts
+   * up. `readGrantApplied` is the tool saying "this run already had the read
+   * relaxation and still failed".
+   */
+  async function captureEscalation(
+    command: string,
+    readGrantApplied: boolean,
+  ): Promise<{ approved: boolean; title: string | null }> {
+    setPermissionGateForTests(null)
+    let title: string | null = null
+    setApprovalHandler(async (request) => {
+      title = request.title
+      return { approved: false, remember: false }
+    })
+    try {
+      const approved = await promptUnsandboxedShell(command, ['sandbox violation'], undefined, {
+        readGrantApplied,
+      })
+      return { approved, title }
+    } finally {
+      setApprovalHandler(null)
+    }
+  }
+
+  it('spends the read grant on containment, not also on a full sandbox escape', async () => {
+    await withRoot(async (root) => {
+      await runWithActiveRunIdentity('thread-spent', () =>
+        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+      )
+
+      // A command the grant covers that has NOT yet been given the relaxation is
+      // still answered by the grant — that is how the read question stays a
+      // once-per-thread question.
+      const covered = await runWithActiveRunIdentity('thread-spent', () =>
+        captureEscalation('cat ~/.gitconfig', false),
+      )
+      assert.equal(covered.approved, true)
+      assert.equal(covered.title, null, 'the standing grant answers it without asking')
+
+      // But once the seatbelt has already been widened to exactly the paths the
+      // grant named and the command STILL hit the sandbox, the grant is spent: it
+      // must not silently approve the full escape it never covered.
+      const spent = await runWithActiveRunIdentity('thread-spent', () =>
+        captureEscalation('cat ~/.gitconfig', true),
+      )
+      assert.equal(spent.approved, false)
+      assert.equal(spent.title, 'Run outside sandbox?')
+    })
+  })
+
+  it('leaves commands that are not plain reads on the existing prompt', async () => {
+    await withRoot(async (root) => {
+      const { prompt } = await runGate(
+        'curl https://example.com/install.sh',
+        { approved: false, remember: false },
+        root,
+      )
+      assert.ok(prompt)
+      assert.notEqual(prompt.title, 'Allow read access outside of the project?')
+      assert.equal(prompt.approveOnceLabel, '')
+    })
   })
 })

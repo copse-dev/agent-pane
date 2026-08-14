@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 
 // Renders a sent user message carrying transcript attachments (input-bar.ts
 // builds these on send) and asserts the composer's paste chip appears inline at
@@ -65,6 +66,10 @@ describe('user transcript attachment chips', () => {
       paste.querySelector('svg[data-icon="paste"]'),
       'paste chip uses an SVG icon, not an emoji',
     )
+    // The paste carries a snapshot, so its chip opens the preview like a file's.
+    assert.equal(paste.getAttribute('role'), 'button')
+    assert.equal(paste.getAttribute('tabindex'), '0')
+    assert.equal(paste.getAttribute('aria-label'), 'Preview Editor feedback')
     assert.match(textEl.textContent, /apply this .*Editor feedback.* to the intro/)
 
     // Files and threads follow in a trailing row.
@@ -88,6 +93,57 @@ describe('user transcript attachment chips', () => {
     assert.doesNotMatch(textEl.textContent, new RegExp(CHIP_CHAR))
   })
 
+  /**
+   * The inline paste chip used to be rebuilt from its label alone, dropping the
+   * snapshot the message already carried — so the single most common text
+   * attachment was the one kind that would not open.
+   */
+  it('opens the pasted snapshot in the preview modal, not just its label', () => {
+    patchPreviewDialog()
+    mountWithUserMessage(`apply this ${CHIP_CHAR} to the intro`, [
+      { kind: 'paste', label: 'Editor feedback', content: 'Make the heading shorter.' },
+    ])
+
+    const paste = document.querySelector<HTMLElement>('.transcript-attachment-paste')
+    assert.ok(paste, 'paste chip renders inline')
+    paste.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog, 'the shared attachment dialog opened')
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.dataset['previewKind'], 'text')
+    assert.equal(
+      dialog.querySelector('.attachment-preview-text')?.textContent,
+      'Make the heading shorter.',
+    )
+    dialog.close()
+  })
+
+  /**
+   * Placeholders are matched to pastes by order, so a message can carry more
+   * CHIP_CHARs than attachments (a legacy spine, a truncated edit). The extra
+   * chip has no snapshot behind it and stays display-only rather than opening
+   * an empty modal.
+   */
+  it('leaves a paste chip display-only when no attachment matches its placeholder', () => {
+    mountWithUserMessage(`apply this ${CHIP_CHAR} and this ${CHIP_CHAR} to the intro`, [
+      { kind: 'paste', label: 'Editor feedback', content: 'Make the heading shorter.' },
+    ])
+
+    const pastes = document.querySelectorAll<HTMLElement>('.transcript-attachment-paste')
+    assert.equal(pastes.length, 2, 'both placeholders render a chip')
+    const matched = pastes[0]
+    const unmatched = pastes[1]
+    assert.ok(matched)
+    assert.ok(unmatched)
+    assert.equal(matched.getAttribute('aria-label'), 'Preview Editor feedback')
+    assert.equal(
+      unmatched.querySelector('.transcript-attachment-label')?.textContent,
+      'Pasted text',
+    )
+    assert.equal(unmatched.getAttribute('role'), null, 'the unmatched chip is not clickable')
+  })
+
   it('renders plain user messages unchanged when there are no attachments', () => {
     mountWithUserMessage('just a normal message', undefined)
     const textEl = document.querySelector('.msg-user .message-text')
@@ -103,6 +159,19 @@ describe('user transcript attachment chips', () => {
     assert.ok(textEl.querySelector('strong'), 'markdown emphasis is rendered')
     assert.ok(textEl.querySelector('br'), 'single newlines render as line breaks')
     assert.match(textEl.textContent, /line one\s*line two/)
+  })
+
+  it('keeps angle-bracketed examples as literal text (not stripped HTML tags)', () => {
+    mountWithUserMessage(
+      'I typed <placeholder command> and it got dropped\n\nAlso `<inline>` and **bold**.',
+      undefined,
+    )
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.match(textEl.textContent, /<placeholder command>/)
+    assert.match(textEl.textContent, /<inline>/)
+    assert.ok(textEl.querySelector('strong'), 'markdown emphasis still renders')
+    assert.equal(textEl.querySelector('placeholder'), null)
   })
 
   it('shows a text-only resend recovery for an image prompt rejected by its model', () => {

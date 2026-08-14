@@ -124,13 +124,13 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
   })
 
   it('maps a copse.todos panel_update to a plan (P4)', () => {
-    // The `copse.todos` first-party pack emits `panel_update` with a level-2
+    // The `copse.todos` first-party plugin emits `panel_update` with a level-2
     // list panel (`todosToPanelListData`). External ACP clients speak `plan`,
-    // so the adapter forwards the pack panel through as a plan update with
+    // so the adapter forwards the plugin panel through as a plan update with
     // the same cancelled-omitted policy the `todo_update` path uses.
     const update = streamChunkToSessionUpdate({
       type: 'panel_update',
-      packId: 'copse.todos',
+      pluginId: 'copse.todos',
       contributionId: 'plan',
       data: {
         kind: 'list',
@@ -152,13 +152,13 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
     })
   })
 
-  it('drops a panel_update from a pack that has no ACP counterpart', () => {
-    // Only the todos plan panel maps to `plan`. A generic pack panel from
-    // some future pack (or a wrong contribution id) is silently dropped so
+  it('drops a panel_update from a plugin that has no ACP counterpart', () => {
+    // Only the todos plan panel maps to `plan`. A generic plugin panel from
+    // some future plugin (or a wrong contribution id) is silently dropped so
     // external clients never receive a plan update they cannot interpret.
     const notTodos = streamChunkToSessionUpdate({
       type: 'panel_update',
-      packId: 'copse.someday',
+      pluginId: 'copse.someday',
       contributionId: 'plan',
       data: { kind: 'list', rows: [] },
     })
@@ -166,7 +166,7 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
 
     const wrongContribution = streamChunkToSessionUpdate({
       type: 'panel_update',
-      packId: 'copse.todos',
+      pluginId: 'copse.todos',
       contributionId: 'not-plan',
       data: { kind: 'list', rows: [] },
     })
@@ -174,7 +174,7 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
 
     const treePanel = streamChunkToSessionUpdate({
       type: 'panel_update',
-      packId: 'copse.todos',
+      pluginId: 'copse.todos',
       contributionId: 'plan',
       data: { kind: 'tree', roots: [] },
     })
@@ -201,6 +201,68 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
     assert.deepEqual(sessionUpdateToStreamChunk(update), {
       type: 'tool_call',
       toolCall: { id: 't9', name: 'search', args: { q: 'x' } },
+    })
+  })
+
+  it('prefers a meaningful ACP title over the programmatic tool name', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-title',
+      title: 'Read the project manifest',
+      name: 'copse.read_file',
+      rawInput: { path: 'package.json' },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: {
+        id: 't-title',
+        name: 'Read the project manifest',
+        args: { path: 'package.json' },
+      },
+    })
+  })
+
+  it('uses the programmatic name for Cursor’s generic MCP title', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-mcp',
+      title: 'MCP: tool',
+      name: 'mcp__copse__read_archive',
+      rawInput: { path: 'thread.zip' },
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: {
+        id: 't-mcp',
+        name: 'mcp__copse__read_archive',
+        args: { path: 'thread.zip' },
+      },
+    })
+  })
+
+  it('keeps Cursor’s generic MCP title when no programmatic name is available', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-generic',
+      title: 'MCP: tool',
+      rawInput: {},
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call',
+      toolCall: { id: 't-generic', name: 'MCP: tool', args: {} },
+    })
+  })
+
+  it('accepts a programmatic name supplied by a later tool update', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't-late-name',
+      name: 'copse.search_code',
+    }
+    assert.deepEqual(sessionUpdateToStreamChunk(update), {
+      type: 'tool_call_update',
+      toolCallId: 't-late-name',
+      name: 'copse.search_code',
     })
   })
 

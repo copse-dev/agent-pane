@@ -20,7 +20,7 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-search-'))
     mkdirSync(join(workspaceRoot, 'src'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'README.md'), '# Fixture\n', 'utf8')
-    knowledgeDir = seedRoadmapNotes(workspaceRoot, [
+    knowledgeDir = seedRoadmapNotes('e2e-roadmap-search', [
       {
         id: 'e2e-roadmap-quokka',
         title: 'Polish the quokka onboarding flow',

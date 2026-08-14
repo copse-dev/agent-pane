@@ -1,0 +1,9 @@
+{
+  "name": "sync-worker",
+  "retries": 2,
+  "timeoutMs": 30000,
+  "endpoints": {
+    "primary": "https://example.invalid/api",
+    "fallback": "https://example.invalid/api-2"
+  }
+}

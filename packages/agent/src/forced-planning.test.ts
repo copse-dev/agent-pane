@@ -203,7 +203,7 @@ describe('resolveForcedPlanningConfig', () => {
 
   it('falls back to defaults for values that would silently break the policy', () => {
     // An emptied number input arrives as NaN and a corrupted bag can hold
-    // anything; either must not disable the pack by accident.
+    // anything; either must not disable the plugin by accident.
     const junk: Record<string, unknown> = {
       [CANONICAL_THRESHOLD_SETTING]: Number.NaN,
       [COMPOSITE_THRESHOLD_SETTING]: -5,

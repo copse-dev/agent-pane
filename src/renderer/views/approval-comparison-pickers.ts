@@ -18,7 +18,16 @@ function modelRow(label: string, select: HTMLSelectElement): HTMLElement {
   )
 }
 
-/** Model pickers for the "Compare models on this diff?" approval prompt. */
+/**
+ * Model pickers for the "Compare models on this diff?" approval prompt.
+ *
+ * These offer *concrete* models, unlike the plugin settings that feed them. The
+ * settings choose a rule because they are set once and read much later; this
+ * dialog is the opposite — the run is about to start, its models have already
+ * been resolved (and de-duplicated) by `resolveDistinctDynamicModelIds`, and the
+ * question on screen is whether to spend money on those specific models. A rule
+ * here would name something the prompt could not price.
+ */
 export function createComparisonModelPickers(
   api: ApiClient,
   models: ComparisonModelSelection,

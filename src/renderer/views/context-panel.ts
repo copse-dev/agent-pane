@@ -21,7 +21,9 @@ import {
 } from '../monaco/git-diff-viewer.ts'
 import type { MonacoSelectionSource, MonacoShortcutSource } from '../monaco/selection-to-chat.ts'
 import { showErrorToast } from './toast.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
+import { canOpenWorkspaceFileInBrowser, openWorkspaceFileInBrowser } from '../controller/files.ts'
 import {
   getActiveThreadOwner,
   requireActiveThreadOwner,
@@ -281,6 +283,29 @@ export function mountContextPanel(
     return openFile ? { path: openFile.path } : null
   })
 
+  const onContextMenu = (event: MouseEvent): void => {
+    const { openFile } = store.getState()
+    if (!openFile || !canOpenWorkspaceFileInBrowser(store)) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    showContextMenu(event.clientX, event.clientY, [
+      {
+        label: 'Open in browser',
+        onSelect: (): void => {
+          const currentOpenFile = store.getState().openFile
+          if (!currentOpenFile) return
+          void openWorkspaceFileInBrowser(store, api, currentOpenFile.path).catch(
+            (err: unknown): void => {
+              showErrorToast(`Failed to open ${currentOpenFile.path} in the browser`, err)
+            },
+          )
+        },
+      },
+    ])
+  }
+  root.addEventListener('contextmenu', onContextMenu, true)
+
   function updatePanel(): void {
     const { openFile } = store.getState()
 
@@ -394,6 +419,7 @@ export function mountContextPanel(
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
+    root.removeEventListener('contextmenu', onContextMenu, true)
     fileEditor.dispose()
     diffEditor?.dispose()
     diffEditor = null

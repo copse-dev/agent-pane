@@ -32,11 +32,35 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       update_channel: ${{ steps.release.outputs.update_channel }}
     steps:
+      # First step in the whole workflow, before the checkout and long before
+      # the mac runner: an unset signing secret is the likeliest reason a first
+      # release fails, and discovering it after preflight's CI wait would cost
+      # an hour and a half to learn nothing about the release itself.
+      - name: Require signing and notarization credentials
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for credential in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!credential:-}" ]; then
+              echo "Required release credential is unavailable: $credential"
+              echo "See docs/releasing-macos.md#required-credentials"
+              exit 1
+            fi
+          done
       - uses: actions/checkout@v7.0.1
         with:
           # Dispatch accepts a tag *name*, never an arbitrary branch/ref.
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
+      # The validation below runs `.mts` scripts, which need the type stripping
+      # that .nvmrc's Node has and the runner image's default Node may not.
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
       - id: release
         name: Validate tag, version, ancestry, and exact-SHA CI
         env:
@@ -64,11 +88,24 @@ jobs:
           # revision, not necessarily the requested tag. Checkout above has
           # already resolved that tag, so HEAD is the only trustworthy source.
           release_sha="$(git rev-parse 'HEAD^{commit}')"
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$release_sha" origin/main; then
-            echo "Release tag commit is not reachable from protected branch origin/main"
+          # Releases are cut from `release`, not from trunk. A promotion merge
+          # is a commit ON `release` and is therefore NOT reachable from `main`,
+          # so checking ancestry against trunk would reject every real release.
+          # `release` is the branch that has actually passed the full promotion
+          # gate, and the ruleset protects it against deletion and non-fast-
+          # forward, so reachability from it is the property worth demanding.
+          # Use an explicit refspec: `git fetch origin release` alone does not
+          # reliably write refs/remotes/origin/release when checkout configured
+          # the remote for a tag.
+          git fetch --no-tags origin +refs/heads/release:refs/remotes/origin/release
+          if ! git merge-base --is-ancestor "$release_sha" origin/release; then
+            echo "Release tag commit is not reachable from protected branch origin/release"
             exit 1
           fi
+          # `gh release create` has no TTY here and refuses to publish without a
+          # body. Generate it from CHANGELOG.md now so a missing or emptied
+          # Unreleased section fails in seconds rather than after notarization.
+          node scripts/release-notes.mts "$version" > /dev/null
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -112,34 +149,37 @@ jobs:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: actions/setup-node@v7
         with: { node-version-file: '.nvmrc' }
+      - run: |
+          corepack enable
+          corepack prepare --activate
       - name: Verify clean release build
-        run: npm ci --ignore-scripts && npm run build:release
-
+        run: pnpm install --frozen-lockfile --config.ignore-scripts=true && pnpm run build:release
+        env:
+          CI: true
   build-test:
     needs: [preflight, verify-clean-release-build]
-    runs-on: macos-14
+    # The runtime smoke test below is the only gate that actually launches the
+    # packaged app, so it has to run on an OS the app supports. Keep this label
+    # at or above `build.mac.minimumSystemVersion` in package.json; the
+    # deployment-target check in the verify step enforces that and fails the
+    # release rather than letting the gate silently drift below the floor again.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: ./.github/actions/setup
+      # GitHub retired its Intel macOS images, so this runner is Apple Silicon
+      # and the x64 bundle's smoke test — plus its `gortex version` call — runs
+      # translated. Rosetta is not guaranteed on the arm64 images, and finding
+      # that out at the verify step would cost a whole sign-and-notarize cycle
+      # first ("Bad CPU type in executable"). A no-op when already present.
+      - name: Ensure Rosetta can run the x64 bundle
+        run: softwareupdate --install-rosetta --agree-to-license
       - name: Build a universal bundled gortex
-        run: npm run prepare:gortex:mac
-      - name: Require signing and notarization credentials
-        env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          for credential in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!credential:-}" ]; then
-              echo "Required release credential is unavailable: $credential"
-              exit 1
-            fi
-          done
+        run: pnpm run prepare:gortex:mac
+      # The credentials themselves were asserted in preflight, before this
+      # runner was provisioned.
       - name: Build, sign, and notarize without publishing
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -150,8 +190,8 @@ jobs:
           UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
         run: |
           set -euo pipefail
-          npm run build:release
-          npx electron-builder --mac -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
+          pnpm run build:release
+          pnpm exec electron-builder --mac -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
           node scripts/finalize-release-metadata.mts
       - name: Verify signatures, notarization, metadata, and packaged runtime
         env:
@@ -160,6 +200,18 @@ jobs:
           UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
         run: |
           set -euo pipefail
+          # The smoke test below launches the packaged app, so this runner must be
+          # at least the version the app declares it supports. Without this check a
+          # runner-label bump (or an OS-image retirement) can silently move the only
+          # runtime gate onto an OS no shipped build will ever run on.
+          declared_minimum="$(node -p "require('./package.json').build.mac.minimumSystemVersion")"
+          runner_version="$(sw_vers -productVersion)"
+          if [ "$(printf '%s\n%s\n' "$declared_minimum" "$runner_version" | sort -V | head -n1)" != "$declared_minimum" ]; then
+            echo "Runner macOS $runner_version is below the declared minimum $declared_minimum;"
+            echo "the packaged runtime smoke test would not run on a supported OS."
+            exit 1
+          fi
+          echo "Runner macOS $runner_version satisfies the declared minimum $declared_minimum"
           apps=()
           while IFS= read -r app; do apps+=("$app"); done < <(find release -type d -name Copse.app -print)
           if [ "${#apps[@]}" -ne 2 ]; then
@@ -213,8 +265,22 @@ jobs:
             done
           done
           shasum -a 256 release/*.dmg release/*.zip release/*.blockmap "${update_metadata[@]}" > release/SHA256SUMS
+      # Publish the reviewed notes with the artifacts they describe. Generating
+      # them here rather than in `publish` keeps that job artifact-only.
+      - name: Generate the release notes from CHANGELOG.md
+        run: node scripts/release-notes.mts > release/RELEASE_NOTES.md
+      # Artifact attestations are unavailable for PRIVATE repositories outside
+      # GitHub Enterprise Cloud, and this org is on Team — the action fails the
+      # job with "Feature not available for the organization". Publishing to a
+      # private repository is a rehearsal, not distribution (#802), so skip
+      # provenance there and let it switch itself back on the moment the
+      # repository is public. SHA256SUMS ships either way.
+      - name: Note the skipped attestation
+        if: github.event.repository.private
+        run: echo "::warning::Private repository — artifact attestation skipped. Provenance needs a public repository or GitHub Enterprise Cloud."
       - name: Attest tested release artifacts
-        uses: actions/attest@v4.2.0
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest@v4.2.1
         with:
           subject-path: |
             release/*.dmg
@@ -231,6 +297,7 @@ jobs:
             release/*.blockmap
             release/*-mac.yml
             release/SHA256SUMS
+            release/RELEASE_NOTES.md
           if-no-files-found: error
           retention-days: 30
 
@@ -262,5 +329,11 @@ jobs:
           else
             release_flags+=(--latest)
           fi
+          # `gh release create` has no TTY here: without a body it refuses to
+          # run. The notes were generated from CHANGELOG.md alongside the
+          # artifacts they describe; `--verify-tag` keeps gh from inventing a
+          # tag if that ever stops being true.
+          test -s release/RELEASE_NOTES.md
           gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml release/SHA256SUMS \
-            --target "$TARGET" --title "$TAG" "${release_flags[@]}"
+            --target "$TARGET" --title "$TAG" --notes-file release/RELEASE_NOTES.md --verify-tag \
+            "${release_flags[@]}"

@@ -1,4 +1,9 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { isRightPanelMaximized } from '../controller/panels.ts'
+import { syncPaneMaximizeButton } from './pane-maximize-button.ts'
+
+/** Set on `#body` while the open pane covers chat (see layout.css). */
+export const RIGHT_PANEL_MAXIMIZED_CLASS = 'is-right-panel-maximized'
 
 // The right panel's section (explorer / terminal / changes / prs / browser) is
 // chosen from the titlebar buttons; this controller just keeps the matching host
@@ -47,10 +52,34 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
   }
 
+  /**
+   * Expanding the panel is a layout state on `#body`, not a per-pane one: only
+   * one pane is ever on screen, and every pane header carries the same toggle,
+   * so both the class and the buttons' expand/restore face are set from here.
+   */
+  function syncMaximized(): void {
+    const maximized = isRightPanelMaximized(store)
+    document.getElementById('body')?.classList.toggle(RIGHT_PANEL_MAXIMIZED_CLASS, maximized)
+    for (const btn of document.querySelectorAll<HTMLElement>('.pane-maximize-btn')) {
+      syncPaneMaximizeButton(btn, maximized)
+    }
+    // Chat is covered, not unmounted — it keeps its scroll position and live
+    // editors that way, but a composer still holding focus behind the pane would
+    // swallow keystrokes meant for the terminal or browser on top of it.
+    if (!maximized) return
+    const active = document.activeElement
+    if (active instanceof HTMLElement && document.getElementById('pane-chat')?.contains(active)) {
+      active.blur()
+    }
+  }
+
   syncLayout()
+  syncMaximized()
   const unsubs = [
     store.on('right_panel_mode_changed', syncLayout),
     store.on('files_pane_changed', syncLayout),
+    store.on('files_pane_changed', syncMaximized),
+    store.on('right_panel_maximized_changed', syncMaximized),
   ]
 
   return () => {

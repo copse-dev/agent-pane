@@ -14,7 +14,7 @@ describe('roadmap category grouping and filters', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-categories-'))
-    knowledgeDir = seedRoadmapNotes(workspaceRoot, [
+    knowledgeDir = seedRoadmapNotes('e2e-roadmap-category-filter', [
       {
         id: 'bug-high',
         title: 'Fix startup crash',

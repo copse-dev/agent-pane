@@ -107,6 +107,15 @@ describe('scanCandidates', () => {
       ['netstat'],
     )
   })
+
+  it('narrows lsof to one validated port for kill-time revalidation', () => {
+    assert.deepEqual(scanCandidates('darwin', 43177)[0]?.args, [
+      '-nP',
+      '-iTCP:43177',
+      '-sTCP:LISTEN',
+      '-Fpcn',
+    ])
+  })
 })
 
 describe('dedupePorts', () => {

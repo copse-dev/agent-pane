@@ -79,13 +79,18 @@ export function mountConversationSearch(root: HTMLElement): void {
       type: 'button',
       class: 'chat-search-nav',
       'aria-label': 'Previous match',
-      title: 'Previous (Shift+Enter)',
+      'data-tooltip': 'Previous match (Shift+Enter)',
     },
     chevronUpIcon('ui-icon ui-icon-sm'),
   )
   const nextBtn = el(
     'button',
-    { type: 'button', class: 'chat-search-nav', 'aria-label': 'Next match', title: 'Next (Enter)' },
+    {
+      type: 'button',
+      class: 'chat-search-nav',
+      'aria-label': 'Next match',
+      'data-tooltip': 'Next match (Enter)',
+    },
     chevronDownIcon('ui-icon ui-icon-sm'),
   )
   const closeBtn = el(
@@ -94,7 +99,7 @@ export function mountConversationSearch(root: HTMLElement): void {
       type: 'button',
       class: 'chat-search-close',
       'aria-label': 'Close find',
-      title: 'Close (Esc)',
+      'data-tooltip': 'Close find (Esc)',
     },
     closeIcon('ui-icon ui-icon-sm'),
   )

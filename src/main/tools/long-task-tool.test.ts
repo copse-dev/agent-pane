@@ -14,6 +14,134 @@ import {
 import { trackLongTaskTool } from './long-task-tool.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 
+/** Run a tool action as `threadId`, with the same context shape a turn has. */
+function asThread(
+  threadId: string,
+  args: Parameters<typeof trackLongTaskTool.execute>[0],
+): ReturnType<typeof trackLongTaskTool.execute> {
+  return runWithThreadExecutionContext(
+    {
+      projectId: 'project-1',
+      threadId,
+      projectRoot: '/project',
+      root: '/project',
+      checkoutMode: 'shared',
+      branch: 'main',
+    },
+    () =>
+      runWithActiveRunIdentity(threadId, () =>
+        trackLongTaskTool.execute(args, new AbortController().signal),
+      ),
+  )
+}
+
+async function textResult(
+  threadId: string,
+  args: Parameters<typeof trackLongTaskTool.execute>[0],
+): Promise<string> {
+  const result = await asThread(threadId, args)
+  if (typeof result !== 'string') assert.fail('expected a text tool result')
+  return result
+}
+
+describe('track_long_task list scoping', () => {
+  let root: string
+  let restoreWorkspace: () => void
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'long-task-scope-'))
+    setLongTaskRootForTest(root)
+    restoreWorkspace = setWorkspaceRootForTest('/project')
+  })
+
+  afterEach(() => {
+    setLongTaskRootForTest(null)
+    restoreWorkspace()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it("lists only the calling thread's own tasks", async () => {
+    await textResult('thread-a', {
+      action: 'create',
+      title: 'Read access sandbox warning',
+      goal: 'grants prompt',
+      steps: ['trace the gate'],
+    })
+    await textResult('thread-b', {
+      action: 'create',
+      title: 'ACP ZDR annotations',
+      goal: 'zdr surfaced',
+      steps: ['extract ZDR fields'],
+    })
+
+    const listedByA = await textResult('thread-a', { action: 'list' })
+
+    assert.match(listedByA, /Read access sandbox warning/)
+    assert.doesNotMatch(listedByA, /ACP ZDR annotations/)
+  })
+
+  it("reports other threads' tasks as a count rather than a checklist", async () => {
+    await textResult('thread-b', {
+      action: 'create',
+      title: 'ACP ZDR annotations',
+      goal: 'zdr surfaced',
+      steps: ['extract ZDR fields'],
+    })
+
+    const listedByA = await textResult('thread-a', { action: 'list' })
+
+    assert.match(listedByA, /No long tasks tracked for this thread/)
+    assert.match(listedByA, /1 other long task in this workspace belongs to other threads/)
+    // The step is what a context-less turn would pick up; the count is not.
+    assert.doesNotMatch(listedByA, /extract ZDR fields/)
+  })
+
+  it('shows every task, labelled by owner, under the workspace scope', async () => {
+    await textResult('thread-a', {
+      action: 'create',
+      title: 'Mine',
+      goal: 'g',
+      steps: ['s'],
+    })
+    await textResult('thread-b', {
+      action: 'create',
+      title: 'Theirs',
+      goal: 'g',
+      steps: ['s'],
+    })
+
+    const listed = await textResult('thread-a', { action: 'list', scope: 'workspace' })
+
+    assert.match(listed, /\[t1\] \[this thread\] Mine/)
+    assert.match(listed, /\[t2\] \[another thread\] Theirs/)
+  })
+
+  it("treats a task written before owners were recorded as nobody's to resume", async () => {
+    // Written directly, the way the store looked before tasks carried a threadId.
+    createLongTask({ title: 'Legacy', goal: 'g', steps: ['s'] }, '/project')
+
+    const listed = await textResult('thread-a', { action: 'list' })
+
+    assert.match(listed, /No long tasks tracked for this thread/)
+    assert.match(listed, /1 other long task/)
+  })
+
+  it('still resolves an explicit task id from another thread', async () => {
+    await textResult('thread-b', {
+      action: 'create',
+      title: 'Theirs',
+      goal: 'g',
+      steps: ['s'],
+    })
+
+    // The supervised wake path resolves tasks by id, so id lookups stay
+    // workspace-wide even though listing does not.
+    const status = await textResult('thread-a', { action: 'status', taskId: 't1' })
+
+    assert.match(status, /Theirs/)
+  })
+})
+
 describe('track_long_task continue', () => {
   let root: string
   let restoreWorkspace: () => void

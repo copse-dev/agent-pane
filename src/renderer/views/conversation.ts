@@ -17,6 +17,13 @@ import {
   type HookCard,
   type HookCardStatus,
 } from '@shared/hooks/hook-card.ts'
+import {
+  hookRunDetailChips,
+  hookRunDetailEmptyReason,
+  hookRunDetailSections,
+  type HookRunSection,
+} from '@shared/hooks/hook-run-detail.ts'
+import type { HookRunDetail } from '@shared/types/hooks.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -55,9 +62,9 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { navigateToChange } from '../controller/panels.ts'
-import { createPackPanelEl } from './pack-panel.ts'
-import { todosToPanelListData, type PanelListData } from '@copse/agent/packs/pack-panel.ts'
-import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
+import { createPluginPanelEl } from './plugin-panel.ts'
+import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
+import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import {
@@ -66,6 +73,7 @@ import {
   retryReview,
 } from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
+import { renderSignature } from './render-signature.ts'
 import {
   drainMessageQueue,
   isHeldMessage,
@@ -124,8 +132,9 @@ function createToolHeader(
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
 ): HTMLElement {
-  // Keep a fixed-width leading slot in every state so the label never shifts
-  // when a running tool settles. The animated icon itself is omitted once done.
+  // Nothing here precedes the label in flow: the slot renders in the transcript
+  // gutter, or trails the row when it is indented (tool-cards.css). So the label
+  // sits at the same indent running or settled. The icon is omitted once done.
   const activityIcon = el('span', {
     class: 'tool-activity-icon-slot',
     'aria-hidden': 'true',
@@ -149,7 +158,7 @@ function createToolHeader(
             type: 'button',
             class: 'tool-edit-stats',
             'data-edit-path': editPath,
-            title: 'View changes',
+            'data-tooltip': 'View changes',
             'aria-label': `View changes to ${editPath}`,
           },
           ...stats,
@@ -348,7 +357,10 @@ function setUserMarkdown(el: HTMLElement, content: string): void {
     el.replaceChildren()
     return
   }
-  el.innerHTML = renderMarkdown(userPromptMarkdown(content))
+  // escape-all: angle-bracketed examples (`<cd … && npm test>`) must stay literal.
+  // Default passthrough emits raw tags; the sink sanitizer then strips unknown
+  // elements and the command vanishes from the transcript.
+  el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
   attachCodeBlockCopyButtons(el)
 }
 
@@ -470,7 +482,7 @@ function syncSubagentTimeline(
     const innerToolCalls = msg.toolCalls ?? []
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`
-      const sig = JSON.stringify(innerToolCalls)
+      const sig = renderSignature(innerToolCalls)
       let wrap = existing.get(key)
       if (!wrap || subagentInnerToolsSig.get(wrap) !== sig) {
         // Rebuilding recreates every inner tool collapsed; carry over the ids
@@ -527,7 +539,7 @@ function subagentChromeSignature(
   // the result must drop the duplicate copy below it, even though `tc.result`
   // itself never changed.
   const result = parentResultText(tc, session, status)
-  return JSON.stringify({
+  return renderSignature({
     label,
     status,
     model: session.model ?? null,
@@ -687,9 +699,11 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // Everything that determines a card's rendered output. When it is unchanged
 // since the last tick the existing card is reused verbatim, so its markdown is
 // not re-rendered and its copy buttons are not re-attached (#728). Wire tool
-// calls are plain JSON, so a stringify captures args/result/status/subagent.
+// calls are plain JSON, so a stringify captures args/result/status/subagent —
+// digested rather than kept, or the cache would pin a second copy of every tool
+// result for as long as its card is on screen (see {@link renderSignature}).
 function toolCardSignature(item: ToolCallDisplayItem): string {
-  return JSON.stringify(item)
+  return renderSignature(item)
 }
 
 function createMessageImages(images: string[]): HTMLElement {
@@ -755,12 +769,101 @@ function hookCardDetailLines(card: HookCard): string[] {
   return lines
 }
 
-function createHookCard(card: HookCard): HTMLElement {
+/**
+ * Fetch the raw record behind one card (`hooks:runDetail`). Injected rather than
+ * reached for, so the card family stays a pure rendering concern and component
+ * tests can drive the inspector without an IPC bridge.
+ */
+export type HookRunDetailLoader = (runId: string) => Promise<HookRunDetail>
+
+/** One labeled block of raw text in the inspector, with a copy affordance. */
+function createHookInspectorSection(section: HookRunSection): HTMLElement {
+  const copy = el('button', {
+    class: 'hook-card-raw-copy',
+    type: 'button',
+    'aria-label': `Copy ${section.label}`,
+  })
+  copy.textContent = 'Copy'
+  copy.addEventListener('click', () => {
+    void navigator.clipboard.writeText(section.text).then(
+      () => {
+        copy.textContent = 'Copied'
+        setTimeout(() => {
+          copy.textContent = 'Copy'
+        }, 1200)
+      },
+      () => {
+        copy.textContent = 'Failed'
+      },
+    )
+  })
+  const heading = el('div', { class: 'hook-card-raw-label' }, section.label)
+  heading.append(copy)
+  const pre = el('pre', { class: 'hook-card-raw-pre', 'data-format': section.format })
+  pre.textContent = section.text
+  return el('div', { class: 'hook-card-raw-section', 'data-section': section.label }, heading, pre)
+}
+
+/** Render a loaded {@link HookRunDetail} into the inspector body. */
+function fillHookInspector(body: HTMLElement, detail: HookRunDetail): void {
+  clear(body)
+  const chips = hookRunDetailChips(detail)
+  if (chips.length > 0) {
+    const row = el('div', { class: 'hook-card-raw-chips' })
+    for (const chip of chips) row.append(el('span', { class: 'hook-card-raw-chip' }, chip))
+    body.append(row)
+  }
+  for (const section of hookRunDetailSections(detail)) {
+    body.append(createHookInspectorSection(section))
+  }
+  const empty = hookRunDetailEmptyReason(detail)
+  if (empty !== null) body.append(el('div', { class: 'hook-card-raw-status' }, empty))
+}
+
+/**
+ * The inspector: what the hook was handed and what it returned, in full. The
+ * card header answers "what happened"; this answers "what was in it" — the
+ * question the character counts above can only gesture at.
+ *
+ * Loaded lazily on first open and never re-fetched: a hook run is immutable once
+ * recorded, and an expanded transcript would otherwise fetch every blob of every
+ * card it scrolled past.
+ */
+function createHookCardInspector(card: HookCard, load: HookRunDetailLoader): HTMLElement {
+  const body = el('div', { class: 'hook-card-raw-body' })
+  const inspector = el(
+    'details',
+    { class: 'hook-card-raw' },
+    el('summary', { class: 'hook-card-raw-summary' }, 'Inspect run'),
+    body,
+  )
+  let requested = false
+  inspector.addEventListener('toggle', () => {
+    if (!inspector.open || requested) return
+    requested = true
+    body.append(el('div', { class: 'hook-card-raw-status' }, 'Reading the recorded run…'))
+    void load(card.id).then(
+      (detail) => {
+        fillHookInspector(body, detail)
+      },
+      () => {
+        clear(body)
+        body.append(
+          el('div', { class: 'hook-card-raw-status' }, 'Could not read this run from the thread.'),
+        )
+      },
+    )
+  })
+  return inspector
+}
+
+function createHookCard(card: HookCard, load: HookRunDetailLoader): HTMLElement {
   const cardEl = el('details', {
     class: 'hook-card',
     'data-hook-id': card.hookId,
     'data-hook-event': card.event,
     'data-hook-kind': card.kind,
+    'data-hook-run': card.id,
     'data-status': card.status,
     open: hookCardPerformedAction(card),
   })
@@ -780,7 +883,7 @@ function createHookCard(card: HookCard): HTMLElement {
   for (const line of hookCardDetailLines(card)) {
     detail.append(el('div', { class: 'hook-card-detail-line' }, line))
   }
-  cardEl.append(header, detail)
+  cardEl.append(header, detail, createHookCardInspector(card, load))
   return cardEl
 }
 
@@ -846,7 +949,11 @@ function hookGroupSummaryLabel(cards: HookCard[]): string {
  * in fire order. The summary carries the worst status so a blocking verdict is
  * still visible while collapsed.
  */
-function createHookCardHost(messageId: string, cards: HookCard[]): HTMLElement {
+function createHookCardHost(
+  messageId: string,
+  cards: HookCard[],
+  load: HookRunDetailLoader,
+): HTMLElement {
   const host = el('div', {
     class: 'hook-card-host',
     'data-hook-cards-for': messageId,
@@ -866,7 +973,7 @@ function createHookCardHost(messageId: string, cards: HookCard[]): HTMLElement {
     el('span', { class: 'hook-status-icon', 'aria-label': status }, hookCardStatusIcon(status)),
   )
   const body = el('div', { class: 'hook-card-group-body' })
-  for (const card of cards) body.append(createHookCard(card))
+  for (const card of cards) body.append(createHookCard(card, load))
   group.append(header, body)
   host.append(group)
   return host
@@ -973,7 +1080,10 @@ function renderUserTranscript(
   parts.forEach((part, i) => {
     if (part) host.append(document.createTextNode(part))
     if (i < parts.length - 1) {
-      host.append(transcriptChip({ kind: 'paste', label: pastes[i]?.label ?? 'Pasted text' }, api))
+      // Pass the whole attachment, not just its label: the snapshot behind a
+      // paste is what makes its chip openable in the preview modal. A
+      // placeholder with no attachment left to match stays display-only.
+      host.append(transcriptChip(pastes[i] ?? { kind: 'paste', label: 'Pasted text' }, api))
     }
   })
 
@@ -1115,6 +1225,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       class: 'scroll-to-bottom',
       type: 'button',
       'aria-label': 'Scroll to bottom',
+      'data-tooltip': 'Scroll to bottom',
+      'data-tooltip-placement': 'top',
       hidden: true,
     },
     arrowDownIcon('ui-icon'),
@@ -1947,31 +2059,34 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     if (!thread) return
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
-    let prevModel: string | undefined
+    // A segment starts where the model *or* the parameters change, so dialling
+    // effort up mid-thread marks the turn it took effect on.
+    let prevLabel: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
       const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
       if (!msgEl) continue
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
-      if (show && model && model !== prevModel) {
+      const text = model ? formatPrimaryChatModelLabel(model, msg.parameters) : undefined
+      if (show && text && text !== prevLabel) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = formatPrimaryChatModelLabel(model)
+        label.textContent = text
         if (!existing) msgEl.prepend(label)
       } else {
         existing?.remove()
       }
-      prevModel = model
+      prevLabel = text
     }
   }
 
   function syncTodoPanel(): void {
-    // P4: the plan panel is a level-2 declarative pack contribution from
+    // P4: the plan panel is a level-2 declarative plugin contribution from
     // `copse.todos`. Historical rendering resolves from `thread.todos` (the
     // durable `todo_update` state persisted across sessions), never from the
-    // live pack registration (decision 17) — so an old thread's plan renders
-    // even if the pack is later disabled. The generic pack-panel renderer
-    // (`createPackPanelEl`) is fed the same `PanelListData` the pack emits
+    // live plugin registration (decision 17) — so an old thread's plan renders
+    // even if the plugin is later disabled. The generic plugin-panel renderer
+    // (`createPluginPanelEl`) is fed the same `PanelListData` the plugin emits
     // via `panel_update` for new turns (`todosToPanelListData`), keeping the
     // in-turn UI and reloaded-history UI byte-identical.
     todoHost.replaceChildren()
@@ -1980,8 +2095,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const data: PanelListData = todosToPanelListData(thread.todos)
     if (data.rows.length === 0) return
     todoHost.append(
-      createPackPanelEl(data, {
-        packId: TODOS_PACK_ID,
+      createPluginPanelEl(data, {
+        pluginId: TODOS_PLUGIN_ID,
         contributionId: TODOS_PANEL_CONTRIBUTION_ID,
         ariaLabel: 'To-dos',
       }),
@@ -1999,7 +2114,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
     const cards = msg?.hookCards ?? []
     if (!msgEl || cards.length === 0) return
-    msgEl.after(createHookCardHost(messageId, cards))
+    // The inspector resolves its thread at *open* time, not render time: a card
+    // rendered now can be inspected after the user has switched threads and back,
+    // and the ids are re-read from the store rather than captured stale.
+    const load: HookRunDetailLoader = (runId) => {
+      const projectId = store.getState().activeProjectId
+      if (projectId === null) return Promise.resolve({ found: false })
+      return api.hooks.runDetail(projectId, threadId, runId)
+    }
+    msgEl.after(createHookCardHost(messageId, cards, load))
   }
 
   function renderMessageReview(threadId: string, messageId: string): void {

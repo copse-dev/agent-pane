@@ -2,6 +2,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
 
@@ -39,7 +40,17 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
   await expect(banner).toHaveAttribute('data-phase', 'armed')
 }
 
-describe('Guarded YOLO shell mode', function () {
+// Quarantined in CI by #1680 — see the note on `github-write-approval.e2e.ts`
+// for the shared fault. Same signature every run: `#approval-dialog` never
+// appears, then `invalid session id` once the session is gone.
+//
+// **Be uncomfortable about this one.** #1680 says so directly: while it is
+// skipped, the hard-deny for catastrophic deletion is not being exercised in
+// CI at all. Today's evidence points at the runner's memory ceiling rather
+// than the product, so the deny itself is very likely intact — but "very
+// likely" is the whole reason this is a quarantine with an open issue and not
+// a deletion. It still runs locally.
+describeSkipInCi('Guarded YOLO shell mode', function () {
   this.timeout(120_000)
   before(async () => {
     resetUserData()
@@ -115,6 +126,20 @@ describe('Guarded YOLO shell mode', function () {
     await expect($('#approval-dialog')).not.toBeDisplayed()
     const failedTool = await $('.tool-card[data-status="error"]')
     await failedTool.waitForDisplayed({ timeout: 30_000 })
+    // Tool cards are collapsed <details> whose body is built lazily
+    // (`lazyToolCardBodies` in conversation.ts). Until the card opens, the
+    // denial reason is not in the DOM at all and `getText()` returns only the
+    // summary — i.e. the `rm -rf /` label, never the harm-gate reason. Open it
+    // first, then wait for the deferred body to build.
+    await failedTool.$('summary.tool-card-header').click()
+    await browser.waitUntil(
+      async () => (await failedTool.getText()).includes('Guarded YOLO harm gate'),
+      {
+        timeout: 10_000,
+        interval: 250,
+        timeoutMsg: 'Opened error tool card never rendered the Guarded YOLO harm gate reason',
+      },
+    )
     expect(await failedTool.getText()).toContain('Guarded YOLO harm gate')
     await saveElementScreenshot('.tool-card[data-status="error"]', 'guarded-yolo-hard-deny.png')
   })

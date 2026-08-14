@@ -1,0 +1,36 @@
+{
+  "id": "mock-selftest",
+  "description": "Harness self-test: exercises the agent loop, git workspace setup, the git_commit and run_shell tools, and the check runner against the deterministic mock provider. The mock ignores the system prompt, so lift is meaningless here and this pack declares no gate.",
+  "steer": { "kind": "turnStart", "ref": "todoSteering" },
+  "tasks": [
+    {
+      "id": "mock-git-commit",
+      "description": "Directive drives the git_commit tool; asserts the tool ran and a second commit landed.",
+      "prompt": "Commit the pending work. [[mcp:git_commit {\"message\":\"steer harness smoke\"}]]",
+      "fixture": "benchmarks/steer/fixtures/pending-change",
+      "gitInit": { "defaultBranch": "main", "stageFixture": false },
+      "mockOnly": true,
+      "maxSteps": 2,
+      "timeoutMs": 60000,
+      "checks": [
+        { "id": "used-git-commit", "kind": "tool-used", "tool": "git_commit" },
+        {
+          "id": "commit-landed",
+          "kind": "shell",
+          "command": "test \"$(git rev-list --count HEAD)\" -ge 2"
+        }
+      ]
+    },
+    {
+      "id": "mock-run-shell",
+      "description": "Directive drives run_shell; asserts the allowlist accepts a permitted command.",
+      "prompt": "Check the working tree. [[mcp:run_shell {\"command\":\"git status --short\"}]]",
+      "gitInit": { "defaultBranch": "main" },
+      "allowedCommands": ["git status --short"],
+      "mockOnly": true,
+      "maxSteps": 2,
+      "timeoutMs": 60000,
+      "checks": [{ "id": "used-run-shell", "kind": "tool-used", "tool": "run_shell" }]
+    }
+  ]
+}

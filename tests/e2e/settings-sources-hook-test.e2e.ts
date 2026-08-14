@@ -59,9 +59,9 @@ describe('settings sources hooks (dry-run tester)', () => {
 
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="sources"]').click()
+    await dialog.$('button[data-section="customise"]').click()
 
-    const sources = dialog.$('.settings-section[data-section="sources"]')
+    const sources = dialog.$('.settings-section[data-section="customise"]')
     await expect(sources).toBeDisplayed()
     await expect(sources.$('legend=Hooks')).toBeDisplayed()
 

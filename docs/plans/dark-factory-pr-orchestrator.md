@@ -53,14 +53,15 @@ What exists to build on, and what is net-new:
 | CI investigator subagent             | `ci-investigator-service.ts` + `investigate-ci-tool.ts` (read-only tool set, local-model routed)                     | ✅ but **on-demand only**, callable only inside a live chat turn (`activeContext` seam)                |
 | Follow-up suggestions on PR signals  | `pr-context-service.ts` → `follow-up-service.ts` ("Debug CI" chip)                                                   | ✅ turn-triggered, passive                                                                             |
 | PR pane                              | `src/renderer/views/pr-pane.ts`                                                                                      | ✅ event-driven refresh, **no polling**; per-row CI dot from an in-memory session cache                |
+| Explicit per-turn CI waits           | `wait_for_ci_checks` → supervised `ci_watch` task                                                                    | ✅ durable across restart; resumes the owning turn once, but does not discover or correlate a fleet    |
 | Knowledge store (typed OKF notes)    | `src/main/services/storage/knowledge-store.ts`                                                                       | ✅ new note types need no store change                                                                 |
-| Scheduler / background poller        | `src/main/services/supervisor/dark-factory-sensor.ts`                                                                | ⚠️ adaptive, feature-gated event source exists; no fleet/GitHub observation consumer yet               |
-| Headless agent invocation            | —                                                                                                                    | ❌ `runAgent` requires an IPC-driven chat turn; subagent runners only work inside one                  |
+| Fleet scheduler / background poller  | `src/main/services/supervisor/dark-factory-sensor.ts`                                                                | ⚠️ adaptive, feature-gated event source exists; no fleet/GitHub observation consumer yet               |
+| Machine continuation                 | `AgentDispatcher.dispatchMachine`                                                                                    | ✅ bounded/deduplicated turn continuation; CI investigator subagent still needs a live turn context    |
 | Check-run history / cross-PR memory  | —                                                                                                                    | ❌ all CI reads are stateless                                                                          |
 | Flake/outage detection               | —                                                                                                                    | ❌ nothing correlates failures across PRs or over time                                                 |
 | GitHub rate-limit / backoff handling | —                                                                                                                    | ❌ neither backend inspects rate-limit headers or uses conditional requests                            |
 | OS/toast notifications               | —                                                                                                                    | ❌ nearest analogue is the projects-pane attention indicator                                           |
-| Durable background task schema       | `src/shared/supervisor/`, `schemas/copse-supervisor-task.schema.json`                                                | 🟡 P1 schema/reconcile foundation only; no main-process supervisor service or timers                   |
+| Durable background supervisor        | `src/main/services/supervisor/`, `schemas/copse-supervisor-task.schema.json`                                         | ✅ persisted tasks, restart reconciliation, wake/event/cron triggers, cancellation, and task UI        |
 | Project cron automations             | `src/main/services/automations/`, `copse.automations` pack                                                           | ✅ app-open prototype; not headless and not the orchestrator scheduler                                 |
 
 ## Background-agents.com comparison
@@ -212,7 +213,12 @@ Settled here; changing one means updating this doc, not silently diverging.
 1. **One orchestrator per app instance, in the main process.** Not per-thread, not a
    subagent of any chat turn. It owns the only PR/CI polling loop in the app; the PR
    pane becomes a _consumer_ of orchestrator state pushed over IPC (its lazy per-row
-   fetch remains only as the flag-off fallback).
+   fetch remains only as the flag-off fallback). An explicitly registered
+   `wait_for_ci_checks` task is a narrower exception, not an ambient fleet poller: the
+   shared supervisor owns its wake timer, it is pinned to one PR + head SHA + turn-tree,
+   and it performs no discovery, history correlation, or incident policy. When the fleet
+   observer lands, these watches may consume its observations without changing their
+   durable continuation contract.
 2. **Deterministic-first ("dark factory").** Sensors and control are plain code — pure,
    unit-testable, no model calls. A model runs only at rungs 4–5, on a classified
    incident, bounded and deduplicated. Routine supervision must cost ~zero tokens.

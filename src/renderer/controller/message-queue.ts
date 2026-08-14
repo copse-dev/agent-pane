@@ -163,6 +163,9 @@ function refreshPayload(
     // than the global default. Read at dispatch time so a change made while the
     // message was queued still takes effect. Absent → main uses the global default.
     ...(thread?.model !== undefined ? { model: thread.model } : {}),
+    // The composer's reasoning dial, read at dispatch time for the same reason:
+    // turning it up while a message sits queued should apply to that message.
+    ...(thread?.reasoning !== undefined ? { reasoning: thread.reasoning } : {}),
     // C3: thread the turn-tree epoch + the machine turns already spent so the
     // main-process continuation ledger keys and seeds the same counter this
     // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so
@@ -291,13 +294,36 @@ export function movePendingUserMessagesToEnd(
   return alreadyInOrder ? messages : nextMessages
 }
 
-export function resumePendingQueues(store: AppStore, api: ApiClient): void {
+async function runningThreadIdsOrNone(api: ApiClient): Promise<string[]> {
+  try {
+    return await api.agent.runningThreadIds()
+  } catch {
+    return []
+  }
+}
+
+export async function resumePendingQueues(store: AppStore, api: ApiClient): Promise<void> {
+  // A crash mid-run can leave status stuck at running with no live main-process
+  // run — but the main process is long-lived and may genuinely still be
+  // streaming a thread the renderer is only now (re)loading (e.g. a window
+  // reload, or switching back to a project while its run kept going). Ask
+  // which threads actually have a live run before trusting the persisted flag,
+  // so a real run's status isn't flipped to idle out from under it, hiding its
+  // stop control while it keeps producing output (#1406).
+  //
+  // Asking is best-effort: this runs behind `void` at both call sites, so an IPC
+  // rejection here would otherwise strand the whole resume — no queue drained and
+  // no stale `queuePaused` cleared — on an unhandled rejection nothing observes.
+  // Treating an unavailable answer as "nothing is running" degrades to the
+  // pre-#1406 behaviour (trust the persisted flag), which is the safe direction:
+  // a thread wrongly reset to idle still shows its queue, where one wrongly left
+  // running would be stuck with no way back.
+  const reallyRunning = new Set(await runningThreadIdsOrNone(api))
   for (const thread of store.getState().threads) {
     // A fresh session has no open inline editors, so a persisted pause is stale.
     if (thread.queuePaused) setQueuePaused(store, thread.id, false)
-    // A crash mid-run can leave status stuck at running with no live main-process run.
     let status = thread.status
-    if (status === 'running') {
+    if (status === 'running' && !reallyRunning.has(thread.id)) {
       setThreadStatus(store, thread.id, 'idle')
       status = 'idle'
     }

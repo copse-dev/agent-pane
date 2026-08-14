@@ -3,31 +3,30 @@ import type { DemoTrace } from '../demo-traces.ts'
 
 export const LANDING_TRACE: DemoTrace = {
   id: 'landing',
-  label: 'Landing hero',
-  prompt: 'how does the demo preview comment know which scenarios to link?',
+  label: 'Builds a cupcake site',
+  prompt:
+    'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
   steps: [
     {
       chunk: {
         type: 'reasoning',
-        text: 'The comment is written by a workflow, so the scenario list is either hard-coded there or handed to it by the build. Start at the workflow and follow the value backwards.',
+        text: '\n\n**Planning commentary before editing**\n\n**Inspecting list and status with parallel exec**',
       },
     },
     {
       chunk: {
         type: 'text',
-        text: 'The comment is generated in CI, so the list is either hard-coded in the workflow or emitted by the build. Following it back from the comment step:',
+        text: 'I’ll first inspect the project structure and any existing assets, then I’ll build the page in the project’s native setup. Visual direction: warm patisserie editorial—vanilla paper, berry ink, hand-drawn flourishes, oversized type, and a signup interaction that feels like part of the composition rather than a generic form. Afterward I’ll test responsiveness and behavior, then open a browser preview.',
       },
     },
     {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'tc-1',
-          name: 'search_code',
-          args: {
-            pattern: 'scenarios',
-            path: '.github/workflows/demo-preview.yml',
-          },
+          id: 'exec-798b76ff-4aef-4927-a7ef-d7465b5dd9a9',
+          name: 'git_status',
+          args: {},
+          kind: 'execute',
         },
       },
       delayMs: 420,
@@ -35,10 +34,10 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'tc-1',
-        result:
-          ".github/workflows/demo-preview.yml:46:scenarios: ${{ steps.scenarios.outputs.json }}\n.github/workflows/demo-preview.yml:83:- id: scenarios\n.github/workflows/demo-preview.yml:88:tr -d '\\n' < dist/demo/scenarios.json 2>/dev/null || echo '[]'\n.github/workflows/demo-preview.yml:152:SCENARIOS: ${{ needs.publish.outputs.scenarios }}\n.github/workflows/demo-preview.yml:164:let scenarios = [];\n.github/workflows/demo-preview.yml:166:scenarios = JSON.parse(process.env.SCENARIOS || '[]');\n.github/workflows/demo-preview.yml:168:scenarios = [];\n.github/workflows/demo-preview.yml:170:const links = scenarios",
+        toolCallId: 'exec-798b76ff-4aef-4927-a7ef-d7465b5dd9a9',
+        result: '(no output)',
         isError: false,
+        resultFormat: 'markdown',
       },
       delayMs: 900,
     },
@@ -46,13 +45,13 @@ export const LANDING_TRACE: DemoTrace = {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'tc-2',
-          name: 'read_file',
+          id: 'exec-eab41b0d-9d5b-4803-99ca-c4fa777171a4',
+          name: 'list_dir',
           args: {
-            path: 'scripts/build.mts',
-            start_line: 27,
-            end_line: 47,
+            path: '.',
+            recursive: true,
           },
+          kind: 'execute',
         },
       },
       delayMs: 420,
@@ -60,10 +59,43 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'tc-2',
-        result:
-          "// Emit a scenario manifest (id + label) alongside the demo build so the per-PR\n// demo-preview PR comment can link each selectable `?scenario=` state without\n// hard-coding the list. `demo-scenarios.ts` has only a type-only import, so\n// esbuild bundles it standalone; we import the emitted module and read the\n// exported list back. Best-effort: any failure writes `[]` rather than breaking\n// the demo build, since the comment degrades gracefully without it.\nasync function writeDemoScenarioManifest(outPath: string): Promise<void> {\n  const tempModule = resolve('dist', '.demo-scenarios.mjs')\n  try {\n    await esbuild.build({\n      entryPoints: ['src/shared/demo-scenarios.ts'],\n      bundle: true,\n      platform: 'node',\n      format: 'esm',\n      outfile: tempModule,\n      alias: sharedAlias,\n    })\n    const imported: unknown = await import(pathToFileURL(tempModule).href)\n    const list =\n      imported !== null && typeof imported === 'object' && 'DEMO_SCENARIOS' in imported\n        ? imported.DEMO_SCENARIOS",
+        toolCallId: 'exec-eab41b0d-9d5b-4803-99ca-c4fa777171a4',
+        result: '',
         isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Creating SVG cupcake illustration files**',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-c3d1f576-7b42-4380-a915-d5a3d77fd339',
+          name: 'write_file',
+          args: {
+            path: 'index.html',
+            content:
+              '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <meta name="description" content="Crumb & Bloom — small-batch cupcakes, thoughtfully made. Join the first-bite list.">\n  <title>Crumb & Bloom — Coming Soon</title>\n  <link rel="preconnect" href="https://fonts.googleapis.com">\n  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">\n  <link rel="stylesheet" href="styles.css">\n</head>\n<body>\n  <div class="page-shell">\n    <header class="site-header">\n      <a class="brand" href="#" aria-label="Crumb and Bloom home">\n        <span class="brand-mark" aria-hidden="true">C<span>&</span>B</span>\n        <span class="brand-name">Crumb <em>&</em> Bloom</span>\n      </a>\n      <div class="header-note"><span></span> Whisking up something lovely</div>\n    </header>\n\n    <main>\n      <section class="hero" aria-labelledby="hero-title">\n        <div class="hero-copy">\n          <p class="eyebrow">A small-batch cupcake studio</p>\n          <h1 id="hero-title">Little cakes.<br><em>Big feelings.</em></h1>\n          <p class="intro">Playful flavours, cloud-soft swirls, and the kind of crumbs worth getting on your best shirt.</p>\n\n          <form class="signup" id="signup-form">\n            <label for="email">Join the first-bite list</label>\n            <div class="form-row">\n              <input id="email" name="email" type="email" placeholder="your@email.com" autocomplete="email" required>\n              <button type="submit"><span>Save me a spot</span><span aria-hidden="true">↗</span></button>\n            </div>\n            <p class="form-note" id="form-note" aria-live="polite">Fresh drops, opening news & no soggy inboxes.</p>\n          </form>\n        </div>\n\n        <div class="hero-art" aria-label="Illustration of a cherry-topped cupcake">\n          <span class="doodle doodle-one" aria-hidden="true">✦</span>\n          <span class="doodle doodle-two" aria-hidden="true">made<br>with joy</span>\n          <svg class="cupcake" viewBox="0 0 560 600" role="img" aria-labelledby="cupcake-title">\n            <title id="cupcake-title">A hand-drawn pink cupcake topped with a cherry</title>\n            <path class="shadow" d="M108 534c62 35 275 39 340-4 42-28-24-55-164-56-136-1-219 35-176 60z"/>\n            <path class="wrapper" d="M140 318l32 216c4 26 27 43 53 43h116c25 0 47-17 52-42l37-217z"/>\n            <path class="wrapper-line" d="M181 337l28 207M237 332l10 231M294 332l-1 231M350 332l-18 229M403 334l-43 211"/>\n            <path class="frosting" d="M126 329c-22-25 0-62 39-71-11-35 13-69 59-72-4-39 30-69 73-60 29-32 84-21 92 21 42-4 68 32 59 70 42 10 55 52 29 79 16 23 1 53-30 54l-291 1c-27 0-44-10-30-22z"/>\n            <path class="frosting-detail" d="M169 257c24-4 43 3 54 20M223 186c24 3 40 16 44 35M296 129c20 8 30 23 28 44M390 149c-19 7-30 21-30 41M447 219c-24-3-43 7-53 26M143 310c33-15 62-11 83 8M286 218c-26 9-37 31-32 53M345 280c17-25 40-34 69-25"/>\n            <path class="stem" d="M322 134c3-52 32-87 81-103"/>\n            <path class="leaf" d="M358 71c25-42 65-43 85-34-13 34-43 51-85 34z"/>\n            <circle class="cherry" cx="312" cy="126" r="43"/>\n            <path class="cherry-shine" d="M290 106c6-9 14-13 25-14"/>\n          </svg>\n          <p class="art-caption"><span>01</span> Signature swirls<br>in every season</p>\n        </div>\n      </section>\n\n      <section class="ticker" aria-label="What to expect">\n        <div class="ticker-track">\n          <span>Small batches</span><i>✿</i><span>Big buttercream</span><i>✿</i><span>Joyful flavours</span><i>✿</i>\n          <span aria-hidden="true">Small batches</span><i aria-hidden="true">✿</i><span aria-hidden="true">Big buttercream</span><i aria-hidden="true">✿</i><span aria-hidden="true">Joyful flavours</span><i aria-hidden="true">✿</i>\n        </div>\n      </section>\n    </main>\n\n    <footer>\n      <p>Baked with care in London</p>\n      <p>Opening autumn 2026</p>\n      <a href="https://www.instagram.com" aria-label="Follow Crumb and Bloom on Instagram">Instagram ↗</a>\n    </footer>\n  </div>\n  <script src="script.js"></script>\n</body>\n</html>',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-c3d1f576-7b42-4380-a915-d5a3d77fd339',
+        result:
+          'Applied edit directly to index.html. Git was clean except for Copse-applied edits in this session, so no approval was required. You can validate with run_shell/read_file/git now.',
+        isError: false,
+        resultFormat: 'markdown',
       },
       delayMs: 900,
     },
@@ -71,13 +103,14 @@ export const LANDING_TRACE: DemoTrace = {
       chunk: {
         type: 'tool_call',
         toolCall: {
-          id: 'tc-3',
-          name: 'read_file',
+          id: 'exec-93ee42b7-5aa3-4f60-bc0d-742ecb190338',
+          name: 'write_file',
           args: {
-            path: 'src/shared/demo-scenarios.ts',
-            start_line: 1,
-            end_line: 16,
+            path: 'styles.css',
+            content:
+              ':root {\n  --cream: #f6f0e3;\n  --paper: #fffaf0;\n  --berry: #8d2341;\n  --pink: #e9a6b8;\n  --pink-light: #f5cbd3;\n  --red: #c9314b;\n  --green: #3d684d;\n  --ink: #2d251f;\n  --line: rgba(45, 37, 31, .25);\n}\n* { box-sizing: border-box; }\nhtml { scroll-behavior: smooth; }\nbody {\n  margin: 0;\n  background: var(--cream);\n  color: var(--ink);\n  font-family: "DM Sans", sans-serif;\n  -webkit-font-smoothing: antialiased;\n}\nbody::before {\n  content: "";\n  position: fixed; inset: 0; pointer-events: none; opacity: .32;\n  background-image: url("data:image/svg+xml,%3Csvg viewBox=\'0 0 180 180\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'.08\'/%3E%3C/svg%3E");\n  z-index: 10;\n}\n.page-shell { min-height: 100vh; overflow: hidden; }\n.site-header {\n  height: 100px; display: flex; align-items: center; justify-content: space-between;\n  padding: 0 clamp(24px, 5vw, 76px); border-bottom: 1px solid var(--line);\n}\n.brand { display: flex; align-items: center; gap: 13px; color: inherit; text-decoration: none; }\n.brand-mark {\n  width: 44px; height: 44px; border: 1.5px solid var(--ink); border-radius: 50%;\n  display: grid; place-items: center; font-family: "Instrument Serif"; font-size: 17px;\n  transform: rotate(-5deg);\n}\n.brand-mark span, .brand-name em { color: var(--berry); font-style: italic; }\n.brand-name { font-family: "Instrument Serif"; font-size: 25px; letter-spacing: -.02em; }\n.header-note { text-transform: uppercase; font-size: 10px; letter-spacing: .17em; display: flex; align-items: center; gap: 10px; }\n.header-note span { width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse 2s infinite; }\n\n.hero {\n  min-height: calc(100vh - 182px); display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(420px, .96fr);\n}\n.hero-copy {\n  padding: clamp(70px, 8vw, 125px) clamp(30px, 7.5vw, 118px) 74px;\n  display: flex; flex-direction: column; justify-content: center; border-right: 1px solid var(--line);\n}\n.eyebrow {\n  margin: 0 0 25px; color: var(--berry); text-transform: uppercase; letter-spacing: .19em;\n  font-size: 11px; font-weight: 600; display: flex; gap: 12px; align-items: center;\n}\n.eyebrow::before { content:""; width: 32px; height: 1px; background: currentColor; }\nh1 { margin: 0; font-family: "Instrument Serif"; font-weight: 400; font-size: clamp(68px, 7.3vw, 116px); line-height: .83; letter-spacing: -.055em; }\nh1 em { color: var(--berry); font-weight: 400; }\n.intro { max-width: 470px; margin: 35px 0 47px; font-family: "Instrument Serif"; font-size: clamp(20px, 1.7vw, 25px); line-height: 1.4; }\n.signup { max-width: 555px; }\n.signup label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .14em; font-weight: 600; margin-bottom: 11px; }\n.form-row { display: flex; border-bottom: 1.5px solid var(--ink); }\ninput {\n  min-width: 0; flex: 1; border: 0; background: transparent; padding: 14px 4px;\n  font: 17px "DM Sans"; color: var(--ink); outline: none;\n}\ninput::placeholder { color: #7b7169; }\nbutton {\n  border: 0; background: var(--berry); color: white; font: 600 11px "DM Sans";\n  text-transform: uppercase; letter-spacing: .1em; padding: 0 18px; margin-bottom: 7px;\n  display: flex; align-items: center; gap: 15px; cursor: pointer; transition: background .2s, transform .2s;\n}\nbutton:hover { background: var(--ink); transform: translateY(-2px); }\nbutton:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--pink); outline-offset: 4px; }\n.form-note { font-size: 11px; color: #746b63; margin: 10px 0 0; min-height: 16px; }\n.form-note.success { color: var(--green); font-weight: 600; }\n\n.hero-art { position: relative; display: grid; place-items: center; background: var(--pink-light); min-height: 660px; }\n.hero-art::before {\n  content:""; position: absolute; width: min(76%, 530px); aspect-ratio: 1;\n  border: 1px solid rgba(141,35,65,.24); border-radius: 50%;\n}\n.cupcake { width: min(78%, 580px); position: relative; filter: drop-shadow(0 16px 0 rgba(141,35,65,.08)); animation: float 5s ease-in-out infinite; }\n.shadow { fill: #cd889b; opacity: .45; }\n.wrapper { fill: #f3d58f; stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; }\n.wrapper-line { fill: none; stroke: #bb8647; stroke-width: 2.2; opacity: .65; }\n.frosting { fill: #fff9ee; stroke: var(--ink); stroke-width: 3.4; stroke-linejoin: round; }\n.frosting-detail { fill: none; stroke: #d795a8; stroke-width: 3; stroke-linecap: round; }\n.stem { fill: none; stroke: var(--green); stroke-width: 7; stroke-linecap: round; }\n.leaf { fill: #789b67; stroke: var(--ink); stroke-width: 3; }\n.cherry { fill: var(--red); stroke: var(--ink); stroke-width: 3; }\n.cherry-shine { fill: none; stroke: #ffd9da; stroke-width: 6; stroke-linecap: round; }\n.doodle { position: absolute; z-index: 2; color: var(--berry); }\n.doodle-one { font-size: 42px; top: 17%; right: 13%; transform: rotate(14deg); }\n.doodle-two { left: 8%; top: 26%; font: italic 20px/1 "Instrument Serif"; text-align: center; transform: rotate(-11deg); }\n.doodle-two::after { content: "↘"; display: block; font-size: 29px; margin: 7px 0 0 31px; }\n.art-caption {\n  position: absolute; right: 7%; bottom: 6%; margin: 0; font: italic 16px/1.25 "Instrument Serif";\n  transform: rotate(3deg);\n}\n.art-caption span { font: 10px "DM Sans"; letter-spacing: .15em; display: block; margin-bottom: 5px; }\n\n.ticker { background: var(--berry); color: var(--paper); overflow: hidden; padding: 15px 0; }\n.ticker-track { width: max-content; display: flex; align-items: center; animation: ticker 28s linear infinite; }\n.ticker span { font: italic 21px "Instrument Serif"; padding: 0 34px; }\n.ticker i { font-style: normal; font-size: 14px; color: var(--pink); }\nfooter {\n  min-height: 82px; padding: 0 clamp(24px, 5vw, 76px); display: flex; align-items: center; gap: 40px;\n  text-transform: uppercase; letter-spacing: .12em; font-size: 9px;\n}\nfooter p:nth-child(2) { margin-left: auto; }\nfooter a { color: inherit; text-underline-offset: 4px; }\n\n@keyframes pulse { 50% { transform: scale(.65); opacity: .5; } }\n@keyframes float { 50% { transform: translateY(-9px) rotate(1deg); } }\n@keyframes ticker { to { transform: translateX(-50%); } }\n\n@media (max-width: 860px) {\n  .site-header { height: 82px; }\n  .brand-name { font-size: 22px; }\n  .header-note { display: none; }\n  .hero { grid-template-columns: 1fr; }\n  .hero-copy { border-right: 0; padding: 72px 25px 70px; }\n  h1 { font-size: clamp(65px, 18vw, 94px); }\n  .intro { margin: 30px 0 42px; }\n  .hero-art { min-height: 570px; border-top: 1px solid var(--line); }\n  .cupcake { width: min(87%, 520px); }\n  footer { flex-wrap: wrap; justify-content: space-between; gap: 10px 20px; padding-block: 25px; }\n  footer p { margin: 0; }\n  footer p:nth-child(2) { margin-left: 0; }\n}\n@media (max-width: 480px) {\n  .brand-mark { width: 38px; height: 38px; }\n  h1 { font-size: 65px; }\n  .form-row { display: block; border: 0; }\n  input { width: 100%; border-bottom: 1.5px solid var(--ink); }\n  button { width: 100%; height: 50px; margin: 12px 0 0; justify-content: space-between; }\n  .hero-art { min-height: 470px; }\n  .doodle-two { top: 16%; }\n  .art-caption { bottom: 4%; }\n}\n@media (prefers-reduced-motion: reduce) {\n  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }\n}',
           },
+          kind: 'execute',
         },
       },
       delayMs: 420,
@@ -85,26 +118,229 @@ export const LANDING_TRACE: DemoTrace = {
     {
       chunk: {
         type: 'tool_result',
-        toolCallId: 'tc-3',
+        toolCallId: 'exec-93ee42b7-5aa3-4f60-bc0d-742ecb190338',
         result:
-          "import type { Project, Thread } from './types/index.ts'\nimport type { DemoTrace } from './demo-traces.ts'\nimport { LANDING_TRACE } from './demo-traces/landing.ts'\n\nconst FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)\nconst FOOTER_INPUT_TOKENS = 50_000\nconst FOOTER_OUTPUT_TOKENS = 1_800\n\nexport interface DemoScenario {\n  id: string\n  label: string\n  project: Project\n  threads: Thread[]\n  settings: Readonly<Record<string, unknown>>\n  /**\n   * A recorded turn the demo can replay when its prompt is submitted. Scenarios",
+          'Applied edit directly to styles.css. Git was clean except for Copse-applied edits in this session, so no approval was required. You can validate with run_shell/read_file/git now.',
         isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-2e778c46-b3e5-46b5-9e86-7a643af2fdb5',
+          name: 'write_file',
+          args: {
+            path: 'script.js',
+            content:
+              "const form = document.querySelector('#signup-form');\nconst note = document.querySelector('#form-note');\nform.addEventListener('submit', (event) => {\n  event.preventDefault();\n  const email = new FormData(form).get('email');\n  if (!email) return;\n  note.textContent = \"You're on the list — we'll save you the first swirl.\";\n  note.classList.add('success');\n  form.querySelector('button span:first-child').textContent = 'You’re in!';\n  form.querySelector('input').value = '';\n});",
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-2e778c46-b3e5-46b5-9e86-7a643af2fdb5',
+        result:
+          'Applied edit directly to script.js. Git was clean except for Copse-applied edits in this session, so no approval was required. You can validate with run_shell/read_file/git now.',
+        isError: false,
+        resultFormat: 'markdown',
       },
       delayMs: 900,
     },
     {
       chunk: {
         type: 'text',
-        text: "Nothing hard-codes it — the list is a build output.\n\n### The chain\n\n1. **`src/shared/demo-scenarios.ts`** is the single source: `DEMO_SCENARIOS` holds every\n   `{ id, label, project, threads, settings }` the demo can boot into.\n2. **`scripts/build.mts`** (`writeDemoScenarioManifest`) bundles that module on its own with\n   esbuild, imports the result, and writes `id` + `label` pairs to `dist/demo/scenarios.json`.\n3. **`.github/workflows/demo-preview.yml`** reads that file into a step output:\n\n   ```yaml\n   tr -d '\\n' < dist/demo/scenarios.json 2>/dev/null || echo '[]'\n   ```\n\n4. The `comment` job parses it and maps each entry to `?scenario=<id>`.\n\n### What that means for you\n\nAdd a scenario to `DEMO_SCENARIOS` and the PR comment picks it up on the next push — no\nworkflow edit. The manifest step is deliberately best-effort: if the bundle fails it writes\n`[]` and the comment degrades to a bare preview link rather than failing the build.",
+        text: 'The core page is in place: a split editorial hero, custom hand-drawn cupcake artwork, moving flavour ribbon, and a responsive signup flow. I’m opening it now to check the actual rendered composition, keyboard-readable structure, and form behavior; I’ll adjust anything that looks off in the browser.',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-4e186036-cd38-4890-959e-556e67eeb55e',
+          name: 'browser_preview',
+          args: {
+            path: 'index.html',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-4e186036-cd38-4890-959e-556e67eeb55e',
+        result:
+          'Opened tab-1 in the visible Browser panel: Crumb & Bloom — Coming Soon\nhttp://localhost:61025/index.html',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Requesting screenshot**',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-d06a3ecf-21ee-4e84-98cd-59d0f0405a64',
+          name: 'browser_screenshot',
+          args: {
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-d06a3ecf-21ee-4e84-98cd-59d0f0405a64',
+        result:
+          'Saved screenshot of tab-1 to ~/debugging/agent-pane/.wdio-eval-userdata-a3a2d66b-7G38gL/browser-screenshots/tab-1-1786277869636.png',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-fa1cc6dd-5f45-4a2d-b3fa-1d9a42378200',
+          name: 'browser_snapshot',
+          args: {
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-fa1cc6dd-5f45-4a2d-b3fa-1d9a42378200',
+        result:
+          'page: "Crumb & Bloom — Coming Soon"\nurl: http://localhost:61025/index.html\n\n- link "Crumb and Bloom home" [ref=e1]\n  - text "&" [ref=e2]\n  - text "&" [ref=e3]\n- text "A small-batch cupcake studio"\n- heading "Little cakes.Big feelings."\n  - text "Big feelings."\n- text "Playful flavours, cloud-soft swirls, and the kind of crumbs worth getting on your best shirt."\n- text "Join the first-bite list"\n- textbox "Join the first-bite list" [ref=e4]\n- button "Save me a spot↗" [ref=e5]\n  - text "Save me a spot" [ref=e6]\n  - text "↗" [ref=e7]\n- text "Fresh drops, opening news & no soggy inboxes."\n- text "✦"\n- img "A hand-drawn pink cupcake topped with a cherry"\n- text "01 Signature swirlsin every season"\n- text "01"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Baked with care in London"\n- text "Opening autumn 2026"\n- link "Follow Crumb and Bloom on Instagram" [ref=e8]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Testing image viewing via screenshot tool**',
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-a5b1aaf5-9e63-4bf6-af9c-4bcea44ce7a1',
+          name: 'browser_type',
+          args: {
+            ref: 'e4',
+            text: 'hello@example.com',
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-a5b1aaf5-9e63-4bf6-af9c-4bcea44ce7a1',
+        result: 'Typed into [ref=e4]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-13b18f21-2291-416f-9ab7-89c7347892f4',
+          name: 'browser_click',
+          args: {
+            ref: 'e5',
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-13b18f21-2291-416f-9ab7-89c7347892f4',
+        result: 'Clicked [ref=e5]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'exec-1fe3e158-c75e-46b8-b140-e655e65e31eb',
+          name: 'browser_snapshot',
+          args: {
+            viewId: 'tab-1',
+          },
+          kind: 'execute',
+        },
+      },
+      delayMs: 420,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'exec-1fe3e158-c75e-46b8-b140-e655e65e31eb',
+        result:
+          'page: "Crumb & Bloom — Coming Soon"\nurl: http://localhost:61025/index.html\n\n- link "Crumb and Bloom home" [ref=e1]\n  - text "&" [ref=e2]\n  - text "&" [ref=e3]\n- text "A small-batch cupcake studio"\n- heading "Little cakes.Big feelings."\n  - text "Big feelings."\n- text "Playful flavours, cloud-soft swirls, and the kind of crumbs worth getting on your best shirt."\n- text "Join the first-bite list"\n- textbox "Join the first-bite list" [ref=e4]\n- button "You’re in!↗" [ref=e5]\n  - text "You’re in!" [ref=e6]\n  - text "↗" [ref=e7]\n- text "You\'re on the list — we\'ll save you the first swirl."\n- text "✦"\n- img "A hand-drawn pink cupcake topped with a cherry"\n- text "01 Signature swirlsin every season"\n- text "01"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Small batches"\n- text "✿"\n- text "Big buttercream"\n- text "✿"\n- text "Joyful flavours"\n- text "✿"\n- text "Baked with care in London"\n- text "Opening autumn 2026"\n- link "Follow Crumb and Bloom on Instagram" [ref=e8]',
+        isError: false,
+        resultFormat: 'markdown',
+      },
+      delayMs: 900,
+    },
+    {
+      chunk: {
+        type: 'reasoning',
+        text: '\n\n**Planning overflow validation approach**',
+      },
+    },
+    {
+      chunk: {
+        type: 'text',
+        text: 'Built and previewed a polished, responsive coming-soon site for Crumb & Bloom featuring:\n\n- Handcrafted cupcake illustration\n- Warm editorial branding and typography\n- Animated flavour ticker\n- Functional email signup confirmation\n- Accessible focus states and reduced-motion support\n- Mobile-responsive layout\n\nFiles: [index.html](~/index.html), [styles.css](~/styles.css), [script.js](~/script.js)\n\nhttp://localhost:61025/index.html',
       },
     },
     {
       chunk: {
         type: 'usage',
-        model: 'claude-sonnet-5',
-        inputTokens: 41820,
-        outputTokens: 1264,
-        cacheReadTokens: 38400,
+        model: 'acp:codex',
+        inputTokens: 1236,
+        outputTokens: 160,
+        cacheReadTokens: 23296,
       },
       delayMs: 300,
     },
@@ -118,9 +354,9 @@ export const LANDING_TRACE: DemoTrace = {
   ],
   source: {
     exportVersion: 5,
-    threadId: 'a2f1c6d4-9f4a-4a91-8d7e-3f0b1c2d4e5f',
-    title: 'Where the demo scenario list comes from',
+    threadId: '44f88c10-9b17-4536-8314-646199f8936f',
+    title: 'Build a polished coming-soon site for',
     turn: 0,
-    model: 'claude-sonnet-5',
+    model: 'acp:codex',
   },
 }

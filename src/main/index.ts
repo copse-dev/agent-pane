@@ -10,12 +10,23 @@ import {
 import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
-import { createMainWindow } from './windows/create-main-window.ts'
+import {
+  assertPrimaryMainWindow,
+  createMainWindow,
+  getFocusedMainWindow,
+  getMainWindow,
+} from './windows/create-main-window.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
+import {
+  approveClose,
+  deferQuitForCloseConfirmation,
+  guardWindowClose,
+  initCloseConfirm,
+} from './services/close-confirm.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import {
   createRegistry,
@@ -23,7 +34,7 @@ import {
   syncCiInvestigatorTools,
   syncGhTools,
 } from './services/registry-bootstrap.ts'
-import { getPackService } from './services/packs/pack-service.ts'
+import { getPluginService } from './services/plugins/plugin-service.ts'
 import {
   loadMcpServers,
   shutdownMcpServers,
@@ -49,6 +60,7 @@ import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   abortAgent,
+  listRunningThreadIds,
   retryPostTurnReview,
   retryModelComparison,
   suggestThreadTitle,
@@ -74,7 +86,6 @@ import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import { clearAgentHistory } from './services/thread-store.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
-import { getMainWindow } from './windows/create-main-window.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
@@ -82,6 +93,7 @@ import {
   setBrowserSessionPlatform,
   shutdownBrowserSession,
 } from './services/browser/session-manager.ts'
+import { shutdownStaticPreviewServers } from './services/browser/static-preview-server.ts'
 import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
@@ -119,8 +131,10 @@ import {
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
+  resolveThreadExecutionContext,
   runWithThreadExecutionContext,
 } from './services/thread-execution-context.ts'
+import { parkCompletedPullRequestWorktree } from './services/worktree-parking.ts'
 import { runWithActiveRunIdentity } from './services/thread-models.ts'
 import {
   prepareThreadCheckout,
@@ -130,6 +144,7 @@ import { getAutomationService } from './services/automations/automation-service.
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
+import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 
@@ -148,6 +163,11 @@ const taskSupervisor = getTaskSupervisor()
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
   getAgentSession: () => getAgentBrowserSession(),
+  showUrl: (url) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    win.webContents.send('browser:show-tab', url)
+  },
 })
 
 setVideoDecoderPlatform({
@@ -257,8 +277,16 @@ app
     })
     applyAppIcon([win])
     const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
-    buildAppMenu(win, developerMode)
+    buildAppMenu(
+      {
+        getFocusedWindow: getFocusedMainWindow,
+        createWindow: createMainWindow,
+      },
+      developerMode,
+    )
     initUpdatePrompt(win)
+    initCloseConfirm(win)
+    guardWindowClose(win)
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
     // spawns (one of them, `gh auth status`, a network round trip), and run
     // before the window they cost the user seconds of blank screen. The window
@@ -278,12 +306,12 @@ app
     const toolAvailability = checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
-    // P5: boot the pack service before `createRegistry()` so persisted
-    // `packDisabled` state is applied to the shared registry before
+    // P5: boot the plugin service before `createRegistry()` so persisted
+    // `pluginDisabled` state is applied to the shared registry before
     // `syncModelComparisonTools` reads it — otherwise the fallback fresh
-    // first-party registry (all packs enabled) would register the tool for a
-    // pack the user turned off in a previous session.
-    getPackService()
+    // first-party registry (all plugins enabled) would register the tool for a
+    // plugin the user turned off in a previous session.
+    getPluginService()
     const registry = createRegistry()
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
@@ -322,6 +350,7 @@ app
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
+    disposeCiWatchConsumer = installCiWatchConsumer(taskSupervisor, agentDispatcher)
     disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
@@ -428,6 +457,7 @@ app
         modelArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         if (typeof promptArg !== 'string' || promptArg.length > 1_000_000) {
@@ -453,12 +483,16 @@ app
       'agent:run',
       async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         await agentDispatcher.dispatch({
           projectId,
           threadId,
           payload: parseAgentRunPayload(rawPrompt),
+        })
+        await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
+          console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
       },
     )
@@ -504,6 +538,7 @@ app
       'agent:clearHistory',
       async (event, projectIdArg: unknown, threadIdArg: unknown) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         agentDispatcher.forgetHistory(projectId, threadId)
@@ -524,8 +559,17 @@ app
 
     ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
       assertMainFrameSender(event, win)
+      assertPrimaryMainWindow(event.sender)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       abortAgent(threadId)
+    })
+
+    // Thread ids with a live in-process run, so a renderer that's just loaded a
+    // project's threads can tell a genuinely still-running turn apart from a
+    // persisted `status: 'running'` left over from a crash (#1406).
+    ipcMain.handle('agent:runningThreadIds', (event) => {
+      assertMainFrameSender(event, win)
+      return listRunningThreadIds()
     })
 
     // Re-run just the post-turn review / model comparison for a thread — the
@@ -558,6 +602,7 @@ app
       'agent:retryReview',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
@@ -575,6 +620,7 @@ app
       'agent:retryComparison',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
@@ -608,20 +654,26 @@ app
       return suggestToolTurnSummary(actions)
     })
 
-    ipcMain.handle('agent:suggestFollowUps', (event, contextJson: string) => {
-      assertMainFrameSender(event, win)
-      let rawContext: unknown
-      try {
-        rawContext = JSON.parse(contextJson)
-      } catch {
-        throw new Error('agent:suggestFollowUps: context is not valid JSON')
-      }
-      const parsed = followUpContextSchema.safeParse(rawContext)
-      if (!parsed.success) {
-        throw new Error('agent:suggestFollowUps: context failed validation')
-      }
-      return suggestFollowUps(parsed.data)
-    })
+    ipcMain.handle(
+      'agent:suggestFollowUps',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, contextJson: string) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        let rawContext: unknown
+        try {
+          rawContext = JSON.parse(contextJson)
+        } catch {
+          throw new Error('agent:suggestFollowUps: context is not valid JSON')
+        }
+        const parsed = followUpContextSchema.safeParse(rawContext)
+        if (!parsed.success) {
+          throw new Error('agent:suggestFollowUps: context failed validation')
+        }
+        const { root } = await resolveThreadExecutionContext(projectId, threadId)
+        return suggestFollowUps(parsed.data, root)
+      },
+    )
 
     // Every channel the renderer can invoke is registered by here, so it is now
     // safe to block on the probe. Both syncs read `isGhAvailable()`, which only
@@ -678,6 +730,7 @@ let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
 let disposeLongTaskWake: (() => void) | undefined
+let disposeCiWatchConsumer: (() => void) | undefined
 let disposeBackgroundProcessSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
@@ -695,6 +748,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeBackgroundProcessSupervisor = undefined
   disposeLongTaskWake?.()
   disposeLongTaskWake = undefined
+  disposeCiWatchConsumer?.()
+  disposeCiWatchConsumer = undefined
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -703,6 +758,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
+  await shutdownStaticPreviewServers()
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
@@ -711,6 +767,10 @@ async function cleanupBeforeQuit(): Promise<void> {
 
 app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
+  // Ask before anything below runs: the cleanup this handler starts is what
+  // kills the in-flight turns the user is being warned about, so a prompt after
+  // it would come too late to save them. Re-issues the quit once confirmed.
+  if (deferQuitForCloseConfirmation(event)) return
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
   // The hidden video-decoder window is not the main window, so nothing else
@@ -731,6 +791,9 @@ app.on('before-quit', (event) => {
 
 function quitFromSignal(signal: NodeJS.Signals): void {
   console.log(`[shutdown] Received ${signal}; quitting`)
+  // A signal is not a user at the keyboard — there is nobody to answer the
+  // running-thread prompt, and blocking here would hang the shutdown.
+  approveClose()
   app.quit()
 }
 

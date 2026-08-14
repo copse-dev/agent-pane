@@ -67,4 +67,50 @@ describe('latest user prompt anchor', () => {
 
     await saveAppScreenshot('user-prompt-sticky.png')
   })
+
+  it('returns the latest prompt to the transcript when the chat pane is narrow', async () => {
+    await browser.execute(() => {
+      const app = document.getElementById('app')
+      if (app) app.style.width = '600px'
+      window.dispatchEvent(new Event('resize'))
+      const answer = document.querySelector('[data-message-id="msg-assistant-sticky-result"]')
+      answer?.scrollIntoView({ block: 'end' })
+    })
+    await browser.pause(100)
+
+    const layout = await browser.execute(() => {
+      const chat = document.getElementById('pane-chat')
+      const list = document.querySelector('.messages-list')
+      const latest = document.querySelector('[data-message-id="msg-user-sticky-latest"]')
+      const answer = document.querySelector('[data-message-id="msg-assistant-sticky-result"]')
+      const composer = document.getElementById('input-bar')
+      if (!chat || !list || !latest || !answer || !composer) {
+        return { error: 'missing narrow sticky fixture element' }
+      }
+
+      const chatRect = chat.getBoundingClientRect()
+      const listRect = list.getBoundingClientRect()
+      const latestRect = latest.getBoundingClientRect()
+      const answerRect = answer.getBoundingClientRect()
+      const composerRect = composer.getBoundingClientRect()
+      return {
+        chatWidth: chatRect.width,
+        latestPosition: getComputedStyle(latest).position,
+        latestBottom: latestRect.bottom,
+        answerTop: answerRect.top,
+        answerBottom: answerRect.bottom,
+        visibleTop: listRect.top,
+        visibleBottom: Math.min(listRect.bottom, composerRect.top),
+      }
+    })
+
+    expect(layout).not.toHaveProperty('error')
+    expect(layout.chatWidth).toBeLessThanOrEqual(360)
+    expect(layout.latestPosition).toBe('relative')
+    expect(layout.latestBottom).toBeLessThanOrEqual(layout.answerTop)
+    expect(layout.answerBottom).toBeGreaterThan(layout.visibleTop)
+    expect(layout.answerBottom).toBeLessThanOrEqual(layout.visibleBottom + 1)
+
+    await saveAppScreenshot('user-prompt-narrow-chat.png', { width: 600, height: 800 })
+  })
 })

@@ -9,6 +9,7 @@ import {
   type CommandRouting,
 } from './command-routing.ts'
 import { shellRequiresOutsideSandbox } from './permission-policy.ts'
+import { readOutsideProjectGrantTargets } from './read-outside-project.ts'
 
 export { TRUSTED_COMMANDS_SETTING } from '@shared/command-routing.ts'
 
@@ -55,6 +56,33 @@ export function routeShellCommand(command: string): CommandRouting {
 export function shellRunsOutsideSandbox(command: string): boolean {
   if (routeShellCommand(command).outcome === 'allow') return true
   return shellRequiresOutsideSandbox(command, getWorkspaceRoot(), isProjectSandboxEnabled())
+}
+
+/**
+ * The paths a command's seatbelt may be widened to so an approved
+ * read-outside-the-project command runs CONTAINED instead of unsandboxed, or
+ * null when it must keep today's routing.
+ *
+ * Layers the two host-side gates on top of the pure analysis:
+ *
+ * - **No sandbox, nothing to relax.** Off macOS (or with the project sandbox
+ *   off) the read grant already contains the case as well as it can; there is no
+ *   seatbelt to widen.
+ * - **An explicitly trusted command keeps its unsandboxed routing.** The user
+ *   put that binary on the allow-list precisely so it runs outside; silently
+ *   containing it would break the grant they made, and it already runs with no
+ *   prompt either way.
+ *
+ * Called by the shell tool on the same RAW command the permission gate analysed,
+ * so the approval and the execution overlay stay in lockstep.
+ */
+export function shellReadGrantTargets(
+  command: string,
+  executionRoot: string | null,
+): string[] | null {
+  if (!isProjectSandboxEnabled()) return null
+  if (routeShellCommand(command).outcome === 'allow') return null
+  return readOutsideProjectGrantTargets(command, executionRoot)
 }
 
 /**

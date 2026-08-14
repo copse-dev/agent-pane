@@ -28,6 +28,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   web_search: { running: 'Searching the web', done: 'Searched the web' },
   parallel_search: { running: 'Searching with Parallel', done: 'Searched with Parallel' },
   fetch_url: { running: 'Fetching page', done: 'Fetched page' },
+  browser_preview: { running: 'Opening preview', done: 'Opened preview' },
   browser_navigate: { running: 'Opening browser', done: 'Opened browser' },
   browser_snapshot: { running: 'Taking page snapshot', done: 'Took page snapshot' },
   browser_screenshot: { running: 'Taking screenshot', done: 'Took screenshot' },
@@ -81,6 +82,7 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
   },
   browser: {
     tools: [
+      'browser_preview',
       'browser_navigate',
       'browser_snapshot',
       'browser_screenshot',

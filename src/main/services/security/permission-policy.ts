@@ -1,6 +1,5 @@
-import { basename } from 'node:path'
-import { parse as parseShellCommand } from 'shell-quote'
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import type { ShellHarmDecision } from './shell-harm.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
@@ -30,11 +29,10 @@ export const SANDBOX_TOOLS = new Set([
 ])
 
 /**
- * Read-only GitHub CI tools. They reach github.com via the `gh` CLI but only
- * read CI status/logs (no mutation), so the gate auto-runs them without
- * prompting — same treatment as the read-only gh_pr_* tools in SANDBOX_TOOLS.
+ * Non-mutating GitHub CI tools. They only read GitHub state; the wait tool also
+ * records a bounded local supervisor task under the active turn-tree budget.
  */
-export const GITHUB_READONLY_CI_TOOLS = new Set([
+export const GITHUB_NONMUTATING_CI_TOOLS = new Set([
   'get_ci_status',
   'wait_for_ci_checks',
   'get_ci_failure_logs',
@@ -54,6 +52,42 @@ export const GITHUB_WRITE_TOOLS = new Set([
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
 ])
+
+/** User-facing question for each mutating GitHub PR tool. Keep snake_case ids out of the modal. */
+const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
+  gh_pr_rerun_failed_ci: 'Re-run failed CI?',
+  gh_pr_approve: 'Approve pull request on GitHub?',
+  gh_pr_mark_ready: 'Mark pull request ready for review?',
+  gh_pr_enable_auto_merge: 'Enable auto-merge on GitHub?',
+}
+
+export interface GithubWritePrompt {
+  title: string
+  body: string
+}
+
+/**
+ * Human prompt copy for mutating GitHub PR tools. Titles are questions; the body
+ * is a PR target (`owner/repo#N` or `PR #N`) rather than a JSON dump of args.
+ * Unrecognised args fall back to pretty-printed JSON so the user still sees what
+ * would run.
+ */
+export function formatGithubWritePrompt(toolName: string, args: unknown): GithubWritePrompt {
+  const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
+  return { title, body: formatGithubWritePromptBody(args) }
+}
+
+function formatGithubWritePromptBody(args: unknown): string {
+  if (!isRecord(args)) return JSON.stringify(args, null, 2)
+  const number = args['number']
+  if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) {
+    return JSON.stringify(args, null, 2)
+  }
+  const owner = typeof args['owner'] === 'string' && args['owner'].length > 0 ? args['owner'] : null
+  const repo = typeof args['repo'] === 'string' && args['repo'].length > 0 ? args['repo'] : null
+  if (owner && repo) return `${owner}/${repo}#${String(number)}`
+  return `PR #${String(number)}`
+}
 
 export interface PermissionCheck {
   toolName: string
@@ -77,23 +111,20 @@ export type ShellPermissionDecision =
 export type ShellPermissionMode = 'standard' | 'guarded-yolo'
 
 export type TerminalPermissionDecision =
-  | { action: 'allow' }
-  | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' | 'widened-network' }
+  { action: 'allow' } | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' }
 
 /**
  * Integrated terminals are user-directed and run outside the project seatbelt on
- * macOS. They can open without prompting only while no widened network scope is
- * active and the spawn path is a local PTY (not SSH).
+ * macOS. A local PTY can therefore open without prompting when the sandbox is
+ * available; SSH remains an explicit remote boundary.
  */
 export function decideTerminalPermission(input: {
   sandboxEnabled: boolean
   remoteTarget: boolean
-  networkScopeActive: boolean
 }): TerminalPermissionDecision {
   // SSH PTYs intentionally launch outside the local seatbelt. Treat the actual
   // spawn path as the boundary, not merely the platform's sandbox capability.
   if (input.remoteTarget) return { action: 'prompt', reason: 'remote-target' }
-  if (input.networkScopeActive) return { action: 'prompt', reason: 'widened-network' }
   if (!input.sandboxEnabled) return { action: 'prompt', reason: 'sandbox-unavailable' }
   return { action: 'allow' }
 }
@@ -207,107 +238,19 @@ export function shellCommandFromArgs(args: unknown): string | null {
   return typeof cmd === 'string' ? cmd : null
 }
 
-const READ_ONLY_SHELL_BASENAMES = new Set([
-  'pwd',
-  'ls',
-  'cat',
-  'head',
-  'tail',
-  'wc',
-  'sort',
-  'uniq',
-  'grep',
-  'egrep',
-  'fgrep',
-  'rg',
-  'fd',
-  'tree',
-  'stat',
-  'file',
-  'du',
-  'jq',
-  'cut',
-  'tr',
-  'basename',
-  'dirname',
-  'realpath',
-])
-
 /**
- * Git subcommands that only read. Exported so the auto-approval classifier can
- * build its (wider) read set as a superset of this one rather than restating it —
- * two independent lists of "which git subcommands are safe to read" would drift.
+ * Read-only command recognition now lives in `shell-argv.ts` — `shell-scope.ts`
+ * needs it to tell a chat-store *read* from a chat-store write, and this module
+ * already imports `shell-scope.ts`. Re-exported so existing importers are
+ * unaffected, including `read-outside-project.ts`, which builds its wider read
+ * shape on top of `READ_ONLY_SHELL_BASENAMES`.
  */
-export const READ_ONLY_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  'status',
-  'diff',
-  'log',
-  'show',
-  'grep',
-  'ls-files',
-  'ls-tree',
-  'cat-file',
-  'rev-parse',
-])
-
-/**
- * Conservative structural read-only check for shell commands. This is not a
- * sandbox boundary; callers must compose it with normal scope analysis. It only
- * recognizes simple read/query commands and pipelines thereof, rejecting shell
- * control flow, redirection, substitutions, and command families with common
- * mutating modes.
- */
-export function isStructurallyReadOnlyShellCommand(command: string): boolean {
-  const trimmed = command.trim()
-  if (!trimmed) return false
-  if (/[`$<>&();]|\|\|/.test(trimmed) || trimmed.includes('&&')) return false
-  const segments = trimmed.split('|').map((segment) => segment.trim())
-  return segments.length > 0 && segments.every(isReadOnlySimpleCommand)
-}
-
-/**
- * Whether a single simple command (no pipeline, no control operators) is a
- * read/query invocation. Exported for the auto-approval classifier, which does
- * its own quote-aware segmentation and needs the per-segment verdict rather than
- * {@link isStructurallyReadOnlyShellCommand}'s whole-line one.
- */
-export function isReadOnlySimpleCommand(segment: string): boolean {
-  let tokens: ReturnType<typeof parseShellCommand>
-  try {
-    tokens = parseShellCommand(segment)
-  } catch {
-    return false
-  }
-  if (tokens.length === 0 || !tokens.every((token): token is string => typeof token === 'string')) {
-    return false
-  }
-
-  const argv = tokens
-  const commandName = basename(argv[0] ?? '')
-  if (!commandName) return false
-  if (commandName === 'git') return isReadOnlyGitCommand(argv)
-  if (!READ_ONLY_SHELL_BASENAMES.has(commandName)) return false
-  if (commandName === 'rg' && argv.some((arg) => arg === '--pre' || arg.startsWith('--pre='))) {
-    return false
-  }
-  return true
-}
-
-function isReadOnlyGitCommand(argv: readonly string[]): boolean {
-  const subcommand = argv[1]
-  if (!subcommand || !READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return false
-  return !argv
-    .slice(2)
-    .some(
-      (arg) =>
-        arg === '-o' ||
-        arg === '-O' ||
-        arg === '--output' ||
-        arg.startsWith('--output=') ||
-        arg.startsWith('--exec=') ||
-        arg === '--exec',
-    )
-}
+export {
+  READ_ONLY_GIT_SUBCOMMANDS,
+  READ_ONLY_SHELL_BASENAMES,
+  isReadOnlySimpleCommand,
+  isStructurallyReadOnlyShellCommand,
+} from './shell-argv.ts'
 
 export function formatShellPromptBody(command: string, reasons: string[]): string {
   return flattenShellPromptParts(formatShellPromptParts(command, reasons))

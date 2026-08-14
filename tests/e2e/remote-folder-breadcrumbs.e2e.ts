@@ -20,9 +20,15 @@ describe('Open remote folder — path breadcrumbs', () => {
   it('shows an Up control and root breadcrumb in the browse toolbar', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const remoteButton = await $('.projects-open-remote-btn')
-    await expect(remoteButton).toBeDisplayed()
-    await remoteButton.click()
+    const addProjectButton = await $('.projects-add-btn')
+    await expect(addProjectButton).toHaveAttribute(
+      'data-tooltip',
+      'New project, open a folder, or connect remotely',
+    )
+    await addProjectButton.click()
+    const remoteMenuItem = await $('.context-menu-item*=Open remote project')
+    await expect(remoteMenuItem).toBeDisplayed()
+    await remoteMenuItem.click()
 
     const dialog = await $('#remote-folder-dialog')
     await expect(dialog).toBeDisplayed()

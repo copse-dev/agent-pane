@@ -9,6 +9,7 @@ import {
   refreshIcon,
   searchIcon,
 } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -17,7 +18,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
-import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import { openRightPanel } from '../controller/panels.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showErrorToast, showToast } from './toast.ts'
@@ -129,15 +130,248 @@ function browserModeActive(store: AppStore): boolean {
   return filesPaneOpen && rightPanelMode === 'browser'
 }
 
-function createWebview(): BrowserWebviewElement {
-  const webview = document.createElement('webview') as BrowserWebviewElement
-  webview.setAttribute('partition', BROWSER_SESSION_PARTITION)
-  webview.setAttribute('webpreferences', WEBVIEW_PREFS)
-  webview.setAttribute('allowpopups', 'false')
-  webview.className = 'browser-webview'
+function loopbackWorkspacePath(rawUrl: string): string | null {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+  if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1' && url.hostname !== '[::1]') {
+    return null
+  }
+  let path: string
+  try {
+    path = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+  } catch {
+    return null
+  }
+  return !path || path.endsWith('/') ? `${path}index.html` : path
+}
+
+function workspaceAssetPath(reference: string, previewUrl: string): string | null {
+  let resolved: URL
+  let base: URL
+  try {
+    base = new URL(previewUrl)
+    resolved = new URL(reference, base)
+  } catch {
+    return null
+  }
+  if (resolved.origin !== base.origin) return null
+  try {
+    return decodeURIComponent(resolved.pathname).replace(/^\/+/, '')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Read a file from the checked-in site published alongside a static demo. A
+ * missing file returns null so older builds and non-demo hosts can fall back to
+ * the replayed workspace writes.
+ */
+function publishedDemoSiteUrl(path: string): string | null {
+  const root = document.documentElement.dataset['demoStaticSite']?.trim()
+  if (!root) return null
+  const base = new URL(`${root.replace(/\/+$/, '')}/`, document.baseURI)
+  const url = new URL(path, base)
+  if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) return null
+  return url.toString()
+}
+
+type WorkspacePreview = { html: string } | { url: string }
+
+/**
+ * A localhost URL in the static browser demo has no server behind it. Assemble
+ * the entry document and its local CSS/JS into one isolated iframe document,
+ * preferring the checked-in published site and falling back to the replayed
+ * proposed files. A missing entry falls through to ordinary navigation,
+ * preserving honest local-server behaviour for Electron and other hosts.
+ */
+async function workspacePreviewHtml(
+  rawUrl: string,
+  store: AppStore,
+  api: ApiClient,
+): Promise<WorkspacePreview | null> {
+  const entryPath = loopbackWorkspacePath(rawUrl)
+  const { activeProjectId, activeThreadId } = store.getState()
+  if (!entryPath || !activeProjectId || !activeThreadId) return null
+
+  // A checked-in site has a real same-origin URL. Navigate the sandboxed frame
+  // there instead of copying it into `srcdoc`: srcdoc inherits Copse's parent
+  // CSP, whose `script-src 'self'` intentionally blocks inlined site scripts.
+  const published = publishedDemoSiteUrl(entryPath)
+  if (published) return { url: published }
+
+  const read = (path: string): Promise<string> =>
+    api.fs.readFile(activeProjectId, activeThreadId, path)
+  const html = await read(entryPath)
+  if (!html) return null
+
+  const previewDocument = new DOMParser().parseFromString(html, 'text/html')
+  await Promise.all(
+    [...previewDocument.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]')].map(
+      async (link) => {
+        const path = workspaceAssetPath(link.getAttribute('href') ?? '', rawUrl)
+        if (!path) return
+        const css = await read(path)
+        if (!css) return
+        const style = previewDocument.createElement('style')
+        style.dataset['workspacePath'] = path
+        style.textContent = css
+        link.replaceWith(style)
+      },
+    ),
+  )
+  await Promise.all(
+    [...previewDocument.querySelectorAll<HTMLScriptElement>('script[src]')].map(async (script) => {
+      const path = workspaceAssetPath(script.getAttribute('src') ?? '', rawUrl)
+      if (!path) return
+      const source = await read(path)
+      if (!source) return
+      const inline = previewDocument.createElement('script')
+      inline.dataset['workspacePath'] = path
+      inline.textContent = source.replace(/<\/script/gi, '<\\/script')
+      script.replaceWith(inline)
+    }),
+  )
+  return { html: `<!doctype html>\n${previewDocument.documentElement.outerHTML}` }
+}
+
+/**
+ * Electron's `<webview>` is a registered custom element, so its methods are on
+ * the instance the moment it is created. Outside Electron — the browser demo —
+ * the same tag is an inert `HTMLElement`: no methods, and `dom-ready` never
+ * fires, so the pane would mount its whole toolbar around a permanently blank
+ * box.
+ */
+function supportsElectronWebview(element: HTMLElement): boolean {
+  return typeof (element as Partial<BrowserWebviewElement>).getURL === 'function'
+}
+
+/**
+ * An `<iframe>` wearing the guest-webview interface, for hosts without Electron.
+ *
+ * Only navigation is honest here. An iframe cannot report a cross-origin
+ * document's URL or title and exposes no session history, so those answer from
+ * what we were last asked to load and the history controls stay disabled —
+ * better than a Back button that lies. `getWebContentsId` throws, which is what
+ * callers already treat as "this page cannot be shared".
+ */
+function createIframeWebview(
+  resolveWorkspacePreview?: (url: string) => Promise<WorkspacePreview | null>,
+): BrowserWebviewElement {
+  const frame = document.createElement('iframe')
+  frame.className = 'browser-webview'
+  // Same intent as the guest's `contextIsolation`: scripts may run, but the
+  // page gets an opaque origin and no reach into the demo that embeds it.
+  frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups')
+  frame.setAttribute('referrerpolicy', 'no-referrer')
+
+  let requested = 'about:blank'
+  let navigationId = 0
+  let workspacePreviewActive = false
+
+  const navigateRemote = (url: string): void => {
+    workspacePreviewActive = false
+    delete frame.dataset['workspacePreview']
+    frame.removeAttribute('srcdoc')
+    frame.setAttribute('src', url)
+  }
+  const navigate = (url: string): void => {
+    requested = url
+    const id = ++navigationId
+    if (!resolveWorkspacePreview) {
+      navigateRemote(url)
+      return
+    }
+    void resolveWorkspacePreview(url)
+      .then((preview) => {
+        if (id !== navigationId) return
+        if (preview === null) {
+          navigateRemote(url)
+          return
+        }
+        workspacePreviewActive = true
+        frame.dataset['workspacePreview'] = 'loading'
+        if ('url' in preview) {
+          frame.removeAttribute('srcdoc')
+          frame.setAttribute('src', preview.url)
+        } else {
+          frame.removeAttribute('src')
+          frame.srcdoc = preview.html
+        }
+      })
+      .catch(() => {
+        if (id === navigationId) navigateRemote(url)
+      })
+  }
+  // `src` has to record what it was handed before delegating: it is the only
+  // place the requested URL is ever seen, and `getURL` has no other source.
+  Object.defineProperty(frame, 'src', {
+    get: (): string => requested,
+    set: navigate,
+    configurable: true,
+  })
+  // The pane gates every navigation on `dom-ready`; an iframe says `load`.
+  frame.addEventListener('load', () => {
+    if (workspacePreviewActive) frame.dataset['workspacePreview'] = 'ready'
+    frame.dispatchEvent(new Event('dom-ready'))
+    frame.dispatchEvent(new Event('did-navigate'))
+  })
+  navigate('about:blank')
+  // The initial blank document does not reliably announce itself — Chromium
+  // creates it synchronously on insertion and may never fire `load` for it — and
+  // the pane holds every navigation until the first `dom-ready`. An iframe is in
+  // fact ready as soon as it exists, so say so on the next task, once the caller
+  // has attached its listener and put us in the document.
+  setTimeout(() => frame.dispatchEvent(new Event('dom-ready')), 0)
+
+  return Object.assign(frame, {
+    getURL: (): string => requested,
+    getTitle: (): string => '',
+    loadURL: navigate,
+    // Re-setting `src` to the value it already holds is not guaranteed to
+    // renavigate, so blank the frame first and restore on the next task.
+    reload: (): void => {
+      const url = requested
+      navigate('about:blank')
+      setTimeout(() => {
+        navigate(url)
+      }, 0)
+    },
+    // Nothing can halt a cross-origin load from out here. Blanking the frame
+    // would be worse than doing nothing: it discards the page *and* the URL the
+    // address bar is showing.
+    stop: (): void => {
+      /* no-op */
+    },
+    canGoBack: (): boolean => false,
+    canGoForward: (): boolean => false,
+    goBack: (): void => undefined,
+    goForward: (): void => undefined,
+    openDevTools: (): void => undefined,
+    getWebContentsId: (): number => {
+      throw new Error('No webContents outside Electron.')
+    },
+  })
+}
+
+function createWebview(
+  resolveWorkspacePreview?: (url: string) => Promise<WorkspacePreview | null>,
+): BrowserWebviewElement {
+  const webview = document.createElement('webview')
+  if (!supportsElectronWebview(webview)) return createIframeWebview(resolveWorkspacePreview)
+  const guest = webview as BrowserWebviewElement
+  guest.setAttribute('partition', BROWSER_SESSION_PARTITION)
+  guest.setAttribute('webpreferences', WEBVIEW_PREFS)
+  guest.setAttribute('allowpopups', 'false')
+  guest.className = 'browser-webview'
   // Attach the guest immediately; navigation waits for dom-ready.
-  webview.src = 'about:blank'
-  return webview
+  guest.src = 'about:blank'
+  return guest
 }
 
 export function mountBrowserPane(
@@ -153,12 +387,12 @@ export function mountBrowserPane(
       type: 'button',
       class: 'browser-tabs-new-btn',
       'aria-label': 'New browser tab',
-      title: 'New tab',
+      'data-tooltip': 'New browser tab',
     },
     '+',
   )
-  if (api) listHeader.append(panePopoutButton(api, 'browser', 'browser'))
-  listHeader.append(newBtn)
+  if (api) listHeader.append(panePopoutButton(store, api, 'browser', 'browser'))
+  listHeader.append(paneMaximizeButton(store, 'browser'), newBtn)
 
   const tabsWrap = el('div', { class: 'browser-tabs-list' })
   listRoot.append(listHeader, tabsWrap)
@@ -167,6 +401,9 @@ export function mountBrowserPane(
   viewerRoot.append(body)
 
   const tabs = new Map<string, BrowserTab>()
+  const resolveWorkspacePreview = api
+    ? (url: string): Promise<WorkspacePreview | null> => workspacePreviewHtml(url, store, api)
+    : undefined
   let activeTabId: string | null = null
   let resizeObserver: ResizeObserver | null = null
 
@@ -283,7 +520,7 @@ export function mountBrowserPane(
   function ensureWebview(tab: BrowserTab): BrowserWebviewElement {
     if (tab.webview) return tab.webview
 
-    const webview = createWebview()
+    const webview = createWebview(resolveWorkspacePreview)
     tab.webviewHost.append(webview)
     tab.webview = webview
 
@@ -444,7 +681,7 @@ export function mountBrowserPane(
         class: 'browser-tabs-tab-close',
         role: 'button',
         'aria-label': 'Close tab',
-        title: 'Close',
+        'data-tooltip': 'Close tab',
       },
       '×',
     )
@@ -461,7 +698,7 @@ export function mountBrowserPane(
         type: 'button',
         class: 'browser-nav-btn',
         'aria-label': 'Back',
-        title: 'Back',
+        'data-tooltip': 'Back',
         disabled: true,
       },
       arrowLeftIcon('ui-icon ui-icon-sm'),
@@ -472,14 +709,19 @@ export function mountBrowserPane(
         type: 'button',
         class: 'browser-nav-btn',
         'aria-label': 'Forward',
-        title: 'Forward',
+        'data-tooltip': 'Forward',
         disabled: true,
       },
       arrowRightIcon('ui-icon ui-icon-sm'),
     )
     const reloadBtn = el(
       'button',
-      { type: 'button', class: 'browser-nav-btn', 'aria-label': 'Reload', title: 'Reload' },
+      {
+        type: 'button',
+        class: 'browser-nav-btn',
+        'aria-label': 'Reload',
+        'data-tooltip': 'Reload',
+      },
       refreshIcon('ui-icon ui-icon-sm'),
     )
     const urlInput = el('input', {
@@ -490,7 +732,7 @@ export function mountBrowserPane(
     })
     const goBtn = el(
       'button',
-      { type: 'button', class: 'browser-go-btn', 'aria-label': 'Go', title: 'Go' },
+      { type: 'button', class: 'browser-go-btn', 'aria-label': 'Go', 'data-tooltip': 'Go' },
       'Go',
     )
 
@@ -500,7 +742,7 @@ export function mountBrowserPane(
         type: 'button',
         class: 'browser-nav-btn browser-menu-btn',
         'aria-label': 'More actions',
-        title: 'More actions',
+        'data-tooltip': 'More actions',
         'aria-haspopup': 'menu',
         'aria-expanded': 'false',
       },
@@ -778,8 +1020,8 @@ export function mountBrowserPane(
     if (target) setActiveTab(target)
   }
 
-  async function ensurePackBrowserTab(
-    request: PackBrowserTabRequest,
+  async function ensurePluginBrowserTab(
+    request: PluginBrowserTabRequest,
   ): Promise<{ tabId: string; webContentsId: number }> {
     const hadTabs = tabs.size > 0
     openRightPanel(store, 'browser')
@@ -816,9 +1058,13 @@ export function mountBrowserPane(
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
+    api?.browser.onShowTab?.((url) => {
+      openRightPanel(store, 'browser')
+      addTab({ url, activate: true })
+    }),
     api?.browser.onShareText(attachSharedText),
     api?.browser.onShareImage(attachSharedImage),
-    api?.browser.onPackTabRequest(ensurePackBrowserTab),
+    api?.browser.onPluginTabRequest(ensurePluginBrowserTab),
     (): void => {
       document.removeEventListener('click', onDocumentClick)
     },

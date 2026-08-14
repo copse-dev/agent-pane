@@ -28,27 +28,34 @@ import type { StreamChunk } from '@shared/types'
 import type {
   AcpAgentProbe,
   AcpAgentSandboxConfig,
+  AcpConfigChoice,
+  AcpConfigOption,
   AcpModeChoice,
   AcpModeSelector,
   AcpModelChoice,
   AcpModelSelector,
 } from '@shared/types/acp.ts'
+import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
-import { cancelApprovalsForAcpToolCall } from '../approval.ts'
+import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
+import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
-import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
+  detachForGroupKill,
   formatArgvForShell,
-  isProjectSandboxEnabled,
   resolveSandboxShellExecutable,
   shellForSandboxWrap,
   withSandboxShellPath,
-} from '../../project-sandbox/spawn.ts'
+} from '../../project-sandbox/sandbox-argv.ts'
+import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -99,6 +106,15 @@ export interface AcpAgentSpawnConfig {
    */
   permissionMode?: string
   /**
+   * Chosen values for the agent's other ACP session config options, keyed by
+   * `configId` — reasoning level (`thought_level`) and anything else the agent
+   * advertises. Applied via `session/set_config_option` right after
+   * `session/new`, and re-applied between turns when the selection moves, so a
+   * switch never forces a respawn (the same treatment as {@link model}).
+   * Values the agent no longer offers are skipped.
+   */
+  configOptions?: Record<string, string>
+  /**
    * Copse-configured MCP servers to hand the agent via `session/new`
    * (`mcpServers`), so the external agent can mount the user's servers itself.
    * Filtered against the agent's advertised `mcpCapabilities` before sending
@@ -122,6 +138,62 @@ export interface AcpAgentSpawnConfig {
 const UNSUPPORTED = (method: string) => (): Promise<never> =>
   Promise.reject(new Error(`Client capability not enabled: ${method}`))
 
+/** Flatten a `SessionConfigSelect`'s `options` (grouped or flat) into choices. */
+function flattenSelectChoices(options: unknown): AcpConfigChoice[] {
+  const choices: AcpConfigChoice[] = []
+  const push = (entry: Record<string, unknown>): void => {
+    if (typeof entry['value'] !== 'string' || typeof entry['name'] !== 'string') return
+    const choice: AcpConfigChoice = { value: entry['value'], label: entry['name'] }
+    // Empty descriptions are dropped, not carried: an agent that sends `""` means
+    // "nothing extra to say", and a blank line under a label reads as a bug.
+    if (typeof entry['description'] === 'string' && entry['description'].length > 0) {
+      choice.description = entry['description']
+    }
+    choices.push(choice)
+  }
+  for (const entry of recordArrayOrEmpty(options)) {
+    if (typeof entry['group'] === 'string') {
+      for (const sub of recordArrayOrEmpty(entry['options'])) push(sub)
+    } else {
+      push(entry)
+    }
+  }
+  return choices
+}
+
+/**
+ * Every `select` config option the agent advertised on `session/new`, flattened
+ * for the picker. Deliberately category-agnostic: ACP is explicit that
+ * `category` is a UX hint clients "MUST handle missing or unknown" values for,
+ * so an option with no category (or a vendor `_`-prefixed one) still reaches
+ * the user — it just lands under a generic label. `boolean` options are skipped
+ * for now; Copse does not advertise `sessionCapabilities.configOptions.boolean`,
+ * so a spec-compliant agent will not send them.
+ */
+export function configOptionsFrom(response: {
+  configOptions?: readonly unknown[] | null
+}): AcpConfigOption[] {
+  const options: AcpConfigOption[] = []
+  for (const candidate of response.configOptions ?? []) {
+    if (!isRecord(candidate) || candidate['type'] !== 'select') continue
+    const configId = candidate['id']
+    const currentValue = candidate['currentValue']
+    if (typeof configId !== 'string' || typeof currentValue !== 'string') continue
+    const category = acpConfigCategory(candidate['category'])
+    const name = candidate['name']
+    const option: AcpConfigOption = {
+      configId,
+      name: typeof name === 'string' && name ? name : acpConfigCategoryLabel(category),
+      category,
+      currentValue,
+      choices: flattenSelectChoices(candidate['options']),
+    }
+    if (typeof candidate['description'] === 'string') option.description = candidate['description']
+    options.push(option)
+  }
+  return options
+}
+
 /**
  * Find the agent's model selector in a `session/new` response, if any. ACP
  * surfaces model choice as a `SessionConfigOption` with `category: "model"` and
@@ -132,36 +204,16 @@ const UNSUPPORTED = (method: string) => (): Promise<never> =>
 export function modelSelectorFrom(response: {
   configOptions?: readonly unknown[] | null
 }): AcpModelSelector | null {
-  const option = (response.configOptions ?? []).find(
-    (candidate) =>
-      isRecord(candidate) && candidate['category'] === 'model' && candidate['type'] === 'select',
-  )
-  if (!isRecord(option)) return null
-  const configId = option['id']
-  const currentValue = option['currentValue']
-  if (typeof configId !== 'string' || typeof currentValue !== 'string') return null
-  const choices: AcpModelChoice[] = []
+  const option = configOptionsFrom(response).find((candidate) => candidate.category === 'model')
+  if (!option) return null
   // `description` is carried alongside the name: agents that label their models
   // by family alone keep the version there (see `acpModelChoiceLabel`).
-  const toChoice = (entry: Record<string, unknown>): AcpModelChoice[] => {
-    const value = entry['value']
-    const name = entry['name']
-    if (typeof value !== 'string' || typeof name !== 'string') return []
-    const description = entry['description']
-    return [
-      typeof description === 'string' && description.length > 0
-        ? { value, label: name, description }
-        : { value, label: name },
-    ]
-  }
-  for (const entry of recordArrayOrEmpty(option['options'])) {
-    if (typeof entry['group'] === 'string') {
-      for (const sub of recordArrayOrEmpty(entry['options'])) choices.push(...toChoice(sub))
-    } else {
-      choices.push(...toChoice(entry))
-    }
-  }
-  return { configId, currentValue, choices }
+  const choices: AcpModelChoice[] = option.choices.map((choice) => ({
+    value: choice.value,
+    label: choice.label,
+    ...(choice.description ? { description: choice.description } : {}),
+  }))
+  return { configId: option.configId, currentValue: option.currentValue, choices }
 }
 
 /**
@@ -213,13 +265,84 @@ async function applySessionMode(
 }
 
 /**
+ * Apply one chosen config-option value via `session/set_config_option`, the way
+ * the reference client (Zed) does: iterate what the **agent** advertised, and
+ * treat Copse's stored selection as a wish that must survive validation. A
+ * value for an option the agent no longer offers — or one that has dropped out
+ * of its list, e.g. a reasoning level that disappeared with a model switch — is
+ * logged and skipped, never sent. Returns the value now in effect, or
+ * `undefined` when nothing was applied.
+ */
+async function applyConfigOption(
+  connection: ClientConnection,
+  sessionId: string,
+  advertised: readonly AcpConfigOption[],
+  configId: string,
+  value: string,
+): Promise<string | undefined> {
+  const option = advertised.find((candidate) => candidate.configId === configId)
+  if (!option) return undefined
+  if (!option.choices.some((choice) => choice.value === value)) {
+    console.warn(
+      `[acp] "${value}" is not a valid value for config option "${configId}"; using the agent's default`,
+    )
+    return undefined
+  }
+  if (value === option.currentValue) return value
+  try {
+    await connection.agent.request(methods.agent.session.setConfigOption, {
+      sessionId,
+      configId,
+      value,
+    })
+    return value
+  } catch {
+    // Fall back to the agent's current value; one rejected option must not fail
+    // the session (or the turn) around it.
+    return undefined
+  }
+}
+
+/**
+ * Apply every stored config-option selection to a newly created, resumed, or
+ * ongoing session. `applied` carries what is already in effect so a repeat
+ * between turns is a no-op; the returned map replaces it.
+ */
+async function applyConfigOptions(
+  connection: ClientConnection,
+  session: ManagedAcpSession,
+  desired: Record<string, string> | undefined,
+  applied: Readonly<Record<string, string>> = {},
+): Promise<Record<string, string>> {
+  const next = { ...applied }
+  if (!desired) return next
+  const advertised = configOptionsFrom(session.response)
+  if (advertised.length === 0) return next
+  for (const [configId, value] of Object.entries(desired)) {
+    if (applied[configId] === value) continue
+    const inEffect = await applyConfigOption(
+      connection,
+      session.sessionId,
+      advertised,
+      configId,
+      value,
+    )
+    if (inEffect !== undefined) next[configId] = inEffect
+  }
+  return next
+}
+
+/**
  * Build the env for the spawned ACP agent. The base is scrubbed of LLM/provider
  * secrets via {@link envForRendererChildProcess} (an external agent runs its own
  * model loop and must not inherit Copse's cloud API keys); `config.env` is the
  * explicit allowlist of vars that agent is meant to receive and is overlaid last.
  */
-export function buildAcpAgentEnv(config: AcpAgentSpawnConfig): Record<string, string> {
-  return { ...envForRendererChildProcess(), ...(config.env ?? {}) }
+export function buildAcpAgentEnv(
+  config: AcpAgentSpawnConfig,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  return { ...envForRendererChildProcess(baseEnv), ...(config.env ?? {}) }
 }
 
 /**
@@ -273,12 +396,19 @@ function acpProcessSpawnError(command: string, err: Error, stderr: string): Erro
   )
 }
 
-async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildProcess> {
-  const env = buildAcpAgentEnv(config)
+export async function spawnAcpAgentProcess(
+  config: AcpAgentSpawnConfig,
+  options: {
+    detached?: boolean
+    allowLocalhost?: boolean
+    baseEnv?: NodeJS.ProcessEnv
+  } = {},
+): Promise<ChildProcess> {
+  const env = buildAcpAgentEnv(config, options.baseEnv)
   const stdio: 'pipe'[] = ['pipe', 'pipe', 'pipe']
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
-      allowLocalhost: Boolean(config.nativeBridge),
+      allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for
@@ -287,6 +417,7 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
     const release = acquireSandboxNetworkScope({
       domains: overlay.network?.allowedDomains ?? [],
       allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
+      label: `ACP agent: ${config.command}`,
     })
     try {
       const command = formatArgvForShell(config.command, config.args ?? [])
@@ -302,7 +433,16 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
         cwd: config.cwd,
         env: withSandboxShellPath({ ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }),
         stdio,
+        // Lead a process group so `terminateAcpChild` can reap the real agent,
+        // which the sandbox wrapper shell spawns as a grandchild.
+        detached: options.detached ?? detachForGroupKill,
       })
+      // Release on BOTH events. `close` waits for every inherited stdio pipe to
+      // shut, so a grandchild that outlives the wrapper holds it open forever and
+      // the scope stays widened for the rest of the app's run — every pane then
+      // prompts on every shell command, blamed on a process that already exited.
+      // `exit` fires on the wrapper's own exit regardless. Release is idempotent.
+      child.once('exit', release)
       child.once('close', release)
       child.once('error', release)
       return child
@@ -311,7 +451,27 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
       throw err
     }
   }
-  return spawn(config.command, config.args ?? [], { cwd: config.cwd, env, stdio })
+  return spawn(config.command, config.args ?? [], {
+    cwd: config.cwd,
+    env,
+    stdio,
+    detached: options.detached ?? detachForGroupKill,
+  })
+}
+
+/**
+ * Tear down an ACP agent child and everything it spawned.
+ *
+ * A bare `child.kill()` only signals the direct child — for a sandboxed agent
+ * that is the wrapper shell, leaving the real agent running as a grandchild. The
+ * group kill needs `detached: true` at spawn (see {@link spawnAcpAgentProcess});
+ * `signalProcessTree` falls back to a direct kill when the child leads no group,
+ * so this stays correct for the unsandboxed and remote paths too.
+ */
+export function terminateAcpChild(child: ChildProcess): void {
+  const cancelEscalation = terminateProcessTree(child)
+  child.once('close', cancelEscalation)
+  child.once('exit', cancelEscalation)
 }
 
 /**
@@ -443,6 +603,15 @@ export interface OpenAcpSession {
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
   appliedModel: string | undefined
   /**
+   * The config-option selections this session should run with, keyed by
+   * `configId`. Seeded from the spawn config and refreshed by the session pool
+   * on reuse, so a reasoning-level change made between turns reaches an
+   * already-open session instead of waiting for a respawn.
+   */
+  desiredConfigOptions: Record<string, string> | undefined
+  /** Config-option values already in effect on this session (avoid re-sending). */
+  appliedConfigOptions: Record<string, string>
+  /**
    * When true the update pump consumes the agent's updates without forwarding
    * them to the UI. Set on turn abort (Stop button) so a cancelled agent's
    * trailing output stays hidden; cleared when the next turn starts.
@@ -476,7 +645,7 @@ function acpChildStdoutStream(
   const stdout = child.stdout
   if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
   let cancelRead = (): void => {
-    child.kill()
+    terminateAcpChild(child)
   }
   return new ReadableStream<Uint8Array>({
     start(controller): void {
@@ -522,7 +691,7 @@ function acpChildStdoutStream(
           settled = true
           cleanup()
         }
-        child.kill()
+        terminateAcpChild(child)
       }
       stdout.on('data', onData)
       stdout.on('error', onStdoutError)
@@ -553,7 +722,22 @@ async function spawnTransport(
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
   const sshTarget = acpSshTarget(config.cwd)
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget)
-  const child = await spawnAcpAgentProcess(config)
+  let child: ChildProcess
+  if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
+    try {
+      child = await spawnSandboxedAcpSessionHost(config)
+    } catch (err) {
+      // Preserve containment if the standalone host cannot start. This is the
+      // pre-phase-5 path: it widens the main process's ASRT network singleton,
+      // so the overlap gate remains necessary as a bounded fallback.
+      console.warn(
+        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${err instanceof Error ? err.message : String(err)}`,
+      )
+      child = await spawnAcpAgentProcess(config)
+    }
+  } else {
+    child = await spawnAcpAgentProcess(config)
+  }
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
   const stderrTail = captureAcpChildStderr(child, config.command)
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
@@ -561,7 +745,7 @@ async function spawnTransport(
   return {
     stream: ndJsonStream(writable, readable),
     dispose: (): void => {
-      child.kill()
+      terminateAcpChild(child)
     },
   }
 }
@@ -625,8 +809,15 @@ export async function openAcpSession(
   handlers: MutableAcpHandlers,
   createTransport: AcpTransportFactory = spawnTransport,
   resumeSessionId?: string,
+  trace: AcpWireSink | null = null,
 ): Promise<OpenAcpSession> {
   const transport = await createTransport(config)
+  // Opt-in diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`): record every inbound
+  // JSON-RPC message verbatim, before the SDK's schema parse strips unmodelled
+  // fields and before `sessionUpdateToStreamChunk` normalizes what survives.
+  // `null` (the default, and always when the flag is off) returns the
+  // transport's own stream, so the untraced path is unchanged.
+  const stream = tapAcpWireStream(transport.stream, trace)
 
   let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
   const pendingUpdates = new Map<string, SessionUpdate[]>()
@@ -647,15 +838,36 @@ export async function openAcpSession(
     })
     .onRequest(methods.client.session.requestPermission, async (ctx) => {
       const { sessionId, toolCall } = ctx.params
-      // Some ACP agents omit rawInput from their display notifications while
-      // still supplying it on the permission request. Feed that authoritative
-      // payload through the same ordered update queue so terminal tasks,
-      // transcript cards, and restart persistence receive the arguments.
-      if (toolCall.rawInput !== undefined) {
+      // Agents split a tool call's identity across the display notification and
+      // the permission request differently, and no agent fills in both. Wire
+      // traces (#1659) of three:
+      //
+      //   Cursor  session/update says `title: "MCP: tool"` with `rawInput: {}`;
+      //           the permission request carries the real
+      //           `copse-git_status: git_status` but no rawInput.
+      //   Codex   permission request has no `title` key at all, but a populated
+      //           rawInput — the case the rawInput back-fill below was written
+      //           for.
+      //   Claude  sends both, in both places.
+      //
+      // So treat the permission request as a patch over whatever the display
+      // notification said, and feed it through the same ordered update queue
+      // that `session/update` uses. That keeps terminal tasks, transcript
+      // cards, and restart persistence on one path, and it is why Cursor's MCP
+      // calls can be labelled at all: its `tool_call_update` never carries a
+      // title, so the permission request is the only channel that ever names
+      // the tool.
+      const patch = {
+        ...(toolCall.rawInput !== undefined ? { rawInput: toolCall.rawInput } : {}),
+        ...(typeof toolCall.title === 'string' && toolCall.title.trim() !== ''
+          ? { title: toolCall.title }
+          : {}),
+      }
+      if (Object.keys(patch).length > 0) {
         enqueueUpdate(sessionId, {
           sessionUpdate: 'tool_call_update',
           toolCallId: toolCall.toolCallId,
-          rawInput: toolCall.rawInput,
+          ...patch,
         })
       }
       const current = handlers.current
@@ -676,7 +888,7 @@ export async function openAcpSession(
       return writeTextFile ? writeTextFile(ctx.params) : UNSUPPORTED('fs/write_text_file')()
     })
 
-  const connection = app.connect(transport.stream)
+  const connection = app.connect(stream)
   let disposed = false
   const dispose = (): void => {
     if (disposed) return
@@ -743,6 +955,11 @@ export async function openAcpSession(
     // the seatbelt already contains writes. Applied here, before the first
     // prompt, so the session's first tool call already honors the mode.
     await applySessionMode(connection, session, config.permissionMode)
+    // Everything else the agent lets us configure (reasoning level, and any
+    // other selector it advertises) is applied the same way, before the first
+    // prompt. Unlike the mode this is not baked into the session fingerprint —
+    // a later change re-applies live at the start of the next turn.
+    const appliedConfigOptions = await applyConfigOptions(connection, session, config.configOptions)
 
     const open: OpenAcpSession = {
       session,
@@ -754,6 +971,8 @@ export async function openAcpSession(
       promptImage,
       resumed,
       appliedModel: undefined,
+      desiredConfigOptions: config.configOptions,
+      appliedConfigOptions,
       suppressChunks: false,
       turnStop: null,
       isClosed: () => disposed || connection.signal.aborted,
@@ -885,6 +1104,17 @@ export async function runAcpSessionPrompt(
       }
     }
 
+    // Reasoning level and friends switch live too, so picking a new one between
+    // turns takes effect on the existing session (no respawn, no lost context).
+    if (!signal?.aborted) {
+      open.appliedConfigOptions = await applyConfigOptions(
+        connection,
+        session,
+        open.desiredConfigOptions,
+        open.appliedConfigOptions,
+      )
+    }
+
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,
@@ -931,7 +1161,9 @@ export async function probeAcpAgent(
     .onRequest(methods.client.fs.readTextFile, UNSUPPORTED('fs/read_text_file'))
     .onRequest(methods.client.fs.writeTextFile, UNSUPPORTED('fs/write_text_file'))
 
-  const timer = setTimeout(() => child.kill(), timeoutMs)
+  const timer = setTimeout(() => {
+    terminateAcpChild(child)
+  }, timeoutMs)
   try {
     return await app.connectWith(stream, async (ctx) => {
       await ctx.request(methods.agent.initialize, {
@@ -939,9 +1171,11 @@ export async function probeAcpAgent(
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
       })
       return ctx.buildSession(config.cwd).withSession((session) => {
+        const configOptions = configOptionsFrom(session.newSessionResponse)
         const probe: AcpAgentProbe = {
           models: modelSelectorFrom(session.newSessionResponse),
           modes: modeSelectorFrom(session.newSessionResponse),
+          ...(configOptions.length > 0 ? { configOptions } : {}),
         }
         void ctx.notify('session/cancel', { sessionId: session.sessionId })
         return probe
@@ -949,6 +1183,6 @@ export async function probeAcpAgent(
     })
   } finally {
     clearTimeout(timer)
-    child.kill()
+    terminateAcpChild(child)
   }
 }

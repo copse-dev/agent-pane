@@ -39,16 +39,23 @@ export interface TurnStartPayload {
   /** Todos carried over from prior turns (drives the prior-todos pin). */
   priorTodos: readonly TodoItem[]
   /**
+   * Executor that will run this turn. Hooks use this only to avoid naming
+   * executor-private tools or mechanisms that are unavailable on that path;
+   * intent policy itself should stay executor-neutral. Absent in pure package
+   * tests and older fire sites.
+   */
+  executor?: 'local' | 'acp'
+  /**
    * The resolved model id running this turn, in the app's selection form
    * (`claude-sonnet-5`, `lmstudio:<weights>`, `openrouter:<vendor>/<model>`, …).
    * Lets a steering hook condition on *which* model is about to run — the
-   * forced-planning pack thresholds on its measured capability. Absent when the
+   * forced-planning plugin thresholds on its measured capability. Absent when the
    * fire site has no resolved model (pure package tests).
    */
   model?: string
   /**
    * Names of the tools actually offered to the model this turn, after every
-   * host-side filter (pack enablement, read-only mode, subagent routing). A
+   * host-side filter (plugin enablement, read-only mode, subagent routing). A
    * steering hook must not instruct the model to call a tool that was filtered
    * out; this is how it checks. Absent when the fire site does not compute a
    * tool list.
@@ -412,6 +419,14 @@ export interface HookRunRecord {
   outcome: BlockingHookOutcome | null
   /** Set when the hook threw. Fail-hard semantics still apply — recording happens first. */
   error?: string
+  /**
+   * The dispatch payload the hook was handed — the function-hook counterpart of a
+   * command hook's stdin bytes, so "what did the hook see?" is answerable for both
+   * executors (decision 6). Passed by reference and left opaque here: the *host*
+   * decides whether to serialize it, and bounds what it stores. `packages/agent`
+   * never reads it back.
+   */
+  payload?: unknown
 }
 
 // ---------------------------------------------------------------------------
@@ -456,14 +471,14 @@ export interface HookContext {
    */
   resolveGithubRepoSlug?: () => Promise<string | null>
   /**
-   * Read one pack-scoped setting value (the persisted value, or `undefined` when
+   * Read one plugin-scoped setting value (the persisted value, or `undefined` when
    * the user never changed it — the caller applies the manifest default). Same
-   * service-injection shape as {@link resolveGithubRepoSlug}: a first-party pack
-   * hook needs its own configuration without importing the host's pack service
+   * service-injection shape as {@link resolveGithubRepoSlug}: a first-party plugin
+   * hook needs its own configuration without importing the host's plugin service
    * or `electron-store` (execution-guidance rule 4). Absent in pure package
-   * tests, where every pack setting falls back to its manifest default.
+   * tests, where every plugin setting falls back to its manifest default.
    */
-  resolvePackSetting?: (packId: string, key: string) => unknown
+  resolvePluginSetting?: (pluginId: string, key: string) => unknown
   /**
    * Spine-recording sink (decision 6, always-on when the host provides it).
    * Called once per hook execution, including executions that throw. Injected

@@ -150,6 +150,7 @@ export function flushProjectThreads(
 export function __resetPersistenceForTest(): void {
   persistedMeta.clear()
   writeChains.clear()
+  activeAutosave = null
 }
 
 export async function loadProjects(
@@ -164,12 +165,12 @@ export async function loadProjects(
     if (typeof value['sshHost'] === 'string') project.sshHost = value['sshHost']
     if (typeof value['missing'] === 'boolean') project.missing = value['missing']
     const worktreeMode = value['worktreeMode']
-    if (
-      worktreeMode === 'never' ||
-      worktreeMode === 'always' ||
-      worktreeMode === 'from-default-branch'
-    ) {
+    // `from-default-branch` predates cutting worktrees from the default branch
+    // unconditionally; it now means the same thing as `always`.
+    if (worktreeMode === 'never' || worktreeMode === 'always') {
       project.worktreeMode = worktreeMode
+    } else if (worktreeMode === 'from-default-branch') {
+      project.worktreeMode = 'always'
     }
     return [project]
   })
@@ -204,8 +205,25 @@ export const AUTOSAVE_DEBOUNCE_MS = 250
 export interface Autosave {
   /** Persist any pending changes immediately and await the writes. */
   flush(): Promise<void>
+  /**
+   * Await in-flight thread writes without forcing a projects save.
+   * Settles even when a write rejects so callers can still proceed.
+   */
+  whenIdle(): Promise<void>
   /** Remove listeners and cancel the pending timer (mainly for tests). */
   detach(): void
+}
+
+/** Active autosave from the most recent `attachAutosave` (cleared on detach). */
+let activeAutosave: Autosave | null = null
+
+/**
+ * Wait for any in-flight autosave writes (especially immediate `threads:create`
+ * on a new id). Used by `terminal:create` so main's ownership check cannot race
+ * ahead of the create that `threads_changed` already kicked off.
+ */
+export function awaitPendingThreadPersistence(): Promise<void> {
+  return activeAutosave?.whenIdle() ?? Promise.resolve()
 }
 
 // Autosave: maps store mutations onto event-level thread-store writes.
@@ -292,8 +310,11 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       // Blank-thread first send calls `agent:prepareCheckout` before any
       // `message_added` reconcile. Debouncing that create leaves a race that
       // surfaces as "Thread is not persisted yet; retry sending the message".
+      // The integrated terminal has the same race on `terminal:create` when a
+      // new thread is opened with the Terminal pane already visible.
       // Flush immediately when threads_changed introduces a new id so main can
-      // validate the project/thread pair on the first send.
+      // validate the project/thread pair; callers that need the create on disk
+      // (send, terminal spawn) must still `awaitPendingThreadPersistence()`.
       const prev = persistedMeta.get(activeProjectId) ?? new Map()
       if (threads.some((t) => !prev.has(t.id))) {
         if (timer !== null) {
@@ -370,8 +391,11 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
   const onPagehide = (): void => void flush()
   window.addEventListener('pagehide', onPagehide)
 
-  return {
+  const whenIdle = (): Promise<void> => inflightFlush.catch(() => undefined)
+
+  const autosave: Autosave = {
     flush,
+    whenIdle,
     detach(): void {
       if (timer !== null) {
         clearTimeout(timer)
@@ -381,6 +405,9 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
         u()
       })
       window.removeEventListener('pagehide', onPagehide)
+      if (activeAutosave === autosave) activeAutosave = null
     },
   }
+  activeAutosave = autosave
+  return autosave
 }

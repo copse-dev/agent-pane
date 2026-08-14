@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  shouldSendSystemNotification,
   startWindowAttention,
   type DockAttention,
   type WindowAttention,
@@ -28,6 +29,23 @@ function fakeWindow(): {
     focus: () => focusListener?.(),
   }
 }
+
+describe('shouldSendSystemNotification', () => {
+  it('only sends while the Copse window is hidden', () => {
+    assert.equal(
+      shouldSendSystemNotification({ isDestroyed: () => false, isVisible: () => true }),
+      false,
+    )
+    assert.equal(
+      shouldSendSystemNotification({ isDestroyed: () => false, isVisible: () => false }),
+      true,
+    )
+    assert.equal(
+      shouldSendSystemNotification({ isDestroyed: () => true, isVisible: () => false }),
+      false,
+    )
+  })
+})
 
 describe('startWindowAttention', () => {
   it('uses a critical Dock bounce for interaction and stops it once', () => {

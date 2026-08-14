@@ -55,7 +55,7 @@ session.
   is recorded as an `actor: "classifier"`, `verdict: "classified"` event with
   `scope` + `confidence`; it does not claim the classifier authorized execution.
 - **Hook verdicts** — any non-`allow` Cursor hook decision
-  ([`cursor-hooks.ts`](../src/main/services/skills/cursor-hooks.ts)) is recorded
+  ([`cursor-hooks.ts`](../src/shared/types/cursor-hooks.ts)) is recorded
   as an `actor: "hook"` event (`blocked` / `ask`).
 
 ## Redaction

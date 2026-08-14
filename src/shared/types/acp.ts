@@ -80,6 +80,24 @@ export interface AcpAgentConfig {
    */
   availablePermissionModes?: AcpModeChoice[]
   /**
+   * Chosen values for the agent's ACP session config options, keyed by
+   * `configId` — reasoning level (`thought_level`), mode, or any other selector
+   * the agent advertises. Keyed by id rather than category because the id is
+   * what `session/set_config_option` takes and the category is only a UX hint
+   * (an agent may ship two options in one category, or none at all).
+   *
+   * Values are validated against the agent's advertised choices at session
+   * start: an id the agent no longer offers, or a value no longer in its list,
+   * is logged and skipped rather than sent.
+   */
+  configOptions?: Record<string, string>
+  /**
+   * Config options the agent advertised the last time it was probed, cached so
+   * the composer picker can list reasoning levels/modes without re-spawning the
+   * agent. Refreshed on every probe and on every session the agent opens.
+   */
+  availableConfigOptions?: AcpConfigOption[]
+  /**
    * Per-agent override of the seatbelt confines (issue #590). Absent = use the
    * `KNOWN_ACP_AGENTS` catalog preset for this id (custom agents spawn
    * unsandboxed); an object = custom confines; `false` = explicitly opt out.
@@ -140,15 +158,62 @@ export interface AcpModeSelector {
 }
 
 /**
+ * Semantic category ACP attaches to a session config option. The spec reserves
+ * the un-prefixed names below and is explicit that the field is a **UX hint**:
+ * "It MUST NOT be required for correctness. Clients MUST handle missing or
+ * unknown categories gracefully." So Copse renders every advertised option
+ * regardless, and uses the category only to label and place it —
+ * {@link ACP_OTHER_CATEGORY} stands in for absent/unknown/vendor (`_`-prefixed)
+ * values.
+ */
+export type AcpConfigCategory = 'mode' | 'model' | 'model_config' | 'thought_level' | 'other'
+
+/** A selectable value of an ACP config option (`SessionConfigValueId` + label). */
+export interface AcpConfigChoice {
+  value: string
+  label: string
+  description?: string
+}
+
+/**
+ * One `select`-kind ACP session config option, flattened from a `session/new`
+ * response. This is the generic form of {@link AcpModelSelector}: the model
+ * picker is just the `category: "model"` instance of it, and reasoning level
+ * (`thought_level`) and permission mode (`mode`) arrive the same way.
+ */
+export interface AcpConfigOption {
+  /** `configId` used with `session/set_config_option`. */
+  configId: string
+  /** Agent-provided human-readable label ("Thinking effort", "Mode", …). */
+  name: string
+  /** UX hint only; `'other'` when absent or unrecognized. */
+  category: AcpConfigCategory
+  /** Optional agent-provided description of what the option does. */
+  description?: string
+  /** The value the agent starts a session on when Copse selects nothing. */
+  currentValue: string
+  /** Flattened choices (option groups expanded). */
+  choices: AcpConfigChoice[]
+}
+
+/**
  * Combined result of probing an ACP agent (Settings → "Detect models"): the
- * model selector and the session-mode selector, discovered from one throwaway
- * `session/new` so the agent process is spawned only once (issue #607).
+ * model selector, the session-mode selector, and every other config option the
+ * agent advertises, discovered from one throwaway `session/new` so the agent
+ * process is spawned only once (issue #607).
  */
 export interface AcpAgentProbe {
   /** The agent's model selector, or `null` when it exposes no selectable models. */
   models: AcpModelSelector | null
   /** The agent's session-mode selector, or `null` when it exposes no modes. */
   modes: AcpModeSelector | null
+  /**
+   * Every `select` config option the agent advertised, including the model one.
+   * Cached on the agent config as {@link AcpAgentConfig.availableConfigOptions}
+   * so the composer picker can offer reasoning level / mode without re-spawning
+   * the agent.
+   */
+  configOptions?: AcpConfigOption[]
 }
 
 /** Outcome of the one-shot ACP preset auto-setup (install/register/detect). */

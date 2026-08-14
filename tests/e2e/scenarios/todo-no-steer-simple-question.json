@@ -1,0 +1,12 @@
+{
+  "id": "todo-no-steer-simple-question",
+  "description": "Negative control for todo steering. shouldSteerTodos() has four mustNotSteerTodos fixture cases, but no scenario has ever exercised the negative side end-to-end — over-steering (a plan for a one-paragraph question) is only checked at the matcher level. Uses a mustNotSteerTodos prompt verbatim so the matrix and this eval cannot drift apart.",
+  "prompts": ["Explain what TodoItem.status means in one paragraph."],
+  "expect": {
+    "shouldSteerTodos": false,
+    "forbidTools": ["update_todos"],
+    "maxExplore": 2,
+    "requireDoctrineCompliance": true,
+    "userIntent": "question"
+  }
+}

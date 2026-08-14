@@ -35,9 +35,14 @@
  *   node scripts/test-oracle.mts --run e2e       # run the recommended e2e subset
  *   node scripts/test-oracle.mts --plan          # CI plan (see .github/workflows/ci.yml)
  *
- * CI gating (.github/workflows/ci.yml `plan-e2e` job): on a pull_request the
+ * CI gating (.github/workflows/ci.yml `precheck` job): on a pull_request the
  * `--plan` output thins the e2e tier to the affected specs; a push to main
  * always runs the full suite, so main is never gated on a partial map.
+ *
+ * `--plan` also emits a UNIT plan (`unit_mode` / `unit_specs`). CI applies it
+ * only to a PR that targets another PR's branch — a stacked layer that cannot
+ * merge yet — so every PR that can actually reach trunk still runs the whole
+ * suite under the coverage ratchet. See {@link computeUnitPlan}.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
@@ -260,12 +265,86 @@ export function computePlan(sel: Selection): CiPlan {
   return { mode, specs, count: mode === 'full' ? runnableAll.length : specs.length }
 }
 
+export type UnitPlan = { mode: 'full' | 'subset' | 'skip'; tests: string[]; count: number }
+
+/**
+ * Longest `unit_specs=` line the plan will emit before giving up and running the
+ * whole suite. The list crosses into CI through `$GITHUB_OUTPUT` and back out as
+ * an argv, so an unbounded subset trades one bounded cost (the full suite) for
+ * an unbounded one. The `> half` rule below already caps the count; this caps
+ * the bytes for a subset of unusually long paths.
+ */
+const UNIT_SPECS_MAX_CHARS = 16_000
+
+/**
+ * Changes that cannot reach a unit test by any route the runner has. Kept
+ * deliberately tiny and prefix-anchored: `docs/` and Markdown are read by humans,
+ * never imported or loaded at runtime. Anything else — including `.github/`,
+ * `schemas/`, and every fixture directory — is NOT listed, because a JSON or YAML
+ * file a test reads from disk is invisible to the import graph and must keep
+ * falling through to `full`.
+ */
+const DOCS_ONLY_PATTERNS: RegExp[] = [/^docs\//, /\.md$/, /^LICENSE$/, /^\.github\/[A-Z_]+\.md$/]
+
+/**
+ * Markdown that a unit test CAN observe, and so is never docs-only. `site/*.md`
+ * is generated from `site/*.html` and compared byte-for-byte by
+ * `scripts/sync-site-markdown.test.ts` — a hand-edit to a published twin is the
+ * one change that whole gate exists to catch, and skipping the unit tier for it
+ * would let it through.
+ */
+const DOCS_ONLY_EXCEPTIONS: RegExp[] = [/^site\//]
+
+/** True when every changed file is documentation the unit suite cannot observe. */
+export function isDocsOnlyChange(changed: string[]): boolean {
+  return (
+    changed.length > 0 &&
+    changed.every(
+      (f) =>
+        DOCS_ONLY_PATTERNS.some((re) => re.test(f)) &&
+        !DOCS_ONLY_EXCEPTIONS.some((re) => re.test(f)),
+    )
+  )
+}
+
+/**
+ * Decide how much of the UNIT tier a change needs. Unit selection is exact in a
+ * way e2e selection is not: a unit test is chosen because it transitively
+ * imports a changed file, so the import graph — not the selector-vocabulary
+ * heuristic — is the whole mapping. That is why `confidence` / `unmapped` (which
+ * `computeSelection` documents as being about the e2e tier specifically) play no
+ * part here.
+ *
+ *   full   — the safe default, and what an EMPTY selection means. No unit test
+ *            importing a changed file is the same evidence as a fixture, JSON
+ *            snapshot, or config the graph cannot see, so it must not thin.
+ *   subset — run only `tests` (the tests that reach the diff).
+ *   skip   — docs-only, the one change shape no unit test can observe.
+ *
+ * This mirrors {@link unitCommandArgs}, which the local `--run unit` path has
+ * always used; CI now reads the same policy instead of always running all of it.
+ */
+export function computeUnitPlan(sel: Selection): UnitPlan {
+  const all = sel.unitTests
+  const selected = sel.selectedUnit
+  if (isDocsOnlyChange(sel.changed)) return { mode: 'skip', tests: [], count: 0 }
+  if (sel.broad || selected.length === 0 || selected.length > Math.ceil(all.length / 2))
+    return { mode: 'full', tests: [], count: all.length }
+  if (selected.join(' ').length > UNIT_SPECS_MAX_CHARS)
+    return { mode: 'full', tests: [], count: all.length }
+  return { mode: 'subset', tests: selected, count: selected.length }
+}
+
 /** Emit the plan as `key=value` lines (ready for $GITHUB_OUTPUT). */
 function emitCiPlan(sel: Selection): void {
   const { mode, specs, count } = computePlan(sel)
   process.stdout.write(`mode=${mode}\n`)
   process.stdout.write(`count=${String(count)}\n`)
   process.stdout.write(`specs=${specs.join(' ')}\n`)
+  const unit = computeUnitPlan(sel)
+  process.stdout.write(`unit_mode=${unit.mode}\n`)
+  process.stdout.write(`unit_count=${String(unit.count)}\n`)
+  process.stdout.write(`unit_specs=${unit.tests.join(' ')}\n`)
 }
 
 // ── Selector vocabulary ──────────────────────────────────────────────────────

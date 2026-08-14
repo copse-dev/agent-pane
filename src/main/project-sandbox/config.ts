@@ -1,8 +1,9 @@
 import { accessSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getSetting } from '../services/storage/settings.ts'
+import { copseWorkspaceDir } from '../services/storage/copse-paths.ts'
 import {
   getChatStoreRootSync,
   getInternalWorkspaceRootRegistration,
@@ -128,6 +129,28 @@ function nestedCheckoutSiblingDenyPaths(checkoutRoot: string, executionRoot: str
 }
 
 /**
+ * Deny linked checkouts that are not already covered by the broad home-read deny.
+ *
+ * A busy repository can have hundreds of linked worktrees. Repeating every
+ * home-contained sibling in both denyRead and denyWrite makes ASRT's inline
+ * macOS Seatbelt profile grow past ARG_MAX even though `denyRead: [homedir()]`
+ * already blocks those paths and the write policy is allow-list based. Keep
+ * explicit rules only for external siblings, which need their own read deny.
+ */
+export function uncoveredSiblingDenyPaths(
+  siblingRoots: readonly string[],
+  broadReadDenyRoot: string = homedir(),
+): string[] {
+  const denyRoot = canonicalizeWorkspaceRoot(broadReadDenyRoot)
+  return siblingRoots.flatMap((siblingRoot) => {
+    const sibling = canonicalizeWorkspaceRoot(siblingRoot)
+    const rel = relative(denyRoot, sibling)
+    const covered = rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
+    return covered ? [] : [sibling, `${sibling}/**`]
+  })
+}
+
+/**
  * A workspace-owned scratch directory the sandbox permits writes to, used to
  * redirect $TMPDIR away from the system temp dir.
  *
@@ -139,7 +162,7 @@ function nestedCheckoutSiblingDenyPaths(checkoutRoot: string, executionRoot: str
  * the user's working tree.
  */
 export function workspaceTmpDir(): string {
-  return join(homedir(), '.copse', 'workspace', 'tmp')
+  return join(copseWorkspaceDir(), 'tmp')
 }
 
 /**
@@ -449,6 +472,111 @@ export function portBindingSandboxOverlay(workspaceRoot: string): Partial<Sandbo
   }
 }
 
+/**
+ * Canonicalize a granted read target the way {@link canonicalizeWorkspaceRoot}
+ * canonicalizes the workspace root: seatbelt matches the kernel's symlink-free
+ * path, so `~/foo` on a symlinked home (or a `/tmp/...` target) must be spelled
+ * the way the kernel sees it or the allow rule silently never matches.
+ *
+ * A target that does not exist — a glob such as `~/notes/*.md`, or a file the
+ * command is about to discover is absent — cannot be realpath'd, so the parent
+ * is canonicalized instead and the leaf re-joined.
+ */
+function canonicalizeReadTarget(target: string): string {
+  const resolved = resolve(target)
+  try {
+    return realpathSync.native(resolved)
+  } catch {
+    // Leaf missing: canonicalize the deepest existing ancestor instead.
+  }
+  try {
+    return join(realpathSync.native(dirname(resolved)), basename(resolved))
+  } catch {
+    return resolved
+  }
+}
+
+/**
+ * Every directory between a granted target and the filesystem root.
+ *
+ * macOS seatbelt resolves a path component by component, so reading
+ * `~/notes/todo.md` needs metadata access to `~/notes` and to `$HOME` itself —
+ * the broad `denyRead: [homedir()]` otherwise stops the walk before the
+ * more-specific leaf allow is ever consulted. Emitted as literal directory
+ * paths with no `/**`, so this grants traversal (and a listing of the named
+ * directories) without exposing any sibling subtree's contents — the same
+ * narrow shape `worktreeDiscoveryRead` uses for git's repository probe.
+ */
+function readTargetTraversalPaths(canonicalTarget: string): string[] {
+  const paths: string[] = []
+  let cursor = dirname(canonicalTarget)
+  while (cursor !== dirname(cursor)) {
+    paths.push(cursor)
+    cursor = dirname(cursor)
+  }
+  return paths
+}
+
+function isDirectoryPath(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Seatbelt overlay for a command the user approved through the **read-access
+ * question** (`read-outside-project.ts`): the workspace rules with exactly the
+ * granted paths added to `allowRead`.
+ *
+ * Without this, approving "Allow read access outside of the project?" still ran
+ * the command fully UNSANDBOXED — the command names a path outside the
+ * workspace, so `shellRunsOutsideSandbox` routes it out, and the read grant only
+ * silenced the prompt. That handed the command writes and network the prompt
+ * explicitly promised it was not granting. This overlay is the containment that
+ * makes the prompt's wording true: reads of the named paths, and nothing else.
+ *
+ * Deliberately one axis only, mirroring {@link portBindingSandboxOverlay}:
+ * `allowRead` gains the granted targets, their ancestor directories (needed for
+ * path traversal), and `${target}/**` for a target that is a directory. Network
+ * stays on the contained deny-all, `allowWrite`/`denyWrite` are untouched, and
+ * the mandatory write denies still apply. Credential and whole-home targets
+ * never reach here: `sensitiveTargetReason`/`breadthBlocker` refuse them at
+ * eligibility time, before a grant exists.
+ *
+ * Built fresh per spawn, so a relaxation can never outlive the one command whose
+ * own targets earned it.
+ */
+export function readAllowedSandboxOverlay(
+  workspaceRoot: string,
+  readTargets: readonly string[],
+): Partial<SandboxRuntimeConfig> {
+  const base = workspaceSandboxOverlay(workspaceRoot)
+  const fs = base.filesystem
+  if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
+
+  const grantedRead: string[] = []
+  for (const target of readTargets) {
+    // Fail closed: a relative target means the caller resolved nothing, and
+    // guessing a base here could widen a path the analysis never approved.
+    if (!isAbsolute(target)) continue
+    const canonical = canonicalizeReadTarget(target)
+    grantedRead.push(canonical)
+    if (isDirectoryPath(canonical)) grantedRead.push(`${canonical}/**`)
+    grantedRead.push(...readTargetTraversalPaths(canonical))
+  }
+  if (grantedRead.length === 0) return base
+
+  return {
+    ...base,
+    filesystem: {
+      ...fs,
+      allowRead: [...new Set([...(fs.allowRead ?? []), ...grantedRead])],
+    },
+  }
+}
+
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
@@ -507,9 +635,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'packed-refs'),
       ]
     : []
-  const siblingDeny = internalRoot
-    ? internalRoot.siblingRoots.flatMap((siblingRoot) => [siblingRoot, `${siblingRoot}/**`])
-    : []
+  const siblingDeny = internalRoot ? uncoveredSiblingDenyPaths(internalRoot.siblingRoots) : []
   // Close the "shared project tree" hole: ASRT default-allows all reads, and
   // the base `denyRead: [homedir()]` only covers layouts where the primary
   // checkout lives under $HOME. Linked worktrees under `/tmp`, `/var/folders`,

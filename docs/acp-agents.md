@@ -50,6 +50,23 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   native loop's transcript or orchestration state (ask_user, explore subagents,
   todos, memories) stay private; `advisor` is the exception, scoped to the whole
   ACP turn by agent-service.
+- **How a tool call gets its name differs per agent**, and no agent fills in
+  every field. Wire traces of three (captured with the `COPSE_DEBUG_ACP_UPDATES`
+  flag from #1659):
+  Claude sends the qualified name (`mcp__copse__run_shell`) everywhere; Cursor
+  titles the call `MCP: tool` with empty arguments and reveals the real name
+  **only** on the permission request; Codex sends no title on permission
+  requests but does send the arguments. Copse treats the permission request as a
+  patch over the display notification, so each agent's missing half is filled
+  from whichever channel carries it. A consequence worth knowing: under Cursor,
+  a bridged or MCP call that is auto-approved never produces a permission
+  request, so it can keep the generic `MCP: tool` label.
+- Because that title is also how Copse recognises **its own** bridged tools to
+  skip a duplicate approval prompt, the same per-agent spread applies: Cursor's
+  `copse-gh_pr_list: gh_pr_list` and Claude's `mcp__copse__gh_pr_view` are both
+  recognised. Codex sends no title at all, so its bridged calls still prompt
+  twice — the bridge's own gate still enforces them, so this is noise, not a
+  hole.
 - Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
   under the workspace seatbelt** on macOS when the project sandbox is active
   (issue #590): writes confined to the workspace, home denied except the agent's
@@ -201,6 +218,49 @@ silently degrades to the agent's default rather than failing the turn.
 > the seatbelt: a sandboxed agent that asks to touch a genuinely denied path
 > (system `/tmp`, network) still fails with `EPERM` even after you approve it.
 
+> **Sandboxed Codex keeps `agent` mode.** Codex orchestrates tool calls from an
+> opaque code-mode `exec` cell. Copse automatically accepts that cell only when
+> the Codex preset is inside the native project seatbelt; concrete shell commands
+> still include their command text and pass through Copse's ordinary shell gate.
+> This avoids a prompt before every Copse MCP call without selecting Codex's
+> broader `agent-full-access` mode for normal product sessions.
+
+### Reasoning level and the agent's other selectors (experimental)
+
+Beyond the model, ACP lets an agent advertise arbitrary **session config
+options** on `session/new` — each a labelled list of values with an optional
+`category`. The spec reserves `model`, `model_config`, `mode`, and
+`thought_level` (reasoning/thinking effort), and is explicit that the category
+is a UX hint: _"It MUST NOT be required for correctness. Clients MUST handle
+missing or unknown categories gracefully."_
+
+Copse therefore surfaces **every** `select` option the agent advertises, whatever
+its category, in the composer's model picker:
+
+- Open the picker and the agent's selectors are listed under the models —
+  `Thinking effort · Medium`, `Mode · Default` — each drilling into its choices.
+- **Right-click the model picker** for the same choices on one flat menu,
+  without opening the model list.
+- An option Copse has no label for still appears, using the agent's own `name`.
+
+Choices are stored per agent: config options under their `configId` in
+`configOptions`, and a session mode in `permissionMode` (see above). Values are
+validated against what the agent advertises before anything is sent — a level
+that disappears with a model switch is logged and skipped, not forced.
+
+Reasoning level applies with `session/set_config_option` and switches **live**:
+picking a new one takes effect on the next turn of the same session, with no
+respawn and no lost context (the same treatment as the model). A session **mode**
+still needs a fresh session, so it is part of the pool fingerprint.
+
+The list comes from **Detect models** in Settings, which caches what the agent
+advertised. An agent that has never been probed shows no selectors.
+
+> Agents differ in what they expose. In ACP v1 many surface permission modes via
+> `modes`/`session/set_mode` rather than as a `mode` config option, and some
+> encode reasoning effort as separate _models_ instead of a `thought_level`
+> option — in which case it stays in the model list where it already was.
+
 ### A note on secrets
 
 The spawned agent runs its own model loop, so Copse **scrubs its own cloud LLM
@@ -272,6 +332,55 @@ types, MCP transports, modes, models, auth, and any `_meta` each adapter
 tunnels. For write routing / permission payloads / mid-turn `_meta` under a real
 turn, use `npm run probe:acp:behavior` (issue #832; spends tokens). See
 [`docs/acp-capability-probe.md`](acp-capability-probe.md).
+
+## Capturing the raw ACP wire (`COPSE_DEBUG_ACP_UPDATES`)
+
+When an agent's tool calls show up with a useless label — the reported case is
+Cursor rendering every MCP call as `MCP: tool` — the probes above only tell you
+what survived parsing. To see what the adapter actually sent, run Copse with:
+
+```sh
+COPSE_DEBUG_ACP_UPDATES=1 npm start
+```
+
+Every inbound JSON-RPC message from the agent is then appended verbatim to
+`acp-debug.jsonl` inside that thread's own folder, beside `events.jsonl`. The tap
+sits on the transport, so each line is what the agent said **before** the ACP
+schema drops unmodelled fields and before Copse normalizes the rest — an
+experimental `name`, a vendor extension key, `_meta`, `rawInput` / `rawOutput`,
+`content`, and `locations` all arrive intact. One JSON object per line:
+
+```jsonc
+{
+  "v": 1,
+  "ts": "…",
+  "dir": "in",
+  "type": "notification",
+  "method": "session/update",
+  "msg": {/* verbatim */},
+}
+```
+
+Reproduce a case by starting a thread with the agent, asking it to call one MCP
+tool, and letting the call finish. To get the file out, use **Export thread
+folder (ZIP)** on the thread — `acp-debug.jsonl` is included — or read it
+directly at `~/.copse/workspace/<projectId>/<threadId>/acp-debug.jsonl` (under
+`$COPSE_WORKSPACE_DIR` instead, if you set one).
+
+> **The trace is deliberately unredacted.** It contains your prompts, tool
+> arguments and output, source code, absolute paths, and any secret an agent put
+> in one of those — for example an MCP server token echoed back in `rawInput`.
+> Read the file before sharing it, prefer a scratch project when reproducing,
+> and never set the flag by default. With the flag unset, no diagnostic file is
+> created and nothing is serialized or written.
+
+The one exception to "unredacted" is the header line, which records how Copse
+spawned the agent rather than anything the agent sent. Argument values that look
+like credentials are masked there — `CLAUDE_CODE_OAUTH_TOKEN=<redacted>` keeps
+the variable name so you can still see which credential was passed. This matters
+because some agents take their token as an argv entry, which would otherwise put
+a live secret on line 1 of a file whose purpose is to be handed to someone else.
+Every ACP payload below the header is still written verbatim.
 
 ## See also
 

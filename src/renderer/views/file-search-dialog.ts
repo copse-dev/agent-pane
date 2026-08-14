@@ -5,7 +5,7 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import { materialFileIconUrl, mountMaterialIcon } from '../icons/material-file-icons.ts'
 import { openWorkspaceFile } from '../controller/files.ts'
 import { navigateToRoadmapItem } from '../controller/panels.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 
 // Cmd/Ctrl+P "quick open" palette. A native <dialog> (showModal) so we inherit
 // the top-layer focus trap, inert background, and Esc-to-close for free — mirrors
@@ -197,11 +197,11 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
     const token = ++roadmapToken
     let items: RoadmapItem[]
     try {
-      // Roadmap is gated by the `copse.roadmap-plans` first-party pack; only
-      // surface roadmap matches while that pack is enabled (mirrors the Roadmap
+      // Roadmap is gated by the `copse.roadmap-plans` first-party plugin; only
+      // surface roadmap matches while that plugin is enabled (mirrors the Roadmap
       // pane's titlebar-button gate).
-      const packs = await api.packs.list()
-      const enabled = packs.packs.some((p) => p.id === ROADMAP_PLANS_PACK_ID && p.enabled)
+      const plugins = await api.plugins.list()
+      const enabled = plugins.plugins.some((p) => p.id === ROADMAP_PLANS_PLUGIN_ID && p.enabled)
       items = enabled ? await api.roadmap.list() : []
     } catch {
       items = []

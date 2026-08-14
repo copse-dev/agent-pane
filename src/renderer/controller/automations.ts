@@ -20,7 +20,6 @@ function isPendingAutomation(thread: Thread): boolean {
   return (
     thread.automation !== undefined &&
     thread.status === 'idle' &&
-    thread.messages.length === 0 &&
     Boolean(thread.draftPrompt?.trim())
   )
 }
@@ -50,7 +49,7 @@ export function attachAutomationController(
           projectId,
           threadId,
           prompt,
-          'automatic',
+          'worktree',
           initial.model,
         )
         if (store.getState().activeProjectId !== projectId) return

@@ -10,6 +10,7 @@ import {
 } from './subprocess-output-cap.ts'
 import { READ_TERMINAL_DEFAULT_LINES, takeLastLines } from '@shared/terminal/read-terminal.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
 interface PtyListeners {
   onData: IDisposable
@@ -28,9 +29,16 @@ export interface TerminalSessionInfo {
   active: boolean
 }
 
+/** A live shell's pid, for attributing listening ports back to the tab that opened them. */
+export interface TerminalProcessInfo {
+  id: string
+  label: string
+  pid: number
+}
+
 export interface TerminalSession {
   id: string
-  pty: Pick<IPty, 'write' | 'resize' | 'kill' | 'onData' | 'onExit'>
+  pty: Pick<IPty, 'pid' | 'write' | 'resize' | 'kill' | 'onData' | 'onExit'>
   /** Identifies the renderer that created the session, for ownership checks. */
   ownerId: number
   listeners?: PtyListeners
@@ -99,7 +107,7 @@ function clearActiveIfNeeded(sessionId: string, ownerId: number): void {
   if (activeByOwner.get(ownerId) === sessionId) activeByOwner.delete(ownerId)
 }
 
-function disposeSession(session: TerminalSession, sessionId: string): void {
+function disposeSession(session: TerminalSession, sessionId: string, notify = true): void {
   disposeSessionListeners(session)
   clearActiveIfNeeded(sessionId, session.ownerId)
   try {
@@ -108,6 +116,7 @@ function disposeSession(session: TerminalSession, sessionId: string): void {
     // PTY may already be dead during shutdown.
   }
   sessions.delete(sessionId)
+  if (notify) notifyThreadResourceFinished(session.threadId)
 }
 
 function attachPtyHandlers(
@@ -124,6 +133,7 @@ function attachPtyHandlers(
     disposeSessionListeners(session)
     clearActiveIfNeeded(sessionId, session.ownerId)
     sessions.delete(sessionId)
+    notifyThreadResourceFinished(session.threadId)
     // exitCode comes from node-pty (external); guard against a missing code at runtime.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     sendTerminalEvent(win, 'terminal:exit', sessionId, exitCode ?? 1)
@@ -202,7 +212,7 @@ export function destroyTerminalSession(sessionId: string, ownerId: number): void
 
 export function destroyAllTerminalSessions(): void {
   for (const [sessionId, session] of sessions) {
-    disposeSession(session, sessionId)
+    disposeSession(session, sessionId, false)
   }
   sessions.clear()
   activeByOwner.clear()
@@ -256,6 +266,22 @@ export function hasTerminalSessions(threadId?: string | null): boolean {
 }
 
 /**
+ * Every live shell's pid, across owners and threads — the Ports panel attributes
+ * a listening port to a tab by climbing from the listener to one of these, so it
+ * needs the whole host's worth, not one thread's. Sessions without a real pid
+ * (test injections) are skipped rather than attributing pid 0 to everything.
+ */
+export function listTerminalProcesses(): TerminalProcessInfo[] {
+  const out: TerminalProcessInfo[] = []
+  for (const session of sessions.values()) {
+    const { pid } = session.pty
+    if (!Number.isInteger(pid) || pid <= 0) continue
+    out.push({ id: session.id, label: session.label, pid })
+  }
+  return out
+}
+
+/**
  * Dispose every terminal owned by one thread. This explicit async boundary is
  * used by ordered thread/worktree retirement; unrelated and unscoped terminals
  * remain alive.
@@ -280,8 +306,10 @@ export function __testInjectTerminalSession(opts: {
   output.append(opts.outputText)
   const session: TerminalSession = {
     id,
-    // Minimal IPty stand-in — never written/resized/killed in these tests.
+    // Minimal IPty stand-in — never written/resized/killed in these tests. pid 0
+    // is deliberately not a real pid, so `listTerminalProcesses` skips it.
     pty: {
+      pid: 0,
       write(): void {},
       resize(): void {},
       kill(): void {},

@@ -1,3 +1,4 @@
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type {
   Message,
   ModelUsage,
@@ -51,6 +52,8 @@ interface MessageLike {
   toolSummary?: string
   attachments?: TranscriptAttachment[]
   model?: string
+  requestedModel?: string
+  parameters?: ModelParameters
   review?: ThreadReview
   origin?: QueuedMessageOrigin
   editedByUser?: boolean
@@ -180,6 +183,8 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
     })
   }
   if (msg.model !== undefined) line.model = msg.model
+  if (msg.requestedModel !== undefined) line.requestedModel = msg.requestedModel
+  if (msg.parameters !== undefined) line.parameters = msg.parameters
   if (msg.review !== undefined) line.review = msg.review
   if (msg.origin !== undefined) line.origin = msg.origin
   if (msg.editedByUser !== undefined) line.editedByUser = msg.editedByUser
@@ -370,6 +375,8 @@ function foldOne(
     })
   }
   if (line.model !== undefined) msg.model = line.model
+  if (line.requestedModel !== undefined) msg.requestedModel = line.requestedModel
+  if (line.parameters !== undefined) msg.parameters = line.parameters
   if (line.review !== undefined) msg.review = line.review
   if (line.origin !== undefined) msg.origin = line.origin
   if (line.editedByUser !== undefined) msg.editedByUser = line.editedByUser
@@ -397,6 +404,7 @@ export function foldMessage(
     ...(m.toolSummary !== undefined ? { toolSummary: m.toolSummary } : {}),
     ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
     ...(m.model !== undefined ? { model: m.model } : {}),
+    ...(m.requestedModel !== undefined ? { requestedModel: m.requestedModel } : {}),
     ...(m.review !== undefined ? { review: m.review } : {}),
     ...(m.origin !== undefined ? { origin: m.origin } : {}),
     ...(m.editedByUser !== undefined ? { editedByUser: m.editedByUser } : {}),

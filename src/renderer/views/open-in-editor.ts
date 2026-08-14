@@ -1,6 +1,7 @@
 import { el, clear, on } from '../dom/helpers.ts'
 import { chevronDownIcon } from '../dom/icons.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
+import { setTooltip } from '../dom/tooltip.ts'
 import { showToast } from './toast.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -50,6 +51,7 @@ export function mountOpenInEditor(
       type: 'button',
       class: 'titlebar-text-btn open-in-editor-caret',
       'aria-label': 'Choose editor',
+      'data-tooltip': 'Choose editor',
       'aria-haspopup': 'menu',
       'aria-expanded': 'false',
     },
@@ -112,7 +114,7 @@ export function mountOpenInEditor(
     const def = defaultEditor()
     const labelEl = primary.querySelector('.open-in-editor-label')
     if (labelEl) labelEl.textContent = def ? `Open in ${def.name}` : 'Open in'
-    if (def) primary.title = `Open this folder in ${def.name}`
+    setTooltip(primary, def ? `Open this folder in ${def.name}` : null)
     // The caret only earns its place when there's a choice to make.
     caret.hidden = editors.length < 2
   }

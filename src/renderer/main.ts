@@ -9,7 +9,12 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  nextThreadId,
+  openNewThread,
+  prevThreadId,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -24,6 +29,7 @@ import { mountSupervisedTasks } from './views/supervised-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
+import { mountPortsSection } from './views/ports-section.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import {
@@ -50,14 +56,15 @@ import {
   openOnboardingDialog,
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
-import { mountContextWarningBanner } from './views/context-warning-banner.ts'
 import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { registerUiKit } from './ui/index.ts'
+import { installTooltips } from './dom/tooltip.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
+import { mountCloseConfirm } from './views/close-confirm.ts'
 
 registerUiKit()
 import {
@@ -85,6 +92,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
+import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
@@ -205,6 +213,9 @@ async function boot(): Promise<void> {
   // load if DOMPurify had to be lazily pulled in); the highlighter awaits its
   // code-split highlight.js chunk so code blocks get their hljs token spans.
   await Promise.all([sanitizerReady, highlighterReady])
+  // Delegated, so it covers every `[data-tooltip]` mounted later — including
+  // pane contents that render long after boot.
+  installTooltips()
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)
@@ -212,11 +223,12 @@ async function boot(): Promise<void> {
   mountSshPromptDialog(api)
   mountUpdatePromptDialog(api)
   mountConfirmDialog()
+  // Mounted after the confirm dialog it prompts through, so a close arriving
+  // during boot has somewhere to render.
+  mountCloseConfirm(api, store)
   mountFileSearchDialog(store, api)
   mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
-  // Mounted after settings (it subscribes to the settings-close event to re-check).
-  const contextWarningBanner = mountContextWarningBanner(api)
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -302,6 +314,12 @@ async function boot(): Promise<void> {
     // Outside Cursor cloud agents for the open project — first tick after one
     // interval, never on editor open.
     startExternalCursorAgentSync(store, api)
+  } else {
+    // …but the diff queue is shared workspace state, not agent ownership. Without
+    // this the detached Changes pane has an empty `stagedDiffs` forever and never
+    // renders its "Proposed" section (#1704). `revealOnShowDiff` stays off: a
+    // pop-out is already pinned to one pane, so there is nothing to reveal.
+    attachDiffState(store, api, { revealOnShowDiff: false })
   }
   attachProjectThreadCache(store)
 
@@ -408,14 +426,7 @@ async function boot(): Promise<void> {
     return
   }
 
-  if (await shouldShowOnboarding(api)) {
-    openOnboardingDialog()
-  } else {
-    // Onboarding walks the user through model setup, so only nudge established
-    // users here: warn when no configured chat model has a usable context window
-    // (e.g. LM Studio reloaded everything at a tiny default after a reboot).
-    void contextWarningBanner.refresh()
-  }
+  if (await shouldShowOnboarding(api)) openOnboardingDialog()
 }
 
 function ensureLayout(): void {
@@ -441,7 +452,7 @@ async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
   openRightPanel(store, mode)
   document.documentElement.setAttribute('data-popout-mode', mode)
   const seed = await api.panes.takePopoutSeed(mode)
-  await applyPopoutSeed(mode, seed)
+  await applyPopoutSeed(mode, seed, store)
 }
 
 if (popoutMode) {
@@ -484,6 +495,7 @@ function mountFullLayout(): void {
     api,
   )
   mountSupervisedTasks(requireElement('terminals-list-host'), store, api)
+  mountPortsSection(requireElement('terminals-list-host'), store, api)
   mountBrowserPane(
     requireElement('browser-tabs-host'),
     requireElement('browser-viewer-host'),
@@ -618,8 +630,14 @@ function registerKeyboardShortcuts(): void {
     if (e.key === 'Enter' && handleStopShortcut?.('Enter')) {
       e.preventDefault()
     }
-    if (e.altKey && e.key === 'ArrowLeft') switchToPrevThread()
-    if (e.altKey && e.key === 'ArrowRight') switchToNextThread()
+    // Ctrl+Tab / Ctrl+Shift+Tab cycle threads, matching browser and other
+    // agent apps. Ctrl specifically (not Cmd), so it composes with macOS's
+    // Cmd+Tab app switcher.
+    if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'Tab') {
+      e.preventDefault()
+      if (e.shiftKey) switchToPrevThread()
+      else switchToNextThread()
+    }
   })
 }
 
@@ -651,17 +669,13 @@ async function confirmDeleteThread(): Promise<void> {
 }
 
 function switchToPrevThread(): void {
-  const { threads, activeThreadId } = store.getState()
-  const idx = threads.findIndex((t) => t.id === activeThreadId)
-  const prev = idx > 0 ? threads[idx - 1] : undefined
-  if (prev) switchThread(store, prev.id)
+  const prev = prevThreadId(store)
+  if (prev) switchThread(store, prev)
 }
 
 function switchToNextThread(): void {
-  const { threads, activeThreadId } = store.getState()
-  const idx = threads.findIndex((t) => t.id === activeThreadId)
-  const next = idx >= 0 && idx < threads.length - 1 ? threads[idx + 1] : undefined
-  if (next) switchThread(store, next.id)
+  const next = nextThreadId(store)
+  if (next) switchThread(store, next)
 }
 
 void boot()

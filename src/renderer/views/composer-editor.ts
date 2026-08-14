@@ -1,4 +1,5 @@
 import { renderTextBlock, textBlockLabel } from '@copse/agent/build-text-with-attachments.ts'
+import { attachTextExpand } from '../attachments/text-expand.ts'
 
 /**
  * The composer's rich input: a `contenteditable` that renders pasted text
@@ -111,6 +112,10 @@ export function mountComposerEditor(): ComposerEditor {
     const label = document.createElement('span')
     label.className = 'inline-paste-chip-label'
     label.textContent = block.label
+    // Openable before send, so a paste can be checked without sending it. The
+    // handler preventDefaults, so a click reads as "open" rather than dropping
+    // the caret into a chip the editor treats as one atomic character.
+    attachTextExpand(label, block.content, block.label)
     const remove = document.createElement('button')
     remove.type = 'button'
     remove.className = 'inline-paste-chip-remove'

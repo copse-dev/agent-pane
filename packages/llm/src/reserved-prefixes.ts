@@ -1,7 +1,7 @@
 // Reserved `<prefix>:` model-selection namespaces that are NOT extra providers.
 //
 // Copse encodes a chosen model as `<slug>:<modelId>` for several routing layers
-// (OpenRouter, LM Studio, remote cloud agents, device agents, pack routes, and
+// (OpenRouter, LM Studio, remote cloud agents, device agents, plugin routes, and
 // every OpenAI-compatible "extra" provider). The extra-provider classifier has
 // to tell its own slugs apart from these reserved namespaces, so it needs their
 // literal prefixes.
@@ -10,7 +10,7 @@
 // the full model-id-namespacing vocabulary and carries no upward import into
 // app-specific code — a prerequisite for extracting `@copse/llm` standalone.
 // App code that also needs one of these re-exports it from here (see
-// ../acp.ts, ../pack-model.ts, ../remote-agent.ts) so there is a single source
+// ../acp.ts, ../plugin-model.ts, ../remote-agent.ts) so there is a single source
 // of truth for each literal.
 //
 // `model-selection.ts` is the parser that consumes all of them; prefer
@@ -32,10 +32,19 @@ export const LMSTUDIO_MODEL_PREFIX = 'lmstudio:'
 export const ACP_MODEL_PREFIX = 'acp:'
 
 /**
- * Model-selection prefix for a pack-contributed model route
- * (`pack-model:<packId>:<routeId>`, both halves URI-encoded).
+ * Model-selection prefix for a plugin-contributed model route
+ * (`plugin-model:<pluginId>:<routeId>`, both halves URI-encoded).
  */
-export const PACK_MODEL_PREFIX = 'pack-model:'
+export const PLUGIN_MODEL_PREFIX = 'plugin-model:'
+
+/**
+ * Model-selection prefix for a *dynamic* selection — a rule the host evaluates
+ * at run time instead of a pinned model id (`auto:best-value`,
+ * `auto:min-intellect:45`, `auto:role:reviewer`). Unlike its siblings this
+ * names no route: the rule resolves to one of the others. The vocabulary lives
+ * in `../dynamic-model.ts`.
+ */
+export const AUTO_MODEL_PREFIX = 'auto:'
 
 /**
  * Separator between an agent identity and its chosen model, shared by `acp:`

@@ -8,6 +8,323 @@ every published entry.
 
 ## Unreleased
 
+- Changes popped out into its own window now shows the same thing the docked
+  pane does. The **Proposed** section was missing entirely from the pop-out: the
+  main process pushed the proposed-diff queue to the main window only, and a
+  pop-out deliberately does not run the agent loop, so nothing in the detached
+  window was listening either. Two windows side by side disagreed about what the
+  agent had proposed, and the one you popped out to review in was the one that
+  could not show it — or accept it, since Accept and Reject only appear
+  alongside a proposed diff. Diff-queue and file-change events now reach every
+  window, panes read the current queue on mount rather than waiting to catch a
+  push, and a pop-out opens on the file you were looking at instead of falling
+  through to an unrelated git change. Approving or rejecting also refreshes the
+  git sections in both windows, so the two stay in step.
+- The diff viewer no longer rebuilds itself when nothing about the file changed.
+  Every file-watcher tick and panel toggle re-entered it and threw away both
+  editor models to recreate them from byte-identical content, which flashed the
+  collapsed-region markers and scrolled you back to the first hunk in the middle
+  of reading a long diff. Selecting a genuinely different file still remounts —
+  including the case where two files happen to read identically, which would
+  otherwise have left the previous file's syntax highlighting on screen.
+- Everything Copse stores now lives in one directory. Threads, worktrees and
+  knowledge were already under `~/.copse/`, but projects, settings, API keys,
+  MCP config, custom tools, the browser profiles and the search index sat in
+  Electron's own directory — `~/Library/Application Support/copse-panel/` on
+  macOS — so backing Copse up meant copying two unrelated folders and restoring
+  them as a matched pair, and moving to a new machine meant the same. They now
+  live at `~/.copse/user-data/`, and the first launch after updating moves an
+  existing profile across. A migration that cannot complete logs why and keeps
+  using the old directory, so a failure costs a retry rather than your projects
+  list. `COPSE_DIR` consequently relocates the whole profile for real: it used
+  to move the thread store's per-project directories while the chat store root,
+  knowledge, long tasks, roadmap review, pack snapshots and user hooks stayed
+  behind in `~/.copse`, which left thread reads authorised against a root
+  nothing was being written to. Back up `~/.copse/` and you have all of it —
+  see [`docs/recovery.md`](docs/recovery.md), which is now one directory rather
+  than a checklist.
+- Knowledge notes, long tasks and roadmap-review state now follow a project that
+  moves. They were filed under a hash of the project's absolute path while
+  threads were filed under its id, so relocating a project — moving the repo,
+  recovering a folder Copse had quarantined, or restoring a backup onto a
+  machine where your home directory has a different name — brought the threads
+  back and left the notes behind. Nothing was ever deleted; the app was looking
+  in a directory named after where the project used to be. All three now key by
+  project id like threads do, and an existing directory is carried across the
+  first time it is opened.
+- A provider whose stored API key cannot be decrypted no longer presents itself
+  as configured. Keys are sealed with the OS keychain of the user that saved
+  them, not with the Copse profile, so a profile restored on a second machine
+  carries ciphertext nothing there can open. Copse treated "a key is stored" as
+  "a key works": the provider looked ready and only the request failed. Such a
+  key now reads as unconfigured, so the normal prompt to add one appears. A
+  keyring that is merely locked — common on Linux at login — is not mistaken for
+  a broken key.
+- `/checkup` now reports an API key it cannot decrypt. Keys are sealed with the
+  OS keychain of the user that saved them, not with the Copse profile, so a
+  profile restored on a second machine carries ciphertext nothing there can
+  open. Copse used to treat "a key is stored" as "a key works": the provider
+  showed as configured, `/checkup` called it encrypted and healthy, and only the
+  request failed. Each unreadable key is now an error naming the provider and
+  pointing at re-entering it or supplying the environment variable instead. New
+  [`docs/profiles.md`](docs/profiles.md) covers running more than one profile,
+  what a profile does and does not isolate — keys are separated by file, not by
+  encryption key — and what to expect from the one-time move of the old Electron
+  directory.
+- A thread working in its own isolated worktree no longer asks you to approve
+  every delete, rename, and new folder. Writes have applied straight to disk
+  since the session backup landed, but the three non-content ops still staged
+  unconditionally — so an isolated thread was queueing up approvals for files
+  only the agent had ever written, in a checkout you do not share, on a branch
+  that is not yours. They now take the same path writes do, and the same
+  fallbacks: an op still stages if git cannot be read, if uncommitted work could
+  not be backed up first, or if the file changed underneath the agent since it
+  read it. Threads on the shared checkout are unchanged — those are your files.
+  **Settings → Permissions → File edits** carries the toggle
+  (_Skip approval for deletes, renames, and new folders in an isolated
+  worktree_), on by default.
+- The side panel can now take the whole chat column. Every pane header —
+  Explorer, Shells, Changes, PRs, Memories, Roadmap, Browser — carries an
+  **expand** control next to its pop-out button, and pressing it gives that pane
+  everything from the thread list to the right edge of the window; the same
+  control, now pointing inward, restores the split. It is the in-window half of
+  pop out: a wide diff, a real browser viewport or a full-width terminal without
+  detaching a second window to get one. The projects rail stays where it is, so
+  threads remain visible and switchable with the pane expanded, and the titlebar
+  stays reachable, so switching panes swaps the content and stays expanded.
+  Expanding covers chat rather than collapsing it, so the transcript keeps its
+  scroll position and the composer its draft, and restoring puts both back
+  exactly as they were — the agent carries on underneath either way. Closing the
+  panel gives chat its column back.
+- The file tree and file previews work in a `npm run dev` build again. `dev.mts`
+  never emitted `dist/main/sandbox-fs-worker.js` (nor the pack-tool, ACP-probe
+  and SSH-askpass bundles) — only `npm run build` did. A `dist/` filled purely by
+  `npm run dev`, as in a fresh worktree, therefore failed every sandboxed `fs:*`
+  call with a `MODULE_NOT_FOUND` from a child process, spawning two doomed
+  Electron processes per call. Both builders now emit the same list, and a
+  missing worker bundle reports itself by name instead of spawning anything.
+- Opening a new thread with the Terminal pane already visible no longer fails
+  to spawn a shell. Autosave already flushed `threads:create` immediately on a
+  new id, but `terminal:create` did not wait for that write — main's ownership
+  check then treated the missing `meta.json` as "thread does not belong to
+  project". The terminal spawn now awaits the in-flight create first, and a
+  missing meta is reported as "not persisted yet" rather than a membership
+  mismatch.
+- A thread that went wrong can now be handed to a thread that can read it.
+  **Debug trace**, in the composer's overflow menu, exports the conversation
+  you are looking at as a zip of its whole store directory — the spine, the
+  message prose, tool arguments and results, plans, nested subagent runs — opens
+  a new thread with that archive attached, and drafts a prompt asking for the
+  diagnosis: a timeline of what the thread was asked to do and what it actually
+  did, the point it went wrong quoted from the trace, the failure mode behind it,
+  and what would have prevented it. It says up front when history was trimmed
+  mid-run, which is a common cause and one the transcript alone cannot show. The
+  archive is stored with the new thread, so the investigation outlives the thread
+  it is about, and the agent unpacks it into files with `read_archive` rather
+  than ever taking the bytes into context. Nothing is sent: the draft ends on an
+  open line for you to say what you actually saw, which is the one thing a trace
+  cannot contain. Debug trace and **Share trace** are also no longer behind
+  Developer mode — someone whose thread has just gone wrong is by definition not
+  the person who went looking for a developer setting first.
+- New threads are now isolated by default, and no longer pick up where the last
+  thread left off. A new thread in a Git project gets its own linked checkout,
+  branched from the project's default branch — `origin/main` as last fetched,
+  not whatever happens to be checked out. Both halves of that are the fix. The
+  automatic choice deferred to a per-project setting that defaulted to off and
+  that nothing in the app could turn on, so in practice every thread shared the
+  project checkout; and because Copse leaves that checkout on the branch a
+  thread created, the next thread opened straight into the previous one's
+  working tree, on its branch, and built on top of it. Isolated threads were
+  affected too, more quietly: a worktree was cut from the live checkout, so even
+  an explicitly isolated thread started from the previous thread's commits.
+  Uncommitted work in the project checkout still comes along when it belongs to
+  the same commit the thread is starting from; when it does not — the checkout
+  is on another branch, or the default branch has moved on since — the thread
+  starts clean rather than mixing two unrelated states, and your own checkout is
+  left exactly as it was either way. Threads that cannot be isolated are
+  unchanged: a project that is not a Git repository, is reached over SSH, uses
+  submodules, or has no resolvable default branch shares the project checkout
+  and says so before you send. So does a project set to `worktreeMode: never`,
+  and either way the choice is still yours per thread, from the composer.
+- The Changes panel no longer goes blank when a diff is replaced. Opening a file
+  tore the current diff down before the next one had been computed, so for the
+  length of that compute the editor held nothing at all — and any attach that was
+  abandoned partway (a store update re-selecting the same file, a fresh proposal
+  arriving, a thread or project switch) returned without putting anything back,
+  leaving the panel showing an empty editor rather than a diff or its “Select a
+  changed file” message. The outgoing diff is now released only once its
+  replacement is on screen, so an abandoned attach leaves the diff you were
+  looking at in place. Clearing the viewer also releases the view-model wrapper
+  around the models, which nothing had been disposing.
+- The worktrees Copse creates are now something you can see and clear out.
+  Every isolated thread gets its own linked checkout of the project, and until
+  now nothing in the app admitted they existed: they accumulated under
+  `~/.copse/worktrees`, one full working copy each, and the only way to find out
+  how much disk that had become was to go looking with `git worktree list` and
+  `du`. **Settings → Sources → Worktrees** lists them, most recently used first,
+  and each row says what the checkout is for and what it costs — the thread it
+  was created for, when it was last used, when it was created, and its measured
+  size on disk, with the path on hover. Rows that are safe to reclaim say so
+  rather than leaving you to work it out: a checkout whose thread is gone reads
+  “orphaned”, one whose thread has moved on reads “released”, and one Copse did
+  not create reads “external”, alongside badges for uncommitted work, unmerged
+  commits, a detached HEAD, or a lock. Each row deletes, including the dirty and
+  unmerged cases the automatic cleanup has to refuse — which are exactly the ones
+  that pile up. Deleting always asks first; if Git reports content that would go
+  with the directory, it asks a second time and lists the files, checked at the
+  moment you delete rather than when the list was drawn, so a checkout the agent
+  has dirtied since still stops you. A checkout with a turn running in it cannot
+  be deleted at all. Deleting one does not brick its thread: the thread drops the
+  worktree and carries on in the project checkout. The branch goes only if it is
+  fully merged — anything unmerged outlives the checkout that held it.
+- Switching projects no longer carries a prompt across, or leaves the app half
+  moved. Two problems, both about a switch and the thing it left behind.
+  Approval prompts and `ask_user` questions were checked against the focused
+  thread when they were raised, but the open dialog was never re-checked — so a
+  prompt from the project you just left stayed on screen over the thread you
+  landed on, reading as a question that thread never asked, and answering it
+  approved a tool call in the project behind you. A prompt whose thread loses
+  focus is now withdrawn and re-flagged as a sidebar bell, and comes back, in
+  order, when you return to it. Separately, switching away and immediately back
+  used to let the abandoned switch finish behind you: it pointed the main
+  process at the other project's root, saved it as the project to reopen at next
+  launch, and stripped the transcripts off the sidebar rows of the project still
+  on screen — leaving the file tree, git, terminals and the next run's working
+  directory all serving a project the window was not showing. Clicking the
+  project (or a thread in it) you are already on now cancels the switch in
+  flight and puts the workspace and the saved selection back. Workspace
+  activations are also applied in the order they were requested, so two quick
+  switches can no longer land out of order, and a switch that is cancelled or
+  superseded always releases whatever was waiting on it — File ▸ Open Folder,
+  new project, relocate and orphan recovery all awaited that, and on launch the
+  app layout itself was chained off it.
+- The model picker names Claude models one way, whoever supplied them. Every
+  provider spells them differently — Cursor's catalog returns a bare “Opus 5”
+  and puts the version first in “Claude 4.6 Sonnet (Thinking)”, device agents
+  label them by family alone, and some rows only had the raw id
+  (`claude-opus-4-7`) — so a list whose own rows read “Claude Opus 4.8” looked
+  like it held four vendors' models, and under a heading that names an agent
+  rather than a vendor (“Cursor Cloud Agent”) a bare “Opus 5” did not say whose
+  Opus it was. Those rows now read “Claude Opus 5”, “Claude Sonnet 4.6
+  (Thinking)”, “Claude Opus 4.7”, with qualifiers kept intact. The rewrite is
+  display-only and only reorders what a name already says: models it does not
+  recognise — Composer 2, GPT-5.6 Sol, local weights — are left exactly as their
+  provider named them. An agent's own spelling still resolves its intellect
+  hint, and a spelling no alias covers now finds the measurement through the
+  model it names, so more agent rows carry the score their cloud twin shows.
+- Hook cards are debuggable. A card that said “Added context · Injected 307 chars
+  of context” could tell you a hook had done something but never what — the
+  character counts were the whole story. Every card now carries an **Inspect run**
+  disclosure that shows the run itself: what the hook was handed and what it
+  returned, read on demand from the thread's own records. Command hooks show the
+  exact stdin they read alongside their stdout and stderr; in-process hooks, which
+  had no visible output at all, now show their dispatch payload and the full text
+  of everything they applied — the injected context, the message to the agent, a
+  rewritten tool input, a halt reason — with real line breaks, not escaped JSON.
+  Each block copies in one click. Nothing is fetched until you open a card, and
+  captures are bounded so a chatty hook cannot bloat a thread.
+- A long session holds on to much less memory. Two things kept transcript text
+  alive that did not need to be. The transcript's render caches — the ones that
+  let an unchanged tool card skip a rebuild — stored the card's whole JSON
+  encoding as its signature, so every tool result, and every base64 image
+  attachment inside one, was held a second time for as long as its card was on
+  screen; a heap snapshot of a long session showed 83% of a 319 MB renderer heap
+  in strings, with the same 500 kB screenshots and 200 kB command outputs
+  appearing two and three times over. Signatures are now a short digest of that
+  JSON rather than the JSON itself. Separately, archived threads were still
+  folded into memory in full on every project load, message bodies and images
+  included, even though the sidebar and the `@`-picker both hide them; the load
+  now skips them. They stay on disk untouched, and all-time usage totals still
+  count them. Third, the sidebar kept a thread list per project visited this
+  session, and those lists were whole threads — so switching between projects
+  added transcripts to memory rather than replacing them. A project you switch
+  away from now keeps only what its rows draw: title, running mark, and the PR
+  refs already scraped out of its messages. Switching back reloads from disk as
+  before.
+- Models chosen through an API can now be tuned, the way a device agent's model
+  and permission mode already were. Settings → Models grows a **Model
+  parameters** block under the chat-model picker with reasoning depth,
+  temperature, and top-p. The values belong to the model rather than to the
+  field, so they follow it wherever it runs — chat, task roles, subagents — and
+  each model keeps its own set. Which controls appear is decided by the model:
+  the newest Claude models reject temperature and top-p outright and get the
+  reasoning ladder alone, older Claude models have no reasoning ladder and get a
+  thinking budget instead, and OpenAI-compatible providers get all three with a
+  note that the upstream model has the final say. A value saved against one
+  model is re-checked against whatever it is read for, so a stale setting
+  degrades to the provider default instead of failing the turn. Untouched models
+  send exactly the request body they sent before.
+
+  Two shortcuts sit on top of it. Where a vendor publishes a recipe for a model
+  — DeepSeek V4 Flash asks for max reasoning effort with `temperature 1.0` and
+  `top_p 0.95` in agentic use — a **Use recommended** button fills the fields
+  from it and links the source. It is offered rather than applied: the recipes
+  are scenario-specific and only as current as the version they were read
+  against, so nothing is sent until you accept it. And a **reasoning dial** now
+  sits beside the model picker in the composer, scoped to one chat, for when a
+  single task wants more thinking than the model is normally set to — no
+  permanent re-tuning to get through one turn.
+
+  What a turn actually ran with is now recorded on the assistant message, next
+  to the model that produced it. The saved values are mutable and the resolved
+  ones can differ from them — a stale value is dropped, the dial overrides the
+  level, a cheap role caps it — so without this a transcript would re-read as
+  though every past turn ran at whatever Settings holds today. The transcript
+  labels a turn where the model _or_ its parameters changed, so dialling effort
+  up mid-chat marks the turn it took effect on, and the values travel with the
+  thread through export.
+
+  The two roles whose job is to be cheap — thread titles and follow-up
+  suggestions, and the shell-command classifier — cap the reasoning depth they
+  inherit. A model set to max effort for the work should not spend max effort
+  naming the conversation, and that bill would arrive with nothing on screen to
+  explain it.
+
+- The Parallel Search pack's switch no longer turns on without a key. The tool
+  was already credential-gated where it counts — `parallel_search` is registered
+  only when the pack is enabled _and_ a Parallel API key resolves — but Settings
+  let you flip the toggle with no key saved, leaving a pack that read as on and
+  contributed nothing. The toggle now stays inert until a key is stored, with a
+  hint saying so. Turning it off is never blocked, so clearing the key on an
+  enabled pack shows the hint (and unregisters the tool) rather than trapping the
+  switch on.
+- Context-window trouble is now reported where the model is chosen. Picking a
+  model for a thread that no longer fits it puts a message above the composer —
+  "This thread no longer fits “GPT-4o mini”: the next prompt needs about 158K
+  tokens and its context window holds 128K" — with the two ways out: pick a model
+  with a larger window, or free up context (local models also get the "raise its
+  Context Length in LM Studio" route). It appears at 90% of the window too, while
+  there is still room to act, and carries a **Choose another model** button that
+  opens the picker beside it. This replaces the startup banner that warned about
+  low-context local models before any thread or model was in play; the same
+  underlying check still feeds the `/checkup` report.
+- Closing Copse while a thread is still working now asks first. Quitting tears
+  down every live agent session with no way to resume, so a close that would land
+  mid-turn opens a confirmation naming the threads still running ("Fix login is
+  mid-turn…") with **Close anyway** / **Keep working**. Backing out leaves the
+  run untouched. This covers both routes out of the app — the window's close
+  button and Cmd+Q / the Quit menu item — and the prompt lands before any
+  teardown starts, not after. Closing with nothing running is unchanged: no
+  dialog, no extra click.
+- The model value map keeps working past Artificial Analysis' API retirement.
+  AA retires its legacy `/api/v2/data/*` endpoints on 4 November 2026, after
+  which they answer `410 Gone`. The live panel already read the supported free
+  language feed, but it fell back to the legacy scores endpoint when a response
+  failed validation; since AA's documented replacement for that legacy endpoint
+  is the very feed we call first, the fallback had no successor and is gone —
+  one endpoint, one attempt. The `sync:intellect --from-api` refresh moves onto
+  the same feed, which means it now walks every page rather than reading only
+  the first, so a keyed refresh sees the whole model list instead of the first
+  200 rows. API keys are unchanged.
+- Icon-only controls now name themselves on hover. The titlebar panel toggles,
+  pane header actions, composer buttons, browser navigation, and the PR
+  lifecycle and CI glyphs all get a small label after a short hover — the plain
+  kind you'd expect on the web, not a panel. It arrives faster than the OS
+  tooltip it replaces, follows the app theme, flips above the anchor when there
+  is no room below, and stays inside the window near an edge. Keyboard focus
+  shows the same label; the click that follows a hover dismisses it. Where the
+  glyph encodes state the label decodes it: "Open changes — 3 pending diffs",
+  "CI failing", "Auto-merge is on — merges itself once checks pass".
 - The context wheel no longer goes blank on hover while the agent is working.
   Mid-run the pre-send estimate is deliberately suppressed — it describes the
   _next_ prompt, not the one in flight — but that left the wheel with nothing to
@@ -184,6 +501,14 @@ every published entry.
   train on inputs. Privacy-forward hosted endpoints (Groq, Together AI, and
   Fireworks AI) are available directly as provider presets instead of being
   hidden under Other. See docs/provider-data-policies.md.
+- Every text attachment chip now opens its snapshot in the preview modal. A
+  pasted block, an attached file and an attached terminal selection are all
+  openable in the composer, so what you attached can be checked before you send
+  it rather than only afterwards from the transcript — the ✕ still removes the
+  chip, since the affordance sits on the label beside it. Sent pasted blocks
+  open too: their chip was being rebuilt from its label alone, dropping the
+  snapshot the message already carried, so the most common text attachment was
+  the one kind that stayed stubbornly shut.
 
 ## Release-note process
 

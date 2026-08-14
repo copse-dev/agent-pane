@@ -1,8 +1,8 @@
 # Project automations
 
-**Status: Experimental prototype shipped.** The default-off `copse.automations` pack,
-schedule editor, local ticker, **Run now**, thread creation, and renderer submission are
-implemented. The durable/headless behavior below remains planned.
+**Status: Experimental local workflow shipped.** The default-off `copse.automations` pack,
+schedule editor, local ticker, **Run now**, fresh grouped tasks, bounded worktree use,
+and renderer submission are implemented. The durable/headless behavior below remains planned.
 
 This plan defines the first local prototype of Copse automations. It is a thin,
 explicitly limited slice of the durable background supervisor proposed in
@@ -12,9 +12,41 @@ GitHub issue #1081 and the local/cloud split proposed in #875.
 
 An enabled, project-scoped schedule contains a name, five-field cron expression,
 prompt, and selected model. While the desktop app is running, a matching minute
-creates a new thread in that project's filesystem-native thread store. The new
-thread is model-pinned and the renderer submits its prompt as a new root agent
-turn through the normal checkout and agent-run paths.
+starts a fresh task and root turn for that schedule. The thread is model-pinned
+for the turn and the renderer submits its prompt through the normal checkout and
+agent-run paths.
+
+## Bounded local lifecycle
+
+The local workflow has three invariants aimed at unattended reliability:
+
+1. **A fresh thread per run, grouped by schedule.** Every successful trigger gets
+   empty conversation context and its own task identity. Automation tasks render
+   under one collapsed **Automations** disclosure per project, then coalesce under
+   their schedule name. Expanding a schedule reveals timestamped historical runs;
+   selecting one reveals both disclosures.
+2. **A small live-worktree budget per schedule.** Every run explicitly requests
+   an isolated worktree even when ordinary project threads default to the shared
+   checkout. Before creating the next task, Copse retires clean, fully merged
+   checkouts and accepts already parked PR checkouts. The safe default allows one
+   live worktree; a schedule author may explicitly raise the cap to two or three
+   when independent runs should continue while older changes await review. Once
+   that cap is reached, the new trigger is skipped rather than producing an
+   unbounded trail of worktrees.
+3. **No overlapping turns.** A trigger that finds the schedule's latest task running
+   or holding an unsubmitted scheduled draft is coalesced. It neither creates a
+   thread/worktree nor queues another turn. The next matching cron occurrence may
+   try again after the thread returns idle.
+
+Attention pierces the quiet grouping without opening the entire history. If a
+background automation task pauses for approval or a question, the sidebar reveals
+**Automations**, its schedule, and only the affected run row. The bell stays on
+that actionable row; the schedule keeps a right-facing chevron until the user
+explicitly expands the older runs.
+
+Legacy automation threads that resolved onto a shared checkout remain historical;
+the next successful trigger creates a fresh isolated task. Archived automation
+threads are likewise never resurrected.
 
 The schedule authorizes submission of the configured prompt, not broader tool
 access. Normal permission policy remains in force: sandbox-contained commands
@@ -34,7 +66,7 @@ Prototype boundaries:
 - local machine and local wall-clock time only;
 - Copse must be running;
 - standard five-field cron, evaluated once per minute;
-- no missed-run catch-up, retry/backoff, concurrency policy, or process recovery;
+- no missed-run catch-up, retry/backoff, cross-schedule concurrency cap, or process recovery;
 - no webhook/event triggers;
 - no headless execution for an inactive project or closed renderer.
 
@@ -69,3 +101,21 @@ scheduler or arbitrary renderer code.
 
 Disabling the pack stops new triggers but preserves schedules and already-created
 threads. History never consults live pack registration (decision 17).
+
+## Verification and model comparison
+
+The current model-comparison harness compares two reviews of a working Git diff.
+That is useful after an editing automation, and the existing global
+`modelComparisonAutoOnReview` path still applies when the automation changes
+files. It is not yet a general verifier for issue triage, documentation freshness,
+or roadmap classification: those tasks need two independent task results plus a
+judge over structured evidence, not two diff reviews.
+
+Do not silently turn on billable comparison for schedules. The existing comparison
+approval is interactive and remembered per thread; an unattended trigger cannot
+answer it. A future per-schedule verification policy must therefore capture an
+explicit model/cost budget when the schedule is saved, run the two workers with
+separate read contexts, judge a schema-validated result, and record agreement,
+disagreement, evidence, and spend in the schedule thread. Until that contract
+exists, prompts may request the existing comparison tool, but the normal approval
+boundary remains in force.

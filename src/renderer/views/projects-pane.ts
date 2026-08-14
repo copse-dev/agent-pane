@@ -11,7 +11,7 @@ import {
 } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { OrphanProjectStore, Project, Thread } from '@shared/types'
+import type { OrphanProjectStore, Project } from '@shared/types'
 import {
   archiveThread,
   deleteThread,
@@ -20,7 +20,6 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
-  collectThreadPrRefs,
   describeThreadPrStatus,
   normalizePrLifecycleState,
   summarizeThreadPrStatus,
@@ -43,9 +42,10 @@ import {
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
-import { openSettingsDialog } from './settings-dialog.ts'
+import { openAutomationSettings, openSettingsDialog } from './settings-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
+import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 
@@ -69,6 +69,7 @@ function attentionBell(label: string): SVGSVGElement {
   svg.setAttribute('height', '14')
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', label)
+  svg.setAttribute('data-tooltip', label)
   const path = document.createElementNS(SVG_NS, 'path')
   path.setAttribute('fill', 'currentColor')
   path.setAttribute(
@@ -87,6 +88,7 @@ function runningStatus(label: string): SVGSVGElement {
   const svg = runningStatusIcon('ui-icon ui-icon-sm chat-running-status')
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', label)
+  svg.setAttribute('data-tooltip', label)
   svg.removeAttribute('aria-hidden')
   return svg
 }
@@ -102,15 +104,15 @@ function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
       class: `chat-pr-status is-${rollup.kind}`,
       role: 'img',
       'aria-label': label,
-      title: label,
+      'data-tooltip': label,
     },
     icon,
   )
 }
 
-function settingsIcon(): SVGSVGElement {
+function settingsIcon(className = 'titlebar-btn-icon'): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg')
-  svg.setAttribute('class', 'titlebar-btn-icon')
+  svg.setAttribute('class', className)
   svg.setAttribute('viewBox', '0 0 24 24')
   svg.setAttribute('width', ICON_SIZE)
   svg.setAttribute('height', ICON_SIZE)
@@ -127,6 +129,25 @@ function settingsIcon(): SVGSVGElement {
   return svg
 }
 
+/**
+ * Trailing link on an automation heading through to that automation's setup in
+ * Settings — the sidebar owns run history, the schedule editor owns the
+ * configuration, and this is the seam between them. Quiet until its heading is
+ * hovered or the button takes focus, like the row actions beside it.
+ */
+function automationSetupBtn(label: string, open: () => void): HTMLElement {
+  const btn = el(
+    'button',
+    { type: 'button', class: 'automation-setup-btn', 'aria-label': label, title: label },
+    settingsIcon('ui-icon ui-icon-sm'),
+  )
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    open()
+  })
+  return btn
+}
+
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const title = el('span', {}, 'Projects')
   // Toggles the thread filter row below. Filtering the sidebar's thread list is
@@ -134,30 +155,25 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // expanded project's threads in place, the palette jumps across everything.
   const searchToggle = el(
     'button',
-    { class: 'projects-search-btn', 'aria-label': 'Search threads', title: 'Search threads' },
+    {
+      class: 'projects-search-btn',
+      'aria-label': 'Search threads',
+      'data-tooltip': 'Search threads',
+    },
     searchIcon('ui-icon ui-icon-sm'),
   )
-  const openRemoteBtn = el(
-    'button',
-    { class: 'projects-open-remote-btn', 'aria-label': 'Open remote project', hidden: true },
-    '+ Remote',
-  )
-  // Single "+" entry point for local projects: opens a context menu with
-  // New project / Open folder. Remote keeps its own header button because it is
-  // an opt-in affordance that only appears once SSH workspaces are enabled.
+  // One "+" entry point for every way to add a project. The remote action is
+  // included only while SSH workspaces are enabled.
   const addBtn = el(
     'button',
-    { class: 'projects-add-btn', 'aria-label': 'New project', title: 'New project' },
+    {
+      class: 'projects-add-btn',
+      'aria-label': 'Add project',
+      'data-tooltip': 'New project or open a folder',
+    },
     '+',
   )
-  const header = el(
-    'div',
-    { class: 'pane-projects-header' },
-    title,
-    searchToggle,
-    addBtn,
-    openRemoteBtn,
-  )
+  const header = el('div', { class: 'pane-projects-header' }, title, searchToggle, addBtn)
 
   // Filter input for the expanded project's threads. It lives outside `list`
   // (which render() clears on every update) so its focus and value survive
@@ -205,7 +221,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const list = el('div', { class: 'projects-list' })
   const settingsBtn = el(
     'button',
-    { class: 'projects-settings-btn', 'aria-label': 'Settings' },
+    { class: 'projects-settings-btn', 'aria-label': 'Settings', 'data-tooltip': 'Open settings' },
     settingsIcon(),
     'Settings',
   )
@@ -214,11 +230,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   root.append(header, searchRow, list, settingsBtn)
 
-  openRemoteBtn.addEventListener('click', () => {
-    void addRemoteProject(store, api).catch((err: unknown) => {
-      showErrorToast('Could not open remote folder', err)
-    })
-  })
+  let sshWorkspaceEnabled = false
 
   addBtn.addEventListener('click', () => {
     const rect = addBtn.getBoundingClientRect()
@@ -235,18 +247,41 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           void addProject(store, api)
         },
       },
+      ...(sshWorkspaceEnabled
+        ? [
+            {
+              label: 'Open remote project',
+              onSelect: (): void => {
+                void addRemoteProject(store, api).catch((err: unknown) => {
+                  showErrorToast('Could not open remote folder', err)
+                })
+              },
+            },
+          ]
+        : []),
     ])
   })
 
-  const syncRemoteOpenVisibility = (): void => {
+  const syncRemoteOpenAvailability = (): void => {
     void isSshWorkspaceEnabled(api).then((enabled) => {
-      openRemoteBtn.hidden = !enabled
+      sshWorkspaceEnabled = enabled
+      addBtn.setAttribute(
+        'data-tooltip',
+        enabled
+          ? 'New project, open a folder, or connect remotely'
+          : 'New project or open a folder',
+      )
     })
   }
-  syncRemoteOpenVisibility()
-  store.on('settings_changed', syncRemoteOpenVisibility)
+  syncRemoteOpenAvailability()
+  store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
+  // Automation history is intentionally tucked away from ordinary conversation
+  // rows. Expansion is session-only: a fresh app launch returns to the quiet
+  // default, while selecting an automation thread always reveals its owner.
+  const expandedAutomationProjects = new Set<string>()
+  const expandedAutomationSchedules = new Set<string>()
   let orphans: OrphanProjectStore[] = []
 
   // Inline rename state survives `render()` (which rebuilds the chat list).
@@ -334,10 +369,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function rollupForThread(
-    thread: Pick<Thread, 'messages' | 'remoteAgentLink'>,
-  ): ThreadPrRollup | null {
-    const refs = collectThreadPrRefs(thread)
+  function rollupForThread(thread: SidebarThread): ThreadPrRollup | null {
+    const refs = sidebarPrRefs(thread)
     if (refs.length === 0) return null
     ensurePrLifecycles(refs)
     const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown')
@@ -429,7 +462,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const expandedId = expandedProjectId ?? activeProjectId
 
     if (projects.length === 0 && orphans.length === 0) {
-      list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+ Open".'))
+      list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
       return
     }
 
@@ -498,7 +531,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             type: 'button',
             class: 'project-new-thread-btn',
             'aria-label': 'New thread',
-            title: 'New thread',
+            'data-tooltip': 'New thread',
           },
           '+',
         )
@@ -532,17 +565,28 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             (t.title || 'New Thread').toLowerCase().includes(threadFilter),
           )
         : sidebarThreads
+      const automationThreads = matchingThreads.filter((thread) => thread.automation !== undefined)
+      const conversationThreads = matchingThreads.filter(
+        (thread) => thread.automation === undefined,
+      )
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null
-      let visibleThreads: Thread[]
+      let visibleThreads: SidebarThread[]
       let visibleCount: number
       let hasMore: boolean
       if (isFiltering) {
-        visibleThreads = matchingThreads
-        visibleCount = matchingThreads.length
+        visibleThreads = conversationThreads
+        visibleCount = conversationThreads.length
         hasMore = false
       } else {
-        const paged = paginateSidebarThreads(sidebarThreads, visibleLimit, activeId)
+        const activeConversationId = conversationThreads.some((thread) => thread.id === activeId)
+          ? activeId
+          : null
+        const paged = paginateSidebarThreads(
+          conversationThreads,
+          visibleLimit,
+          activeConversationId,
+        )
         visibleThreads = paged.visibleThreads
         visibleCount = paged.visibleCount
         hasMore = paged.hasMore
@@ -564,8 +608,28 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
       }
-      for (const thread of visibleThreads) {
-        const displayTitle = thread.title || 'New Thread'
+
+      /**
+       * Open a schedule's setup (or, with no id, this project's schedule list).
+       * Schedules are project-scoped, so a heading under a project that isn't
+       * open lands on the project first — the same one-click-to-switch the New
+       * thread button uses rather than editing another project's automations.
+       */
+      function openAutomationSetup(scheduleId?: string): void {
+        if (project.id !== store.getState().activeProjectId) {
+          switchProject(store, api, project.id)
+          return
+        }
+        openAutomationSettings(scheduleId)
+      }
+
+      function renderThreadRow(
+        thread: SidebarThread,
+        options: { displayTitle?: string; allowRename?: boolean } = {},
+      ): HTMLElement {
+        const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
+        const allowRename = options.allowRename ?? true
+        const scheduleId = thread.automation?.scheduleId
         const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null
         let title: HTMLElement
         if (renameState) {
@@ -600,15 +664,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           title = input
         } else {
           title = el('span', { class: 'chat-title' }, displayTitle)
-          title.addEventListener('dblclick', (e) => {
-            e.stopPropagation()
-            beginThreadRename(thread.id, displayTitle)
-          })
+          if (allowRename) {
+            title.addEventListener('dblclick', (e) => {
+              e.stopPropagation()
+              beginThreadRename(thread.id, displayTitle)
+            })
+          }
         }
         const chatRow = el(
           'div',
           {
-            class: `chat-row${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
+            class: `chat-row${thread.automation ? ' is-automation' : ''}${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
             'data-thread-id': thread.id,
           },
           title,
@@ -621,12 +687,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           e.preventDefault()
           e.stopPropagation()
           showContextMenu(e.clientX, e.clientY, [
-            {
-              label: 'Rename',
-              onSelect: (): void => {
-                beginThreadRename(thread.id, displayTitle)
-              },
-            },
+            ...(allowRename
+              ? [
+                  {
+                    label: 'Rename',
+                    onSelect: (): void => {
+                      beginThreadRename(thread.id, displayTitle)
+                    },
+                  },
+                ]
+              : []),
             {
               label: 'Fork',
               onSelect: (): void => {
@@ -639,6 +709,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 archiveProjectThread(project.id, thread.id)
               },
             },
+            // A schedule with a single run has no heading of its own, and a
+            // historical run is several rows below the one that does, so every
+            // automation row carries the way out to its setup.
+            ...(scheduleId
+              ? [
+                  {
+                    label: 'Automation setup…',
+                    onSelect: (): void => {
+                      openAutomationSetup(scheduleId)
+                    },
+                  },
+                ]
+              : []),
           ])
         })
 
@@ -660,7 +743,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
         const del = el(
           'button',
-          { class: 'chat-delete', 'aria-label': 'Delete thread' },
+          { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
           closeIcon('ui-icon ui-icon-sm'),
         )
         del.addEventListener('click', (e) => {
@@ -672,7 +755,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           }
         })
         chatRow.append(del)
-        chats.append(chatRow)
+        return chatRow
+      }
+
+      for (const thread of visibleThreads) {
+        chats.append(renderThreadRow(thread))
       }
 
       if (hasMore) {
@@ -682,6 +769,156 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         })
         chats.append(showMoreBtn)
+      }
+
+      if (automationThreads.length > 0) {
+        const scheduleGroups = new Map<string, SidebarThread[]>()
+        for (const thread of automationThreads) {
+          const scheduleId = thread.automation?.scheduleId
+          if (!scheduleId) continue
+          const runs = scheduleGroups.get(scheduleId)
+          if (runs) runs.push(thread)
+          else scheduleGroups.set(scheduleId, [thread])
+        }
+        const hasActiveAutomation = automationThreads.some((thread) => thread.id === activeId)
+        const attentionAutomationThreads = automationThreads.filter((thread) =>
+          isThreadAwaitingAttention(thread.id),
+        )
+        const automationExpanded =
+          isFiltering ||
+          expandedAutomationProjects.has(project.id) ||
+          hasActiveAutomation ||
+          attentionAutomationThreads.length > 0
+        const group = el('div', { class: 'automation-threads-group' })
+        const toggle = el(
+          'button',
+          {
+            type: 'button',
+            class: 'automation-threads-toggle',
+            'aria-expanded': automationExpanded ? 'true' : 'false',
+          },
+          el(
+            'span',
+            { class: `automation-threads-twisty${automationExpanded ? ' expanded' : ''}` },
+            chevronRightIcon('ui-icon ui-icon-sm'),
+          ),
+          el('span', { class: 'automation-threads-title' }, 'Automations'),
+          el('span', { class: 'automation-threads-count' }, String(scheduleGroups.size)),
+        )
+        if (automationThreads.some((thread) => thread.status === 'running')) {
+          const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
+          status.setAttribute('role', 'img')
+          status.setAttribute('aria-label', 'An automation is running')
+          status.removeAttribute('aria-hidden')
+          toggle.append(status)
+        }
+        toggle.addEventListener('click', () => {
+          if (expandedAutomationProjects.has(project.id)) {
+            expandedAutomationProjects.delete(project.id)
+          } else {
+            expandedAutomationProjects.add(project.id)
+          }
+          render()
+        })
+        group.append(
+          el(
+            'div',
+            { class: 'automation-threads-header' },
+            toggle,
+            automationSetupBtn('Automation settings', () => {
+              openAutomationSetup()
+            }),
+          ),
+        )
+        if (automationExpanded) {
+          const automationRows = el('div', { class: 'automation-thread-rows' })
+          for (const [scheduleId, runs] of scheduleGroups) {
+            const firstRun = runs[0]
+            if (!firstRun) continue
+            if (runs.length === 1) {
+              automationRows.append(renderThreadRow(firstRun))
+              continue
+            }
+
+            const scheduleKey = `${project.id}\0${scheduleId}`
+            const hasActiveRun = runs.some((thread) => thread.id === activeId)
+            const attentionRuns = runs.filter((thread) => isThreadAwaitingAttention(thread.id))
+            const showingAllRuns =
+              isFiltering || expandedAutomationSchedules.has(scheduleKey) || hasActiveRun
+            const scheduleRevealed = showingAllRuns || attentionRuns.length > 0
+            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
+            const scheduleGroup = el('div', {
+              class: 'automation-schedule-group',
+              'data-schedule-id': scheduleId,
+            })
+            const scheduleToggle = el(
+              'button',
+              {
+                type: 'button',
+                class: 'automation-schedule-toggle',
+                'aria-expanded': showingAllRuns ? 'true' : 'false',
+              },
+              el(
+                'span',
+                {
+                  class: `automation-threads-twisty${showingAllRuns ? ' expanded' : ''}`,
+                },
+                chevronRightIcon('ui-icon ui-icon-sm'),
+              ),
+              el('span', { class: 'automation-schedule-title' }, scheduleName),
+              el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
+            )
+            if (runs.some((thread) => thread.status === 'running')) {
+              const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
+              status.setAttribute('role', 'img')
+              status.setAttribute('aria-label', 'This automation is running')
+              status.removeAttribute('aria-hidden')
+              scheduleToggle.append(status)
+            }
+            scheduleToggle.addEventListener('click', () => {
+              if (expandedAutomationSchedules.has(scheduleKey)) {
+                expandedAutomationSchedules.delete(scheduleKey)
+              } else {
+                expandedAutomationSchedules.add(scheduleKey)
+              }
+              render()
+            })
+            scheduleGroup.append(
+              el(
+                'div',
+                { class: 'automation-schedule-header' },
+                scheduleToggle,
+                automationSetupBtn(`${scheduleName} setup`, () => {
+                  openAutomationSetup(scheduleId)
+                }),
+              ),
+            )
+            if (scheduleRevealed) {
+              const runRows = el('div', { class: 'automation-schedule-runs' })
+              const visibleRuns = showingAllRuns ? runs : attentionRuns
+              for (const thread of visibleRuns) {
+                const index = runs.indexOf(thread)
+                const timestamp = thread.automation?.triggeredAt
+                const when = timestamp
+                  ? new Date(timestamp).toLocaleString([], {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    })
+                  : 'Unknown time'
+                runRows.append(
+                  renderThreadRow(thread, {
+                    displayTitle: index === 0 ? `Latest · ${when}` : when,
+                    allowRename: false,
+                  }),
+                )
+              }
+              scheduleGroup.append(runRows)
+            }
+            automationRows.append(scheduleGroup)
+          }
+          group.append(automationRows)
+        }
+        chats.append(group)
       }
 
       list.append(chats)

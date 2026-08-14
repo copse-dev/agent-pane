@@ -6,6 +6,7 @@ import {
   localModelIntellectHint,
   modelIntellectHint,
 } from '@copse/llm/intellect-hints.ts'
+import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 import {
   isOpenRouterModel,
   openRouterDisplayLabel,
@@ -34,7 +35,7 @@ export interface ModelOptionsApi {
   remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
   lmStudio: Pick<ApiClient['lmStudio'], 'models'> &
     Partial<Pick<ApiClient['lmStudio'], 'modelInfo'>>
-  packs?: Pick<ApiClient['packs'], 'list'>
+  plugins?: Pick<ApiClient['plugins'], 'list'>
 }
 import {
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
@@ -55,14 +56,25 @@ import {
   enabledClaudeAcpAgent,
   parseAcpAgentConfigs,
   parseAcpModel,
+  parseAcpModelSelection,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
-import { PACK_MODEL_PREFIX, packModelValue, parsePackModelSelection } from '@shared/pack-model.ts'
+import {
+  PLUGIN_MODEL_PREFIX,
+  pluginModelValue,
+  parsePluginModelSelection,
+} from '@shared/plugin-model.ts'
 import {
   BEST_VALUE_CHAT_MODEL,
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
+import {
+  AUTO_MODEL_PREFIX,
+  dynamicModelChoices,
+  dynamicModelLabel,
+} from '@copse/llm/dynamic-model.ts'
+import { canonicalModelLabel, claudeModelIdFromLabel } from '@copse/llm/model-label.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -87,9 +99,11 @@ export interface ModelOption {
 
 export function modelDisplayLabel(model: string): string {
   if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
+  const dynamic = dynamicModelLabel(model)
+  if (dynamic) return dynamic
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
-  const packModel = parsePackModelSelection(model)
-  if (packModel) return packModel.routeId
+  const pluginModel = parsePluginModelSelection(model)
+  if (pluginModel) return pluginModel.routeId
   if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
   if (parseRemoteAgentModelSelection(model)) {
@@ -101,28 +115,52 @@ export function modelDisplayLabel(model: string): string {
   return cloudModelDisplayLabel(model)
 }
 
-async function packModelOptions(
+/**
+ * Intellect hint for a model an agent named itself. The same weights arrive
+ * spelled every which way ("Opus 4.8", "Claude 4.6 Sonnet", a bare id), so each
+ * form the agent gave us is tried against the measurement alias map first, and
+ * only then the Anthropic id a plain family + version denotes — which is how a
+ * spelling no alias covers still finds its measurement. Null when none resolve,
+ * so an unmeasured model renders without a hint rather than with a guess.
+ */
+function agentModelIntellectHint(
+  ...forms: ReadonlyArray<string | null | undefined>
+): string | null {
+  const named = forms.filter((form): form is string => Boolean(form))
+  for (const form of named) {
+    const hint = modelIntellectHint(form)
+    if (hint) return hint
+  }
+  for (const form of named) {
+    const id = claudeModelIdFromLabel(form)
+    const hint = id === null ? null : modelIntellectHint(id)
+    if (hint) return hint
+  }
+  return null
+}
+
+async function pluginModelOptions(
   api: ModelOptionsApi,
   includeAgentModels: boolean,
   current: string,
 ): Promise<ModelOption[]> {
   if (!includeAgentModels) return []
   try {
-    const result = await api.packs?.list()
+    const result = await api.plugins?.list()
     if (!result) return []
-    const currentSelection = parsePackModelSelection(current)
-    return result.packs.flatMap((pack) =>
-      pack.contributions.modelRoutes.flatMap((route) => {
+    const currentSelection = parsePluginModelSelection(current)
+    return result.plugins.flatMap((plugin) =>
+      plugin.contributions.modelRoutes.flatMap((route) => {
         const selectedWhileDisabled =
-          !pack.enabled &&
-          currentSelection?.packId === pack.id &&
+          !plugin.enabled &&
+          currentSelection?.pluginId === plugin.id &&
           currentSelection.routeId === route.id
-        if (!pack.enabled && !selectedWhileDisabled) return []
+        if (!plugin.enabled && !selectedWhileDisabled) return []
         return [
           {
-            value: packModelValue(pack.id, route.id),
-            label: `${route.label}${selectedWhileDisabled ? ' (pack disabled)' : ''}`,
-            group: route.group ?? `${pack.name} — personal pack`,
+            value: pluginModelValue(plugin.id, route.id),
+            label: `${route.label}${selectedWhileDisabled ? ' (plugin disabled)' : ''}`,
+            group: route.group ?? `${plugin.name} — personal plugin`,
             ...(route.supportsImages !== undefined ? { supportsImages: route.supportsImages } : {}),
             ...(selectedWhileDisabled ? { disabled: true } : {}),
           },
@@ -135,9 +173,10 @@ async function packModelOptions(
 }
 
 // External ACP agents the user has configured. Only enabled agents are offered;
-// a stale `acp:<id>` selection for a removed/disabled agent is surfaced via the
-// "(not configured)" fallback below rather than silently vanishing. The agents
-// are fetched once by the caller (also used to decide the ACP-over-API ordering).
+// a stale `acp:<id>` selection is surfaced below with the precise cause (agent
+// removed, disabled, or selected model no longer advertised) rather than
+// silently vanishing. The agents are fetched once by the caller (also used to
+// decide the ACP-over-API ordering).
 function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
   const options: ModelOption[] = []
   for (const agent of agents.filter((agent) => agent.enabled)) {
@@ -155,10 +194,7 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       for (const model of models) {
         const label = acpModelChoiceLabel(model)
         const versioned = acpModelVersionName(model.description)
-        const hint =
-          modelIntellectHint(model.value) ??
-          (versioned === null ? null : modelIntellectHint(versioned)) ??
-          modelIntellectHint(model.label)
+        const hint = agentModelIntellectHint(model.value, versioned, model.label, label)
         options.push({
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label} — ${hint}` : label,
@@ -219,9 +255,12 @@ async function openRouterOptions(
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    // Intellect-only hint (no catalog pricing for OpenRouter ids), matched via
-    // the measurement alias map. `group` carries the ZDR/retention annotation.
-    const hint = modelIntellectHint(id)
+    // Match the cloud presentation when the OpenRouter id resolves to a tracked
+    // cloud model (e.g. `anthropic/claude-opus-5:batch` -> `claude-opus-5`), so the
+    // OpenRouter row reads the same as the plan/cloud route. `group` carries the
+    // ZDR/retention annotation. Fall back to the intellect-only hint when nothing resolves.
+    const cloudId = resolveIntellectModelId(id)
+    const hint = cloudId ? cloudModelIntellectHint(cloudId) : modelIntellectHint(id)
     entries.push({
       value,
       label: hint ? `${label} — ${hint}` : label,
@@ -335,10 +374,14 @@ async function remoteAgentOptions(
     // is configured, even when the live catalog is empty.
     add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), 'Default')
     for (const model of liveModels) {
-      const label = model.label || model.id
-      // Intellect-only hint (remote agents are subscription-billed, no token
-      // price), matched via the measurement alias map on id or label.
-      const hint = modelIntellectHint(model.id) ?? modelIntellectHint(label)
+      // Cursor's catalog names Claude models its own way — a bare "Opus 5", or
+      // "Claude 4.6 Sonnet (Thinking)" with the version ahead of the family.
+      // Under a heading that names the agent rather than the vendor, that reads
+      // as someone else's model, so it gets the same spelling as every other row.
+      const vendorLabel = model.label || model.id
+      const label = canonicalModelLabel(vendorLabel)
+      // Intellect-only hint (remote agents are subscription-billed, no token price).
+      const hint = agentModelIntellectHint(model.id, vendorLabel, label)
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
         hint ? `${label} — ${hint}` : label,
@@ -350,7 +393,7 @@ async function remoteAgentOptions(
       currentSelection.model &&
       !seen.has(current)
     ) {
-      add(current, currentSelection.model)
+      add(current, canonicalModelLabel(currentSelection.model))
     }
   }
 
@@ -382,7 +425,7 @@ async function remoteAgentOptions(
       currentSelection.model &&
       !seen.has(current)
     ) {
-      add(current, currentSelection.model)
+      add(current, canonicalModelLabel(currentSelection.model))
     }
     // Keep a pre-multi-model bare selection selectable until the user switches.
     if (current === remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC) && !seen.has(current)) {
@@ -425,6 +468,19 @@ export async function fetchModelOptions(
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
       group: CHAT_DEFAULT_GROUP,
     })
+    // The Settings chat model can also be a rule, not just a pinned model: offer
+    // the other automatic selectors (balanced, most capable, cheapest) so the
+    // user can pick how the default resolves. auto:best-value is already the
+    // row above; the rest ride in their own Automatic group.
+    for (const choice of dynamicModelChoices()) {
+      if (choice.value === BEST_VALUE_CHAT_MODEL) continue
+      if (choice.group !== 'Automatic') continue
+      options.push({
+        value: choice.value,
+        label: `${choice.label} — ${choice.description}`,
+        group: choice.group,
+      })
+    }
   }
   // ACP agents are hidden on SSH workspaces UNLESS the user opted into remote ACP
   // over SSH, in which case they spawn on the remote host (docs/plans/acp-over-ssh.md).
@@ -494,7 +550,7 @@ export async function fetchModelOptions(
     const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude)
     const acp = acpAgentOptions(acpAgents)
     options.push(...(preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]))
-    options.push(...(await packModelOptions(api, includeAgentModels, current)))
+    options.push(...(await pluginModelOptions(api, includeAgentModels, current)))
   }
 
   // Local models: only listed when a local server is reachable and exposes some.
@@ -534,20 +590,29 @@ export async function fetchModelOptions(
         group: selection ? remoteAgentGroupLabel(selection.provider) : 'Remote agents',
       })
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
+      const selection = parseAcpModelSelection(current)
+      const configuredAgent = selection
+        ? acpAgents.find((agent) => agent.id === selection.id)
+        : undefined
+      const configuredButUnlisted = configuredAgent?.enabled === true
       const stale: ModelOption = {
         value: current,
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`
-          : `${modelDisplayLabel(current)} (not configured)`,
-        group: ACP_GROUP,
+          : configuredButUnlisted
+            ? `${configuredAgent.title} — ${selection?.model ?? 'agent default'} (not currently advertised)`
+            : configuredAgent
+              ? `${configuredAgent.title} (disabled)`
+              : `${modelDisplayLabel(current)} (not configured)`,
+        group: configuredAgent ? acpGroupLabel(configuredAgent.title) : ACP_GROUP,
       }
       if (sshWorkspace) stale.disabled = true
       options.push(stale)
-    } else if (includeAgentModels && current.startsWith(PACK_MODEL_PREFIX)) {
+    } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
       options.push({
         value: current,
-        label: `${modelDisplayLabel(current)} (pack disabled)`,
-        group: 'Personal packs',
+        label: `${modelDisplayLabel(current)} (plugin disabled)`,
+        group: 'Personal plugins',
         disabled: true,
       })
     } else {
@@ -557,7 +622,10 @@ export async function fetchModelOptions(
 
   // Only when nothing at all is configured (no cloud key, no provider, no local
   // server — and no Settings best-value row) do we surface a guiding message.
-  const concreteCount = options.filter((o) => !isBestValueChatModel(o.value)).length
+  const concreteCount = options.filter(
+    (o) =>
+      !isBestValueChatModel(o.value) && o.value !== '' && !o.value.startsWith(AUTO_MODEL_PREFIX),
+  ).length
   if (concreteCount === 0) {
     options.push({
       value: '',
@@ -605,4 +673,49 @@ export function localModelOptions(
   autoLabel = '(auto — first loaded model)',
 ): ModelOption[] {
   return [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))]
+}
+
+/** Group heading for a pinned model kept selectable in a dynamic-only picker. */
+const PINNED_GROUP = 'Currently pinned'
+
+/**
+ * The option list for a picker that selects *how* to choose a model rather than
+ * which one — every plugin-owned model setting and the Experimental worker model.
+ *
+ * These features run unattended, often long after the picker was last opened: a
+ * pinned id there quietly rots as keys, plans, and local models change, and the
+ * user has no reason to revisit it. A rule keeps meaning what it said.
+ *
+ * A `current` value that is *not* a selector (a choice made before this, or a
+ * hand-edited settings file) is kept as its own row rather than dropped. Silently
+ * showing a different selection than the one that will actually run is worse than
+ * one extra row, and choosing any dynamic option retires it.
+ */
+export function dynamicModelOptions(current: string, autoLabel?: string): ModelOption[] {
+  const options: ModelOption[] = dynamicModelChoices().map((choice) => ({
+    value: choice.value,
+    label: `${choice.label} — ${choice.description}`,
+    group: choice.group,
+  }))
+  // A field whose blank value means something ("reviewer A follows the chat
+  // model") needs that state selectable, or the picker would show a rule the
+  // feature is not using. Same `''` convention as the role/small-task pickers.
+  if (autoLabel !== undefined) options.unshift(autoModelOption(autoLabel))
+  const pinned = current.trim()
+  if (pinned && !options.some((option) => option.value === pinned)) {
+    options.unshift({
+      value: pinned,
+      label: `${modelDisplayLabel(pinned)} (pinned)`,
+      group: PINNED_GROUP,
+    })
+  }
+  return options
+}
+
+/** {@link dynamicModelOptions} in the async shape every picker's `loadOptions` wants. */
+export function fetchDynamicModelOptions(
+  current: string,
+  autoLabel?: string,
+): Promise<ModelOption[]> {
+  return Promise.resolve(dynamicModelOptions(current, autoLabel))
 }

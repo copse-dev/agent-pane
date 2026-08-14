@@ -3,22 +3,30 @@ import assert from 'node:assert/strict'
 import {
   BAND_REPRESENTATIVE_MODEL,
   CANONICAL_INTELLECT_VERSION,
-  MODEL_INTELLECT,
   explainIntellectScore,
   getIntellectScore,
   intellectBand,
   modelIntellect,
   topAnnotatedIntellect,
+  type IntellectMeasurement,
 } from './model-intellect.ts'
 import { MODEL_INTELLECT_RAW } from './model-intellect.generated.ts'
 import { LOCAL_MODEL_CATALOG } from './local-model-catalog.ts'
 import { TRACKED_MODELS } from './model-catalog.ts'
 
+function canonicalMeasurement(modelId: string): IntellectMeasurement {
+  const measurement = MODEL_INTELLECT_RAW[modelId]?.find(
+    (entry) => entry.indexVersion === CANONICAL_INTELLECT_VERSION,
+  )
+  assert.ok(measurement, `expected a canonical measurement for ${modelId}`)
+  return measurement
+}
+
 describe('getIntellectScore', () => {
   it('returns the canonical measurement as a fact, not an estimate', () => {
     const score = getIntellectScore('claude-opus-4-8')
     assert.ok(score)
-    assert.equal(score.value, 55.7)
+    assert.equal(score.value, canonicalMeasurement('claude-opus-4-8').value)
     assert.equal(score.estimated, undefined)
     assert.equal(score.measuredBitsPerWeight, 16)
     assert.ok(score.source.length > 10)
@@ -33,7 +41,7 @@ describe('getIntellectScore', () => {
   it('resolves alias and structurally-wrapped forms to the same measurement', () => {
     const direct = getIntellectScore('claude-fable-5')
     assert.ok(direct)
-    assert.equal(direct.value, 59.9)
+    assert.equal(direct.value, canonicalMeasurement('claude-fable-5').value)
     // ACP picker label, OpenRouter id, provider prefix, option suffix, agent
     // segment, and serving-route tag all resolve to the one measurement.
     assert.deepEqual(getIntellectScore('Fable 5'), direct)
@@ -51,18 +59,23 @@ describe('getIntellectScore', () => {
   })
 
   it('prefers a direct canonical measurement over equating a June-cohort reading', () => {
-    // MiniMax-M3 carries both a v4.0 reading (55) and a direct v4.1 reading
-    // (44.4). The canonical scale is v4.1, so the direct measurement wins as a
-    // fact — no equating hop, not flagged estimated.
+    // MiniMax-M3 carries both an older reading and a direct canonical reading.
+    // The direct measurement wins as a fact — no equating hop or estimate.
+    const canonical = canonicalMeasurement('MiniMaxAI/MiniMax-M3')
+    assert.ok(
+      MODEL_INTELLECT_RAW['MiniMaxAI/MiniMax-M3']?.some(
+        (entry) => entry.indexVersion !== CANONICAL_INTELLECT_VERSION,
+      ),
+    )
     const m3 = getIntellectScore('MiniMaxAI/MiniMax-M3')
     assert.ok(m3)
-    assert.equal(m3.value, 44.4)
+    assert.equal(m3.value, canonical.value)
     assert.equal(m3.estimated, undefined)
     const explanation = explainIntellectScore('MiniMaxAI/MiniMax-M3')
     assert.ok(explanation)
     assert.equal(explanation.steps.length, 1)
     assert.equal(explanation.steps[0]?.step, 'measured')
-    assert.equal(explanation.steps[0].value, 44.4)
+    assert.equal(explanation.steps[0].value, canonical.value)
   })
 
   it('every synced measurement carries a citation and version', () => {
@@ -81,7 +94,7 @@ describe('explainIntellectScore', () => {
   it('derives a canonical measurement in one cited step', () => {
     const explanation = explainIntellectScore('claude-sonnet-4-6')
     assert.ok(explanation)
-    assert.equal(explanation.value, 35.9)
+    assert.equal(explanation.value, canonicalMeasurement('claude-sonnet-4-6').value)
     assert.equal(explanation.estimated, false)
     assert.match(explanation.scale, new RegExp(CANONICAL_INTELLECT_VERSION.replace('.', '\\.')))
     assert.equal(explanation.steps.length, 1)
@@ -122,30 +135,27 @@ describe('catalog merge', () => {
 })
 
 describe('model intellect scale', () => {
-  it('annotates every tracked model, and nothing else', () => {
-    assert.deepEqual(Object.keys(MODEL_INTELLECT).sort(), [...TRACKED_MODELS].sort())
+  it('ranks a tracked model exactly when it has a measurement', () => {
+    // The old editorial map guaranteed coverage by forcing a hand-written entry
+    // per model. Ranking now follows the measurements instead, so a model that
+    // ships ahead of its Intelligence Index reading is simply unranked —
+    // `null`, meaning unknown, never a stand-in number. Consumers must treat
+    // that as "not a candidate", not as "weakest".
+    for (const model of TRACKED_MODELS) {
+      assert.equal(modelIntellect(model), getIntellectScore(model)?.value ?? null, model)
+    }
   })
 
-  it('resolves a value for tracked ids and null for unknown/local ids', () => {
-    assert.equal(modelIntellect('claude-opus-4-8'), 9)
-    assert.equal(modelIntellect('claude-haiku-4-5'), 4)
-    assert.equal(modelIntellect('lmstudio:qwen/qwen2.5-coder-32b'), null)
+  it('reads the measured axis rather than a separate scale', () => {
+    for (const model of TRACKED_MODELS) {
+      const measured = getIntellectScore(model)
+      if (measured) assert.equal(modelIntellect(model), measured.value, model)
+    }
+  })
+
+  it('returns null for ids nothing has measured or curated', () => {
+    assert.equal(modelIntellect('lmstudio:not-a-real-local-model'), null)
     assert.equal(modelIntellect(''), null)
-  })
-
-  it('keeps the scale ordinal: a strictly stronger model has a strictly higher number', () => {
-    const haiku = modelIntellect('claude-haiku-4-5') ?? NaN
-    const sonnet = modelIntellect('claude-sonnet-4-6') ?? NaN
-    const opus = modelIntellect('claude-opus-4-8') ?? NaN
-    assert.ok(haiku < sonnet && sonnet < opus)
-  })
-
-  it('bands values relative to the annotated distribution', () => {
-    const scale = [3, 4, 5, 6, 6, 8, 9]
-    assert.equal(intellectBand(9, scale), 'top')
-    assert.equal(intellectBand(8, scale), 'top')
-    assert.equal(intellectBand(6, scale), 'mid')
-    assert.equal(intellectBand(4, scale), 'low')
   })
 
   it('keeps each band representative inside its band as the scale evolves', () => {

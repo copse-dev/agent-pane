@@ -35,10 +35,11 @@ export const SHARED_WORKING_STYLE = `Working style:
 - Follow explicit constraints on tool use and commands. When the user supplies an exact operation and says its prerequisites are satisfied, do not add speculative inspection, cleanup, command wrappers, or other preparation; deviate only when observed evidence makes that necessary.
 - Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
 
-export const GIT_BRANCH_SAFETY = `Git branch safety:
-- Never commit or push directly to the repository's default branch (commonly main or master). Before committing, check the current branch and the repository's default branch.
-- If the default branch is checked out, create and switch to a working branch named copse/<short-kebab-summary> before making the commit. Use that naming convention for new branches.
-- Preserve an existing non-default working branch unless the user explicitly asks to change branches.`
+export const GIT_BRANCH_SAFETY = `Git branch safety (hard rule — a commit on the default branch is a failure):
+1. Before every commit, check the current branch (git_status or \`git branch --show-current\`) and treat \`main\`/\`master\` (or the repo's default) as the default branch.
+2. If HEAD is on the default branch: do NOT call git_commit yet. First create and switch with \`run_shell\` to \`git checkout -b copse/<short-kebab-summary>\` (example: \`git checkout -b copse/set-retries-to-5\`). Only then call git_commit on that new branch.
+3. If HEAD is already on a non-default working branch: stay there — commit on it; do not create a fresh copse/ branch unless the user asked to change branches.
+4. Never push to the default branch.`
 
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
@@ -50,7 +51,7 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - gh_run_list: List recent CI workflow runs for a branch (read-only GitHub CLI)
 - gh_run_view: Fetch failing CI workflow run logs by run id (read-only GitHub CLI)
 - get_ci_status: Read GitHub pull request CI check status (requires gh CLI and an open PR)
-- wait_for_ci_checks: Wait until PR CI checks finish after a push
+- wait_for_ci_checks: Register a durable CI watch after a push, end the turn, and resume once when checks finish
 - get_ci_failure_logs: Fetch failed GitHub Actions log output for a PR
 - run_shell: Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool (may prompt for approval; do not use for reading files or searching code)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
@@ -158,13 +159,14 @@ export const DIRECT_READS_BASE_PROMPT_VARS = DIRECT_READS_MODE_VARS
 export const BROWSER_TOOLS_BLOCK = `
 
 You also have built-in browser tools (loopback/localhost auto-runs; other origins prompt):
+- browser_preview: Serve a static HTML/CSS/JS project and open it in the visible Browser panel; use this instead of starting a server
 - browser_navigate: Open a URL in a headless browser tab
 - browser_snapshot: Read the page as an accessibility outline with [ref=…] handles
 - browser_screenshot: Save a PNG of the page for visual checks
 - browser_click / browser_type: Interact with an element by its snapshot ref
 - browser_tabs: List or close tabs
 Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
-This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download); start the project's dev server and open its URL with browser_navigate.`
+This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download). For static sites, use browser_preview. Use run_background plus browser_navigate only when the project needs its own framework dev server.`
 
 // Appended when `readTerminalEnabled` is on. The tool itself is only offered on
 // turns where this chat has an open Shells tab (see parentTools).
@@ -175,19 +177,19 @@ You can read the user's open Shells tabs (interactive terminals in the right pan
 - read: snapshot recent scrollback (defaults to the active tab; pass id / max_lines to target another or pull more history)
 This is for user-run terminals, not your own run_shell / run_background output. Prefer read_terminal over asking the user to paste when a relevant shell is open. Users may also @shell a tab into the message explicitly.`
 
-// Optional steering, gated by the `copse.okf-memories` first-party pack. Only
+// Optional steering, gated by the `copse.okf-memories` first-party plugin. Only
 // appended when the remember/recall tools are actually registered. The block
-// text lives in the pack (its `promptBlocks` declaration) so the pack decl and
+// text lives in the plugin (its `promptBlocks` declaration) so the plugin decl and
 // the host appending site read the identical string; re-exported here to keep
 // this module's block-export surface stable for `agent-system-prompt.ts`.
-export { MEMORY_TOOLS_BLOCK } from '@copse/agent/packs/okf-memories-pack.ts'
+export { MEMORY_TOOLS_BLOCK } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
-// Optional steering, gated by the `copse.pii-redaction` first-party pack. Only
-// appended when the pack is enabled (the same flag that registers the reveal_pii
-// tool). The block TEXT is owned by the pack so its `promptBlocks` declaration
+// Optional steering, gated by the `copse.pii-redaction` first-party plugin. Only
+// appended when the plugin is enabled (the same flag that registers the reveal_pii
+// tool). The block TEXT is owned by the plugin so its `promptBlocks` declaration
 // and this appended text stay a single source of truth; re-exported here so
 // `agent-system-prompt.ts` keeps importing it from this module.
-export { PII_REDACTION_BLOCK } from '@copse/agent/packs/pii-redaction-pack.ts'
+export { PII_REDACTION_BLOCK } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 
 // Model-specific steering, appended only when the turn runs on Claude Opus 5
 // (`isOpus5Model`). The base prompt above is deliberately model-agnostic; this

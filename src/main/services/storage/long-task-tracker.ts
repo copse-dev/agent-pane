@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { at } from '@shared/array-utils.ts'
 import { getActiveProjectRoot } from '../workspace.ts'
+import { copseDataRoot } from './copse-paths.ts'
+import { projectStoreNamespaceDir } from './project-namespace.ts'
 
 /**
  * Experimental, opt-in "long-horizon tasks" feature (tracked in
@@ -20,10 +20,11 @@ import { getActiveProjectRoot } from '../workspace.ts'
  * State persists per project as JSON under
  * `~/.copse/long-tasks/<workspace>/tasks.json` (mirroring the memories store's
  * workspace namespacing). It complements the in-thread `todos` (#530), which is
- * scoped to a single thread; a long task outlives the thread. Off by default:
- * the `copse.long-horizon-tasks` first-party pack gates the `track_long_task`
+ * scoped to a single thread; a long task outlives the *turn* but still belongs
+ * to the thread that opened it — see {@link isOwnedByThread}. Off by default:
+ * the `copse.long-horizon-tasks` first-party plugin gates the `track_long_task`
  * tool registration (see `registry-bootstrap.ts`) so the feature is fully inert
- * until the user opts in via Settings → Packs.
+ * until the user opts in via Settings → Plugins.
  */
 
 const stepSchema = z.object({
@@ -41,6 +42,14 @@ const longTaskSchema = z.object({
   steps: z.array(stepSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /**
+   * Thread that created the task. The store is per workspace root, so without
+   * this every thread in a project reads every other thread's checklist as if it
+   * were its own plan. Optional because tasks written before this field existed
+   * name no owner; {@link isOwnedByThread} treats those as belonging to no
+   * thread rather than to whichever one asks.
+   */
+  threadId: z.string().optional(),
 })
 
 export type LongTask = z.infer<typeof longTaskSchema>
@@ -64,26 +73,12 @@ export function setLongTaskRootForTest(path: string | null): void {
 }
 
 function longTaskBaseDir(): string {
-  return rootOverride ?? join(homedir(), '.copse', 'long-tasks')
-}
-
-function workspaceNamespace(root: string | null = getActiveProjectRoot()): string {
-  if (!root) return 'shared'
-  const name = slugify(basename(root)) || 'workspace'
-  const hash = createHash('sha1').update(root).digest('hex').slice(0, 8)
-  return `${name}-${hash}`
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
+  return rootOverride ?? join(copseDataRoot(), 'long-tasks')
 }
 
 function longTaskFile(root?: string | null): string {
-  return join(longTaskBaseDir(), workspaceNamespace(root), 'tasks.json')
+  const scope = root === undefined ? getActiveProjectRoot() : root
+  return join(projectStoreNamespaceDir(longTaskBaseDir(), scope), 'tasks.json')
 }
 
 /** Load this project's long tasks, oldest first. Missing/corrupt file → []. */
@@ -124,6 +119,20 @@ export interface CreateLongTaskInput {
   title: string
   goal: string
   steps: string[]
+  /** Owning thread; omitted only by callers with no thread of their own. */
+  threadId?: string
+}
+
+/**
+ * Whether `task` is this thread's to resume.
+ *
+ * A task with no recorded owner (written before tasks carried one) belongs to no
+ * thread. Handing it to whichever thread happens to ask is how an unrelated
+ * checklist gets adopted as the current plan, so unowned tasks stay visible only
+ * through an explicit workspace-wide listing.
+ */
+export function isOwnedByThread(task: LongTask, threadId: string): boolean {
+  return task.threadId !== undefined && task.threadId === threadId
 }
 
 /** Create a long task with a checklist of step labels. */
@@ -144,6 +153,7 @@ export function createLongTask(
     })),
     createdAt: now,
     updatedAt: now,
+    ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
   }
   writeLongTasks([...tasks, task], root)
   return task

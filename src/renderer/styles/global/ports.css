@@ -1,0 +1,112 @@
+/* Ports (#771, local half) — a section in the Terminal tab's left rail, under
+   the shells and tasks, since a listening port belongs to something running in
+   one of them. Selecting a row expands it in place: the rail is ~200px, so the
+   detail is two lines and a compact action row rather than a viewer takeover. */
+.ports-section {
+  flex-shrink: 0;
+  max-height: 40%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.ports-list {
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--spacing-xs) 0;
+}
+.ports-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 5px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.ports-row:hover {
+  background: var(--bg-hover);
+}
+.ports-row.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+}
+.ports-row-port {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+.ports-row-command {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.ports-row-owner {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+/* Expanded row. Shares the active row's fill so the two read as one block
+   rather than a highlighted row with loose text under it. */
+.ports-detail {
+  padding: 0 var(--spacing-sm) var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-selected);
+}
+.ports-detail-line {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.ports-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.ports-btn {
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.ports-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ports-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ports-btn-danger {
+  color: var(--danger, #f14c4c);
+}
+.ports-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
+  color: var(--danger, #f14c4c);
+}
+.ports-detail-note,
+.ports-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.ports-empty {
+  padding: var(--spacing-xs) var(--spacing-sm);
+}

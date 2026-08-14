@@ -1,6 +1,8 @@
 import type * as Monaco from 'monaco-editor'
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
+import { setTooltip } from '../dom/tooltip.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -92,14 +94,15 @@ export function mountPrPane(
   const listHeader = el('div', { class: 'git-changes-header' })
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Pull requests'),
-    panePopoutButton(api, 'prs', 'pull requests'),
+    panePopoutButton(store, api, 'prs', 'pull requests'),
+    paneMaximizeButton(store, 'pull requests'),
     el(
       'button',
       {
         type: 'button',
         class: 'git-changes-refresh-btn pr-pane-refresh-btn',
         'aria-label': 'Refresh pull requests',
-        title: 'Refresh',
+        'data-tooltip': 'Refresh pull requests',
       },
       refreshIcon('ui-icon ui-icon-sm'),
     ),
@@ -170,7 +173,8 @@ export function mountPrPane(
 
   function applyCiClass(node: HTMLElement, state: GhPrChecksState | 'loading'): void {
     node.className = `pr-list-ci pr-list-ci-${state}`
-    node.title = CI_LABEL[state]
+    // A bare coloured dot; the tooltip is the only place the colour is decoded.
+    setTooltip(node, CI_LABEL[state])
   }
 
   function ensureCheck(pr: GhPrSummary): void {
@@ -245,7 +249,7 @@ export function mountPrPane(
           'span',
           {
             class: 'pr-list-agent-badge',
-            title: `Opened by a ${agentProviderLabel(agent.provider)} agent launched from this app`,
+            'data-tooltip': `Opened by a ${agentProviderLabel(agent.provider)} agent launched from this app`,
           },
           '🤖',
         )
@@ -447,7 +451,7 @@ export function mountPrPane(
       {
         type: 'button',
         class: 'pr-open-external-btn',
-        title: 'Open on GitHub',
+        'data-tooltip': 'Open this pull request on GitHub',
       },
       el('span', {}, 'Open on GitHub'),
       externalLinkIcon('ui-icon ui-icon-sm'),
@@ -466,7 +470,7 @@ export function mountPrPane(
           {
             type: 'button',
             class: 'pr-open-thread-btn',
-            title: `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`,
+            'data-tooltip': `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`,
           },
           el('span', {}, `Open ${agentProviderLabel(agent.provider)} agent thread`),
         )
@@ -484,7 +488,7 @@ export function mountPrPane(
       {
         type: 'button',
         class: 'pr-new-thread-btn',
-        title: 'Open a new thread about this pull request (shared checkout)',
+        'data-tooltip': 'Open a new thread about this pull request (shared checkout)',
       },
       el('span', {}, 'New thread'),
     )
@@ -505,12 +509,38 @@ export function mountPrPane(
     }
 
     const badges = el('span', { class: 'pr-viewer-badges' })
-    if (prDetails.isDraft) badges.append(el('span', { class: 'pr-badge pr-badge-draft' }, 'Draft'))
+    if (prDetails.isDraft) {
+      badges.append(
+        el(
+          'span',
+          {
+            class: 'pr-badge pr-badge-draft',
+            'data-tooltip': 'Draft — not ready for review or merge',
+          },
+          'Draft',
+        ),
+      )
+    }
     if (prDetails.reviewDecision === 'APPROVED') {
-      badges.append(el('span', { class: 'pr-badge pr-badge-approved' }, 'Approved'))
+      badges.append(
+        el(
+          'span',
+          { class: 'pr-badge pr-badge-approved', 'data-tooltip': 'Approved by a reviewer' },
+          'Approved',
+        ),
+      )
     }
     if (prDetails.autoMergeEnabled) {
-      badges.append(el('span', { class: 'pr-badge pr-badge-automerge' }, 'Auto-merge'))
+      badges.append(
+        el(
+          'span',
+          {
+            class: 'pr-badge pr-badge-automerge',
+            'data-tooltip': 'Auto-merge is on — merges itself once checks pass',
+          },
+          'Auto-merge',
+        ),
+      )
     }
 
     const actions = el(

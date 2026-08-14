@@ -21,10 +21,16 @@ landing page's decorative density.
 
 ### Shared foundations
 
-- **Space Grotesk** is the default interface and prose family.
-- **Averia Serif Libre** is a display face. Use it only through an explicit branded-heading class on
-  expressive or destination-level surfaces. Do not apply it globally to `h1`, `h2`, or `h3`;
-  utility headings, settings titles, field labels, and panel headings remain Space Grotesk.
+- **Pliant** is the default interface and prose family (`--font-family`, `tokens.css`). The
+  marketing site still ships Space Grotesk; the app does not use it anywhere.
+- **Averia Serif Libre** is a display face (`--font-display`). `brand.css` binds it to `h1`–`h3`
+  app-wide at weight 400 (Averia ships one weight; asking for 600 only gets Chromium's synthetic
+  bold, which smears the serifs). Treat that as the rule it implies: **`h1`–`h3` are the display
+  tier**. A heading that should not be in the serif is not an `h1`–`h3` — reach for `h4`+ or a
+  styled `<span>`, as Packs' Active/Inactive headings do. Group headings on a destination surface
+  may opt in explicitly (Settings' top-level `<legend>`s), but utility headings, field labels, and
+  nested card titles stay in Pliant, so the serif marks the top two tiers of a page rather than
+  every heading on it.
 - Code, commands, paths, hashes, and terminal content use `--font-mono`.
 - Use the exact Copse glyph and wordmark assets rather than approximating them with text or
   redrawing the mark.
@@ -41,6 +47,11 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
   optional so the workbench stays low-fatigue.
 - Pink is the default interaction emphasis, not a product status colour. Do not use it for errors,
   warnings, success, or routine headings; those keep their semantic/text tokens.
+  - **Exception — "experimental".** Where a surface asks you to opt into something unfinished, the
+    experimental marker takes the accent (`.pack-badge-experimental` in Settings → Packs). It is not
+    reporting that anything has gone wrong; it is the one thing on the card you must read before
+    flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
+    owns "this needs your attention because something is off".
 - Error, warning, success, and danger continue to use their semantic tokens.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
@@ -99,6 +110,21 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
   (`-webkit-text-security: disc`). At compact UI sizes, use a large enough system-font mask that the
   glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
   text-field overlay.
+
+### Permission / approval prompts
+
+Approval is a workbench decision surface, not a debug dump:
+
+- Titles are **questions in plain language** (`Mark pull request ready for review?`, `Run package
+install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
+- Bodies lead with the **thing at stake** (PR target, command, origin). Pretty-printed JSON args
+  are a last-resort fallback when the gate cannot summarize, not the default.
+- Buttons use `.ui-btn*` via `uiActions` (Approve = primary, Reject = secondary). Do not paint
+  Approve in `--success` and Reject in `--error`; those tokens are for status, not yes/no chrome.
+- Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
+  one-line PR target does not look like a `<pre>` of JSON.
+
+Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
 
 ## Design tokens, not magic numbers
 
@@ -192,9 +218,15 @@ Avoid `:nth-child(3) { width: 34% }` and similar “column 3 is always Branch”
 
 For primary/secondary action buttons (Save / Cancel style):
 
-- Pill geometry is reserved for clear, high-value actions such as Save, Continue, Build, or the
-  primary onboarding action. Routine toolbar controls, row actions, icon buttons, filters, and
-  status indicators retain the normal UI-kit radius.
+- **Primary CTAs are never square.** High-value actions — welcome empty-state buttons, dialog
+  Save / Continue / Confirm, onboarding primary, composer Submit — use the shared action recipe
+  (`--action-radius: 999px`, `--action-min-height`, `--action-padding-*`). Do not leave a primary
+  CTA on `--radius` / `--radius-lg`; a 6–8px corner next to a pill reads as two control systems.
+- Pill geometry is reserved for those clear, high-value actions. Routine toolbar controls, row
+  actions, icon buttons, filters, and status indicators retain the normal UI-kit radius.
+- Paired peer CTAs on the same surface (e.g. welcome **New Project** + **Open Folder**) must share
+  the same action geometry even when fill vs outline differs. Register the whole peer set together
+  in `brand.css` / local baselines — omitting one button is how square-vs-pill mismatches ship.
 - Paired secondary actions may use the matching outline treatment, but should not compete with the
   primary fill.
 - Define action geometry through shared `--action-*` tokens and a UI-kit variant. Do not maintain a
@@ -242,6 +274,27 @@ copied. The contract test
 the policy: body defaults to non-selectable, the content regions opt back in, and the permission
 prompt stays non-selectable.
 
+### Every highlight declares both halves
+
+A highlight that sets only a background inherits whatever colour the text already had — which is how
+selected prose went invisible: with no author `::selection`, Chromium paints an **unfocused** window's
+selection as a flat light grey and leaves `--text-primary` on top of it. The rule holds for the
+native selection, the CSS Custom Highlight API (`::highlight(chat-search-current)`), and the
+terminal's xterm theme (`selectionInactiveBackground` — its default is a dark grey that swallows
+light-theme text). So:
+
+- Declare `background` **and** `color` together, from `--selection-bg` / `--selection-text` or
+  `--highlight-current-bg` / `--highlight-current-text`. The one exception is a deliberately
+  translucent wash (`::highlight(chat-search)`), where `color: inherit` keeps the underlying text's
+  own contrast.
+- Don't build a highlight from `var(--accent)` + `var(--text-on-accent)`. `--text-on-accent` is
+  computed from the raw accent the user picked, while the light theme darkens `--accent` by 30% — the
+  pair collapses to dark-on-dark. It was an accent-derived selection that made this unreadable the
+  first time (#1423).
+- Keep every pair at 4.5:1 or better. `text-selection.test.ts` computes the WCAG ratio from the
+  token hexes in both themes and fails below AA, and `tests/e2e/selection-highlight.e2e.ts` captures
+  a live selection in each theme.
+
 ## Responsive titlebar chrome
 
 Titlebar compactness follows the space its rendered contents actually need, not the window's aspect
@@ -263,8 +316,15 @@ Rules of thumb:
 
 - Put the scroll container's bottom breathing room **inside the sticky footer** (as the footer's own
   `padding-bottom`), not as `padding-bottom` on the scroll container.
-- The sticky footer needs an opaque `background` (`var(--bg-base)`) so content scrolling beneath it is
-  actually covered.
+- The sticky footer must **cover** the content scrolling beneath it — but covering is not the same as
+  hiding. A tall opaque slab makes a long page look like it has ended when it has only scrolled
+  under the bar. Prefer a frosted panel: a gradient wash plus `backdrop-filter`, both carried on a
+  masked `::before` so the effect ramps in rather than starting at a hard line, and no `border-top`
+  (a hairline across a see-through bar reads as the cut the fade exists to avoid). See
+  `.settings-buttons` in `settings.css`.
+- An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
+  in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
+  along with the backdrop.
 - Alternatively, mirror the onboarding pattern: make the footer a non-scrolling flex sibling
   (`flex-shrink: 0`) _outside_ the scroll region (see `onboarding.css` / `onboarding-dialog.ts`).
   Prefer this when the footer doesn't need to live inside a `<form>` for submit semantics.
@@ -293,6 +353,50 @@ At large interface scales or short window heights, the Settings sidebar can also
 Keep the native dialog itself `overflow: hidden` and give `.settings-nav` its own vertical overflow
 with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole sidebar moves upward,
 then ends above the window bottom and exposes a large blank surface beneath it.
+
+## Settings is a destination, not a dialog's worth of chrome
+
+It fills the window and its sections run several screens, so it is typed and spaced like a page:
+
+- **Two heading tiers in the display face** — the section `<h3>` and its top-level group `<legend>`s
+  (`--font-display`, weight 400: Averia ships one weight and synthetic bold smears it). Everything
+  below that — field labels, nested card titles inside a group, list headings such as Packs'
+  Active / Inactive — stays in the interface family, so the serif marks structure and not decoration.
+- **Group gaps are the page's punctuation.** Top-level groups clear `calc(var(--spacing-xl) * 2)`;
+  a field and its own hint stay tight while the gap lives _between_ fields.
+- **Controls are targets, not text.** Nav rows, the search box, selects, text/number inputs, colour
+  wells, and the provider chips all take `--action-min-height`; a checkbox's whole line is
+  clickable (padding on `.checkbox-label`, pulled back with a negative `margin-inline-start` so the
+  box still sits on the section's left edge).
+- **The sidebar doubles as the open section's contents.** `renderNavSubheadings()` reads the active
+  section's top-level legends straight off the DOM on every section change and lists them under
+  that nav row; clicking one scrolls to its group. Reading the DOM rather than a registry means a
+  group that is hidden (developer-only) or mounted by a panel needs no second place to be declared.
+  Search clears the list — its results are lifted out of their sections, so the contents no longer
+  describe what is on screen.
+- **A pack row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): its mark, then
+  the publisher as a tracked-caps eyebrow over the name, and the switch flanked by Off / On whose
+  live side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
+  Everything configurable folds into one closed `Pack settings` disclosure, so a list of packs stays
+  a list of packs; the credential gate stays outside it, because it explains a switch you can see is
+  locked. Only **first-party** packs wear the Copse mark (`assets/brand-mark.svg`, copied to the
+  renderer by `build.mts`) — a user-installed pack gets a neutral initial tile, or a sideloaded pack
+  would be wearing our badge of trust.
+
+Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
+
+## Sticky prompts yield in narrow chat panes
+
+The latest user prompt can stay anchored while a response grows at normal chat widths. In a narrow
+split, however, a long sticky prompt can cover the entire assistant response even when the outer
+window is wide. Responsive chat behavior therefore follows the width of `.pane-chat` itself via a
+container query, not a viewport breakpoint.
+
+At 360px or narrower, return the latest prompt to ordinary transcript flow. This preserves the
+request immediately above its answer without letting it become an opaque overlay. Keep the normal
+sticky behavior above that threshold. The paired regression states live in
+[`tests/e2e/user-prompt-sticky.e2e.ts`](../tests/e2e/user-prompt-sticky.e2e.ts): one wide reference
+and one narrow reference that proves the response reaches the composer unobscured.
 
 ## Markdown prose spacing in chat
 
@@ -419,11 +523,23 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `reasoning` field / provider events.
 - **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
   `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
-  into the live disclosure title so the transcript never shows two reasoning labels. The animated
-  spiral sits immediately beside the live label; settled disclosures return to a static chevron.
-- **Live tool actions reuse the activity spiral.** Put it in a fixed-width slot immediately before
-  progressive tool labels such as `Running command`. When the tool settles, leave the empty slot in
-  place so the existing past-tense label does not jump horizontally; do not keep animating it.
+  into the live disclosure title so the transcript never shows two reasoning labels. Settled
+  reasoning disclosures return to a static chevron.
+- **The activity spiral never sits ahead of a label in the text column.** Nothing in flow may
+  precede a live label, or the row reads at a different indent than its settled self and the hover
+  pill stretches past the text. Two placements, by where the row's label sits:
+  - **On the prose column → the gutter.** Top-level tool rows and the standalone activity row put
+    the spiral out of flow in the message's own padding column (`.tool-activity-icon-slot`,
+    `.agent-activity > .reasoning-activity-icon`). `.msg` clips horizontally, so that gutter is
+    `--spacing-md` wide — size the spiral to fit it, do not reach further left.
+  - **Indented under a rule → trailing its own line.** Rows inside `.tool-rollup-body` or
+    `.subagent-timeline` keep the slot in flow but `order` it after the label and stats, sized to
+    the status glyph beside it. A far-left gutter spiral would strand itself a column away from the
+    label it belongs to. Collapse the empty slot when such a row settles: with nothing ahead of the
+    label there is no indent to preserve, only a gap to avoid.
+
+  When a tool settles, drop the icon; do not keep animating it.
+
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
@@ -506,6 +622,11 @@ Pin to `clientX`/`clientY`, clamp into the viewport, and dismiss on outside poin
 window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
 [`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
+File rows and the file viewer use the same menu for **Open in browser**, but only for local
+workspaces. The global “Open links in the built-in browser” setting applies here too: on (the
+default), Copse serves the file through its loopback-only static preview; off, it hands a local
+`file:` URL to the system browser. Remote SSH paths have no safe local equivalent. Visual eval:
+[`tests/e2e/file-viewer-changes.e2e.ts`](../tests/e2e/file-viewer-changes.e2e.ts).
 
 In-app **browser guest pages** (`<webview>`) use a native Electron `Menu` from the main-process
 `context-menu` event instead — guest content cannot host our DOM menu. Standard items live in
@@ -515,12 +636,14 @@ Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.
 
 ## Sources lists: origin on hover, not in the resting row
 
-Settings → Sources rows already carry a coarse source badge (`bundled`, `project`, …). When the
+Settings → Customise rows already carry a coarse source badge (`bundled`, `project`, …). When the
 useful origin is a long filesystem path, keep it out of the resting list: put it in
-`.sources-row-hover-detail` inside the header gutter (between title and badge), revealed on
-`:hover` / `:focus-within` without growing the row. Truncate with left-elision
-(`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so the leaf
-stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
+`.sources-row-hover-detail` inside `.sources-row-primary` (the title slot between name and badge),
+revealed on `:hover` / `:focus-within` without growing the row or widening the settings column.
+The row / primary slot set `min-width: 0` + `overflow: hidden`, and the path uses `width: 0` with
+`flex: 1 1 0`, so intrinsic path length cannot blow out the flex min-content. Truncate with
+left-elision (`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so
+the leaf stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
 [`tests/e2e/settings-sources-skills.e2e.ts`](../tests/e2e/settings-sources-skills.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval
@@ -610,6 +733,40 @@ without that margin — the label drifts left of the titles above it.
 
 Settings nav (`.settings-nav-btn.active`) keeps a **leading** accent rail — that list sits on the
 dialog's left edge, so the marker belongs there, not on the trailing side.
+
+### Automation threads
+
+Recurring work must not turn the main conversation list into a run log. Automation
+threads live under one collapsed **Automations** disclosure per project; the header
+shows only a schedule count and exceptional running/attention indicators. Multiple
+runs coalesce under one schedule-name disclosure with a compact run count and
+timestamped children; a schedule with one run stays a single row. Opening an
+automation thread reveals both owning disclosures so the selected row is never
+hidden. Keep run rows visually identical to ordinary threads apart from their extra
+indent — the same full-bleed selected state, PR lifecycle icon, attention bell, and
+row actions still apply.
+
+Attention is the exception to the collapsed default. A waiting run automatically
+reveals its **Automations** and schedule ancestors, but the bell appears only on
+the actionable run. While the older history is filtered out, the schedule keeps
+the right-facing chevron; the first deliberate click rotates it and expands the
+complete run list.
+
+Do not create a second permanent pane or one sidebar section per schedule. The
+schedule editor owns configuration; the collapsed project disclosure owns task
+history.
+
+That split needs a seam, or the editor is something you have to go and find:
+each automation heading carries a trailing settings glyph
+(`.automation-setup-btn`) out to its own setup — the **Automations** heading to
+the project's schedule list, a schedule heading to that schedule opened for
+editing. It stays `opacity: 0` until its heading is hovered or the button takes
+focus, exactly like the row actions beside it, and the heading itself keeps
+doing what a disclosure does. A single-run schedule has no heading of its own,
+so every automation row's context menu offers the same **Automation setup…**
+destination. Schedules are project-scoped, so a heading under a project that
+isn't open lands on the project first rather than editing another project's
+automations. Spec: [`tests/e2e/automation-settings-link.e2e.ts`](../tests/e2e/automation-settings-link.e2e.ts).
 
 ## Settings → Usage worth-it card
 

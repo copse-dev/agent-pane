@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { LLMMessage } from '@shared/types'
+import { modelIntellect } from '@copse/llm/model-intellect.ts'
 import {
   DEFAULT_ADVISOR_MAX_TOKENS,
   advisorAddsLift,
+  assessCloudAdvisorPair,
   attributeAdvice,
   buildAdvisorTranscript,
+  cloudAdvisorAddsLift,
   formatAdvisorModelLabel,
   isNativeAdvisorPair,
   normalizeAdvisorResult,
@@ -118,7 +121,10 @@ describe('validateAdvisorPair', () => {
   })
 
   it('recommends a local executor with a frontier cloud advisor (the flagship pairing)', () => {
-    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-fable-5')
+    // Fable is no longer the top-band flagship now that Opus 5 tops the scale;
+    // the pairing check uses the band representative, so Opus 5 is what earns
+    // the 'frontier advisor' recommendation. Fable is now a mid advisor.
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-opus-5')
     assert.equal(a.ok, true)
     assert.equal(a.native, false)
     assert.equal(a.level, 'good')
@@ -139,30 +145,41 @@ describe('validateAdvisorPair', () => {
   })
 
   it('grades cloud pairings by comparing intellect numbers', () => {
-    // Stronger advisor: fine even across providers (no native table entry).
-    const stronger = validateAdvisorPair('gpt-4o-mini', 'claude-opus-4-8')
+    const stronger = assessCloudAdvisorPair(40, 43)
     assert.equal(stronger.level, 'good')
-    assert.match(stronger.reason, /annotated stronger/i)
+    assert.match(stronger.reason, /stronger than the executor/i)
 
-    // Equal intellect: a second opinion, not lift.
-    const equal = validateAdvisorPair('gpt-4o', 'claude-sonnet-4-6')
+    // Within the parity band: a second opinion, not lift.
+    const equal = assessCloudAdvisorPair(40, 41)
     assert.equal(equal.level, 'info')
     assert.match(equal.reason, /same intellect/i)
 
-    // Weaker advisor: warned, still allowed (client-side is permissive) and the
-    // hint says the tool is hidden for the pairing.
-    const weaker = validateAdvisorPair('claude-opus-4-8', 'claude-haiku-4-5')
+    const weaker = assessCloudAdvisorPair(43, 40)
     assert.equal(weaker.ok, true)
     assert.equal(weaker.level, 'warn')
-    assert.match(weaker.reason, /annotated weaker/i)
+    assert.match(weaker.reason, /weaker than the executor/i)
     assert.match(weaker.reason, /hidden/i)
+  })
+
+  it('grades live cloud models from their current synced scores', () => {
+    const executorModel = 'gpt-4o-mini'
+    const advisorModel = 'claude-opus-4-8'
+    const executor = modelIntellect(executorModel)
+    const advisor = modelIntellect(advisorModel)
+    assert.ok(executor !== null && advisor !== null)
+    const expected = assessCloudAdvisorPair(executor, advisor)
+    const actual = validateAdvisorPair(executorModel, advisorModel)
+    assert.equal(actual.level, expected.level)
+    assert.equal(actual.reason, expected.reason)
   })
 
   it('keeps a cloud advisor informative when the executor has no annotation', () => {
     const a = validateAdvisorPair('openrouter:qwen/qwen3-235b-a22b:free', 'claude-opus-4-8')
     assert.equal(a.ok, true)
     assert.equal(a.level, 'info')
-    assert.match(a.reason, /intellect 9/i)
+    const advisor = modelIntellect('claude-opus-4-8')
+    assert.ok(advisor !== null)
+    assert.match(a.reason, new RegExp(`intellect ${String(Math.round(advisor * 10) / 10)} of`, 'i'))
   })
 
   it('compares catalogued local models by size when both executor and advisor are local', () => {
@@ -210,9 +227,21 @@ describe('advisorAddsLift', () => {
   })
 
   it('compares annotated cloud models by intellect', () => {
-    assert.equal(advisorAddsLift('gpt-4o-mini', 'claude-opus-4-8'), true) // stronger
-    assert.equal(advisorAddsLift('gpt-4o', 'claude-sonnet-4-6'), true) // equal intellect → keep
-    assert.equal(advisorAddsLift('claude-opus-4-8', 'claude-haiku-4-5'), false) // weaker → hide
+    assert.equal(cloudAdvisorAddsLift(40, 43), true)
+    assert.equal(cloudAdvisorAddsLift(40, 41), true)
+    assert.equal(cloudAdvisorAddsLift(43, 40), false)
+  })
+
+  it('uses the current synced scores for annotated cloud models', () => {
+    const executorModel = 'gpt-4o-mini'
+    const advisorModel = 'claude-opus-4-8'
+    const executor = modelIntellect(executorModel)
+    const advisor = modelIntellect(advisorModel)
+    assert.ok(executor !== null && advisor !== null)
+    assert.equal(
+      advisorAddsLift(executorModel, advisorModel),
+      cloudAdvisorAddsLift(executor, advisor),
+    )
   })
 
   it('compares catalogued local models by parameter count', () => {

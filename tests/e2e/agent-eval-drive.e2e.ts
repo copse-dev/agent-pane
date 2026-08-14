@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
+import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
@@ -206,6 +207,24 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
       )
       assert.ok(count >= exp.git.minCommits, `Expected at least ${exp.git.minCommits} commits`)
     }
+    if (exp.git.allCommitMessagesContain) {
+      const messages = execFileSync('git', ['log', '--format=%B%x00'], {
+        cwd: root,
+        encoding: 'utf8',
+      })
+        .split('\0')
+        .map((message) => message.trim())
+        .filter(Boolean)
+      assert.ok(messages.length > 0, 'Expected at least one commit message')
+      for (const expected of exp.git.allCommitMessagesContain) {
+        for (const message of messages) {
+          assert.ok(
+            message.includes(expected),
+            `Expected every commit message to contain ${JSON.stringify(expected)}; got ${JSON.stringify(message)}`,
+          )
+        }
+      }
+    }
   }
 
   if (exp.homePage) {
@@ -232,7 +251,9 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
   for (const fileExpectation of exp.filesContain ?? []) {
     const candidates = walkFiles(root).filter((file) => {
       if (!fileExpectation.glob) return true
-      if (fileExpectation.glob === '*.html') return file.toLowerCase().endsWith('.html')
+      if (fileExpectation.glob.startsWith('*.')) {
+        return basename(file).toLowerCase().endsWith(fileExpectation.glob.slice(1).toLowerCase())
+      }
       return basename(file) === fileExpectation.glob
     })
     const match = candidates.find((file) => {
@@ -248,14 +269,12 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
   }
 }
 
-function readActiveThread(): Thread {
+async function readActiveThread(): Promise<Thread> {
   const configPath = join(getCopseUserDataDir(), 'config.json')
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
   const projectId = config.activeProjectId as string
-  const threads = config[`threads:${projectId}`] as Thread[]
-  if (!Array.isArray(threads) || threads.length === 0) {
-    throw new Error('No threads in config after eval run')
-  }
+  const threads = await loadProjectThreads(projectId)
+  if (threads.length === 0) throw new Error('No threads in the thread store after eval run')
   const activeId = config.activeThreadId as string | undefined
   const thread = threads.find((t) => t.id === activeId) ?? threads[threads.length - 1]
   if (!thread) throw new Error('Could not resolve active thread')
@@ -271,6 +290,37 @@ function assertExploreSubagentCompleted(thread: Thread): void {
     (tc) => tc.status === 'done' && typeof tc.result === 'string' && tc.result.trim().length > 20,
   )
   assert.ok(completed.length > 0, 'expected explore to complete with a non-empty summary result')
+}
+
+function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void {
+  const expectation = scenario.toolUse
+  if (!expectation) return
+  const calls = thread.messages.flatMap((message) => message.toolCalls)
+  const names = new Set(calls.map((call) => call.name))
+  for (const name of expectation.requireTools ?? []) {
+    assert.ok(names.has(name), `expected agent to use ${name}`)
+  }
+  for (const name of expectation.forbidTools ?? []) {
+    assert.equal(names.has(name), false, `expected agent not to use ${name}`)
+  }
+  if (expectation.requireBackgroundWakeStart === true) {
+    assert.ok(
+      calls.some(
+        (call) =>
+          call.name === 'run_background' &&
+          call.args['action'] === 'start' &&
+          call.args['wake_on_completion'] === true &&
+          typeof call.args['timeout_ms'] === 'number',
+      ),
+      'expected run_background start with wake_on_completion and a bounded timeout',
+    )
+  }
+  if (expectation.maxApprovals !== undefined) {
+    assert.ok(
+      approvalCount <= expectation.maxApprovals,
+      `approval count ${String(approvalCount)} > max ${String(expectation.maxApprovals)}`,
+    )
+  }
 }
 
 function readJsonValue(path: string): unknown {
@@ -346,7 +396,8 @@ describe('agent eval drive', () => {
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
 
-    const thread = readActiveThread()
+    const thread = await readActiveThread()
+    assertToolUseExpectations(thread, scenario)
     if (
       scenario.id === 'working-brief-eval' ||
       scenario.id === 'working-brief-eval-lmstudio' ||

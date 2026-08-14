@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
@@ -13,12 +14,17 @@ import {
   captureBrowserPageText,
   captureBrowserScreenshot,
 } from '../services/browser/browser-share.ts'
+import {
+  getStaticPreviewServer,
+  staticPreviewUrl,
+} from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
   getActiveProjectId,
   getActiveProjectSshHost,
   getProjectById,
+  getProjectRoot,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolvePathWithinRoot,
@@ -36,9 +42,12 @@ import {
   assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
+  modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
+  parsePortKillArgs,
   zMcpServerName,
+  zHookRunId,
   zHookTestRequest,
   zNonEmptyString,
   zPathString,
@@ -80,8 +89,8 @@ import {
 } from '../services/providers/extra-providers-store.ts'
 import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
-import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
+import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
@@ -93,6 +102,12 @@ import {
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
+import {
+  getElectronAppVersion,
+  getElectronBuildCommit,
+  getElectronBuildDirty,
+  isElectronAppPackaged,
+} from '../services/electron-app-runtime.ts'
 import {
   describeWorkspaceArchive,
   storeArchiveAttachment,
@@ -110,12 +125,21 @@ import {
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
 import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
+import { listRunningThreadIds } from '../services/agent-service.ts'
+import {
+  listWorktreeInventory,
+  cleanupWorktreePackages,
+  measureWorktreeSize,
+  removeWorktree,
+  resolveRegisteredWorktreePath,
+} from '../services/worktree-inventory.ts'
 import {
   requestAcpPackageInstallApproval,
   revalidateStaleAcpModels,
   runAcpAutoSetup,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
+import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -126,13 +150,14 @@ import {
   listUnsandboxedProjectHooks,
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
-import { getPackService } from '../services/packs/pack-service.ts'
+import { readHookRunDetail } from '../services/hooks/run-detail.ts'
+import { getPluginService } from '../services/plugins/plugin-service.ts'
 import {
-  setPackToolRuntimeController,
-  ToolingPackToolRuntimeController,
-} from '../services/packs/pack-tool-controller.ts'
-import { createPackBrowserPanelService } from '../services/packs/pack-browser-panel.ts'
-import { setPackBrowserService } from '../services/packs/pack-browser-service.ts'
+  setPluginToolRuntimeController,
+  ToolingPluginToolRuntimeController,
+} from '../services/plugins/plugin-tool-controller.ts'
+import { createPluginBrowserPanelService } from '../services/plugins/plugin-browser-panel.ts'
+import { setPluginBrowserService } from '../services/plugins/plugin-browser-service.ts'
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -148,18 +173,18 @@ import {
   syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
-import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
-import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
-import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
-import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
-import { PARALLEL_SEARCH_PACK_ID } from '@copse/agent/packs/parallel-search-pack.ts'
-import { DARK_FACTORY_PACK_ID } from '@copse/agent/packs/dark-factory-pack.ts'
-import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
+import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
+import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
+import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
+import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
+import { DEVTOOLS_SHORTCUT_PLUGIN_ID } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
+import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
+import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
@@ -176,6 +201,7 @@ import {
   setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
+import { killOwnedPort, listPortRows, setSeededPortRows } from '../services/ports/ports-registry.ts'
 
 import {
   deleteAllKnowledgeAttachments,
@@ -251,7 +277,12 @@ import {
   type MockScriptStep,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+import {
+  createMainWindow,
+  getFocusedMainWindow,
+  getMainWindow,
+  syncDevtoolsShortcut,
+} from '../windows/create-main-window.ts'
 import { buildAppMenu } from '../windows/app-menu.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
@@ -271,6 +302,10 @@ import {
   fetchLiveIntellectModels,
   invalidateLiveIntellectCache,
 } from '../services/providers/aa-live-intellect.ts'
+import {
+  resolveModelCard,
+  type ResolvedModelCard,
+} from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -303,6 +338,7 @@ const zAutomationScheduleInput = z.object({
   prompt: z.string().trim().min(1).max(100_000),
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
+  maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 })
 
 const SKILLS_RELOAD_KEYS = new Set([
@@ -341,17 +377,17 @@ you want the coding agent to follow on every turn.
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const alertUser = createElectronUserAlertSender(win, app.dock)
-  const packService = getPackService()
-  setPackBrowserService(createPackBrowserPanelService(win))
-  setPackToolRuntimeController(new ToolingPackToolRuntimeController(registry))
-  void packService.refreshPackSources().catch((error: unknown) => {
-    console.warn('[packs] selected-pack startup reconciliation failed:', error)
+  const pluginService = getPluginService()
+  setPluginBrowserService(createPluginBrowserPanelService(win))
+  setPluginToolRuntimeController(new ToolingPluginToolRuntimeController(registry))
+  void pluginService.refreshInstalledPlugins().catch((error: unknown) => {
+    console.warn('[plugins] startup reconciliation failed:', error)
   })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
-  // pack is enabled. The pack ships off (`defaultEnabled: false`) and
-  // getPackService() has already layered the user's explicit choices on top, so
+  // plugin is enabled. The plugin ships off (`defaultEnabled: false`) and
+  // getPluginService() has already layered the user's explicit choices on top, so
   // this is a no-op unless they opted in.
-  syncDevtoolsShortcut(win)
+  syncDevtoolsShortcut()
   const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
     if (!win.isDestroyed()) {
       win.webContents.send('security:guardedYoloChanged', getGuardedYoloState(threadId))
@@ -576,6 +612,23 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = getWorkspaceRoot()
     if (root) await whenFileIndexReady(root)
     return await resolveFileReferences(candidates)
+  })
+
+  // Ports panel. Listening ports are discovered by scanning the host, not by
+  // tracking what Copse spawned, so the list includes the user's other apps and
+  // system services — visibility over enforcement, per #771. Only rows that
+  // descend from a Shells tab or a background task can be killed, and that is
+  // decided in `killOwnedPort` from a fresh scan rather than from anything the
+  // renderer sends.
+  ipcMain.handle('ports:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listPortRows()
+  })
+
+  ipcMain.handle('ports:kill', (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const port = parsePortKillArgs(rawArgs)
+    return killOwnedPort(port)
   })
 
   // OKF memories management. The renderer's Memories pane (issue #645, Phase 3)
@@ -1072,11 +1125,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       syncReadTerminalTools(registry)
     }
     // Keep the native diagnostics menu in sync with Developer mode. The
-    // Ctrl+Shift+I shortcut is owned independently by its first-party pack.
+    // Ctrl+Shift+I shortcut is owned independently by its first-party plugin.
     if (k === DEVELOPER_MODE_SETTING) {
       const win = getMainWindow()
       const enabled = typeof value === 'boolean' && value
-      if (win) buildAppMenu(win, enabled)
+      if (win) {
+        buildAppMenu(
+          {
+            getFocusedWindow: getFocusedMainWindow,
+            createWindow: createMainWindow,
+          },
+          enabled,
+        )
+      }
     }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
@@ -1099,6 +1160,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('intellect:live-models', (event) => {
     assertMainFrameSender(event, win)
     return fetchLiveIntellectModels()
+  })
+  // Model-card links for the value map. Batched because the panel warms every
+  // plotted model at once; the resolver's URL cache makes repeat calls free.
+  ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
+    assertMainFrameSender(event, win)
+    const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
+    const out: Record<string, ResolvedModelCard | null> = {}
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          out[id] = await resolveModelCard(id)
+        } catch {
+          // A probe failure is "no link", never a broken settings panel.
+          out[id] = null
+        }
+      }),
+    )
+    return out
   })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
@@ -1195,8 +1274,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { imported, skipped }
   })
-  ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
+  // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
+  // to show the concrete model behind a rule; a pinned id round-trips unchanged.
+  ipcMain.handle('models:resolveDynamic', (_event, rawValue: unknown) => {
+    const value = parseIpcArgs(z.string().trim().max(256), [rawValue])
+    return resolveDynamicModelId(value)
+  })
   ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
   ipcMain.handle('settings:modelPricing', () => resolveModelPricing())
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
@@ -1314,6 +1398,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
     const { approved } = await requestApproval({
       title: 'Enable Guarded YOLO for this thread?',
+      cause: 'mode-arming',
       body: [
         'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
         '',
@@ -1338,7 +1423,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
-    return loadProjectThreads(id)
+    // Archived threads are hidden from every renderer surface (sidebar and
+    // `@`-catalog both filter them), so folding their history into the store
+    // only grew the heap. They stay on disk and in the whole-history readers.
+    return loadProjectThreads(id, { includeArchived: false })
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -1402,10 +1490,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // The whole thread directory, zipped — the archive counterpart to the
   // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
   // download and saves it, exactly as it does for the `.jsonl`.
-  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:exportArchive', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return buildThreadArchive(pid, tid)
+    return {
+      bytes: await buildThreadArchive(pid, tid),
+      build: {
+        version: getElectronAppVersion(),
+        buildCommit: getElectronBuildCommit(),
+        buildDirty: getElectronBuildDirty(),
+        packaged: isElectronAppPackaged(),
+        platform: process.platform,
+        capturedAt: new Date().toISOString(),
+      },
+    }
   })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
@@ -1493,8 +1591,89 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listOrphanProjectStores(projectIds)
   })
 
+  // Settings → Sources → Worktrees. Every call names the project by id and the
+  // main process resolves its root itself, so the renderer never gets to say
+  // which repository (or which directory) is operated on.
+  const worktreeInput = (
+    rawProjectId: unknown,
+  ): { projectId: string; projectRoot: string } | null => {
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const projectRoot = getProjectRoot(projectId)
+    return projectRoot === null ? null : { projectId, projectRoot }
+  }
+
+  ipcMain.handle('worktrees:list', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const target = worktreeInput(rawProjectId)
+    if (!target) return []
+    return listWorktreeInventory({
+      ...target,
+      runningThreadIds: new Set(listRunningThreadIds()),
+    })
+  })
+
+  ipcMain.handle('worktrees:size', async (event, rawProjectId: unknown, rawPath: unknown) => {
+    assertMainFrameSender(event, win)
+    const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+    const target = worktreeInput(rawProjectId)
+    if (!target) throw new IpcValidationError('That project is no longer available')
+    return measureWorktreeSize({ ...target, path })
+  })
+
+  ipcMain.handle(
+    'worktrees:cleanupPackages',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawRemove: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, remove] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawRemove,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return cleanupWorktreePackages({
+        ...target,
+        path,
+        remove,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
+
+  ipcMain.handle(
+    'worktrees:openTerminal',
+    async (event, rawProjectId: unknown, rawPath: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      const root = await resolveRegisteredWorktreePath({ ...target, path })
+      return openWorkspaceInExternalEditor('terminal', root)
+    },
+  )
+
+  ipcMain.handle(
+    'worktrees:remove',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawForce: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, force] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawForce,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return removeWorktree({
+        ...target,
+        path,
+        force,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
+
   ipcMain.handle('skills:list', () => listSkills())
-  ipcMain.handle('plugins:list', () => listCursorPlugins())
+  ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
@@ -1527,14 +1706,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
   })
-  // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
-  // Settings pack list ("about:addons") calls these to enumerate every
-  // registered pack, toggle enablement atomically (P1 contract), and read /
-  // write pack-scoped settings values under the manifest's declared schema.
-  ipcMain.handle('packs:list', async (event) => {
+  // Read one recorded hook execution back out of a thread's spine so the
+  // hook-card inspector can show what the hook was handed and what it returned.
+  // Read-only: it never re-runs anything (that is `hooks:test`), and the ids are
+  // validated so a compromised renderer cannot walk out of the chat store.
+  ipcMain.handle(
+    'hooks:runDetail',
+    (event, rawProjectId: unknown, rawThreadId: unknown, rawRunId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, runId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zHookRunId]),
+        [rawProjectId, rawThreadId, rawRunId],
+      )
+      return readHookRunDetail(projectId, threadId, runId)
+    },
+  )
+  // Plugin registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
+  // Settings plugin list ("about:addons") calls these to enumerate every
+  // registered plugin, toggle enablement atomically (P1 contract), and read /
+  // write plugin-scoped settings values under the manifest's declared schema.
+  ipcMain.handle('plugins:list', async (event) => {
     assertMainFrameSender(event, win)
-    await getPackService().refreshPackSources()
-    return { packs: getPackService().list() }
+    await getPluginService().refreshPluginSources()
+    return { plugins: getPluginService().list() }
   })
   ipcMain.handle('supervisor:list', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
@@ -1570,99 +1764,99 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       : null
     return { task: summary }
   })
-  ipcMain.handle('packs:addSource', async (event) => {
+  ipcMain.handle('plugins:addSource', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
-      title: 'Add pack',
+      title: 'Add plugin',
       properties: ['openDirectory'],
     })
     const sourcePath = result.filePaths[0]
     if (!result.canceled && sourcePath) {
-      await getPackService().addPackSource(sourcePath)
+      await getPluginService().addPluginSource(sourcePath)
     }
-    return { packs: getPackService().list() }
+    return { plugins: getPluginService().list() }
   })
-  ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
+  ipcMain.handle('plugins:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
-    await getPackService().setEnabled(id, enabled)
-    // P5: toggling the model-comparison pack adds/removes its `compare_models`
-    // tool on the live registry so the atomic pack-disable also drops the tool
+    await getPluginService().setEnabled(id, enabled)
+    // P5: toggling the model-comparison plugin adds/removes its `compare_models`
+    // tool on the live registry so the atomic plugin-disable also drops the tool
     // from the model tool list without an app restart (mirrors the setting
     // toggles above for the other syncable tools).
-    if (id === MODEL_COMPARISON_PACK_ID) {
+    if (id === MODEL_COMPARISON_PLUGIN_ID) {
       syncModelComparisonTools(registry)
     }
-    // Same for the `copse.long-horizon-tasks` pack's `track_long_task` tool.
-    if (id === LONG_HORIZON_TASKS_PACK_ID) {
+    // Same for the `copse.long-horizon-tasks` plugin's `track_long_task` tool.
+    if (id === LONG_HORIZON_TASKS_PLUGIN_ID) {
       syncLongHorizonTasksTools(registry)
     }
-    // Same for the `copse.roadmap-plans` pack's `roadmap_plan` tool.
-    if (id === ROADMAP_PLANS_PACK_ID) {
+    // Same for the `copse.roadmap-plans` plugin's `roadmap_plan` tool.
+    if (id === ROADMAP_PLANS_PLUGIN_ID) {
       syncRoadmapPlanTools(registry)
     }
-    // Same for the `copse.advisor-strategy` pack's `advisor` tool.
-    if (id === ADVISOR_STRATEGY_PACK_ID) {
+    // Same for the `copse.advisor-strategy` plugin's `advisor` tool.
+    if (id === ADVISOR_STRATEGY_PLUGIN_ID) {
       syncAdvisorStrategyTools(registry)
     }
-    // Same for the `copse.okf-memories` pack's `remember`/`recall` tools — the
-    // atomic pack-disable also drops the tools from the model tool list (and
+    // Same for the `copse.okf-memories` plugin's `remember`/`recall` tools — the
+    // atomic plugin-disable also drops the tools from the model tool list (and
     // stops the memory prompt block) without an app restart.
-    if (id === OKF_MEMORIES_PACK_ID) {
+    if (id === OKF_MEMORIES_PLUGIN_ID) {
       syncOkfMemoryTools(registry)
     }
-    // Same for the `copse.ci-investigator` pack's entry and gh_run_* helper
+    // Same for the `copse.ci-investigator` plugin's entry and gh_run_* helper
     // tools; the register direction still requires `gh` availability.
-    if (id === CI_INVESTIGATOR_PACK_ID) {
+    if (id === CI_INVESTIGATOR_PLUGIN_ID) {
       syncCiInvestigatorTools(registry)
     }
-    // Same for the `copse.pii-redaction` pack's `reveal_pii` tool — toggling the
-    // pack also arms/disarms the input rewrite and steering block, which read
-    // the same pack enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
-    if (id === PII_REDACTION_PACK_ID) {
+    // Same for the `copse.pii-redaction` plugin's `reveal_pii` tool — toggling the
+    // plugin also arms/disarms the input rewrite and steering block, which read
+    // the same plugin enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
+    if (id === PII_REDACTION_PLUGIN_ID) {
       syncPiiTools(registry)
     }
-    // The `copse.devtools-shortcut` pack contributes no tool — it owns the
-    // `devtools-shortcut` capability. Toggling the pack registers/unregisters the
-    // global Ctrl+Shift+I shortcut so the atomic pack-disable turns it off
+    // The `copse.devtools-shortcut` plugin contributes no tool — it owns the
+    // `devtools-shortcut` capability. Toggling the plugin registers/unregisters the
+    // global Ctrl+Shift+I shortcut so the atomic plugin-disable turns it off
     // without an app restart (mirrors the tool syncs above).
-    if (id === DEVTOOLS_SHORTCUT_PACK_ID) {
-      syncDevtoolsShortcut(win)
+    if (id === DEVTOOLS_SHORTCUT_PLUGIN_ID) {
+      syncDevtoolsShortcut()
     }
-    // Same for the `copse.background-tasks` pack's `run_background` tool — the
-    // atomic pack-disable also revokes the pack's declared `loopback-bind`
+    // Same for the `copse.background-tasks` plugin's `run_background` tool — the
+    // atomic plugin-disable also revokes the plugin's declared `loopback-bind`
     // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
-    if (id === BACKGROUND_TASKS_PACK_ID) {
+    if (id === BACKGROUND_TASKS_PLUGIN_ID) {
       syncBackgroundTasksTools(registry)
     }
-    if (id === PARALLEL_SEARCH_PACK_ID) {
+    if (id === PARALLEL_SEARCH_PLUGIN_ID) {
       syncParallelSearchTools(registry)
     }
-    if (id === DARK_FACTORY_PACK_ID) {
+    if (id === DARK_FACTORY_PLUGIN_ID) {
       syncDarkFactorySensor()
     }
-    if (id === AUTOMATIONS_PACK_ID) {
+    if (id === AUTOMATIONS_PLUGIN_ID) {
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
     }
-    return { packs: getPackService().list() }
+    return { plugins: getPluginService().list() }
   })
   ipcMain.handle(
-    'packs:setSetting',
+    'plugins:setSetting',
     async (event, rawId: unknown, rawKey: unknown, rawValue: unknown) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
       const key = parseIpcArgs(zNonEmptyString.max(128), [rawKey])
-      // Pack-scoped setting values are declaratively-shaped by the manifest;
+      // Plugin-scoped setting values are declaratively-shaped by the manifest;
       // the renderer sends the primitive it read from the form. Cap to a sane
       // upper bound so a compromised renderer can't stuff arbitrary payloads.
       const value = parseIpcArgs(
         z.union([z.boolean(), z.number(), z.string().max(8192), z.null()]),
         [rawValue],
       )
-      await getPackService().setSetting(id, key, value)
-      return { packs: getPackService().list() }
+      await getPluginService().setSetting(id, key, value)
+      return { plugins: getPluginService().list() }
     },
   )
 
@@ -1943,6 +2137,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return shell.openExternal(href)
   })
+  ipcMain.handle('shell:openWorkspaceFileInBrowser', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
+    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
+      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
+    }
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return shell.openExternal(pathToFileURL(abs).href)
+  })
+  ipcMain.handle('browser:workspaceFileUrl', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
+    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
+      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
+    }
+    const abs = await resolvePathWithinRoot(relPath, root)
+    const preview = await getStaticPreviewServer(root)
+    const previewPath = relative(preview.root, abs).split(sep).map(encodeURIComponent).join('/')
+    return staticPreviewUrl(preview.url, previewPath)
+  })
 
   ipcMain.handle('editors:list', (event) => {
     assertMainFrameSender(event, win)
@@ -2000,6 +2216,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('mcp:listCurated', (event) => {
     assertMainFrameSender(event, win)
     return getCuratedServerStatuses(getMcpServerStatuses())
+  })
+  ipcMain.handle('mcp:listDeclared', (event) => {
+    assertMainFrameSender(event, win)
+    return getPluginService().declaredMcpServers()
   })
   ipcMain.handle('mcp:setCuratedEnabled', async (event, name: unknown, enabled: unknown) => {
     assertMainFrameSender(event, win)
@@ -2094,6 +2314,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       )
       return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
     })
+    // Drives the real main→renderer close question without actually quitting —
+    // an e2e that closed the app would take its own session down with it.
+    ipcMain.handle('test:requestCloseConfirm', (event) => {
+      assertMainFrameSender(event, win)
+      return requestCloseConfirmation()
+    })
+
+    ipcMain.handle('test:createMainWindow', (event) => {
+      assertMainFrameSender(event, win)
+      createMainWindow()
+    })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
@@ -2112,6 +2343,33 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
           toVersion: '1.1.7',
         },
       ])
+    })
+    ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      // Scanning is a property of the host, and the CI image has neither `ss` nor
+      // `lsof` — so the Ports spec seeds rows instead of starting real listeners.
+      const rows = parseIpcArgs(
+        z
+          .array(
+            z.object({
+              port: z.number().int().min(1).max(65535),
+              pid: z.number().int().positive().nullable(),
+              command: z.string().max(200),
+              address: z.string().max(64),
+              owner: z
+                .object({
+                  kind: z.enum(['terminal', 'background']),
+                  id: z.string().max(128),
+                  label: z.string().max(200),
+                })
+                .nullable(),
+              url: z.string().max(2048).nullable(),
+            }),
+          )
+          .max(64),
+        [raw],
+      )
+      setSeededPortRows({ rows, tool: 'seeded' })
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

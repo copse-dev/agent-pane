@@ -73,6 +73,13 @@ runs:
     # and redundant on the miss path.
     - uses: actions/setup-node@v7
       with: { node-version-file: '.nvmrc' }
+    # Activate packageManager-pinned pnpm (Corepack). setup-node does not install
+    # pnpm by itself when packageManager is set — only enables npm cache heuristics.
+    - run: |
+        corepack enable
+        corepack prepare --activate
+        pnpm --version
+      shell: bash
     # ripgrep backs the app's code-search services at runtime; the unit suite
     # and the e2e app both exercise them. GitHub-hosted runners have passwordless
     # sudo + apt, so install it there. Self-hosted runners typically have neither
@@ -96,41 +103,98 @@ runs:
       env:
         HOMEBREW_NO_AUTO_UPDATE: '1'
         HOMEBREW_NO_ANALYTICS: '1'
-    # Warm-start on self-hosted runners whose image baked the dependency tree
-    # (see .github/runner*/Dockerfile). If the baked layer's lockfile hash still
-    # matches this checkout, seed node_modules + vendor/gortex straight from
-    # local disk (a few seconds) instead of restoring ~525 MB from the Actions
-    # cache service — which crawled at ~1 MB/s (≈8 min) on freshly reprovisioned
-    # runners. Runs AFTER checkout (checkout's `clean` would wipe a pre-placed
-    # tree), and sets `seeded=true` to skip the cache restore + npm ci below. A
-    # miss — no baked layer (GitHub-hosted, or an older image) or a lockfile bump
-    # — leaves seeded=false, so the existing cache / npm ci path runs unchanged.
+    # Warm-start from local disk instead of the Actions cache service, which on
+    # this fleet crawls at ~1-3 MB/s — a ~590 MB restore costs 2.5-3.5 min, and
+    # a full CI run fans out to ~16 jobs (9 setup call sites, one of them an
+    # 8-shard e2e matrix) that all restore it concurrently and contend for the
+    # same egress. Two local sources are tried, cheapest first:
+    #
+    #   1. COPSE_BAKED_DEPS — the tree baked into the runner IMAGE
+    #      (ci-runners/Dockerfile step 6). Free, but keyed by the lockfile hash
+    #      at image-build time, so every dependency bump makes it stale
+    #      fleet-wide until the images are rebuilt.
+    #   2. COPSE_DEPS_CACHE — a host-local store on a Docker volume shared by
+    #      every runner container on the host (ci-runners/docker-compose.yml),
+    #      keyed by the CURRENT lockfile hash and populated by the publish step
+    #      at the end of this action. This is what covers the gap above: after a
+    #      lockfile bump the first job on a host still pays the network restore,
+    #      and every job after it on that host copies from local disk.
+    #
+    # Runs AFTER checkout (checkout's `clean` would wipe a pre-placed tree), and
+    # sets `seeded=true` to skip the cache restore + npm ci below. A miss on both
+    # leaves seeded=false and `source=none`, so the existing cache / npm ci path
+    # runs unchanged — and the publish step then seeds the store for the next job.
     - id: baked
       shell: bash
       run: |
+        # Copy a prepared dependency tree into the workspace. Called from inside
+        # `if` conditions so a partial copy is caught rather than being fatal
+        # under `set -e` — every caller cleans up and falls through on failure.
+        #
+        # --reflink=auto makes this near-instant on a CoW host filesystem
+        # (XFS/Btrfs) and a plain copy everywhere else, but it is GNU-only: the
+        # self-hosted macOS runners have BSD cp, which rejects the flag. Probe
+        # once rather than branching on the OS.
+        CP=(cp -a)
+        if cp --reflink=auto --help >/dev/null 2>&1; then CP=(cp -a --reflink=auto); fi
+        seed_from() {
+          src="$1"
+          rm -rf node_modules || return 1
+          "${CP[@]}" "${src}/node_modules" node_modules || return 1
+          if [ -d "${src}/vendor/gortex" ]; then
+            mkdir -p vendor || return 1
+            rm -rf vendor/gortex || return 1
+            "${CP[@]}" "${src}/vendor/gortex" vendor/gortex || return 1
+          fi
+        }
+
+        lockhash="$(sha256sum pnpm-lock.yaml 2>/dev/null | awk '{ print $1 }' || echo unknown)"
         seeded=false
+        source=none
+
         if [ -n "${COPSE_BAKED_DEPS:-}" ] && [ -f "${COPSE_BAKED_DEPS}/.ready" ]; then
-          want="$(sha256sum package-lock.json 2>/dev/null | awk '{ print $1 }' || echo want)"
-          have="$(cat "${COPSE_BAKED_DEPS}/.lockhash" 2>/dev/null || echo have)"
-          if [ "$want" = "$have" ]; then
-            # Best-effort: the seed runs inside the `if` condition, so a failing
-            # copy is caught (not fatal under set -e) — clean up and fall back.
-            if rm -rf node_modules \
-               && cp -a "${COPSE_BAKED_DEPS}/node_modules" node_modules \
-               && { [ ! -d "${COPSE_BAKED_DEPS}/vendor/gortex" ] \
-                    || { mkdir -p vendor && rm -rf vendor/gortex \
-                         && cp -a "${COPSE_BAKED_DEPS}/vendor/gortex" vendor/gortex; }; }; then
+          baked_hash="$(cat "${COPSE_BAKED_DEPS}/.lockhash" 2>/dev/null || echo stale)"
+          if [ "$lockhash" = "$baked_hash" ]; then
+            if seed_from "${COPSE_BAKED_DEPS}"; then
               seeded=true
-              echo "Seeded node_modules + vendor/gortex from ${COPSE_BAKED_DEPS} (lockfile match)"
+              source=baked
+              echo "Seeded node_modules + vendor/gortex from the baked image layer (lockfile match)"
             else
-              echo "Baked-dep seed failed — cleaning up and falling back to cache / npm ci"
+              echo "Baked-dep seed failed — cleaning up and falling back"
               rm -rf node_modules
             fi
           else
-            echo "Baked deps present but stale (lockfile changed) — using cache / npm ci"
+            echo "Baked deps present but stale (lockfile changed) — trying the host-local store"
           fi
         fi
-        echo "seeded=$seeded" >> "$GITHUB_OUTPUT"
+
+        # Host-local store, keyed by the current lockfile hash. `.ready` is
+        # written last under a temp name and renamed into place, so an entry is
+        # only ever visible complete (see the publish step).
+        entry=""
+        if [ "$seeded" != true ] && [ -n "${COPSE_DEPS_CACHE:-}" ] && [ "$lockhash" != unknown ]; then
+          entry="${COPSE_DEPS_CACHE}/${lockhash}"
+          if [ -f "${entry}/.ready" ]; then
+            if seed_from "${entry}"; then
+              seeded=true
+              source=store
+              # Mark the entry as recently used so pruning keeps hot lockfiles.
+              touch "${entry}" 2>/dev/null || true
+              echo "Seeded node_modules + vendor/gortex from ${entry} (host-local store hit)"
+            else
+              echo "Host-local store seed failed — cleaning up and falling back to cache / pnpm install"
+              rm -rf node_modules
+            fi
+          else
+            echo "Host-local store miss for ${lockhash} — using cache / pnpm install, then publishing"
+          fi
+        fi
+
+        {
+          echo "seeded=$seeded"
+          echo "source=$source"
+          echo "lockhash=$lockhash"
+        } >> "$GITHUB_OUTPUT"
     # Cache the fully-installed dependency tree, not just the npm download cache.
     # The key is the lockfile hash, so an electron/node-pty bump (which changes
     # the native ABI) busts it and forces a fresh electron-rebuild. vendor/
@@ -156,26 +220,26 @@ runs:
         # ignore-scripts saved a node_modules with no native builds (no esbuild
         # binary, no electron-rebuilt node-pty) under the lockfile-hash key. Since
         # the lockfile is unchanged that poisoned entry would keep restoring and
-        # skip the fixed npm ci; bumping the token forces one clean reinstall.
-        key: ${{ runner.os }}-${{ runner.arch }}-deps-v2-${{ hashFiles('package-lock.json') }}
+        # skip the fixed pnpm install; bumping the token forces one clean reinstall.
+        key: ${{ runner.os }}-${{ runner.arch }}-deps-v3-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
     # Force install scripts to run for THIS install only. A self-hosted runner may
     # set `ignore-scripts=true` globally (a sensible host-wide hardening), but that
     # skips the native setup this app's e2e needs: esbuild's platform binary (used
     # to load the wdio TS config — without it wdio dies instantly with
     # "@esbuild/<os>-<arch> could not be found"), Electron's binary download, and
-    # the root postinstall that electron-rebuilds node-pty. Scoping the override to
-    # this step via step env keeps the box's global setting intact for everything
-    # else; running our own first-party repo's scripts here is safe (the fork guard
-    # keeps untrusted PR code off the self-hosted runner). --include=optional
+    # the root postinstall that electron-rebuilds node-pty. Project `.npmrc` also
+    # sets ignore-scripts=false; the env override here is belt-and-braces for a
+    # host that injects npm_config_ignore_scripts after Corepack. --include=optional
     # additionally overrides any host `omit=optional`, which would otherwise drop
     # esbuild's @esbuild/<os>-<arch> optional package.
-    - run: npm ci --include=optional
+    - run: pnpm install --frozen-lockfile
       if: steps.baked.outputs.seeded != 'true' && steps.deps.outputs.cache-hit != 'true'
       shell: bash
       env:
         npm_config_ignore_scripts: 'false'
+        CI: 'true'
     # Self-heal a poisoned dependency tree on the cache-HIT / baked-seed path
-    # (where the npm ci above is skipped). `--version` alone is not enough: a
+    # (where the pnpm install above is skipped). `--version` alone is not enough: a
     # half-broken @esbuild/<platform> binary can answer --version and still die
     # mid-build with "The service was stopped" (seen on main check after a baked
     # seed under fleet load). Probe the same JS-API service path that
@@ -189,11 +253,102 @@ runs:
           esbuild_ok=false
         fi
         if [ "$esbuild_ok" != true ]; then
-          echo "::warning::esbuild unhealthy after dep restore — running npm rebuild esbuild"
-          npm rebuild esbuild
+          echo "::warning::esbuild unhealthy after dep restore — running pnpm rebuild esbuild"
+          pnpm rebuild esbuild
           node_modules/.bin/esbuild --version
           node -e "require('esbuild').transformSync('export default 1',{loader:'ts'})"
         fi
       shell: bash
       env:
         npm_config_ignore_scripts: 'false'
+    # Publish this job's dependency tree to the host-local store so the NEXT job
+    # on this host skips the Actions cache entirely. Only runs when we actually
+    # paid for it (`source=none` — the cache-restore / npm ci path); seeding from
+    # the baked layer or from the store itself has nothing new to contribute.
+    #
+    # Deliberately placed after the esbuild self-heal so a poisoned tree is never
+    # what gets published. Entirely best-effort: this runs on the tail of a
+    # successful setup, and a failure here must not fail the job — the next job
+    # just misses the store and falls back to the cache, which is today's
+    # behaviour.
+    - if: steps.baked.outputs.source == 'none'
+      shell: bash
+      run: |
+        store="${COPSE_DEPS_CACHE:-}"
+        lockhash="${{ steps.baked.outputs.lockhash }}"
+        # No volume mounted (GitHub-hosted, or a host without the store) — no-op.
+        if [ -z "$store" ] || [ "$lockhash" = unknown ]; then exit 0; fi
+        if ! mkdir -p "$store" 2>/dev/null || [ ! -w "$store" ]; then
+          echo "::warning::${store} is not writable — skipping host-local dep publish"
+          exit 0
+        fi
+
+        CP=(cp -a)
+        if cp --reflink=auto --help >/dev/null 2>&1; then CP=(cp -a --reflink=auto); fi
+
+        entry="${store}/${lockhash}"
+        if [ -f "${entry}/.ready" ]; then
+          echo "Host-local store already holds ${lockhash} — nothing to publish"
+        else
+          # Build the entry under a temp name and rename it into place. rename(2)
+          # on a directory requires the target not to exist (or be an empty dir),
+          # so a concurrent container that published the same hash first simply
+          # wins and we discard our copy — the contents are identical either way.
+          # `.ready` is written inside the temp dir, so a half-built entry can
+          # never be observed as usable even if the rename is interrupted.
+          published=false
+          if tmp="$(mktemp -d "${store}/.tmp-XXXXXXXX" 2>/dev/null)"; then
+            if "${CP[@]}" node_modules "${tmp}/node_modules" \
+               && { [ ! -d vendor/gortex ] \
+                    || { mkdir -p "${tmp}/vendor" \
+                         && "${CP[@]}" vendor/gortex "${tmp}/vendor/gortex"; }; } \
+               && touch "${tmp}/.ready" \
+               && mv -T "$tmp" "$entry" 2>/dev/null; then
+              published=true
+              echo "Published dependency tree to ${entry}"
+            fi
+            [ "$published" = true ] || rm -rf "$tmp"
+          fi
+          # Losing the rename is the EXPECTED outcome whenever sibling jobs on
+          # this host publish the same hash at once (an 8-shard e2e matrix means
+          # 7 losers), and the winner's entry is what we wanted anyway — so only
+          # annotate when the entry genuinely is not there afterwards.
+          if [ "$published" != true ]; then
+            if [ -f "${entry}/.ready" ]; then
+              echo "Another job published ${lockhash} first — using theirs"
+            else
+              echo "::warning::could not publish the dependency tree to ${store} — continuing"
+            fi
+          fi
+        fi
+
+        # Reap temp dirs abandoned by a container that died mid-publish. They are
+        # excluded from the entry pruning below (they are not valid entries), so
+        # without this they would accumulate on the volume forever.
+        find "$store" -mindepth 1 -maxdepth 1 -type d -name '.tmp-*' -mmin +60 \
+          -exec rm -rf {} + 2>/dev/null || true
+
+        # Bound the volume: keep the newest KEEP entries. Anything touched in the
+        # last hour is left alone regardless — a concurrent container may be
+        # mid-copy out of it, and `rm -rf` under a reader makes that reader's cp
+        # fail. (It would fall back to the Actions cache rather than get a corrupt
+        # tree, but an hour of slack makes the race moot: a copy takes seconds.)
+        #
+        # GNU find/mv only, which is fine: this whole step already returned above
+        # unless COPSE_DEPS_CACHE is set, and that is set only by the Linux
+        # container fleet (ci-runners/docker-compose.yml).
+        KEEP=3
+        n=0
+        while IFS= read -r dir; do
+          n=$((n + 1))
+          [ "$n" -le "$KEEP" ] && continue
+          [ "$dir" = "$entry" ] && continue
+          if [ -z "$(find "$dir" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then continue; fi
+          # Drop the readiness marker before the (non-atomic) delete, so a
+          # container killed mid-`rm -rf` leaves a directory that is already
+          # correctly marked unusable rather than a half-deleted tree that still
+          # looks seedable. The leftover is picked up by a later prune pass.
+          rm -f "${dir}/.ready" 2>/dev/null || true
+          rm -rf "$dir" 2>/dev/null && echo "Pruned stale store entry $(basename "$dir")"
+        done < <(find "$store" -mindepth 1 -maxdepth 1 -type d ! -name '.tmp-*' -printf '%T@ %p\n' 2>/dev/null \
+                 | sort -rn | cut -d' ' -f2-)

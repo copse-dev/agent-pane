@@ -7,8 +7,11 @@ import {
   type SpineMachineContinuationLine,
 } from '@shared/threads/spine-schema.ts'
 import { randomUUID } from 'node:crypto'
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
+import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
+import { recoverAgentHistory } from './history-recovery.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -17,6 +20,7 @@ import {
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import {
   appendMachineContinuation,
+  getProjectThread,
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
@@ -31,6 +35,8 @@ export interface AgentDispatchPayload {
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
+  /** Per-chat reasoning dial for this turn; absent means the model's own level. */
+  reasoning?: ReasoningLevel
   turnTreeId?: string
   continuationBudgetUsed?: number
 }
@@ -51,6 +57,12 @@ export type MachineDispatchResult = 'completed' | 'duplicate' | 'stale' | 'budge
 export interface AgentDispatcherDependencies {
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
   saveHistory: (projectId: string, threadId: string, messages: LLMMessage[]) => Promise<void>
+  /**
+   * Provider history rebuilt from the visible transcript, for a thread whose
+   * sidecar is empty because an earlier run never committed one. See
+   * {@link recoverAgentHistory}.
+   */
+  recoverHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
   loadEpoch: (projectId: string, threadId: string) => Promise<AgentTurnEpoch | null>
   saveEpoch: (projectId: string, threadId: string, epoch: AgentTurnEpoch) => Promise<void>
   appendMachineContinuation: (
@@ -65,6 +77,12 @@ export interface AgentDispatcherDependencies {
     threadId: string,
     host: AgentHost<StreamChunk>,
   ) => Promise<ThreadExecutionContext | null>
+  /**
+   * How many messages the thread's transcript already holds. Compared against
+   * the loaded provider history to catch a turn starting with context the user
+   * can see but the model cannot — see {@link contextWasLost}.
+   */
+  transcriptLength: (projectId: string, threadId: string) => Promise<number>
   run: (
     threadId: string,
     userContent: UserContent,
@@ -75,20 +93,96 @@ export interface AgentDispatcherDependencies {
   ) => ReturnType<typeof runAgent>
 }
 
+async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
+  const thread = await getProjectThread(projectId, threadId)
+  return thread?.messages.length ?? 0
+}
+
+/**
+ * Rebuild this thread's provider history from its own transcript. Reads the
+ * thread only on the recovery path (an empty sidecar), and the result is cached
+ * by {@link AgentDispatcher.history} like any other load.
+ */
+async function recoverHistoryFromTranscript(
+  projectId: string,
+  threadId: string,
+): Promise<LLMMessage[]> {
+  const thread = await getProjectThread(projectId, threadId)
+  if (!thread) return []
+  return recoverAgentHistory(thread.messages)
+}
+
 const defaultDependencies: AgentDispatcherDependencies = {
   loadHistory: loadAgentHistory,
   saveHistory: saveAgentHistory,
+  recoverHistory: recoverHistoryFromTranscript,
   loadEpoch: loadAgentTurnEpoch,
   saveEpoch: saveAgentTurnEpoch,
   appendMachineContinuation,
   now: Date.now,
   createId: randomUUID,
   prepareExecutionContext: prepareThreadExecutionContext,
+  transcriptLength: threadTranscriptLength,
   run: runAgent,
 }
 
 function dispatchKey(projectId: string, threadId: string): string {
   return `${projectId}\0${threadId}`
+}
+
+interface HistoryCheckpointWriter {
+  /** Record the newest snapshot; never throws and never blocks the caller. */
+  submit: (messages: LLMMessage[]) => void
+  /** Stop accepting, and resolve once every accepted snapshot has been written. */
+  close: () => Promise<void>
+}
+
+/**
+ * Coalescing sink for a turn's mid-run history checkpoints.
+ *
+ * A long turn checkpoints once per LLM call, and each write is a full history —
+ * queueing one per call would spend the turn rewriting the same file. Writes are
+ * chained instead: a snapshot that arrives while an earlier write is in flight
+ * replaces any other waiting snapshot, so at most one write is outstanding and
+ * only the newest history is ever written. Order is strict, so a slow write can
+ * never land on top of a newer one.
+ *
+ * `close()` is what keeps a checkpoint from overwriting the end-of-turn commit:
+ * the caller closes the writer before saving the final history, so no checkpoint
+ * is still in flight when the authoritative version lands.
+ */
+function createHistoryCheckpointWriter(
+  save: (messages: LLMMessage[]) => Promise<void>,
+): HistoryCheckpointWriter {
+  let pending: LLMMessage[] | null = null
+  let chain: Promise<void> = Promise.resolve()
+  let closed = false
+
+  const flushNewest = async (): Promise<void> => {
+    const next = pending
+    pending = null
+    // Already written by an earlier link in the chain — this snapshot was
+    // superseded before it reached the front of the queue.
+    if (!next) return
+    try {
+      await save(next)
+    } catch {
+      // A checkpoint is a best-effort durability aid. The end-of-turn commit
+      // remains the authority, and a failing disk will surface there.
+    }
+  }
+
+  return {
+    submit(messages: LLMMessage[]): void {
+      if (closed) return
+      pending = messages
+      chain = chain.then(flushNewest)
+    },
+    close(): Promise<void> {
+      closed = true
+      return chain
+    },
+  }
 }
 
 /** Main-process authority for starting primary agent turns and committing provider history. */
@@ -154,6 +248,13 @@ export class AgentDispatcher {
     let messages = this.histories.get(key)
     if (!messages) {
       messages = await this.dependencies.loadHistory(projectId, threadId)
+      // An empty sidecar means either a genuinely fresh thread or a run that
+      // died before it could commit one. Only the transcript can tell the two
+      // apart, and only in the second case does it have anything to give back —
+      // so ask it rather than starting a thread with visible history from zero.
+      if (messages.length === 0) {
+        messages = await this.dependencies.recoverHistory(projectId, threadId)
+      }
       this.histories.set(key, messages)
     }
     return messages
@@ -284,6 +385,37 @@ export class AgentDispatcher {
     }
   }
 
+  /**
+   * Say so when this turn is starting without history the transcript shows it
+   * should have. Emitted through the same text channel `runAgent` uses for its
+   * own pre-turn notices (the remote-agent fallback, the oversized-turn
+   * message), so it needs no new surface — it just precedes the answer.
+   *
+   * `historyLength` is what {@link AgentDispatcher.history} returned, which
+   * already includes the transcript rebuild (#1547). Recovery has therefore had
+   * its turn before this runs, and a successful one leaves nothing to warn
+   * about — the notice is what remains when even the transcript held nothing
+   * reconstructible.
+   *
+   * Never blocks the turn: a thread the store cannot read is a diagnostic
+   * problem, not a reason to refuse to run.
+   */
+  private async warnIfContextWasLost(
+    projectId: string,
+    threadId: string,
+    historyLength: number,
+  ): Promise<void> {
+    if (historyLength > 0) return
+    let transcriptMessages: number
+    try {
+      transcriptMessages = await this.dependencies.transcriptLength(projectId, threadId)
+    } catch {
+      return
+    }
+    if (!contextWasLost(historyLength, transcriptMessages)) return
+    this.host.emit(threadId, { type: 'text', text: contextLossNotice(transcriptMessages) })
+  }
+
   private async execute(request: AgentDispatchRequest, key: string): Promise<void> {
     const { projectId, threadId, payload } = request
     const priorMessages = await this.history(projectId, threadId)
@@ -294,28 +426,50 @@ export class AgentDispatcher {
     )
     if (!executionContext) return
 
+    // Reports on the pre-turn state, so it runs before the checkpoint writer
+    // starts moving that state on.
+    await this.warnIfContextWasLost(projectId, threadId, priorMessages.length)
+
+    // Keep the in-memory history in step with each persisted checkpoint. A run
+    // that throws outright never reaches the commit below, and leaving the cache
+    // on the pre-turn history while the sidecar has moved on would hand the next
+    // turn a context that disagrees with disk.
+    const checkpoints = createHistoryCheckpointWriter(async (messages) => {
+      this.histories.set(key, messages)
+      await this.dependencies.saveHistory(projectId, threadId, messages)
+    })
+
     const options: RunAgentOptions = {
       invokedSkills: payload.invokedSkills,
       priorTodos: payload.priorTodos,
+      onHistoryCheckpoint: checkpoints.submit,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       ...(payload.model !== undefined ? { model: payload.model } : {}),
+      ...(payload.reasoning !== undefined ? { reasoning: payload.reasoning } : {}),
       ...(payload.turnTreeId !== undefined ? { turnTreeId: payload.turnTreeId } : {}),
       ...(payload.continuationBudgetUsed !== undefined
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }
         : {}),
     }
-    const result = await runWithThreadExecutionContext(executionContext, () =>
-      runWithActiveRunIdentity(threadId, () =>
-        this.dependencies.run(
-          threadId,
-          payload.userContent,
-          priorMessages,
-          this.host,
-          this.registry,
-          options,
+    let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
+    try {
+      result = await runWithThreadExecutionContext(executionContext, () =>
+        runWithActiveRunIdentity(threadId, () =>
+          this.dependencies.run(
+            threadId,
+            payload.userContent,
+            priorMessages,
+            this.host,
+            this.registry,
+            options,
+          ),
         ),
-      ),
-    )
+      )
+    } finally {
+      // Drain before the commit below so no checkpoint can land on top of the
+      // turn's authoritative history.
+      await checkpoints.close()
+    }
     this.histories.set(key, result.messages)
     await this.dependencies.saveHistory(projectId, threadId, result.messages)
   }

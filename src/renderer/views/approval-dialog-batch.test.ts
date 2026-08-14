@@ -21,6 +21,7 @@ interface EmitReq {
   body?: string
   bodyAdvice?: string
   bodyFooter?: string
+  type?: 'shell' | 'mcp' | 'web'
   allowRemember?: boolean
   rememberLabel?: string
   allowTurnTreeLease?: boolean
@@ -73,7 +74,7 @@ function makeApi(): {
         body: req.body ?? `body-${req.id}`,
         bodyAdvice: req.bodyAdvice,
         bodyFooter: req.bodyFooter,
-        type: 'shell',
+        type: req.type ?? 'shell',
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
         allowTurnTreeLease: req.allowTurnTreeLease,
@@ -218,8 +219,26 @@ describe('approval dialog coalescing', () => {
     assert.equal(advice.textContent, 'Potential harm: recursive/forced delete')
     assert.equal(body.textContent, 'rm -rf ./tmp')
     assert.equal(footer.textContent, 'Allow this bounded destructive action once?')
+    assert.ok(body.classList.contains('approval-body-code'))
+    assert.ok(approve().classList.contains('ui-btn-primary'))
+    assert.ok(dialog.querySelector('.approval-reject')?.classList.contains('ui-btn-secondary'))
     assert.ok(advice.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING)
     assert.ok(body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('keeps GitHub-style MCP bodies in the interface font, not a code dump', () => {
+    emit({
+      id: 'gh',
+      type: 'mcp',
+      title: 'Mark pull request ready for review?',
+      body: 'PR #1478',
+    })
+    fireWindow()
+    const body = dialog.querySelector('.approval-body')
+    assert.ok(body)
+    assert.equal(body.textContent, 'PR #1478')
+    assert.equal(body.classList.contains('approval-body-code'), false)
+    assert.equal(heading(), 'Mark pull request ready for review?')
   })
 
   it('keeps per-row labels and a count heading for a mixed batch', () => {

@@ -1,4 +1,4 @@
-/* Hook card family (decision 10 of docs/plans/hooks-and-feature-packs.md).
+/* Hook card family (decision 10 of docs/plans/hooks-and-feature-plugins.md).
    Hook executions, deny/ask decisions, and halts render as a distinct
    tool-call-style card family: right-aligned, same blue as the user's own
    messages (--accent), but clearly NOT a user message — they carry the hook
@@ -17,6 +17,16 @@
   /* Pull up against the anchor message so the hook cards read as part of that
      turn, matching the tool-card top spacing. */
   margin-top: calc(-1 * var(--spacing-sm));
+}
+
+/* The first turn's `sessionStart` hooks fire detached before any message has
+   been written, so `attachHookCards` folds them onto the first message. That
+   anchor (a plain sticky user prompt) carries none of the assistant-message
+   bulk the negative margin above is tuned for, so the pull-up would leave the
+   cards flush against the prompt. Give that host a normal gap instead, matching
+   how later turns' cards sit relative to their message. */
+.messages-list > :first-child + .hook-card-host {
+  margin-top: var(--spacing-sm);
 }
 
 .hook-card,
@@ -142,6 +152,106 @@
 /* Collapsed by default: the header carries the verdict; details are on demand. */
 .hook-card:not([open]) .hook-card-detail {
   display: none;
+}
+
+/* Inspector: the raw record behind a card — what the hook was handed and what it
+   returned. Two levels down on purpose (card → inspect → streams): the counts in
+   the detail lines answer most questions, and only a reader debugging the hook
+   itself needs the bodies. */
+.hook-card-raw {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+}
+.hook-card:not([open]) .hook-card-raw {
+  display: none;
+}
+
+.hook-card-raw-summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-secondary);
+  width: fit-content;
+  padding: 2px 0;
+}
+.hook-card-raw-summary::-webkit-details-marker {
+  display: none;
+}
+.hook-card-raw-summary::before {
+  content: '▸ ';
+}
+.hook-card-raw[open] > .hook-card-raw-summary::before {
+  content: '▾ ';
+}
+.hook-card-raw-summary:hover {
+  color: var(--text-primary);
+}
+
+.hook-card-raw-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+
+.hook-card-raw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.hook-card-raw-chip {
+  padding: 1px var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.hook-card-raw-status {
+  color: var(--text-muted);
+}
+
+.hook-card-raw-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hook-card-raw-copy {
+  margin-left: auto;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.hook-card-raw-copy:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+/* Bodies can be long and are never wrapped mid-token: scroll inside the block so
+   a 4 KB payload cannot stretch the card past the transcript's right edge. */
+.hook-card-raw-pre {
+  margin: 2px 0 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Origin marker on a hook-originated user turn: a small accent label above the

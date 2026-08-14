@@ -16,12 +16,13 @@ import {
 } from '../thread-execution-context.ts'
 import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
 import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
+import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
-// pack (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
+// plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
 // relaxation (issue #1190). The former `backgroundTasksEnabled` standalone
 // setting / `BACKGROUND_TASKS_ENABLED_SETTING` constant is retired; the
-// pack-service enablement migration reads the legacy key by literal value.
+// plugin-service enablement migration reads the legacy key by literal value.
 
 /** Per-process output cap — smaller than a one-shot command so many tasks stay bounded. */
 const BACKGROUND_OUTPUT_MAX_BYTES = Math.floor(COMMAND_OUTPUT_MAX_BYTES / 2)
@@ -276,11 +277,13 @@ export async function startBackgroundProcess(
       entry.exitCode = code
       notifyCompletion(entry)
       done()
+      notifyThreadResourceFinished(entry.owner.threadId)
     })
     proc.on('error', () => {
       entry.exited = true
       notifyCompletion(entry)
       done()
+      notifyThreadResourceFinished(entry.owner.threadId)
     })
   })
 
@@ -291,6 +294,29 @@ export function listBackgroundProcesses(
   owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
 ): BackgroundProcessInfo[] {
   return [...processes.values()].filter((entry) => sameOwner(entry.owner, owner)).map(toInfo)
+}
+
+/** A running task's pid, for attributing listening ports back to the task that bound them. */
+export interface BackgroundProcessPid {
+  id: string
+  command: string
+  pid: number
+}
+
+/**
+ * Every running task's pid, across threads and projects. Unlike
+ * `listBackgroundProcesses` this is deliberately unscoped: the Ports panel shows
+ * the whole host, so a port bound by another thread's task should still be named
+ * rather than left inert.
+ */
+export function listBackgroundProcessPids(): BackgroundProcessPid[] {
+  const out: BackgroundProcessPid[] = []
+  for (const entry of processes.values()) {
+    const pid = entry.proc.pid
+    if (entry.exited || pid === undefined || pid <= 0) continue
+    out.push({ id: entry.id, command: entry.command, pid })
+  }
+  return out
 }
 
 /** Recent output for a process (head + tail, capped), or null when unknown. */
@@ -313,6 +339,7 @@ export function stopBackgroundProcess(
   if (entry.completionTimer) clearTimeout(entry.completionTimer)
   terminateProcessTree(entry.proc)
   processes.delete(id)
+  notifyThreadResourceFinished(entry.owner.threadId)
   return true
 }
 
@@ -352,6 +379,10 @@ export async function stopBackgroundProcessesForThread(
     ),
   )
   return entries.map((entry) => entry.id)
+}
+
+export function hasBackgroundProcessesForThread(owner: ThreadExecutionOwner): boolean {
+  return [...processes.values()].some((entry) => !entry.exited && sameOwner(entry.owner, owner))
 }
 
 /** Kill every tracked process — called on app shutdown. */

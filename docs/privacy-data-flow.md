@@ -116,8 +116,8 @@ configuration may pass selected values by design.
 
 The principal local stores are:
 
-- `settings.json` and `config.json` in the `copse-panel` Electron user-data
-  directory for credentials, preferences, providers, projects, and UI state;
+- `settings.json` and `config.json` under `~/.copse/user-data/` (or `COPSE_DIR`)
+  for credentials, preferences, providers, projects, and UI state;
 - `~/.copse/workspace/<projectId>/<threadId>/` (or `COPSE_WORKSPACE_DIR`) for
   conversations, reasoning, tool arguments/results, hook output, images, and
   nested subagents;
@@ -146,3 +146,22 @@ Removing a thread or local store affects only the local copy; it does not delete
 data already sent to a provider, remote agent, MCP server, ACP agent, website, or
 GitHub. Use that service's controls for its retained copy. Backup, migration, and
 forward-recovery guidance is in [recovery.md](recovery.md).
+
+## One person per installation, deliberately
+
+There is no Copse account, no user directory, no sharing, and no concept of a second user.
+Threads, knowledge notes, settings, and credentials belong to the operating-system user
+running the app, and the access control over them is the filesystem's.
+
+This is a **non-goal rather than an unbuilt feature**. Sharing a thread, a plan, or a note
+with another person would require an identity to share with, a channel to share over, and a
+retention story for whatever sits in the middle — the three things the design above exists to
+avoid. [`plans/mission-control.md`](plans/mission-control.md) parks the nearest version of it
+("a second person looking at someone else's run") for the same reason.
+
+Two things that are _not_ covered by this position, because they already exist: exporting a
+thread deliberately (see above), and a remote execution target that the user configures and
+controls. Neither introduces another principal.
+
+Recorded here because from outside an absence and a decision look identical. Evidence:
+[`plans/unowned-capability-gaps.md`](plans/unowned-capability-gaps.md) G-10.

@@ -29,6 +29,55 @@ function signalProcessTree(proc: ChildProcess, signal: NodeJS.Signals): void {
 }
 
 /**
+ * The same group-then-process escalation as {@link signalProcessTree}, for a pid
+ * we hold no `ChildProcess` for — a listener discovered by scanning the host
+ * rather than one Copse spawned. `-pid` only names a group when that pid leads
+ * one, so a non-leader falls through to a direct kill and never reaches a
+ * sibling's group.
+ */
+function signalPidTree(pid: number, signal: NodeJS.Signals): boolean {
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-pid, signal)
+      return true
+    } catch {
+      // Not a group leader — fall through to a direct kill.
+    }
+  }
+  try {
+    process.kill(pid, signal)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** True while the pid exists and this process may signal it. */
+export function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * SIGTERM a bare pid, escalating to SIGKILL after the grace period if it is still
+ * alive. Unlike {@link terminateProcessTree} there is no `ChildProcess` to watch,
+ * so liveness is probed with signal 0. The timer is unref'd: a pending escalation
+ * must never hold the app open at quit.
+ */
+export function terminatePidTree(pid: number, graceMs = SUBPROCESS_KILL_GRACE_MS): boolean {
+  if (!Number.isInteger(pid) || pid <= 1) return false
+  if (!signalPidTree(pid, 'SIGTERM')) return false
+  setTimeout(() => {
+    if (isPidAlive(pid)) signalPidTree(pid, 'SIGKILL')
+  }, graceMs).unref()
+  return true
+}
+
+/**
  * Send SIGTERM, then SIGKILL the whole process group after a grace period if the
  * child has not exited. Returns a cleanup function that cancels the pending SIGKILL
  * (call it once the process actually closes so the timer never leaks).

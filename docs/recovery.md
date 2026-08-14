@@ -9,24 +9,55 @@ supported recovery path.
 Quit Copse before copying its data so append-only thread files and Electron
 stores are not changing during the backup.
 
-Back up together:
+Back up **`~/.copse/`** — or the directory `COPSE_DIR` selects. That single root
+holds the whole profile:
 
-1. The conversation store at `~/.copse/workspace/`, or the directory selected by
-   `COPSE_WORKSPACE_DIR`.
-2. The Electron user-data directory:
-   - macOS: `~/Library/Application Support/copse-panel/`
-   - Linux source builds: `~/.config/copse-panel/`
-   - Windows source builds: `%APPDATA%/copse-panel/`
-3. Each project repository through its normal version-control and backup
-   process. Copse's app-data backup is not a backup of the project itself.
+| Path                                                                                 | Contents                                                              |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `user-data/config.json`                                                              | Projects, active project, workspace root, pack settings, usage ledger |
+| `user-data/settings.json`                                                            | Settings, including encrypted API keys                                |
+| `user-data/` (rest)                                                                  | `mcp.json`, custom tools, browser profiles, the semantic-search index |
+| `workspace/`                                                                         | Conversation store: threads, tasks, decision log, deferred approvals  |
+| `worktrees/`                                                                         | Copse-managed Git worktrees                                           |
+| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | Per-feature stores                                                    |
 
-Stored API keys are tied to the operating system's secure-storage account when
-encrypted and may not decrypt after moving to another machine or user. Keep a
-separate secure record of credentials and be prepared to enter them again.
+Back up each project repository separately, through its normal version-control
+and backup process. Copse's app-data backup is not a backup of the project
+itself.
 
-Browser profiles and the semantic-search index are inside Electron user data.
-They are not required to reconstruct threads; omit them only if losing browser
-sessions and rebuilding the search index is acceptable.
+Stored API keys are sealed with the operating system's secure storage, which
+belongs to the OS user account rather than to the Copse profile, so they do not
+decrypt after a restore onto another machine or user. Keep a separate secure
+record of credentials and expect to enter them again; `/checkup` reports each
+key it cannot decrypt. See [profiles.md](profiles.md#what-profiles-do-not-isolate-api-keys).
+
+Browser profiles and the semantic-search index are the bulk of `user-data/` and
+are not required to reconstruct threads. Excluding them keeps a backup small, at
+the cost of losing browser sessions and rebuilding the search index on restore.
+
+Threads survive a restore even if your projects land at different absolute paths,
+because they are keyed by project id. Some smaller stores are not — see
+[profiles.md](profiles.md#moving-a-profile-to-another-machine) before restoring
+onto a machine where the repository paths will differ.
+
+The granular overrides `COPSE_WORKSPACE_DIR`, `COPSE_WORKTREES_DIR`, and
+`COPSE_PANEL_USER_DATA` each move one directory out of this root. If you set
+any of them, back up that location too. See [profiles.md](profiles.md) for
+running more than one profile and for what a profile does not carry with it.
+
+### Profiles from before the single-root layout
+
+Copse used to keep Electron user data outside `~/.copse`, in
+`~/Library/Application Support/copse-panel/` (macOS),
+`~/.config/copse-panel/` (Linux), or `%APPDATA%/copse-panel/` (Windows). The
+first launch after updating moves that directory to `~/.copse/user-data/`. If
+the move cannot complete — an unwritable data root, or a profile already there —
+Copse logs the reason at startup and keeps using the old directory, so back up
+both locations until a launch has moved it.
+
+When `COPSE_DIR` points at a different volume from the old profile, the
+directory is copied rather than moved and the original is left beside it with a
+`.migrated` suffix. Delete it once the new profile is verified.
 
 ## Worktree restore points
 
@@ -65,8 +96,7 @@ current data directories for investigation, and report the problem through
 [../SUPPORT.md](../SUPPORT.md). Recovery is a corrective newer release.
 
 To restore a pre-update backup, install the latest supported release, quit it,
-replace the conversation store and Electron user-data directory with the matched
-backup copies, then launch again. Do not combine individual files from different
+replace `~/.copse/` with the backup copy, then launch again. Do not combine individual files from different
 backup times unless the on-disk format documentation explicitly permits it.
 
 Reinstalling the latest application bundle can repair a damaged app binary, but

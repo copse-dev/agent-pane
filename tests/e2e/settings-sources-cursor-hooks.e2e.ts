@@ -58,7 +58,7 @@ describe('settings sources hooks', () => {
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
 
-    await dialog.$('button[data-section="sources"]').click()
+    await dialog.$('button[data-section="customise"]').click()
     await dialog.$('#sources-hooks-list .sources-row').waitForExist({ timeout: 15_000 })
 
     // The security toggle lives in the Hooks fieldset and defaults off.

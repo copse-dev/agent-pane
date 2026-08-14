@@ -70,12 +70,12 @@ a number for the model:
 
 ## How it is wired
 
-| Piece                                                                                                     | Role                                                                                    |
-| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [`packages/llm/src/intellect-lookup.ts`](../packages/llm/src/intellect-lookup.ts)                         | Scale-tagged capability lookup for a selected model id (cloud, OpenRouter, ACP, local). |
-| [`packages/agent/src/forced-planning.ts`](../packages/agent/src/forced-planning.ts)                       | The pure policy: thresholds, gates, and the two steering texts.                         |
-| `forcedPlanningHook` in [`turn-start-hooks.ts`](../packages/agent/src/hooks/turn-start-hooks.ts)          | The `turnStart` hook — supplies turn facts and reads the pack's own settings.           |
-| [`packages/agent/src/packs/forced-planning-pack.ts`](../packages/agent/src/packs/forced-planning-pack.ts) | The manifest: the hook contribution, the settings schema, namespaced storage.           |
+| Piece                                                                                                         | Role                                                                                    |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`packages/llm/src/intellect-lookup.ts`](../packages/llm/src/intellect-lookup.ts)                             | Scale-tagged capability lookup for a selected model id (cloud, OpenRouter, ACP, local). |
+| [`packages/agent/src/forced-planning.ts`](../packages/agent/src/forced-planning.ts)                           | The pure policy: thresholds, gates, and the two steering texts.                         |
+| `forcedPlanningHook` in [`turn-start-hooks.ts`](../packages/agent/src/hooks/turn-start-hooks.ts)              | The `turnStart` hook — supplies turn facts and reads the pack's own settings.           |
+| [`packages/agent/src/plugins/forced-planning-pack.ts`](../packages/agent/src/plugins/forced-planning-pack.ts) | The manifest: the hook contribution, the settings schema, namespaced storage.           |
 
 Two small platform additions came with it, both documented in
 [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) (P12):
@@ -94,5 +94,5 @@ flip, restoring a byte-identical system prompt.
 
 ## Related
 
-- [`docs/packs.md`](packs.md) — the pack manifest, registry, and lifecycle
+- [`docs/plugins.md`](plugins.md) — the pack manifest, registry, and lifecycle
 - [`docs/hooks.md`](hooks.md) — the hook registry the pack's hook registers through

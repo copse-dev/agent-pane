@@ -1,3 +1,4 @@
+import type { ModelParameters, ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
@@ -186,6 +187,20 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
+  /**
+   * The concrete model a turn's `model` selector expanded to (e.g.
+   * `auto:…` → `gpt-5.6-terra`). Recorded at resolution time so it survives a
+   * turn that fails before any usage, unlike the live `byModel` usage map.
+   * Absent on threads written before this was captured.
+   */
+  resolvedModel?: string
+  /**
+   * Per-chat reasoning dial, set from the composer footer. Overrides the level
+   * saved against the model in Settings for this chat's turns only, so "this
+   * one's hard, think harder" does not permanently re-tune the model. Absent
+   * means the model's own saved level applies.
+   */
+  reasoning?: ReasoningLevel
   /** Provenance for a task created by a project automation schedule. */
   automation?: {
     scheduleId: string
@@ -306,11 +321,29 @@ export interface Message {
    */
   toolSummary?: string
   /**
-   * Primary-chat model that produced this assistant message (picker id for the
-   * turn). Surfaced in the transcript only when the thread used more than one
-   * primary model — subagent models live on {@link SubagentSession.model}.
+   * Primary-chat model that produced this assistant message — the concrete
+   * route actually run, after a dynamic selector (`auto:…`) was expanded.
+   * Surfaced in the transcript only when the thread used more than one primary
+   * model — subagent models live on {@link SubagentSession.model}.
    */
   model?: string
+  /**
+   * The model the user asked for for this turn — the picker/requested
+   * selection, which may be a dynamic selector (`auto:…`) rather than a
+   * concrete route. The resolved route the turn actually ran on lives on
+   * {@link Message.model}. Absent on messages written before this was captured.
+   */
+  requestedModel?: string
+  /**
+   * Generation parameters this turn actually ran with — resolved, not
+   * configured: the model's saved values after sanitizing for what it accepts,
+   * with a per-chat dial applied over them and a cheap role's ceiling applied
+   * under them. Recorded because the configuration is mutable and the resolved
+   * value can differ from it, so without this a transcript re-reads as though
+   * every past turn ran at whatever Settings says today. Absent when the turn
+   * sent no parameters at all, which is the common case.
+   */
+  parameters?: ModelParameters
   /**
    * Post-turn review verdict for the editing turn this message concluded. Set on
    * the turn's final assistant message so the review joins the transcript inline

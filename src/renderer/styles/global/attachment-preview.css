@@ -88,3 +88,10 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* Composer pills hang the affordance on their label, because the pill itself
+   already contains the ✕ button. Round the hover tint so it sits inside the
+   pill's border rather than squaring off against it. */
+.attachment-chip-label.text-expandable,
+.inline-paste-chip-label.text-expandable {
+  border-radius: var(--radius);
+}

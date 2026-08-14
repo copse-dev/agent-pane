@@ -155,7 +155,7 @@ async function main(): Promise<void> {
           skillsEnabled: false,
           subagentsEnabled: false,
         },
-        enabledPackIds: scenario.backgroundWake ? ['copse.background-tasks'] : [],
+        enabledPluginIds: scenario.backgroundWake ? ['copse.background-tasks'] : [],
         toolAvailability: { rg: false, git: false, gh: false },
         loadMcpServers: false,
         workspaceTrusted: true,
