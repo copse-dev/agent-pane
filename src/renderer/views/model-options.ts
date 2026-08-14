@@ -6,6 +6,7 @@ import {
   localModelIntellectHint,
   modelIntellectHint,
 } from '@copse/llm/intellect-hints.ts'
+import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 import {
   isOpenRouterModel,
   openRouterDisplayLabel,
@@ -68,7 +69,11 @@ import {
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
-import { dynamicModelChoices, dynamicModelLabel } from '@copse/llm/dynamic-model.ts'
+import {
+  AUTO_MODEL_PREFIX,
+  dynamicModelChoices,
+  dynamicModelLabel,
+} from '@copse/llm/dynamic-model.ts'
 import { canonicalModelLabel, claudeModelIdFromLabel } from '@copse/llm/model-label.ts'
 
 const ACP_GROUP = 'Agents on this device'
@@ -250,9 +255,12 @@ async function openRouterOptions(
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    // Intellect-only hint (no catalog pricing for OpenRouter ids), matched via
-    // the measurement alias map. `group` carries the ZDR/retention annotation.
-    const hint = modelIntellectHint(id)
+    // Match the cloud presentation when the OpenRouter id resolves to a tracked
+    // cloud model (e.g. `anthropic/claude-opus-5:batch` -> `claude-opus-5`), so the
+    // OpenRouter row reads the same as the plan/cloud route. `group` carries the
+    // ZDR/retention annotation. Fall back to the intellect-only hint when nothing resolves.
+    const cloudId = resolveIntellectModelId(id)
+    const hint = cloudId ? cloudModelIntellectHint(cloudId) : modelIntellectHint(id)
     entries.push({
       value,
       label: hint ? `${label} — ${hint}` : label,
@@ -460,6 +468,19 @@ export async function fetchModelOptions(
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
       group: CHAT_DEFAULT_GROUP,
     })
+    // The Settings chat model can also be a rule, not just a pinned model: offer
+    // the other automatic selectors (balanced, most capable, cheapest) so the
+    // user can pick how the default resolves. auto:best-value is already the
+    // row above; the rest ride in their own Automatic group.
+    for (const choice of dynamicModelChoices()) {
+      if (choice.value === BEST_VALUE_CHAT_MODEL) continue
+      if (choice.group !== 'Automatic') continue
+      options.push({
+        value: choice.value,
+        label: `${choice.label} — ${choice.description}`,
+        group: choice.group,
+      })
+    }
   }
   // ACP agents are hidden on SSH workspaces UNLESS the user opted into remote ACP
   // over SSH, in which case they spawn on the remote host (docs/plans/acp-over-ssh.md).
@@ -601,7 +622,10 @@ export async function fetchModelOptions(
 
   // Only when nothing at all is configured (no cloud key, no provider, no local
   // server — and no Settings best-value row) do we surface a guiding message.
-  const concreteCount = options.filter((o) => !isBestValueChatModel(o.value)).length
+  const concreteCount = options.filter(
+    (o) =>
+      !isBestValueChatModel(o.value) && o.value !== '' && !o.value.startsWith(AUTO_MODEL_PREFIX),
+  ).length
   if (concreteCount === 0) {
     options.push({
       value: '',
