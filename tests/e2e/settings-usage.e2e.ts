@@ -131,6 +131,10 @@ describe('settings usage panel', function () {
     await fieldset.scrollIntoView({ block: 'start', inline: 'nearest' })
     await prepareE2eScreenshot()
 
+    const discover = fieldset.$('button.frontier-discover')
+    await discover.waitForClickable({ timeout: 20_000 })
+    await discover.click()
+    await expect(discover).toHaveAttribute('aria-pressed', 'true')
     await $('.frontier-chart circle.frontier-hit').waitForExist({
       timeout: 20_000,
       timeoutMsg: 'value-map points never rendered',

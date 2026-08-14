@@ -27,8 +27,13 @@ describe('settings usage value map model card link', function () {
     const fieldset = $('.frontier-fieldset')
     await expect(fieldset).toBeDisplayed()
 
-    // Claude models carry a curated card entry; hover the point for one. Under
-    // COPSE_MODEL_CARD_PROBE_MOCK the resolver answers without a vendor request.
+    // The empty profile has no routable cloud provider, so expose the catalog
+    // overlay before choosing a curated Claude model. Under
+    // COPSE_MODEL_CARD_PROBE_MOCK the card resolver answers without a vendor request.
+    const discover = fieldset.$('button.frontier-discover')
+    await discover.waitForClickable({ timeout: 20_000 })
+    await discover.click()
+    await expect(discover).toHaveAttribute('aria-pressed', 'true')
     const modelPoint = fieldset.$('circle.frontier-hit[data-model-id="claude-opus-4-8"]')
     await modelPoint.waitForExist({
       timeout: 20_000,
