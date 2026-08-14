@@ -188,6 +188,24 @@ export function switchThread(store: AppStore, id: string): void {
   store.emit('threads_changed')
 }
 
+/** The next thread in the list, wrapping from the last back to the first. */
+export function nextThreadId(store: AppStore): string | null {
+  const { threads, activeThreadId } = store.getState()
+  if (threads.length < 2) return null
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  const target = idx < 0 || idx >= threads.length - 1 ? threads[0] : threads[idx + 1]
+  return target ? target.id : null
+}
+
+/** The previous thread in the list, wrapping from the first back to the last. */
+export function prevThreadId(store: AppStore): string | null {
+  const { threads, activeThreadId } = store.getState()
+  if (threads.length < 2) return null
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1]
+  return target ? target.id : null
+}
+
 export function deleteThread(store: AppStore, id: string): void {
   const { threads, activeThreadId } = store.getState()
   const remaining = threads.filter((t) => t.id !== id)
