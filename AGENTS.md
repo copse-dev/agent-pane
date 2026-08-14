@@ -7,8 +7,12 @@ no backend service; the main process talks directly to LLM providers. Prefer the
 `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
 `check`) rather than inventing parallel commands.
 
-Use Node **22.18 or newer**. The repo pins `22.18.0` in `.nvmrc`; older Node 22 releases cannot run
-the native TypeScript tooling in `scripts/*.mts`. Environment setup, headless GUI notes, mock-model
+Use Node **22.22.2 or newer** and **pnpm** (via Corepack). The repo pins `22.22.2` in
+`.nvmrc` and `pnpm@10.34.5` via `packageManager`. Installs use pnpm’s isolated
+`node_modules` (package symlinks into `.pnpm`) with `package-import-method=auto`
+so worktrees share store bytes on APFS. Electron’s extracted `dist/` and the
+vendored gortex binary are shared under `~/.copse/cache/electron-dist/` and
+`~/.copse/cache/gortex/` (worktrees symlink into those caches). Environment setup, headless GUI notes, mock-model
 controls, app-state locations, and common validation commands live in
 [`docs/agent-development.md`](docs/agent-development.md).
 
@@ -74,10 +78,10 @@ only for native sizing, Monaco, terminal, webview, or real main-process IPC. Sta
 relevant set:
 
 ```bash
-npm test -- thread-store
-npm run oracle
-npm run oracle -- --run unit
-npm run oracle -- --run e2e
+pnpm test -- thread-store
+pnpm run oracle
+pnpm run oracle -- --run unit
+pnpm run oracle -- --run e2e
 ```
 
 Read the oracle confidence. `LOW` exposes unmapped files and `broad` requires the full named tier; a
@@ -86,7 +90,7 @@ green subset is never a substitute for the pre-commit gate. Full guidance is in
 
 ### Use the right machine
 
-- Prefer `npm run e2e:remote -- run --detach` while iterating when a remote-e2e host or registry is
+- Prefer `pnpm run e2e:remote -- run --detach` while iterating when a remote-e2e host or registry is
   configured; continue editing, then use `e2e:remote -- wait <run-id>`. Use local Electron e2e for
   macOS-specific behavior or when no remote host is available. See
   [`ci-runners/README.md`](ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
@@ -105,7 +109,7 @@ hook does not replace type-aware lint, TypeScript, or the full gate.
 ### Before committing
 
 Rebase onto the PR's current base (normally `origin/main`) before opening the PR; GitHub tests the
-merged base and head, not an isolated branch tip. Run **`npm run check`** before committing. It covers
+merged base and head, not an isolated branch tip. Run **`pnpm run check`** before committing. It covers
 typecheck, ESLint, Prettier, dead-code detection, and unit tests. If a source file is intentionally
 unlinked, add it to `ALLOWED_UNLINKED` in `scripts/check-dead-code.mts` with a reason.
 
@@ -118,4 +122,4 @@ oracle. Detailed local commands and screenshot ownership behavior are in
 Conversation messages, subagent timelines, and file preview use the hand-rolled renderer in
 `src/renderer/markdown/`. Before markdown or list-indent changes, read
 [`src/renderer/markdown/README.md`](src/renderer/markdown/README.md); then run
-`npm run build && npm run test:e2e:markdown`.
+`pnpm run build && pnpm run test:e2e:markdown`.

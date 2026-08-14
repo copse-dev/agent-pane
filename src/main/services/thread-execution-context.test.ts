@@ -190,6 +190,56 @@ describe('thread execution context', () => {
     assert.deepEqual(indexedRoots, ['/validated/root'])
   })
 
+  it('coalesces concurrent resolutions for the same persisted thread (#1728)', async () => {
+    let releaseMeta: (() => void) | undefined
+    const metaCanResolve = new Promise<void>((resolve) => {
+      releaseMeta = resolve
+    })
+    let metaReads = 0
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => {
+        metaReads += 1
+        await metaCanResolve
+        return { id: 'thread-1' }
+      },
+    }
+
+    const first = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    const second = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(metaReads, 1)
+
+    releaseMeta?.()
+    const [firstContext, secondContext] = await Promise.all([first, second])
+    assert.equal(firstContext, secondContext)
+
+    await resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(metaReads, 2)
+  })
+
+  it('does not retain a failed resolution for a later request (#1728)', async () => {
+    let metaReads = 0
+    let shouldFail = true
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => {
+        metaReads += 1
+        if (shouldFail) throw new Error('transient meta read failure')
+        return { id: 'thread-1' }
+      },
+    }
+
+    const first = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    const second = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    await assert.rejects(Promise.all([first, second]), /transient meta read failure/)
+    assert.equal(metaReads, 1)
+
+    shouldFail = false
+    const recovered = await resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(recovered.root, '/project')
+    assert.equal(metaReads, 2)
+  })
+
   it('persists an adopted live branch when Git HEAD drifted inside the worktree', async () => {
     const persisted = {
       path: '/diagnostic/path',

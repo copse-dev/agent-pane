@@ -22,7 +22,7 @@
     "probe:acp:long": "node scripts/run-probe-acp-long-run.mts",
     "probe:plan-usage": "node scripts/probe-plan-usage.mts",
     "icons:mac": "node scripts/generate-icon.mts && COPSE_PANEL_REFRESH_DOCK=1 node scripts/patch-dev-name.mts",
-    "start:mac": "npm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
+    "start:mac": "pnpm run icons:mac && env -u ELECTRON_RUN_AS_NODE electron dist/main/index.js",
     "prestart": "node scripts/patch-dev-name.mts",
     "start": "electron dist/main/index.js",
     "preinstall": "node scripts/check-node-version.cjs",
@@ -37,7 +37,7 @@
     "coverage": "node scripts/run-tests.mts --bundle-only && c8 node scripts/run-tests.mts --test-only",
     "coverage:check": "node scripts/coverage-gate.mts",
     "coverage:update": "node scripts/coverage-gate.mts --update",
-    "coverage:ci": "npm run coverage && npm run coverage:check",
+    "coverage:ci": "pnpm run coverage && pnpm run coverage:check",
     "bench:thread-store": "node scripts/bench-thread-store.mts",
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "bench:agent": "node scripts/run-bench-agent.mts",
@@ -87,10 +87,10 @@
     "sync:model-cards": "node scripts/sync-model-cards.mts",
     "sync:cursor-skills": "node scripts/fetch-bundled-cursor-skills.mts",
     "prepare:gortex:mac": "node scripts/prepare-macos-gortex.mts",
-    "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
-    "dist:mac": "npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run demo:site:check && npm run site:md:check && npm run check:dead-code && npm run check:oracle && npm test"
+    "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
+    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run site:md:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm test"
   },
   "build": {
     "appId": "app.copse-panel",
@@ -144,27 +144,9 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     }
   },
-  "overrides": {
-    "@hono/node-server": "2.0.11",
-    "adm-zip": "^0.6.0",
-    "brace-expansion": "5.0.9",
-    "minimatch": "10.2.5",
-    "dompurify": "$dompurify",
-    "js-yaml@4": "4.3.1",
-    "serialize-javascript": "^7.0.7",
-    "tar": "$tar",
-    "sharp": "0.35.3",
-    "fast-xml-parser": "5.10.1",
-    "fast-uri": "3.1.5",
-    "hono": "4.12.34",
-    "ip-address": "10.3.1",
-    "extract-zip": "$extract-zip",
-    "undici@6": "6.28.0",
-    "undici@7": "7.29.0"
-  },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",
-    "@anthropic-ai/sandbox-runtime": "^0.0.67",
+    "@anthropic-ai/sandbox-runtime": "^0.0.70",
     "@anthropic-ai/sdk": "^0.115.0",
     "@copse/streaming-markdown": "^1.0.3",
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -181,7 +163,7 @@
     "micromatch": "^4.0.8",
     "monaco-editor": "^0.56.0",
     "node-pty": "^1.1.0",
-    "openai": "^7.3.0",
+    "openai": "^7.4.0",
     "shell-quote": "^1.10.0",
     "tldts": "^7.4.10",
     "turndown": "^7.2.0",
@@ -206,9 +188,9 @@
     "@wdio/mocha-framework": "^9.30.1",
     "@wdio/spec-reporter": "^9.30.1",
     "c8": "^12.0.0",
-    "electron": "^43.2.0",
+    "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
-    "electron-chromedriver": "^43.2.0",
+    "electron-chromedriver": "^43.3.0",
     "electron-rebuild": "^3.2.9",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
@@ -222,10 +204,11 @@
     "prettier": "^3.9.6",
     "tar": "^7.5.22",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.65.0",
+    "typescript-eslint": "^8.66.0",
     "webdriverio": "^9.29.0"
   },
+  "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.22.2"
   }
 }

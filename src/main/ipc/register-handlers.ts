@@ -98,6 +98,12 @@ import {
 } from '../services/thread-store.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
+  getElectronAppVersion,
+  getElectronBuildCommit,
+  getElectronBuildDirty,
+  isElectronAppPackaged,
+} from '../services/electron-app-runtime.ts'
+import {
   describeWorkspaceArchive,
   storeArchiveAttachment,
 } from '../services/archive/archive-attachment-store.ts'
@@ -117,8 +123,10 @@ import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
 import {
   listWorktreeInventory,
+  cleanupWorktreePackages,
   measureWorktreeSize,
   removeWorktree,
+  resolveRegisteredWorktreePath,
 } from '../services/worktree-inventory.ts'
 import {
   requestAcpPackageInstallApproval,
@@ -1477,10 +1485,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // The whole thread directory, zipped — the archive counterpart to the
   // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
   // download and saves it, exactly as it does for the `.jsonl`.
-  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:exportArchive', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return buildThreadArchive(pid, tid)
+    return {
+      bytes: await buildThreadArchive(pid, tid),
+      build: {
+        version: getElectronAppVersion(),
+        buildCommit: getElectronBuildCommit(),
+        buildDirty: getElectronBuildDirty(),
+        packaged: isElectronAppPackaged(),
+        platform: process.platform,
+        capturedAt: new Date().toISOString(),
+      },
+    }
   })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
@@ -1596,6 +1614,38 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!target) throw new IpcValidationError('That project is no longer available')
     return measureWorktreeSize({ ...target, path })
   })
+
+  ipcMain.handle(
+    'worktrees:cleanupPackages',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawRemove: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, remove] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawRemove,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return cleanupWorktreePackages({
+        ...target,
+        path,
+        remove,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
+
+  ipcMain.handle(
+    'worktrees:openTerminal',
+    async (event, rawProjectId: unknown, rawPath: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      const root = await resolveRegisteredWorktreePath({ ...target, path })
+      return openWorkspaceInExternalEditor('terminal', root)
+    },
+  )
 
   ipcMain.handle(
     'worktrees:remove',

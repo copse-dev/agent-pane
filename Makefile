@@ -12,7 +12,7 @@
 #
 #   2. App dev loop — keep dependencies and the `dist/` build in sync, then run
 #      the app (`make run`). Dependencies are only reinstalled when
-#      `package-lock.json` changes; `dist/` is only rebuilt when source changes.
+#      `pnpm-lock.yaml` changes; `dist/` is only rebuilt when source changes.
 #
 # Run `make` (or `make help`) for the full target list.
 
@@ -48,9 +48,9 @@ COMPOSE ?= $(shell \
 # the README documents.
 COMPOSE_IN_DIR := cd $(RUNNER_DIR) && $(COMPOSE)
 
-# Minimum Node major.minor required by package.json `engines` (>=22.18).
+# Minimum Node major.minor required by package.json `engines` (>=22.22.2).
 NODE_MIN_MAJOR := 22
-NODE_MIN_MINOR := 18
+NODE_MIN_MINOR := 22
 
 # nvm ships as a shell function loaded from nvm.sh, not a binary, so a recipe
 # can't just call `nvm`. Source it (honouring $NVM_DIR, default ~/.nvm) and run
@@ -93,7 +93,7 @@ $(shell mkdir -p $(STAMP_DIR) && echo '$(SRC_LIST_SUM)' > $(SRC_LIST_STAMP))
 endif
 
 # The build stamp only proves a build *ran* — not that dist/ still holds its
-# output. `npm run dev` writes watch-mode bundles (a partial set, dev flags)
+# output. `pnpm run dev` writes watch-mode bundles (a partial set, dev flags)
 # into the same dist/, and a hand-deleted dist/ leaves the stamp behind. If the
 # main bundle is missing or newer than the stamp, dist/ was touched outside
 # make: drop the stamp so the next build re-syncs it.
@@ -118,7 +118,7 @@ help:
 	@echo "  make runner-env          Check/scaffold the ci-runners/.env file"
 	@echo
 	@echo "App dev loop:"
-	@echo "  make deps              Install deps if package-lock.json changed"
+	@echo "  make deps              Install deps if pnpm-lock.yaml changed"
 	@echo "  make build             Rebuild dist/ if source changed (deps first)"
 	@echo "  make run               deps -> build (if changed) -> start the app"
 	@echo "  make clean             Remove dist/ and build/deps stamps"
@@ -268,29 +268,27 @@ check-node:
 
 # --- dependencies -----------------------------------------------------------
 # Reinstall only when the lockfile (or package.json) is newer than the last
-# successful install. `npm ci` gives a clean, lockfile-exact tree.
+# successful install. `pnpm install --frozen-lockfile` is lockfile-exact.
 #
-# `--ignore-scripts=false` forces this project's `postinstall` to run even when
-# npm is hardened with `ignore-scripts=true` in ~/.npmrc — without it that
-# supply-chain setting silently skips the native postinstall (chmod on
-# node-pty's spawn-helper, electron-rebuild, gortex fetch) and the integrated
-# terminal fails to launch. The flag is scoped to this one invocation, so it
-# doesn't touch your global config. See the "Hardened npm profiles" section of
-# the README.
+# Project `.npmrc` sets `ignore-scripts=false`, but an inherited
+# `npm_config_ignore_scripts=true` (Copse agent shells, hardened user npmrc)
+# overrides it and skips postinstall — node-pty's spawn-helper stays non-
+# executable and the integrated terminal fails with posix_spawnp. Force scripts
+# on for this install, matching `.github/actions/setup/action.yml`.
 #
-# On macOS, npm's own stale-tree pruning can fail with ENOTEMPTY/EBUSY/EPERM.
-# This target only runs when dependencies need reinstalling, so remove the old
-# tree first and give `npm ci` an empty destination instead of retrying after it
-# has already left node_modules half-pruned.
-NPM_CI := npm ci --ignore-scripts=false
+# On macOS, stale-tree pruning can fail with ENOTEMPTY/EBUSY/EPERM. This target
+# only runs when dependencies need reinstalling, so remove the old tree first
+# and give pnpm an empty destination instead of retrying after a half-pruned
+# node_modules.
+PNPM_I := npm_config_ignore_scripts=false pnpm install --frozen-lockfile
 
 .PHONY: deps
 deps: $(DEPS_STAMP)
 
-$(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
-	@echo "==> Dependencies out of date — running 'npm ci' (scripts forced on)…"
+$(DEPS_STAMP): pnpm-lock.yaml package.json | $(STAMP_DIR) check-node
+	@echo "==> Dependencies out of date — running 'pnpm install --frozen-lockfile'…"
 	rm -rf node_modules
-	@$(USE_NVM); $(NPM_CI)
+	@$(USE_NVM); corepack enable; $(PNPM_I)
 	touch $(DEPS_STAMP)
 
 # --- build ------------------------------------------------------------------
@@ -302,7 +300,7 @@ build: $(BUILD_STAMP)
 $(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) $(SRC_LIST_STAMP) | $(STAMP_DIR)
 	@echo "==> Source changed — clearing dist/ and rebuilding…"
 	rm -rf dist
-	@$(USE_NVM); npm run build
+	@$(USE_NVM); pnpm run build
 	touch $(BUILD_STAMP)
 
 # --- run --------------------------------------------------------------------
@@ -310,7 +308,7 @@ $(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) $(SRC_LIST_STAMP) | $(STAMP_DIR)
 .PHONY: run
 run: build
 	@echo "==> Starting the app…"
-	@$(USE_NVM); npm start
+	@$(USE_NVM); pnpm start
 
 # --- cleanup ----------------------------------------------------------------
 .PHONY: clean
