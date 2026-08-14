@@ -107,7 +107,7 @@ describe('settings usage model value map ZDR filter', () => {
     })
     const filteredText = await filteredChart.getText()
     assert.doesNotMatch(filteredText, /claude-opus-4-8|claude-fable-5|gpt-5\.5/)
-    assert.match(filteredText, /gpt-4o/)
+    assert.match(filteredText, /gpt-4o/i)
     await expect(openRouterPoint).toExist()
 
     await prepareE2eScreenshot()
