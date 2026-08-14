@@ -2177,7 +2177,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -2186,7 +2186,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -2324,6 +2324,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:createMainWindow', (event) => {
       assertMainFrameSender(event, win)
       createMainWindow()
+    })
+    // Local macOS WebDriver sessions cannot always relaunch Electron after a
+    // fixture rewrite. Let focused specs drive the same workspace-open event as
+    // the native folder picker while keeping this seam entirely e2e-only.
+    ipcMain.handle('test:openWorkspace', async (event, rawRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const parsedRoot = parseIpcArgs(zPathString, [rawRoot])
+      const root = await registerAllowedWorkspaceRoot(parsedRoot)
+      win.webContents.send('workspace:opened', root)
+      return root
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)

@@ -670,6 +670,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: () => resolved({ rows: [], tool: 'demo' }),
       kill: () => resolved({ killed: false, reason: 'Ports are not available in the demo.' }),
     },
+    vnc: {
+      open: unsupported,
+      list: emptyArray,
+      start: () => {},
+      send: () => {},
+      close: resolvedVoid,
+      onData: subscribe,
+      onStatus: subscribe,
+    },
     memories: {
       list: emptyArray,
       create: unsupported,

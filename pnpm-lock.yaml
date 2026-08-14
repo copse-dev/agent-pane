@@ -44,6 +44,9 @@ importers:
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
+      '@novnc/novnc':
+        specifier: 1.5.0
+        version: 1.5.0
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -1016,6 +1019,9 @@ packages:
 
   '@nodable/entities@3.0.0':
     resolution: {integrity: sha512-8L9xFeTYKhm49xfIypoe2W5wV1m/3Z58kT+7kR9A8OyFxcPduI4VmxaUMQyKYrRjUoLLSXv6EKKID5Tvj9cUVw==}
+
+  '@novnc/novnc@1.5.0':
+    resolution: {integrity: sha512-4yGHOtUCnEJUCsgEt/L78eeJu00kthurLBWXFiaXfonNx0pzbs6R/3gJb1byZe6iAE8V9MF0syQb0xIL8MSOtQ==}
 
   '@npmcli/fs@2.1.2':
     resolution: {integrity: sha512-yOJKRvohFOaLqipNtwYB9WugyZKhC/DZC4VYPmpaCzDBrA8YpK3qHZ8/HGscMnE4GqbkLNuVcCnxkeQEdGt6LQ==}
@@ -5439,6 +5445,8 @@ snapshots:
   '@noble/hashes@2.3.0': {}
 
   '@nodable/entities@3.0.0': {}
+
+  '@novnc/novnc@1.5.0': {}
 
   '@npmcli/fs@2.1.2':
     dependencies:

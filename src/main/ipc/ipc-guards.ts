@@ -1,6 +1,7 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
+import type { VncTarget } from '@shared/types/vnc.ts'
 
 export class IpcValidationError extends Error {
   constructor(message: string) {
@@ -27,6 +28,16 @@ export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z
 }
 
 const zPortNumber = z.number().int().min(1).max(65535)
+
+export const vncTargetSchema: z.ZodType<VncTarget> = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('loopback'), port: zPortNumber }),
+  z.object({
+    kind: z.literal('ssh'),
+    hostId: z.string().regex(/^[\w.-]{1,128}$/),
+    remotePort: zPortNumber,
+    display: z.string().max(128).optional(),
+  }),
+])
 
 /** Decode the single positional argument accepted by `ports:kill`. */
 export function parsePortKillArgs(args: unknown[]): number {

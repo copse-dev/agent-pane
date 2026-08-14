@@ -1,8 +1,11 @@
 # Seeing the other machine's screen: VNC support
 
-**Status: Proposed.** Design only — nothing here is implemented, and there is no
-issue for it yet. The tunnel half of Phase V0 is the work
-[#771](https://github.com/copse-dev/agent-pane/issues/771) already tracks.
+**Status: Active (V0/V1 first release).** The SSH-forwarding primitive and the
+opt-in, read-only viewer are implemented. The generic browser consumer,
+reconnect reconciliation, and live-host validation remain V0/V1 follow-ups;
+human input, discovery, credentials, and every agent-facing capability remain
+V2 or later. The tunnel work is tracked by
+[#771](https://github.com/copse-dev/agent-pane/issues/771).
 
 ## Three readings of "VNC support", and which two this plan covers
 
@@ -204,6 +207,11 @@ contributors on the day they land.
 
 ### V0 — Tunnels (~2 days)
 
+**Implementation:** `ssh-forward.ts` now builds loopback-only ControlMaster
+forward/cancel argv and allocates ephemeral ports; SSH transports track and
+cancel forwards on disconnect, VNC close, and awaited app shutdown. Reconnect
+reconciliation and a generic browser-pane consumer remain.
+
 1. `ssh-workspace/ssh-forward.ts`: establish/cancel a local forward via `-O
 forward` / `-O cancel` on the existing control socket; allocate the local port
    with a `listen(0)` probe rather than guessing.
@@ -217,6 +225,12 @@ forward` / `-O cancel` on the existing control socket; allocate the local port
 after disconnect. This is #771's tunnel half and lands under that issue.
 
 ### V1 — The viewer, read-only (~1 week)
+
+**Implementation:** shipped behind `vncEnabled`, default off. Main owns the raw
+RFB socket (direct loopback or SSH-forwarded), preload exposes a binary
+WebSocket-shaped IPC channel, and noVNC 1.5.0 paints the view-only pane. Unit
+coverage uses real loopback sockets, and the focused WDIO eval paints and pixel-
+checks a two-colour RFB 3.8 framebuffer. The live `DISPLAY=:1` harness remains.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local

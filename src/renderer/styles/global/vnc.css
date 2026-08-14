@@ -1,0 +1,118 @@
+.vnc-controls-host {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vnc-controls-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  overflow-y: auto;
+  padding: var(--spacing-md);
+}
+
+.vnc-target-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.vnc-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.vnc-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.vnc-port-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--spacing-sm);
+  color: var(--text-primary);
+  font: inherit;
+  font-family: var(--font-mono);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.vnc-port-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.vnc-connect-btn,
+.vnc-disconnect-btn {
+  justify-content: center;
+  width: 100%;
+}
+
+.vnc-status {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.vnc-status[data-kind='working'] {
+  color: var(--text-secondary);
+}
+
+.vnc-status[data-kind='ok'] {
+  color: var(--success);
+}
+
+.vnc-status[data-kind='error'] {
+  color: var(--error);
+}
+
+.vnc-view-only-note {
+  margin: auto 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.vnc-viewer-host {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+.vnc-screen {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: var(--spacing-sm);
+}
+
+.vnc-screen canvas {
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.vnc-empty {
+  position: absolute;
+  inset: 0;
+}

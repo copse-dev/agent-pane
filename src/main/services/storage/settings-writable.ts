@@ -290,6 +290,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),
+  vncEnabled: z.boolean(),
   browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
   // When on (default), http(s) links clicked in chat/PR/preview surfaces open in
   // the in-app browser pane. When off, they open in the user's default browser

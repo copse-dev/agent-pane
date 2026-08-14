@@ -826,6 +826,43 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('ports:list'),
     kill: (port: number) => ipcRenderer.invoke('ports:kill', port),
   },
+  vnc: {
+    open: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:open', target),
+    list: () => ipcRenderer.invoke('vnc:list'),
+    start: (connectionId: string): void => {
+      ipcRenderer.send('vnc:start', connectionId)
+    },
+    send: (connectionId: string, bytes: Uint8Array): void => {
+      ipcRenderer.send('vnc:send', connectionId, bytes)
+    },
+    close: (connectionId: string) => ipcRenderer.invoke('vnc:close', connectionId),
+    onData: (handler: (connectionId: string, bytes: Uint8Array) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        connectionId: string,
+        bytes: Uint8Array,
+      ): void => {
+        handler(connectionId, bytes)
+      }
+      ipcRenderer.on('vnc:data', listener)
+      return (): void => {
+        ipcRenderer.off('vnc:data', listener)
+      }
+    },
+    onStatus: (handler: (event: import('@shared/types/vnc.ts').VncStatusEvent) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        status: import('@shared/types/vnc.ts').VncStatusEvent,
+      ): void => {
+        handler(status)
+      }
+      ipcRenderer.on('vnc:status', listener)
+      return (): void => {
+        ipcRenderer.off('vnc:status', listener)
+      }
+    },
+  },
   memories: {
     list: () => ipcRenderer.invoke('memories:list'),
     create: (title: string, body: string, tags?: string[]) =>
@@ -1107,6 +1144,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
+    },
+    openWorkspace(root: string) {
+      return ipcRenderer.invoke('test:openWorkspace', root)
     },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
