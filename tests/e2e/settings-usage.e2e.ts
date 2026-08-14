@@ -131,6 +131,10 @@ describe('settings usage panel', function () {
     await fieldset.scrollIntoView({ block: 'start', inline: 'nearest' })
     await prepareE2eScreenshot()
 
+    await $('.frontier-chart circle.frontier-hit').waitForExist({
+      timeout: 20_000,
+      timeoutMsg: 'value-map points never rendered',
+    })
     const hits = await $$('.frontier-chart circle.frontier-hit')
     assert.ok(hits.length > 0, 'expected value-map points to render')
     let rightmost = hits[0]
