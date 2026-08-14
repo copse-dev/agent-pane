@@ -106,7 +106,7 @@ describe('settings → Storage → worktree actions', function () {
     )
 
     const thread = row.$('.sources-worktree-thread-btn')
-    await expect(thread).toHaveText('thread')
+    await expect(thread).toHaveText('THREAD')
     await expect(thread).toHaveAttribute('aria-label', 'Open thread Dependency cleanup demo')
     await expect(row.$('.sources-worktree-terminal-btn')).toBeClickable()
     await expect(row.$('.sources-worktree-cleanup-btn')).toBeClickable()
