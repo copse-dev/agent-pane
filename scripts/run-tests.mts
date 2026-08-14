@@ -74,6 +74,10 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       'turndown',
       'mermaid',
       '@anthropic-ai/sandbox-runtime',
+      // The LM Studio SDK is large and reaches many tests through the provider
+      // barrel. Inlining it into every standalone test bundle exhausts the CI
+      // runner heap; leave it as a normal runtime dependency instead.
+      '@lmstudio/sdk',
       // esbuild locates its native binary by a path relative to its own JS API,
       // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
       // a worker bundle to assert what it links against need the real package.
