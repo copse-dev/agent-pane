@@ -108,7 +108,11 @@ describe('settings usage model value map ZDR filter', () => {
 
     const chart = fieldset.$('.frontier-chart svg')
     await expect(chart).toBeDisplayed()
-    assert.match(await chart.getText(), /claude-|gpt-/)
+    await chart.$('circle.frontier-hit').waitForExist({
+      timeout: 20_000,
+      timeoutMsg: 'value-map points never rendered',
+    })
+    assert.match(await chart.getText(), /claude-|gpt-/i)
 
     // Settings footer Save/Cancel can cover the control until scrolled into view.
     await fieldset.scrollIntoView()
@@ -142,7 +146,7 @@ describe('settings usage model value map ZDR filter', () => {
       async () => (await noTrainingBtn.getAttribute('aria-pressed')) === 'true',
       { timeout: 5000, timeoutMsg: 'No training toggle did not activate' },
     )
-    assert.match(await chart.getText(), /claude-|gpt-/)
+    assert.match(await chart.getText(), /claude-|gpt-/i)
     assert.equal(
       await chart.$('circle.frontier-point[data-model-id^="deepseek:"]').isExisting(),
       false,
