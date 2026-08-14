@@ -673,6 +673,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     vnc: {
       open: unsupported,
       list: emptyArray,
+      discover: emptyArray,
       start: () => {},
       send: () => {},
       close: resolvedVoid,

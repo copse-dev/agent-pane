@@ -13,12 +13,6 @@
   padding: var(--spacing-md);
 }
 
-.vnc-target-label {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
-
 .vnc-connect-form {
   display: flex;
   flex-direction: column;
@@ -33,7 +27,8 @@
   font-size: var(--font-size-sm);
 }
 
-.vnc-port-input {
+.vnc-port-input,
+.vnc-machine-select {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -46,15 +41,81 @@
   border-radius: var(--radius);
 }
 
-.vnc-port-input:focus {
+.vnc-port-input:focus,
+.vnc-machine-select:focus {
   border-color: var(--accent);
   outline: none;
 }
 
 .vnc-connect-btn,
-.vnc-disconnect-btn {
+.vnc-disconnect-btn,
+.vnc-discover-btn {
   justify-content: center;
   width: 100%;
+}
+
+.vnc-discovery-status {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.vnc-discovery-status[data-kind='working'] {
+  color: var(--text-secondary);
+}
+
+.vnc-discovery-status[data-kind='ok'] {
+  color: var(--success);
+}
+
+.vnc-discovery-status[data-kind='error'] {
+  color: var(--error);
+}
+
+.vnc-discovered-ports {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.vnc-discovered-ports[hidden] {
+  display: none;
+}
+
+.vnc-discovered-port {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.vnc-discovered-port-number {
+  color: var(--text-muted);
+}
+
+.vnc-discovered-port.selected .vnc-discovered-port-number {
+  color: var(--text-secondary);
+}
+
+.vnc-discovered-port:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.vnc-discovered-port.selected {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .vnc-status {

@@ -2,6 +2,9 @@ export type VncTarget =
   | { kind: 'loopback'; port: number }
   | { kind: 'ssh'; hostId: string; remotePort: number; display?: string | undefined }
 
+/** Machine whose listening ports should be checked for RFB servers. */
+export type VncDiscoveryHost = { kind: 'local' } | { kind: 'ssh'; hostId: string }
+
 export type VncConnectionStatus = 'connecting' | 'connected' | 'closed' | 'error'
 
 export interface VncConnection {

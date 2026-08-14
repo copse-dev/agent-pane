@@ -2,7 +2,12 @@ import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { getSetting } from '../services/storage/settings.ts'
 import { getVncService, type VncConnectionOwner } from '../services/vnc/vnc-service.ts'
-import { assertMainFrameSender, parseIpcArgs, vncTargetSchema } from './ipc-guards.ts'
+import {
+  assertMainFrameSender,
+  parseIpcArgs,
+  vncDiscoveryHostSchema,
+  vncTargetSchema,
+} from './ipc-guards.ts'
 
 const vncConnectionIdSchema = z.uuid()
 const MAX_VNC_CLIENT_MESSAGE_BYTES = 1024 * 1024
@@ -37,6 +42,9 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
       throw new Error('VNC viewer is disabled in Settings')
     }
     const target = parseIpcArgs(vncTargetSchema, [rawTarget])
+    if (target.kind === 'ssh' && !getSetting<boolean>('sshWorkspaceEnabled', false)) {
+      throw new Error('Enable SSH workspaces in Settings before opening a remote desktop')
+    }
     const connection = await service.open(target, ownerFor(event.sender))
     const ownerId = event.sender.id
     event.sender.once('destroyed', () => {
@@ -48,6 +56,18 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
   ipcMain.handle('vnc:list', (event) => {
     assertMainFrameSender(event, win)
     return service.list(event.sender.id)
+  })
+
+  ipcMain.handle('vnc:discover', async (event, rawHost: unknown) => {
+    assertMainFrameSender(event, win)
+    if (!getSetting<boolean>('vncEnabled', false)) {
+      throw new Error('VNC viewer is disabled in Settings')
+    }
+    const host = parseIpcArgs(vncDiscoveryHostSchema, [rawHost])
+    if (host.kind === 'ssh' && !getSetting<boolean>('sshWorkspaceEnabled', false)) {
+      throw new Error('Enable SSH workspaces in Settings before discovering a remote desktop')
+    }
+    return service.discover(host)
   })
 
   ipcMain.handle('vnc:close', async (event, rawId: unknown) => {
@@ -72,6 +92,7 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
   return async () => {
     ipcMain.removeHandler('vnc:open')
     ipcMain.removeHandler('vnc:list')
+    ipcMain.removeHandler('vnc:discover')
     ipcMain.removeHandler('vnc:close')
     ipcMain.off('vnc:start', onStart)
     ipcMain.off('vnc:send', onSend)

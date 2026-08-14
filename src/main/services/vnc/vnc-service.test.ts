@@ -1,10 +1,15 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:net'
-import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
+import type { SshExecResult, SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
 import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
-import { VNC_DATA_CHANNEL, VNC_STATUS_CHANNEL, VncService } from './vnc-service.ts'
+import {
+  isPlausibleVncListener,
+  VNC_DATA_CHANNEL,
+  VNC_STATUS_CHANNEL,
+  VncService,
+} from './vnc-service.ts'
 
 interface TestOwner {
   id: number
@@ -65,6 +70,41 @@ class ForwardingFakeTransport extends FakeSshTransport {
     await Promise.resolve()
   }
 }
+
+class DiscoveringForwardingFakeTransport extends ForwardingFakeTransport {
+  override async execArgv(argv: string[]): Promise<SshExecResult> {
+    if (argv[0] === 'ss') {
+      return Promise.resolve({
+        stdout: 'LISTEN 0 16 127.0.0.1:5901 0.0.0.0:* users:(("x11vnc",pid=42,fd=3))',
+        stderr: '',
+        code: 0,
+      })
+    }
+    return super.execArgv(argv)
+  }
+}
+
+describe('VNC discovery candidates', () => {
+  it('recognises conventional display ports and VNC process names', () => {
+    assert.equal(
+      isPlausibleVncListener({ port: 5900, pid: null, command: '', address: '127.0.0.1' }),
+      true,
+    )
+    assert.equal(
+      isPlausibleVncListener({
+        port: 41_000,
+        pid: 1,
+        command: 'x11vnc',
+        address: '127.0.0.1',
+      }),
+      true,
+    )
+    assert.equal(
+      isPlausibleVncListener({ port: 3000, pid: 1, command: 'node', address: '127.0.0.1' }),
+      false,
+    )
+  })
+})
 
 describe('VncService', () => {
   const servers: Server[] = []
@@ -144,6 +184,66 @@ describe('VncService', () => {
 
     assert.equal(connection.localPort, port)
     await service.close(connection.id, firstOwner.id)
+    assert.deepEqual(transport.closeCalls, [port])
+  })
+
+  it('discovers only verified local RFB listeners', async () => {
+    const rfbServer = createServer((socket) => {
+      socket.write('RFB 003.008\n')
+    })
+    const httpServer = createServer((socket) => {
+      socket.write('HTTP/1.1 200 OK\r\n\r\n')
+    })
+    servers.push(rfbServer, httpServer)
+    const rfbPort = await listen(rfbServer)
+    const httpPort = await listen(httpServer)
+    const service = new VncService(
+      {
+        connect: async (): Promise<SshConnection> => {
+          throw new Error('SSH should not be used for local discovery')
+        },
+      },
+      async () => ({
+        tool: 'test',
+        ports: [
+          { port: rfbPort, pid: 1, command: 'x11vnc', address: '127.0.0.1' },
+          { port: httpPort, pid: 2, command: 'wayvnc', address: '127.0.0.1' },
+          { port: 5902, pid: 3, command: 'x11vnc', address: '192.0.2.10' },
+          { port: 3000, pid: 4, command: 'node', address: '127.0.0.1' },
+        ],
+      }),
+    )
+
+    assert.deepEqual(await service.discover({ kind: 'local' }), [rfbPort])
+  })
+
+  it('discovers remote RFB listeners through temporary SSH forwards', async () => {
+    const server = createServer((socket) => {
+      socket.write('RFB 003.008\n')
+    })
+    servers.push(server)
+    const port = await listen(server)
+    const transport = new DiscoveringForwardingFakeTransport(port)
+    await transport.connect()
+    const host: SshWorkspaceHost = {
+      id: 'build-box',
+      label: 'Build box',
+      host: 'build.example',
+    }
+    const manager = {
+      connect: async (hostId: string): Promise<SshConnection> => {
+        assert.equal(hostId, host.id)
+        return {
+          host,
+          transport,
+          execArgv: (argv) => transport.execArgv(argv),
+          execShell: (command, options) => transport.execShell(command, options),
+        }
+      },
+    }
+    const service = new VncService(manager)
+
+    assert.deepEqual(await service.discover({ kind: 'ssh', hostId: host.id }), [5901])
     assert.deepEqual(transport.closeCalls, [port])
   })
 

@@ -1,11 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { createConnection, type Socket } from 'node:net'
-import type { VncConnection, VncStatusEvent, VncTarget } from '@shared/types/vnc.ts'
+import type {
+  VncConnection,
+  VncDiscoveryHost,
+  VncStatusEvent,
+  VncTarget,
+} from '@shared/types/vnc.ts'
 import {
   getSshConnectionManager,
   type SshConnectionManager,
 } from '../ssh-workspace/connection-manager.ts'
 import type { SshTransport } from '../ssh-workspace/transport.ts'
+import { scanListeningPorts, type PortScan } from '../ports/host-scan.ts'
+import { dedupePorts, scanCandidates, type ListeningPort } from '../ports/port-scan.ts'
 
 export interface VncConnectionOwner {
   id: number
@@ -23,6 +30,83 @@ interface ManagedVncConnection {
 
 export const VNC_DATA_CHANNEL = 'vnc:data'
 export const VNC_STATUS_CHANNEL = 'vnc:status'
+
+const RFB_BANNER_BYTES = 12
+const RFB_PROBE_TIMEOUT_MS = 600
+const REMOTE_SCAN_TIMEOUT_MS = 5_000
+const LOOPBACK_REACHABLE_ADDRESSES = new Set([
+  '0.0.0.0',
+  '127.0.0.1',
+  '::',
+  '::1',
+  '*',
+  'localhost',
+  '',
+])
+
+/** Conventional display ports plus listeners whose process name advertises VNC. */
+export function isPlausibleVncListener(listener: ListeningPort): boolean {
+  return (
+    (listener.port >= 5900 && listener.port <= 5999) ||
+    /(?:vnc|screen\s*sharing|screensharing|vino)/i.test(listener.command)
+  )
+}
+
+function rfbBanner(bytes: Buffer): boolean {
+  return /^RFB \d{3}\.\d{3}\n$/.test(bytes.subarray(0, RFB_BANNER_BYTES).toString('ascii'))
+}
+
+/** Verify that a listener speaks RFB without sending application bytes to it. */
+async function probeRfbPort(port: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host: '127.0.0.1', port })
+    let settled = false
+    let received = Buffer.alloc(0)
+    const settle = (result: boolean): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(result)
+    }
+    const timer = setTimeout(() => {
+      settle(false)
+    }, RFB_PROBE_TIMEOUT_MS)
+    socket.on('data', (chunk: Buffer) => {
+      received = Buffer.concat(
+        [received, chunk],
+        Math.min(RFB_BANNER_BYTES, received.length + chunk.length),
+      )
+      if (received.length >= RFB_BANNER_BYTES) settle(rfbBanner(received))
+    })
+    socket.once('error', () => {
+      settle(false)
+    })
+    socket.once('close', () => {
+      settle(received.length >= RFB_BANNER_BYTES && rfbBanner(received))
+    })
+  })
+}
+
+async function scanRemotePorts(
+  connection: Awaited<ReturnType<SshConnectionManager['connect']>>,
+): Promise<ListeningPort[]> {
+  // Try the superset used across Linux/macOS/Windows SSH hosts. A missing tool
+  // returns 127 and falls through; the first usable scanner wins.
+  for (const plan of scanCandidates('linux')) {
+    try {
+      const result = await connection.execArgv([plan.file, ...plan.args], {
+        timeoutMs: REMOTE_SCAN_TIMEOUT_MS,
+        maxBytes: 2 * 1024 * 1024,
+      })
+      const parsed = plan.parse(result.stdout)
+      if (result.code === 0 || parsed.length > 0) return dedupePorts(parsed)
+    } catch {
+      // Scanner unavailable on this host — try the next portable candidate.
+    }
+  }
+  return []
+}
 
 function targetPort(target: VncTarget): number {
   return target.kind === 'loopback' ? target.port : target.remotePort
@@ -44,9 +128,38 @@ function connectionFailure(target: VncTarget, error: Error): Error {
 export class VncService {
   private readonly connections = new Map<string, ManagedVncConnection>()
   private readonly sshManager: Pick<SshConnectionManager, 'connect'>
+  private readonly scanLocal: () => Promise<PortScan>
 
-  constructor(sshManager: Pick<SshConnectionManager, 'connect'> = getSshConnectionManager()) {
+  constructor(
+    sshManager: Pick<SshConnectionManager, 'connect'> = getSshConnectionManager(),
+    scanLocal: () => Promise<PortScan> = scanListeningPorts,
+  ) {
     this.sshManager = sshManager
+    this.scanLocal = scanLocal
+  }
+
+  async discover(host: VncDiscoveryHost): Promise<number[]> {
+    if (host.kind === 'local') {
+      const scan = await this.scanLocal()
+      return this.probeCandidates(scan.ports, async (port) => probeRfbPort(port))
+    }
+
+    const connection = await this.sshManager.connect(host.hostId)
+    const ports = await scanRemotePorts(connection)
+    return this.probeCandidates(ports, async (remotePort) => {
+      let localPort: number | null = null
+      try {
+        const forward = await connection.transport.openForward(remotePort)
+        localPort = forward.localPort
+        return await probeRfbPort(localPort)
+      } catch {
+        return false
+      } finally {
+        if (localPort !== null) {
+          await connection.transport.closeForward(localPort).catch(() => {})
+        }
+      }
+    })
   }
 
   async open(target: VncTarget, owner: VncConnectionOwner): Promise<VncConnection> {
@@ -148,6 +261,27 @@ export class VncService {
       throw new Error('Unknown VNC connection')
     }
     return connection
+  }
+
+  private async probeCandidates(
+    listeners: readonly ListeningPort[],
+    probe: (port: number) => Promise<boolean>,
+  ): Promise<number[]> {
+    const candidates = [
+      ...new Set(
+        listeners
+          .filter((listener) => LOOPBACK_REACHABLE_ADDRESSES.has(listener.address))
+          .filter(isPlausibleVncListener)
+          .map((listener) => listener.port),
+      ),
+    ].sort((left, right) => left - right)
+    const discovered: number[] = []
+    // Keep the probe sequential: remote candidates temporarily allocate SSH
+    // forwards, and discovery should never fan out dozens of control commands.
+    for (const port of candidates) {
+      if (await probe(port)) discovered.push(port)
+    }
+    return discovered
   }
 
   private attachSocket(connection: ManagedVncConnection): void {

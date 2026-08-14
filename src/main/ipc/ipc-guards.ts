@@ -1,7 +1,7 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
-import type { VncTarget } from '@shared/types/vnc.ts'
+import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
 
 export class IpcValidationError extends Error {
   constructor(message: string) {
@@ -37,6 +37,11 @@ export const vncTargetSchema: z.ZodType<VncTarget> = z.discriminatedUnion('kind'
     remotePort: zPortNumber,
     display: z.string().max(128).optional(),
   }),
+])
+
+export const vncDiscoveryHostSchema: z.ZodType<VncDiscoveryHost> = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local') }),
+  z.object({ kind: z.literal('ssh'), hostId: z.string().regex(/^[\w.-]{1,128}$/) }),
 ])
 
 /** Decode the single positional argument accepted by `ports:kill`. */

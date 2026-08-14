@@ -100,14 +100,34 @@ function attachRfb38(socket: Socket): void {
   })
 }
 
-async function listen(server: Server): Promise<number> {
+async function listenOn(server: Server, port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
+    const onError = (error: Error): void => {
+      server.off('listening', onListening)
+      reject(error)
+    }
+    const onListening = (): void => {
+      server.off('error', onError)
+      resolve()
+    }
+    server.once('error', onError)
+    server.once('listening', onListening)
+    server.listen(port, '127.0.0.1')
   })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Expected fake VNC TCP address')
-  return address.port
+}
+
+async function listenOnVncPort(server: Server): Promise<number> {
+  for (let port = 5999; port >= 5900; port--) {
+    try {
+      await listenOn(server, port)
+      return port
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'EADDRINUSE') {
+        throw error
+      }
+    }
+  }
+  throw new Error('No conventional VNC port was available for the fake server')
 }
 
 describe('read-only VNC viewer', function () {
@@ -126,10 +146,19 @@ describe('read-only VNC viewer', function () {
       socket.once('close', () => sockets.delete(socket))
       attachRfb38(socket)
     })
-    port = await listen(server)
+    port = await listenOnVncPort(server)
     await browser.execute(async (workspaceRoot) => {
       await window.api.settings.set('onboardingCompleted', true)
       await window.api.settings.set('vncEnabled', true)
+      await window.api.settings.set('sshWorkspaceEnabled', true)
+      await window.api.settings.set('sshWorkspaceHosts', [
+        {
+          id: 'build-box',
+          label: 'Build box',
+          host: 'build.example',
+          user: 'ubuntu',
+        },
+      ])
       const e2e = (
         window as unknown as {
           __copseE2e?: { openWorkspace: (root: string) => Promise<string> }
@@ -162,7 +191,20 @@ describe('read-only VNC viewer', function () {
     await desktopButton.click()
     const portInput = $('.vnc-port-input')
     await portInput.waitForExist({ timeout: 20_000 })
-    await portInput.setValue(String(port))
+    const machineOptions = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLOptionElement>('.vnc-machine-select option')].map(
+        (option) => option.textContent,
+      ),
+    )
+    assert.deepEqual(machineOptions, ['This machine', 'Build box · ubuntu@build.example'])
+
+    const discoveredServer = $(`.vnc-discovered-port[data-port="${String(port)}"]`)
+    await discoveredServer.waitForExist({ timeout: 20_000 })
+    assert.equal(await portInput.getValue(), String(port))
+    assert.equal(
+      await discoveredServer.getAttribute('aria-label'),
+      `Display :${String(port - 5900)}, port ${String(port)}`,
+    )
     await $('.vnc-connect-btn').click()
 
     await browser.waitUntil(async () => (await $('.vnc-status').getText()).includes('Connected'), {
@@ -188,11 +230,32 @@ describe('read-only VNC viewer', function () {
     assert.deepEqual(sampled?.left, [255, 90, 165, 255])
     assert.deepEqual(sampled?.right, [0, 74, 70, 255])
 
-    // The fake server listens on an ephemeral port. Normalize the disabled
-    // field before capture so the reference PNG is stable across runs.
+    // The fake server uses any free conventional VNC port. Normalize the
+    // dynamic discovery result before capture so the reference PNG is stable.
     await browser.execute(() => {
       const input = document.querySelector<HTMLInputElement>('.vnc-port-input')
       if (input) input.value = '5901'
+      const machine = document.querySelector<HTMLSelectElement>('.vnc-machine-select')
+      if (machine) machine.value = 'ssh:build-box'
+      const status = document.querySelector<HTMLElement>('.vnc-discovery-status')
+      if (status) status.textContent = '1 VNC server found.'
+      const ports = document.querySelector<HTMLElement>('.vnc-discovered-ports')
+      if (ports) {
+        ports.replaceChildren()
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'vnc-discovered-port selected'
+        button.dataset['port'] = '5901'
+        button.setAttribute('aria-label', 'Display :1, port 5901')
+        button.disabled = true
+        const label = document.createElement('span')
+        label.textContent = 'Display :1'
+        const number = document.createElement('span')
+        number.className = 'vnc-discovered-port-number'
+        number.textContent = '5901'
+        button.append(label, number)
+        ports.append(button)
+      }
     })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-read-only.png')
     await assertNoErrorToasts('read-only VNC viewer')

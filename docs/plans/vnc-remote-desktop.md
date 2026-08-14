@@ -1,10 +1,10 @@
 # Seeing the other machine's screen: VNC support
 
-**Status: Active (V0/V1 first release).** The SSH-forwarding primitive and the
-opt-in, read-only viewer are implemented. The generic browser consumer,
-reconnect reconciliation, and live-host validation remain V0/V1 follow-ups;
-human input, discovery, credentials, and every agent-facing capability remain
-V2 or later. The tunnel work is tracked by
+**Status: Active (V0/V1 first release).** The SSH-forwarding primitive, opt-in
+read-only viewer, protocol-verified local discovery, and configured-SSH-host
+discovery are implemented. The generic browser consumer, reconnect
+reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
+credentials, and every agent-facing capability remain V2 or later. The tunnel work is tracked by
 [#771](https://github.com/copse-dev/agent-pane/issues/771).
 
 ## Three readings of "VNC support", and which two this plan covers
@@ -61,9 +61,10 @@ listing the host's listeners, attributing the ones that descend from a Shells ta
 or a background task, and offering open/kill for those alone. It sits there
 rather than in its own right-panel mode because a listening port is a property of
 something running in that pane — the same argument that put agent tasks and
-background tasks in the same rail. Remote discovery in V2 extends `discover()`
-over the SSH exec path onto the same parsers rather than growing a second scanner
-beside them.
+background tasks in the same rail. VNC discovery now extends `discover()` over
+the SSH exec path onto those same parsers rather than growing a second scanner
+beside them. Candidate listeners are reported only after a loopback connection
+(or temporary SSH forward) receives a valid RFB version banner.
 
 ## Binding decisions
 
@@ -230,7 +231,9 @@ after disconnect. This is #771's tunnel half and lands under that issue.
 RFB socket (direct loopback or SSH-forwarded), preload exposes a binary
 WebSocket-shaped IPC channel, and noVNC 1.5.0 paints the view-only pane. Unit
 coverage uses real loopback sockets, and the focused WDIO eval paints and pixel-
-checks a two-colour RFB 3.8 framebuffer. The live `DISPLAY=:1` harness remains.
+checks a two-colour RFB 3.8 framebuffer. The pane explicitly selects this
+machine or a configured SSH host, discovers verified RFB listeners on either,
+and still accepts a manually entered port. The live `DISPLAY=:1` harness remains.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local
@@ -246,14 +249,12 @@ checks a two-colour RFB 3.8 framebuffer. The live `DISPLAY=:1` harness remains.
 **Acceptance:** with an SSH workspace pointed at the e2e host, the pane shows
 `DISPLAY=:1` and an `npm run test:e2e` run is watchable from inside Copse.
 
-### V2 — Human input and discovery (~3–4 days)
+### V2 — Human input and credentials (~3–4 days)
 
 1. Pointer and key events from the pane, with the keysym mapping noVNC provides.
-2. `discover()` over the SSH exec path, running the local Ports panel's parsers
-   against a remote host.
-3. Optional per-host password through `secret-cipher.ts`, never in settings JSON.
-4. Clipboard toggle, off by default, per connection.
-5. The idle-blanker problem is real and documented (`AGENTS.md:42`): synthetic
+2. Optional per-host password through `secret-cipher.ts`, never in settings JSON.
+3. Clipboard toggle, off by default, per connection.
+4. The idle-blanker problem is real and documented (`AGENTS.md:42`): synthetic
    warps do not reset X's screensaver, only real input does. Surface it as a
    pane control ("keep awake"), not as a background loop nobody can see.
 

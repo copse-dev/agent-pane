@@ -60,7 +60,12 @@ import type {
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
-import type { VncConnection, VncStatusEvent, VncTarget } from '@shared/types/vnc.ts'
+import type {
+  VncConnection,
+  VncDiscoveryHost,
+  VncStatusEvent,
+  VncTarget,
+} from '@shared/types/vnc.ts'
 
 export type { DetectedAcpAgent }
 
@@ -661,6 +666,7 @@ export interface ApiClient {
   vnc: {
     open: (target: VncTarget) => Promise<VncConnection>
     list: () => Promise<VncConnection[]>
+    discover: (host: VncDiscoveryHost) => Promise<number[]>
     start: (connectionId: string) => void
     send: (connectionId: string, bytes: Uint8Array) => void
     close: (connectionId: string) => Promise<void>

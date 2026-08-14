@@ -830,6 +830,8 @@ contextBridge.exposeInMainWorld('api', {
     open: (target: import('@shared/types/vnc.ts').VncTarget) =>
       ipcRenderer.invoke('vnc:open', target),
     list: () => ipcRenderer.invoke('vnc:list'),
+    discover: (host: import('@shared/types/vnc.ts').VncDiscoveryHost) =>
+      ipcRenderer.invoke('vnc:discover', host),
     start: (connectionId: string): void => {
       ipcRenderer.send('vnc:start', connectionId)
     },

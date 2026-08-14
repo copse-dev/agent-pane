@@ -20,6 +20,7 @@ function apiHarness(): {
       vnc: {
         open: (): Promise<never> => Promise.reject(new Error('unused')),
         list: (): Promise<never[]> => Promise.resolve([]),
+        discover: (): Promise<never[]> => Promise.resolve([]),
         start: (id): void => {
           starts.push(id)
         },
