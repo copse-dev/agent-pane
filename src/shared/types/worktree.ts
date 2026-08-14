@@ -95,6 +95,25 @@ export interface WorktreeSizeResult {
   truncated: boolean
 }
 
+/** One ignored package-manager directory that can be reclaimed from a worktree. */
+export interface WorktreePackageDirectory {
+  /** Path relative to the checkout root, for display and confirmation. */
+  path: string
+  bytes: number
+  truncated: boolean
+}
+
+/** Preview or completed result for the package-directory cleanup action. */
+export type WorktreePackageCleanupResult =
+  | {
+      status: 'ready' | 'cleaned'
+      path: string
+      directories: WorktreePackageDirectory[]
+      bytes: number
+      truncated: boolean
+    }
+  | { status: 'blocked-running'; path: string; threadId: string }
+
 /**
  * Outcome of removing one linked checkout. Blocking results are values rather
  * than errors: each one is a state the UI shows and offers a next step for.

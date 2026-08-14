@@ -1,6 +1,6 @@
 // Canonical *display* naming for models the app did not name itself.
 //
-// Every provider spells the same Claude model differently: Cursor's catalog
+// Every provider spells the same Claude or GPT model differently: Cursor's catalog
 // returns "Opus 5" and "Claude 4.6 Sonnet (Thinking)", ACP agents return bare
 // family names, and some surfaces only have the raw id ("claude-opus-4-7").
 // Dropped straight into the picker those sit next to the app's own "Claude Opus
@@ -9,7 +9,7 @@
 // Opus it is.
 //
 // This module rewrites those forms into one house style — `Claude <Family>
-// <version>`, qualifiers preserved — and nothing else. It is display-only and
+// <version>` or `GPT-<version> <variant>`, qualifiers preserved — and nothing else. It is display-only and
 // deliberately structural: it reorders and re-spells what a name already says
 // and never infers a model from a name it does not recognise, so an unknown
 // label is returned untouched rather than guessed at.
@@ -45,6 +45,26 @@ const FAMILY_FIRST = new RegExp(
   'i',
 )
 
+// OpenAI ids and display labels use the same pieces with different separators:
+// `gpt-5.4-nano`, `GPT-5.6-Sol`, and `GPT-5 mini`. Accept one optional variant
+// but reject dated snapshots and other longer ids rather than half-rewriting
+// them. `4o` is a version token in its own right.
+const GPT_NAME = /^gpt[-\s]+(\d+(?:\.\d+)?[a-z]?)(?:[-\s]+([a-z][a-z0-9]*))?$/i
+
+function canonicalGptLabel(labelOrId: string): string | null {
+  const match = GPT_NAME.exec(labelOrId.trim())
+  const version = match?.[1]
+  if (!version) return null
+  const variant = match[2]
+  if (!variant) return `GPT-${version.toLowerCase()}`
+  const lower = variant.toLowerCase()
+  const displayVariant =
+    lower === 'mini' || lower === 'nano'
+      ? lower
+      : `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
+  return `GPT-${version.toLowerCase()} ${displayVariant}`
+}
+
 function claudeName(family: string, version: string, rest: string): ClaudeName | null {
   // Only a qualifier the label already separated ("Claude 4.6 Sonnet
   // (Thinking)") is carried over. Anything glued to the version is part of an
@@ -74,16 +94,19 @@ function parseClaudeName(value: string): ClaudeName | null {
 /**
  * A vendor's model name (or a raw id) in the app's house style: "Opus 5" →
  * "Claude Opus 5", "Claude 4.6 Sonnet (Thinking)" → "Claude Sonnet 4.6
- * (Thinking)", "claude-opus-4-7" → "Claude Opus 4.7". Names the app already
+ * (Thinking)", "claude-opus-4-7" → "Claude Opus 4.7", and "gpt-5.4-nano" →
+ * "GPT-5.4 nano". Names the app already
  * spells this way pass through unchanged (the rewrite is idempotent), and a
- * name it does not recognise — "Composer 2", "GPT-5.6 Sol", a local weight id —
+ * name it does not recognise — "Composer 2", a local weight id —
  * is returned exactly as given.
  */
 export function canonicalModelLabel(labelOrId: string): string {
   const parsed = parseClaudeName(labelOrId)
-  if (!parsed) return labelOrId
-  const family = `${parsed.family.charAt(0).toUpperCase()}${parsed.family.slice(1)}`
-  return `Claude ${family} ${parsed.version}${parsed.rest}`
+  if (parsed) {
+    const family = `${parsed.family.charAt(0).toUpperCase()}${parsed.family.slice(1)}`
+    return `Claude ${family} ${parsed.version}${parsed.rest}`
+  }
+  return canonicalGptLabel(labelOrId) ?? labelOrId
 }
 
 /**

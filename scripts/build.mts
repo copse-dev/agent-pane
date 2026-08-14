@@ -88,13 +88,48 @@ function assertParses(outfile: string): void {
   }
 }
 
+/**
+ * Stamp diagnostics with the exact source revision that produced the bundle.
+ * Release CI can provide COPSE_BUILD_COMMIT explicitly; local builds fall back
+ * to the checkout's HEAD. `unknown` is honest when building from a source
+ * archive with no `.git` directory.
+ */
+function resolveBuildCommit(): string {
+  const supplied = process.env['COPSE_BUILD_COMMIT']?.trim()
+  if (supplied) return supplied
+  try {
+    return execSync('git rev-parse HEAD', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return 'unknown'
+  }
+}
+
+function resolveBuildDirty(): boolean | null {
+  try {
+    const status = execSync('git status --porcelain --untracked-files=normal', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    return status.length > 0
+  } catch {
+    return null
+  }
+}
+
 // Release builds (`COPSE_RELEASE=1`, used by `npm run build:release` → packaging)
 // strip the MockLLMProvider test directives so the parser is absent from shipped
 // apps. The `define` turns the guard into `if (false)`; `minifySyntax` is what
 // actually dead-code-eliminates that dead branch (esbuild keeps it otherwise).
 // Non-release builds keep the directives for dev/e2e and stay un-minified.
 const isRelease = process.env['COPSE_RELEASE'] === '1'
-const define = { __COPSE_TEST_DIRECTIVES__: String(!isRelease) }
+const define = {
+  __COPSE_TEST_DIRECTIVES__: String(!isRelease),
+  __COPSE_BUILD_COMMIT__: JSON.stringify(resolveBuildCommit()),
+  __COPSE_BUILD_DIRTY__: JSON.stringify(resolveBuildDirty()),
+}
 
 const nodeOpts = {
   bundle: true,
@@ -259,7 +294,9 @@ cpSync('assets', 'dist/assets', { recursive: true })
 const bundledGortex = resolve('vendor/gortex', bundledGortexName)
 try {
   accessSync(bundledGortex)
-  cpSync('vendor/gortex', 'dist/resources/gortex', { recursive: true })
+  // Dereference so a worktree symlink into ~/.copse/cache/gortex becomes a
+  // real binary inside the packaged app (symlinks would escape the bundle).
+  cpSync('vendor/gortex', 'dist/resources/gortex', { recursive: true, dereference: true })
 } catch {
   // Optional — postinstall may be skipped on unsupported platforms.
 }

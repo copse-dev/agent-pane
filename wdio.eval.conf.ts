@@ -1,7 +1,8 @@
 import type { Options } from '@wdio/types'
 import electronBinary from 'electron'
+import { createRequire } from 'node:module'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import {
@@ -34,9 +35,11 @@ function codexEvalPermissionMode(): string {
 
 /** WDIO config for real local-model agent evals (not mock LLM). */
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
+const requireFromProject = createRequire(join(process.cwd(), 'package.json'))
 const chromedriverBinary = join(
-  process.cwd(),
-  'node_modules/electron-chromedriver/bin/chromedriver',
+  dirname(requireFromProject.resolve('electron-chromedriver/package.json')),
+  'bin',
+  'chromedriver',
 )
 
 let evalUserDataDir: string | null = null
