@@ -82,6 +82,20 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
   startWorktreeIndexing: startExecutionRootIndexing,
 }
 
+// Selecting one thread fans out into several independent renderer IPCs (branch
+// status, changes, file links, etc.). They all need the same trusted root, and a
+// worktree resolution runs multiple Git commands to validate that root. Share
+// only concurrent resolutions: once a flight settles it is removed, so the next
+// request still observes branch changes, retirement, or a replaced worktree.
+const resolutionFlights = new WeakMap<
+  ThreadExecutionContextDependencies,
+  Map<string, Promise<ThreadExecutionContext>>
+>()
+
+function executionOwnerKey(projectId: string, threadId: string): string {
+  return `${projectId}\0${threadId}`
+}
+
 /**
  * Resolve a shared or isolated context from trusted persisted state.
  * The renderer supplies identity, never a filesystem root; main validates both
@@ -89,10 +103,35 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
  * Persisted worktree paths are diagnostic only: the manager reconstructs and
  * validates the registered checkout before its root can enter the run context.
  */
-export async function resolveThreadExecutionContext(
+export function resolveThreadExecutionContext(
   projectId: string,
   threadId: string,
   dependencies: ThreadExecutionContextDependencies = defaultDependencies,
+): Promise<ThreadExecutionContext> {
+  let flights = resolutionFlights.get(dependencies)
+  if (!flights) {
+    flights = new Map()
+    resolutionFlights.set(dependencies, flights)
+  }
+  const key = executionOwnerKey(projectId, threadId)
+  const existing = flights.get(key)
+  if (existing) return existing
+
+  const pending = resolveThreadExecutionContextUncached(projectId, threadId, dependencies)
+  flights.set(key, pending)
+  const clear = (): void => {
+    if (flights.get(key) === pending) flights.delete(key)
+  }
+  // Supplying both handlers means this cleanup branch always resolves; callers
+  // still receive the original promise and its original rejection.
+  void pending.then(clear, clear)
+  return pending
+}
+
+async function resolveThreadExecutionContextUncached(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadExecutionContextDependencies,
 ): Promise<ThreadExecutionContext> {
   const projectRoot = dependencies.getProjectRoot(projectId)
   if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
