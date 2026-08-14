@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  BALANCED_MODEL_SELECTOR,
   BEST_INTELLECT_MODEL_SELECTOR,
   BEST_LOCAL_MODEL_SELECTOR,
   BEST_VALUE_MODEL_SELECTOR,
@@ -21,6 +22,7 @@ describe('parseDynamicModel', () => {
     assert.deepEqual(parseDynamicModel(BEST_INTELLECT_MODEL_SELECTOR), { kind: 'best-intellect' })
     assert.deepEqual(parseDynamicModel(BEST_LOCAL_MODEL_SELECTOR), { kind: 'best-local' })
     assert.deepEqual(parseDynamicModel(CHEAPEST_MODEL_SELECTOR), { kind: 'cheapest' })
+    assert.deepEqual(parseDynamicModel(BALANCED_MODEL_SELECTOR), { kind: 'balanced' })
     assert.deepEqual(parseDynamicModel(minIntellectSelector(45)), {
       kind: 'min-intellect',
       threshold: 45,
@@ -70,6 +72,7 @@ describe('selector namespace', () => {
 describe('dynamicModelLabel', () => {
   it('names each selector and declines to label a pinned id', () => {
     assert.equal(dynamicModelLabel(BEST_VALUE_MODEL_SELECTOR), 'Best value')
+    assert.equal(dynamicModelLabel(BALANCED_MODEL_SELECTOR), 'Balanced')
     assert.equal(dynamicModelLabel(BEST_LOCAL_MODEL_SELECTOR), 'Best on-device')
     assert.equal(dynamicModelLabel(minIntellectSelector(50)), 'At least 50 intelligence')
     assert.equal(dynamicModelLabel(roleModelSelector('advisor')), 'Role: Advisor')
@@ -98,5 +101,13 @@ describe('dynamicModelChoices', () => {
       assert.ok(choice.description.trim().length > 0, `${choice.value} has no description`)
       assert.ok(choice.group.trim().length > 0, `${choice.value} has no group`)
     }
+  })
+
+  it('offers the balanced rule among the automatic choices', () => {
+    const byValue = new Map(dynamicModelChoices().map((choice) => [choice.value, choice]))
+    const balanced = byValue.get(BALANCED_MODEL_SELECTOR)
+    assert.ok(balanced, 'missing balanced choice')
+    assert.equal(balanced.label, 'Balanced')
+    assert.equal(balanced.group, 'Automatic')
   })
 })

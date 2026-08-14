@@ -277,5 +277,5 @@ export function intellectBand(
 export const BAND_REPRESENTATIVE_MODEL: Record<IntellectBand, TrackedModel> = {
   low: 'claude-haiku-4-5',
   mid: 'claude-sonnet-5',
-  top: 'claude-fable-5',
+  top: 'claude-opus-5',
 }

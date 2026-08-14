@@ -76,6 +76,11 @@ function stopDemoServer(): Promise<void> {
 
 export const config: Options.Testrunner = {
   runner: 'local',
+  // The check fleet runs several PR build jobs concurrently. WebdriverIO's
+  // default shared /tmp cache lets one interrupted download leave another job
+  // with a partial Chrome/ChromeDriver archive, so keep this job's downloads
+  // inside its isolated checkout.
+  cacheDir: resolve('.cache/wdio-demo'),
   specs: ['./tests/demo/**/*.demo.ts'],
   // Browser-hosted scenarios are materially lighter than Electron sessions.
   // Four workers keep a growing geometry tier to two startup waves on the

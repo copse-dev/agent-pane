@@ -66,9 +66,10 @@ describe('sidebar thread selection styling', () => {
 
     const geometry = await browser.execute(() => {
       const pane = document.querySelector<HTMLElement>('#pane-projects')
+      const header = document.querySelector<HTMLElement>('.pane-projects-header')
       const list = document.querySelector<HTMLElement>('.chats-list')
       const selected = document.querySelector<HTMLElement>('.chat-row.selected')
-      if (!pane || !list || !selected) return null
+      if (!pane || !header || !list || !selected) return null
       const paneRect = pane.getBoundingClientRect()
       const listRect = list.getBoundingClientRect()
       const rowRect = selected.getBoundingClientRect()
@@ -86,6 +87,7 @@ describe('sidebar thread selection styling', () => {
         paddingRight: style.paddingRight,
         paddingBottom: style.paddingBottom,
         paddingLeft: style.paddingLeft,
+        headerPaddingRight: getComputedStyle(header).paddingRight,
         boxShadow: style.boxShadow,
         borderRadius: style.borderRadius,
       }
@@ -101,10 +103,11 @@ describe('sidebar thread selection styling', () => {
     expect(Math.abs(geometry!.rowRight - geometry!.paneRight)).toBeLessThanOrEqual(1)
     expect(geometry!.boxShadow).toMatch(/-2px/)
     expect(geometry!.borderRadius).toBe('0px')
-    // Roomier than the previous 4px / 8px vertical/trailing padding.
+    // Roomier than the previous 4px vertical padding, with the trailing edge
+    // aligned to the shared projects action column.
     expect(Number.parseFloat(geometry!.paddingTop)).toBeGreaterThanOrEqual(12)
     expect(Number.parseFloat(geometry!.paddingBottom)).toBeGreaterThanOrEqual(12)
-    expect(Number.parseFloat(geometry!.paddingRight)).toBeGreaterThanOrEqual(12)
+    expect(geometry!.paddingRight).toBe(geometry!.headerPaddingRight)
     expect(Number.parseFloat(geometry!.paddingLeft)).toBe(28)
 
     await saveElementScreenshot('#pane-projects', 'thread-sidebar-selection.png')
