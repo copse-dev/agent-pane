@@ -1,0 +1,45 @@
+/* Small hover/focus label for icon-only chrome. One fixed-position node for the
+   whole window, placed by src/renderer/dom/tooltip.ts. Deliberately a plain
+   label — richer hover surfaces (footer usage, context wheel) are popovers with
+   their own styling. */
+.app-tooltip {
+  position: fixed;
+  /* Above dialogs (200/250) and toasts (300) so a tooltip on chrome inside a
+     modal isn't clipped behind it. */
+  z-index: 400;
+  left: 0;
+  top: 0;
+  max-width: 260px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  /* Reads as a floating layer like the menus and popovers, rather than melting
+     into the titlebar/pane header it usually hangs off. */
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: var(--shadow-md);
+  /* Never intercept the hover that opened it, or the click that follows. */
+  pointer-events: none;
+  animation: app-tooltip-in 90ms ease-out;
+}
+.app-tooltip[hidden] {
+  display: none;
+}
+
+@keyframes app-tooltip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-tooltip {
+    animation: none;
+  }
+}

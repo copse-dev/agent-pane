@@ -612,6 +612,21 @@ describe('thread-store', () => {
       )
     })
 
+    it('updateMeta persists the resolved model as a distinct field next to the selector', async () => {
+      await createThread(
+        'proj-1',
+        thread('t1', { title: 'Main check', model: 'auto:min-intellect:40' }),
+      )
+      await updateMeta('proj-1', 't1', { resolvedModel: 'gpt-5.6-terra', updatedAt: 500 })
+
+      const meta = await getThreadMeta('proj-1', 't1')
+      assert.ok(meta)
+      assert.equal(meta.model, 'auto:min-intellect:40')
+      assert.equal(meta.resolvedModel, 'gpt-5.6-terra')
+      const onDisk = readFileSync(join(root, 'proj-1', 't1', 'meta.json'), 'utf8')
+      assert.match(onDisk, /"resolvedModel":"gpt-5\.6-terra"/)
+    })
+
     it('updateMeta refreshes the catalog line (title, updatedAt, first-user digest)', async () => {
       await createThread('proj-1', thread('t1', { title: 'Draft' }))
       await appendMessage('proj-1', 't1', userMsg('u1', 'how do I parse JSON'))
@@ -661,6 +676,31 @@ describe('thread-store', () => {
       // Directory + meta remain; only the catalog line is removed.
       const loaded = await loadProjectThreads('proj-1')
       assert.equal(loaded.find((t) => t.id === 't2')?.archivedAt, 99)
+    })
+
+    it('includeArchived: false leaves archived threads out of the load', async () => {
+      await createThread('proj-1', thread('t1', { title: 'Keep' }))
+      await createThread(
+        'proj-1',
+        thread('t2', {
+          title: 'Hide',
+          messages: [assistantMsg('m1', 'archived work', 'a big tool result')],
+        }),
+      )
+      await updateMeta('proj-1', 't2', { archivedAt: 99, updatedAt: 99 })
+
+      const visible = await loadProjectThreads('proj-1', { includeArchived: false })
+      assert.deepEqual(
+        visible.map((t) => t.id),
+        ['t1'],
+      )
+      // The archived thread is skipped, not deleted: it comes back in full — its
+      // message bodies included — for the whole-history readers.
+      const all = await loadProjectThreads('proj-1')
+      const archived = all.find((t) => t.id === 't2')
+      assert.ok(archived)
+      assert.equal(archived.archivedAt, 99)
+      assert.equal(archived.messages[0]?.toolCalls[0]?.result, 'a big tool result')
     })
   })
 })

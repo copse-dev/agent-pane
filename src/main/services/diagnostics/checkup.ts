@@ -3,10 +3,12 @@
 // pure `checkup-report.ts` so they can be unit-tested from a plain snapshot.
 
 import { accessSync, constants, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import {
   hasApiKey,
   isApiKeyEncrypted,
+  isApiKeyReadable,
   isProviderAvailable,
   getSetting,
 } from '../storage/settings.ts'
@@ -54,6 +56,7 @@ function providerSnapshot(id: string, label: string): ProviderSnapshot {
     configured: available,
     source: stored ? 'stored' : available ? 'env' : null,
     encrypted: stored ? isApiKeyEncrypted(id) : null,
+    readable: stored ? isApiKeyReadable(id) : null,
   }
 }
 
@@ -107,15 +110,23 @@ function findSpawnHelper(root: string): string | null {
  * node-pty ships with Copse, not with the project the user opened, so we resolve
  * the helper relative to the app — never `process.cwd()` in a packaged build,
  * which can be an arbitrary (or broken) unrelated directory the app was launched
- * from. In dev the app runs from the repo, so cwd's node_modules is correct.
+ * from. In dev, resolve via Node's package resolution (works with pnpm isolated).
  */
 function spawnHelperExecutable(): boolean | null {
   if (process.platform === 'win32') return null
-  const prebuildsRoot = isElectronAppPackaged()
-    ? process.resourcesPath
+  let prebuildsRoot: string | null
+  if (isElectronAppPackaged()) {
+    prebuildsRoot = process.resourcesPath
       ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds')
       : null
-    : join(process.cwd(), 'node_modules', 'node-pty', 'prebuilds')
+  } else {
+    try {
+      const requireFromApp = createRequire(join(process.cwd(), 'package.json'))
+      prebuildsRoot = join(dirname(requireFromApp.resolve('node-pty/package.json')), 'prebuilds')
+    } catch {
+      prebuildsRoot = null
+    }
+  }
   if (!prebuildsRoot) return null
   const helper = findSpawnHelper(prebuildsRoot)
   if (!helper) return null

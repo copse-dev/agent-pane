@@ -1,9 +1,10 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { composerText } from './helpers/composer.ts'
 
 // Creating a project runs `git init` + writes AGENT.md/README.md, so it needs a
 // writable parent outside the repo working tree. A throwaway temp dir keeps the
@@ -29,6 +30,31 @@ describe('new project flow', () => {
 
     await $('.welcome-card').waitForDisplayed({ timeout: 30_000 })
     await expect($('.welcome-new-btn')).toHaveText('New Project')
+    await expect($('.welcome-open-btn')).toHaveText('Open Folder')
+
+    // Peer welcome CTAs share the pill action recipe — never square vs rounded mismatch.
+    const radii = await browser.execute(() => {
+      const newBtn = document.querySelector('.welcome-new-btn')
+      const openBtn = document.querySelector('.welcome-open-btn')
+      if (!(newBtn instanceof HTMLElement) || !(openBtn instanceof HTMLElement)) {
+        return null
+      }
+      const newRadius = getComputedStyle(newBtn).borderRadius
+      const openRadius = getComputedStyle(openBtn).borderRadius
+      // Resolve the token the same way the buttons do (used values, not the raw var).
+      const probe = document.createElement('div')
+      probe.style.borderRadius = 'var(--action-radius)'
+      document.body.append(probe)
+      const actionRadius = getComputedStyle(probe).borderRadius
+      probe.remove()
+      return { newRadius, openRadius, actionRadius }
+    })
+    expect(radii).not.toBeNull()
+    expect(radii!.newRadius).toBe(radii!.openRadius)
+    expect(radii!.newRadius).toBe(radii!.actionRadius)
+    // Guard against regressing to the square UI-kit radius (6px).
+    expect(radii!.newRadius).not.toMatch(/^6px/)
+    await saveAppScreenshot('welcome-empty.png')
 
     await $('.welcome-new-btn').click()
     const dialog = await $('#new-project-dialog')
@@ -69,8 +95,14 @@ describe('new project flow', () => {
     await $('.new-project-actions .ui-btn.primary').click()
 
     // The workspace activates and the composer appears with the starter prompt.
+    // The composer is a contenteditable, not an input: WDIO's value matchers read
+    // `undefined` off it (see helpers/composer.ts), so read its text the way the
+    // editor itself does, and poll — the prompt is seeded after activation.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.prompt-input')).toHaveValue(expect.stringContaining('Introduce this project'))
+    // `.prompt-input` is the composer's contenteditable root (see
+    // composer-editor.ts), not an <input>/<textarea> — it has no `value`
+    // property, so `toHaveValue` reads undefined and can never match.
+    await expect($('.prompt-input')).toHaveText(expect.stringContaining('Introduce this project'))
     await saveAppScreenshot('new-project-active.png')
 
     // The folder was scaffolded under `<parent>/<name>` with AGENT.md + README.md
@@ -83,7 +115,7 @@ describe('new project flow', () => {
 
   it('sidebar + menu offers New project / Open folder once a project already exists', async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'existing-proj', { packDisabled: [] })
+    seedEmptyProject(process.cwd(), 'existing-proj', { pluginDisabled: [] })
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -91,8 +123,11 @@ describe('new project flow', () => {
     await addBtn.waitForDisplayed({ timeout: 10_000 })
     await addBtn.click()
 
-    const menuItems = await $$('.context-menu-item')
-    const labels = (await Promise.all(menuItems.map((i) => i.getText()))).join('|')
+    // `$$(…).map` is WebdriverIO's own async map: it awaits each element and
+    // resolves to a plain string[]. Wrapping it in `Promise.all` hands a single
+    // Promise to something expecting an iterable, which throws. This was the only
+    // `Promise.all` in the e2e suite — every other spec uses the idiom below.
+    const labels = (await $$('.context-menu-item').map((item) => item.getText())).join('|')
     expect(labels).toContain('New project')
     expect(labels).toContain('Open folder')
   })

@@ -8,14 +8,15 @@ import {
   activeBridgeToolNames,
   BRIDGE_TOOL_NAMES,
   BRIDGE_MCP_SERVER_NAME,
+  bridgedWorkspaceWritePaths,
   isBridgedNativeToolTitle,
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
 import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { at } from '@shared/array-utils.ts'
-import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
-import { definePack } from '@copse/agent/packs/pack-manifest.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { storageSet } from '../storage/storage.ts'
 import {
   requireThreadExecutionOwner,
@@ -28,6 +29,20 @@ import {
  * drive it as a real MCP client would: JSON-RPC over stateless streamable
  * HTTP, bearer-token gated.
  */
+
+describe('bridgedWorkspaceWritePaths', () => {
+  it('attributes successful native file edits to the ACP workspace audit', () => {
+    assert.deepEqual(bridgedWorkspaceWritePaths('write_file', { path: './index.html' }), [
+      './index.html',
+    ])
+    assert.deepEqual(
+      bridgedWorkspaceWritePaths('rename_file', { from: 'old.css', to: 'styles.css' }),
+      ['old.css', 'styles.css'],
+    )
+    assert.deepEqual(bridgedWorkspaceWritePaths('read_file', { path: 'index.html' }), [])
+    assert.deepEqual(bridgedWorkspaceWritePaths('delete_file', { path: 42 }), [])
+  })
+})
 
 function testRegistry(executed: string[]): ToolRegistry {
   const registry = new ToolRegistry()
@@ -119,7 +134,7 @@ describe('startAcpNativeBridge', () => {
 
   afterEach(async () => {
     setPermissionGateForTests(null)
-    setDefaultPackRegistry(null)
+    setDefaultPluginRegistry(null)
     await bridge?.close()
     bridge = null
   })
@@ -168,6 +183,37 @@ describe('startAcpNativeBridge', () => {
     assert.equal(contentText(shellCall), 'ran npm test')
     assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
+  })
+
+  it('attributes successful bridged writes to the current turn', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'write_file',
+      description: 'Write a workspace file',
+      parameters: z.object({ path: z.string(), content: z.string() }),
+      execute: () => Promise.resolve('written'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    const writes: string[] = []
+    bridge.setWorkspaceWriteObserver((path) => writes.push(path))
+    for (const init of initialized()) await rpc(bridge, init)
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'write_file',
+        arguments: { path: 'index.html', content: '<h1>Cupcakes</h1>' },
+      },
+    })
+
+    assert.equal(contentText(call), 'written')
+    assert.deepEqual(writes, ['index.html'])
   })
 
   it('forwards tool images as MCP image content, not just the manifest text', async () => {
@@ -276,13 +322,13 @@ describe('startAcpNativeBridge', () => {
     assert.equal(contentText(call), 'Advice: do the smallest slice first.')
   })
 
-  it('offers enabled packs’ declared acpTools and removes them atomically on disable', async () => {
+  it('offers enabled plugins’ declared acpTools and removes them atomically on disable', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
-    const packs = new PackRegistry()
-    packs.register(
-      definePack(
+    const plugins = new PluginRegistry()
+    plugins.register(
+      definePlugin(
         {
-          name: 'search-pack',
+          name: 'search-plugin',
           trust: 'first-party',
           stability: 'experimental',
           tools: { native: ['pack_search'], acpTools: ['pack_search'] },
@@ -290,12 +336,12 @@ describe('startAcpNativeBridge', () => {
         { toolNames: ['pack_search'] },
       ),
     )
-    setDefaultPackRegistry(packs)
+    setDefaultPluginRegistry(plugins)
 
     const registry = testRegistry([])
     registry.register({
       name: 'pack_search',
-      description: 'Search through a pack tool',
+      description: 'Search through a plugin tool',
       parameters: z.object({ query: z.string() }),
       execute: ({ query }) => Promise.resolve(`result:${query}`),
     })
@@ -320,7 +366,7 @@ describe('startAcpNativeBridge', () => {
     })
     assert.equal(contentText(call), 'result:docs')
 
-    packs.disable('search-pack')
+    plugins.disable('search-plugin')
     const afterDisable = await rpc(bridge, LIST_TOOLS)
     assert.ok(
       !recordArrayOrEmpty(rpcResult(afterDisable)['tools']).some(
@@ -444,6 +490,24 @@ describe('isBridgedNativeToolTitle', () => {
 
   it('unwraps an inline-code-wrapped title before matching', () => {
     assert.ok(isBridgedNativeToolTitle('`copse-gh_pr_list`'))
+  })
+
+  // Claude infixes the server name under the conventional `mcp__` prefix rather
+  // than leading with it, so `^copse` never matched and every bridged call
+  // double-prompted. Found by a wire trace (#1659), not by the probe.
+  it("matches the observed Claude title 'mcp__<server>__<tool>'", () => {
+    assert.ok(isBridgedNativeToolTitle('mcp__copse__gh_pr_view'))
+    assert.ok(isBridgedNativeToolTitle('mcp__copse__run_shell'))
+    assert.ok(isBridgedNativeToolTitle('mcp.copse.staged_diffs'))
+    assert.ok(isBridgedNativeToolTitle('MCP__COPSE__GH_PR_LIST'))
+  })
+
+  // The `mcp` prefix is deliberately the *only* thing allowed to lead. Admitting
+  // an arbitrary leading word would re-admit the prose titles below.
+  it('does not let the optional prefix become "any leading word"', () => {
+    assert.ok(!isBridgedNativeToolTitle('Run copse gh_pr_list now'))
+    assert.ok(!isBridgedNativeToolTitle('mcpserver-copse-gh_pr_list'))
+    assert.ok(!isBridgedNativeToolTitle('Edit mcp__copse__gh_pr_list-notes.md'))
   })
 
   it('only matches at the start, so prose that merely mentions copse is safe', () => {

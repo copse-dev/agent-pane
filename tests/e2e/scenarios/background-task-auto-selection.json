@@ -1,0 +1,46 @@
+{
+  "id": "background-task-auto-selection",
+  "description": "A real agent selects durable background execution for a long eval without the prompt naming the tool.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "copse-background-auto-eval-",
+    "seedFiles": [
+      {
+        "path": "long-eval.mjs",
+        "content": "import { mkdir, writeFile } from 'node:fs/promises'\n\nconsole.log('matrix eval started')\nawait new Promise((resolve) => setTimeout(resolve, 2500))\nawait mkdir('.eval', { recursive: true })\nawait writeFile('.eval/result.json', `${JSON.stringify({ status: 'passed', cells: 12, failures: 0 }, null, 2)}\\n`)\nconsole.log('matrix eval passed: 12 cells, 0 failures')\n"
+      },
+      {
+        "path": "README.md",
+        "content": "# Long evaluation fixture\n\n`node long-eval.mjs` represents the repository's complete model-evaluation matrix. It writes `.eval/result.json` when complete.\n"
+      }
+    ]
+  },
+  "backgroundWake": {
+    "continuationCount": 1,
+    "finalAssistantContains": "LONG_EVAL_COMPLETE",
+    "timeoutMs": 180000
+  },
+  "toolUse": {
+    "requireTools": ["run_background"],
+    "forbidTools": ["run_shell"],
+    "requireBackgroundWakeStart": true,
+    "maxApprovals": 0
+  },
+  "promptVariants": [
+    "Run the complete evaluation with `node long-eval.mjs`. In the real repository this takes several minutes, so do not leave a foreground tool call blocked and do not poll for status. Continue automatically when it finishes, verify `.eval/result.json`, summarize the result, and end with the exact marker LONG_EVAL_COMPLETE.",
+    "Please execute `node long-eval.mjs`, our slow full-matrix eval. I do not want repeated status checks or approval churn; let it run asynchronously, resume once on completion, inspect the result with file tools, and finish with LONG_EVAL_COMPLETE.",
+    "Validate this change by running `node long-eval.mjs`. Treat it as a long bounded eval that may outlive the current turn. Keep working without asking me to continue, avoid process polling, verify the generated result after completion, and end your report with LONG_EVAL_COMPLETE."
+  ],
+  "assertWorkspace": {
+    "filesContain": [
+      {
+        "glob": "result.json",
+        "contains": ["\"status\": \"passed\"", "\"cells\": 12", "\"failures\": 0"]
+      }
+    ]
+  },
+  "expect": {
+    "requireTools": ["run_background"],
+    "forbidTools": ["run_shell"]
+  }
+}

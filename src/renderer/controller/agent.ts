@@ -34,23 +34,45 @@ import {
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
+import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
-import { syncFilesPaneDom } from './panels.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 
-/** Stamp the thread's picker model onto a new primary-chat assistant bubble. */
+/**
+ * Resolved generation parameters, resolved model, and requested model for the
+ * turn currently streaming, keyed by thread. Main reports them once before the
+ * first token, which is before the assistant bubble exists — so they are held
+ * here and stamped onto the bubble the moment it is created. Cleared when
+ * consumed so a later turn on an untuned model cannot inherit them.
+ */
+interface PendingTurn {
+  parameters: ModelParameters
+  /** The concrete route the turn actually ran on (after `auto:…` resolution). */
+  model?: string
+  /** The user's picker/requested selection (possibly a dynamic selector). */
+  requestedModel?: string
+}
+const pendingTurn = new Map<string, PendingTurn>()
+
+/**
+ * Stamp a new primary-chat assistant bubble. The resolved model (the concrete
+ * route actually run) becomes the message `model`; the picker/requested
+ * selection — which may be a dynamic selector like `auto:…` — is recorded
+ * separately as `requestedModel`.
+ */
 function addAssistantMessage(store: AppStore, threadId: string): string {
-  const model = getThreadById(store, threadId)?.model ?? store.getState().settings?.model
-  return addMessage(
-    store,
-    threadId,
-    'assistant',
-    '',
-    undefined,
-    undefined,
-    model !== undefined ? { model } : undefined,
-  )
+  const held = pendingTurn.get(threadId)
+  const requested =
+    held?.requestedModel ??
+    getThreadById(store, threadId)?.model ??
+    store.getState().settings?.model
+  return addMessage(store, threadId, 'assistant', '', undefined, undefined, {
+    ...(requested !== undefined ? { requestedModel: requested } : {}),
+    ...(held?.model !== undefined ? { model: held.model } : {}),
+    ...(held?.parameters !== undefined ? { parameters: held.parameters } : {}),
+  })
 }
 
 function recordUsageToLedger(
@@ -111,34 +133,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     syncAgentActivity(store, tid, get(tid).writing)
   }
 
-  type QueuedDiffSummary = { path: string; language: string }
-  const diffQueuesByOwner = new Map<string, QueuedDiffSummary[]>()
-  const ownerKey = (projectId: string, threadId: string): string =>
-    JSON.stringify([projectId, threadId])
-  const isActiveOwner = (projectId: string, threadId: string): boolean => {
-    const current = store.getState()
-    return current.activeProjectId === projectId && current.activeThreadId === threadId
-  }
-  const publishActiveQueue = (entries: QueuedDiffSummary[]): void => {
-    const { activeDiff } = store.getState()
-    const stillQueued =
-      activeDiff && entries.some((entry) => entry.path === activeDiff.path) ? activeDiff : null
-    const openingChanges = entries.length > 0
-    store.setState({
-      stagedDiffs: entries,
-      rightPanelMode: openingChanges ? 'changes' : store.getState().rightPanelMode,
-      filesPaneOpen: openingChanges ? true : store.getState().filesPaneOpen,
-      activeDiff: entries.length === 0 ? null : stillQueued,
-    })
-    // Unhide `#pane-files` and switch the Changes hosts before the pane syncs
-    // a Monaco model — otherwise `whenDiffHostVisible` races a still-closed
-    // panel and can stall the shared diff load queue.
-    if (openingChanges) syncFilesPaneDom(store)
-    if (openingChanges) store.emit('right_panel_mode_changed')
-    store.emit('files_pane_changed')
-    store.emit('staged_diffs_changed')
-    store.emit('panel_changed')
-  }
+  // Diff IPC → store. Shared with pop-out windows, which run this wiring alone
+  // because they deliberately do not start the rest of the agent controller.
+  const detachDiffState = attachDiffState(store, api, { revealOnShowDiff: true })
 
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)
@@ -267,6 +264,16 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         store.emit('agent_activity', threadId, CONTEXT_TRIM_ACTIVITY)
         break
       }
+      case 'turn_parameters': {
+        // Held rather than applied: the bubble this belongs to is created by the
+        // first text/tool chunk, which has not arrived yet.
+        pendingTurn.set(threadId, {
+          parameters: chunk.parameters,
+          model: chunk.model,
+          ...(chunk.requestedModel !== undefined ? { requestedModel: chunk.requestedModel } : {}),
+        })
+        break
+      }
       case 'usage': {
         const delta: UsageDelta = {
           model: chunk.model,
@@ -370,7 +377,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'panel_update': {
-        // P4: the todos pack emits `panel_update` alongside `todo_update` (the
+        // P4: the todos plugin emits `panel_update` alongside `todo_update` (the
         // ACP bridge maps it for external clients). The renderer already drives
         // the plan panel from `thread.todos` via the `todo_update` above, so the
         // chunk is redundant here — ignore it explicitly rather than through a
@@ -426,6 +433,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'done': {
         if (st.msgId) store.emit('message_done', st.msgId)
         state.delete(threadId)
+        // The turn is over; the next one resolves its own parameters (or none).
+        pendingTurn.delete(threadId)
         setThreadStatus(store, threadId, 'idle')
         store.emit('agent_activity', threadId, null)
         // The turn may have ended on a different branch than it started.
@@ -450,23 +459,6 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     }
   })
 
-  api.diff.onShowDiff((projectId, threadId, path, before, after, language) => {
-    if (!isActiveOwner(projectId, threadId)) return
-    store.setState({
-      activeDiff: { path, before, after, language },
-      rightPanelMode: 'changes',
-      filesPaneOpen: true,
-    })
-    // Layout first (unhide pane + Changes hosts), then tell the pane to sync.
-    syncFilesPaneDom(store)
-    store.emit('right_panel_mode_changed')
-    store.emit('files_pane_changed')
-    store.emit('panel_changed')
-  })
-
-  // Diff IPC → store: `agent:show_diff` sets activeDiff; `diff:queued` updates
-  // stagedDiffs (path/language only). The Changes panel caches full payloads from
-  // show_diff for multi-file switching; approve/reject use diff:* IPC handlers.
   // C2: an async hook's queued message (decision 4) arrives here and lands in the
   // thread's pending queue with its origin + epoch. `enqueueHookMessage` owns the
   // staleness check (decision 16): a stale send-now is downgraded to held instead
@@ -480,34 +472,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     })
   })
 
-  api.diff.onQueued((projectId, threadId, entries) => {
-    diffQueuesByOwner.set(ownerKey(projectId, threadId), entries)
-    if (isActiveOwner(projectId, threadId)) publishActiveQueue(entries)
-  })
-
-  let publishedOwnerKey = ownerKey(
-    store.getState().activeProjectId ?? '',
-    store.getState().activeThreadId ?? '',
-  )
-  const syncDiffOwner = (): void => {
-    const { activeProjectId, activeThreadId } = store.getState()
-    const nextOwnerKey = ownerKey(activeProjectId ?? '', activeThreadId ?? '')
-    if (nextOwnerKey === publishedOwnerKey) return
-    publishedOwnerKey = nextOwnerKey
-    const entries =
-      activeProjectId && activeThreadId
-        ? (diffQueuesByOwner.get(ownerKey(activeProjectId, activeThreadId)) ?? [])
-        : []
-    publishActiveQueue(entries)
-  }
-  const unsubDiffWorkspace = store.on('workspace_changed', syncDiffOwner)
-  const unsubDiffThreads = store.on('threads_changed', syncDiffOwner)
-
   return () => {
     unsub()
     unsubHookQueue()
-    unsubDiffWorkspace()
-    unsubDiffThreads()
+    detachDiffState()
   }
 }
 

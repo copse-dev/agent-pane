@@ -27,12 +27,30 @@ import { getAgentRole, type AgentRoleId } from '@copse/llm/agent-roles.ts'
  */
 export const MODEL_CLASSIFIER_ENABLED_SETTING = 'modelClassifierEnabled'
 
-/** Models grouped by the shared, distribution-derived intellect bands. */
-export const BAND_CANDIDATES: Record<IntellectBand, readonly TrackedModel[]> = {
-  low: TRACKED_MODELS.filter((model) => intellectBand(modelIntellect(model) ?? 0) === 'low'),
-  mid: TRACKED_MODELS.filter((model) => intellectBand(modelIntellect(model) ?? 0) === 'mid'),
-  top: TRACKED_MODELS.filter((model) => intellectBand(modelIntellect(model) ?? 0) === 'top'),
+/**
+ * Models grouped by the shared, distribution-derived intellect bands.
+ *
+ * A model with no intellect is left out of every band rather than defaulted.
+ * Coercing "unknown" to 0 would band it `low` — presumed weakest — and since
+ * the pick within a band is by price, a cheap unmeasured model would become
+ * the default for trivial work on no capability evidence at all. Absent means
+ * unknown, so it is not an auto-routing candidate until it is measured. It
+ * stays fully selectable by hand in the picker.
+ */
+export function groupModelsByIntellectBand<T extends string>(
+  models: readonly T[],
+  intellectFor: (model: T) => number | null,
+  scale?: readonly number[],
+): Record<IntellectBand, readonly T[]> {
+  const grouped: Record<IntellectBand, T[]> = { low: [], mid: [], top: [] }
+  for (const model of models) {
+    const intellect = intellectFor(model)
+    if (intellect !== null) grouped[intellectBand(intellect, scale)].push(model)
+  }
+  return grouped
 }
+
+export const BAND_CANDIDATES = groupModelsByIntellectBand(TRACKED_MODELS, modelIntellect)
 
 export interface ClassifyModelInput {
   /** The task / prompt to route. */

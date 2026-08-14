@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { setTooltip } from '../dom/tooltip.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountOpenInEditor } from './open-in-editor.ts'
@@ -46,6 +47,9 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     const { workspaceRoot, activeProjectId, projects } = store.getState()
     const project = projects.find((p) => p.id === activeProjectId)
     workspaceName.textContent = workspaceRoot ? basename(workspaceRoot) : 'No folder'
+    // The name is a basename and truncates further in narrow chrome; the
+    // tooltip is where the full path lives.
+    setTooltip(workspaceName, workspaceRoot)
     if (project?.sshHost) {
       void api.sshWorkspace.listHosts().then((hosts) => {
         const host = hosts.find((h) => h.id === project.sshHost)
@@ -56,7 +60,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
         const target = host.user ? `${host.user}@${host.host}` : host.host
         sshTarget.hidden = false
         sshTarget.textContent = target
-        sshTarget.title = `SSH workspace on ${target}`
+        setTooltip(sshTarget, `SSH workspace on ${target}`)
       })
     } else {
       sshTarget.hidden = true
@@ -84,7 +88,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
         const branch = s.currentBranch
         workspaceBranch.hidden = !branch
         workspaceBranch.textContent = branch ?? ''
-        if (branch) workspaceBranch.title = `On branch ${branch}`
+        setTooltip(workspaceBranch, branch ? `On branch ${branch}` : null)
       },
       () => {
         if (token !== branchToken) return

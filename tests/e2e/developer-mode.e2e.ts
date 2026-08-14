@@ -10,7 +10,7 @@ describe('Developer mode surfaces', function () {
     resetUserData()
   })
 
-  it('hides diagnostics and Hooks by default', async () => {
+  it('hides diagnostics and Hooks by default, keeping the trace exits', async () => {
     resetUserData()
     seedDeveloperModeFixture(process.cwd(), false)
     await browser.reloadSession()
@@ -24,11 +24,14 @@ describe('Developer mode surfaces', function () {
         item.textContent?.trim(),
       ),
     )
-    assert.deepEqual(labels, ['Enable Guarded YOLO'])
+    // Debug trace and Share trace are the two "this went wrong" exits, so they
+    // are deliberately not behind Developer mode — unlike the exports above them.
+    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Debug trace', 'Share trace'])
+    await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu-default.png')
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="sources"]').click()
+    await dialog.$('button[data-section="customise"]').click()
     await expect(dialog.$('[data-developer-only="hooks"]')).not.toBeDisplayed()
   })
 
@@ -51,6 +54,7 @@ describe('Developer mode surfaces', function () {
       'Copy thread ID',
       'Export conversation (JSONL)',
       'Export thread folder (ZIP)',
+      'Debug trace',
       'Share trace',
     ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu.png')
@@ -58,7 +62,7 @@ describe('Developer mode surfaces', function () {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="sources"]').click()
+    await dialog.$('button[data-section="customise"]').click()
     const hooks = dialog.$('[data-developer-only="hooks"]')
     await expect(hooks).toBeDisplayed()
     // This eval covers developer-mode visibility, not the host machine's user

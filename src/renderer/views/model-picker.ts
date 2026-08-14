@@ -1,3 +1,4 @@
+import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { el, clear, on } from '../dom/helpers.ts'
 import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../dom/icons.ts'
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
@@ -22,16 +23,55 @@ export interface ModelPickerOptions {
    * that must not apply from a stale in-flight load (e.g. syncing a native select).
    */
   onOptionsLoaded?: (options: readonly ModelOption[]) => void
+  /**
+   * Extra selectors for the *current* value, listed under the models — today
+   * the ACP agent's own knobs (reasoning level, mode). Loaded alongside the
+   * model list on every refresh; return `[]` for values that have none.
+   */
+  loadValueGroups?: (current: string) => Promise<PickerValueGroup[]>
+  /** Applies a selection from {@link ModelPickerOptions.loadValueGroups}. */
+  onSelectGroupValue?: (groupId: string, value: string) => void
+  /**
+   * Returns the label to show on the trigger for the current value. When it
+   * returns a string, that wins over the option/catalog label; returning
+   * `undefined` falls back to the matched option label (or `modelDisplayLabel`).
+   * A caller can use this to show a resolved route (the actual model a dynamic
+   * selector ran on) while `current` (the stored picker selection) stays a
+   * selector like `auto:…`.
+   */
+  formatCurrentLabel?: (current: string) => string | undefined
+}
+
+/**
+ * A secondary selector shown beneath the model list, scoped to the currently
+ * selected model. Deliberately protocol-agnostic: the picker renders labelled
+ * choices and reports the pick, and the caller decides what a group means.
+ */
+export interface PickerValueGroup {
+  id: string
+  label: string
+  currentValue: string
+  choices: readonly { value: string; label: string; description?: string }[]
 }
 
 export interface ModelPicker {
   root: HTMLElement
   refresh: () => Promise<void>
   sync: () => void
+  /** Open the menu from outside the trigger (e.g. a "choose another model" action). */
+  openMenu: () => void
   destroy: () => void
 }
 
 const RECENT_MODEL_LIMIT = 5
+
+/**
+ * Feeds `anchor-name` / `position-anchor` in model-picker.css, which lets a
+ * field menu clamp itself to the surface instead of running off the page.
+ * One name per instance: Chromium resolves a duplicated anchor-name to another
+ * element carrying it, which would throw a menu at a different picker.
+ */
+let pickerAnchorId = 0
 
 /**
  * The app-wide searchable model picker. Surfaces own where the current value is
@@ -57,6 +97,7 @@ export function mountModelPicker(
       .filter((part): part is string => Boolean(part))
       .join(' '),
   })
+  wrap.style.setProperty('--model-picker-anchor', `--model-picker-${String(++pickerAnchorId)}`)
   const triggerAttrs: Record<string, string> = {
     type: 'button',
     class: 'model-picker-trigger',
@@ -120,17 +161,36 @@ export function mountModelPicker(
     el('span', {}, 'All models'),
     chevronRightIcon('ui-icon ui-icon-sm'),
   )
-  menu.append(recentHeader, allHeader, filter, list, browseButton)
+  // Selectors that belong to the current model rather than to the catalog (an
+  // ACP agent's reasoning level, its mode). Listed under the models, each row
+  // drilling into its own choices.
+  const groupsSection = el('div', { class: 'model-picker-groups', hidden: '' })
+  const groupHeader = el('div', { class: 'model-picker-all-header', hidden: '' })
+  const groupBack = el(
+    'button',
+    { type: 'button', class: 'model-picker-back', 'aria-label': 'Back to models' },
+    arrowLeftIcon('ui-icon ui-icon-sm'),
+  )
+  const groupTitle = el('span', { class: 'model-picker-view-title' })
+  groupHeader.append(groupBack, groupTitle)
+  menu.append(recentHeader, allHeader, groupHeader, filter, list, groupsSection, browseButton)
   wrap.append(trigger, menu)
   root.append(wrap)
 
+  const homeView = recentMode ? 'recent' : 'all'
   let open = false
-  let view: 'recent' | 'all' = recentMode ? 'recent' : 'all'
+  let view: 'recent' | 'all' | 'group' = homeView
   const cleanups: Array<() => void> = []
   let cachedOptions: ModelOption[] = []
+  let valueGroups: PickerValueGroup[] = []
+  let activeGroupId: string | null = null
   let activeValue: string | null = null
   let refreshGeneration = 0
   let loadState: 'loading' | 'ready' | 'error' = 'loading'
+
+  function activeGroup(): PickerValueGroup | undefined {
+    return valueGroups.find((group) => group.id === activeGroupId)
+  }
 
   function focusActiveOption(): void {
     list
@@ -138,18 +198,36 @@ export function mountModelPicker(
       ?.focus({ preventScroll: true })
   }
 
-  function setView(next: 'recent' | 'all', focus = true): void {
-    view = recentMode ? next : 'all'
+  function setView(next: 'recent' | 'all' | 'group', focus = true): void {
+    view = next === 'group' ? 'group' : recentMode ? next : 'all'
+    if (view !== 'group') activeGroupId = null
     recentHeader.hidden = view !== 'recent'
     allHeader.hidden = !recentMode || view !== 'all'
+    groupHeader.hidden = view !== 'group'
     filter.hidden = view !== 'all'
     browseButton.hidden = !recentMode || view !== 'recent'
-    list.setAttribute('aria-label', view === 'recent' ? 'Recent models' : 'All models')
-    if (view === 'recent') filter.value = ''
+    groupsSection.hidden = view !== homeView || valueGroups.length === 0
+    const group = activeGroup()
+    if (group) groupTitle.textContent = group.label
+    list.setAttribute(
+      'aria-label',
+      view === 'group'
+        ? (group?.label ?? 'Options')
+        : view === 'recent'
+          ? 'Recent models'
+          : 'All models',
+    )
+    if (view !== 'all') filter.value = ''
     renderMenu(cachedOptions)
     if (!focus) return
     if (view === 'all') filter.focus()
     else focusActiveOption()
+  }
+
+  function openGroup(groupId: string): void {
+    activeGroupId = groupId
+    activeValue = activeGroup()?.currentValue ?? null
+    setView('group')
   }
 
   function setOpen(next: boolean): void {
@@ -157,12 +235,12 @@ export function mountModelPicker(
     trigger.setAttribute('aria-expanded', String(next))
     if (next) {
       menu.removeAttribute('hidden')
-      setView(recentMode ? 'recent' : 'all')
+      setView(homeView)
       if (loadState === 'error') void refresh()
     } else {
       menu.setAttribute('hidden', '')
       filter.value = ''
-      setView(recentMode ? 'recent' : 'all', false)
+      setView(homeView, false)
       pickerOpts.onClose?.()
     }
   }
@@ -201,8 +279,81 @@ export function mountModelPicker(
     }
   }
 
-  function renderMenu(options: readonly ModelOption[]): void {
+  /** Render one group's choices in place of the model list (drill-in view). */
+  function renderGroupChoices(group: PickerValueGroup): void {
     clear(list)
+    activeValue ??= group.currentValue
+    for (const choice of group.choices) {
+      const selected = choice.value === group.currentValue
+      const item = el(
+        'button',
+        {
+          type: 'button',
+          // `is-group-choice` drops the model list's monospace treatment: these
+          // are prose labels the agent wrote ("High"), not model identifiers.
+          class: 'model-picker-option is-group-choice',
+          role: 'option',
+          'data-value': choice.value,
+          'aria-selected': choice.value === activeValue ? 'true' : 'false',
+          'aria-current': selected ? 'true' : undefined,
+          ...(choice.description ? { title: choice.description } : {}),
+        },
+        el('span', { class: 'model-picker-option-label' }, choice.label),
+        ...(selected ? [checkIcon('ui-icon ui-icon-sm model-picker-option-check')] : []),
+      )
+      if (selected) item.classList.add('is-selected')
+      if (choice.value === activeValue) item.classList.add('is-active')
+      item.addEventListener('click', () => {
+        selectGroupValue(choice.value)
+      })
+      list.append(item)
+    }
+    scrollActiveOptionIntoView()
+  }
+
+  /** The current model's own selectors, as rows that drill into their choices. */
+  function renderGroups(): void {
+    clear(groupsSection)
+    groupsSection.hidden = view !== homeView || valueGroups.length === 0
+    for (const group of valueGroups) {
+      const current = group.choices.find((choice) => choice.value === group.currentValue)
+      const row = el(
+        'button',
+        {
+          type: 'button',
+          class: 'model-picker-group-row',
+          'aria-haspopup': 'listbox',
+          'aria-label': `${group.label}: ${current?.label ?? 'default'}`,
+        },
+        el('span', { class: 'model-picker-group-row-label' }, group.label),
+        el('span', { class: 'model-picker-group-row-value' }, current?.label ?? 'Default'),
+        chevronRightIcon('ui-icon ui-icon-sm'),
+      )
+      row.addEventListener('click', () => {
+        openGroup(group.id)
+      })
+      groupsSection.append(row)
+    }
+  }
+
+  function selectGroupValue(value: string): void {
+    const group = activeGroup()
+    if (!group) return
+    // Reflect the pick immediately: persistence is async and the menu closes now.
+    group.currentValue = value
+    pickerOpts.onSelectGroupValue?.(group.id, value)
+    renderGroups()
+    setOpen(false)
+  }
+
+  function renderMenu(options: readonly ModelOption[]): void {
+    const group = activeGroup()
+    if (view === 'group' && group) {
+      renderGroupChoices(group)
+      return
+    }
+    clear(list)
+    renderGroups()
     if (options.length === 0 && loadState !== 'ready') {
       list.append(
         el(
@@ -281,19 +432,29 @@ export function mountModelPicker(
   }
 
   function moveActive(direction: -1 | 1): void {
-    const enabledOptions = visibleOptions(cachedOptions).filter((opt) => !opt.disabled)
-    if (enabledOptions.length === 0) return
-    const index = enabledOptions.findIndex((opt) => opt.value === activeValue)
-    const nextIndex = Math.max(0, Math.min(enabledOptions.length - 1, index + direction))
-    activeValue = enabledOptions[nextIndex]?.value ?? null
+    const group = activeGroup()
+    const values =
+      view === 'group' && group
+        ? group.choices.map((choice) => choice.value)
+        : visibleOptions(cachedOptions)
+            .filter((opt) => !opt.disabled)
+            .map((opt) => opt.value)
+    if (values.length === 0) return
+    const index = values.findIndex((value) => value === activeValue)
+    const nextIndex = Math.max(0, Math.min(values.length - 1, index + direction))
+    activeValue = values[nextIndex] ?? null
     renderMenu(cachedOptions)
-    if (view === 'recent') focusActiveOption()
+    if (view !== 'all') focusActiveOption()
   }
 
   function updateTrigger(options: readonly ModelOption[]): void {
     const current = getCurrent()
     const match = options.find((opt) => opt.value === current)
-    labelEl.textContent = match?.label ?? (current ? modelDisplayLabel(current) : 'Select model')
+    const label =
+      (current ? pickerOpts.formatCurrentLabel?.(current) : undefined) ??
+      match?.label ??
+      (current ? modelDisplayLabel(current) : 'Select model')
+    labelEl.textContent = label
     labelEl.title = current
   }
 
@@ -312,6 +473,14 @@ export function mountModelPicker(
       if (generation !== refreshGeneration) return
       cachedOptions = []
       loadState = 'error'
+    }
+    // The current model's own selectors are a separate, best-effort load: a
+    // failure there leaves the model list fully usable.
+    if (pickerOpts.loadValueGroups) {
+      const groups = await pickerOpts.loadValueGroups(getCurrent()).catch(() => [])
+      if (generation !== refreshGeneration) return
+      valueGroups = [...groups]
+      if (!activeGroup()) activeGroupId = null
     }
     pickerOpts.onOptionsLoaded?.(cachedOptions)
     renderMenu(cachedOptions)
@@ -332,11 +501,39 @@ export function mountModelPicker(
   trigger.addEventListener('click', () => {
     setOpen(!open)
   })
+  // Right-click is the shortcut to the current model's own selectors: every
+  // choice on one flat menu, grouped by selector, without walking into the
+  // model list first. Falls through to the platform menu when there are none.
+  trigger.addEventListener('contextmenu', (e) => {
+    if (valueGroups.length === 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const entries: ContextMenuEntry[] = []
+    for (const group of valueGroups) {
+      entries.push({ heading: group.label })
+      for (const choice of group.choices) {
+        entries.push({
+          label: choice.label,
+          checked: choice.value === group.currentValue,
+          onSelect: () => {
+            group.currentValue = choice.value
+            pickerOpts.onSelectGroupValue?.(group.id, choice.value)
+            renderGroups()
+          },
+        })
+      }
+    }
+    showContextMenu(e.clientX, e.clientY, entries)
+  })
   browseButton.addEventListener('click', () => {
     setView('all')
   })
   backButton.addEventListener('click', () => {
     setView('recent')
+  })
+  groupBack.addEventListener('click', () => {
+    activeValue = null
+    setView(homeView)
   })
   filter.addEventListener('input', () => {
     renderMenu(cachedOptions)
@@ -355,15 +552,25 @@ export function mountModelPicker(
         (e.target instanceof HTMLElement && e.target.matches('.model-picker-option')))
     ) {
       e.preventDefault()
-      selectOption(activeValue)
+      if (view === 'group') {
+        if (activeValue !== null) selectGroupValue(activeValue)
+      } else selectOption(activeValue)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      if (view === 'all' && recentMode) setView('recent')
+      if (view === 'group') {
+        activeValue = null
+        setView(homeView)
+      } else if (view === 'all' && recentMode) setView('recent')
       else {
         setOpen(false)
         if (!recentMode) trigger.focus()
       }
+    } else if (e.key === 'ArrowLeft' && view === 'group') {
+      e.preventDefault()
+      e.stopPropagation()
+      activeValue = null
+      setView(homeView)
     } else if (e.key === 'ArrowRight' && view === 'recent' && recentMode) {
       e.preventDefault()
       e.stopPropagation()
@@ -427,6 +634,9 @@ export function mountModelPicker(
     root: wrap,
     refresh,
     sync,
+    openMenu: (): void => {
+      if (!open) setOpen(true)
+    },
     destroy,
   }
 }

@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getActiveThreadOwner, requireActiveThreadOwner } from './active-thread-owner.ts'
+import { openBrowserUrl } from './panels.ts'
 
 const LANG: Record<string, string> = {
   ts: 'typescript',
@@ -70,6 +71,28 @@ export async function openWorkspaceFile(
   store.emit('panel_changed')
   store.emit('right_panel_mode_changed')
   store.emit('files_pane_changed')
+}
+
+/** Open a local workspace file using the user's global browser preference. */
+export async function openWorkspaceFileInBrowser(
+  store: AppStore,
+  api: ApiClient,
+  path: string,
+): Promise<void> {
+  const { projectId, threadId } = requireActiveThreadOwner(store)
+  if (store.getState().openLinksInBuiltInBrowser) {
+    const url = await api.browser.workspaceFileUrl(projectId, threadId, path)
+    openBrowserUrl(store, url)
+    return
+  }
+  await api.shell.openWorkspaceFileInBrowser(projectId, threadId, path)
+}
+
+/** Browser preview is local-only; SSH paths are meaningful only on the remote host. */
+export function canOpenWorkspaceFileInBrowser(store: AppStore): boolean {
+  const { activeProjectId, projects } = store.getState()
+  const activeProject = projects.find((project) => project.id === activeProjectId)
+  return activeProject !== undefined && activeProject.sshHost === undefined
 }
 
 /** Reveal a workspace directory in the explorer tree without opening a file viewer tab. */

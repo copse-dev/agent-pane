@@ -71,7 +71,7 @@ export interface IpcInvokeMap {
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {
-    args: [contextJson: string]
+    args: [projectId: string, threadId: string, contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
   }
 
@@ -100,6 +100,10 @@ export interface IpcInvokeMap {
   }
   'diff:approveAll': { args: [projectId: string, threadId: string]; result: undefined }
   'diff:rejectAll': { args: [projectId: string, threadId: string]; result: undefined }
+  'diff:queue': {
+    args: [projectId: string, threadId: string]
+    result: { path: string; language: string }[]
+  }
 
   // Approval gate (shell / MCP)
   'approval:respond': {
@@ -216,6 +220,12 @@ export interface IpcInvokeMap {
     args: []
     result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
   }
+  // First card URL that resolves for each model id, or null. Probe-cached in
+  // the main process, so repeat calls are usually free.
+  'modelCards:resolve': {
+    args: [modelIds: string[]]
+    result: Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
+  }
   'usage:setClaudePlanMonthlyFee': {
     args: [fee: number | null]
     result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
@@ -261,7 +271,23 @@ export interface IpcInvokeMap {
     result: import('./state.ts').OrphanProjectStore[]
   }
 
-  // Project-scoped automations (copse.automations pack).
+  // Worktree management (Settings → Sources → Worktrees). Sizing is separate
+  // from listing because it walks the whole checkout; removal is the only
+  // mutating call and is confirmed in the renderer first.
+  'worktrees:list': {
+    args: [projectId: string]
+    result: import('./worktree.ts').WorktreeInventoryEntry[]
+  }
+  'worktrees:size': {
+    args: [projectId: string, path: string]
+    result: import('./worktree.ts').WorktreeSizeResult
+  }
+  'worktrees:remove': {
+    args: [projectId: string, path: string, force: boolean]
+    result: import('./worktree.ts').WorktreeRemovalResult
+  }
+
+  // Project-scoped automations (copse.automations plugin).
   'automations:list': {
     args: [projectId: string]
     result: import('./automations.ts').AutomationSchedule[]
@@ -294,7 +320,7 @@ export interface IpcInvokeMap {
       rows: number,
       meta: { label?: string; projectId: string; threadId: string | null },
     ]
-    result: string
+    result: { sessionId: string; checkoutMode: 'shared' | 'worktree' }
   }
   'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
   'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: undefined }
@@ -352,6 +378,14 @@ export interface IpcInvokeMap {
 
   // Shell
   'shell:openExternal': { args: [url: string]; result: undefined }
+  'shell:openWorkspaceFileInBrowser': {
+    args: [projectId: string, threadId: string, path: string]
+    result: undefined
+  }
+  'browser:workspaceFileUrl': {
+    args: [projectId: string, threadId: string, path: string]
+    result: string
+  }
 
   // External editors ("Open in …" titlebar dropdown)
   'editors:list': { args: []; result: import('./editors.ts').ExternalEditorList }
@@ -478,6 +512,8 @@ export interface IpcEventMap {
     },
   ]
   'update:dev_notice': []
+  /** Main asks the renderer whether the app may close while threads are working. */
+  'app:close_confirm_request': [{ id: string }]
   'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]

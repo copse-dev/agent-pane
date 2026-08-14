@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
+import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
+import { getIntellectScore } from '@copse/llm/model-intellect.ts'
 import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
@@ -16,8 +18,8 @@ interface MockOpts {
   openRouterZdrOnlySetting?: boolean
   openRouterAllowTrainingSetting?: boolean
   acpAgents?: AcpAgentConfig[]
-  packModels?: Array<{ id: string; label: string; group?: string }>
-  packEnabled?: boolean
+  pluginModels?: Array<{ id: string; label: string; group?: string }>
+  pluginEnabled?: boolean
 }
 
 // availableProviders() returns explicit booleans for every provider; mirror that
@@ -32,6 +34,17 @@ const ALL_UNCONFIGURED = {
   gemini: false,
   deepseek: false,
   huggingface: false,
+}
+
+function intellectSuffix(modelId: string): string {
+  const score = getIntellectScore(modelId)
+  return score ? ` — intellect ${score.estimated ? '~' : ''}${String(score.value)}` : ''
+}
+
+function currentCloudIntellectHint(modelId: string): string {
+  const hint = cloudModelIntellectHint(modelId)
+  assert.ok(hint, `expected an intellect hint for ${modelId}`)
+  return hint
 }
 
 // Minimal ApiClient stub exposing only what fetchModelOptions touches.
@@ -69,11 +82,11 @@ function mockApi(opts: MockOpts = {}): ApiClient {
         ...base['lmStudio'],
         models: async () => opts.lmStudioModels ?? [],
       },
-      packs: {
-        ...base['packs'],
+      plugins: {
+        ...base['plugins'],
         list: async () => ({
-          packs:
-            opts.packModels === undefined
+          plugins:
+            opts.pluginModels === undefined
               ? []
               : [
                   {
@@ -81,10 +94,10 @@ function mockApi(opts: MockOpts = {}): ApiClient {
                     trust: 'user',
                     stability: 'experimental',
                     name: 'personal.reference-model',
-                    enabled: opts.packEnabled ?? true,
+                    enabled: opts.pluginEnabled ?? true,
                     contributions: {
                       toolNames: [],
-                      modelRoutes: opts.packModels,
+                      modelRoutes: opts.pluginModels,
                       browserOrigins: [],
                       blockingHooks: [],
                       asyncHooks: [],
@@ -132,16 +145,16 @@ describe('fetchModelOptions visibility', () => {
     assert.equal(option.disabled, true)
   })
 
-  it('offers best-value only when includeBestValue is set (Settings chat model)', async () => {
+  it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    assert.equal(options.length, 2)
-    const [bestValue, empty] = options
-    assert.ok(bestValue)
-    assert.equal(bestValue.value, 'auto:best-value')
+    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    const values = options.map((o) => o.value)
+    assert.ok(values.includes('auto:best-value'))
+    assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    const bestValue = options.find((o) => o.value === 'auto:best-value')
+    assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)
-    assert.ok(empty)
-    assert.match(empty.label, /No models available/)
-    assert.equal(empty.disabled, true)
+    assert.ok(options.some((o) => o.disabled && /No models available/.test(o.label)))
     assert.ok(!(await fetchModelOptions(mockApi(), '')).some((o) => o.value === 'auto:best-value'))
   })
 
@@ -338,12 +351,48 @@ describe('fetchModelOptions visibility', () => {
       [
         { value: 'acp:cursor#auto', label: 'Auto' },
         // The agent's "Opus 4.8" label aliases to the sourced measurement, so
-        // the row earns an intellect-only hint (ACP has no token pricing).
-        { value: 'acp:cursor#opus[]', label: 'Opus 4.8 — intellect 55.7' },
+        // the row earns an intellect-only hint (ACP has no token pricing), and
+        // is spelled the way every other group spells the same model.
+        {
+          value: 'acp:cursor#opus[]',
+          label: `Claude Opus 4.8${intellectSuffix('claude-opus-4-8')}`,
+        },
       ],
     )
     // The bare "acp:cursor" (agent default) entry is intentionally omitted.
     assert.ok(!acp.some((o) => o.value === 'acp:cursor'))
+  })
+
+  it('normalises raw GPT model ids advertised by an ACP agent', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'codex-acp',
+            title: 'Codex',
+            command: 'codex-acp',
+            enabled: true,
+            availableModels: [
+              { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
+              { value: 'gpt-5.1', label: 'gpt-5.1' },
+              { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+              { value: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+
+    assert.deepEqual(
+      options.filter((option) => option.group === 'Codex on this device').map((o) => o.label),
+      [
+        'GPT-5.4 nano',
+        'GPT-5.1',
+        `GPT-5 mini${intellectSuffix('gpt-5-mini')}`,
+        `GPT-5.6 Sol${intellectSuffix('gpt-5.6-sol')}`,
+      ],
+    )
   })
 
   it('shows the version an agent keeps in the model description, and scores it', async () => {
@@ -383,9 +432,9 @@ describe('fetchModelOptions visibility', () => {
         // Claude Code labels its models bare, so the picker folds the version
         // from the description back in — and resolves the hint through it (the
         // agent's own `sonnet` value aliases to nothing).
-        'Default (recommended) — Opus 5',
-        'Opus 5 (1M context)',
-        'Sonnet 5 — intellect 53.4',
+        `Default (recommended) — Claude Opus 5${intellectSuffix('claude-opus-5')}`,
+        `Claude Opus 5 (1M context)${intellectSuffix('claude-opus-5')}`,
+        `Claude Sonnet 5${intellectSuffix('claude-sonnet-5')}`,
       ],
     )
   })
@@ -396,6 +445,30 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(current)
     assert.equal(current.group, 'Agents on this device')
     assert.match(current.label, /not configured/)
+  })
+
+  it('distinguishes an unadvertised model from an unconfigured ACP agent', async () => {
+    const staleValue = 'acp:cursor#composer-2.5[fast=true]'
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            enabled: true,
+            availableModels: [{ value: 'composer-2.5[fast=false]', label: 'Composer 2.5' }],
+          },
+        ],
+      }),
+      staleValue,
+    )
+    const current = options.find((option) => option.value === staleValue)
+    assert.deepEqual(current, {
+      value: staleValue,
+      label: 'Cursor — composer-2.5[fast=true] (not currently advertised)',
+      group: 'Cursor on this device',
+    })
   })
 
   it('omits ACP agents on SSH workspaces and marks a stale selection unavailable', async () => {
@@ -432,7 +505,33 @@ describe('fetchModelOptions visibility', () => {
     )
     const row = options.find((o) => o.group === 'Cursor Cloud Agent' && /Opus 4\.8/.test(o.label))
     assert.ok(row)
-    assert.match(row.label, /Opus 4\.8 — intellect 55\.7/)
+    assert.equal(row.label, `Claude Opus 4.8${intellectSuffix('claude-opus-4-8')}`)
+  })
+
+  it("spells Cursor's Claude models the way every other group spells them", async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { cursor: true },
+        cursorCloudModels: [
+          // Cursor names Claude models its own way: no vendor on one, the
+          // version ahead of the family on the next. Its own models keep the
+          // name Cursor gave them.
+          { id: 'claude-opus-5', label: 'Opus 5' },
+          { id: 'claude-4.6-sonnet-thinking', label: 'Claude 4.6 Sonnet (Thinking)' },
+          { id: 'composer-2', label: 'Composer 2' },
+        ],
+      }),
+      '',
+    )
+    assert.deepEqual(
+      options.filter((o) => o.group === 'Cursor Cloud Agent').map((o) => o.label),
+      [
+        'Default',
+        `Claude Opus 5${intellectSuffix('claude-opus-5')}`,
+        'Claude Sonnet 4.6 (Thinking)',
+        'Composer 2',
+      ],
+    )
   })
 
   it('omits whole-session agents from task-role model options', async () => {
@@ -459,39 +558,39 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(!options.some((option) => option.value.startsWith('acp:')))
   })
 
-  it('shows enabled selected-pack models only in whole-thread pickers', async () => {
+  it('shows enabled selected-plugin models only in whole-thread pickers', async () => {
     const api = mockApi({
-      packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+      pluginModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
     })
     const options = await fetchModelOptions(api, '')
     assert.deepEqual(
       options.find((option) => option.group === 'Personal models'),
       {
-        value: 'pack-model:personal.reference-model:judge%3Adefault',
+        value: 'plugin-model:personal.reference-model:judge%3Adefault',
         label: 'Reference judge',
         group: 'Personal models',
       },
     )
     assert.equal(
-      modelDisplayLabel('pack-model:personal.reference-model:judge%3Adefault'),
+      modelDisplayLabel('plugin-model:personal.reference-model:judge%3Adefault'),
       'judge:default',
     )
     const roles = await fetchModelOptions(api, '', { includeAgentModels: false })
-    assert.ok(!roles.some((option) => option.value.startsWith('pack-model:')))
+    assert.ok(!roles.some((option) => option.value.startsWith('plugin-model:')))
   })
 
-  it('keeps a disabled pack model visible but unavailable', async () => {
+  it('keeps a disabled plugin model visible but unavailable', async () => {
     const options = await fetchModelOptions(
       mockApi({
-        packEnabled: false,
-        packModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
+        pluginEnabled: false,
+        pluginModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
       }),
-      'pack-model:personal.reference-model:judge%3Adefault',
+      'plugin-model:personal.reference-model:judge%3Adefault',
     )
-    const selected = options.find((option) => option.value.startsWith('pack-model:'))
+    const selected = options.find((option) => option.value.startsWith('plugin-model:'))
     assert.ok(selected)
     assert.equal(selected.disabled, true)
-    assert.equal(selected.label, 'Reference judge (pack disabled)')
+    assert.equal(selected.label, 'Reference judge (plugin disabled)')
     assert.equal(selected.group, 'Personal models')
   })
 
@@ -525,20 +624,21 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { anthropic: true, openai: true } }),
       '',
     )
+    // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
+    // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
+    const opus5 = options.find((o) => o.value === 'claude-opus-5')
+    assert.ok(opus5)
+    assert.equal(opus5.label, `Claude Opus 5 — ${currentCloudIntellectHint('claude-opus-5')}`)
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
-    assert.equal(opus.label, 'Claude Opus 4.8 — intellect 55.7 · $9/MTok · frontier')
+    assert.equal(opus.label, `Claude Opus 4.8 — ${currentCloudIntellectHint('claude-opus-4-8')}`)
+    assert.doesNotMatch(opus.label, /frontier/)
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
-    // Haiku is dominated on the re-baselined frontier (a cheaper model reaches
-    // its intellect), so it shows intellect and price without the frontier tag.
-    assert.equal(haiku.label, 'Claude Haiku 4.5 — intellect 24 · $1.80/MTok')
-    // gpt-4o is scored (11.2) but dominated, so it shows intellect and price
-    // without the frontier tag.
+    assert.equal(haiku.label, `Claude Haiku 4.5 — ${currentCloudIntellectHint('claude-haiku-4-5')}`)
     const gpt4o = options.find((o) => o.value === 'gpt-4o')
     assert.ok(gpt4o)
-    assert.match(gpt4o.label, /^GPT-4o — intellect 11\.2 · \$[\d.]+\/MTok$/)
-    assert.doesNotMatch(gpt4o.label, /frontier/)
+    assert.equal(gpt4o.label, `GPT-4o — ${currentCloudIntellectHint('gpt-4o')}`)
   })
 
   it('keeps the current selection selectable even with no key', async () => {

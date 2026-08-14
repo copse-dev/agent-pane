@@ -14,10 +14,8 @@ interface RootWatchState {
   rebuildQueued: boolean
   /**
    * Whether a rebuild for this root also refreshes the semantic index. True
-   * for the primary workspace root; worktree execution roots opt out — gortex
-   * scopes its daemon to one active repo at a time (`scopeGortexToActiveRepo`),
-   * so tracking every worktree alongside the workspace would thrash it. Those
-   * roots fall back to regex/text search instead (#1400).
+   * for the primary workspace root; worktree execution roots opt out because
+   * they reuse that shared semantic snapshot with a local delta overlay.
    */
   withSemantic: boolean
 }
@@ -59,6 +57,18 @@ export function startWorkspaceIndexWatcher(
   } catch (err) {
     console.warn('[copse-panel] workspace index watcher unavailable:', err)
   }
+}
+
+/**
+ * Whether a live recursive watcher is re-listing this root on disk changes.
+ *
+ * A watched root's index is current by construction, so re-registering it never
+ * needs a fresh listing (#1694). False when `fs.watch` never armed — an SSH
+ * workspace, or a platform that refused the recursive watch — and those roots
+ * fall back to an age check instead.
+ */
+export function isRootWatched(root: string): boolean {
+  return states.get(resolve(root))?.watcher != null
 }
 
 /** Stop watching one root, or every watched root when called with none (app quit / workspace switch). */

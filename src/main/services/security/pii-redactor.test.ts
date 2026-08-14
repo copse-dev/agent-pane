@@ -1,11 +1,11 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  setDefaultPackRegistry,
-  getDefaultPackRegistry,
-} from '@copse/agent/packs/default-pack-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+  setDefaultPluginRegistry,
+  getDefaultPluginRegistry,
+} from '@copse/agent/plugins/default-plugin-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import {
   redactUserContent,
   revealPlaceholder,
@@ -52,21 +52,21 @@ function fakeModule(): RampartModule {
 }
 
 describe('pii-redactor', () => {
-  // Enablement is the `copse.pii-redaction` pack (Settings > Packs). A fresh
-  // first-party registry has the pack enabled; install it so `redactUserContent`
+  // Enablement is the `copse.pii-redaction` plugin (Settings > Plugins). A fresh
+  // first-party registry has the plugin enabled; install it so `redactUserContent`
   // reads a stable instance we can toggle.
   beforeEach(() => {
     setRampartLoaderForTest(() => Promise.resolve(fakeModule()))
-    setDefaultPackRegistry(createFirstPartyPackRegistry())
+    setDefaultPluginRegistry(createFirstPartyPluginRegistry())
   })
 
   afterEach(() => {
     setRampartLoaderForTest(null)
-    setDefaultPackRegistry(null)
+    setDefaultPluginRegistry(null)
   })
 
   it('passes text through unchanged when the feature is disabled', async () => {
-    getDefaultPackRegistry().disable(PII_REDACTION_PACK_ID)
+    getDefaultPluginRegistry().disable(PII_REDACTION_PLUGIN_ID)
     const text = 'email john@example.com to Jane'
     assert.equal(await redactUserContent('t1', text), text)
   })

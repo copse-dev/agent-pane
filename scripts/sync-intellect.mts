@@ -1,4 +1,4 @@
-// Regenerates packages/llm/src/model-intellect.generated.ts from the curated
+// Regenerates packages/llm/src/model-intellect.generated.ts from the reviewed
 // measurement file scripts/data/intellect-scores.json. Companion to
 // sync-model-catalog.mts (cloud pricing) and sync-local-models.mts (local
 // benchmark scores); this one carries the single composite "intellect" axis
@@ -21,15 +21,19 @@
 //
 // Run locally:  npm run sync:intellect            (validate + emit, reuse fits)
 //               npm run sync:intellect -- --refit (deliberately refit all hops)
+// Run in CI:    .github/workflows/sync-intellect.yml (weekly + manual)
 //
 // API refresh (the scalable data channel):
 //   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api
-// Fetches Artificial Analysis' model list and refreshes/adds measurements for
-// models we support: those already in `scores`, PLUS the `wanted` allowlist of
-// catalog models we don't have a value for yet (local models, extra tracked
-// cloud models). Matched by id or alias — the API never introduces a model id
-// that isn't scored or wanted, so every plotted model remains a reviewed
-// decision, and nobody hand-enters a mis-configured number. The index version
+// Fetches Artificial Analysis' model list from the supported free-tier language
+// feed (`/api/v2/language/models/free` — the documented replacement for the
+// legacy `/api/v2/data/llms/models`, which returns 410 Gone after 2026-11-04)
+// and refreshes/adds every directly measured model configuration. Every page of
+// the feed is walked. Known models are matched by id or alias so Copse keeps its
+// canonical catalog ids; new models use AA's exact slug (falling back to id or
+// name) so variants such as reasoning-effort configurations are never merged.
+// `wanted` remains useful for mapping a not-yet-measured catalog id onto the
+// spelling AA will eventually publish. The index version
 // is read from the payload's declared version field when present, else defaults
 // to the data file's canonicalVersion (the AA API always reports the current
 // index, so "the latest" is canonical) with a warning; pass --index-version=
@@ -38,8 +42,8 @@
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { execFileSync } from 'node:child_process'
 import { z } from 'zod'
+import { formatGenerated, writeGeneratedFile } from './lib/generated-file.mts'
 import {
   MIN_RECOMMENDED_ANCHORS,
   fitLinearEquating,
@@ -50,6 +54,8 @@ import { optionalRecord } from '../src/shared/unknown-value.mts'
 
 const DATA_PATH = resolve('scripts/data/intellect-scores.json')
 const GENERATED_PATH = resolve('packages/llm/src/model-intellect.generated.ts')
+/** Supported free-tier feed; see {@link requestAaModels} for the migration note. */
+const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
 
 export interface Measurement {
   modelId: string
@@ -68,8 +74,7 @@ export interface Measurement {
 /**
  * A model we support (in a catalog) and want AA data for, but don't have a
  * value for yet. `--from-api` matches these by id/alias against the feed and
- * ADDS a measurement — so "get data for the models we support" is one keyed
- * sync, with no hand-entered (and easily mis-configured) numbers.
+ * adds the measurement under our canonical catalog id instead of AA's slug.
  */
 export interface WantedModel {
   modelId: string
@@ -86,6 +91,11 @@ export interface DataFile {
   equatingPairs: Array<{ from: string; to: string }>
   /** Crystallised fits — written back by this script, reused on later runs. */
   equating: EquatingMap[]
+}
+
+/** Serialize the reviewed data file in the same shape the repository gate expects. */
+export async function formatDataFile(data: DataFile): Promise<string> {
+  return await formatGenerated(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`)
 }
 
 const measurementSchema: z.ZodType<Measurement> = z.object({
@@ -118,18 +128,32 @@ const dataFileSchema: z.ZodType<DataFile> = z.object({
   equatingPairs: z.array(z.object({ from: z.string(), to: z.string() })),
   equating: z.array(equatingMapSchema),
 })
+// `nullish`, not `optional`: the supported free feed represents "not measured"
+// as an explicit null (both for individual fields and for whole rows in `data`),
+// which `optional()` alone rejects.
 const aaApiModelSchema: z.ZodType<AaApiModel> = z.object({
-  id: z.string().optional(),
-  slug: z.string().optional(),
-  name: z.string().optional(),
+  id: z.string().nullish(),
+  slug: z.string().nullish(),
+  name: z.string().nullish(),
   evaluations: z
     .object({
-      artificial_analysis_intelligence_index: z.number().optional(),
-      artificial_analysis_intelligence_index_version: z.union([z.string(), z.number()]).optional(),
+      artificial_analysis_intelligence_index: z.number().nullish(),
+      artificial_analysis_intelligence_index_version: z.union([z.string(), z.number()]).nullish(),
     })
-    .optional(),
+    .nullish(),
 })
-const aaPayloadSchema = z.object({ data: z.array(aaApiModelSchema).optional() }).loose()
+const aaPayloadSchema = z
+  .object({
+    data: z.array(aaApiModelSchema.nullable()).nullish(),
+    pagination: z
+      .object({
+        page: z.number().optional(),
+        total_pages: z.number().optional(),
+        has_more: z.boolean().optional(),
+      })
+      .nullish(),
+  })
+  .loose()
 
 function isIsoDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -318,14 +342,15 @@ ${mapRows}
 }
 
 export interface AaApiModel {
-  id?: string | undefined
-  slug?: string | undefined
-  name?: string | undefined
+  id?: string | null | undefined
+  slug?: string | null | undefined
+  name?: string | null | undefined
   evaluations?:
     | {
-        artificial_analysis_intelligence_index?: number | undefined
-        artificial_analysis_intelligence_index_version?: string | number | undefined
+        artificial_analysis_intelligence_index?: number | null | undefined
+        artificial_analysis_intelligence_index_version?: string | number | null | undefined
       }
+    | null
     | undefined
 }
 
@@ -370,11 +395,53 @@ export function detectPayloadVersion(
 }
 
 /**
- * Refresh measurements from the Artificial Analysis API for models the seed
- * file already knows (by modelId or alias). Returns the updated score list;
- * never invents a new model id. The index version comes from the payload's own
- * version field; a `--index-version=` pin, when passed, must agree with it
- * (and covers a payload that omits the field).
+ * Fetch every page of the supported free-tier language feed.
+ *
+ * This is the documented replacement for the retired `/api/v2/data/llms/models`
+ * — AA's migration guide maps the legacy path onto exactly this URL, legacy
+ * paths return 410 Gone after 2026-11-04 23:59 UTC, and the key is unchanged.
+ * Unlike the legacy feed it paginates (200 rows a page), so walk `pagination`
+ * until it says there is nothing more; the first page is returned alongside the
+ * rows because that is where the declared index version lives.
+ * See https://artificialanalysis.ai/data-api/migrate-v2-data.
+ */
+export async function requestAaModels(
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ firstPayload: Record<string, unknown>; models: AaApiModel[] }> {
+  const models: AaApiModel[] = []
+  let firstPayload: Record<string, unknown> = {}
+  let page = 1
+  let hasMore = true
+  while (hasMore) {
+    const url = new URL(AA_MODELS_URL)
+    url.searchParams.set('page', String(page))
+    const res = await fetchImpl(url, { headers: { 'x-api-key': apiKey } })
+    if (!res.ok) {
+      // 410 is AA's marker for a retired `/api/v2/data/*` path. We no longer
+      // request one, so it would mean the supported endpoint itself moved.
+      const hint = res.status === 410 ? ' (endpoint retired — AA_MODELS_URL needs updating)' : ''
+      fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}${hint}`)
+    }
+    const payload = aaPayloadSchema.parse((await res.json()) as unknown)
+    if (page === 1) firstPayload = payload
+    models.push(...(payload.data ?? []).filter((m): m is AaApiModel => m !== null))
+
+    const pagination = payload.pagination
+    hasMore =
+      pagination?.has_more === true ||
+      (typeof pagination?.total_pages === 'number' && page < pagination.total_pages)
+    if (hasMore) page += 1
+  }
+  return { firstPayload, models }
+}
+
+/**
+ * Refresh measurements from the Artificial Analysis API. Known models retain
+ * their canonical ids; every other measured configuration is added under its
+ * exact AA identifier. The index version comes from the payload's own version
+ * field; a `--index-version=` pin, when passed, must agree with it (and covers
+ * a payload that omits the field).
  */
 async function refreshFromApi(
   data: DataFile,
@@ -382,13 +449,8 @@ async function refreshFromApi(
   apiKey: string,
   today: string,
 ): Promise<Measurement[]> {
-  const res = await fetch('https://artificialanalysis.ai/api/v2/data/llms/models', {
-    headers: { 'x-api-key': apiKey },
-  })
-  if (!res.ok) fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}`)
-  const payload = aaPayloadSchema.parse((await res.json()) as unknown)
-  const apiModels = payload.data ?? []
-  const declared = detectPayloadVersion(payload, apiModels)
+  const { firstPayload, models: apiModels } = await requestAaModels(apiKey)
+  const declared = detectPayloadVersion(firstPayload, apiModels)
   const pinned = normalizeVersion(pinnedVersion)
   if (declared && pinned && declared !== pinned) {
     fail(`--index-version=${pinned} conflicts with the payload's declared index ${declared}`)
@@ -411,18 +473,18 @@ async function refreshFromApi(
 
   const merged = mergeApiModels(data, apiModels, indexVersion, today)
   console.log(
-    `[sync-intellect] API refresh: ${String(merged.matched)} measurement(s) matched supported ` +
-      `models (${String(apiModels.length)} in the feed; unmatched models are ignored by design).`,
+    `[sync-intellect] API refresh: ${String(merged.matched)} measured model configuration(s) ` +
+      `imported or refreshed (${String(apiModels.length)} rows in the feed).`,
   )
   return merged.scores
 }
 
 /**
  * Pure merge of an API model list into the seed's measurements. A feed model is
- * matched (by id/slug/name) against known measurements AND the `wanted`
- * allowlist of catalog models; a match refreshes an existing same-version entry
- * or adds a new one. Never introduces a model id that isn't already known or
- * wanted. Deterministic — no I/O, no clock (today is passed in).
+ * matched (by id/slug/name) against known measurements and the `wanted`
+ * canonicalisation list. Otherwise its exact AA slug becomes the model id
+ * (falling back to id, then name). Each directly measured configuration is kept
+ * distinct. Deterministic — no I/O, no clock (today is passed in).
  */
 export function mergeApiModels(
   data: DataFile,
@@ -448,11 +510,17 @@ export function mergeApiModels(
   for (const api of apiModels) {
     const value = api.evaluations?.artificial_analysis_intelligence_index
     if (typeof value !== 'number' || !Number.isFinite(value)) continue
-    const modelId = [api.id, api.slug, api.name]
+    const knownModelId = [api.id, api.slug, api.name]
       .map((k) => (k ? aliasToId.get(k) : undefined))
       .find((id) => id !== undefined)
+    const modelId =
+      knownModelId ??
+      [api.slug, api.id, api.name].find(
+        (candidate): candidate is string =>
+          typeof candidate === 'string' && candidate.trim().length > 0,
+      )
     if (!modelId) continue
-    const aliases = aliasesFor.get(modelId)
+    const aliases = knownModelId ? aliasesFor.get(modelId) : undefined
     const measurement: Measurement = {
       modelId,
       value,
@@ -462,8 +530,15 @@ export function mergeApiModels(
       ...(aliases ? { aliases } : {}),
     }
     const existing = next.findIndex((m) => m.modelId === modelId && m.indexVersion === indexVersion)
-    if (existing >= 0) next[existing] = { ...next[existing], ...measurement }
-    else next.push(measurement)
+    if (existing >= 0) {
+      const current = next[existing]
+      // Keep an unchanged measurement byte-stable. Besides making local
+      // refreshes idempotent, this prevents the scheduled workflow from
+      // opening a date-only PR every week merely because `today` moved.
+      if (current?.value !== value) next[existing] = { ...current, ...measurement }
+    } else {
+      next.push(measurement)
+    }
     matched += 1
   }
   return { scores: next, matched }
@@ -498,7 +573,7 @@ async function main(): Promise<void> {
     const wanted = graduateWanted(data.wanted ?? [], scores)
     data = { ...data, scores, wanted }
     validate(data)
-    await writeFile(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+    await writeFile(DATA_PATH, await formatDataFile(data), 'utf8')
   }
 
   const maps = resolveEquating(data, today, refit)
@@ -508,29 +583,36 @@ async function main(): Promise<void> {
   const nextJson = JSON.stringify(maps)
   if (storedJson !== nextJson) {
     const updated: DataFile = { ...data, equating: maps }
-    await writeFile(DATA_PATH, `${JSON.stringify(updated, null, 2)}\n`, 'utf8')
+    await writeFile(DATA_PATH, await formatDataFile(updated), 'utf8')
     console.log(
       `[sync-intellect] Crystallised ${String(maps.length)} equating fit(s) into ${DATA_PATH}.`,
     )
   }
 
   const content = renderFile(data, maps, today)
-  const existing = await readFile(GENERATED_PATH, 'utf8').catch(() => '')
-  const stripSyncDate = (s: string): string =>
-    s.replace(/\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/, '')
-  if (stripSyncDate(existing) === stripSyncDate(content)) {
+  if (!(await writeGeneratedFile(GENERATED_PATH, content))) {
     console.log(`[sync-intellect] No changes (${String(data.scores.length)} measurements).`)
     return
   }
-  await writeFile(GENERATED_PATH, content, 'utf8')
-  execFileSync('npx', ['prettier', '--write', GENERATED_PATH], { stdio: 'inherit' })
   console.log(
     `[sync-intellect] Wrote ${String(data.scores.length)} measurement(s), ` +
       `${String(maps.length)} equating map(s) to ${GENERATED_PATH} (synced ${today}).`,
   )
 }
 
-main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err))
-  process.exit(1)
-})
+// Only when this file IS the process entry — `sync-intellect.test.ts` imports
+// from here, and at module scope this ran the whole sync on every unit run:
+// a network fetch to Artificial Analysis, then a rewrite of two tracked files
+// (`data/intellect.json` and `model-intellect.generated.ts`, the latter through
+// `prettier --write`). A green `npm run check` therefore left the working tree
+// dirty, and the bumped `// Last synced:` line went on to collide with the
+// scheduled sync in a real merge conflict.
+//
+// Same guard idiom as `copy-monaco-workers.mts`, which is also both a module
+// and a CLI.
+if (process.argv[1]?.endsWith('sync-intellect.mts')) {
+  main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err))
+    process.exit(1)
+  })
+}

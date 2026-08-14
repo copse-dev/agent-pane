@@ -1,7 +1,8 @@
 import '../../../tests/setup-dom.ts'
-import { describe, it } from 'node:test'
+import { before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { CHIP_CHAR, mountComposerEditor } from './composer-editor.ts'
+import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 
 // Selection-dependent behavior (insert at caret, selectionStart mapping) needs
 // a real focused Chromium selection and is exercised by the paste e2e spec;
@@ -85,5 +86,52 @@ describe('composer editor expandedValue', () => {
     const editor = mountComposerEditor()
     editor.value = 'just text\nwith lines'
     assert.equal(editor.expandedValue(), 'just text\nwith lines')
+  })
+})
+
+describe('composer editor chip preview', () => {
+  before(patchPreviewDialog)
+
+  it('opens the pasted body in the attachment modal before the prompt is sent', () => {
+    const editor = mountComposerEditor()
+    editor.insertPasteChip('- tighten intro\n- fix typos', 'review notes')
+
+    const label = editor.el.querySelector<HTMLElement>('.inline-paste-chip-label')
+    assert.ok(label)
+    assert.equal(label.getAttribute('role'), 'button')
+    assert.equal(label.getAttribute('aria-label'), 'Preview review notes')
+    label.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.open, true)
+    assert.equal(
+      dialog.querySelector('.attachment-preview-text')?.textContent,
+      '- tighten intro\n- fix typos',
+    )
+    dialog.close()
+  })
+
+  /**
+   * The affordance rides the label, not the pill: the pill's ✕ is a real button,
+   * and the editor treats the whole chip as one atomic character. Opening a
+   * preview must not consume the click that removes the chip, nor change how
+   * the chip serializes.
+   */
+  it('leaves the chip atomic and its ✕ working', () => {
+    const editor = mountComposerEditor()
+    editor.insertPasteChip('block body')
+    assert.equal(editor.value, CHIP_CHAR)
+
+    const remove = editor.el.querySelector<HTMLButtonElement>('button.inline-paste-chip-remove')
+    assert.ok(remove)
+    remove.click()
+    assert.equal(editor.value, '')
+    assert.equal(editor.getBlocks().length, 0)
+    assert.equal(
+      document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')?.open ?? false,
+      false,
+      'removing a chip does not open its preview',
+    )
   })
 })

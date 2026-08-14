@@ -11,7 +11,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
   LLMMessage,
@@ -39,6 +38,7 @@ import {
   rebuildSpinePreservingNonMessageLines,
   serializeSpineEntries,
   serializeSpineLine,
+  type ContentRef,
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpinePermissionDecisionLine,
@@ -55,7 +55,7 @@ import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { z } from 'zod'
 import { storageGet } from './storage/storage.ts'
-import { projectStoreDir } from './storage/copse-paths.ts'
+import { copseWorkspaceDir, projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**
@@ -66,6 +66,7 @@ import { runSerialized } from './storage/write-queue.ts'
  *   events.jsonl        append-only spine, one line per finalized message
  *   agent-history.json  provider-format LLM resume snapshot (issue #993)
  *   acp-session.json    private external-agent session binding
+ *   acp-debug.jsonl     opt-in ACP wire trace (COPSE_DEBUG_ACP_UPDATES=1 only)
  *   messages/*.md       OKF prose (message content + reasoning)
  *   blobs/*             verbatim tool results and images
  *   subagents/**        nested subagent sessions, same structure recursively
@@ -96,11 +97,7 @@ const sha256 = (input: string): string => createHash('sha256').update(input, 'ut
 const projectDir = projectStoreDir
 
 /** Root of the chat store. COPSE_DIR owns the normal profile layout. */
-function workspaceRoot(): string {
-  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
-  if (override) return override
-  return join(homedir(), '.copse', 'workspace')
-}
+const workspaceRoot = copseWorkspaceDir
 
 /** Root of the chat store, for callers that need to authorise a path against it. */
 export const chatStoreRoot = workspaceRoot
@@ -405,7 +402,26 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
   return contents
 }
 
-async function readThread(projectId: string, threadId: string): Promise<Thread | null> {
+/**
+ * How much of a project's history a load pulls into memory.
+ *
+ * Archived threads are soft-hidden: the sidebar and the `@`-catalog both drop
+ * them, but their directories stay on disk and every message, tool result and
+ * base64 image in them used to be folded back into the renderer's store on each
+ * project load — a heap that only ever grew, holding history no surface could
+ * show. `includeArchived` defaults to true so the whole-history readers (the
+ * usage ledger's all-time totals, agent discovery) are unchanged; the renderer's
+ * `threads:loadProject` opts out.
+ */
+export interface ThreadLoadOptions {
+  includeArchived?: boolean
+}
+
+async function readThread(
+  projectId: string,
+  threadId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread | null> {
   const dir = threadDir(projectId, threadId)
   const [metaRaw, eventsRaw] = await Promise.all([
     readOrNull(join(dir, META_FILE)),
@@ -413,6 +429,9 @@ async function readThread(projectId: string, threadId: string): Promise<Thread |
   ])
   const meta = parseMeta(metaRaw)
   if (meta === null) return null
+  // Bail before the prefetch: skipping an archived thread is only worth doing if
+  // its message bodies are never read, and that is where the bytes are.
+  if (options.includeArchived === false && meta.archivedAt != null) return null
 
   const raw = eventsRaw ?? ''
   const entries = parseSpineEntries(raw)
@@ -451,9 +470,12 @@ function listThreadIds(projectId: string): string[] {
     .map((entry) => entry.name)
 }
 
-async function readProjectThreads(projectId: string): Promise<Thread[]> {
+async function readProjectThreads(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
   const loaded = await mapConcurrent(listThreadIds(projectId), (threadId) =>
-    readThread(projectId, threadId),
+    readThread(projectId, threadId, options),
   )
   return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
 }
@@ -858,8 +880,11 @@ export function listAgentPrLinks(projectId: string): Promise<RemoteAgentPrIndexE
   ])
 }
 
-export function loadProjectThreads(projectId: string): Promise<Thread[]> {
-  return runSerialized(queueKey(projectId), () => readProjectThreads(projectId))
+export function loadProjectThreads(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
+  return runSerialized(queueKey(projectId), () => readProjectThreads(projectId, options))
 }
 
 export function saveProjectThread(projectId: string, thread: Thread): Promise<void> {
@@ -971,6 +996,65 @@ export function appendHookRun(
   })
 }
 
+/** One blob a `hook_run` line points at; `text` is null when it is gone from disk. */
+export interface StoredHookRunBlob {
+  ref: string
+  text: string | null
+}
+
+/** A `hook_run` line plus the bodies it references — the raw record behind a hook card. */
+export interface StoredHookRun {
+  line: SpineHookRunLine
+  payload: StoredHookRunBlob | null
+  stdout: StoredHookRunBlob | null
+  stderr: StoredHookRunBlob | null
+  outcome: StoredHookRunBlob | null
+}
+
+/**
+ * Read one hook execution back out of a thread's spine, by its `hook_run` id.
+ * Backs the hook-card inspector: the transcript carries only the compact card,
+ * so the bodies (stdin payload, raw streams, applied outcome) are fetched on
+ * demand — the store stays the single source of truth and history never grows a
+ * second copy of a hook's output.
+ *
+ * Returns null when no such run is recorded — an id from a live card whose spine
+ * append has not landed yet, or a thread whose store was pruned. Each blob is
+ * read independently so a missing file degrades to `text: null` on that one
+ * stream rather than losing the whole record.
+ */
+export function readHookRun(
+  projectId: string,
+  threadId: string,
+  runId: string,
+): Promise<StoredHookRun | null> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    const raw = safeRead(join(dir, EVENTS_FILE))
+    if (raw === null) return null
+    let line: SpineHookRunLine | null = null
+    for (const entry of parseSpineEntries(raw)) {
+      if (entry.line?.type === 'hook_run' && entry.line.id === runId) line = entry.line
+    }
+    if (!line) return null
+    // Refs are app-written, but they are still data read back off disk: keep the
+    // read inside the thread's own blobs dir so a corrupted spine line can never
+    // turn an inspector open into an arbitrary file read.
+    const blob = (ref: ContentRef | undefined): StoredHookRunBlob | null => {
+      if (!ref) return null
+      const isThreadBlob = ref.ref.startsWith('blobs/') && !ref.ref.includes('..')
+      return { ref: ref.ref, text: isThreadBlob ? safeRead(join(dir, ref.ref)) : null }
+    }
+    return {
+      line,
+      payload: blob(line.payload),
+      stdout: blob(line.stdout),
+      stderr: blob(line.stderr),
+      outcome: blob(line.outcome),
+    }
+  })
+}
+
 /** Append one durable Guarded YOLO shell authorization record. */
 export function appendPermissionDecision(
   projectId: string,
@@ -1061,6 +1145,28 @@ export function updateMetaOrThrow(
   })
 }
 
+/**
+ * Forget a thread's linked checkout after that checkout has been removed from
+ * disk. `updateMeta` cannot express this: it merges a patch, and an absent
+ * worktree has to actually leave `meta.json`. Without it the thread is bricked
+ * — {@link import('./thread-checkout-transaction.ts')} validates recorded
+ * worktree metadata on every send and deliberately never falls back to shared
+ * mode. Dropping the field (and keeping `worktreeChoice`) lets the thread carry
+ * on in the project checkout instead. Returns false when there was nothing to
+ * clear, so callers can tell a no-op from a real reversion.
+ */
+export function clearThreadWorktree(projectId: string, threadId: string): Promise<boolean> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    if (current === null || current.worktree === undefined) return false
+    const { worktree: _removed, ...rest } = current
+    writeFileSync(join(dir, META_FILE), `${JSON.stringify({ ...rest, id: threadId })}\n`)
+    refreshCatalogLine(projectId, threadId)
+    return true
+  })
+}
+
 export function deleteProjectThread(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
     const dir = threadDir(projectId, threadId)
@@ -1099,6 +1205,21 @@ function agentEpochPath(projectId: string, threadId: string): string {
  */
 export function threadBlobsDir(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), 'blobs')
+}
+
+/**
+ * A thread's own directory in the chat store.
+ *
+ * Exposed for sidecar writers that are not part of the thread model and must
+ * not become part of it — today the opt-in ACP wire trace
+ * (`acp-wire-trace.ts`), which appends `acp-debug.jsonl` beside `events.jsonl`.
+ * A root-level file like that is safe by construction: {@link writeThread}
+ * regenerates only the spine and prunes only {@link CONTENT_DIRS}, and
+ * {@link readThread} reads only `meta.json` and the spine, so a full save keeps
+ * it and a load ignores it.
+ */
+export function threadDirectoryPath(projectId: string, threadId: string): string {
+  return threadDir(projectId, threadId)
 }
 
 /** Ceiling on a thread-directory snapshot, so an export cannot exhaust memory. */

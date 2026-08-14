@@ -15,10 +15,9 @@
 // entry has data in the generated catalog — so if the two lists drift, the
 // unit suite (which runs in both `npm run check` and the sync workflow) fails.
 
-import { execFileSync } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import { writeGeneratedFile } from './lib/generated-file.mts'
 
 const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
@@ -30,13 +29,16 @@ const TRACKED_MODELS = [
   'claude-sonnet-4-6',
   'claude-fable-5',
   'claude-sonnet-5',
+  'claude-opus-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5.5',
   'gpt-5',
   'gpt-5-mini',
+  'gpt-5-nano',
   'gpt-4o',
   'gpt-4o-mini',
 ] as const
@@ -180,13 +182,6 @@ ${body}
 `
 }
 
-function runPrettier(): void {
-  // The emitted file aims to be prettier-clean already, but run prettier so any
-  // future formatting changes (line width, trailing commas) reformat the
-  // generated file consistently with the rest of the repo.
-  execFileSync('npx', ['prettier', '--write', GENERATED_PATH], { stdio: 'inherit' })
-}
-
 async function main(): Promise<void> {
   const raw = await fetchCatalog()
   const entries = resolveEntries(raw)
@@ -194,20 +189,14 @@ async function main(): Promise<void> {
   const content = renderFile(entries, today)
   // Only rewrite the file if anything would change, so the workflow's
   // `git diff --quiet` step (and local re-runs) stay no-op when LiteLLM hasn't
-  // moved. We compare the rendered content against the existing file, ignoring
-  // the `Last synced:` header line so a re-run on a day with no upstream
-  // changes is a true no-op.
-  const existing = await readFile(GENERATED_PATH, 'utf8').catch(() => '')
-  const stripSyncDate = (s: string): string =>
-    s.replace(/\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/, '')
-  if (stripSyncDate(existing) === stripSyncDate(content)) {
+  // moved — see scripts/lib/generated-file.mts for why the `Last synced:` line
+  // is excluded from that comparison, and why the render is formatted first.
+  if (!(await writeGeneratedFile(GENERATED_PATH, content))) {
     console.log(
       `[sync-model-catalog] No upstream changes for ${String(TRACKED_MODELS.length)} tracked models.`,
     )
     return
   }
-  await writeFile(GENERATED_PATH, content, 'utf8')
-  runPrettier()
   console.log(
     `[sync-model-catalog] Wrote ${String(Object.keys(entries).length)} entries to ${GENERATED_PATH} (synced ${today}).`,
   )

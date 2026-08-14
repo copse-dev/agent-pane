@@ -168,6 +168,66 @@
   opacity: 0.65;
   cursor: progress;
 }
+/* The thread no longer fits the model picked for it. Shares the image warning's
+   shape (icon · message · action) so composer warnings read as one family; the
+   `is-over` variant escalates from warning to danger once the prompt cannot be
+   sent without trimming. */
+.composer-context-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+  padding: 8px var(--spacing-md);
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.composer-context-warning.is-over {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-base));
+}
+.composer-context-warning[hidden] {
+  display: none;
+}
+.composer-context-warning-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: var(--bg-base);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.composer-context-warning.is-over .composer-context-warning-icon {
+  background: var(--danger);
+}
+.composer-context-warning-text {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.35;
+}
+.composer-context-model-btn {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.composer-context-model-btn:hover {
+  border-color: var(--warning);
+}
+.composer-context-warning.is-over .composer-context-model-btn {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+}
+.composer-context-warning.is-over .composer-context-model-btn:hover {
+  border-color: var(--danger);
+}
 .composer-checkout-error {
   display: flex;
   align-items: center;
@@ -574,6 +634,29 @@
   min-width: 0;
   flex-shrink: 1;
   max-width: min(200px, 30vw);
+}
+/* Per-chat reasoning dial. Sits next to the model it applies to and stays
+   quiet — the model name is the headline; effort is the qualifier. */
+.footer-reasoning-host {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+.footer-reasoning-select {
+  max-width: min(140px, 30vw);
+  padding: 2px var(--spacing-md) 2px var(--spacing-xs);
+  border: none;
+  background-color: transparent;
+  background-position: right 0 center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.footer-reasoning-select:hover {
+  color: var(--text-primary);
+}
+/* Set apart only while it actually overrides the model's own level, so a glance
+   says whether this chat is running hotter than the model's default. */
+.footer-reasoning.is-set .footer-reasoning-select {
+  color: var(--text-secondary);
 }
 .footer-checkout-host {
   position: relative;

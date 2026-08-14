@@ -13,7 +13,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -23,7 +23,7 @@ import {
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
-import type { PackSummary, PacksListResult } from '@shared/types/packs.ts'
+import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
 
 function shimModal(dialog: HTMLDialogElement): void {
   let open = false
@@ -73,11 +73,11 @@ function stubApi(
   },
 ): ApiClient {
   const base = createFakeApi()
-  const roadmapPack: PackSummary = {
-    id: ROADMAP_PLANS_PACK_ID,
+  const roadmapPlugin: PluginSummary = {
+    id: ROADMAP_PLANS_PLUGIN_ID,
     trust: 'first-party',
     stability: 'experimental',
-    name: ROADMAP_PLANS_PACK_ID,
+    name: ROADMAP_PLANS_PLUGIN_ID,
     enabled: options?.roadmapEnabled ?? false,
     contributions: {
       toolNames: [],
@@ -113,13 +113,13 @@ function stubApi(
       ...base.settings,
       get: (): Promise<unknown> => Promise.resolve(null),
     },
-    packs: {
-      ...base.packs,
-      // Roadmap is gated by the `copse.roadmap-plans` pack; the dialog reads
-      // enablement from `packs:list` (mirrors the pane's titlebar-button gate).
-      list: (): Promise<PacksListResult> =>
+    plugins: {
+      ...base.plugins,
+      // Roadmap is gated by the `copse.roadmap-plans` plugin; the dialog reads
+      // enablement from `plugins:list` (mirrors the pane's titlebar-button gate).
+      list: (): Promise<PluginsListResult> =>
         Promise.resolve({
-          packs: [roadmapPack],
+          plugins: [roadmapPlugin],
         }),
     },
     roadmap: {

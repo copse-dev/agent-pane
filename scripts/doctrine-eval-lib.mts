@@ -191,6 +191,7 @@ const ruleRatesSchema: z.ZodType<Record<DoctrineRuleId, number>> = z.object({
   faithfulReporting: z.number(),
   scopeDiscipline: z.number(),
   noNarratingComments: z.number(),
+  followExplicitConstraints: z.number(),
 })
 const baselineArmSchema: z.ZodType<DoctrineBaselineArm> = z.object({
   solveRate: z.number(),

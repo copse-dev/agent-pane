@@ -103,7 +103,7 @@ const longTask: LongTask = {
 
 function dependencies(overrides: Partial<LongTaskWakeDependencies> = {}): LongTaskWakeDependencies {
   return {
-    isPackEnabled: () => true,
+    isPluginEnabled: () => true,
     resolveContext: () => Promise.resolve(context),
     autoRunSandboxCommands: () => true,
     projectSandboxEnabled: () => true,
@@ -157,7 +157,7 @@ describe('long-task supervised wake', () => {
     }
   })
 
-  it('does not dispatch when the pack is disabled at wake time', async () => {
+  it('does not dispatch when the plugin is disabled at wake time', async () => {
     const store = new MemoryStore()
     const clock = new FixedClock(100)
     const supervisor = new TaskSupervisor({
@@ -174,7 +174,7 @@ describe('long-task supervised wake', () => {
           return Promise.resolve('completed')
         },
       },
-      dependencies({ isPackEnabled: () => false }),
+      dependencies({ isPluginEnabled: () => false }),
     )
 
     try {
@@ -188,7 +188,7 @@ describe('long-task supervised wake', () => {
       await supervisor.waitForIdle()
 
       assert.equal(dispatched, false)
-      assert.equal(store.tasks.get(scheduled.taskId)?.resultRef?.ref, 'pack-disabled')
+      assert.equal(store.tasks.get(scheduled.taskId)?.resultRef?.ref, 'plugin-disabled')
     } finally {
       dispose()
       await supervisor.shutdown()

@@ -303,3 +303,52 @@ describe('AnthropicProvider mid-conversation system messages (#1286)', () => {
     ])
   })
 })
+
+describe('AnthropicProvider tuned parameters', () => {
+  it('pairs a chosen effort with adaptive thinking', async () => {
+    const provider = new AnthropicProvider('claude-opus-5', {
+      apiKey: 'test',
+      params: { reasoning: 'xhigh' },
+    })
+    const capture = withFakeStream(provider, [])
+    await collect(provider)
+    assert.ok(capture.params)
+    assert.deepEqual(capture.params['thinking'], { type: 'adaptive' })
+    assert.deepEqual(capture.params['output_config'], { effort: 'xhigh' })
+  })
+
+  it('disables thinking rather than naming an effort for "off"', async () => {
+    const provider = new AnthropicProvider('claude-opus-5', {
+      apiKey: 'test',
+      params: { reasoning: 'off' },
+    })
+    const capture = withFakeStream(provider, [])
+    await collect(provider)
+    assert.ok(capture.params)
+    assert.deepEqual(capture.params['thinking'], { type: 'disabled' })
+    assert.equal(capture.params['output_config'], undefined)
+  })
+
+  it('sends sampling for a model that still accepts it', async () => {
+    const provider = new AnthropicProvider('claude-sonnet-4-6', {
+      apiKey: 'test',
+      params: { temperature: 0.2, topP: 0.9 },
+    })
+    const capture = withFakeStream(provider, [])
+    await collect(provider)
+    assert.ok(capture.params)
+    assert.equal(capture.params['temperature'], 0.2)
+    assert.equal(capture.params['top_p'], 0.9)
+  })
+
+  it('leaves an untuned request body free of parameter fields', async () => {
+    const provider = new AnthropicProvider('claude-opus-5', { apiKey: 'test' })
+    const capture = withFakeStream(provider, [])
+    await collect(provider)
+    assert.ok(capture.params)
+    assert.equal(capture.params['thinking'], undefined)
+    assert.equal(capture.params['output_config'], undefined)
+    assert.equal(capture.params['temperature'], undefined)
+    assert.equal(capture.params['top_p'], undefined)
+  })
+})

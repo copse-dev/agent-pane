@@ -1,6 +1,11 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { fetchModelOptions } from './model-options.ts'
 import { mountModelPicker } from './model-picker.ts'
+import {
+  loadAcpOptionGroups,
+  saveAcpOptionSelection,
+  type AcpOptionGroup,
+} from './acp-config-options.ts'
 
 export interface FooterModelPickerOptions {
   /** When true, ACP agents are omitted (SSH workspaces). */
@@ -9,6 +14,8 @@ export interface FooterModelPickerOptions {
   onClose?: () => void
   /** Most-recent-first model values from prior threads. */
   getRecentModels?: () => readonly string[]
+  /** Override the trigger label for the current picker value (resolved route). */
+  formatCurrentLabel?: (current: string) => string | undefined
 }
 
 // Composer adapter for the app-wide picker. The trigger stays compact while the
@@ -19,7 +26,22 @@ export function mountFooterModelPicker(
   getCurrent: () => string,
   onSelect: (model: string) => void,
   pickerOpts: FooterModelPickerOptions = {},
-): { refresh: () => void; destroy: () => void } {
+): { refresh: () => void; openMenu: () => void; destroy: () => void } {
+  // The agent whose selectors are currently listed. Captured on load so a pick
+  // persists against the right agent even if the model value moves on after.
+  let optionAgentId: string | null = null
+  let optionGroups: AcpOptionGroup[] = []
+
+  function persistGroupValue(groupId: string, value: string): void {
+    const agentId = optionAgentId
+    const group = optionGroups.find((candidate) => candidate.id === groupId)
+    if (!agentId || !group) return
+    group.currentValue = value
+    void saveAcpOptionSelection(api, agentId, group, value).catch((err: unknown) => {
+      console.error('[acp] failed to save option selection:', err)
+    })
+  }
+
   const picker = mountModelPicker(
     root,
     getCurrent,
@@ -35,16 +57,37 @@ export function mountFooterModelPicker(
       variant: 'compact',
       enableShortcut: true,
       ariaLabel: 'Chat model',
+      // An ACP agent's own knobs — reasoning level, mode — hang off whichever
+      // agent is selected, so they reload with the model list.
+      loadValueGroups: async (current) => {
+        const loaded = await loadAcpOptionGroups(api, current)
+        optionAgentId = loaded?.agentId ?? null
+        optionGroups = loaded?.groups ?? []
+        return optionGroups
+      },
+      onSelectGroupValue: persistGroupValue,
       ...(pickerOpts.onClose ? { onClose: pickerOpts.onClose } : {}),
       ...(pickerOpts.getRecentModels ? { getRecentValues: pickerOpts.getRecentModels } : {}),
+      ...(pickerOpts.formatCurrentLabel
+        ? { formatCurrentLabel: pickerOpts.formatCurrentLabel }
+        : {}),
     },
   )
 
-  // Selected-pack models can appear or disappear while this footer remains
-  // mounted. Refresh on explicit open so the menu reflects live pack state.
+  // Selected-plugin models can appear or disappear while this footer remains
+  // mounted. Refresh on explicit open so the menu reflects live plugin state.
   picker.root.querySelector('.model-picker-trigger')?.addEventListener('click', () => {
     void picker.refresh()
   })
 
-  return { refresh: () => void picker.refresh(), destroy: picker.destroy }
+  return {
+    refresh: () => void picker.refresh(),
+    // Same pairing as an explicit trigger click: refresh live plugin/provider
+    // state, then show the menu.
+    openMenu: (): void => {
+      void picker.refresh()
+      picker.openMenu()
+    },
+    destroy: picker.destroy,
+  }
 }

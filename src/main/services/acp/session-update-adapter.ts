@@ -1,8 +1,8 @@
 import type { PlanEntry, SessionUpdate, ToolCallContent, ToolKind } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
-import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
-import type { PanelEntry } from '@copse/agent/packs/pack-panel.ts'
+import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
+import type { PanelEntry } from '@copse/agent/plugins/plugin-panel.ts'
 
 /**
  * Translate between Copse's internal `StreamChunk` stream and ACP
@@ -104,15 +104,15 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
             status: todo.status,
           })),
       }
-    // P4: the `copse.todos` pack emits `panel_update` for the plan panel
+    // P4: the `copse.todos` plugin emits `panel_update` for the plan panel
     // (level 2, id `plan`). Map that to ACP `plan` too — it is the same data,
-    // just carried on the pack-panel chunk vocabulary — so an external ACP
+    // just carried on the plugin-panel chunk vocabulary — so an external ACP
     // client (Buzz, cursor-agent) sees one plan stream regardless of which
     // shape Copse emits internally. Only the todos plan panel maps here; a
-    // future generic panel from another pack would carry no ACP counterpart
+    // future generic panel from another plugin would carry no ACP counterpart
     // and stays as a dropped update.
     case 'panel_update': {
-      if (chunk.packId !== TODOS_PACK_ID) return null
+      if (chunk.pluginId !== TODOS_PLUGIN_ID) return null
       if (chunk.contributionId !== TODOS_PANEL_CONTRIBUTION_ID) return null
       if (chunk.data.kind !== 'list') return null
       const entries = chunk.data.rows
@@ -152,6 +152,22 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
     default:
       return null
   }
+}
+
+/**
+ * ACP's title is the user-facing description and stays authoritative whenever
+ * it is meaningful. The optional `name` is unstable programmatic identity, but
+ * it can rescue adapters such as Cursor that collapse MCP titles to the known
+ * `MCP: tool` placeholder.
+ */
+function preferredAcpToolLabel(
+  title: string | null | undefined,
+  name: string | null | undefined,
+): string | undefined {
+  const displayTitle = typeof title === 'string' ? unwrapInlineCode(title) : undefined
+  const programmaticName = typeof name === 'string' ? unwrapInlineCode(name) : undefined
+  if (displayTitle !== undefined && !/^MCP\s*:\s*tool$/i.test(displayTitle)) return displayTitle
+  return programmaticName ?? displayTitle
 }
 
 export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
@@ -195,7 +211,7 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         type: 'tool_call',
         toolCall: {
           id: update.toolCallId,
-          name: unwrapInlineCode(update.title),
+          name: preferredAcpToolLabel(update.title, update.name) ?? unwrapInlineCode(update.title),
           args: update.rawInput ?? {},
           // Carry a *meaningful* ACP kind so the card groups/labels like the
           // built-in tools (`getToolGroupKey`) and the terminal's "Agent tasks"
@@ -221,7 +237,7 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         rawTextResult ??
         contentResult ??
         (update.rawOutput !== undefined ? formatRawToolValue(update.rawOutput) : undefined)
-      const name = typeof update.title === 'string' ? unwrapInlineCode(update.title) : undefined
+      const name = preferredAcpToolLabel(update.title, update.name)
       if (
         status === undefined &&
         result === undefined &&

@@ -206,4 +206,31 @@ describe('sandbox-fs-client', () => {
       await rm(taskRoot, { recursive: true, force: true })
     }
   })
+
+  // Regression: `scripts/dev.mts` never emitted `dist/main/sandbox-fs-worker.js`,
+  // so a `dist/` built only by `npm run dev` failed every sandboxed fs call with a
+  // MODULE_NOT_FOUND printed by a doomed child process. This runs with the real
+  // spawn paths (no invoker or spawner stub) and no worker bundle beside the test
+  // bundle, which is exactly that state: it must fail naming the missing build,
+  // and it must fail before launching anything.
+  it('names the missing worker bundle instead of spawning a doomed process', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'copse-sbfs-nobundle-'))
+    try {
+      clearAllowedWorkspaceRootsForTest()
+      const root = await registerAllowedWorkspaceRoot(dir)
+      const restore = setWorkspaceRootForTest(root)
+      setSandboxFsGatewayEnabledForTest(true)
+
+      await assert.rejects(gatewayListDir(root), (err: unknown) => {
+        assert.ok(err instanceof Error)
+        assert.match(err.message, /sandbox fs worker bundle is missing/)
+        assert.match(err.message, /npm run build/)
+        assert.match(err.message, /sandbox-fs-worker\.js/)
+        return true
+      })
+      restore()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

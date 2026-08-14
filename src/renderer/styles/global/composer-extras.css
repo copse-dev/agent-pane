@@ -98,6 +98,30 @@
   border-radius: 2px;
   object-fit: cover;
 }
+/* Image fidelity is chosen per image from the chip's right-click menu. Only a
+   non-default choice is marked: `auto` is what every attachment has always
+   sent, so badging it would put a label on every chip and say nothing. The
+   badge sits over the thumbnail corner rather than widening the pill, so a row
+   of images keeps its layout whatever is chosen. */
+.image-chip {
+  position: relative;
+}
+.image-chip[data-detail='low']::after,
+.image-chip[data-detail='high']::after {
+  content: attr(data-detail);
+  position: absolute;
+  bottom: 1px;
+  left: 9px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.3;
+  text-transform: uppercase;
+  pointer-events: none;
+}
 /* An attached video costs no context — its size is the only cost signal worth
    showing, so it sits muted beside the filename rather than competing with it. */
 .attachment-chip-meta {

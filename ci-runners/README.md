@@ -24,6 +24,29 @@ It folds three changes into one image:
    target repo's branch at build time** and bakes its deps — so the image can
    live in its own repo and be pointed at any consumer.
 
+4. **Host-local dependency store (`deps-cache` volume).** The baked layer above
+   is keyed by the lockfile hash _at image-build time_, so any dependency bump
+   makes it stale fleet-wide until the images are rebuilt. Runners are ephemeral
+   (one job each), so before this volume existed a stale bake meant every job
+   independently restored ~590 MB from the Actions cache service — 2.5–3.5 min
+   apiece, ~16 jobs per CI run, all in parallel and contending for the same
+   egress (which is what pinned the observed transfer rate near 1 MB/s).
+
+   The volume is a persistent, host-local store keyed by the **current**
+   lockfile hash and shared by every runner container on the host.
+   `.github/actions/setup` reads it before falling back to the network, and
+   republishes into it on a miss — so after a lockfile bump the first job on a
+   host still pays the network restore and every job after it copies from local
+   disk. Entries are published via an atomic rename (concurrent shards racing on
+   the same hash is normal and safe) and pruned to the 3 most recent hashes, so
+   budget roughly 3× the installed tree (~5 GB) per host.
+
+   It is pure cache: `docker volume rm ci-runners_deps-cache` is always safe and
+   it rebuilds itself on the next job. Only first-party code ever writes to it —
+   `ci.yml` guards every self-hosted job on
+   `pull_request.head.repo.full_name == github.repository`, so fork PRs run on
+   GitHub-hosted runners and never touch a host that mounts this.
+
 > **Status: prototype — not yet live.** This directory replaces the two old
 > runner dirs (`.github/runner`, `.github/runner-checks`), which are **removed in
 > this branch**; `make runners*` now drives this unified fleet. But the pool has
@@ -276,7 +299,7 @@ Without `COPSE_CI_REGISTRY`, `up` still works but bakes on the host
 console (Storage → Container Registry), then
 [`docker login`](https://www.scaleway.com/en/docs/container-registry/how-to/connect-docker-cli/)
 uses `SCW_SECRET_KEY` with user `nologin`. Image tags are
-`copse-ci-runner:<sha256(package-lock.json)>` and `:latest`.
+`copse-ci-runner:<sha256(pnpm-lock.yaml)>` and `:latest`.
 
 **Secrets never land in Scaleway images.** `BUILD_GH_TOKEN` is a BuildKit
 secret at bake/publish time only. Registry auth on `up` is an ephemeral host
@@ -297,8 +320,8 @@ Dev hosts carry their own tag namespace (`copse-remote-e2e` /
 capacity and `runners:burst down` can never take a dev host. The same
 TTL backstop applies (`--ttl-minutes`, default 240; Scaleway self-terminates
 via API, AWS uses terminate-on-shutdown) — `down --yes` remains the real
-cleanup. After a `package-lock.json` change, runs warn and fall back to
-`npm ci`; refresh with `npm run e2e:remote -- rebake --push` (publish + pull
+cleanup. After a `pnpm-lock.yaml` change, runs warn and fall back to
+`pnpm install`; refresh with `npm run e2e:remote -- rebake --push` (publish + pull
 onto the saved host) or `rebake --rebuild` (on-host bake).
 A spare machine with Docker + passwordless sudo works too:
 `npm run e2e:remote -- adopt --host user@box`.
@@ -310,13 +333,13 @@ tokens — one org-scoped fine-grained (or classic) PAT can cover all three — 
 they are separate _permissions_, and one of them (the build-time clone) is
 genuinely new versus today.
 
-| Role                                        | Used when                                                                                                             | Needs                                                                                                                                                                           | New?                                                                             |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| **Registration** (`ACCESS_TOKEN`)           | container start, to register the runner                                                                               | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level                |
-| **Build-time clone** (`BUILD_GH_TOKEN`)     | `docker build`, to clone `TARGET_REPO` and let its `npm ci` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both)                                               | **NEW** — the old images had the repo in the build context, so they never cloned |
-| **`pick-runner` detection** (`RUNNERS_PAT`) | in CI, to list online runners for auto-routing                                                                        | **Org:** classic `admin:org` / fine-grained org **Self-hosted runners: Read**                                                                                                   | Existing token, but must query the **org** endpoint (scope widens repo→org)      |
+| Role                                        | Used when                                                                                                                   | Needs                                                                                                                                                                           | New?                                                                             |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Registration** (`ACCESS_TOKEN`)           | container start, to register the runner                                                                                     | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level                |
+| **Build-time clone** (`BUILD_GH_TOKEN`)     | `docker build`, to clone `TARGET_REPO` and let its `pnpm install` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both)                                               | **NEW** — the old images had the repo in the build context, so they never cloned |
+| **`pick-runner` detection** (`RUNNERS_PAT`) | in CI, to list online runners for auto-routing                                                                              | **Org:** classic `admin:org` / fine-grained org **Self-hosted runners: Read**                                                                                                   | Existing token, but must query the **org** endpoint (scope widens repo→org)      |
 
-**Why the clone token is unavoidable:** baking `agent-pane` runs `npm ci`, which
+**Why the clone token is unavoidable:** baking `agent-pane` runs `pnpm install`, which
 pulls `@copse/streaming-markdown` — a **private** git dependency. So even the
 build needs read access to _both_ repos. That's the same cross-repo access the
 `setup` action's `github-pat` input already handles at job time; here it moves
@@ -331,20 +354,20 @@ tmpfs and consumed only inside the bake `RUN` via `GIT_CONFIG_*` env vars — it
 
 If you point `TARGET_REPO` at a repo with a trivial, fully-public install, you
 can leave `BUILD_GH_TOKEN` empty — the bake step no-ops and jobs fall back to
-`npm ci`. But agent-pane's private git dep means its bake needs the token.
+`pnpm install`. But agent-pane's private git dep means its bake needs the token.
 
 ## How baking stays compatible
 
 The bake writes exactly what `agent-pane/.github/actions/setup` already consumes:
 `/opt/deps/tree/{node_modules,vendor/gortex,.lockhash,.ready}` with
 `COPSE_BAKED_DEPS=/opt/deps/tree`. On a job, setup seeds the workspace from that
-layer **iff** the checked-out `package-lock.json` hash matches `.lockhash`, else
-falls back to the Actions cache / `npm ci`. So a lockfile bump is never served
+layer **iff** the checked-out `pnpm-lock.yaml` hash matches `.lockhash`, else
+falls back to the Actions cache / `pnpm install`. So a lockfile bump is never served
 stale — rebuild the image to re-bake.
 
 **One-repo bake, shared pool:** the image bakes ONE repo's tree (default
 `agent-pane`, the heavy consumer). `streaming-markdown` jobs land on the same
-runners but get a cold `npm ci` — which is cheap there (small, pure-TS, no
+runners but get a cold `pnpm install` — which is cheap there (small, pure-TS, no
 native rebuild). If you later want warm starts for both, bake into
 per-repo `/opt/deps/tree-<slug>` dirs and have the setup action pick by lockhash
 — noted as a future enhancement, out of scope for this prototype.

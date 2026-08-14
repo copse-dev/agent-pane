@@ -1,7 +1,8 @@
 import type { Options } from '@wdio/types'
 import electronBinary from 'electron'
+import { createRequire } from 'node:module'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import {
@@ -14,16 +15,31 @@ import {
   LM_STUDIO_MODEL_IDS,
   resolveLocalServerUrl,
 } from './src/shared/lm-studio-defaults.ts'
+import { parseAcpModelSelection } from './src/shared/acp.ts'
+import { KNOWN_ACP_AGENTS } from './src/shared/acp-known-agents.ts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
 const KEEP_EVAL_WDIO = process.env.COPSE_EVAL_KEEP_WDIO === '1'
 
+function codexEvalPermissionMode(): string {
+  const requested = process.env.COPSE_EVAL_ACP_PERMISSION_MODE?.trim()
+  if (requested === 'agent' || requested === 'agent-full-access') return requested
+  if (requested) {
+    throw new Error(
+      'COPSE_EVAL_ACP_PERMISSION_MODE must be "agent" or "agent-full-access" for Codex ACP',
+    )
+  }
+  return 'agent-full-access'
+}
+
 /** WDIO config for real local-model agent evals (not mock LLM). */
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
+const requireFromProject = createRequire(join(process.cwd(), 'package.json'))
 const chromedriverBinary = join(
-  process.cwd(),
-  'node_modules/electron-chromedriver/bin/chromedriver',
+  dirname(requireFromProject.resolve('electron-chromedriver/package.json')),
+  'bin',
+  'chromedriver',
 )
 
 let evalUserDataDir: string | null = null
@@ -46,14 +62,18 @@ export const config: Options.Testrunner = {
   runner: 'local',
   specs: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
-  logLevel: 'info',
+  // Agent evals poll the running-state controls frequently while inference is
+  // active. Info logging turns that into hundreds of thousands of WebDriver
+  // lines and hides the agent evidence we actually need on failure.
+  logLevel: 'warn',
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   autoXvfb: !process.env.DISPLAY,
   capabilities: [
     {
       browserName: 'chrome',
-      browserVersion: '134.0.6998.205',
+      // Must match Chromium in the pinned Electron 43 runtime (see wdio.conf.ts).
+      browserVersion: '150.0.7871.46',
       'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
@@ -103,6 +123,14 @@ export const config: Options.Testrunner = {
     process.env.COPSE_EVAL_WORKSPACE_ROOT = project.root
 
     const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
+    const evalModel = process.env.COPSE_EVAL_MODEL?.trim()
+    const acpSelection = evalModel ? parseAcpModelSelection(evalModel) : null
+    const acpPreset = acpSelection
+      ? KNOWN_ACP_AGENTS.find((candidate) => candidate.id === acpSelection.id)
+      : undefined
+    if (acpSelection && !acpPreset) {
+      throw new Error(`COPSE_EVAL_MODEL selected unknown ACP agent "${acpSelection.id}"`)
+    }
     const subagentsEnabled =
       process.env.COPSE_EVAL_SUBAGENTS === '0'
         ? false
@@ -113,12 +141,11 @@ export const config: Options.Testrunner = {
     resetUserData()
     seedEmptyProject(project.root, `${scenario.id}-project`, {
       subagentsEnabled,
-      backgroundTasksEnabled: scenario.backgroundWake !== undefined,
       autoRunSandboxCommands: scenario.autonomy?.requireShellApproval !== true,
       ...(useMock
         ? { model: 'claude-sonnet-4-6' }
         : {
-            model: DEFAULT_APP_CHAT_MODEL,
+            model: evalModel ?? DEFAULT_APP_CHAT_MODEL,
             localServerUrl: resolveLocalServerUrl(undefined, {
               COPSE_EVAL_LM_STUDIO_URL:
                 process.env.COPSE_EVAL_LOCAL_SERVER_URL ?? process.env.COPSE_EVAL_LM_STUDIO_URL,
@@ -126,6 +153,28 @@ export const config: Options.Testrunner = {
             localDefaultModel: LM_STUDIO_MODEL_IDS.chat,
             subagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
             localSubagentsEnabled: true,
+            ...(acpPreset
+              ? {
+                  registeredAcpAgents: [
+                    {
+                      id: acpPreset.id,
+                      title: acpPreset.title,
+                      command: acpPreset.command,
+                      args: acpPreset.args,
+                      enabled: true,
+                      // Codex ACP implements all tool use through its code-mode
+                      // `exec` call, so its normal `agent` mode asks before even
+                      // read-only Copse MCP orchestration. Eval projects are
+                      // disposable and the adapter is already wrapped in Copse's
+                      // workspace-only seatbelt; select the adapter's no-prompt
+                      // mode explicitly so an unattended recording can finish.
+                      ...(acpPreset.id === 'codex'
+                        ? { permissionMode: codexEvalPermissionMode() }
+                        : {}),
+                    },
+                  ],
+                }
+              : {}),
           }),
     })
 

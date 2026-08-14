@@ -8,7 +8,7 @@ import type {
   ThreadWorktree,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
-import { decideThreadWorktreePolicy } from '@shared/git/worktree-policy.ts'
+import { decideThreadWorktreePolicy, settledCheckoutMode } from '@shared/git/worktree-policy.ts'
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -66,6 +66,7 @@ export interface ThreadCheckoutTransactionDependencies {
     projectRoot: string
     prompt: string
     baseBranch: string
+    seedFromDirtyProject: boolean
   }) => Promise<ThreadWorktree>
   /**
    * Reclaim a linked checkout left behind when allocate succeeded but
@@ -179,11 +180,19 @@ export function createThreadCheckoutPreview(
   return async (input) => {
     const project = dependencies.getProject(input.projectId)
     if (!project) return { checkoutMode: 'shared' }
+    // Avoid four Git queries when the choice or explicit project setting
+    // already determines the preview. An absent project mode deliberately uses
+    // the policy's `always` default and still inspects repository support.
+    const settled = settledCheckoutMode({
+      choice: input.choice,
+      ...(project.worktreeMode ? { projectMode: project.worktreeMode } : {}),
+    })
+    if (settled) return { checkoutMode: settled }
     const isLocal = !project.sshHost && !(input.model && isRemoteAgentModel(input.model))
     const inspection = await dependencies.inspect(project, isLocal)
     const decision = decideThreadWorktreePolicy({
       choice: input.choice,
-      projectMode: project.worktreeMode ?? 'never',
+      ...(project.worktreeMode ? { projectMode: project.worktreeMode } : {}),
       isLocal,
       ...inspection,
     })
@@ -241,7 +250,7 @@ export function createThreadCheckoutTransaction(
       const inspection = await dependencies.inspect(project, isLocal)
       const decision = decideThreadWorktreePolicy({
         choice: input.choice,
-        projectMode: project.worktreeMode ?? 'never',
+        ...(project.worktreeMode ? { projectMode: project.worktreeMode } : {}),
         isLocal,
         ...inspection,
       })
@@ -257,8 +266,15 @@ export function createThreadCheckoutTransaction(
         return persistedResult(input.choice, inspection.currentBranch ?? undefined)
       }
 
-      if (!inspection.currentBranch)
-        throw new Error('Cannot create a worktree from a detached HEAD')
+      // The base is the repository's default branch, never the branch the
+      // project checkout happens to be sitting on. Cutting from live HEAD meant
+      // a thread started on top of whatever the previous thread had left
+      // checked out, which is precisely the isolation the worktree promises.
+      // `unsupportedReason` already routed an unresolved default branch to
+      // shared (or blocked an explicit choice), so this is a type guard.
+      if (!inspection.defaultBranch)
+        throw new Error('Cannot create a worktree without a resolved default branch')
+      const baseBranch = inspection.defaultBranch
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw
       // "already registered" and strand the thread.
@@ -266,7 +282,7 @@ export function createThreadCheckoutTransaction(
         projectId: input.projectId,
         threadId: input.threadId,
         projectRoot: project.path,
-        baseBranch: inspection.currentBranch,
+        baseBranch,
       })
       const worktree =
         recovered ??
@@ -275,7 +291,8 @@ export function createThreadCheckoutTransaction(
           threadId: input.threadId,
           projectRoot: project.path,
           prompt: input.prompt,
-          baseBranch: inspection.currentBranch,
+          baseBranch,
+          seedFromDirtyProject: decision.seededFromDirtyProject,
         }))
       if (recovered) {
         await dependencies.validate({

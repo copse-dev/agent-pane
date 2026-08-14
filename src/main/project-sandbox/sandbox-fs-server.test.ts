@@ -112,6 +112,36 @@ describe('sandbox-fs-server', () => {
     }
   })
 
+  it('keeps a live worker for one root running while serving a second root (#i2jsed)', async () => {
+    const dirA = await mkdtemp(join(tmpdir(), 'copse-sbfs-root-a-'))
+    const dirB = await mkdtemp(join(tmpdir(), 'copse-sbfs-root-b-'))
+    let spawnCount = 0
+    setWorkerSpawnerForTest(() => {
+      spawnCount += 1
+      return Promise.resolve(echoSpawner())
+    })
+    try {
+      await writeFile(join(dirA, 'a.txt'), 'from-a', 'utf-8')
+      await writeFile(join(dirB, 'b.txt'), 'from-b', 'utf-8')
+
+      const fileA = await requestViaServer({ op: 'statDir', path: dirA }, dirA)
+      assert.equal(fileA.ok, true)
+
+      // Switching "focus" to a second root must not tear down root A's worker —
+      // separate git worktrees are meant to run concurrently.
+      const fileB = await requestViaServer({ op: 'statDir', path: dirB }, dirB)
+      assert.equal(fileB.ok, true)
+      assert.equal(spawnCount, 2, 'each root gets its own worker')
+
+      // Root A must still be served by its original worker, not respawned.
+      await requestViaServer({ op: 'statDir', path: dirA }, dirA)
+      assert.equal(spawnCount, 2, 'root A did not need to respawn after root B was served')
+    } finally {
+      await rm(dirA, { recursive: true, force: true })
+      await rm(dirB, { recursive: true, force: true })
+    }
+  })
+
   it('reuses the same worker across sequential requests', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'copse-sbfs-reuse-'))
     const restore = setWorkspaceRootForTest(dir)

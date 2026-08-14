@@ -2,7 +2,7 @@ import { runCommand } from '../exec/command-runner.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isGitAvailableForTarget, isGhAvailable } from '../tool-availability.ts'
-import { isInsideGitWorkTree, getCurrentBranchName } from './git-service.ts'
+import { isInsideGitWorkTree, getCurrentBranchName, getGitChangeStats } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -92,8 +92,11 @@ export function parseGhOpenPr(raw: string): GitOpenPr | null {
   }
 }
 
-async function runGit(args: string[]): Promise<{ stdout: string; code: number }> {
-  const cwd = getWorkspaceRoot()
+async function runGit(
+  args: string[],
+  root: string | null,
+): Promise<{ stdout: string; code: number }> {
+  const cwd = root
   if (!cwd) return { stdout: '', code: 1 }
   const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
   const { stdout, code } = await runCommand('git', args, {
@@ -103,8 +106,15 @@ async function runGit(args: string[]): Promise<{ stdout: string; code: number }>
   return { stdout, code }
 }
 
-/** Deterministic workspace + PR signals for follow-up bubbles. No LLM needed. */
-export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
+/**
+ * Deterministic workspace + PR signals for follow-up bubbles. No LLM needed.
+ * `root` must be the thread execution checkout (shared project or worktree) —
+ * never the ambient renderer workspace alone, or worktree threads inherit the
+ * shared tree's stale `+1 -1` chip.
+ */
+export async function getPrWorkspaceContext(
+  root: string | null = getWorkspaceRoot(),
+): Promise<PrWorkspaceContext> {
   const empty: PrWorkspaceContext = {
     branch: null,
     hasOpenPr: false,
@@ -113,35 +123,27 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
     changeStats: null,
   }
 
-  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return empty
+  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) {
+    return empty
+  }
 
-  const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], root)
   const branch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null
 
-  const statusResult = await runGit(['status', '--porcelain=v1', '-z'])
+  const statusResult = await runGit(['status', '--porcelain=v1', '-z'], root)
   const hasLocalConflicts =
     statusResult.code === 0 && porcelainHasMergeConflicts(statusResult.stdout)
 
-  const unstaged = await runGit(['diff', '--numstat'])
-  const staged = await runGit(['diff', '--cached', '--numstat'])
-  const unstagedStats =
-    unstaged.code === 0 ? parseDiffNumstat(unstaged.stdout) : { additions: 0, deletions: 0 }
-  const stagedStats =
-    staged.code === 0 ? parseDiffNumstat(staged.stdout) : { additions: 0, deletions: 0 }
-  const additions = unstagedStats.additions + stagedStats.additions
-  const deletions = unstagedStats.deletions + stagedStats.deletions
-  const changeStats = additions + deletions > 0 ? { additions, deletions } : null
+  const changeStats = await getGitChangeStats(root)
 
   let hasOpenPr = false
   let hasMergeConflicts = hasLocalConflicts
   let hasCiFailures = false
 
-  const ghResult = await runGh([
-    'pr',
-    'view',
-    '--json',
-    'state,mergeable,mergeStateStatus,statusCheckRollup',
-  ])
+  const ghResult = await runGh(
+    ['pr', 'view', '--json', 'state,mergeable,mergeStateStatus,statusCheckRollup'],
+    { cwd: root },
+  )
   if (ghResult.code === 0 && ghResult.stdout.trim()) {
     const pr = parseGhJson(ghResult.stdout, decodeGhPr)
     if (pr?.state === 'OPEN') {

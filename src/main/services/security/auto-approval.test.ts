@@ -137,8 +137,8 @@ describe('assessAutoApproval — network commands need a configured remote', () 
   })
 
   it('refuses an unrecognised flag rather than guessing', () => {
-    prompts('git push --receive-pack=/tmp/evil origin main')
-    prompts('git fetch --upload-pack=/tmp/evil origin')
+    prompts('git push --receive-plugin=/tmp/evil origin main')
+    prompts('git fetch --upload-plugin=/tmp/evil origin')
   })
 })
 

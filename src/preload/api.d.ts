@@ -3,8 +3,13 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
-import type { PacksListResult } from '@shared/types/packs.ts'
+import type {
+  HooksListResult,
+  HookRunDetail,
+  HookTestRequest,
+  HookTestResult,
+} from '@shared/types/hooks.ts'
+import type { PluginsListResult } from '@shared/types/plugins.ts'
 import type {
   AutomationSchedule,
   AutomationScheduleInput,
@@ -27,7 +32,11 @@ import type {
   GhPrSummary,
   PrActionResult,
 } from '@shared/types/git.ts'
-import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
+import type {
+  McpServerStatus,
+  CuratedMcpServerStatus,
+  DeclaredMcpServer,
+} from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
@@ -43,9 +52,13 @@ import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
+  WorktreeInventoryEntry,
+  WorktreePackageCleanupResult,
+  WorktreeRemovalResult,
+  WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
-import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
 export type { DetectedAcpAgent }
@@ -84,14 +97,16 @@ export interface ApiClient {
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
+    workspaceFileUrl: (projectId: string, threadId: string, path: string) => Promise<string>
     onOpenTab: (handler: (url: string) => void) => () => void
+    onShowTab?: (handler: (url: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
     onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
-    onPackTabRequest: (
+    onPluginTabRequest: (
       handler: (
-        request: PackBrowserTabRequest,
+        request: PluginBrowserTabRequest,
       ) => Promise<{ tabId: string; webContentsId: number }>,
     ) => () => void
   }
@@ -143,6 +158,7 @@ export interface ApiClient {
       payload: string,
     ) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
+    runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
@@ -151,7 +167,11 @@ export interface ApiClient {
     suggestTerminalTitle: (text: string) => Promise<string | null>
     suggestCommandSummary: (commands: string[]) => Promise<string | null>
     suggestToolTurnSummary: (actions: string[]) => Promise<string | null>
-    suggestFollowUps: (contextJson: string) => Promise<FollowUpSuggestion[]>
+    suggestFollowUps: (
+      projectId: string,
+      threadId: string,
+      contextJson: string,
+    ) => Promise<FollowUpSuggestion[]>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {
@@ -164,6 +184,8 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        collapseDetails?: boolean
+        approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
         comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
@@ -197,6 +219,11 @@ export interface ApiClient {
     approveAll: (projectId: string, threadId: string) => Promise<void>
     rejectAll: (projectId: string, threadId: string) => Promise<void>
     content: (projectId: string, threadId: string, path: string) => Promise<ActiveDiff | null>
+    /** Current proposed-diff queue for this thread — the pull counterpart to `onQueued`. */
+    queue: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/types/state.ts').StagedDiffEntry[]>
     onShowDiff: (
       handler: (
         projectId: string,
@@ -253,6 +280,10 @@ export interface ApiClient {
     ) => () => void
     onDevNotice: (handler: () => void) => () => void
   }
+  closeConfirm: {
+    respond: (id: string, confirmed: boolean) => Promise<void>
+    onRequest: (handler: (req: { id: string }) => void) => () => void
+  }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
@@ -280,6 +311,8 @@ export interface ApiClient {
     reload: () => Promise<McpServerStatus[]>
     setEnabled: (name: string, enabled: boolean) => Promise<McpServerStatus[]>
     listCurated: () => Promise<CuratedMcpServerStatus[]>
+    /** Plugin-declared servers nothing is running. See {@link DeclaredMcpServer}. */
+    listDeclared: () => Promise<DeclaredMcpServer[]>
     setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
@@ -309,7 +342,10 @@ export interface ApiClient {
      * subagents) for download. The JSONL export stays the portable single-file
      * transcript; this is the full-fidelity copy of the store directory.
      */
-    exportArchive: (projectId: string, threadId: string) => Promise<Uint8Array<ArrayBuffer>>
+    exportArchive: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/debug-trace-prompt.ts').DebugTraceArchiveExport>
     /**
      * Seed a fork's provider-format history from the thread it branched off.
      * Omit `throughMessageId` (or pass the source's last message id) to copy the
@@ -372,17 +408,16 @@ export interface ApiClient {
     >
   }
   models: {
-    /** Whether any available chat model reaches the recommended context window. */
-    chatDefaultContextHealth: () => Promise<{
-      hasDecentChatDefault: boolean
-      minimum: number
-      bestAvailableContext: number | null
-    }>
     /**
      * Concrete model id for the plan/price Pareto best-value default
      * (`auto:best-value` setting expands to this on new chats / agent runs).
      */
     bestValueDefault: () => Promise<string>
+    /**
+     * Concrete model id a dynamic selection (`auto:…`) resolves to right now.
+     * A pinned id is returned unchanged, so callers can pass whatever is stored.
+     */
+    resolveDynamic: (value: string) => Promise<string>
   }
   intellect: {
     /** Live Artificial Analysis model feed; empty models when no key stored. */
@@ -397,6 +432,18 @@ export interface ApiClient {
       indexVersion?: string | number
       error?: string
     }>
+  }
+  modelCards: {
+    /**
+     * The first card URL that resolves for each model id, or null where none
+     * does. Probe results are cached in the main process, so calling this for
+     * models already looked up costs no network.
+     */
+    resolve: (
+      modelIds: string[],
+    ) => Promise<
+      Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
+    >
   }
   lmStudio: {
     test: (
@@ -603,6 +650,11 @@ export interface ApiClient {
       handler: (status: import('@shared/types/index-status.ts').WorkspaceIndexStatus) => void,
     ) => () => void
   }
+  ports: {
+    list: () => Promise<import('../main/services/ports/ports-registry.ts').PortScanResult>
+    /** Refuses ports Copse did not start; `reason` says why when `killed` is false. */
+    kill: (port: number) => Promise<{ killed: boolean; reason?: string }>
+  }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
     create: (
@@ -698,26 +750,54 @@ export interface ApiClient {
     cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
     onChanged(callback: (projectId: string) => void): () => void
   }
+  /** Linked checkouts of the project's repository, listed and managed in Settings → Sources. */
+  worktrees: {
+    /** Every linked checkout, most recently used first. Empty for a non-Git project. */
+    list: (projectId: string) => Promise<WorktreeInventoryEntry[]>
+    /** Walk one checkout for its on-disk size — separate from `list`, which stays fast. */
+    size: (projectId: string, path: string) => Promise<WorktreeSizeResult>
+    /** Preview or remove ignored dependency directories inside one registered checkout. */
+    cleanupPackages: (
+      projectId: string,
+      path: string,
+      remove: boolean,
+    ) => Promise<WorktreePackageCleanupResult>
+    /** Open the system terminal at one registered checkout. */
+    openTerminal: (projectId: string, path: string) => Promise<void>
+    /**
+     * Delete one checkout. Without `force` a checkout holding uncommitted,
+     * untracked, or ignored files is reported back rather than removed, so the
+     * caller can show what would be destroyed and ask again.
+     */
+    remove: (projectId: string, path: string, force: boolean) => Promise<WorktreeRemovalResult>
+  }
   skills: {
     list: () => Promise<SkillSummary[]>
   }
-  plugins: {
+  /**
+   * Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin
+   * registry) until C1 merges the two Settings surfaces; named for its source
+   * so the two keys cannot collide in the meantime.
+   */
+  cursorPlugins: {
     list: () => Promise<CursorPluginSummary[]>
   }
   hooks: {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
     test: (req: HookTestRequest) => Promise<HookTestResult>
+    /** Read the raw record behind one hook card — payload, streams, applied outcome. */
+    runDetail: (projectId: string, threadId: string, runId: string) => Promise<HookRunDetail>
   }
-  packs: {
-    /** Enumerate every registered pack with contributions + enablement + settings values (P3). */
-    list: () => Promise<PacksListResult>
+  plugins: {
+    /** Enumerate every registered plugin with contributions + enablement + settings values (P3). */
+    list: () => Promise<PluginsListResult>
     /** Atomic enable/disable (P1 contract) — persists and flips the shared registry flag. */
-    setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
-    /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
-    setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
-    /** Choose and register one pack directory through a native host dialog. */
-    addSource: () => Promise<PacksListResult>
+    setEnabled: (id: string, enabled: boolean) => Promise<PluginsListResult>
+    /** Persist one plugin-scoped setting value under the manifest's declared schema (P3). */
+    setSetting: (id: string, key: string, value: unknown) => Promise<PluginsListResult>
+    /** Choose and register one plugin directory through a native host dialog. */
+    addSource: () => Promise<PluginsListResult>
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
@@ -737,7 +817,7 @@ export interface ApiClient {
       cols: number,
       rows: number,
       meta: { label?: string; projectId: string; threadId: string | null },
-    ) => Promise<string>
+    ) => Promise<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
     destroy: (sessionId: string) => Promise<void>
@@ -812,6 +892,7 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
+    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) => Promise<void>
   }
   editors: {
     /** Installed external editors plus the sticky last-used default. */

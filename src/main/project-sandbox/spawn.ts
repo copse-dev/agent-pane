@@ -1,20 +1,37 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import { homedir } from 'node:os'
-import { basename, dirname } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import quote from 'shell-quote'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { posixQuote } from '../services/security/safe-install.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import {
   ensureWorkspaceTmpDir,
   portBindingSandboxOverlay,
+  readAllowedSandboxOverlay,
   workspaceSandboxOverlay,
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
-import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
+import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
+import {
+  detachForGroupKill,
+  formatArgvForShell,
+  resolveSandboxShellExecutable,
+  shellForSandboxWrap,
+  withSandboxShellPath,
+} from './sandbox-argv.ts'
+
+// Re-exported so `spawn.ts` stays the single import site callers already use.
+export {
+  detachForGroupKill,
+  formatArgvForShell,
+  resolveSandboxShellExecutable,
+  shellForSandboxWrap,
+  withSandboxShellPath,
+}
+export { isProjectSandboxEnabled, setProjectSandboxEnabled }
+import { isProjectSandboxEnabled, setProjectSandboxEnabled } from './enabled.ts'
 import {
   isSshExecutionTarget,
   resolveExecutionTarget,
@@ -34,19 +51,6 @@ function sshRemoteWorkingDirectory(
   cwd: string,
 ): string {
   return cwd || target.remoteRoot
-}
-
-export function isProjectSandboxEnabled(): boolean {
-  return isProjectSandboxActive() && SandboxManager.isSandboxingEnabled()
-}
-
-export function setProjectSandboxEnabled(active: boolean): void {
-  setProjectSandboxActive(active)
-}
-
-/** Join argv for `/bin/sh -c` / ASRT wrap. Uses POSIX single quotes so paths with spaces stay one word. */
-export function formatArgvForShell(executable: string, args: string[]): string {
-  return [executable, ...args].map(posixQuote).join(' ')
 }
 
 function shellCommand(executable: string, args: string[]): string {
@@ -82,46 +86,15 @@ function strippedBaseEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   return envForRendererChildProcess(base)
 }
 
-/** POSIX-only: run the child as its own process-group leader so the group can be killed together. */
-const detachForGroupKill = process.platform !== 'win32'
-const DEFAULT_SANDBOX_SHELL = '/bin/bash'
-
-function ensurePathIncludes(dirs: string[]): void {
-  if (process.platform === 'win32') return
-  const current = process.env['PATH'] ?? ''
-  const seen = new Set(current.split(':').filter(Boolean))
-  const missing = dirs.filter((dir) => !seen.has(dir))
-  if (missing.length > 0) {
-    process.env['PATH'] = [...missing, current].filter(Boolean).join(':')
-  }
-}
-
 /**
- * ASRT returns a bare shell name (`bash`) as argv[0]. GUI Electron apps often
- * have a PATH that omits `/bin`, so spawn('bash') → ENOENT. Keep the bare name
- * for ASRT, but rewrite to an absolute path at spawn time.
+ * Fail before the fork when the working directory is gone, naming the missing
+ * directory instead of libuv's misleading `spawn /bin/bash ENOENT` (see
+ * {@link isSpawnableWorkingDirectory}). Local spawns only — an SSH target's
+ * working directory lives on the remote host, so it returns before this.
  */
-export function resolveSandboxShellExecutable(file: string): string {
-  if (process.platform === 'win32' || file.includes('/')) return file
-  if (file === 'bash') return '/bin/bash'
-  if (file === 'sh') return '/bin/sh'
-  return file
-}
-
-/** Ensure the child env can resolve `/bin` shells even when opts.env was snapshotted earlier. */
-export function withSandboxShellPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  if (process.platform === 'win32') return env
-  const required = ['/usr/bin', '/bin']
-  const parts = (env['PATH'] ?? '').split(':').filter(Boolean)
-  const missing = required.filter((dir) => !parts.includes(dir))
-  if (missing.length === 0) return env
-  return { ...env, PATH: [...missing, ...parts].join(':') }
-}
-
-export function shellForSandboxWrap(shellPath: string = DEFAULT_SANDBOX_SHELL): string {
-  if (process.platform === 'win32' || !shellPath.includes('/')) return shellPath
-  ensurePathIncludes([dirname(shellPath), '/usr/bin', '/bin'])
-  return basename(shellPath)
+async function requireLocalWorkingDirectory(cwd: string): Promise<void> {
+  if (await isSpawnableWorkingDirectory(cwd)) return
+  throw new Error(`Working directory no longer exists: ${cwd}`)
 }
 
 function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
@@ -155,6 +128,7 @@ export async function spawnInProjectSandbox(
       ...(opts.signal ? { signal: opts.signal } : {}),
     })
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return spawn(executable, args, {
@@ -194,6 +168,14 @@ export async function spawnShellInProjectSandbox(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     unsandboxed?: boolean
+    /**
+     * Absolute paths a user-approved read-access grant makes readable for THIS
+     * spawn only (see {@link readAllowedSandboxOverlay}). Narrower on purpose
+     * than the `sandboxConfig` escape hatch its sibling takes: the caller names
+     * paths, the spawn builds the overlay, so this option can only ever widen
+     * reads — never writes, network, or the whole profile.
+     */
+    readGrantTargets?: readonly string[]
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -207,6 +189,7 @@ export async function spawnShellInProjectSandbox(
       ...(opts.signal ? { signal: opts.signal } : {}),
     })
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
@@ -221,7 +204,11 @@ export async function spawnShellInProjectSandbox(
     })
   }
 
-  const customConfig = workspaceSandboxOverlay(opts.cwd)
+  const readGrantTargets = opts.readGrantTargets ?? []
+  const customConfig =
+    readGrantTargets.length > 0
+      ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
+      : workspaceSandboxOverlay(opts.cwd)
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     shellCommandLine,
     shellForSandboxWrap(),
@@ -274,6 +261,7 @@ export async function spawnBackgroundProcess(
       ...(opts.env ? { env: opts.env } : {}),
     })
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   if (opts.unsandboxed === true || !isProjectSandboxEnabled()) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
@@ -296,6 +284,7 @@ export async function spawnBackgroundProcess(
     ? acquireSandboxNetworkScope({
         domains: overlay.network?.allowedDomains ?? [],
         allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
+        label: `background task: ${shellCommandLine}`,
       })
     : (): void => {}
   try {
@@ -386,6 +375,7 @@ export async function spawnPtyInProjectSandbox(
     })
     return ptyProcess
   }
+  await requireLocalWorkingDirectory(opts.cwd)
 
   const termEnv: NodeJS.ProcessEnv = {
     ...strippedBaseEnv(),

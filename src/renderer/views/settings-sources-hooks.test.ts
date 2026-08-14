@@ -28,7 +28,7 @@ function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): Api
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.list': () => Promise.resolve([]),
-    'plugins.list': () => Promise.resolve([]),
+    'cursorPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve(hooksResult),
     'hooks.test': (req: unknown) => {
       lastTestRequest = req
@@ -89,7 +89,7 @@ async function openSources(
   document.body.innerHTML = ''
   mountSettingsDialog(createStore({ developerMode }), stubApi(hooksResult, testResult))
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
-    '.settings-nav-btn[data-section="sources"]',
+    '.settings-nav-btn[data-section="customise"]',
   )
   assert.ok(sourcesBtn)
   sourcesBtn.click()

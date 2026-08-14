@@ -9,6 +9,7 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-worktree-terminal-project'
 const THREAD_ID = 'e2e-worktree-terminal-thread'
+const SHARED_THREAD_ID = 'e2e-shared-terminal-thread'
 const WORKTREE_BRANCH = 'copse/e2e-worktree-terminal'
 
 function git(cwd: string, args: string[]): string {
@@ -66,10 +67,22 @@ describe('isolated thread terminal cwd', () => {
       activeProjectId: PROJECT_ID,
       [`threads:${PROJECT_ID}`]: [
         {
+          id: SHARED_THREAD_ID,
+          title: 'Shared checkout',
+          status: 'idle',
+          messages: [],
+          draftPrompt: 'keep shared fixture',
+          usage: { inputTokens: 0, outputTokens: 0 },
+          worktreeChoice: 'shared',
+          createdAt: now + 1,
+          updatedAt: now + 1,
+        },
+        {
           id: THREAD_ID,
           title: 'Isolated terminal',
           status: 'idle',
           messages: [],
+          draftPrompt: 'keep worktree fixture',
           usage: { inputTokens: 0, outputTokens: 0 },
           gitBranch: WORKTREE_BRANCH,
           worktreeChoice: 'worktree',
@@ -89,6 +102,10 @@ describe('isolated thread terminal cwd', () => {
 
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const worktreeThread = await $(`.chat-row[data-thread-id="${THREAD_ID}"]`)
+    await worktreeThread.waitForClickable({ timeout: 30_000 })
+    await worktreeThread.click()
+    await expect(worktreeThread).toHaveElementClass('selected')
   })
 
   after(() => {
@@ -146,8 +163,10 @@ describe('isolated thread terminal cwd', () => {
     await saveAppScreenshot('thread-worktree-file-viewer.png')
   })
 
-  it('shows git changes from the active thread worktree', async function () {
-    this.timeout(60_000)
+  it('shows git changes from the active thread worktree after popping out', async function () {
+    this.timeout(90_000)
+    const mainHandle = (await browser.getWindowHandles())[0]
+    assert.ok(mainHandle)
     const changesBtn = await $('#titlebar .titlebar-btn[aria-label="Open changes"]')
     await changesBtn.click()
 
@@ -157,5 +176,30 @@ describe('isolated thread terminal cwd', () => {
     })
     assert.ok(!(await gitChangePaths()).includes('project-only.md'))
     await expect(changesBtn).toHaveElementClass('active')
+    await $('.git-change-row').click()
+    await $('.monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
+
+    const before = await browser.getWindowHandles()
+    await $('#git-changes-host .pane-popout-btn').click()
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
+      timeout: 15_000,
+      timeoutMsg: 'expected a pop-out Changes window',
+    })
+    const popoutHandle = (await browser.getWindowHandles()).find(
+      (handle) => !before.includes(handle),
+    )
+    assert.ok(popoutHandle)
+    await browser.switchToWindow(popoutHandle)
+
+    await browser.waitUntil(async () => (await gitChangePaths()).includes('worktree-only.md'), {
+      timeout: 30_000,
+      timeoutMsg: 'expected pop-out Changes to retain the active thread worktree',
+    })
+    assert.ok(!(await gitChangePaths()).includes('project-only.md'))
+    await $('.monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
+    await saveAppScreenshot('thread-worktree-changes-popout.png')
+
+    await browser.closeWindow()
+    await browser.switchToWindow(mainHandle)
   })
 })

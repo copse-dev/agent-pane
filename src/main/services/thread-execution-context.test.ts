@@ -109,7 +109,7 @@ describe('thread execution context', () => {
     })
   })
 
-  it('registers a resolved worktree execution root with the file index (#1400)', async () => {
+  it('does not index a worktree during generic UI context resolution (#1728)', async () => {
     const validated: ValidatedThreadWorktree = {
       path: '/validated/root',
       branch: 'copse/thread-1',
@@ -140,7 +140,7 @@ describe('thread execution context', () => {
       },
     })
 
-    assert.deepEqual(indexedRoots, ['/validated/root'])
+    assert.deepEqual(indexedRoots, [])
   })
 
   it('never registers a shared checkout with the worktree indexer', async () => {
@@ -152,6 +152,92 @@ describe('thread execution context', () => {
     })
 
     assert.deepEqual(indexedRoots, [])
+  })
+
+  it('prewarms a resolved worktree index when preparing an agent turn (#1400)', async () => {
+    const persisted = {
+      path: '/diagnostic/path',
+      branch: 'copse/thread-1',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    const validated: ValidatedThreadWorktree = {
+      ...persisted,
+      path: '/validated/root',
+      root: '/validated/root',
+      gitDir: '/repo/.git/worktrees/thread-1',
+      commonGitDir: '/repo/.git',
+    }
+    const indexedRoots: string[] = []
+
+    const context = await prepareThreadExecutionContext(
+      'project-1',
+      'thread-1',
+      { emit: () => {} },
+      {
+        getProjectRoot: () => '/project',
+        getThreadMeta: async () => ({ id: 'thread-1', worktree: persisted }),
+        validateWorktree: async () => validated,
+        startWorktreeIndexing: (root) => {
+          indexedRoots.push(root)
+        },
+      },
+    )
+
+    assert.equal(context?.root, '/validated/root')
+    assert.deepEqual(indexedRoots, ['/validated/root'])
+  })
+
+  it('coalesces concurrent resolutions for the same persisted thread (#1728)', async () => {
+    let releaseMeta: (() => void) | undefined
+    const metaCanResolve = new Promise<void>((resolve) => {
+      releaseMeta = resolve
+    })
+    let metaReads = 0
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => {
+        metaReads += 1
+        await metaCanResolve
+        return { id: 'thread-1' }
+      },
+    }
+
+    const first = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    const second = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(metaReads, 1)
+
+    releaseMeta?.()
+    const [firstContext, secondContext] = await Promise.all([first, second])
+    assert.equal(firstContext, secondContext)
+
+    await resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(metaReads, 2)
+  })
+
+  it('does not retain a failed resolution for a later request (#1728)', async () => {
+    let metaReads = 0
+    let shouldFail = true
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => {
+        metaReads += 1
+        if (shouldFail) throw new Error('transient meta read failure')
+        return { id: 'thread-1' }
+      },
+    }
+
+    const first = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    const second = resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    await assert.rejects(Promise.all([first, second]), /transient meta read failure/)
+    assert.equal(metaReads, 1)
+
+    shouldFail = false
+    const recovered = await resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(recovered.root, '/project')
+    assert.equal(metaReads, 2)
   })
 
   it('persists an adopted live branch when Git HEAD drifted inside the worktree', async () => {
@@ -224,7 +310,7 @@ describe('thread execution context', () => {
   it('rejects a thread that is not persisted under the selected project', async () => {
     await assert.rejects(
       resolver({ getThreadMeta: async () => null }),
-      /does not belong to project/,
+      /is not persisted yet under project/,
     )
   })
 
@@ -248,7 +334,7 @@ describe('thread execution context', () => {
     assert.equal(emitted.length, 2)
     assert.equal(emitted[0]?.threadId, 'thread-1')
     assert.deepEqual(emitted[1]?.chunk, { type: 'done' })
-    assert.match(JSON.stringify(emitted[0].chunk), /does not belong to project/)
+    assert.match(JSON.stringify(emitted[0].chunk), /is not persisted yet under project/)
   })
 
   it('keeps simultaneous thread roots isolated across awaits', async () => {

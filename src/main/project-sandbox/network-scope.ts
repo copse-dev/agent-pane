@@ -25,6 +25,13 @@ import { containedSandboxNetworkConfig } from './config.ts'
 export interface SandboxNetworkScope {
   domains: readonly string[]
   allowLocalBinding: boolean
+  /**
+   * Human-readable holder, shown in the shell approval prompt and the acquire /
+   * release logs (e.g. `codex model probe`, `npm run dev`). Without one the gate
+   * can only say "another process", which is exactly the state a user cannot
+   * debug: the widening may come from a background probe they never started.
+   */
+  label: string
 }
 
 const activeScopes = new Set<SandboxNetworkScope>()
@@ -32,6 +39,14 @@ const activeScopes = new Set<SandboxNetworkScope>()
 /** Whether ASRT's process-global network policy is currently widened. */
 export function isSandboxNetworkScopeActive(): boolean {
   return activeScopes.size > 0
+}
+
+/**
+ * Labels of every scope currently widening the global allowlist, deduplicated
+ * and stable-ordered for display. Empty when nothing is widened.
+ */
+export function activeSandboxNetworkScopeLabels(): string[] {
+  return [...new Set([...activeScopes].map((scope) => scope.label))]
 }
 
 /** Union the active scopes into a network config; deny-all when none. Pure. */
@@ -64,12 +79,20 @@ function applyScopes(): void {
 export function acquireSandboxNetworkScope(scope: SandboxNetworkScope): () => void {
   activeScopes.add(scope)
   applyScopes()
+  console.error(
+    `[network-scope] widened for "${scope.label}" (${String(activeScopes.size)} active: ${activeSandboxNetworkScopeLabels().join(', ')})`,
+  )
   let released = false
   return () => {
     if (released) return
     released = true
     activeScopes.delete(scope)
     applyScopes()
+    console.error(
+      `[network-scope] released "${scope.label}" (${String(activeScopes.size)} still active${
+        activeScopes.size > 0 ? `: ${activeSandboxNetworkScopeLabels().join(', ')}` : ''
+      })`,
+    )
   }
 }
 

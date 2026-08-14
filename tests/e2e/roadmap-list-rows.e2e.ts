@@ -19,7 +19,7 @@ describe('roadmap list rows (quiet single-line layout)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-list-'))
-    knowledgeDir = seedRoadmapNotes(workspaceRoot, [
+    knowledgeDir = seedRoadmapNotes('e2e-roadmap-list-rows', [
       {
         id: 'e2e-roadmap-ready',
         title: 'Refactor the settings dialog',

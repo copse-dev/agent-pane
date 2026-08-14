@@ -1,26 +1,42 @@
 name: Demo preview
 
-# Publishes browser demos and self-contained site+demo bundles under the Pages
-# /demo/ namespace:
-#   /demo/main/ and /demo/develop/ are persistent branch builds.
-#   /demo/develop/preview/ is the develop marketing site, with its matching
-#   browser demo nested at /demo/develop/preview/demo/main/.
-#   /demo/pr-<n>/ remains the direct ephemeral demo URL.
-#   /demo/pr-<n>-preview/ is the PR's marketing site, with its matching browser
-#   demo nested at /demo/pr-<n>-preview/demo/main/.
+# Publishes browser demos and marketing-site bundles under the Pages /demo/
+# namespace:
+#   /demo/main/ and /demo/release/ are persistent branch builds.
+#   /demo/main/preview/ is the trunk marketing site.
+#   /demo/pr-<n>/ is the ephemeral demo URL for a PR.
+#   /demo/pr-<n>-preview/ is that PR's marketing site.
+#
+# Each bundle links the demo published beside it (../pr-<n>/ or ../) rather than
+# carrying its own nested copy, so there is exactly one build of the demo per
+# target instead of two identical ones. That is also why there is no longer a
+# /demo/pr-<n>-preview/demo/main/ URL. A bundle is therefore NOT self-contained:
+# it needs the sibling flat build, which is published and pruned with it.
 #
 # Triggered on push (not workflow_run) so the workflow runs from the pushed
 # branch's own definition — which makes the whole flow testable on the PR that
 # introduces it, before merge. This is safe because only same-repo branches can
 # push here: forks push to their own fork and never trigger this repo's push
 # workflows, so untrusted code never reaches the write token or the deploy. Each
-# qualifying push rebuilds the demo, releases it into the machine-managed
-# demo-previews branch, and redeploys Pages. Feature branches without an open PR
-# build nothing.
+# qualifying push rebuilds the demo and, ONLY IF the built bytes differ from
+# what is already published, releases it into the machine-managed demo-previews
+# branch and redeploys Pages. Feature branches without an open PR build nothing.
+#
+# The build reads the renderer, shared, preload and site trees, so the common
+# case on this repo — a docs, test, benchmark or main-process commit — rebuilds
+# identical bytes and stops at the no-change check, publishing nothing and
+# deploying nothing.
 #
 # The deploy always republishes the root site/ from `main` (see pages.yml), so a
 # preview push can only change content below /demo/ — never the production
 # marketing site at the domain root.
+#
+# Everything published below /demo/ is marked `noindex, nofollow`: the demos by
+# `build:demo`, the marketing-site bundles by the publish step here. Previews are
+# near-duplicates of copse.dev/ that appear and vanish with pull requests, and
+# their links are public, so indexing them competes with the production site for
+# its own copy and leaves dead /demo/pr-<n>/ results behind. The production root
+# carries no such tag and stays indexable — see scripts/lib/noindex.mts.
 
 on:
   push:
@@ -28,6 +44,8 @@ on:
       - demo-previews
   workflow_dispatch:
 
+# pages/id-token are for the called pages.yml deploy: a reusable workflow's token
+# can narrow the caller's scopes but never widen them.
 permissions:
   contents: write
   pull-requests: write
@@ -52,7 +70,7 @@ jobs:
       scenarios: ${{ steps.scenarios.outputs.json }}
     steps:
       - uses: actions/checkout@v7.0.1
-      # main/develop always publish to their persistent slots. Other branches
+      # main/release always publish to their persistent slots. Other branches
       # belong to an open PR; no PR means nothing to preview or comment on.
       - id: target
         uses: actions/github-script@v9
@@ -84,7 +102,34 @@ jobs:
             core.setOutput('pr', pr);
       - if: steps.target.outputs.found == 'true'
         uses: ./.github/actions/setup
+      # Point the demo at the shared Monaco tree rather than bundling its own.
+      # Versioned, so a monaco-editor bump publishes a new tree beside the old one
+      # instead of breaking every preview built against the previous version.
+      #
+      # RELATIVE, deliberately. Every demo is published exactly one level under
+      # /demo/ — /demo/main/, /demo/release/, /demo/pr-<n>/ — so `../vendor/…`
+      # resolves to /demo/vendor/… from all of them, whether Pages serves the
+      # custom-domain root in site/CNAME or an <owner>.github.io/<repo>/ prefix.
+      # This used to carry a hardcoded /<repo>/ prefix, which the copse.dev root
+      # does not have, so every worker 404'd. A root-relative /demo/vendor/… is
+      # correct today but re-adopts the same assumption in the other direction.
+      # `monacoVsRoot()` resolves the value with `new URL(base, location.href)`,
+      # so a relative base is fine. It only became viable once preview bundles
+      # stopped nesting a second demo at the deeper …-preview/demo/main/ path.
+      - id: monaco
+        if: steps.target.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          # Read the file, don't `require('monaco-editor/package.json')`: monaco's
+          # `exports` map has no "./package.json" entry, so Node resolves the
+          # specifier through the map and fails with
+          # "Cannot find module .../esm/vs/package.json.js".
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/monaco-editor/package.json','utf8')).version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "base=../vendor/monaco/${version}/" >> "$GITHUB_OUTPUT"
       - if: steps.target.outputs.found == 'true'
+        env:
+          MONACO_BASE_URL: ${{ steps.monaco.outputs.base }}
         run: npm run build:demo
       - id: scenarios
         if: steps.target.outputs.found == 'true'
@@ -103,6 +148,7 @@ jobs:
           TARGET: ${{ steps.target.outputs.path }}
           LABEL: ${{ steps.target.outputs.label }}
           SHA: ${{ github.sha }}
+          MONACO_VERSION: ${{ steps.monaco.outputs.version }}
         run: |
           set -euo pipefail
           if [[ "$TARGET" != "release" && "$TARGET" != "main" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
@@ -126,7 +172,7 @@ jobs:
           # they clone the same tip and the loser's push is rejected non-fast-
           # forward ("Updates were rejected because the remote contains work that
           # you do not have locally"), failing the job on a change that was
-          # perfectly valid. Targets never share a directory (main/, develop/,
+          # perfectly valid. Targets never share a directory (main/, release/,
           # pr-<n>/, pr-<n>-preview/), so the loser just needs to re-stack onto
           # the winner's tip: re-fetch, hard-reset onto the new tip, re-apply
           # this target's build, re-commit, push again.
@@ -146,32 +192,81 @@ jobs:
                 git -C previews-branch clean -fdx
               fi
             fi
+            # Publish the shared Monaco tree once per version. Every preview
+            # points at this instead of carrying its own 34MB copy — which is
+            # what made this branch grow by 34MB per preview per push, forever,
+            # since removing a closed PR's directory leaves the history behind.
+            monaco_dir="previews-branch/vendor/monaco/${MONACO_VERSION}"
+            if [ ! -d "$monaco_dir" ]; then
+              echo "Publishing shared Monaco ${MONACO_VERSION}"
+              mkdir -p "$monaco_dir"
+              node scripts/copy-monaco-workers.mts "$monaco_dir"
+              git -C previews-branch add "vendor/monaco/${MONACO_VERSION}"
+            fi
             rm -rf "previews-branch/${TARGET}"
             mkdir -p "previews-branch/${TARGET}"
             cp -R dist/demo/. "previews-branch/${TARGET}/"
+            # site/index.html links the demo relatively, as `demo/main/`, which is
+            # correct from the site root. A bundle served from a subdirectory used
+            # to satisfy that by nesting a second, identical copy of the whole
+            # demo inside itself — doubling every preview's size and producing the
+            # /demo/pr-<n>-preview/demo/main/ URL. Point those links at the flat
+            # build published beside it instead. Relative rather than
+            # root-relative, so it holds whether Pages serves from the custom
+            # domain root or from an <owner>.github.io/<repo>/ prefix.
+            point_site_at_demo() {
+              local file="previews-branch/$1/index.html"
+              if ! grep -q '"demo/main/' "$file"; then
+                echo "site/index.html no longer links \"demo/main/\" — update this rewrite" >&2
+                exit 1
+              fi
+              sed -i "s|\"demo/main/|\"$2|g" "$file"
+            }
+            # These bundles are copies of the production marketing site served
+            # under /demo/, so they are near-duplicates of copse.dev/ and of each
+            # other, and they come and go with pull requests. Mark them noindex
+            # here, on the copy — site/ itself stays indexable, and pages.yml
+            # deploys it to the root from main untouched. The flat demo published
+            # beside them is already marked by `build:demo`. GitHub Pages cannot
+            # set an X-Robots-Tag header, hence a meta tag; see
+            # scripts/lib/noindex.mts.
+            mark_bundle_noindex() {
+              node scripts/mark-noindex.mts "previews-branch/$1"
+            }
             if [[ "$TARGET" == "main" ]]; then
-              mkdir -p "previews-branch/${TARGET}/preview/demo/main"
+              mkdir -p "previews-branch/${TARGET}/preview"
               cp -R site/. "previews-branch/${TARGET}/preview/"
-              cp -R dist/demo/. "previews-branch/${TARGET}/preview/demo/main/"
+              # ../ from /demo/main/preview/ is /demo/main/, the flat build above.
+              point_site_at_demo "${TARGET}/preview" "../"
+              mark_bundle_noindex "${TARGET}/preview"
             elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
               bundle_target="${TARGET}-preview"
               rm -rf "previews-branch/${bundle_target}"
-              mkdir -p "previews-branch/${bundle_target}/demo/main"
+              mkdir -p "previews-branch/${bundle_target}"
               cp -R site/. "previews-branch/${bundle_target}/"
-              cp -R dist/demo/. "previews-branch/${bundle_target}/demo/main/"
-              printf '%s\n' "$SHA" > "previews-branch/${bundle_target}/.head-sha"
+              # ../pr-<n>/ from /demo/pr-<n>-preview/ is the flat build above.
+              point_site_at_demo "$bundle_target" "../${TARGET}/"
+              mark_bundle_noindex "$bundle_target"
               find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
               git -C previews-branch add "$bundle_target"
             fi
             # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
             # and high-entropy map contents fail Secret scan on unrelated tips.
             find "previews-branch/${TARGET}" -type f -name '*.map' -delete
-            printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
             git -C previews-branch add "$TARGET"
             if git -C previews-branch diff --cached --quiet; then
               # Reached on the first pass when the build is byte-identical to what
               # is already published, and on a retry when the winning push carried
               # the same content for this target.
+              #
+              # NOTHING under the target directory may be derived from the commit
+              # SHA, or this check can never be true and every push republishes
+              # and redeploys. A `.head-sha` provenance stamp used to be written
+              # here and staged just above, which did exactly that: it changed on
+              # every push, so the diff was never quiet, so a docs-only or
+              # test-only commit still triggered a full-tree Pages deploy. Nothing
+              # ever read the file. Provenance lives in the commit message below,
+              # where it belongs; `git log demo-previews -- <target>/` recovers it.
               echo "No preview change for ${LABEL}"
               unchanged=true
               break
@@ -192,32 +287,57 @@ jobs:
     needs: publish
     if: needs.publish.outputs.published == 'true'
     uses: ./.github/workflows/pages.yml
+    with:
+      # A deploy problem is never this PR's fault — the previews branch is shared,
+      # and so is the Pages service and the deploy queue. Warn rather than redden
+      # the PR; the preview is already committed and the next deploy publishes it.
+      tolerate-deploy-failure: true
     secrets: inherit
 
+  # Deliberately NOT `needs: deploy`. The deploy serializes on the shared `pages`
+  # concurrency group, so gating the comment on it meant the preview link arrived
+  # whenever that queue got around to this run — measured at seven hours after
+  # the push on a busy day. The comment describes URLs that the deploy will serve
+  # shortly, so it does not need to wait for it, and it survives a deploy that
+  # gets superseded by a newer one.
   comment:
-    needs: [publish, deploy]
+    needs: publish
     if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       pull-requests: write
+      pages: read
     steps:
       - uses: actions/github-script@v9
         env:
           PR: ${{ needs.publish.outputs.pr }}
-          BASE_URL: ${{ needs.deploy.outputs.page_url }}
           SCENARIOS: ${{ needs.publish.outputs.scenarios }}
         with:
           script: |
             const marker = '<!-- copse-demo-preview -->';
             const pr = Number(process.env.PR);
-            // page_url is the Pages root; normalise to exactly one trailing
-            // slash, then use the shared /demo/ namespace. The final trailing
-            // slash matters because the demo's assets are document-relative.
-            const base = (
-              process.env.BASE_URL || 'https://copse-dev.github.io/agent-pane/'
-            ).replace(/\/*$/, '/');
+            // Ask Pages for its own base URL rather than hard-coding one. This
+            // repo publishes under the site/CNAME custom domain, so the
+            // <owner>.github.io/<repo>/ form would 404 — and it would silently
+            // become the right answer again if the domain were ever dropped.
+            // Normalise to exactly one trailing slash, then use the shared
+            // /demo/ namespace; that final slash matters because the demo's
+            // assets are document-relative.
+            let root = 'https://copse.dev/';
+            try {
+              const { data: pages } = await github.rest.repos.getPages({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              if (pages.html_url) root = pages.html_url;
+            } catch (err) {
+              console.log(`Could not read the Pages URL (${err.message}); using ${root}`);
+            }
+            const base = root.replace(/\/*$/, '/');
             const previewUrl = `${base}demo/pr-${pr}-preview/`;
-            const demoUrl = `${previewUrl}demo/main/`;
+            // The flat build, not a path inside the bundle: the bundle links this
+            // one rather than nesting its own copy.
+            const demoUrl = `${base}demo/pr-${pr}/`;
             let scenarios = [];
             try {
               scenarios = JSON.parse(process.env.SCENARIOS || '[]');
@@ -237,7 +357,7 @@ jobs:
               links ? 'Interactive, with a mocked backend — jump to a scenario:' : '',
               links,
               '',
-              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Refreshed on each push; removed when the PR closes.</sub>',
+              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Rebuilt whenever a push changes the demo bundle; these links go live once the queued deploy lands, shortly after this comment. Removed when the PR closes.</sub>',
             ]
               .filter((line) => line !== '')
               .join('\n');

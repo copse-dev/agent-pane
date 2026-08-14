@@ -5,6 +5,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -12,7 +13,10 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 // as an "Agent tasks" entry in the Terminal tab's left rail; selecting it shows
 // the command's output as a full panel on the right. Exercises the full path:
 // agent loop → tagged agent:shell_output IPC → renderer agent-tasks view.
-describe('agent tasks in terminal tab', () => {
+// Quarantined in CI by #1680 — the third spec sharing that fault, and the one
+// it was originally filed for. See `github-write-approval.e2e.ts` for the
+// evidence. It still runs locally; only the CI gate skips it.
+describeSkipInCi('agent tasks in terminal tab', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()

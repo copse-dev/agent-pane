@@ -24,9 +24,11 @@ import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
   getThreadExecutionContext,
   requireThreadExecutionOwner,
+  type ThreadCheckoutMode,
   type ThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -76,6 +78,13 @@ type DecisionWaiter = (status: DiffDecision['status']) => void
 interface DiffQueueState {
   root: string | null
   projectRoot: string | null
+  /**
+   * Whether this thread executes in its own linked worktree. Cached alongside
+   * `root` because the ACP native-tool bridge binds only the owner (see
+   * `runWithThreadExecutionOwner`), so `getThreadExecutionContext()` is null on
+   * that async chain and the last resolved mode is the honest answer.
+   */
+  checkoutMode: ThreadCheckoutMode
   readonly queue: QueueEntry[]
   readonly recentDecisions: DiffDecision[]
   readonly directAppliedSnapshots: Map<string, string>
@@ -84,10 +93,15 @@ interface DiffQueueState {
 
 const statesByProject = new Map<string, Map<string, DiffQueueState>>()
 
-function createDiffQueueState(root: string | null, projectRoot: string | null): DiffQueueState {
+function createDiffQueueState(
+  root: string | null,
+  projectRoot: string | null,
+  checkoutMode: ThreadCheckoutMode,
+): DiffQueueState {
   return {
     root,
     projectRoot,
+    checkoutMode,
     queue: [],
     recentDecisions: [],
     directAppliedSnapshots: new Map(),
@@ -100,6 +114,7 @@ function stateFor(owner: ThreadExecutionOwner = requireThreadExecutionOwner()): 
   const ownsContext = context?.projectId === owner.projectId && context.threadId === owner.threadId
   const root = ownsContext ? context.root : null
   const projectRoot = ownsContext ? context.projectRoot : null
+  const checkoutMode: ThreadCheckoutMode = ownsContext ? context.checkoutMode : 'shared'
   let projectStates = statesByProject.get(owner.projectId)
   if (!projectStates) {
     projectStates = new Map()
@@ -107,11 +122,12 @@ function stateFor(owner: ThreadExecutionOwner = requireThreadExecutionOwner()): 
   }
   let state = projectStates.get(owner.threadId)
   if (!state) {
-    state = createDiffQueueState(root, projectRoot)
+    state = createDiffQueueState(root, projectRoot, checkoutMode)
     projectStates.set(owner.threadId, state)
   } else if (root) {
     state.root = root
     state.projectRoot = projectRoot
+    state.checkoutMode = checkoutMode
   }
   return state
 }
@@ -125,6 +141,21 @@ function projectRootFor(state: DiffQueueState): string | null {
 }
 
 /**
+ * Refresh the file index for the root an applied edit actually landed in, so
+ * the agent's next `find_files` can see what it just wrote.
+ *
+ * That root is the execution root: `applyDiffEntry` writes through
+ * `executionRootFor`, and `find_files` queries the index for
+ * `getAgentExecutionRoot`. On a worktree thread the project checkout is a
+ * different tree entirely — refreshing it re-listed a tree the edit never
+ * touched and left the index the agent reads to the watcher's debounce.
+ */
+async function reindexAfterApply(state: DiffQueueState): Promise<void> {
+  const root = executionRootFor(state)
+  if (root) await buildIndex(root)
+}
+
+/**
  * Content Copse last wrote directly (bypassing the approval queue) per path.
  * `canApplyDirectly` uses it to tell its own past edits apart from unowned
  * changes in `git status`. The on-disk content check there is the real safety
@@ -133,7 +164,6 @@ function projectRootFor(state: DiffQueueState): string | null {
  * insertion order so a long-running session can't grow it without limit.
  */
 const MAX_DIRECT_APPLIED_SNAPSHOTS = 1000
-let mainWindow: BrowserWindow | null = null
 
 /**
  * Headless resolver for a staged diff. In the GUI a staged entry waits for the
@@ -196,8 +226,7 @@ async function resolveStagedEntry(path: string): Promise<string> {
   recordOwnershipAfterApply(state, entry)
   recordDecision(state, owner, { path, status: 'approved' })
   removeEntry(state, owner, path)
-  const root = projectRootFor(state)
-  if (root) await buildIndex(root)
+  await reindexAfterApply(state)
   return `Approved and applied change to ${path}.`
 }
 
@@ -325,6 +354,53 @@ async function canApplyDirectly(
   }
 
   return { ok: true }
+}
+
+/**
+ * Whether a non-content file op (delete, rename, mkdir) may skip the approval
+ * queue. Writes have always had that option — {@link canApplyDirectly} guards
+ * them with a worktree backup — but ops staged unconditionally, so a thread
+ * running in its own worktree still had to approve every delete and rename it
+ * made inside its own checkout. Nothing there is the user's: the worktree is cut
+ * from the default branch, lives on its own branch in its own directory, and the
+ * user's checkout is untouched either way (worktree invariant 6), so the prompt
+ * was asking about files only the agent had ever written.
+ *
+ * The exemption is deliberately narrow. It applies only in worktree mode, only
+ * while `worktreeAutoApproveEdits` is on, and only under the same policy writes
+ * already pass: the op still stages when git can't be read, when the worktree
+ * holds unowned work that could not be backed up, or when the target changed on
+ * disk since Copse last touched it. Those are safety fallbacks, not friction
+ * (issue #699), and worktree mode does not buy an op out of them.
+ *
+ * A `null` reason means the op was never eligible — shared checkout or the
+ * setting off — so the caller keeps the plain staging message rather than
+ * explaining a fast path this thread never had.
+ *
+ * `mkdir` skips the git checks entirely. Everything {@link canApplyDirectly}
+ * guards against is destruction of content that is not Copse's to destroy — the
+ * backup it takes, the unowned-changes scan, the stale-content comparison — and
+ * creating a directory destroys nothing. It cannot overwrite a file (the tool
+ * checks existence before it gets here), it cannot conflict, and an empty
+ * directory has no git-status footprint to reconcile. The pending-queue check
+ * still applies, so an op never jumps ahead of diffs the user is reviewing. That
+ * leaves the sweep to the first op that could actually lose work, which is when
+ * it earns its three subprocesses.
+ */
+async function canApplyFileOpDirectly(
+  state: DiffQueueState,
+  op: DiffOp,
+  path: string,
+): Promise<{ ok: true } | { ok: false; reason: string | null }> {
+  if (state.checkoutMode !== 'worktree') return { ok: false, reason: null }
+  if (!getSetting<boolean>('worktreeAutoApproveEdits', true)) return { ok: false, reason: null }
+  if (op === 'mkdir') {
+    if (state.queue.length > 0) {
+      return { ok: false, reason: 'there are pending staged diffs waiting for user approval' }
+    }
+    return { ok: true }
+  }
+  return canApplyDirectly(state, path)
 }
 
 /**
@@ -701,8 +777,6 @@ async function applyMkdir(entry: QueueEntry, root: string): Promise<ApplyResult>
 }
 
 export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
-  mainWindow = win
-
   function parseOwner(projectIdArg: unknown, threadIdArg: unknown): ThreadExecutionOwner {
     const projectId = parseIpcArgs(zProjectId, [projectIdArg])
     const threadId = parseIpcArgs(zThreadId, [threadIdArg])
@@ -724,7 +798,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
       if (result.status === 'conflict') {
         restage(owner, entry, result.current)
         recordDecision(state, owner, { path: entry.path, status: 'conflict' })
-        mainWindow?.webContents.send('diff:conflict', owner.projectId, owner.threadId, [entry.path])
+        broadcastToAppWindows('diff:conflict', owner.projectId, owner.threadId, [entry.path])
         return
       }
       if (result.status === 'error') {
@@ -732,8 +806,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
         recordDecision(state, owner, { path: entry.path, status: 'error', error: result.error })
         throw new Error(`Failed to write ${entry.path}: ${result.error}`)
       }
-      const root = projectRootFor(state)
-      if (root) await buildIndex(root)
+      await reindexAfterApply(state)
       recordOwnershipAfterApply(state, entry)
       recordDecision(state, owner, { path: entry.path, status: 'approved' })
       removeEntry(state, owner, path)
@@ -774,6 +847,17 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
       }
     },
   )
+
+  // On-demand read of the queue itself, the list counterpart to `diff:content`.
+  // `diff:queued` is a push, so any renderer that boots mid-run starts with an
+  // empty queue and stays empty until the next stage/approve — which is how a
+  // Changes pop-out ended up with no "Proposed" section at all (#1704). Panes
+  // hydrate from this on mount instead of depending on catching the push.
+  ipcMain.handle('diff:queue', (event, projectIdArg: unknown, threadIdArg: unknown) => {
+    assertMainFrameSender(event, win)
+    const owner = parseOwner(projectIdArg, threadIdArg)
+    return stateFor(owner).queue.map((e) => ({ path: e.path, language: e.language }))
+  })
 
   ipcMain.handle('diff:approveAll', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
@@ -828,15 +912,14 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
     }
   }
   if (appliedEntries.size > 0) {
-    const root = projectRootFor(state)
-    if (root) await buildIndex(root)
+    await reindexAfterApply(state)
     for (let i = state.queue.length - 1; i >= 0; i--) {
       const queued = state.queue[i]
       if (queued && appliedEntries.has(queued)) state.queue.splice(i, 1)
     }
   }
   if (conflicts.length) {
-    mainWindow?.webContents.send(
+    broadcastToAppWindows(
       'diff:conflict',
       resolvedOwner.projectId,
       resolvedOwner.threadId,
@@ -860,7 +943,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
  */
 function restage(owner: ThreadExecutionOwner, entry: QueueEntry, current: string): void {
   entry.before = current
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'agent:show_diff',
     owner.projectId,
     owner.threadId,
@@ -885,7 +968,7 @@ export function stageDiff(
   const entry = state.queue.find((e) => e.path === path)
   if (!entry) throw new Error(`Staged diff entry for ${path} missing immediately after upsert`)
   // Payload before queue broadcast so the renderer can populate activeDiff first.
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'agent:show_diff',
     owner.projectId,
     owner.threadId,
@@ -926,8 +1009,7 @@ export async function applyOrStageDiff(
   if (result.status === 'written') {
     recordDirectAppliedSnapshot(state, path, after)
     recordDecision(state, owner, { path, status: 'applied_directly' })
-    const root = projectRootFor(state)
-    if (root) await buildIndex(root)
+    await reindexAfterApply(state)
     const backup = getSessionBackup()
     const safetyNote = backup
       ? `The worktree had uncommitted changes, so those were backed up to ${backup.ref} first; no approval was required.`
@@ -943,6 +1025,85 @@ export async function applyOrStageDiff(
   return `Failed to write ${path}: ${result.error}`
 }
 
+interface FileOpRequest {
+  op: DiffOp
+  path: string
+  before: string
+  after: string
+  language: string
+  renameTo?: string
+}
+
+/** Noun-phrase description of a pending op, for the staging message. */
+function stagedFileOpVerb(entry: FileOpRequest): string {
+  if (entry.op === 'delete') return `Deletion of ${entry.path}`
+  if (entry.op === 'rename') {
+    return `Rename of ${entry.path} → ${entry.renameTo ?? '(unknown target)'}`
+  }
+  return `Creation of directory ${entry.path}`
+}
+
+/** Past-tense description of a landed op, mirroring {@link stagedFileOpVerb}. */
+function appliedFileOpVerb(entry: FileOpRequest): string {
+  if (entry.op === 'delete') return `Deleted ${entry.path}`
+  if (entry.op === 'rename') {
+    return `Renamed ${entry.path} → ${entry.renameTo ?? '(unknown target)'}`
+  }
+  return `Created directory ${entry.path}`
+}
+
+/**
+ * Apply a non-content file operation (delete, rename, mkdir) directly when this
+ * thread's worktree makes approval meaningless, otherwise stage it for the user.
+ * The write-side twin is {@link applyOrStageDiff}; both funnel through
+ * {@link applyDiffEntry}, so hooks, the stale-content guard, and ownership
+ * bookkeeping behave the same however the op got there.
+ */
+export async function applyOrStageFileOp(entry: FileOpRequest): Promise<string> {
+  if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
+  const owner = requireThreadExecutionOwner()
+  const state = stateFor(owner)
+  const direct = await canApplyFileOpDirectly(state, entry.op, entry.path)
+  if (!direct.ok) {
+    const staged = await stageFileOp(entry)
+    return direct.reason ? `${staged}\nReason approval is required: ${direct.reason}.` : staged
+  }
+
+  const queued: QueueEntry = {
+    path: entry.path,
+    before: entry.before,
+    after: entry.after,
+    language: entry.language,
+    op: entry.op,
+    ...(entry.renameTo ? { renameTo: entry.renameTo } : {}),
+  }
+  const result = await applyDiffEntry(queued, executionRootFor(state), projectRootFor(state))
+  if (result.status === 'written') {
+    recordOwnershipAfterApply(state, queued)
+    recordDecision(state, owner, { path: entry.path, status: 'applied_directly' })
+    await reindexAfterApply(state)
+    const backup = getSessionBackup()
+    const backupNote = backup
+      ? ` The worktree had uncommitted changes, so those were backed up to ${backup.ref} first.`
+      : ''
+    return `${appliedFileOpVerb(entry)} directly. This thread runs in its own isolated worktree, so no approval was required.${backupNote} You can validate with run_shell/read_file/git now.`
+  }
+  if (result.status === 'conflict') {
+    // A move carries whatever is on disk now, so a restaged rename follows the
+    // current content on both sides rather than re-proposing the stale copy the
+    // agent read. A delete's `after` is already empty, and mkdir never conflicts.
+    const staged = await stageFileOp({
+      ...entry,
+      before: result.current,
+      ...(entry.op === 'rename' ? { after: result.current } : {}),
+    })
+    recordDecision(state, owner, { path: entry.path, status: 'conflict' })
+    return `${staged}\nDirect apply was skipped because ${entry.path} changed after it was read; review the staged change before approval.`
+  }
+  recordDecision(state, owner, { path: entry.path, status: 'error', error: result.error })
+  return `Failed to apply ${entry.op} for ${entry.path}: ${result.error}`
+}
+
 /**
  * Stage a non-content file operation (delete, rename, mkdir) through the diff
  * approval queue (#122) so it inherits the same user-approval safety model as
@@ -950,14 +1111,7 @@ export async function applyOrStageDiff(
  * the user as a before/after diff (delete: full removal; rename: content moved;
  * mkdir: directory marker) and is not applied until approved.
  */
-export function stageFileOp(entry: {
-  op: DiffOp
-  path: string
-  before: string
-  after: string
-  language: string
-  renameTo?: string
-}): Promise<string> {
+function stageFileOp(entry: FileOpRequest): Promise<string> {
   if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
@@ -975,7 +1129,7 @@ export function stageFileOp(entry: {
   } else {
     state.queue.push(queued)
   }
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'agent:show_diff',
     owner.projectId,
     owner.threadId,
@@ -986,14 +1140,8 @@ export function stageFileOp(entry: {
   )
   broadcastQueue(state, owner)
   if (activeStagedDiffResolver()) return resolveStagedEntry(entry.path)
-  const verb =
-    entry.op === 'delete'
-      ? `Deletion of ${entry.path}`
-      : entry.op === 'rename'
-        ? `Rename of ${entry.path} → ${entry.renameTo ?? '(unknown target)'}`
-        : `Creation of directory ${entry.path}`
   return Promise.resolve(
-    `${verb} staged. Approve or reject in the diff panel — nothing changes on disk until accepted.`,
+    `${stagedFileOpVerb(entry)} staged. Approve or reject in the diff panel — nothing changes on disk until accepted.`,
   )
 }
 
@@ -1017,7 +1165,7 @@ function removeEntry(state: DiffQueueState, owner: ThreadExecutionOwner, path: s
 }
 
 function broadcastQueue(state: DiffQueueState, owner: ThreadExecutionOwner): void {
-  mainWindow?.webContents.send(
+  broadcastToAppWindows(
     'diff:queued',
     owner.projectId,
     owner.threadId,

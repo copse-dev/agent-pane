@@ -1,6 +1,9 @@
 import { el, clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
+import { attachTextExpand } from '../attachments/text-expand.ts'
+import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
@@ -10,9 +13,11 @@ import {
   recordThreadVideos,
   recordThreadArchives,
   applyPreparedThreadCheckout,
+  createThread,
   getThreadById,
   getActiveThread,
   setThreadDraftPrompt,
+  setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import {
   dispatchAgentRun,
@@ -49,6 +54,7 @@ import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { mountFooterReasoningDial } from './footer-reasoning-dial.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
@@ -56,9 +62,11 @@ import { mountFooterOverflow } from './footer-overflow.ts'
 import {
   downloadThreadArchive,
   downloadThreadJsonl,
+  threadExportBaseName,
   threadHasExportableContent,
 } from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
+import { buildDebugTracePrompt, debugTraceThreadTitle } from '@shared/threads/debug-trace-prompt.ts'
 import {
   formatFooterUsageDetail,
   formatFooterUsageSummary,
@@ -75,6 +83,7 @@ import {
   FALLBACK_APP_CHAT_MODEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
+import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -92,7 +101,9 @@ import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
-import { fetchModelOptions, type ModelOption } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { contextFitAdvice } from '@shared/context-window-advice.ts'
+import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 
 interface MountInputBarOptions {
   /**
@@ -101,6 +112,24 @@ interface MountInputBarOptions {
    * can omit this and keep all generated UI under their fixture root.
    */
   portraitPanelHost?: HTMLElement
+}
+
+/** One image in the composer, with the fidelity chosen for it (default `auto`). */
+interface AttachedImage {
+  dataUrl: string
+  mimeType: string
+  detail?: ImageDetail
+}
+
+/**
+ * Menu copy for each fidelity. Says what it costs as well as what it does —
+ * `low` is the one with a consequence worth warning about, because it
+ * downsamples far enough that text in a screenshot stops being readable.
+ */
+const IMAGE_DETAIL_LABELS: Record<ImageDetail, string> = {
+  auto: 'Auto detail (provider decides)',
+  low: 'Low detail — cheapest, text may be unreadable',
+  high: 'High detail — full fidelity, most tokens',
 }
 
 export function mountInputBar(
@@ -115,7 +144,14 @@ export function mountInputBar(
   const submitBtn = el('button', { class: 'submit-btn', type: 'button' }, 'Send')
   const stopBtn = el(
     'button',
-    { class: 'stop-btn', type: 'button', hidden: '', 'aria-label': 'Stop agent' },
+    {
+      class: 'stop-btn',
+      type: 'button',
+      hidden: '',
+      'aria-label': 'Stop agent',
+      'data-tooltip': 'Stop the running agent',
+      'data-tooltip-placement': 'top',
+    },
     'Stop',
   )
   // Hidden native file picker driven by the paperclip button — gives an
@@ -130,7 +166,13 @@ export function mountInputBar(
   })
   const attachBtn = el(
     'button',
-    { class: 'attach-btn', type: 'button', 'aria-label': 'Attach files', title: 'Attach files' },
+    {
+      class: 'attach-btn',
+      type: 'button',
+      'aria-label': 'Attach files',
+      'data-tooltip': 'Attach files',
+      'data-tooltip-placement': 'top',
+    },
     outlineIcon(
       'attach',
       [
@@ -201,12 +243,34 @@ export function mountInputBar(
     describeImagesBtn,
     sendWithoutImagesBtn,
   )
+  // Sits beside the model picker it talks about: the thread no longer fits (or
+  // barely fits) the model selected for it. Recomputed from the same pre-send
+  // estimate that drives the context wheel, so picking a model updates it at once.
+  const contextFitText = el('span', { class: 'composer-context-warning-text' })
+  const contextFitModelBtn = el(
+    'button',
+    { type: 'button', class: 'composer-context-model-btn' },
+    'Choose another model',
+  )
+  const contextFitWarning = el(
+    'div',
+    {
+      class: 'composer-context-warning',
+      role: 'status',
+      'aria-live': 'polite',
+      hidden: '',
+    },
+    el('span', { class: 'composer-context-warning-icon', 'aria-hidden': 'true' }, '!'),
+    contextFitText,
+    contextFitModelBtn,
+  )
   let footerOverflow: ReturnType<typeof mountFooterOverflow> | null = null
   const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
     footerOverflow?.update()
   })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const reasoningHost = el('div', { class: 'footer-reasoning-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
   const checkoutBtn = el('button', {
     type: 'button',
@@ -243,7 +307,7 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
-  footer.append(modelHost, checkoutHost, branchHost)
+  footer.append(modelHost, reasoningHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
       label: guardedYolo.menuLabel,
@@ -272,10 +336,20 @@ export function mountInputBar(
         !threadHasExportableContent(getActiveThread(store)),
       onClick: exportThreadArchive,
     },
+    // Debug trace and Share trace are the two "something went wrong here" exits,
+    // so unlike the diagnostics above them they are not behind Developer mode —
+    // the user who needs them is by definition not the one who went looking for
+    // a developer setting first.
+    {
+      label: 'Debug trace',
+      hidden: (): boolean =>
+        store.getState().activeProjectId === null ||
+        !threadHasExportableContent(getActiveThread(store)),
+      onClick: debugTrace,
+    },
     {
       label: 'Share trace',
-      hidden: (): boolean =>
-        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
       onClick: shareTrace,
     },
   ])
@@ -300,6 +374,25 @@ export function mountInputBar(
     return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
   }
 
+  /**
+   * The label for the footer picker trigger. When the active model is a dynamic
+   * selector (`auto:…`), prefer the concrete route the last turn actually ran
+   * on so the picker shows a real model instead of the opaque selector; fall
+   * back to the selector's display label otherwise.
+   */
+  function footerModelDisplayLabel(current: string): string | undefined {
+    if (!isDynamicModel(current)) return undefined
+    const thread = getActiveThread(store)
+    if (!thread) return undefined
+    const resolved =
+      thread.resolvedModel ??
+      [...thread.messages].reverse().find((m) => m.role === 'assistant' && m.model)?.model
+    // Run the resolved route through the same label formatter the picker uses
+    // (OpenRouter/cloud friendly), so `openrouter:minimax/minimax-m3` renders
+    // as "MiniMax M3" rather than the raw id.
+    return resolved ? modelDisplayLabel(resolved) : undefined
+  }
+
   function footerRecentModels(): string[] {
     const { threads, settings } = store.getState()
     return [...threads]
@@ -321,6 +414,8 @@ export function mountInputBar(
       .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
     store.setState({ threads })
     modelPicker.refresh()
+    // The new model may offer a different ladder — or none at all.
+    reasoningDial.sync()
     updateFooter()
     // The context window depends on the model, so re-estimate the footer wheel
     // against the newly selected model rather than waiting for the next keystroke.
@@ -329,7 +424,38 @@ export function mountInputBar(
     void refreshImageCompatibilityWarning()
   }
 
+  // Per-chat effort, beside the model it applies to. Writes to the thread, so
+  // it lasts as long as the conversation and never re-tunes the model itself.
+  const reasoningDial = mountFooterReasoningDial(
+    reasoningHost,
+    footerChatModel,
+    () => getActiveThread(store)?.reasoning,
+    (reasoning) => {
+      const thread = getActiveThread(store)
+      if (!thread) return
+      const threads = store.getState().threads.map((t) =>
+        t.id !== thread.id
+          ? t
+          : {
+              ...t,
+              ...(reasoning === undefined ? {} : { reasoning }),
+              updatedAt: Date.now(),
+            },
+      )
+      // Clearing the dial has to delete the field rather than write undefined,
+      // or the thread keeps a key that reads as "set" on the next sync.
+      if (reasoning === undefined) {
+        const target = threads.find((t) => t.id === thread.id)
+        if (target) Reflect.deleteProperty(target, 'reasoning')
+      }
+      store.setState({ threads })
+      reasoningDial.sync()
+      composer.focus()
+    },
+  )
+
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
+    formatCurrentLabel: footerModelDisplayLabel,
     isSshWorkspace: (): boolean => {
       const { activeProjectId, projects } = store.getState()
       if (!activeProjectId) return false
@@ -345,6 +471,7 @@ export function mountInputBar(
   // the project changes so ACP options hide/show with SSH workspaces.
   store.on('threads_changed', () => {
     modelPicker.refresh()
+    reasoningDial.sync()
     void refreshAutomaticCheckoutPreview()
   })
   store.on('projects_changed', () => {
@@ -381,6 +508,46 @@ export function mountInputBar(
       showErrorToast('Share trace failed', error)
     })
   }
+
+  /**
+   * Hand this thread's trace to a fresh thread and ask what went wrong in it.
+   *
+   * Everything the model needs is the zip — the same archive "Export thread
+   * folder (ZIP)" downloads — attached to a new conversation rather than saved to
+   * disk, so the diagnosis happens where the user already is. The draft prompt is
+   * deliberately left unsent: only the person who watched the run knows which
+   * part of it looked wrong, and the draft ends on a line for them to say so.
+   */
+  async function startDebugTrace(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (projectId === null || !threadHasExportableContent(thread)) return
+    // Zip before switching away: a failed export should leave the user on the
+    // thread they were reading, not on an empty one with nothing attached.
+    const { bytes, build } = await api.threads.exportArchive(projectId, thread.id)
+    const name = `${threadExportBaseName(thread)}.zip`
+    // Persist whatever is in the composer to its own thread before switching.
+    store.emit('composer_draft_flush')
+    const debugThreadId = createThread(store, buildDebugTracePrompt(thread, name, build))
+    // A title now, rather than one auto-suggested from the first message later:
+    // the sidebar should say which thread this is about before it is ever sent.
+    setThreadTitle(store, debugThreadId, debugTraceThreadTitle(thread))
+    // `threads_changed` has already switched the composer to the new thread, so
+    // the archive is stored under *its* blobs and lives as long as it does.
+    // `.slice` narrows the transferred view to exactly its own bytes, which is
+    // what the attach path re-wraps.
+    await addArchiveChip({
+      name,
+      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    })
+    composer.focus()
+  }
+
+  function debugTrace(): void {
+    void startDebugTrace().catch((error: unknown) => {
+      showErrorToast('Debug trace failed', error)
+    })
+  }
   usageBtn.addEventListener('mouseenter', usagePopover.show)
   usageBtn.addEventListener('mouseleave', usagePopover.hide)
   usageBtn.addEventListener('focus', usagePopover.show)
@@ -404,6 +571,7 @@ export function mountInputBar(
     branchWarning,
     checkoutError,
     imageCompatibilityWarning,
+    contextFitWarning,
     inputRow,
     footer,
   )
@@ -419,7 +587,7 @@ export function mountInputBar(
   const followUpPlaceholder = 'Send follow-up'
 
   let attachedFiles: { path: string; content: string }[] = []
-  let attachedImages: { dataUrl: string; mimeType: string }[] = []
+  let attachedImages: AttachedImage[] = []
   // Attached videos (screen recordings). Stored on disk and referenced by path —
   // the media never enters the prompt, so unlike images these cost no context.
   // The agent reads them through the `video_frames` tool.
@@ -539,6 +707,14 @@ export function mountInputBar(
     if (!recommendedImageModel) return
     selectChatModel(recommendedImageModel.value)
     composer.focus()
+  })
+
+  contextFitModelBtn.addEventListener('click', (event) => {
+    // The picker closes on any document click outside its own subtree, and this
+    // button is outside it — without stopping propagation the menu would shut in
+    // the same dispatch that opened it.
+    event.stopPropagation()
+    modelPicker.openMenu()
   })
 
   function removeAttachedImages(): void {
@@ -700,6 +876,10 @@ export function mountInputBar(
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
   let lastBreakdown: ContextBreakdown | null = null
+  // Model the last estimate was computed for. The context-fit warning quotes a
+  // window and a model name together, so it must not pair a fresh selection with
+  // the previous model's window while the new estimate is still in flight.
+  let breakdownModel: string | null = null
   // Rates for every model outside the static cloud catalog — OpenRouter routes
   // and extra providers alike — keyed by model selection. Resolved in the main
   // process (see model-pricing-store.ts) so the footer and the usage ledger
@@ -774,6 +954,7 @@ export function mountInputBar(
     hideCheckoutError()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
+    breakdownModel = null
     scheduleContextEstimate(0)
   }
 
@@ -888,6 +1069,29 @@ export function mountInputBar(
     }
   }
 
+  /**
+   * Warn when the thread has outgrown (or nearly outgrown) the model chosen for
+   * it. Silent until an estimate for the *current* model lands, so a model the
+   * user just picked is never described with the previous model's window.
+   */
+  function updateContextFitWarning(): void {
+    const model = footerChatModel()
+    const advice =
+      breakdownModel === model
+        ? contextFitAdvice(lastBreakdown, {
+            modelLabel: modelDisplayLabel(model),
+            lmStudioModel: isLocalModel(model),
+          })
+        : null
+    if (!advice) {
+      contextFitWarning.hidden = true
+      return
+    }
+    contextFitText.textContent = advice.message
+    contextFitWarning.classList.toggle('is-over', advice.level === 'over')
+    contextFitWarning.hidden = false
+  }
+
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
@@ -942,6 +1146,7 @@ export function mountInputBar(
       usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip)
     }
     footerOverflow?.update()
+    updateContextFitWarning()
     updateCheckoutControl()
     updateState()
     updateQueueIndicator()
@@ -991,6 +1196,7 @@ export function mountInputBar(
     if (isAcpModel(footerChatModel())) {
       if (lastBreakdown !== null) {
         lastBreakdown = null
+        breakdownModel = null
         updateFooter()
       }
       return
@@ -999,6 +1205,7 @@ export function mountInputBar(
     if (!id) {
       if (lastBreakdown !== null) {
         lastBreakdown = null
+        breakdownModel = null
         updateFooter()
       }
       return
@@ -1006,6 +1213,7 @@ export function mountInputBar(
     const projectId = store.getState().activeProjectId
     if (!projectId) return
     const seq = ++estimateSeq
+    const estimatedModel = footerChatModel()
     const payload = composeEstimatePayload()
     let breakdown: ContextBreakdown
     try {
@@ -1016,6 +1224,7 @@ export function mountInputBar(
     // Drop results that arrived after a newer request or a thread switch.
     if (seq !== estimateSeq || getActiveThreadId() !== id) return
     lastBreakdown = breakdown
+    breakdownModel = estimatedModel
     updateFooter()
   }
 
@@ -1247,7 +1456,13 @@ export function mountInputBar(
     let fullContent: UserContent
     if (attachedImages.length > 0) {
       fullContent = [
-        ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
+        ...attachedImages.map((img) => ({
+          type: 'image' as const,
+          dataUrl: img.dataUrl,
+          // Omitted at 'auto' so an untouched attachment sends the same content
+          // it always has, and stored history stays free of a redundant field.
+          ...(img.detail && img.detail !== 'auto' ? { detail: img.detail } : {}),
+        })),
         {
           type: 'text' as const,
           text: buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
@@ -1396,7 +1611,11 @@ export function mountInputBar(
     chip.className = 'attachment-chip'
     const name = document.createElement('span')
     name.className = 'attachment-chip-label'
-    name.textContent = file.path.split('/').pop() ?? file.path
+    const label = file.path.split('/').pop() ?? file.path
+    name.textContent = label
+    // The label, not the pill: the pill already holds the ✕ button, and a
+    // button inside a role="button" is neither valid nor clickable-apart.
+    attachTextExpand(name, file.content, label)
     chip.append(name)
     const remove = document.createElement('button')
     remove.textContent = '✕'
@@ -1439,6 +1658,7 @@ export function mountInputBar(
     const title = document.createElement('span')
     title.className = 'attachment-chip-label'
     title.textContent = ref.label
+    attachTextExpand(title, ref.content, ref.label)
     chip.append(shellIcon('shell-chip-icon'), title)
     const remove = document.createElement('button')
     remove.textContent = '✕'
@@ -1545,7 +1765,8 @@ export function mountInputBar(
   }
 
   function addImageChip(dataUrl: string, mimeType: string): void {
-    attachedImages.push({ dataUrl, mimeType })
+    const entry: AttachedImage = { dataUrl, mimeType }
+    attachedImages.push(entry)
     const chip = document.createElement('span')
     chip.className = 'attachment-chip image-chip'
     const thumb = document.createElement('img')
@@ -1555,10 +1776,36 @@ export function mountInputBar(
     const remove = document.createElement('button')
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
-      attachedImages = attachedImages.filter((i) => i.dataUrl !== dataUrl)
+      attachedImages = attachedImages.filter((i) => i !== entry)
       chip.remove()
       void refreshImageCompatibilityWarning()
       scheduleContextEstimate()
+    })
+    // Fidelity is per image, so it is chosen on the image rather than in
+    // Settings: a stack trace in one chip and a frame in the next want
+    // opposite answers, and only the person attaching them knows which.
+    const applyDetail = (detail: ImageDetail): void => {
+      entry.detail = detail
+      chip.dataset['detail'] = detail
+      chip.title = IMAGE_DETAIL_LABELS[detail]
+      scheduleContextEstimate()
+    }
+    applyDetail('auto')
+    chip.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(
+        e.clientX,
+        e.clientY,
+        IMAGE_DETAILS.map((detail) => ({
+          // The shared menu has no checked state, so the current choice is
+          // marked in the label rather than by changing that component.
+          label: `${(entry.detail ?? 'auto') === detail ? '✓ ' : '  '}${IMAGE_DETAIL_LABELS[detail]}`,
+          onSelect: (): void => {
+            applyDetail(detail)
+          },
+        })),
+      )
     })
     chip.append(thumb, remove)
     chips.append(chip)

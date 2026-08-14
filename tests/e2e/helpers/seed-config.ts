@@ -25,34 +25,20 @@ import {
   serializeSpineLine,
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
+import { copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 
-/** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
-function copsePanelUserDataDir(): string {
-  const override = process.env.COPSE_PANEL_USER_DATA?.trim()
-  if (override) return override
-  if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'copse-panel')
-  }
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
-    return join(appData, 'copse-panel')
-  }
-  return join(homedir(), '.config', 'copse-panel')
-}
-
-const USER_DATA = copsePanelUserDataDir()
+const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
 /**
- * Packs the host turns off on a profile with no `packDisabled` list — mirrors
- * `DEFAULT_DISABLED_PACK_IDS` in `src/main/services/packs/pack-service.ts`.
+ * Plugins the host turns off on a profile with no `pluginDisabled` list — mirrors
+ * `DEFAULT_DISABLED_PLUGIN_IDS` in `src/main/services/plugins/plugin-service.ts`.
  * Seeding the list explicitly means a fixture never depends on that default.
  */
-const DEFAULT_DISABLED_PACK_IDS = [
+const DEFAULT_DISABLED_PLUGIN_IDS = [
   'copse.advisor-strategy',
   'copse.automations',
-  'copse.background-tasks',
   'copse.ci-investigator',
   'copse.devtools-shortcut',
   'copse.dark-factory',
@@ -71,9 +57,9 @@ export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
   writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(validated, null, 2)}\n`, 'utf8')
 }
 
-/** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
-function packDisabledSeed(enabled: readonly string[]): string[] {
-  return DEFAULT_DISABLED_PACK_IDS.filter((id) => !enabled.includes(id))
+/** The `pluginDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
+function pluginDisabledSeed(enabled: readonly string[]): string[] {
+  return DEFAULT_DISABLED_PLUGIN_IDS.filter((id) => !enabled.includes(id))
 }
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
@@ -87,6 +73,59 @@ export function e2eWorkspaceDir(): string {
 /** Remove a rebuildable per-project thread catalog after an app relaunch. */
 export function invalidateThreadCatalog(projectId: string): void {
   rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
+}
+
+/** Agent Plugins discovery root; mirrors `userPluginsRoot()` (COPSE_PLUGINS_DIR). */
+export function e2ePluginsDir(): string {
+  const override = process.env.COPSE_PLUGINS_DIR?.trim()
+  return override && override.length > 0 ? override : join(homedir(), '.copse', 'plugins')
+}
+
+/** The canonical `$schema` a conformant plugin manifest declares (Agent Plugins §5.2). */
+export const AGENT_PLUGIN_SCHEMA =
+  'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' as const
+
+/**
+ * Write one Agent Plugins package into the e2e discovery root.
+ *
+ * `manifest` is written verbatim so a spec can seed a *deliberately malformed*
+ * package — proving discovery isolates its failures needs a bad neighbour, and
+ * a helper that only emits valid JSON could not express one.
+ */
+export function seedAgentPlugin(
+  dirName: string,
+  manifest: Record<string, unknown> | string,
+  extras: { skill?: string; mcp?: Record<string, unknown> | string } = {},
+): string {
+  const pluginRoot = join(e2ePluginsDir(), dirName)
+  mkdirSync(pluginRoot, { recursive: true })
+  writeFileSync(
+    join(pluginRoot, 'plugin.json'),
+    typeof manifest === 'string' ? manifest : JSON.stringify(manifest, null, 2),
+    'utf8',
+  )
+  if (extras.skill !== undefined) {
+    const skillDir = join(pluginRoot, 'skills', extras.skill)
+    mkdirSync(skillDir, { recursive: true })
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      `---\nname: ${extras.skill}\ndescription: An e2e fixture skill.\n---\n\nFixture.\n`,
+      'utf8',
+    )
+  }
+  if (extras.mcp !== undefined) {
+    writeFileSync(
+      join(pluginRoot, 'mcp.json'),
+      typeof extras.mcp === 'string' ? extras.mcp : JSON.stringify(extras.mcp, null, 2),
+      'utf8',
+    )
+  }
+  return pluginRoot
+}
+
+/** Clear the discovery root so one spec's fixtures cannot leak into another. */
+export function resetAgentPlugins(): void {
+  rmSync(e2ePluginsDir(), { recursive: true, force: true })
 }
 
 // Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
@@ -145,6 +184,24 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
  * `threads:<projectId>` array in the config is routed to the filesystem-native
  * thread store the app now reads; everything else stays in `config.json`.
  */
+/**
+ * Pin seeded projects to the shared checkout unless the fixture asked for
+ * isolation. Specs point projects at real Git repositories — usually
+ * `process.cwd()`, this repo — and assert against files, Changes, terminals,
+ * and diffs in that checkout. Under the product default (`always`) a blank
+ * thread would cut a full worktree of it on the first message, moving the very
+ * files the spec inspects. A spec exercising isolation seeds `worktreeMode`
+ * explicitly and this leaves it alone.
+ */
+function pinSeededProjectCheckouts(projects: unknown): void {
+  if (!Array.isArray(projects)) return
+  for (const project of projects) {
+    if (project && typeof project === 'object' && !('worktreeMode' in project)) {
+      ;(project as Record<string, unknown>)['worktreeMode'] = 'never'
+    }
+  }
+}
+
 export function writeSeedConfig(config: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
@@ -157,6 +214,7 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
         seedThreadDir(match[1], thread as Record<string, unknown>)
       }
     } else {
+      if (key === 'projects') pinSeededProjectCheckouts(value)
       remaining[key] = value
     }
   }
@@ -173,6 +231,24 @@ export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   writeSettings({})
+}
+
+/** Copse's own `mcp.json` under userData — a *user* MCP source, not a project one. */
+const USER_MCP_PATH = join(USER_DATA, 'mcp.json')
+
+/**
+ * Seed the user-owned MCP config. Deliberately writes the userData copy rather
+ * than `~/.cursor/mcp.json`: the latter is the developer's real file, and an
+ * e2e that edits it would both leak their servers into the run and risk leaving
+ * fixture servers behind in it.
+ */
+export function seedUserMcpConfig(servers: Record<string, unknown>): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(USER_MCP_PATH, JSON.stringify({ mcpServers: servers }, null, 2), 'utf8')
+}
+
+export function resetUserMcpConfig(): void {
+  rmSync(USER_MCP_PATH, { force: true })
 }
 
 /** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in hooks/cursor-adapter.ts. */
@@ -295,7 +371,7 @@ export function seedMessageImageFixture(
       },
     ],
   }
-  seedConfig.packDisabled = packDisabledSeed(
+  seedConfig.pluginDisabled = pluginDisabledSeed(
     options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : [],
   )
   writeSeedConfig(seedConfig)
@@ -349,24 +425,24 @@ export function seedEmptyProject(
     safetyModel?: string
     reviewModel?: string
     roleModels?: Record<string, string>
+    /** Per-model generation parameters, keyed by model selection. */
+    modelParameters?: Record<string, { reasoning?: string; temperature?: number; topP?: number }>
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     /**
      * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
      * memory prompt block, and the Memories pane). The pack ships off, so a test
-     * that needs the Memories pane visible must lift it out of `packDisabled`.
+     * that needs the Memories pane visible must lift it out of `pluginDisabled`.
      */
     okfMemoriesEnabled?: boolean
     /** Explicit pack directories discovered at Settings load. */
-    packSources?: readonly string[]
+    pluginSources?: readonly string[]
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
-    /** Opt into the session-scoped `run_background` tool. */
-    backgroundTasksEnabled?: boolean
     developerMode?: boolean
     /**
      * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
@@ -378,21 +454,35 @@ export function seedEmptyProject(
     autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
+    /**
+     * Store a Parallel API key. The `copse.parallel-search` pack is
+     * credential-gated in both directions — the host only registers
+     * `parallel_search` when a key resolves, and Settings only lets the toggle
+     * be turned on once one is saved — so a spec exercising the enabled pack
+     * has to seed one. Same base64-plaintext record shape as
+     * {@link seedOpenRouterFixture}.
+     */
+    parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
-     * The exact `packDisabled` list to write, replacing the host defaults. Use
+     * The exact `pluginDisabled` list to write, replacing the host defaults. Use
      * this to opt out of a pack that ships enabled (e.g. drop
      * `copse.post-turn-review`); the per-pack opt-in flags below are ignored
      * when this is set.
      */
-    packDisabled?: readonly string[]
+    pluginDisabled?: readonly string[]
     /**
      * Opt into the `copse.model-comparison` pack (and its `compare_models`
      * tool). Ships off, like the other experimental packs — a test exercising
-     * the comparison approval flow must lift it out of `packDisabled`.
+     * the comparison approval flow must lift it out of `pluginDisabled`.
      */
     modelComparisonEnabled?: boolean
+    /**
+     * Per-project checkout isolation. Left unset, `writeSeedConfig` pins the
+     * project to the shared checkout; pass `always` to exercise isolation.
+     */
+    worktreeMode?: 'always' | 'never'
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -401,25 +491,27 @@ export function seedEmptyProject(
     path: workspaceRoot,
     name: 'workspace',
   }
+  if (options?.worktreeMode) project.worktreeMode = options.worktreeMode
   if (options?.sshHost) project.sshHost = options.sshHost
   const seedConfig: Record<string, unknown> = {
     projects: [project],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
-  // Pack enablement lives in `config.json` under `packDisabled` (what the host
-  // pack service reads via `storageGet`). Write it explicitly: an explicit
-  // `packDisabled` wins, otherwise the host defaults with the opted-in packs
-  // lifted out.
-  const enabledPacks: string[] = []
-  if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
-  if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
-  if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
-  if (options?.backgroundTasksEnabled) enabledPacks.push('copse.background-tasks')
-  seedConfig.packDisabled =
-    options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
-  if (options?.packSources) {
-    seedConfig.packSources = [...options.packSources]
+  // Plugin enablement lives in `config.json` under `pluginDisabled` (what the
+  // plugin service reads via `storageGet`). Write it explicitly: an explicit
+  // `pluginDisabled` wins, otherwise the host defaults with the opted-in
+  // plugins lifted out.
+  const enabledPlugins: string[] = []
+  if (options?.modelComparisonEnabled) enabledPlugins.push('copse.model-comparison')
+  if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
+  if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
+  seedConfig.pluginDisabled =
+    options?.pluginDisabled !== undefined
+      ? [...options.pluginDisabled]
+      : pluginDisabledSeed(enabledPlugins)
+  if (options?.pluginSources) {
+    seedConfig.pluginSources = [...options.pluginSources]
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
@@ -456,6 +548,9 @@ export function seedEmptyProject(
   if (options?.roleModels !== undefined) {
     settings.roleModels = options.roleModels
   }
+  if (options?.modelParameters !== undefined) {
+    settings.modelParameters = options.modelParameters
+  }
   if (options?.localSubagentsEnabled !== undefined) {
     settings.localSubagentsEnabled = options.localSubagentsEnabled
   }
@@ -477,6 +572,15 @@ export function seedEmptyProject(
   if (options?.windowBounds !== undefined) {
     settings.windowBounds = options.windowBounds
   }
+  if (options?.parallelApiKey !== undefined) {
+    settings.apiKey = {
+      parallel: {
+        v: 1,
+        enc: Buffer.from(options.parallelApiKey, 'utf8').toString('base64'),
+        plain: true,
+      },
+    }
+  }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
   } else {
@@ -485,14 +589,15 @@ export function seedEmptyProject(
 }
 
 /**
- * Seed OKF roadmap notes for a workspace, mirroring the knowledge store's
- * on-disk layout (`~/.copse/knowledge/<slug>-<hash8>/roadmap/<id>.md`,
+ * Seed OKF roadmap notes for a project, mirroring the knowledge store's
+ * on-disk layout (`~/.copse/knowledge/<projectId>/roadmap/<id>.md`,
  * `src/main/services/storage/knowledge-store.ts`). No `index.jsonl` is written —
- * the store heals unindexed note files in on first read. Returns the workspace's
- * knowledge dir so specs can remove it in `after`.
+ * the store heals unindexed note files in on first read. Existing fixture data
+ * for the project is cleared first, and the returned directory is removed by
+ * the spec in `after`.
  */
 export function seedRoadmapNotes(
-  workspaceRoot: string,
+  projectId: string,
   notes: {
     id: string
     title: string
@@ -502,18 +607,9 @@ export function seedRoadmapNotes(
     complexity?: string
   }[],
 ): string {
-  const slug =
-    workspaceRoot
-      .split('/')
-      .filter(Boolean)
-      .slice(-1)[0]
-      ?.toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 64) || 'workspace'
-  const hash = createHash('sha1').update(workspaceRoot).digest('hex').slice(0, 8)
-  const knowledgeDir = join(homedir(), '.copse', 'knowledge', `${slug}-${hash}`)
+  const knowledgeDir = join(homedir(), '.copse', 'knowledge', projectId)
   const roadmapDir = join(knowledgeDir, 'roadmap')
+  rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
   const iso = new Date().toISOString()
   for (const note of notes) {
@@ -1128,7 +1224,8 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
           {
             id: 'msg-user-markdown',
             role: 'user',
-            content: 'line one\nline two\n\n**bold item**',
+            content:
+              'line one\nline two\n\n**bold item**\n\nI typed <placeholder command> and kept it.',
             toolCalls: [],
             createdAt: now,
           },
@@ -1389,11 +1486,56 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
     ...overrides,
   })
 
+  // Captured bodies behind the cards (decision 6), so the inspector has real
+  // blobs to read back through `hooks:runDetail` rather than a stub.
+  const capture = (ref: string, contents: string): { ref: string; contents: string } => ({
+    ref,
+    contents,
+  })
+  const denyStdin = JSON.stringify({
+    hook_event_name: 'beforeShellExecution',
+    command: 'kubectl delete deploy api --context prod',
+  })
+  const denyStdout = JSON.stringify({ permission: 'deny', agent_message: 'Not against prod.' })
+  const closeoutOutcome = JSON.stringify(
+    { injectContext: 'You still have open todos — finish them before stopping.' },
+    null,
+    2,
+  )
+  const blobs = [
+    capture('blobs/hr-deny.payload.json', denyStdin),
+    capture('blobs/hr-deny.stdout.txt', denyStdout),
+    capture('blobs/hr-deny.stderr.txt', ''),
+    capture('blobs/hr-context.outcome.json', closeoutOutcome),
+  ]
+
   // hook_run lines anchor to the message that precedes them in the spine.
   const runsByAnchor: Record<string, SpineHookRunLine[]> = {
     'msg-assistant-hook': [
       hookRun({ id: 'hr-allow', decision: { permission: 'allow' } }),
-      hookRun({ id: 'hr-deny', hookId: 'block-prod.sh', decision: { permission: 'deny' } }),
+      hookRun({
+        id: 'hr-deny',
+        hookId: 'block-prod.sh',
+        decision: { permission: 'deny' },
+        payload: { ref: 'blobs/hr-deny.payload.json', sha256: sha256(denyStdin) },
+        stdout: { ref: 'blobs/hr-deny.stdout.txt', sha256: sha256(denyStdout) },
+        stderr: { ref: 'blobs/hr-deny.stderr.txt', sha256: sha256('') },
+      }),
+      // A function hook: no process, so no exit code — its whole story is the
+      // context it injected, which only the inspector can show.
+      {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'hook_run',
+        id: 'hr-context',
+        event: 'beforeFinalize',
+        hookId: 'todo-finalize-closeout',
+        executor: 'function',
+        startedAt: now,
+        durationMs: 2,
+        parseOk: true,
+        decision: { injectContextChars: 57 },
+        outcome: { ref: 'blobs/hr-context.outcome.json', sha256: sha256(closeoutOutcome) },
+      },
     ],
     'msg-assistant-hook-2': [
       hookRun({
@@ -1408,6 +1550,20 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
 
   const { spine, files } = explodeThread(messages, sha256)
   const lines: string[] = []
+  // The first turn's `sessionStart` hooks fire detached before any message has
+  // been written, so their spine records precede the first message and fold onto
+  // it (an orphan attach). Emit them before the first message line to reproduce
+  // that first-turn layout.
+  for (const run of [
+    hookRun({ id: 'hr-session-start', event: 'sessionStart', hookId: 'session-start.sh' }),
+    hookRun({
+      id: 'hr-session-start-2',
+      event: 'sessionStart',
+      hookId: 'second-dialect.sh',
+    }),
+  ]) {
+    lines.push(serializeSpineLine(run))
+  }
   for (const line of spine) {
     lines.push(serializeSpineLine(line))
     for (const run of runsByAnchor[line.id] ?? []) lines.push(serializeSpineLine(run))
@@ -1416,7 +1572,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
   const dir = join(e2eWorkspaceDir(), projectId, threadId)
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
-  for (const file of files) {
+  for (const file of [...files, ...blobs]) {
     const full = join(dir, file.ref)
     mkdirSync(dirname(full), { recursive: true })
     writeFileSync(full, file.contents)
@@ -1824,8 +1980,8 @@ export function seedPortraitRightPanelFixture(
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
     // The Memories and Roadmap panes are gated by their packs; seed the
-    // `packDisabled` list the host reads (mirrors `seedEmptyProject`).
-    packDisabled: packDisabledSeed([
+    // `pluginDisabled` list the host reads (mirrors `seedEmptyProject`).
+    pluginDisabled: pluginDisabledSeed([
       ...(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
       ...(options?.okfMemoriesEnabled ? ['copse.okf-memories'] : []),
     ]),

@@ -31,6 +31,9 @@
   min-height: 0;
 }
 .pane-projects {
+  --projects-action-size: 24px;
+  --projects-action-inset: var(--spacing-xs);
+
   width: var(--projects-width, 240px);
   flex-shrink: 0;
   display: flex;
@@ -62,7 +65,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--projects-action-inset) var(--spacing-sm) var(--spacing-md);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -70,13 +73,11 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-/* Projects header "+" — at least as large as the per-project "+" (new thread)
-   so the two affordances read as one family, with extra room around it so the
-   primary create affordance is comfortable to hit. */
+/* Header add, project add, and thread close share one trailing action column. */
 .projects-add-btn {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -84,7 +85,7 @@
   font-size: 20px;
   line-height: 1;
   color: var(--text-secondary);
-  margin: 0 2px 0 6px;
+  margin-left: 6px;
 }
 .projects-add-btn:hover {
   color: var(--text-primary);
@@ -136,7 +137,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding-right: var(--spacing-xs);
+  padding-right: var(--projects-action-inset);
 }
 .project-line .project-row {
   flex: 1;
@@ -144,8 +145,8 @@
 }
 .project-new-thread-btn {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
   border-radius: var(--radius);
   font-size: 18px;
   line-height: 1;
@@ -210,6 +211,25 @@
 .context-menu-item:hover {
   background: var(--bg-hover);
 }
+.context-menu-item-label {
+  flex: 1 1 auto;
+}
+.context-menu-item-check {
+  flex: 0 0 auto;
+  color: var(--accent, var(--text-primary));
+}
+.context-menu-heading {
+  padding: 6px 8px 2px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.context-menu-heading:not(:first-child) {
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
 .project-twisty {
   width: 12px;
   height: 12px;
@@ -228,6 +248,117 @@
   flex-direction: column;
   padding: 2px 0 var(--spacing-sm) 0;
 }
+.automation-threads-group {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+/* An automation heading is a disclosure plus a link out to its setup, so the
+   hover wash belongs to the row rather than to the twisty half of it. */
+.automation-threads-header,
+.automation-schedule-header {
+  display: flex;
+  align-items: stretch;
+}
+.automation-threads-header:hover,
+.automation-schedule-header:hover {
+  background: var(--bg-hover);
+}
+.automation-threads-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 1;
+  min-width: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+.automation-threads-header:hover .automation-threads-toggle {
+  color: var(--text-secondary);
+}
+/* Quiet until the heading is hovered or the button itself takes focus — the
+   same reveal as the row-level thread actions. */
+.automation-setup-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  padding-inline: var(--spacing-sm);
+  color: var(--text-muted);
+}
+.automation-threads-header:hover .automation-setup-btn,
+.automation-schedule-header:hover .automation-setup-btn,
+.automation-setup-btn:focus-visible {
+  opacity: 1;
+}
+.automation-setup-btn:hover {
+  color: var(--text-primary);
+}
+.automation-threads-twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--font-size-sm);
+  height: var(--font-size-sm);
+  transition: transform 0.1s ease;
+}
+.automation-threads-twisty.expanded {
+  transform: rotate(90deg);
+}
+.automation-threads-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.automation-threads-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.automation-threads-running {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.automation-thread-rows .chat-row {
+  padding-left: calc(28px + var(--spacing-sm));
+}
+.automation-schedule-group {
+  display: flex;
+  flex-direction: column;
+}
+.automation-schedule-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 1;
+  min-width: 0;
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) calc(28px + var(--spacing-sm));
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+.automation-schedule-header:hover .automation-schedule-toggle {
+  color: var(--text-primary);
+}
+.automation-schedule-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-schedule-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.automation-schedule-runs .chat-row {
+  padding-left: calc(42px + var(--spacing-md));
+  color: var(--text-muted);
+}
 .chat-row {
   position: relative;
   display: flex;
@@ -237,9 +368,9 @@
   margin-inline: 0;
   border-radius: 0;
   text-align: left;
-  /* Left 28px keeps the running-status gutter; roomier vertical/trailing
-     padding so dense thread lists don't feel cramped. */
-  padding: var(--spacing-md) var(--spacing-md) var(--spacing-md) 28px;
+  /* Left 28px keeps the running-status gutter; roomier vertical padding keeps
+     dense thread lists legible while actions use the shared trailing inset. */
+  padding: var(--spacing-md) var(--projects-action-inset) var(--spacing-md) 28px;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -274,12 +405,14 @@
 }
 .chat-delete {
   flex-shrink: 0;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
   opacity: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  padding: 0 4px;
+  padding: 0;
 }
 .chat-row:hover .chat-delete {
   opacity: 1;
@@ -450,6 +583,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  container-name: chat-pane;
+  container-type: inline-size;
   overflow: hidden;
   min-width: 0;
   min-height: 0;
@@ -564,6 +699,37 @@
      heavy two-pixel rule instead of the shared single-width line. */
   border-top: 0;
 }
+/* ---- expanded right panel ---- */
+/* "Expand" lifts the pane over chat instead of collapsing the chat column: chat
+   keeps its geometry, so the transcript's scroll position, the composer height
+   and any live editors survive the round trip and restoring is instant.
+   `isolation` scopes the overlay's stacking to #body — it covers the chat pane's
+   own popovers (footer menus at z-index 100) while the titlebar and its menus,
+   siblings of #body, keep painting above it. */
+.three-pane.is-right-panel-maximized {
+  position: relative;
+  isolation: isolate;
+}
+.three-pane.is-right-panel-maximized > .pane-files {
+  position: absolute;
+  /* Chat only. The projects rail keeps its column so threads stay visible and
+     switchable while the pane is expanded — the same widths the flex and grid
+     layouts lay it out with, so dragging #resizer-projects still moves this
+     edge with it. */
+  inset: 0 0 0 calc(var(--projects-width, 240px) + var(--pane-divider-width, 1px));
+  /* Above the composer footer's popovers (100), below the chat-scoped approval
+     scrim (110) so a permission prompt still reaches the user. */
+  z-index: 105;
+  width: auto;
+  height: auto;
+  /* In the stacked (portrait) layout #body is a grid, and an absolutely
+     positioned grid child resolves `inset` against its own grid area — so claim
+     the whole grid before covering it. */
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  /* Chat is only hidden by being underneath, so the cover must be opaque. */
+  background: var(--bg-base);
+}
 .pane-files-body {
   flex: 1;
   display: flex;
@@ -629,6 +795,15 @@
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+.terminals-checkout-badge {
+  flex-shrink: 0;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.2;
 }
 .terminals-tab-rename {
   flex: 1;
@@ -749,6 +924,25 @@
 .pane-popout-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+}
+/* Expand-over-chat toggle, immediately after the pop-out control. It takes no
+   auto margin of its own: the pop-out button's already pushes the whole trailing
+   cluster right, and a second one would split them apart. */
+.pane-maximize-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.pane-maximize-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.pane-maximize-btn[aria-pressed='true'] {
+  color: var(--accent);
 }
 /* "Restore pre-session changes" banner (#699): appears above the change list
    when Copse applied edits over the user's uncommitted work this session. */
@@ -1502,10 +1696,10 @@
   outline: none;
   border-color: var(--accent);
 }
-.browser-url-input::selection {
-  color: var(--text-on-accent);
-  background: var(--accent);
-}
+/* No ::selection override here: the address bar takes the app-wide highlight
+   from base.css. The accent pair it used to carry read at 1.24:1 in the light
+   theme — --text-on-accent tracks the raw accent while light darkens --accent
+   by 30%, so the URL disappeared into its own selection. */
 .browser-go-btn {
   flex-shrink: 0;
   padding: 4px 10px;

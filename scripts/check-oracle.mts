@@ -20,10 +20,12 @@
 import {
   type CiPlan,
   type Selection,
+  type UnitPlan,
   SELECTOR_STOPLIST,
   computePlan,
   computeScreenshotGate,
   computeSelection,
+  computeUnitPlan,
   extractSpecTokens,
   fileContainsToken,
   listSourceFiles,
@@ -81,6 +83,11 @@ function expectPlan(files: string[], mode: CiPlan['mode']): string | null {
   return got === mode ? null : `expected plan '${mode}' for ${files.join(', ')}; got '${got}'`
 }
 
+function expectUnitPlan(files: string[], mode: UnitPlan['mode']): string | null {
+  const got = computeUnitPlan(computeSelection(files)).mode
+  return got === mode ? null : `expected unit plan '${mode}' for ${files.join(', ')}; got '${got}'`
+}
+
 function expectConfidence(files: string[], conf: Selection['confidence']): string | null {
   const got = computeSelection(files).confidence
   return got === conf ? null : `expected confidence '${conf}' for ${files.join(', ')}; got '${got}'`
@@ -134,6 +141,37 @@ const INVARIANTS: Invariant[] = [
   {
     name: 'docs-only change skips e2e',
     check: () => expectPlan(['README.md'], 'skip'),
+  },
+  {
+    name: 'docs-only change skips the unit tier too',
+    check: () => expectUnitPlan(['docs/testing-strategy.md'], 'skip'),
+  },
+  {
+    // A published Markdown twin is generated from its HTML page and drift-checked
+    // by sync-site-markdown.test.ts, so it is NOT docs-only however much the
+    // extension says otherwise. Hand-editing one is exactly what the unit tier
+    // has to catch, and `skip` here would be a silent green on it.
+    name: 'a hand-edited site/*.md twin still runs the unit tier',
+    check: () => expectUnitPlan(['site/index.md'], 'full'),
+  },
+  {
+    name: 'renderer panel change thins the unit tier to a subset',
+    check: () => expectUnitPlan(['src/renderer/controller/panels.ts'], 'subset'),
+  },
+  {
+    name: 'broad change (package.json) forces the full unit suite',
+    check: () => expectUnitPlan(['package.json'], 'full'),
+  },
+  {
+    // The safety property the whole unit plan rests on. A fixture / snapshot /
+    // config a test READS is invisible to the import graph, so it selects no
+    // unit test — and "no unit test selected" must mean `full`, never `skip`.
+    // Getting this backwards is a silent false green on exactly the changes the
+    // graph cannot see. Note the asymmetry with the e2e plan, which skips here.
+    name: 'a change no unit test imports runs the full suite, never skip',
+    check: () =>
+      expectUnitPlan(['src/main/services/hooks/__snapshots__/wire-payloads.json'], 'full') ??
+      expectUnitPlan(['.github/workflows/ci.yml'], 'full'),
   },
   {
     name: 'screenshot-affecting change without refreshed PNGs fails the gate',

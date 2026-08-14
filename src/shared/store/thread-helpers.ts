@@ -1,5 +1,6 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = (): string => globalThis.crypto.randomUUID()
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type { AppStore } from './store.ts'
 import { at } from '@shared/array-utils.ts'
 import type {
@@ -187,6 +188,24 @@ export function switchThread(store: AppStore, id: string): void {
   store.emit('threads_changed')
 }
 
+/** The next thread in the list, wrapping from the last back to the first. */
+export function nextThreadId(store: AppStore): string | null {
+  const { threads, activeThreadId } = store.getState()
+  if (threads.length < 2) return null
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  const target = idx < 0 || idx >= threads.length - 1 ? threads[0] : threads[idx + 1]
+  return target ? target.id : null
+}
+
+/** The previous thread in the list, wrapping from the first back to the last. */
+export function prevThreadId(store: AppStore): string | null {
+  const { threads, activeThreadId } = store.getState()
+  if (threads.length < 2) return null
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1]
+  return target ? target.id : null
+}
+
 export function deleteThread(store: AppStore, id: string): void {
   const { threads, activeThreadId } = store.getState()
   const remaining = threads.filter((t) => t.id !== id)
@@ -275,7 +294,13 @@ export function addMessage(
   content = '',
   images?: string[],
   attachments?: TranscriptAttachment[],
-  opts?: { model?: string; startingCommit?: string; dirty?: boolean },
+  opts?: {
+    model?: string
+    requestedModel?: string
+    parameters?: ModelParameters
+    startingCommit?: string
+    dirty?: boolean
+  },
 ): string {
   const id = randomUUID()
   const { threads } = store.getState()
@@ -293,6 +318,10 @@ export function addMessage(
               ...(images?.length ? { images } : {}),
               ...(attachments?.length ? { attachments } : {}),
               ...(opts?.model !== undefined ? { model: opts.model } : {}),
+              ...(opts?.requestedModel !== undefined
+                ? { requestedModel: opts.requestedModel }
+                : {}),
+              ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
               ...(opts?.startingCommit !== undefined
                 ? { startingCommit: opts.startingCommit }
                 : {}),
@@ -742,6 +771,7 @@ export function applyPreparedThreadCheckout(
   prepared: PreparedThreadCheckout,
 ): void {
   const { threads } = store.getState()
+  const previousWorktreePath = threads.find((thread) => thread.id === threadId)?.worktree?.path
   const updated = threads.map((thread) => {
     if (thread.id !== threadId) return thread
     return {
@@ -754,5 +784,8 @@ export function applyPreparedThreadCheckout(
   })
   store.setState({ threads: updated })
   store.emit('threads_changed')
+  if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
+    store.emit('thread_checkout_changed', threadId)
+  }
   store.emit('git_branch_changed')
 }

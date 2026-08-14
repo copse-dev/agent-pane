@@ -34,8 +34,8 @@ on:
     - cron: '17 6 * * *'
   # NOTE: there is deliberately no `merge_group` trigger. GitHub's merge queue
   # requires Enterprise Cloud for private repositories and this org is on Team,
-  # so the trigger could never fire. The `develop` -> `main` promotion flow is
-  # the stand-in: `develop` absorbs the day's merges under the light tier, and
+  # so the trigger could never fire. The `main` -> `release` promotion flow is
+  # the stand-in: `main` absorbs the day's merges under the light tier, and
   # the promotion PR runs the full tier once for the whole batch. What we give
   # up versus a real queue is automatic bisection — a red promotion names a
   # batch, not a commit — which is why promotions should be frequent enough to
@@ -50,6 +50,22 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
+  # Job timeouts: every job below sets `timeout-minutes`, and
+  # scripts/ci-workflow-invariants.test.ts fails the build if a new one forgets.
+  # GitHub's default is 360 minutes, which is survivable on hosted runners (you
+  # pay for it) and is not on this fleet: runners are EPHEMERAL and serve both
+  # tiers, so one wedged job parks a whole runner — a sizeable slice of total
+  # capacity — for six hours while every other PR queues behind it. Observed on
+  # a `main` push that sat at 167 minutes with no job-level cap to stop it.
+  #
+  # The caps are leak-stoppers, NOT latency SLAs. Each is roughly 3-5x the
+  # observed duration so that a slow-but-healthy run (cold dependency cache, a
+  # lint OOM retry, a saturated box) never goes red on the clock — a false red
+  # costs more than the leak it would prevent. Queue time is excluded: Actions
+  # starts this clock when the job begins executing, not when it is dispatched.
+  # Tighten only with data (a run record showing the real p99), and raise
+  # rather than let a genuinely-slower job flake.
+  #
   # Check-tier runner routing: every `runs-on` below (except e2e, which routes
   # by label with its own nightly-hosted exception, and release-mac in its own
   # workflow) reads the CHECKS_RUNNER Actions variable and falls back to
@@ -89,6 +105,7 @@ jobs:
     # under load (exit 137). If that recurs, add fleet headroom rather than
     # re-pinning the static gate to hosted.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
     permissions:
       contents: read
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
@@ -98,6 +115,11 @@ jobs:
       specs: ${{ steps.plan.outputs.specs }}
       e2e_shards: ${{ steps.shards.outputs.list }}
       e2e_shard_total: ${{ steps.shards.outputs.total }}
+      # How much of the UNIT tier the `check` job below needs. Empty is read as
+      # `full` there, so a branch of the plan step that forgets to set it fails
+      # safe rather than silently thinning the suite.
+      unit_mode: ${{ steps.plan.outputs.unit_mode }}
+      unit_specs: ${{ steps.plan.outputs.unit_specs }}
     steps:
       # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
       # / previous main tip.
@@ -173,7 +195,7 @@ jobs:
       - run: npm run check:dead-code
       # Fail closed on high/critical dependency advisories. This runs after the
       # lockfile-exact setup, so it audits precisely the tree CI will execute.
-      - run: npm audit --audit-level=high
+      - run: pnpm audit --audit-level=high
       # Guard the e2e oracle that gates the `e2e` job: every spec must stay
       # selectable (liveness) and the mapping invariants must hold, so the gate
       # can't silently start skipping specs it should run.
@@ -190,6 +212,12 @@ jobs:
       # (backend logic with no selector coupling) and broad changes fall back to
       # full. Full coverage on every push is no longer guaranteed — the nightly
       # is the net.
+      #
+      # The same call also emits a UNIT plan (`unit_mode` / `unit_specs`) that the
+      # `check` job below applies, but ONLY to a PR stacked on another PR's branch
+      # — see that job for why. Every early-exit branch here predates the oracle's
+      # analysis of the diff, so each one emits `unit_mode=full`: only the oracle
+      # path has looked at what actually changed, so only it may thin.
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
@@ -211,7 +239,7 @@ jobs:
         run: |
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Screenshot-only head commit -> skip e2e. This is the commit-screenshots
@@ -231,40 +259,40 @@ jobs:
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
             if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
               echo "HEAD commit only refreshes reference screenshots -> skip e2e"
-              { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
+              { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
-          # A promotion is the release gate for the whole develop batch. Always
+          # A promotion is the release gate for the whole trunk batch. Always
           # exercise the complete e2e suite here rather than allowing the oracle
           # to thin or skip it. Keep this after the screenshot-only escape above:
           # the bot's reference-only follow-up has already inherited a successful
           # e2e run from its parent and must not start a render/commit loop.
           if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then
             echo "PR targets release -> full e2e suite (promotion gate)"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
             echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$CI_FULL_LABEL" = "true" ]; then
             echo "ci-full label -> full e2e suite (oracle bypassed on request)"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # No usable base (first push / forced push / branch create) -> full.
           if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "No base sha for $EVENT -> full e2e suite"
-            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # full clone already has base history; this is belt-and-suspenders.
           git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
           node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
-          grep -E '^(mode|specs)=' plan.txt >> "$GITHUB_OUTPUT"
+          grep -E '^(mode|specs|unit_mode|unit_specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # Advisory: annotate which reference shots a UI change will refresh. Stale
       # shots DON'T block the PR — the `e2e` job below already re-renders them as a
@@ -360,6 +388,7 @@ jobs:
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. Watch for 6 GB self-hosted OOM on eslint/prettier (see precheck).
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
@@ -368,27 +397,42 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
-      - uses: ./.github/actions/setup
-      # `|| true` on eslint: a non-autofixable lint error must not abort the run —
-      # we still want the fixes ESLint did apply to land. Real lint failures stay
-      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
-      # on OOM (137); a second kill fails the job so a wedged runner is visible.
-      - name: Autofix changed files
+      # Decide whether there is anything to fix BEFORE installing. `npm ci` /
+      # cache-restore is ~2-5 min on this fleet and the autofix itself takes
+      # seconds, so on a diff with no formattable file the old order paid the
+      # whole install to print "nothing to do". Only git is needed to answer the
+      # question, and checkout has already run.
+      - id: changed
+        name: List autofixable changed files
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
           fi
-          mapfile -t files < <(
-            git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
-              | grep -E '\.(cjs|css|cts|js|json|jsx|md|mjs|mts|ts|tsx|yaml|yml)$' \
-              || true
-          )
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No autofixable files changed vs base."
-            exit 0
+          # NUL-delimited via a temp file rather than a step output: a path is
+          # allowed to contain anything but NUL, and a step output cannot carry a
+          # newline safely.
+          git diff -z --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
+            -- '*.cjs' '*.css' '*.cts' '*.js' '*.json' '*.jsx' '*.md' '*.mjs' \
+               '*.mts' '*.ts' '*.tsx' '*.yaml' '*.yml' \
+            > "${RUNNER_TEMP}/autofix-files.z" || true
+          if [ -s "${RUNNER_TEMP}/autofix-files.z" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No autofixable files changed vs base — skipping install and autofix."
+            echo "any=false" >> "$GITHUB_OUTPUT"
           fi
+      - uses: ./.github/actions/setup
+        if: steps.changed.outputs.any == 'true'
+      # `|| true` on eslint: a non-autofixable lint error must not abort the run —
+      # we still want the fixes ESLint did apply to land. Real lint failures stay
+      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
+      # on OOM (137); a second kill fails the job so a wedged runner is visible.
+      - name: Autofix changed files
+        if: steps.changed.outputs.any == 'true'
+        run: |
+          mapfile -d '' -t files < "${RUNNER_TEMP}/autofix-files.z"
           echo "Autofixing ${#files[@]} changed file(s)"
           npx eslint --fix -- "${files[@]}" || true
           set +e
@@ -401,6 +445,7 @@ jobs:
           sleep 10
           npx prettier --write -- "${files[@]}"
       - name: Commit and push fixes
+        if: steps.changed.outputs.any == 'true'
         run: |
           if git diff --quiet; then
             echo "No formatting changes to commit."
@@ -419,16 +464,69 @@ jobs:
     # the 6 GB self-hosted fleet under load (same class as precheck OOM) — add
     # headroom if it recurs.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
-      - run: npm run coverage:ci
+      #
+      # THINNING (stacked PRs only). A PR whose base is another PR's branch
+      # cannot merge yet: the layer below it has to land first, and when it does
+      # this PR is retargeted at trunk and runs this job again under the `full`
+      # arm. So the run that actually gates a merge into `main`/`release` is
+      # always the whole suite plus the coverage ratchet — thinning never buys a
+      # green that lets unrun tests reach trunk. That is the same "lowest
+      # unmerged PR gates the merge" rule the heavy tier already applies via
+      # `base_ref`, extended to the one tier that had no diff-awareness at all.
+      #
+      # Only `subset` skips the ratchet, and it must: a partial run produces a
+      # coverage number that is not comparable to the baseline, so gating on it
+      # would fail every thinned run. `skip` (docs-only) drops both.
+      # An unset `unit_mode` is read as `full`, so a plan branch that forgets to
+      # emit one fails safe.
+      - name: Unit tests
         env:
           # c8 retains V8 coverage until the suite exits; the default ~2 GB heap
           # can OOM while finalizing a fully green run on the 6 GB check fleet.
           NODE_OPTIONS: --max-old-space-size=3072
+          UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
+          UNIT_SPECS: ${{ needs.precheck.outputs.unit_specs }}
+          # True only for a PR stacked on another PR's branch. `push`, tags and
+          # the nightly schedule have no base_ref and are never thinnable.
+          STACKED_PR: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' && github.base_ref != 'release' }}
+          # Through the environment, never `${{ }}` inside the script: a base
+          # branch name is attacker-chosen text on any PR, and interpolating it
+          # into `run:` would splice it into this shell.
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$UNIT_MODE" = "skip" ]; then
+            echo "Oracle: docs-only diff — no unit test can observe it. Skipping the unit suite."
+            exit 0
+          fi
+          if [ "$STACKED_PR" = "true" ] && [ "$UNIT_MODE" = "subset" ] && [ -n "$UNIT_SPECS" ]; then
+            n=0
+            for _ in $UNIT_SPECS; do n=$(( n + 1 )); done
+            echo "Stacked PR (base '${BASE_REF}' is not trunk) -> $n selected unit file(s)."
+            echo "The trunk-targeted run of this PR will run the full suite + coverage ratchet."
+            # Deliberately unquoted: UNIT_SPECS is a space-separated file list.
+            # shellcheck disable=SC2086
+            npm test -- $UNIT_SPECS
+            exit 0
+          fi
+          npm run coverage:ci
+      # The console gets the `dot` reporter (see scripts/run-tests.mts) so a
+      # failure is reachable through the job-log API's ~5000-line tail. This is
+      # the full TAP for the same run, for when you want the passing detail too.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: unit-tests-tap
+          path: unit-tests.tap
+          if-no-files-found: ignore
+          retention-days: 7
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).
@@ -464,12 +562,12 @@ jobs:
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
-    # HEAVY TIER. Runs on promotion PRs (base `main`), on pushes to `main`, on
-    # the nightly schedule and on release tags — not on the day-to-day PRs into
-    # `develop`, and not on pushes to `develop`. bench fetches gortex and runs
+    # HEAVY TIER. Runs on promotion PRs (base `release`), on pushes to `release`,
+    # on the nightly schedule and on release tags — not on the day-to-day PRs into
+    # `main`, and not on pushes to `main`. bench fetches gortex and runs
     # the semantic-search + agent gates; paying that per PR when ~20 land a day
-    # is the cost the develop model exists to amortise. The `ci-full` label
-    # forces it on a develop-targeted PR that genuinely wants the signal.
+    # is the cost the trunk/promotion model exists to amortise. The `ci-full`
+    # label forces it on a trunk-targeted PR that genuinely wants the signal.
     # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
     # signal has no consumer until the PR is promoted — and `ready_for_review`
     # (see the trigger block) dispatches the full tier the moment it is. The
@@ -479,6 +577,7 @@ jobs:
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. No Electron/display need.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -519,6 +618,14 @@ jobs:
       - run: >-
           npm run eval:doctrine -- --provider mock --repeats 1 --sections tools
           --out bench-results/doctrine-mock --require-solved --require-doctrine
+      # Steer A/B harness self-test: drives both arms of the mock pack through
+      # the real agent loop, including git workspace setup and the check runner.
+      # The mock ignores the system prompt, so this proves the harness works and
+      # says nothing about any steer — real-model lift is an on-demand run
+      # (docs/steer-evals.md), never a per-PR gate.
+      - run: >-
+          npm run eval:steer -- --provider mock --repeats 1
+          --out bench-results/steer-mock --require-gates
       - uses: actions/upload-artifact@v7
         if: always()
         continue-on-error: true
@@ -542,6 +649,7 @@ jobs:
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-agent'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -573,6 +681,7 @@ jobs:
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-doctrine'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -581,7 +690,8 @@ jobs:
           LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
           LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
         run: >-
-          npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools
+          npm run eval:doctrine -- --provider lmstudio --repeats 3
+          --sections tools,workingStyle,gitBranchSafety
           --out bench-results/doctrine
       - uses: actions/upload-artifact@v7
         if: always()
@@ -609,6 +719,7 @@ jobs:
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. Produces the dist artifact consumed by the e2e shards below.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
@@ -685,12 +796,12 @@ jobs:
     # Zero-shard plans (oracle mode=skip / empty subset) skip this job via
     # `e2e_shard_total != 0` — an empty matrix is a GHA **failure**, not a skip
     # (see the precheck shards step).
-    # HEAVY TIER, same rule as `bench` above: promotion PRs (base `main`),
-    # pushes to `main`, the nightly schedule and release tags. PRs into
-    # `develop` skip 8 Electron shards apiece, which is where most of the
-    # runner starvation came from. Two escape hatches on a develop-targeted PR:
+    # HEAVY TIER, same rule as `bench` above: promotion PRs (base `release`),
+    # pushes to `release`, the nightly schedule and release tags. PRs into
+    # `main` skip 8 Electron shards apiece, which is where most of the
+    # runner starvation came from. Two escape hatches on a trunk-targeted PR:
     # `ci-full` for the whole heavy tier, and `update-screenshots` for this job
-    # specifically — without the latter that label would be inert on develop
+    # specifically — without the latter that label would be inert on trunk
     # PRs, since the screenshot commit is produced by the e2e run.
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
@@ -720,6 +831,7 @@ jobs:
            && (vars.E2E_RUNNER == 'ubuntu-latest'
                && fromJSON('["ubuntu-latest"]')
                || fromJSON('["self-hosted", "copse-e2e"]'))) }}
+    timeout-minutes: 45
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
@@ -742,7 +854,7 @@ jobs:
       # failing shard, in one run.
       #
       # `ci-full` is the exception, because there the tradeoff inverts. That label
-      # already means "run the whole heavy tier on a develop PR" — it is opt-in and
+      # already means "run the whole heavy tier on a trunk PR" — it is opt-in and
       # rare, and it is used precisely when the e2e signal is what's wanted. With
       # independent reds (not a whole-run problem) fail-fast surfaces exactly one
       # per run: #1425 spent five runs learning about six specs, cancelling six
@@ -833,6 +945,22 @@ jobs:
           # a wedged run) so the command can't die with "timeout: not found".
           TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
 
+          # ASRT's Linux network bridge, matched by the socket path it owns.
+          #
+          # `@anthropic-ai/sandbox-runtime` spawns socat on both sides of the
+          # sandbox boundary, and both forms name the same generated socket
+          # (`linux-sandbox-utils.js`, initializeLinuxNetworkBridge):
+          #
+          #   host:    socat UNIX-LISTEN:$TMPDIR/claude-http-<hex>.sock,… TCP:localhost:<port>,…
+          #   sandbox: socat TCP-LISTEN:3128,… UNIX-CONNECT:$TMPDIR/claude-http-<hex>.sock
+          #
+          # Matching that socket name — rather than the bare word `socat` — is
+          # what makes this safe to run on a shared runner. A blanket
+          # `pkill -f socat` would also reap a socat the runner infrastructure
+          # itself depends on, which is why #1561 recorded the leak but left
+          # the fix alone. Nothing but ASRT creates `claude-{http,socks}-*.sock`.
+          E2E_SOCAT_PATTERN='[s]ocat.*claude-(http|socks)-[0-9a-f]+\.sock'
+
           cleanup_e2e_processes() {
             # Bracketed patterns avoid matching this shell's own command line.
             # A failed deleteSession can orphan any of these; self-hosted runner
@@ -841,11 +969,23 @@ jobs:
             pkill -TERM -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
             pkill -TERM -f '[X]vfb' 2>/dev/null || true
             pkill -TERM -f '[g]ortex' 2>/dev/null || true
+            # Added for #1442's socat bridges: the reaper predates them, so they
+            # survived into the next job on a reused container. Each leaked
+            # bridge holds its listening socket, and a shard that then cannot
+            # start a session fails every spec that calls `reloadSession`.
+            pkill -TERM -f "$E2E_SOCAT_PATTERN" 2>/dev/null || true
             sleep 1
             pkill -KILL -f '[e]lectron/dist/electron' 2>/dev/null || true
             pkill -KILL -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
             pkill -KILL -f '[X]vfb' 2>/dev/null || true
             pkill -KILL -f '[g]ortex' 2>/dev/null || true
+            pkill -KILL -f "$E2E_SOCAT_PATTERN" 2>/dev/null || true
+            # The sockets outlive the processes that listened on them. Leaving
+            # them behind fills $TMPDIR on a long-lived runner and makes the
+            # diagnostics harder to read.
+            find "${TMPDIR:-/tmp}" -maxdepth 1 \
+              \( -name 'claude-http-*.sock' -o -name 'claude-socks-*.sock' \) \
+              -delete 2>/dev/null || true
           }
 
           capture_e2e_runner_diagnostics() {
@@ -903,6 +1043,45 @@ jobs:
               echo "## processes by RSS"
               ps -eo pid,ppid,state,etimes,rss,vsz,comm --sort=-rss | head -n 80 || true
               echo
+              # An RSS-sorted top-80 hides light, numerous processes — which is
+              # exactly the shape a leak takes. socat in particular is tiny, so a
+              # runner carrying dozens of orphans looks unremarkable above.
+              echo "## process counts by name"
+              ps -eo comm= | sort | uniq -c | sort -rn | head -n 30 || true
+              echo
+              echo "## e2e / sandbox process detail (orphans have ppid 1)"
+              ps -eo pid,ppid,etimes,comm,args \
+                | grep -E '[s]ocat|[b]wrap|[e]lectron|[c]hromedriver|[X]vfb' \
+                | head -n 60 || true
+              echo
+              # ASRT needs bubblewrap AND socat, and bwrap additionally needs
+              # usable unprivileged user namespaces at runtime (see
+              # ci-runners/docker-compose.yml). When these are wrong the app does
+              # not crash — it degrades to sandbox-off — so the fault is invisible
+              # unless captured here.
+              echo "## sandbox preconditions"
+              echo "socat=$(command -v socat || echo MISSING)"
+              echo "bwrap=$(command -v bwrap || echo MISSING)"
+              bwrap --version 2>&1 || true
+              for sysctl_file in \
+                /proc/sys/kernel/apparmor_restrict_unprivileged_userns \
+                /proc/sys/kernel/unprivileged_userns_clone \
+                /proc/sys/user/max_user_namespaces; do
+                if [ -r "$sysctl_file" ]; then
+                  echo "$sysctl_file=$(cat "$sysctl_file")"
+                else
+                  echo "$sysctl_file=UNREADABLE"
+                fi
+              done
+              # The same shape ASRT asks for. Proves the chain rather than just
+              # the binary's presence.
+              echo "### bwrap probe"
+              bwrap --unshare-all --dev-bind / / --die-with-parent true 2>&1 \
+                && echo "bwrap_probe=ok" || echo "bwrap_probe=FAILED"
+              echo
+              echo "## open file descriptors"
+              echo "fd_nr=$(cat /proc/sys/fs/file-nr 2>/dev/null || echo unknown)"
+              echo
               echo "## filesystems"
               df -h / /tmp /dev/shm || true
               echo
@@ -910,6 +1089,102 @@ jobs:
               ulimit -a || true
             } >"$diagnostics_file" 2>&1
             echo "Saved runner diagnostics to $diagnostics_file"
+            # Also print it. The artifact is the durable copy, but downloading a
+            # workflow artifact needs a token with `actions:read`, which a GitHub
+            # App integration does not get — so for anyone triaging through the
+            # API the file may as well not exist (`403 Resource not accessible by
+            # integration`). The job log has no such gate. Collapsed by default,
+            # so a green-eyed scroll past a failing shard costs nothing.
+            echo "::group::runner diagnostics (attempt $attempt)"
+            cat "$diagnostics_file" || true
+            echo "::endgroup::"
+          }
+
+          # Dump whatever WebdriverIO and chromedriver wrote about the session.
+          # "Unable to connect to http://localhost:PORT" tells us the driver
+          # stopped accepting — it never says why, because the only account of
+          # that is the driver's own log, which lives in wdio's outputDir and was
+          # being discarded at job end.
+          #
+          # Filtered, not tailed. The job-log API returns roughly the last 5000
+          # lines, so a raw tail of ~20 driver logs (more with chromedriver's
+          # `verbose`) crowds out everything printed after it — which is how both
+          # the spec summary and the runner diagnostics became unreachable
+          # through the API even though they were right there in the file. Print
+          # the error-adjacent lines instead, and fall back to a raw tail only
+          # when nothing matched, so a novel failure is never silently dropped.
+          # The uploaded artifact remains the complete record.
+          E2E_LOG_SIGNALS='ERROR|WARN|Unable to connect|ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR|bind\(\) failed|Cannot start http server|DevTools HTTP Request failed|aborted due to timeout|Timed out receiving message|no such session|invalid session id|session not created|boot-complete|was started successfully'
+          dump_e2e_session_logs() {
+            local logs_dir="e2e-failure-artifacts/wdio-logs"
+            [ -d "$logs_dir" ] || return 0
+            echo "::group::wdio + chromedriver logs (attempt $1)"
+            for log_file in "$logs_dir"/*.log; do
+              [ -f "$log_file" ] || continue
+              echo "### $log_file"
+              # Capture first: `grep … | tail` exits with *tail's* status, which
+              # is 0 even when grep matched nothing, so testing the pipeline
+              # directly would make the fallback dead code and print nothing at
+              # all for a log with no known signal — the exact case it exists for.
+              matched="$(grep -nE "$E2E_LOG_SIGNALS" "$log_file" | tail -n 60)"
+              if [ -n "$matched" ]; then
+                printf '%s\n' "$matched"
+              else
+                echo "(no signal lines matched — raw tail)"
+                tail -n 60 "$log_file" || true
+              fi
+              echo
+            done
+            echo "::endgroup::"
+          }
+
+          # The last thing the job prints, and deliberately not inside a group.
+          #
+          # Everything above competes for the job-log API's ~5000-line tail; this
+          # does not, because it is last and it is small. It re-states the two
+          # facts a triager always wants first — how many specs passed, and which
+          # ones failed with what — so they survive however large the dumps get.
+          summarise_e2e_attempt() {
+            local attempt="$1" run_log="$2"
+            [ -f "$run_log" ] || return 0
+            echo "── shard ${{ matrix.shard }} attempt ${attempt} digest ─────────────────"
+            grep -E '^Spec Files:' "$run_log" | tail -n 1 || true
+            # The reporter prints a `» <spec>` header for every file it runs, so
+            # keeping them all buried the one line that mattered under twenty
+            # that did not (run 31243627118 shard 2 printed all 21 paths for a
+            # single failing spec). And the error detail carries the same
+            # `[chrome …]` prefix as everything else, so anchoring on leading
+            # whitespace matched none of it — the digest named the spec but never
+            # said what failed.
+            #
+            # Select by worker instead: take the prefixes that reported a
+            # failure, then print those workers' lines whole. Header, verdict and
+            # error arrive together, whatever shape the error takes.
+            local failing
+            failing="$(grep -oE '^\[[^]]+\] [0-9]+ failing' "$run_log" | grep -oE '^\[[^]]+\]' | sort -u)"
+            if [ -n "$failing" ]; then
+              # Name every failing spec before printing any detail. The detail is
+              # capped, and a cap measured in lines drops whole workers once more
+              # than one spec fails: run 31266338302 shard 6 reported "3 failed"
+              # and named exactly one, because `tail -n 40` reached back only as
+              # far as the last worker's block. The names are what a reader needs
+              # first and they cost one line each, so they are never truncated.
+              #
+              # The raw wdio output lives in $run_log, which is not uploaded and
+              # not in the job log, so anything this function drops is gone.
+              echo "failing specs:"
+              printf '%s\n' "$failing" | grep -F -f - "$run_log" | grep -F '» ' | sort -u || true
+              echo
+              printf '%s\n' "$failing" | grep -F -f - "$run_log" | tail -n 120 || true
+            else
+              # No worker reported a failure, so the shard died some other way —
+              # a timeout, or a session that never came up. The raw tail is all
+              # there is, and printing nothing here is how a novel failure mode
+              # becomes invisible.
+              echo "(no per-spec failure reported — raw tail)"
+              tail -n 30 "$run_log" || true
+            fi
+            echo "──────────────────────────────────────────────────────────"
           }
 
           trap cleanup_e2e_processes EXIT
@@ -919,15 +1194,24 @@ jobs:
           # attempts before reporting. Halves the cost of a genuine red shard.
           for attempt in 1 2; do
             cleanup_e2e_processes
+            run_log="e2e-failure-artifacts/attempt-${attempt}.log"
+            mkdir -p e2e-failure-artifacts
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
-            if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
-              echo "::endgroup::"
-              exit 0
-            else
-              attempt_status=$?
-            fi
+            # Tee so the reporter output can be re-read for the digest below.
+            # PIPESTATUS, not $?, or we would read tee's status instead.
+            ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
+              | tee "$run_log"
+            attempt_status=${PIPESTATUS[0]}
             echo "::endgroup::"
+            if [ "$attempt_status" -eq 0 ]; then
+              exit 0
+            fi
+            # Order matters as much as volume: the job-log API returns the tail,
+            # so the biggest output goes first and the smallest, most useful
+            # output goes last. Bulk dumps, then diagnostics, then the digest.
+            dump_e2e_session_logs "$attempt" || true
             capture_e2e_runner_diagnostics "$attempt" "$attempt_status" || true
+            summarise_e2e_attempt "$attempt" "$run_log" || true
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
@@ -1024,6 +1308,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
@@ -1031,6 +1316,14 @@ jobs:
       # True when this job pushed a new commit, i.e. the SHA the rest of CI
       # gated is no longer the branch tip. Consumed by `ci-passed`.
       superseded: ${{ steps.push.outputs.superseded }}
+    env:
+      # The branch this PR is actually based on — `main` for day-to-day PRs,
+      # `release` for a promotion PR. Every reconciliation below targets it, so
+      # both tiers reconcile against the branch they will merge into and a future
+      # branch rename cannot silently point this job at the wrong one. This job
+      # only runs on `pull_request` (see the `if:` above), so `base_ref` is
+      # always populated.
+      BASE_REF: ${{ github.base_ref }}
     steps:
       # The PR can merge while this trailing job is still queued (auto-merge fires
       # the moment the e2e gate goes green), and GitHub then deletes the head
@@ -1091,8 +1384,8 @@ jobs:
       # filter-screenshots.mts pixel-compares each changed PNG against its committed
       # baseline and reverts the ones whose difference is below the noise threshold
       # (clearly-different shots stay). It also reverts CONTESTED shots — a baseline
-      # deliberately committed on this branch by a non-bot author, or moved on main
-      # since the merge-base — so CI never overrides deliberate work (see the job
+      # deliberately committed on this branch by a non-bot author, or moved on the
+      # base branch since the merge-base — so CI never overrides deliberate work (see the job
       # comment above). The reverted shots are reported back so the comment step can
       # offer them for manual review. Needs Node + pixelmatch/pngjs only — install
       # just those two into node_modules (an isolated, scripts-off install, ~0.3s)
@@ -1106,13 +1399,16 @@ jobs:
         id: filter
         env:
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+          # filter-screenshots.mts defaults this to `origin/main`; point it at the
+          # PR's real base so a promotion PR contests against `release`.
+          SCREENSHOT_MAIN_REF: origin/${{ github.base_ref }}
         run: |
-          # The contested check compares against origin/main (merge-base, branch
-          # authorship, main-side changes). fetch-depth: 0 above usually brings it
-          # in already; fetch explicitly so a partial mirror can't silently
-          # disable the check. Best-effort: on failure the filter degrades to
-          # noise/flap-only (merge-base comes back empty), it doesn't clobber.
-          git fetch --no-tags origin main || true
+          # The contested check compares against the base branch (merge-base,
+          # branch authorship, base-side changes). fetch-depth: 0 above usually
+          # brings it in already; fetch explicitly so a partial mirror can't
+          # silently disable the check. Best-effort: on failure the filter degrades
+          # to noise/flap-only (merge-base comes back empty), it doesn't clobber.
+          git fetch --no-tags origin "$BASE_REF" || true
           npm install --no-save --no-audit --no-fund --ignore-scripts \
             --prefix /tmp/ssfilter pixelmatch pngjs
           # `node_modules` is committed as a symlink, so a bare `mkdir -p` errors
@@ -1128,12 +1424,12 @@ jobs:
         id: diff
         run: |
           # Match Collect / filter-screenshots: e2e checks out the pull_request
-          # merge commit (PR + main), so shots main added since the PR branched
-          # are present there and get re-rendered into the artifact. This job
-          # checks out github.head_ref, where those paths are absent — Apply
+          # merge commit (PR + base), so shots the base branch added since the PR
+          # branched are present there and get re-rendered into the artifact. This
+          # job checks out github.head_ref, where those paths are absent — Apply
           # therefore lands them as untracked. `git diff --name-only` alone
           # would miss them, skip the commit, and leave untracked PNGs that
-          # make `git merge origin/main` refuse to start
+          # make `git merge origin/$BASE_REF` refuse to start
           # ("untracked working tree files would be overwritten") — which the
           # reconcile step used to misread as a screenshot conflict and then
           # die on `git commit --no-edit` with no MERGE_HEAD.
@@ -1165,14 +1461,14 @@ jobs:
           # skip the e2e tier, so CI re-runs only lint/check/build, renders nothing,
           # and this job finds no further screenshots to commit.
           git commit -m "chore(e2e): update reference screenshots from CI"
-      # Clear screenshot conflicts against main. A reference PNG re-rendered on BOTH
-      # main and this PR is a binary file git can't merge, so the PR goes `dirty`
-      # and STAYS that way: the render commit above only updates the head branch, it
-      # never incorporates main, so head's PNG keeps conflicting with main's PNG.
-      # Bring main in here so the conflict actually resolves. Generated PNGs have no
+      # Clear screenshot conflicts against the base branch. A reference PNG re-rendered
+      # on BOTH the base and this PR is a binary file git can't merge, so the PR goes
+      # `dirty` and STAYS that way: the render commit above only updates the head
+      # branch, it never incorporates the base, so head's PNG keeps conflicting with
+      # the base's PNG. Bring the base in here so the conflict actually resolves. Generated PNGs have no
       # meaningful 3-way merge, so each conflicting shot is resolved by OWNERSHIP:
       # the branch keeps (--ours) a shot the oracle maps to this diff or that
-      # someone hand-committed here, and takes main's (--theirs) for anything else.
+      # someone hand-committed here, and takes the base's (--theirs) for anything else.
       # Because the filter step above already reverted contested and out-of-scope
       # renders, --ours here means: the fresh render for uncontested owned shots,
       # and the branch's deliberately COMMITTED shot for contested ones — the
@@ -1187,18 +1483,18 @@ jobs:
       # genuinely conflicting. Runs regardless of the render diff above: a conflict
       # can exist even when this run re-rendered nothing new (the noise filter may
       # have reverted the wobble), so gating on `changed` would miss it.
-      - name: Reconcile reference screenshots with main
+      - name: Reconcile reference screenshots with the base branch
         if: steps.head.outputs.exists == 'true'
         id: reconcile
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch --no-tags origin main
+          git fetch --no-tags origin "$BASE_REF"
 
           # Resolve ownership BEFORE any merge attempt: --own-paths reads the
           # branch's diff from the working tree, and a conflicted merge in progress
-          # would fold main's incoming changes into it and over-grant ownership.
-          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base origin/main)
+          # would fold the base's incoming changes into it and over-grant ownership.
+          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base "origin/$BASE_REF")
           echo "Branch owns ${#owned[@]} reference shot(s)"
 
           # `git merge` returns non-zero for real conflicts AND for "untracked
@@ -1206,7 +1502,7 @@ jobs:
           # former is a conflict we can --ours; the latter must be cleared and
           # retried or failed loudly — never fall through to `git commit --no-edit`.
           try_merge() {
-            git merge --no-commit --no-ff origin/main
+            git merge --no-commit --no-ff "origin/$BASE_REF"
           }
           clear_untracked_screenshots_blocking_merge() {
             mapfile -t blockers < <(
@@ -1215,7 +1511,7 @@ jobs:
             if [ ${#blockers[@]} -eq 0 ]; then
               return 1
             fi
-            echo "Untracked screenshots blocked the merge — removing so main can bring them in:"
+            echo "Untracked screenshots blocked the merge — removing so the base branch can bring them in:"
             printf '%s\n' "${blockers[@]}"
             rm -f -- "${blockers[@]}"
             return 0
@@ -1225,17 +1521,17 @@ jobs:
             # Clean (or already up to date) — don't bake a merge commit onto an
             # otherwise-tidy PR. --abort is a no-op / harmless when no merge started.
             git merge --abort 2>/dev/null || true
-            echo "main merges cleanly; nothing to reconcile"
+            echo "$BASE_REF merges cleanly; nothing to reconcile"
             exit 0
           fi
           if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             if clear_untracked_screenshots_blocking_merge && try_merge; then
               git merge --abort 2>/dev/null || true
-              echo "main merges cleanly after clearing untracked screenshots"
+              echo "$BASE_REF merges cleanly after clearing untracked screenshots"
               exit 0
             fi
             if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
-              echo "::error::git merge origin/main failed without starting a merge (no MERGE_HEAD)"
+              echo "::error::git merge origin/$BASE_REF failed without starting a merge (no MERGE_HEAD)"
               exit 1
             fi
           fi
@@ -1337,6 +1633,38 @@ jobs:
           else
             echo "superseded=false" >> "$GITHUB_OUTPUT"
           fi
+      # `update-screenshots` is a REQUEST ("refresh the shots on this PR"), and
+      # this job is where that request is served — so retire it here. Left on, it
+      # is not a request but a mode: the plan step above reads it on every
+      # subsequent push and forces mode=full, and because the label ALSO punches
+      # through the `base_ref == 'release'` guard on `e2e`, a trunk-targeted PR
+      # keeps dispatching 8 Electron shards + `build` for the rest of its life.
+      # Observed on #1569, which paid that on every push, days after the one
+      # refresh it wanted (and where 6 of the 8 shards never even got a runner).
+      #
+      # Reaching this step means `build` and `e2e` both succeeded and the render
+      # was committed, i.e. the refresh actually happened — a failed run leaves
+      # the label in place so the next push retries it. Removal is best-effort:
+      # `|| true` on a 404 (already removed by hand, or two runs raced), and a
+      # failure here must never redden a PR whose screenshots are correct.
+      - name: Retire the update-screenshots label
+        if: steps.head.outputs.exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+        run: |
+          if [ "$HAS_LABEL" != "true" ]; then
+            echo "No update-screenshots label on this PR; nothing to retire."
+            exit 0
+          fi
+          curl -sS -X DELETE \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${{ github.repository }}/issues/${PR_NUMBER}/labels/update-screenshots" \
+            -o /dev/null -w 'label removal: HTTP %{http_code}\n' || true
       - name: Comment on PR with updated screenshots
         # Always run: when there's something to report (refreshed shots, ignored
         # noise, held flapping/contested renders, or a source conflict needing a
@@ -1522,8 +1850,8 @@ jobs:
   # `needs` every other job (and e2e's result aggregates all 8 shards), so it
   # turns the whole pipeline into one green/red status. New jobs or e2e shard
   # counts can change without touching the required-checks list — just add the
-  # job to `needs` here. `if: always()` so this runs even when an upstream job
-  # fails/is skipped; we then assert none failed or were cancelled. Fork PRs
+  # job to `needs` here. `if: !cancelled()` so this runs even when an upstream
+  # job fails/is skipped; we then assert none failed or were cancelled. Fork PRs
   # have their own explicit safe-tier result below: they may pass only after
   # `precheck` actually ran on a GitHub-hosted runner, never merely because all
   # code-executing jobs were skipped.
@@ -1531,12 +1859,27 @@ jobs:
   # Concurrency supersession: top-level `cancel-in-progress` cancels in-flight
   # jobs when a newer push/sync arrives on the same ref. Those cancelled jobs
   # must not paint the superseded SHA's `CI Passed` red — tip CI is the gate
-  # that matters. We detect supersession by (1) comparing this run's head SHA
-  # to the live tip, and (2) looking for a newer CI workflow run on the same
-  # head SHA (same-SHA supersession — e.g. a delayed nightly schedule sharing
-  # `ci-refs/heads/main` with a tip push). Genuine cancels of the tip with no
-  # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
-  # after a real shard failure still fail because `ANY_FAILURE` is true first.
+  # that matters. Two different mechanisms cover that, and which one applies
+  # depends on whether the RUN was cancelled or only some of its JOBS were:
+  #
+  #   - Whole run cancelled (concurrency supersession, manual cancel): this job
+  #     is SKIPPED by the `if:` below and never reports. The superseding run's
+  #     own `CI Passed` is the one that counts.
+  #   - Individual jobs cancelled while the run itself lives on (skip-mode's
+  #     check/build/e2e — issue #609 — matrix cancels, a runner losing
+  #     communication): this job still runs, and the `ANY_CANCELLED` branch in
+  #     the step below decides. It detects supersession by (1) comparing this
+  #     run's head SHA to the live tip, and (2) looking for a newer CI run on
+  #     the same head SHA (e.g. a delayed nightly schedule sharing
+  #     `ci-refs/heads/main` with a tip push). A job-level cancel still at tip
+  #     with no newer run fails. Sibling-matrix cancels after a real shard
+  #     failure fail because `ANY_FAILURE` is true first.
+  #
+  # KNOWN CONSEQUENCE of the first bullet: a skipped required check satisfies
+  # branch protection, so a manually cancelled run now reads as satisfied rather
+  # than red. That is a deliberate trade for unwedging the concurrency group
+  # (see the `if:` below); the case it costs is a human cancelling a run they
+  # do not intend to re-run, which the next push re-gates anyway.
   ci-passed:
     # A push to trunk (`main`) intentionally skips the expensive tier. Give that
     # run a distinct check context so its green result on the same head SHA
@@ -1548,13 +1891,40 @@ jobs:
     # match on by name, so renaming it is a separate change that has to land
     # together with the protection rule.
     name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' || 'CI Passed' }}
-    if: always()
+    # NOT `always()`. That is true even when the RUN is cancelled, so GitHub
+    # still creates and queues this job on a run that is being torn down — and
+    # `runs-on` below prefers the self-hosted fleet, where it can then wait for
+    # a runner that is never coming. A queued job keeps its run out of a
+    # terminal state, the run keeps holding the `ci-<pr>` concurrency group, and
+    # the run that superseded it therefore never starts: it sits `pending` with
+    # zero jobs created. Observed on #1669, where promoting a draft cancelled
+    # the in-flight run and CI was wedged for 114 minutes — until a fleet runner
+    # freed up and the orphan finally ran, correctly reporting "superseded" in
+    # about five seconds. That is the point: the job was never broken, it just
+    # should not have been queued for a runner at all on a run nobody was
+    # waiting for. Meanwhile a normal cancel is accepted (202) but does not
+    # dequeue it, and `force-cancel` is the only manual way out.
+    #
+    # `!cancelled()` keeps everything `always()` was buying — this still runs
+    # when an upstream job FAILS or is SKIPPED, which the default `success()`
+    # would not — and differs only on a cancelled run, where being skipped is
+    # what lets the run finish and release the group. GitHub documents this
+    # exact substitution as the fix for `always()` hangs.
+    if: ${{ !cancelled() }}
     needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
     # minutes; hosted fallback when unset. Fails closed either way: if the fleet
     # is saturated this stays pending (never green), so it can't wave a run
     # through without its required status check.
+    #
+    # "Stays pending" is the right answer for a LIVE run and the wrong one for a
+    # cancelled run, where it wedges the concurrency group — which is why the
+    # `if:` above must never go back to `always()` while this prefers the fleet.
+    # Pinning this one job to `ubuntu-latest` is the other way to buy that (it
+    # would start in seconds and could never queue behind the fleet), at roughly
+    # one billed hosted minute per run; deliberately not taken.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read

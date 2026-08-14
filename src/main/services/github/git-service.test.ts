@@ -13,13 +13,19 @@ import {
   getGitFileDiff,
   getGitPromptState,
   getGitShowText,
+  getGitStatus,
   getGitWorkingFileDiff,
+  invalidateGitWorkTreeProbe,
+  isInsideGitWorkTree,
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
+  repositoryHasSubmodules,
+  resetDefaultBranchCache,
   resolveWorkspaceRelativeGitPath,
   sumDiffNumstat,
   toGitShowPath,
+  getGitChangeStats,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
@@ -171,6 +177,160 @@ describe('classifyGitBlob (#130)', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('repositoryHasSubmodules', { skip: !gitOk && 'git not installed' }, () => {
+  it('finds the repository declaration from a nested project root', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'copse-git-submodules-'))
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: repo })
+      const project = join(repo, 'packages', 'widget')
+      await mkdir(project, { recursive: true })
+
+      assert.equal(await repositoryHasSubmodules(project), false)
+      await writeFile(join(repo, '.gitmodules'), '[submodule "fixture"]\n')
+      assert.equal(await repositoryHasSubmodules(project), true)
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('stops at the nearest repository instead of inheriting parent metadata', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-git-parent-submodules-'))
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: parent })
+      await writeFile(join(parent, '.gitmodules'), '[submodule "parent-only"]\n')
+      const child = join(parent, 'child')
+      await mkdir(child)
+      spawnSync('git', ['init', '-q'], { cwd: child })
+
+      assert.equal(await repositoryHasSubmodules(child), false)
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('work-tree probe cache', { skip: !gitOk && 'git not installed' }, () => {
+  let dir = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: dir })
+
+  before(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'copse-git-worktree-probe-'))
+    restore = setWorkspaceRootForTest(dir)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    invalidateGitWorkTreeProbe()
+    restore?.()
+    if (dir) await rm(dir, { recursive: true, force: true })
+  })
+
+  it('does not cache a negative, so a later git init is seen', async () => {
+    // The whole reason only positives are cached: a plain directory becoming a
+    // repo is an ordinary thing for an agent to do, and caching "not a work
+    // tree" would stranded the workspace as permanently git-less.
+    assert.equal(await isInsideGitWorkTree(dir), false)
+
+    git('init', '-q')
+
+    assert.equal(await isInsideGitWorkTree(dir), true)
+  })
+
+  it('serves getGitStatus from cache, and a stale entry still yields null', async () => {
+    git('init', '-q')
+    assert.notEqual(await getGitStatus(dir), null)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+
+    // The cached probe short-circuits, so `getGitStatus` goes straight to
+    // `git status` — which fails on its own and produces the same null the live
+    // probe would have. That backstop is what makes caching the positive safe.
+    assert.equal(await getGitStatus(dir), null)
+  })
+
+  it('never serves isInsideGitWorkTree from cache, so a vanished checkout says so', async () => {
+    // The bare boolean has no failing follow-up command to correct a stale yes,
+    // and callers gate real work on it — #1686 pins the deleted-folder case.
+    git('init', '-q')
+    assert.equal(await isInsideGitWorkTree(dir), true)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+
+    assert.equal(await isInsideGitWorkTree(dir), false)
+  })
+
+  it('evicts a stale entry when a live probe observes the negative', async () => {
+    git('init', '-q')
+    assert.notEqual(await getGitStatus(dir), null)
+
+    await rm(join(dir, '.git'), { recursive: true, force: true })
+    // The live probe both answers honestly and heals the cache behind it, so a
+    // later `git init` at the same path is not read through the old entry.
+    assert.equal(await isInsideGitWorkTree(dir), false)
+
+    git('init', '-q')
+
+    assert.notEqual(await getGitStatus(dir), null)
+  })
+})
+
+describe('getGitChangeStats', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: repo })
+
+  async function resetTree(): Promise<void> {
+    git('checkout', '--', '.')
+    git('clean', '-fdq')
+  }
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-change-stats-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'tracked.txt'), 'one\n')
+    git('add', 'tracked.txt')
+    git('commit', '-qm', 'init')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  afterEach(async () => {
+    await resetTree()
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('returns null on a clean tree', async () => {
+    assert.equal(await getGitChangeStats(repo), null)
+  })
+
+  it('counts tracked line edits from numstat', async () => {
+    await writeFile(join(repo, 'tracked.txt'), 'two\n')
+    assert.deepEqual(await getGitChangeStats(repo), { additions: 1, deletions: 1 })
+  })
+
+  it('includes untracked file lines that numstat alone would miss (#584)', async () => {
+    await writeFile(join(repo, 'fresh.ts'), 'alpha\nbeta\ngamma\n')
+    assert.deepEqual(await getGitChangeStats(repo), { additions: 3, deletions: 0 })
+  })
+
+  it('sums tracked edits with untracked additions', async () => {
+    await writeFile(join(repo, 'tracked.txt'), 'changed\n')
+    await writeFile(join(repo, 'another.ts'), 'one\ntwo\n')
+    assert.deepEqual(await getGitChangeStats(repo), { additions: 3, deletions: 1 })
+  })
+})
 
 describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed' }, () => {
   let repo = ''
@@ -626,12 +786,12 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
   const git = (...args: string[]): SpawnSyncReturns<string> =>
     spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
 
-  afterEach(() => {
+  // Each case mints its own repo, so reclaim it here rather than leaving every
+  // one but the last behind on the runner.
+  afterEach(async () => {
     restore?.()
     restore = undefined
-  })
-
-  after(async () => {
+    resetDefaultBranchCache()
     if (repo) await rm(repo, { recursive: true, force: true })
     repo = ''
   })
@@ -669,6 +829,46 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
 
     assert.equal(await getDefaultBranch(), null)
+  })
+
+  it('serves a resolved name from cache until the cache is dropped', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-cache-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('remote', 'add', 'origin', 'https://example.com/repo.git')
+    git('update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), 'develop')
+
+    // Repointing origin/HEAD is invisible to a cached read — that is the point,
+    // since the UI re-reads this on every file-watcher tick.
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    assert.equal(await getDefaultBranch(), 'develop')
+
+    resetDefaultBranchCache()
+    assert.equal(await getDefaultBranch(), 'main')
+  })
+
+  it('caches per repository root rather than globally', async () => {
+    const other = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-other-'))
+    try {
+      repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-first-'))
+      git('init', '-q', '-b', 'main')
+      git('config', 'init.defaultBranch', 'develop')
+      restore = setWorkspaceRootForTest(repo)
+      assert.equal(await getDefaultBranch(), 'develop')
+
+      spawnSync('git', ['init', '-q'], { cwd: other, encoding: 'utf8' })
+      spawnSync('git', ['config', 'init.defaultBranch', 'trunk'], { cwd: other, encoding: 'utf8' })
+      assert.equal(await getDefaultBranch(other), 'trunk')
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
   })
 })
 
@@ -728,5 +928,30 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
 
     assert.equal(await getCurrentCommitHash(), null)
     assert.deepEqual(await getGitPromptState(), { startingCommit: null, dirty: false })
+  })
+})
+
+describe('git reads on a deleted checkout', { skip: !gitOk && 'git not installed' }, () => {
+  let restore: (() => void) | undefined
+
+  afterEach(() => {
+    setGitAvailableForTest(null)
+    restore?.()
+    restore = undefined
+  })
+
+  it('degrades to a failed read instead of an unhandled spawn rejection', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'copse-git-deleted-checkout-'))
+    spawnSync('git', ['init', '-q'], { cwd: repo })
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+    assert.equal(await isInsideGitWorkTree(repo), true)
+
+    // A checkout can vanish under a running app while the persisted project path
+    // that names it keeps reaching git — the folder is gone, not the shell, so
+    // the inspection must answer "no repository" rather than reject.
+    await rm(repo, { recursive: true, force: true })
+    assert.equal(await isInsideGitWorkTree(repo), false)
+    assert.equal(await getGitStatus(repo), null)
   })
 })

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { DEMO_SCENARIOS } from './demo-scenarios.ts'
+import { DEMO_SCENARIOS, demoScenarioPrompt } from './demo-scenarios.ts'
 
 describe('demo scenarios', () => {
   it('enables developerMode for the footer-compact overflow geometry demo', () => {
@@ -14,6 +14,21 @@ describe('demo scenarios', () => {
     assert.ok(scenario)
     assert.ok(scenario.trace, 'the walkthrough needs a trace to replay')
     assert.notEqual(scenario.trace.prompt.trim(), '')
+    assert.equal(
+      demoScenarioPrompt(scenario),
+      'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.',
+    )
+    assert.equal(demoScenarioPrompt(scenario), scenario.trace.prompt)
+    assert.equal(scenario.threads[0]?.title, 'Crumb & Bloom coming soon')
+    assert.deepEqual(scenario.settings['registeredAcpAgents'], [
+      {
+        id: 'codex',
+        title: 'Codex',
+        command: 'codex-acp',
+        args: [],
+        enabled: true,
+      },
+    ])
     assert.deepEqual(
       scenario.threads.map((thread) => thread.messages.length),
       [0],

@@ -1,9 +1,9 @@
 import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
-import { randomInt } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   forceKillWedgedE2eSession,
   installDeleteSessionSafety,
@@ -12,6 +12,8 @@ import {
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
+import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
@@ -19,15 +21,25 @@ const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
-const chromedriverBinary = join(
-  process.cwd(),
-  'node_modules/electron-chromedriver/bin/chromedriver',
-)
+const requireFromProject = createRequire(join(process.cwd(), 'package.json'))
+const chromedriverBinary =
+  process.env.COPSE_E2E_CHROMEDRIVER_BINARY?.trim() ||
+  join(
+    dirname(requireFromProject.resolve('electron-chromedriver/package.json')),
+    'bin',
+    'chromedriver',
+  )
 
 let e2eUserDataDir: string | null = null
 
 export const config: Options.Testrunner = {
   runner: 'local',
+  // Keep the runner + chromedriver logs instead of discarding them. When a spec
+  // dies with "Unable to connect to http://localhost:PORT", that message is the
+  // symptom; the driver's own log is the only place the cause is written down.
+  // Landing them under e2e-failure-artifacts/ puts them in the directory CI
+  // already uploads and prints on a failing shard.
+  outputDir: join(process.cwd(), 'e2e-failure-artifacts', 'wdio-logs'),
   specs: ['./tests/e2e/**/*.e2e.ts'],
   exclude: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
@@ -48,7 +60,15 @@ export const config: Options.Testrunner = {
       // Must match the Chromium shipped by the pinned Electron (electron ^43 →
       // Chromium 150); the session reports 150.0.7871.46 at runtime.
       browserVersion: '150.0.7871.46',
-      'wdio:chromedriverOptions': { binary: chromedriverBinary },
+      // `verbose` is forwarded to the driver as `--verbose` (@wdio/utils turns
+      // every chromedriverOptions key into a CLI flag). On by default in CI,
+      // because the session-handshake evidence that diagnosed #1606 was only
+      // there because verbose was already on when the failure happened.
+      // See tests/e2e/helpers/driver-verbose.ts for the override.
+      'wdio:chromedriverOptions': {
+        binary: chromedriverBinary,
+        ...driverVerboseOptions(),
+      },
       'wdio:enforceWebDriverClassic': true,
       // Without this chromedriver collects no browser log and `getLogs('browser')`
       // comes back empty, so the renderer-side diagnostics the failure artifacts
@@ -151,6 +171,10 @@ export const config: Options.Testrunner = {
       // Deterministic Artificial Analysis live cohort (incl. costPerTask) for the
       // Settings → Usage model value map — no AA API key required in e2e.
       COPSE_AA_INTELLECT_MOCK: process.env.COPSE_AA_INTELLECT_MOCK?.trim() || '1',
+      // Resolve every model-card candidate without touching a vendor site, so
+      // the value map's card links render deterministically and e2e makes no
+      // outbound requests. '0' would resolve none.
+      COPSE_MODEL_CARD_PROBE_MOCK: process.env.COPSE_MODEL_CARD_PROBE_MOCK?.trim() || '1',
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
@@ -167,6 +191,11 @@ export const config: Options.Testrunner = {
       // can then seed and validate isolated thread roots without touching the
       // developer's real ~/.copse/worktrees directory.
       COPSE_WORKTREES_DIR: join(e2eUserDataDir, 'worktrees'),
+      // Agent Plugins discovery root. Isolating it matters beyond the discovery
+      // spec: without the override the app would walk the *developer's* real
+      // ~/.copse/plugins, so whatever they happen to have installed would leak
+      // into every Settings → Packs assertion and screenshot.
+      COPSE_PLUGINS_DIR: join(e2eUserDataDir, 'plugins'),
       // Blank every provider key the app recognises so e2e is deterministic:
       // the mock LLM is used (no real key), and the env-key-detection scan
       // (Settings → General) finds nothing from the runner's environment.
@@ -192,21 +221,28 @@ export const config: Options.Testrunner = {
     }
     writeFileSync(e2eEnvFile, JSON.stringify(e2eEnv), 'utf8')
 
-    const cap = capabilities as WebdriverIO.Capabilities & {
-      'goog:chromeOptions'?: { args?: string[] }
-    }
+    const cap = capabilities as ChromeCapabilities
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
-    const debugPort = randomInt(9300, 9999)
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
-      args: [
-        ...new Set([
-          ...(chromeOptions.args ?? []),
-          `--user-data-dir=${e2eUserDataDir}`,
-          `--remote-debugging-port=${debugPort}`,
-        ]),
-      ],
+      args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
     }
+    assignDebugPort(cap)
+  },
+  beforeCommand(commandName) {
+    // beforeSession runs once per worker, but every spec calls
+    // browser.reloadSession() (196 call sites) and reloadSession re-launches
+    // Electron from the capabilities captured back then — so without this the
+    // whole shard rebinds one fixed devtools port ~25 times in a row, each time
+    // onto the port the process it is replacing has only just released. Rotate
+    // it first; see helpers/debug-port.ts for why reuse is what breaks.
+    if (commandName !== 'reloadSession') return
+    const requested = browser.requestedCapabilities as
+      (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities }) | undefined
+    if (!requested) return
+    // W3C sessions may hand back the alwaysMatch/firstMatch shape rather than
+    // the flat capabilities object; reloadSession re-sends whichever it holds.
+    assignDebugPort(requested.alwaysMatch ?? requested)
   },
   onComplete() {
     try {

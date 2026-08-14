@@ -1,12 +1,13 @@
 import { accessSync, constants } from 'node:fs'
 import { join } from 'node:path'
 
-// First-party skills that ship with Copse itself (e.g. `/checkup`). They live in
+// First-party skills that ship with Copse itself (e.g. `/checkup` and
+// `/reconcile-worktrees`). They live in
 // the repo under `assets/skills/<name>/SKILL.md`, which the build copies to
 // `dist/assets/skills` (see scripts/build.mts / scripts/dev.mts), so a single
 // path resolved from the bundled main entry works in both dev and packaged runs.
 // Unlike the fetched Cursor bundled skills, these are committed and always
-// present, giving every workspace a built-in `/checkup` command.
+// present, giving every workspace a small set of built-in operational skills.
 
 let builtinRootOverride: string | null | undefined
 

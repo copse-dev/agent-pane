@@ -80,6 +80,116 @@ afterEach(() => {
 })
 
 describe('footer branch status', () => {
+  it('keeps a thread selectable when branch status cannot be read', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('feature/detached-worktree', true)],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: null, pr: null })
+
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async () => {
+          throw new Error('Thread worktree is on a detached HEAD')
+        },
+      },
+    })
+    await settle()
+
+    const button = qsRequired<HTMLButtonElement>(host, '.footer-branch-status')
+    assert.equal(
+      button.querySelector('.footer-branch-label')?.textContent,
+      'feature/detached-worktree',
+    )
+    assert.ok(button.classList.contains('is-copyable'))
+    assert.equal(document.querySelector('.toast-error'), null)
+  })
+
+  it('keeps a readable branch status when only the branch listing fails', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: 'main', pr: null })
+
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        listBranches: async () => {
+          throw new Error('Thread worktree is missing')
+        },
+      },
+    })
+    await settle()
+
+    // The picker's list is unavailable, but branchStatus answered — so the
+    // widget still names the branch rather than hiding itself entirely.
+    const wrap = qsRequired(host, '.branch-picker')
+    assert.equal(wrap.hidden, false)
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+    assert.equal(document.querySelector('.toast-error'), null)
+  })
+
+  it('drops a slow branch list from a refresh the user has already overtaken', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createApi({ currentBranch: 'main', pr: null })
+
+    let releaseStale = (_value: GitBranchInfo[]): void => {
+      throw new Error('expected stale refresh to pause')
+    }
+    let listBranches = async (): Promise<GitBranchInfo[]> => [
+      { name: 'main', lastCommitDate: '2024-01-01' },
+    ]
+
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: { ...base['git'], listBranches: () => listBranches() },
+    })
+    await settle()
+    await openBranchMenu(host)
+
+    // Refresh A stalls inside loadBranches...
+    listBranches = (): Promise<GitBranchInfo[]> =>
+      new Promise<GitBranchInfo[]>((resolve) => {
+        releaseStale = resolve
+      })
+    store.emit('git_branch_changed')
+    await settle()
+
+    // ...while refresh B starts and finishes with the list that is now current.
+    listBranches = async (): Promise<GitBranchInfo[]> => [
+      { name: 'feature/current', lastCommitDate: '2024-01-02' },
+    ]
+    store.emit('git_branch_changed')
+    await settle()
+
+    releaseStale([{ name: 'feature/stale', lastCommitDate: '2024-01-03' }])
+    await settle()
+
+    const labels = [...host.querySelectorAll('.branch-picker-option-label')].map(
+      (node) => node.textContent,
+    )
+    assert.deepEqual(labels, ['feature/current'])
+  })
+
   it('copies the thread branch on click for existing chats', async () => {
     let copiedBranch: string | null = null
     installClipboard(async (text) => {
@@ -168,6 +278,57 @@ describe('footer branch status', () => {
     assert.equal(copiedBranch, null)
   })
 
+  it('shows the branch name on the default branch even when an open PR exists', async () => {
+    let copiedBranch: string | null = null
+    let requestedUrl: string | null = null
+    installClipboard(async (text) => {
+      copiedBranch = text
+    })
+
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main', true)],
+    })
+    store.on('browser_url_requested', (url) => {
+      requestedUrl = url
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        {
+          currentBranch: 'main',
+          pr: {
+            number: 1531,
+            title: 'Promote main to release',
+            url: 'https://github.com/example/repo/pull/1531',
+          },
+        },
+        [],
+        'main',
+      ),
+    )
+    await settle()
+
+    const button = qsRequired<HTMLButtonElement>(host, '.footer-branch-status')
+    assert.equal(button.querySelector('.footer-branch-label')?.textContent, 'main')
+    assert.ok(!button.classList.contains('is-link'))
+    assert.ok(button.classList.contains('is-copyable'))
+
+    button.click()
+    await settle()
+
+    assert.equal(requestedUrl, null)
+    assert.equal(store.getState().rightPanelMode, 'explorer')
+    assert.equal(store.getState().filesPaneOpen, false)
+    assert.equal(copiedBranch, 'main')
+  })
+
   it('shows the branch picker for new chats without a copy action', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -203,5 +364,44 @@ describe('footer branch status', () => {
       (node) => node.textContent,
     )
     assert.deepEqual(labels[0], 'main')
+  })
+
+  it('keeps the trunk PR out of the branch picker menu too', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        {
+          currentBranch: 'main',
+          pr: {
+            number: 1531,
+            title: 'Promote main to release',
+            url: 'https://github.com/example/repo/pull/1531',
+          },
+        },
+        [{ name: 'main', lastCommitDate: '2024-01-01' }],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+
+    // The trigger already hides the promotion PR; the menu's "Open PR #N" row
+    // must agree rather than offering the branch back as a link.
+    assert.equal(host.querySelectorAll('.branch-picker-action').length, 0)
+    assert.equal(host.querySelector('.branch-picker-empty'), null)
+    const labels = [...host.querySelectorAll('.branch-picker-option-label')].map(
+      (node) => node.textContent,
+    )
+    assert.deepEqual(labels, ['main'])
   })
 })

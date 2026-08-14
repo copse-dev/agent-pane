@@ -11,6 +11,7 @@ export const CURSOR_HOOK_EVENTS = [
   'beforeShellExecution',
   'beforeMCPExecution',
   'beforeReadFile',
+  'preToolUse',
   'beforeSubmitPrompt',
   'afterFileEdit',
   'afterShellExecution',
@@ -25,7 +26,12 @@ export const CURSOR_HOOK_EVENTS = [
 
 export type CursorHookEvent = (typeof CURSOR_HOOK_EVENTS)[number]
 
-/** Permission-gating hooks return a decision; observation hooks return nothing. */
+/**
+ * Permission-gating hooks return a decision; observation hooks return nothing.
+ * These are the **dedicated** pre-tool flavors, each gating one class of tool.
+ * The generic {@link CURSOR_GENERIC_TOOL_GATE_EVENT} gates every tool and is
+ * tracked separately because it has no tool → event mapping.
+ */
 export const CURSOR_PERMISSION_HOOK_EVENTS = [
   'beforeShellExecution',
   'beforeMCPExecution',
@@ -40,6 +46,26 @@ export function isCursorPermissionHookEvent(
 ): event is CursorPermissionHookEvent {
   return (CURSOR_PERMISSION_HOOK_EVENTS as readonly string[]).includes(event)
 }
+
+/**
+ * Cursor's **generic** pre-tool gate — the pre-side twin of `postToolUse`. Where
+ * the dedicated flavors above each cover one tool class, `preToolUse` fires for
+ * *every* tool, with the matcher tested against Cursor's tool-type token
+ * (`Shell`, `Read`, `Write`, `Grep`, `Delete`, `Task`, `MCP:<tool_name>`). It
+ * maps onto the same canonical `toolGate` event as the dedicated flavors — a
+ * payload flavor, not a separate canonical event — so a shell call can invoke
+ * both `beforeShellExecution` and `preToolUse` with their distinct stdin shapes,
+ * exactly as `afterShellExecution` + `postToolUse` already do on the post side.
+ */
+export const CURSOR_GENERIC_TOOL_GATE_EVENT = 'preToolUse' as const
+
+/** Every Cursor event that maps onto the canonical `toolGate` (dedicated + generic). */
+export const CURSOR_TOOL_GATE_HOOK_EVENTS = [
+  ...CURSOR_PERMISSION_HOOK_EVENTS,
+  CURSOR_GENERIC_TOOL_GATE_EVENT,
+] as const
+
+export type CursorToolGateHookEvent = (typeof CURSOR_TOOL_GATE_HOOK_EVENTS)[number]
 
 /**
  * Cursor post-tool events mapped onto canonical `afterToolUse`. The dedicated
@@ -57,7 +83,7 @@ export type CursorAfterToolHookEvent = (typeof CURSOR_AFTER_TOOL_HOOK_EVENTS)[nu
 
 /**
  * Events Copse actually fires (vs parsed for discovery only). The permission
- * gates plus `beforeSubmitPrompt` (B1 — compose path), `afterFileEdit`
+ * gates and the generic `preToolUse` gate, plus `beforeSubmitPrompt` (B1 — compose path), `afterFileEdit`
  * (B2 — the diff-queue / write-tool site), `stop` (B3 — fired the moment agent
  * work stops, at turn end or abort), `subagentStart` / `subagentStop`
  * (D1 — the subagent spawn gate + detached completion, matcher on subagent type),
@@ -68,7 +94,7 @@ export type CursorAfterToolHookEvent = (typeof CURSOR_AFTER_TOOL_HOOK_EVENTS)[nu
  * conversation's first turn; its `env` output propagates to later hook spawns).
  */
 export const CURSOR_WIRED_HOOK_EVENTS = [
-  ...CURSOR_PERMISSION_HOOK_EVENTS,
+  ...CURSOR_TOOL_GATE_HOOK_EVENTS,
   'beforeSubmitPrompt',
   'afterFileEdit',
   'stop',

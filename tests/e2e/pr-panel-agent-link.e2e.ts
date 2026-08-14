@@ -49,7 +49,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     // the agent badge with a provider-named tooltip.
     const badge = await $('.pr-list-row[data-pr-section="linked"] .pr-list-agent-badge')
     await badge.waitForDisplayed({ timeout: 15_000 })
-    expect(await badge.getAttribute('title')).toMatch(/opened by a cursor agent/i)
+    expect(await badge.getAttribute('data-tooltip')).toMatch(/opened by a cursor agent/i)
 
     // Selecting the PR surfaces the "open agent thread" jump in the viewer meta.
     // This is the only intentional thread handoff for a Cursor agent run —

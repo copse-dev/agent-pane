@@ -14,6 +14,7 @@
 //   3. Run `npm run sync:models`.
 
 import { MODEL_CATALOG } from './model-catalog.generated.ts'
+import { canonicalModelLabel } from './model-label.ts'
 // A leaf module — safe here, where importing `extra-providers.ts` for the same
 // parsing (→ pareto-frontier.ts → this module) would cycle.
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
@@ -45,13 +46,16 @@ export const TRACKED_MODELS = [
   DEFAULT_CLOUD_MODEL,
   'claude-fable-5',
   'claude-sonnet-5',
+  'claude-opus-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5.5',
   'gpt-5',
   'gpt-5-mini',
+  'gpt-5-nano',
   'gpt-4o',
   'gpt-4o-mini',
 ] as const
@@ -84,21 +88,29 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
   'claude-sonnet-4-6': 'Claude Sonnet 4.6',
   'claude-fable-5': 'Claude Fable 5',
   'claude-sonnet-5': 'Claude Sonnet 5',
+  'claude-opus-5': 'Claude Opus 5',
   'claude-opus-4-8': 'Claude Opus 4.8',
   'claude-haiku-4-5': 'Claude Haiku 4.5',
   'gpt-5.6-sol': 'GPT-5.6 Sol',
   'gpt-5.6-terra': 'GPT-5.6 Terra',
+  'gpt-5.6-luna': 'GPT-5.6 Luna',
   'gpt-5.5': 'GPT-5.5',
   'gpt-5': 'GPT-5',
   'gpt-5-mini': 'GPT-5 mini',
+  'gpt-5-nano': 'GPT-5 nano',
   'gpt-4o': 'GPT-4o',
   'gpt-4o-mini': 'GPT-4o mini',
 }
 
-/** Friendly label for a tracked cloud id; unknown ids fall back to themselves. */
+/**
+ * Friendly label for a tracked cloud id. An untracked id gets the same house
+ * spelling when its name says enough to give it one (`claude-opus-4-7` →
+ * "Claude Opus 4.7" — the picker lists agent-supplied ids we don't track), and
+ * otherwise falls back to itself.
+ */
 export function cloudModelDisplayLabel(model: string): string {
   const tracked = TRACKED_MODELS.find((candidate) => candidate === model)
-  return tracked === undefined ? model : CLOUD_MODEL_LABELS[tracked]
+  return tracked === undefined ? canonicalModelLabel(model) : CLOUD_MODEL_LABELS[tracked]
 }
 
 /** Model picker entries derived from {@link TRACKED_MODELS}. */
@@ -140,7 +152,7 @@ export function supportsMidConversationSystem(model: string): boolean {
  *
  * The rest cannot: `lmstudio` serves local weights, where a GGUF may be named
  * after a model it is merely distilled from, and `remote-agent` / `acp` /
- * `pack-model` hand the turn to something that owns its own prompt.
+ * `plugin-model` hand the turn to something that owns its own prompt.
  */
 const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter', 'extra-provider'])
 

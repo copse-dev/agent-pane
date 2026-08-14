@@ -8,6 +8,7 @@
  */
 
 export const BROWSER_TOOLS = new Set([
+  'browser_preview',
   'browser_navigate',
   'browser_snapshot',
   'browser_screenshot',

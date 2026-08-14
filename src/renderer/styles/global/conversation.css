@@ -71,6 +71,7 @@
   display: none;
 }
 .agent-activity {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -92,6 +93,18 @@
   flex-shrink: 0;
   overflow: visible;
   color: var(--accent);
+}
+/* The live label lines up with message prose; the spiral sits out of flow in
+   the row's own padding — the same gutter column running tool rows use
+   (see .tool-activity-icon-slot in tool-cards.css). */
+.agent-activity > .reasoning-activity-icon {
+  position: absolute;
+  right: calc(100% - var(--spacing-md) + var(--spacing-xs) / 2);
+  top: 50%;
+  transform: translateY(-50%);
+  width: calc(var(--spacing-md) - var(--spacing-xs) / 2);
+  height: calc(var(--spacing-md) - var(--spacing-xs) / 2);
+  pointer-events: none;
 }
 .reasoning-activity-path {
   fill: none;
@@ -345,6 +358,16 @@
   top: calc(-1 * var(--spacing-lg));
   z-index: 3;
   box-shadow: var(--shadow-sm);
+}
+/* A narrow split pane cannot afford to pin a tall request over the response it
+   owns. Let the prompt rejoin the transcript once the chat column reaches the
+   compact width used beside a full-size Browser or editor. */
+@container chat-pane (max-width: 360px) {
+  .messages-list > .msg-user:not(:has(~ .msg-user)) {
+    position: relative;
+    top: auto;
+    z-index: auto;
+  }
 }
 .msg-assistant {
   background: transparent;

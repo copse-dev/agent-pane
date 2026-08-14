@@ -1,12 +1,13 @@
 import * as fsp from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
-import { runCommand } from '../exec/command-runner.ts'
+import { runCommand, type CommandResult } from '../exec/command-runner.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
+import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -15,6 +16,7 @@ import { detectLanguage } from '../language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
+import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import {
   DEFAULT_GIT_BRANCH,
@@ -26,12 +28,31 @@ import {
   type GitStatusResult,
 } from '@shared/types/git.ts'
 
+/**
+ * A local checkout can vanish while the app still holds a path to it — a
+ * deleted scratch worktree, an unmounted volume, a project record that outlived
+ * its folder. Git cannot even start there, and the raw spawn failure escapes as
+ * an opaque `spawn /bin/bash ENOENT` rejection (see
+ * {@link isSpawnableWorkingDirectory}) rather than something a caller handles.
+ * Report it as what it is instead: a failed git command, which every caller in
+ * this module already copes with. Remote roots live on the SSH host, so they
+ * are never probed against this filesystem.
+ */
+async function isRootReachable(root: string): Promise<boolean> {
+  return isActiveSshWorkspace() || (await isSpawnableWorkingDirectory(root))
+}
+
+function unreachableRootResult(root: string): CommandResult {
+  return { stdout: '', stderr: `Workspace path no longer exists: ${root}`, code: 1 }
+}
+
 async function runGit(
   args: string[],
   root: string | null = getAgentExecutionRoot(),
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
+  if (!(await isRootReachable(cwd))) return unreachableRootResult(cwd)
   return runCommand('git', args, { cwd })
 }
 
@@ -41,10 +62,81 @@ async function runGitRead(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
+  if (!(await isRootReachable(cwd))) return unreachableRootResult(cwd)
   return runCommand('git', args, {
     cwd,
     sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
   })
+}
+
+/**
+ * Per-root cache of the two `rev-parse` probes that bracket every
+ * {@link getGitStatus}: whether `root` is inside a work tree, and its path
+ * relative to the repo top. Both are constants for a fixed root — a checkout
+ * does not stop being a work tree, and a fixed cwd does not move within its
+ * repo — but they were re-spawning on every call, so a `git status` cost three
+ * sandboxed `git` subprocesses where only one reads live state.
+ *
+ * That is invisible at human pace and expensive at agent pace: `canApplyDirectly`
+ * in the diff queue runs this per file operation, so a worktree thread renaming
+ * fifty files paid a hundred avoidable spawns.
+ *
+ * **Only positive results are cached.** A negative is the one answer that
+ * legitimately flips — `git init` in a plain directory makes it a work tree —
+ * and caching that would strand the workspace as permanently git-less.
+ *
+ * **The cache serves {@link getGitStatus}, not {@link isInsideGitWorkTree}.** A
+ * stale positive is safe here because the `git status` that follows fails on its
+ * own, so the caller sees the same `null` the probe would have given it. The bare
+ * boolean has no such backstop, and #1686 pins the case that proves it matters: a
+ * project folder deleted under a running app must answer "no repository" rather
+ * than a cached yes. So that entry point always probes live, and a live negative
+ * evicts any stale entry — the cache heals the moment anything observes the truth.
+ */
+const workTreeProbes = new Map<string, { prefix?: string }>()
+
+/**
+ * Drop cached probes for `root`, or for every root when called with none.
+ * Belt-and-braces for the one case a stale positive is not self-correcting: a
+ * root path reused by a *different* repo after its worktree is released.
+ */
+export function invalidateGitWorkTreeProbe(root?: string): void {
+  if (root === undefined) workTreeProbes.clear()
+  else workTreeProbes.delete(resolve(root))
+}
+
+/**
+ * `rev-parse --is-inside-work-tree`, live unless `allowCached`. A positive always
+ * populates the cache; a live negative evicts it.
+ */
+async function confirmInsideWorkTree(root: string, allowCached: boolean): Promise<boolean> {
+  const key = resolve(root)
+  if (allowCached && workTreeProbes.has(key)) return true
+  const { stdout, code } = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
+  if (code !== 0 || stdout.trim() !== 'true') {
+    workTreeProbes.delete(key)
+    return false
+  }
+  if (!workTreeProbes.has(key)) workTreeProbes.set(key, {})
+  return true
+}
+
+/**
+ * Cached `rev-parse --show-prefix` — `root`'s path relative to the repo top,
+ * used to report status paths workspace-relative. Filled on demand rather than
+ * alongside the work-tree probe so callers that only want the boolean still
+ * cost one subprocess on a cold cache.
+ */
+async function workTreePrefix(root: string): Promise<string | null> {
+  const key = resolve(root)
+  const cached = workTreeProbes.get(key)
+  if (cached?.prefix !== undefined) return cached.prefix
+  const { stdout, code } = await runGitRead(['rev-parse', '--show-prefix'], root)
+  if (code !== 0) return null
+  const prefix = stdout.trim()
+  if (cached) cached.prefix = prefix
+  else workTreeProbes.set(key, { prefix })
+  return prefix
 }
 
 function toWorkspaceRelativeGitPath(path: string, workspacePrefix: string): string | null {
@@ -248,11 +340,12 @@ interface TemporaryGitIndex {
  */
 async function createTemporaryGitIndex(root: string): Promise<TemporaryGitIndex> {
   if (!isActiveSshWorkspace()) {
-    const path = join(tmpdir(), `copse-backup-${String(process.pid)}-${String(Date.now())}.index`)
+    const dir = await fsp.mkdtemp(join(tmpdir(), 'copse-backup-'))
+    const path = join(dir, 'index')
     return {
       path,
       cleanup: async (): Promise<void> => {
-        await fsp.rm(path, { force: true }).catch(() => {})
+        await fsp.rm(dir, { recursive: true, force: true }).catch(() => {})
       },
     }
   }
@@ -276,6 +369,7 @@ async function runGitBuffer(
 ): Promise<{ stdout: Buffer; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
+  if (!(await isRootReachable(cwd))) return { stdout: Buffer.alloc(0), code: 1 }
   const baseEnv = envForRendererChildProcess()
   const gitSsh = leaseGitSshEnv(baseEnv)
   try {
@@ -388,8 +482,9 @@ export async function isInsideGitWorkTree(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<boolean> {
   if (!(await isGitAvailableForTarget()) || !root) return false
-  const { stdout, code } = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
-  return code === 0 && stdout.trim() === 'true'
+  // Deliberately uncached: callers gate real work on this answer, and a checkout
+  // that vanished under the app has to say so (#1686).
+  return confirmInsideWorkTree(root, false)
 }
 
 /** `org/repo` from `origin` when the workspace remote is GitHub. */
@@ -544,15 +639,13 @@ export async function pruneWorktreeBackups(
 export async function getGitStatus(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<GitStatusResult | null> {
-  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
-  const { stdout: prefix, code: prefixCode } = await runGitRead(
-    ['rev-parse', '--show-prefix'],
-    root,
-  )
-  if (prefixCode !== 0) return null
+  if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root, true)))
+    return null
+  const prefix = await workTreePrefix(root)
+  if (prefix === null) return null
   const { stdout, code } = await runGitRead(['status', '--porcelain=v1', '-z'], root)
   if (code !== 0) return null
-  return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix.trim())
+  return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
 }
 
 /** Sum added/deleted line counts from `git diff --numstat` output (binary rows use `-`). */
@@ -586,10 +679,28 @@ export function countDiffChangedLines(diff: string): number {
 }
 
 /**
- * Live add/delete line totals across the working tree (staged + unstaged), or
- * null when there is nothing to show. Cheap enough to call on every filesystem
- * change so the "Changes" follow-up chip stays current instead of freezing on a
- * per-turn snapshot.
+ * Count lines in untracked text files. `git diff --numstat` omits them entirely
+ * (#584), which left the Changes chip stuck at tiny tracked-only totals (often
+ * `+1 -1`) while a worktree was full of new agent-authored files.
+ */
+async function sumUntrackedAdditions(root: string): Promise<number> {
+  const status = await getGitStatus(root)
+  let additions = 0
+  for (const change of status?.unstaged ?? []) {
+    if (change.status !== 'untracked') continue
+    if (imageMimeType(change.path)) continue
+    const text = await readWorkingTree(change.path, root)
+    if (text.includes('\0')) continue
+    additions += computeLineDiffStats('', text).additions
+  }
+  return additions
+}
+
+/**
+ * Live add/delete line totals across the working tree (staged + unstaged +
+ * untracked text files), or null when there is nothing to show. Cheap enough to
+ * call on every filesystem change so the "Changes" follow-up chip stays current
+ * instead of freezing on a per-turn snapshot.
  */
 export async function getGitChangeStats(root: string | null = getAgentExecutionRoot()): Promise<{
   additions: number
@@ -600,7 +711,8 @@ export async function getGitChangeStats(root: string | null = getAgentExecutionR
   const staged = await runGit(['diff', '--cached', '--numstat'], root)
   const u = unstaged.code === 0 ? sumDiffNumstat(unstaged.stdout) : { additions: 0, deletions: 0 }
   const s = staged.code === 0 ? sumDiffNumstat(staged.stdout) : { additions: 0, deletions: 0 }
-  const additions = u.additions + s.additions
+  const untrackedAdditions = await sumUntrackedAdditions(root)
+  const additions = u.additions + s.additions + untrackedAdditions
   const deletions = u.deletions + s.deletions
   return additions + deletions > 0 ? { additions, deletions } : null
 }
@@ -760,12 +872,52 @@ export function parseOriginHeadSymbolicRef(ref: string): string | null {
   return branch || null
 }
 
+/**
+ * Cache of resolved default branches, keyed by repository root. Callers on a UI
+ * refresh path (the footer branch status re-reads it on every `message_added`
+ * and file-watcher tick) would otherwise spawn up to three `git` processes a
+ * second for a value that changes about once in a repository's lifetime.
+ */
+const defaultBranchCache = new Map<string, { branch: string | null; checkedAt: number }>()
+
+/**
+ * A resolved name is effectively immutable: `refs/remotes/origin/HEAD` is a local
+ * ref that `git fetch` does not update, so it only moves on an explicit
+ * `git remote set-head` (or a re-clone). The TTL exists so a rename still
+ * surfaces without an app restart, not because we expect churn.
+ */
+export const DEFAULT_BRANCH_TTL_MS = 5 * 60 * 1000
+
+/**
+ * A `null` result means no remote and no `init.defaultBranch` — the state a
+ * freshly `git init`ed project sits in until the user adds a remote, which they
+ * usually do within minutes. Re-check that case far sooner than a resolved name.
+ */
+export const DEFAULT_BRANCH_MISS_TTL_MS = 30 * 1000
+
+/** Test hook — drop every cached default branch. */
+export function resetDefaultBranchCache(): void {
+  defaultBranchCache.clear()
+}
+
 /** Return the default branch name for the current repository. */
 export async function getDefaultBranch(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<string | null> {
   if (!root) return null
 
+  const cached = defaultBranchCache.get(root)
+  if (cached) {
+    const ttl = cached.branch === null ? DEFAULT_BRANCH_MISS_TTL_MS : DEFAULT_BRANCH_TTL_MS
+    if (Date.now() - cached.checkedAt < ttl) return cached.branch
+  }
+
+  const branch = await resolveDefaultBranch(root)
+  defaultBranchCache.set(root, { branch, checkedAt: Date.now() })
+  return branch
+}
+
+async function resolveDefaultBranch(root: string): Promise<string | null> {
   const { stdout: originHeadStdout, code: originHeadCode } = await runGit(
     ['symbolic-ref', 'refs/remotes/origin/HEAD'],
     root,
@@ -799,10 +951,25 @@ export async function repositoryHasSubmodules(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<boolean> {
   if (!root) return false
-  const { stdout, code } = await runGit(['rev-parse', '--show-toplevel'], root)
-  if (code !== 0 || !stdout.trim()) return false
+  // Do not mix a sandboxed Git answer with an unsandboxed filesystem probe.
+  // In particular, a project nested beneath another checkout (or mounted into
+  // a sandbox) can make `rev-parse --show-toplevel` name the enclosing repo,
+  // and an unrelated parent .gitmodules then disables worktrees for the child.
+  // The main process can identify the nearest local checkout boundary directly;
+  // `.git` may be either a directory or the indirection file used by worktrees.
+  let repositoryRoot = await fsp.realpath(root).catch(() => resolve(root))
+  for (;;) {
+    try {
+      await fsp.access(join(repositoryRoot, '.git'))
+      break
+    } catch {
+      const parent = dirname(repositoryRoot)
+      if (parent === repositoryRoot) return false
+      repositoryRoot = parent
+    }
+  }
   try {
-    await fsp.access(join(stdout.trim(), '.gitmodules'))
+    await fsp.access(join(repositoryRoot, '.gitmodules'))
     return true
   } catch {
     return false

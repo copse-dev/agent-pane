@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
@@ -138,14 +139,15 @@ export function mountGitChangesPane(
       type: 'button',
       class: 'git-changes-refresh-btn',
       'aria-label': 'Refresh changes',
-      title: 'Refresh',
+      'data-tooltip': 'Refresh changes',
     },
     refreshIcon('ui-icon ui-icon-sm'),
   )
   listHeader.append(
     headerTitle,
     bulkActions,
-    panePopoutButton(api, 'changes', 'changes'),
+    panePopoutButton(store, api, 'changes', 'changes'),
+    paneMaximizeButton(store, 'changes'),
     refreshBtn,
   )
 
@@ -193,6 +195,12 @@ export function mountGitChangesPane(
   // Path of a freshly proposed diff the pane should jump to on the next sync,
   // even if an earlier (still-valid) selection would otherwise be preserved.
   let pendingProposedNavigate: string | null = null
+  // A pop-out is seeded with the parent window's selection before its own diff
+  // queue has hydrated, so an early `refresh()` would see an empty queue, judge
+  // the selection dead, and fall through to an unrelated git file (#1704). Hold
+  // the seeded path across that window. One-shot: dropped as soon as this pane
+  // has a queue to judge against, whether or not the path survived in it.
+  let seededProposedPath: string | null = null
 
   function activeOwner(): { projectId: string; threadId: string } | null {
     const { activeProjectId, activeThreadId } = store.getState()
@@ -469,16 +477,27 @@ export function mountGitChangesPane(
     }
     const proposedDiffCache = proposedDiffCacheFor(owner.projectId, owner.threadId)
     const queue = stagedDiffs
-    pruneStagedDiffCache(proposedDiffCache, queue)
+    // An empty queue inside the pop-out's hydration window means "not known
+    // yet", not "nothing proposed". Pruning against it would discard the content
+    // just fetched for the seeded path and re-fetch it on every sync (#1704).
+    if (queue.length > 0 || seededProposedPath === null) {
+      pruneStagedDiffCache(proposedDiffCache, queue)
+    }
     if (activeDiff) proposedDiffCache.set(activeDiff.path, activeDiff)
     selection = { kind: 'proposed', path }
     renderList()
     let view = resolveStagedDiffView(queue, proposedDiffCache, path, activeDiff)
-    if (!view && queue.some((e) => e.path === path)) {
-      // The queue lists this file but its full content never reached the cache —
-      // the `agent:show_diff` push predates this (async/re-)mount and nothing
-      // replays it. Pull the content the main-process queue still holds so the
-      // diff renders instead of clearing to an empty pane.
+    if (!view) {
+      // The full content never reached the cache — the `agent:show_diff` push
+      // predates this (async/re-)mount and nothing replays it. Pull the content
+      // the main-process queue still holds so the diff renders instead of
+      // clearing to an empty pane.
+      //
+      // Deliberately not gated on the path being in `queue`: a pop-out seeded
+      // with a proposed selection can arrive before its own queue has hydrated,
+      // and gating here made it silently fall through to an unrelated git file
+      // (#1704). The main process answers `null` for anything it is not holding,
+      // which is the same outcome the gate produced.
       const requestId = ++selectRequestId
       const fetched = await api.diff.content(owner.projectId, owner.threadId, path)
       if (requestId !== selectRequestId) return
@@ -605,9 +624,14 @@ export function mountGitChangesPane(
 
     let current = selection
 
+    // Once this pane has a queue it can judge selections against it, so the
+    // seed's grace period is over.
+    if (queue.length > 0) seededProposedPath = null
+
     if (current?.kind === 'proposed') {
       const proposedPath = current.path
-      if (!queue.some((e) => e.path === proposedPath)) current = null
+      const awaitingHydration = proposedPath === seededProposedPath
+      if (!awaitingHydration && !queue.some((e) => e.path === proposedPath)) current = null
     }
     if (current?.kind === 'git') {
       const gitSel = current
@@ -724,6 +748,7 @@ export function mountGitChangesPane(
       sessionBackup = null
       renderRestoreBanner()
       pendingProposedNavigate = null
+      seededProposedPath = null
       clearSelection()
       conflictBanner.hidden = true
       if (changesModeActive(store)) void refresh()
@@ -735,6 +760,7 @@ export function mountGitChangesPane(
       status = null
       sessionBackup = null
       selection = null
+      seededProposedPath = null
       if (changesModeActive(store)) void refresh()
       else renderList()
     }),
@@ -746,6 +772,12 @@ export function mountGitChangesPane(
       if (queue.length === 0) conflictBanner.hidden = true
       if (changesModeActive(store)) void syncFromStore()
       else renderList()
+      // Approving or rejecting a diff writes (or restores) the file, so the git
+      // sections below are now stale. The main window usually catches this via
+      // the `fs:changed` watcher on the open file; nothing did in a second
+      // window, which is half of "the changes don't align between the 2
+      // windows" (#1704). Debounced, so a multi-file approve-all coalesces.
+      scheduleRefresh()
     }),
     store.on('panel_changed', () => {
       if (changesModeActive(store)) void syncFromStore()
@@ -769,8 +801,10 @@ export function mountGitChangesPane(
     capture: () => selection,
     apply: (seed) => {
       if (!isChangeSelection(seed)) return
-      if (seed.kind === 'proposed') void selectProposed(seed.path)
-      else void selectGitChange(seed.path, seed.staged)
+      if (seed.kind === 'proposed') {
+        seededProposedPath = seed.path
+        void selectProposed(seed.path)
+      } else void selectGitChange(seed.path, seed.staged)
     },
   })
 

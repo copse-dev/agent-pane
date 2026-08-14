@@ -4,6 +4,7 @@ import { expectRecord } from '@shared/unknown-value.ts'
 import {
   serializedSet,
   attachAutosave,
+  awaitPendingThreadPersistence,
   __resetPersistenceForTest,
   AUTOSAVE_DEBOUNCE_MS,
 } from './persistence.ts'
@@ -469,6 +470,36 @@ test('flush() awaits an in-flight new-thread create started by threads_changed',
   } finally {
     autosave.detach()
   }
+})
+
+test('awaitPendingThreadPersistence waits for the immediate new-thread create', async () => {
+  __resetPersistenceForTest()
+  let resolved = false
+  const { api } = fakeApi({
+    create: () =>
+      new Promise<void>((r) =>
+        setTimeout(() => {
+          resolved = true
+          r()
+        }, 10),
+      ),
+  })
+  const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
+  const autosave = attachAutosave(store, api)
+
+  try {
+    store.emit('threads_changed')
+    assert.equal(resolved, false)
+    await awaitPendingThreadPersistence()
+    assert.equal(resolved, true)
+  } finally {
+    autosave.detach()
+  }
+})
+
+test('awaitPendingThreadPersistence is a no-op when autosave is not attached', async () => {
+  __resetPersistenceForTest()
+  await awaitPendingThreadPersistence()
 })
 
 test('pagehide flush triggers a final reconcile', async () => {

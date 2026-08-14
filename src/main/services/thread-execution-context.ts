@@ -4,7 +4,11 @@ import type { StreamChunk } from '@shared/types'
 import { classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
-import { validateThreadWorktree, type ValidatedThreadWorktree } from './worktree-manager.ts'
+import {
+  restoreRetiredThreadWorktree,
+  validateThreadWorktree,
+  type ValidatedThreadWorktree,
+} from './worktree-manager.ts'
 import { startExecutionRootIndexing } from './search/workspace-indexing.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 
@@ -46,6 +50,12 @@ export interface ThreadExecutionContextDependencies {
     projectRoot: string
     worktree: ThreadWorktree
   }) => Promise<ValidatedThreadWorktree>
+  restoreWorktree?: (input: {
+    projectId: string
+    threadId: string
+    projectRoot: string
+    worktree: ThreadWorktree
+  }) => Promise<ThreadWorktree>
   /** Persist adopted live branch when Git HEAD drifted inside the worktree. */
   syncWorktreeBranch?: (
     projectId: string,
@@ -53,9 +63,10 @@ export interface ThreadExecutionContextDependencies {
     worktree: ThreadWorktree,
   ) => Promise<void>
   /**
-   * Register a resolved worktree's execution root with the file index and its
-   * rebuild watcher (#1400) — fire-and-forget, never awaited, so a slow index
-   * build never delays the turn it was resolved for.
+   * Register an agent turn's resolved worktree root with the file index and its
+   * rebuild watcher (#1400). Generic context resolution deliberately does not
+   * call this: renderer file/Git IPCs only need the validated root, and selecting
+   * a thread must not start a full checkout listing as a side effect (#1728).
    */
   startWorktreeIndexing?: (root: string) => void
 }
@@ -66,8 +77,23 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
   getProjectRoot,
   getThreadMeta,
   validateWorktree: validateThreadWorktree,
+  restoreWorktree: restoreRetiredThreadWorktree,
   syncWorktreeBranch: syncAdoptedWorktreeBranch,
   startWorktreeIndexing: startExecutionRootIndexing,
+}
+
+// Selecting one thread fans out into several independent renderer IPCs (branch
+// status, changes, file links, etc.). They all need the same trusted root, and a
+// worktree resolution runs multiple Git commands to validate that root. Share
+// only concurrent resolutions: once a flight settles it is removed, so the next
+// request still observes branch changes, retirement, or a replaced worktree.
+const resolutionFlights = new WeakMap<
+  ThreadExecutionContextDependencies,
+  Map<string, Promise<ThreadExecutionContext>>
+>()
+
+function executionOwnerKey(projectId: string, threadId: string): string {
+  return `${projectId}\0${threadId}`
 }
 
 /**
@@ -77,42 +103,82 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
  * Persisted worktree paths are diagnostic only: the manager reconstructs and
  * validates the registered checkout before its root can enter the run context.
  */
-export async function resolveThreadExecutionContext(
+export function resolveThreadExecutionContext(
   projectId: string,
   threadId: string,
   dependencies: ThreadExecutionContextDependencies = defaultDependencies,
+): Promise<ThreadExecutionContext> {
+  let flights = resolutionFlights.get(dependencies)
+  if (!flights) {
+    flights = new Map()
+    resolutionFlights.set(dependencies, flights)
+  }
+  const key = executionOwnerKey(projectId, threadId)
+  const existing = flights.get(key)
+  if (existing) return existing
+
+  const pending = resolveThreadExecutionContextUncached(projectId, threadId, dependencies)
+  flights.set(key, pending)
+  const clear = (): void => {
+    if (flights.get(key) === pending) flights.delete(key)
+  }
+  // Supplying both handlers means this cleanup branch always resolves; callers
+  // still receive the original promise and its original rejection.
+  void pending.then(clear, clear)
+  return pending
+}
+
+async function resolveThreadExecutionContextUncached(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadExecutionContextDependencies,
 ): Promise<ThreadExecutionContext> {
   const projectRoot = dependencies.getProjectRoot(projectId)
   if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
 
   const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
-  if (threadMeta?.id !== threadId) {
+  if (threadMeta == null) {
+    throw new Error(`Thread "${threadId}" is not persisted yet under project "${projectId}"`)
+  }
+  if (threadMeta.id !== threadId) {
     throw new Error(`Thread "${threadId}" does not belong to project "${projectId}"`)
   }
 
   if (threadMeta.worktree) {
+    const restored =
+      threadMeta.worktree.retiredAt === undefined && !threadMeta.worktree.pullRequestUrl
+        ? threadMeta.worktree
+        : await (dependencies.restoreWorktree ?? restoreRetiredThreadWorktree)({
+            projectId,
+            threadId,
+            projectRoot,
+            worktree: threadMeta.worktree,
+          })
     const validate = dependencies.validateWorktree ?? validateThreadWorktree
     const worktree = await validate({
       projectId,
       threadId,
       projectRoot,
-      worktree: threadMeta.worktree,
+      worktree: restored,
     })
     if (
+      restored !== threadMeta.worktree ||
       worktree.branch !== threadMeta.worktree.branch ||
       threadMeta.gitBranch !== worktree.branch
     ) {
       const adopted: ThreadWorktree = {
-        path: threadMeta.worktree.path,
+        path: restored.path,
         branch: worktree.branch,
         baseBranch: threadMeta.worktree.baseBranch,
         baseCommit: threadMeta.worktree.baseCommit,
         createdAt: threadMeta.worktree.createdAt,
         seededFromDirtyProject: threadMeta.worktree.seededFromDirtyProject,
+        ...(threadMeta.worktree.pullRequestUrl
+          ? { pullRequestUrl: threadMeta.worktree.pullRequestUrl }
+          : {}),
       }
       await dependencies.syncWorktreeBranch?.(projectId, threadId, adopted)
     }
-    dependencies.startWorktreeIndexing?.(worktree.root)
     return Object.freeze({
       projectId,
       threadId,
@@ -144,7 +210,12 @@ export async function prepareThreadExecutionContext(
   dependencies: ThreadExecutionContextDependencies = defaultDependencies,
 ): Promise<ThreadExecutionContext | null> {
   try {
-    return await resolveThreadExecutionContext(projectId, threadId, dependencies)
+    const context = await resolveThreadExecutionContext(projectId, threadId, dependencies)
+    // Agent turns may invoke find_files immediately. Prewarm the execution
+    // root here so that index-dependent tools can ride the in-flight build,
+    // while read-only renderer selection stays indexing-free (#1728).
+    if (context.checkoutMode === 'worktree') dependencies.startWorktreeIndexing?.(context.root)
+    return context
   } catch (error) {
     host.emit(threadId, { type: 'text', text: classifyAgentError(error) })
     host.emit(threadId, { type: 'done' })

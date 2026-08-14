@@ -7,14 +7,15 @@ import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { resolveModelPricing } from './providers/model-pricing-store.ts'
 import { estimateUsageCost } from '@copse/llm/estimate-cost.ts'
 import { getSetting } from './storage/settings.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
-  MODEL_COMPARISON_PACK_ID,
+  MODEL_COMPARISON_PLUGIN_ID,
   COMPARISON_MODEL_A_SETTING_ID,
   COMPARISON_MODEL_B_SETTING_ID,
   COMPARISON_JUDGE_MODEL_SETTING_ID,
-} from '@copse/agent/packs/model-comparison-pack.ts'
-import { readPackSettingValue } from './packs/pack-service.ts'
+} from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { readPluginSettingValue } from './plugins/plugin-service.ts'
+import { resolveDistinctDynamicModelIds } from './providers/dynamic-model.ts'
 import { requestApproval } from './approval.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import {
@@ -46,25 +47,44 @@ export interface ModelComparisonContext {
 const approvedThreads = new Set<string>()
 
 /**
- * Read one of the comparison models from the `copse.model-comparison` pack's
- * settings bag (the pack now owns these — they replaced the retired top-level
- * `comparisonModel*` store keys; a one-time migration in `pack-service.ts`
+ * Read one of the comparison models from the `copse.model-comparison` plugin's
+ * settings bag (the plugin now owns these — they replaced the retired top-level
+ * `comparisonModel*` store keys; a one-time migration in `plugin-service.ts`
  * lifted any existing value across). Returns the trimmed model id, or '' when
  * unset — `resolveComparisonModels` then applies the chat-model / frontier
  * fallbacks, preserving prior behaviour.
  */
 function comparisonModelSetting(key: string): string {
-  const raw = readPackSettingValue(MODEL_COMPARISON_PACK_ID, key)
+  const raw = readPluginSettingValue(MODEL_COMPARISON_PLUGIN_ID, key)
   return typeof raw === 'string' ? raw.trim() : ''
 }
 
-function resolveModelsFromSettings(chatModel: string): ComparisonModels {
-  return resolveComparisonModels({
+/**
+ * The three *selections* (settings, then defaults), expanded into concrete model
+ * ids. Expansion happens here — before the spend approval — for two reasons: the
+ * approval prompt has to name the models it is about to bill for, and
+ * `isBillableModel` cannot classify a rule that has not been resolved.
+ *
+ * `resolveDistinctDynamicModelIds` walks the three in order against one
+ * candidate pool, each dynamic pick avoiding what the earlier ones took, so
+ * "Most capable" on both reviewer B and the judge yields the two strongest
+ * *different* models rather than the same one twice. A pinned id is exempt: a
+ * user who named a model on both sides gets what they asked for, and the
+ * distinct-reviewer check below surfaces it.
+ */
+async function resolveModelsFromSettings(chatModel: string): Promise<ComparisonModels> {
+  const selections = resolveComparisonModels({
     modelA: comparisonModelSetting(COMPARISON_MODEL_A_SETTING_ID),
     modelB: comparisonModelSetting(COMPARISON_MODEL_B_SETTING_ID),
     judge: comparisonModelSetting(COMPARISON_JUDGE_MODEL_SETTING_ID),
     chatModel,
   })
+  const [a, b, judge] = await resolveDistinctDynamicModelIds([
+    selections.a,
+    selections.b,
+    selections.judge,
+  ])
+  return { a: a ?? selections.a, b: b ?? selections.b, judge: judge ?? selections.judge }
 }
 
 /**
@@ -82,6 +102,7 @@ async function ensureApproved(
   if (signal.aborted) return null
   const { approved, remember, comparisonModels } = await requestApproval({
     type: 'model-compare',
+    cause: 'review-spend',
     title: 'Compare models on this diff?',
     body: comparisonApprovalPickerIntro(),
     comparisonModels: models,
@@ -151,12 +172,12 @@ export async function runModelComparison(
   ctx: ModelComparisonContext,
   signal: AbortSignal,
 ): Promise<{ summary: string; comparison: ModelComparison | null }> {
-  const models = resolveModelsFromSettings(ctx.chatModel)
+  const models = await resolveModelsFromSettings(ctx.chatModel)
 
   if (!comparisonReviewersDistinct(models)) {
     // Surface a card (not a silent no-op) so an identical-reviewer misconfig is
     // visible on the auto path, which ignores the returned summary.
-    const msg = `Comparison skipped: reviewers A and B are the same model (${models.a}). Pick two different models in Settings → Experimental.`
+    const msg = `Comparison skipped: reviewers A and B are the same model (${models.a}). Pick two different selections in Settings → Plugins → Model comparison.`
     const skipped = errorComparison(models, msg)
     ctx.onChunk({ type: 'model_comparison', comparison: skipped })
     return { summary: msg, comparison: skipped }
@@ -265,17 +286,17 @@ export function getModelComparisonRunner(): ModelComparisonRunner | null {
 }
 
 /**
- * Whether the auto-on-review comparison should fire this turn. P5: the pack
+ * Whether the auto-on-review comparison should fire this turn. P5: the plugin
  * toggle (`copse.model-comparison`) is the atomic master switch — disabling
- * the pack drops both the manual `compare_models` tool and this auto trigger
+ * the plugin drops both the manual `compare_models` tool and this auto trigger
  * in one flag flip (decision 15). The `modelComparisonAutoOnReview`
  * sub-setting is the fine-grained "and _also_ run automatically" opt-in and
- * defaults off, so enabling the pack alone still only exposes the on-demand
+ * defaults off, so enabling the plugin alone still only exposes the on-demand
  * tool — the auto trigger stays opt-in.
  */
 export function isAutoComparisonEnabled(): boolean {
   return (
-    getDefaultPackRegistry().isEnabled(MODEL_COMPARISON_PACK_ID) &&
+    getDefaultPluginRegistry().isEnabled(MODEL_COMPARISON_PLUGIN_ID) &&
     getSetting<boolean>('modelComparisonAutoOnReview', false)
   )
 }

@@ -24,6 +24,7 @@ import {
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
+import { safeJsonStringify } from '@shared/safe-json.ts'
 import { childHookEnv, currentHookDepth, HOOK_DEPTH_ENV } from './hook-depth.ts'
 
 /** Default per-hook timeout. Vendor-specific overrides live in each adapter (decision 13, H4). */
@@ -34,6 +35,13 @@ const OUTPUT_CAP_BYTES = 1_000_000
 
 /** Everything observed about one spawned hook process, before dialect interpretation. */
 export interface HookSpawnResult {
+  /**
+   * The exact bytes written to the hook's stdin, verbatim for the spine blob
+   * (decision 6). Reported even when the spawn failed — "what would it have
+   * seen?" is the first question a broken hook raises. Empty when the payload
+   * could not be JSON-serialized.
+   */
+  stdin: string
   /** Raw captured stdout (the response channel), verbatim for the spine blob. */
   stdout: string
   /** Raw captured stderr, verbatim for the spine blob (decision 6). */
@@ -130,6 +138,20 @@ export function setHookSandboxRuntimeForTest(runtime: HookSandboxRuntime | null)
   sandboxRuntime = runtime ?? realSandboxRuntime
 }
 
+/**
+ * JSON-serialize a hook's stdin payload. A payload that cannot be serialized
+ * (a cycle, a BigInt) resolves to the empty string rather than throwing:
+ * `spawnHookProcess` never rejects, so an unserializable payload has to reach
+ * the caller as "the hook read nothing", handled by its dialect exit-code table.
+ */
+function serializeStdin(payload: unknown): string {
+  try {
+    return safeJsonStringify(payload) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 /** Reject when `promise` does not settle within `ms` (wedged sandbox wrapper). */
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -174,6 +196,10 @@ export async function spawnHookProcess(
   const sandboxed = opts.sandbox !== false && sandboxRuntime.enabled()
   const startedAt = Date.now()
   const depthEnv = { [HOOK_DEPTH_ENV]: String(currentHookDepth() + 1) }
+  // Serialize once, up front: the same string is written to the child and
+  // reported back for the spine's payload blob, so the recorded stdin is
+  // byte-for-byte what the hook read — not a re-serialization that could drift.
+  const stdin = serializeStdin(stdinPayload)
 
   let child: ChildProcess
   try {
@@ -217,6 +243,7 @@ export async function spawnHookProcess(
     // output). Report it as a spawn error — the runner's blocked-by-sandbox
     // detection treats a sandboxed spawn failure as a block (never fail-open).
     return {
+      stdin,
       stdout: '',
       stderr: '',
       exitCode: null,
@@ -245,6 +272,7 @@ export async function spawnHookProcess(
       const sandboxViolationCount = sandboxed ? sandboxRuntime.violationCount(command) : 0
       if (sandboxed) sandboxRuntime.afterCommand()
       resolve({
+        stdin,
         stdout,
         stderr,
         exitCode,
@@ -290,7 +318,7 @@ export async function spawnHookProcess(
       /* the process closed its input early; the decision comes from close/error */
     })
     try {
-      child.stdin?.end(JSON.stringify(stdinPayload))
+      child.stdin?.end(stdin)
     } catch {
       finish(true)
     }

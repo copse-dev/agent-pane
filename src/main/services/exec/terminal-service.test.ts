@@ -41,6 +41,36 @@ function mockWindow(): TerminalWindow & {
   return win
 }
 
+/**
+ * Collect `terminal:output` until `pattern` shows up, rather than sleeping a
+ * fixed interval and hoping.
+ *
+ * A pty echoes the command as soon as it is written, so a short sleep reliably
+ * captures the echo and just as reliably races the command's own output. That
+ * is how run 31242246521 failed: the buffer held `printf '__COPSE_CWD__:%s\n'
+ * "$PWD"` — the echo verbatim — and none of the output the assertion wanted,
+ * because the shell had not finished starting inside 300ms on a loaded runner.
+ *
+ * Returns the buffer as-is on timeout instead of throwing, so the caller's
+ * assertion is still what reports the failure and its diff carries everything
+ * the terminal actually emitted.
+ */
+async function waitForTerminalOutput(
+  win: ReturnType<typeof mockWindow>,
+  pattern: RegExp,
+  timeoutMs = 10_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const combined = win.sent
+      .filter(([channel]) => channel === 'terminal:output')
+      .map(([, , data]) => data)
+      .join('')
+    if (pattern.test(combined) || Date.now() >= deadline) return combined
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
 async function ptySpawnAvailable(): Promise<boolean> {
   try {
     const win = mockWindow()
@@ -69,10 +99,11 @@ describe('terminal-service', () => {
       sessionId = await createTerminalSession(win, OWNER)
       assert.ok(sessionId)
       writeTerminalSession(sessionId, OWNER, 'echo hello\n')
-      await new Promise((r) => setTimeout(r, 300))
-      const outputEvents = win.sent.filter(([ch]) => ch === 'terminal:output')
-      assert.ok(outputEvents.length > 0)
-      const combined = outputEvents.map(([, , data]) => data).join('')
+      // Same race as the thread-root test below: `hello` appears twice, once as
+      // the echo and once as the output, so this only needs the echo to have
+      // landed — but a 300ms sleep is not what guarantees that.
+      const combined = await waitForTerminalOutput(win, /hello/)
+      assert.ok(win.sent.filter(([ch]) => ch === 'terminal:output').length > 0)
       assert.match(combined, /hello/)
     } finally {
       if (sessionId) destroyTerminalSession(sessionId, OWNER)
@@ -104,11 +135,11 @@ describe('terminal-service', () => {
         threadRoot,
       )
       writeTerminalSession(sessionId, OWNER, 'printf \'__COPSE_CWD__:%s\\n\' "$PWD"\n')
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      const combined = win.sent
-        .filter(([channel]) => channel === 'terminal:output')
-        .map(([, , data]) => data)
-        .join('')
+      // Wait for the marker followed by a path, which only the *output* has —
+      // the echoed command still carries the literal `%s`. So a shell that
+      // started in the wrong directory prints its marker and fails immediately
+      // on the assertion below, rather than burning the whole timeout first.
+      const combined = await waitForTerminalOutput(win, /__COPSE_CWD__:\//)
       assert.match(combined, new RegExp(`__COPSE_CWD__:${threadRoot}`))
       assert.doesNotMatch(combined, new RegExp(`__COPSE_CWD__:${projectRoot}`))
     } finally {

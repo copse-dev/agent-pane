@@ -24,6 +24,7 @@ import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import {
+  acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -38,6 +39,8 @@ import {
   setActiveRunThread,
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -57,6 +60,7 @@ import { recordReasoningCheckpoint } from './reasoning-checkpoint-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
+  resolveTurnParameters,
   buildSubagentRoute,
   buildReviewRoute,
   isBillableModel,
@@ -74,6 +78,7 @@ import {
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@copse/agent/review-subagent.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
+import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -144,18 +149,23 @@ import {
 } from '@shared/todos/todo-logic.ts'
 import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
-import { todosToPanelListData } from '@copse/agent/packs/pack-panel.ts'
-import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
+import { todosToPanelListData } from '@copse/agent/plugins/plugin-panel.ts'
+import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import {
-  POST_TURN_REVIEW_PACK_ID,
+  POST_TURN_REVIEW_PLUGIN_ID,
   POST_TURN_REVIEW_MAX_CYCLES_SETTING,
   resolveMaxReviewCycles,
-} from '@copse/agent/packs/post-turn-review-pack.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { getPackService, inertPackSources, packUnavailableReason } from './packs/pack-service.ts'
+} from '@copse/agent/plugins/post-turn-review-plugin.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import {
+  getPluginService,
+  inertPluginSources,
+  pluginUnavailableReason,
+} from './plugins/plugin-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
@@ -166,11 +176,12 @@ import {
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { offerAcpReauth } from './acp/acp-reauth.ts'
+import { assembleAcpTurnStart } from './acp/acp-turn-start.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { parsePackModelSelection } from '@shared/pack-model.ts'
-import { getPackToolRuntimeController } from './packs/pack-tool-controller.ts'
-import { buildPackModelTurn } from './packs/pack-model-turn.ts'
+import { parsePluginModelSelection } from '@shared/plugin-model.ts'
+import { getPluginToolRuntimeController } from './plugins/plugin-tool-controller.ts'
+import { buildPluginModelTurn } from './plugins/plugin-model-turn.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -191,14 +202,14 @@ export {
 
 const abortMap = new Map<string, AbortController>()
 
-function packModelResult(raw: unknown): {
+function pluginModelResult(raw: unknown): {
   text: string
   inputTokens: number
   outputTokens: number
 } {
   if (typeof raw === 'string') return { text: raw, inputTokens: 0, outputTokens: 0 }
   if (!isRecord(raw) || typeof raw['text'] !== 'string') {
-    throw new Error('Pack model route returned no text.')
+    throw new Error('Plugin model route returned no text.')
   }
   const inputTokens =
     typeof raw['inputTokens'] === 'number' && Number.isFinite(raw['inputTokens'])
@@ -256,6 +267,7 @@ async function ensureReviewApproved(
   const { approved, remember } = await requestApproval({
     type: 'review-spend',
     title: 'Review this diff with a paid model?',
+    cause: 'review-spend',
     body: reviewSpendApprovalBody(reviewModel),
     allowRemember: true,
     rememberLabel: 'Always review with this model in this chat',
@@ -574,6 +586,11 @@ export interface RunAgentOptions {
   priorTodos?: TodoItem[]
   workingBrief?: string
   model?: string
+  /**
+   * Reasoning depth for this turn, from the composer's per-chat dial. Overrides
+   * the level saved on the model in Settings; absent means "use that level".
+   */
+  reasoning?: ReasoningLevel
   /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
   turnTreeId?: string
   /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
@@ -585,8 +602,16 @@ export interface RunAgentOptions {
   /** Optional tighter loop bounds for benchmark profiles; product defaults remain unchanged. */
   maxSteps?: number
   maxLlmCalls?: number
-  /** Pack-scoped setting resolver owned by an explicit host profile. */
-  resolvePackSetting?: (packId: string, key: string) => unknown
+  /** Plugin-scoped setting resolver owned by an explicit host profile. */
+  resolvePluginSetting?: (pluginId: string, key: string) => unknown
+  /**
+   * Called with the turn's provider history as it grows, so a host can persist
+   * progress a run that never returns would otherwise take with it. Fired once
+   * the (redacted) prompt has been prepared and again at each LLM call, always
+   * with system messages already stripped — the same shape `runAgent` returns.
+   * Purely observational: never awaited, and a throwing sink cannot fail a turn.
+   */
+  onHistoryCheckpoint?: (messages: LLMMessage[]) => void
 }
 
 export async function runAgent(
@@ -605,6 +630,14 @@ export async function runAgent(
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
+  // Persist the resolved model so a turn that fails before any usage (e.g. a
+  // provider rejecting the model) still leaves the concrete id in meta.json —
+  // the live byModel map only fills from usage chunks. Best-effort: a thread
+  // that is not persisted yet must not block the turn.
+  const runContext = getThreadExecutionContext()
+  if (runContext) {
+    await updateMeta(runContext.projectId, threadId, { resolvedModel: model }).catch(() => {})
+  }
   // The model actually running this turn — stamped on Cursor hook agent-session
   // payloads (B4). Set before any hook can fire (beforeSubmitPrompt below, the
   // tool gate, afterFileEdit, stop) so every one reports the real model.
@@ -612,7 +645,7 @@ export async function runAgent(
   const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
-  const packModel = parsePackModelSelection(model)
+  const pluginModel = parsePluginModelSelection(model)
 
   const sendChunk = createAgentChunkSink(threadId, host)
 
@@ -653,59 +686,62 @@ export async function runAgent(
   // to thread history, so placeholders stay consistent across turns. No-op when
   // the feature is off or Rampart is unavailable.
   const outboundPrompt = await redactUserContent(threadId, userPrompt)
+  const resolvePluginSetting =
+    options?.resolvePluginSetting ??
+    ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
 
   if (resolved.fallbackNotice) {
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
   }
 
-  if (packModel) {
-    /** Append a recorded cause to a pack error, or nothing when none was captured. */
+  if (pluginModel) {
+    /** Append a recorded cause to a plugin error, or nothing when none was captured. */
     const suffixFor = (reason: string | undefined): string => (reason ? ` ${reason}` : '')
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
     beginHookRunRecording(threadId)
     try {
-      const packs = getDefaultPackRegistry()
-      const runtime = getPackToolRuntimeController()
+      const plugins = getDefaultPluginRegistry()
+      const runtime = getPluginToolRuntimeController()
       // `isEnabled` is "registered AND not disabled", so on its own it cannot
-      // tell a pack the user switched off from one that never registered at
+      // tell a plugin the user switched off from one that never registered at
       // all. Those have different causes and different fixes, and a selected
-      // pack that failed to appear is the more likely of the two: check
+      // plugin that failed to appear is the more likely of the two: check
       // registration first so the message names the real state.
       //
-      // A `packSources` entry whose discovery throws never registers; a pack
+      // A `pluginSources` entry whose discovery throws never registers; a plugin
       // whose tools fail to start is registered-then-disabled. Each state now
-      // carries the cause `refreshPackSources` recorded (pack-service.ts), so a
+      // carries the cause `refreshPluginSources` recorded (plugin-service.ts), so a
       // failure explains itself here instead of only in the main-process log —
       // which, in CI, is buried in a failure artifact.
-      if (!packs.has(packModel.packId)) {
+      if (!plugins.has(pluginModel.pluginId)) {
         throw new Error(
-          `The selected pack "${packModel.packId}" is not installed.${suffixFor(inertPackSources().join('; '))}`,
+          `The selected plugin "${pluginModel.pluginId}" is not installed.${suffixFor(inertPluginSources().join('; '))}`,
         )
       }
-      if (!packs.isEnabled(packModel.packId)) {
+      if (!plugins.isEnabled(pluginModel.pluginId)) {
         throw new Error(
-          `The selected pack "${packModel.packId}" is disabled.${suffixFor(packUnavailableReason(packModel.packId))}`,
+          `The selected plugin "${pluginModel.pluginId}" is disabled.${suffixFor(pluginUnavailableReason(pluginModel.pluginId))}`,
         )
       }
-      if (!runtime?.isRunning(packModel.packId)) {
+      if (!runtime?.isRunning(pluginModel.pluginId)) {
         // Enabled but not running: saying "disabled" here would send users to a
         // toggle that is already on.
         throw new Error(
-          `The selected pack "${packModel.packId}" is not running.${suffixFor(packUnavailableReason(packModel.packId))}`,
+          `The selected plugin "${pluginModel.pluginId}" is not running.${suffixFor(pluginUnavailableReason(pluginModel.pluginId))}`,
         )
       }
-      const route = packs
-        .get(packModel.packId)
-        ?.contributions.modelRoutes.find((candidate) => candidate.id === packModel.routeId)
-      if (!route) throw new Error(`Pack model route "${packModel.routeId}" is unavailable.`)
+      const route = plugins
+        .get(pluginModel.pluginId)
+        ?.contributions.modelRoutes.find((candidate) => candidate.id === pluginModel.routeId)
+      if (!route) throw new Error(`Plugin model route "${pluginModel.routeId}" is unavailable.`)
 
-      const result = packModelResult(
+      const result = pluginModelResult(
         await runtime.invokeModel(
-          packModel.packId,
-          packModel.routeId,
-          buildPackModelTurn({
+          pluginModel.pluginId,
+          pluginModel.routeId,
+          buildPluginModelTurn({
             threadId,
             prompt: outboundPrompt,
             priorMessages,
@@ -757,6 +793,10 @@ export async function runAgent(
     // decisions cannot become unaudited merely because an ACP client invoked
     // the shell tool.
     beginHookRunRecording(threadId)
+    const acpHookCardSink = (card: HookCard): void => {
+      sendChunk({ type: 'hook_run', card })
+    }
+    setHookRunLiveSink(acpHookCardSink)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
     // Same idle-deadline registry as the local loop: pause while approval dialogs
@@ -794,6 +834,20 @@ export async function runAgent(
         }
       : null
     try {
+      // `turnStart` is an executor-neutral assembly event (decision 20): ACP
+      // receives the same active first-party plugin hooks as the built-in loop.
+      // Only Copse's bridged tools are listed because the host cannot inspect
+      // the external agent's private tool catalogue.
+      const operatorInstructions = await assembleAcpTurnStart({
+        userText: promptTextForSubmit(userPrompt),
+        priorTodos: options?.priorTodos ?? [],
+        model: executorModel,
+        registry,
+        signal: controller.signal,
+        resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolvePluginSetting,
+        recordHookRun: recordFunctionHookRun,
+      })
       const result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -803,6 +857,7 @@ export async function runAgent(
         bridgeTurnSignal: bridgeTurn.signal,
         onChunk: acpChunkSink,
         registry,
+        ...(operatorInstructions ? { operatorInstructions } : {}),
         ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpRunModel ? { model: acpRunModel } : {}),
@@ -822,6 +877,15 @@ export async function runAgent(
       // its estimated usage is reported instead of a silent zero. The error
       // text is separated from any streamed text so the bubble stays readable.
       const partial = err instanceof AcpTurnFailure ? err.partial : null
+      // Classified before anything is streamed so the live diagnosis and the
+      // line written into history are two readings of one verdict, not two
+      // verdicts that can disagree. `aborted` is sampled once for the same
+      // reason: an abort landing mid-catch must not offer a re-auth and then
+      // record the turn as merely stopped.
+      const aborted = controller.signal.aborted
+      const authFailure = aborted
+        ? null
+        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
@@ -830,9 +894,6 @@ export async function runAgent(
       // with its explanation already on screen. The idle deadline is paused for
       // the wait, exactly as it is around approval dialogs, so a user thinking
       // it over can't have the turn aborted underneath the modal.
-      const authFailure = controller.signal.aborted
-        ? null
-        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
       if (authFailure) {
         // Best-effort: the turn has already reported its failure, and a broken
         // offer must not escalate a handled error into an unhandled one.
@@ -847,19 +908,24 @@ export async function runAgent(
         }
       }
       sendChunk({ type: 'done' })
+      // The diagnosis is persisted, not just streamed: a bubble the user can
+      // still see and a history entry that has forgotten why the turn died
+      // would disagree about the same moment. It is also the only assistant
+      // content when the agent failed before emitting a token — an auth failure
+      // at connect time — which used to persist nothing at all.
+      const content = [
+        partial?.assistantText,
+        msg,
+        acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join('\n\n')
       return {
         usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },
         messages: [
           ...priorMessages,
           { role: 'user' as const, content: outboundPrompt },
-          ...(partial?.assistantText
-            ? [
-                {
-                  role: 'assistant' as const,
-                  content: `${partial.assistantText}\n\n[This turn was interrupted by a transient provider error before it completed.]`,
-                },
-              ]
-            : []),
+          { role: 'assistant' as const, content },
         ],
       }
     } finally {
@@ -869,6 +935,7 @@ export async function runAgent(
       cancelApprovalsForThread(threadId)
       runAbort.clear()
       clearRunDeadline(threadId, runAbort.deadline)
+      clearHookRunLiveSink(acpHookCardSink)
       endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -990,6 +1057,26 @@ export async function runAgent(
   let inputTokens = 0
   let outputTokens = 0
 
+  /**
+   * The turn's history in the shape the host persists: turn-local system
+   * steering never outlives the turn that injected it.
+   */
+  const persistableHistory = (): LLMMessage[] => trimmed.filter((m) => m.role !== 'system')
+
+  /**
+   * Hand the host the turn's history so far. Observational — a sink that throws
+   * must not take the turn down with it.
+   */
+  const checkpointHistory = (): void => {
+    const sink = options?.onHistoryCheckpoint
+    if (!sink) return
+    try {
+      sink(persistableHistory())
+    } catch {
+      // A checkpoint is a best-effort durability aid, never a turn's business.
+    }
+  }
+
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
@@ -1041,16 +1128,29 @@ export async function runAgent(
 
   try {
     const invokedSkills = options?.invokedSkills ?? []
-    const resolvePackSetting =
-      options?.resolvePackSetting ??
-      ((packId: string, key: string): unknown => getPackService().getSetting(packId, key))
+    const resolvePluginSetting =
+      options?.resolvePluginSetting ??
+      ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
     const subagentsEnabled = getSetting<boolean>(
       SUBAGENTS_ENABLED_SETTING,
       SUBAGENTS_ENABLED_DEFAULT,
     )
     const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
-    const provider = options?.provider ?? (await buildProvider(model, threadId))
+    const providerOptions = {
+      ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+    }
+    const provider = options?.provider ?? (await buildProvider(model, threadId, providerOptions))
+    // Stamp what this turn actually sends, not what the settings hold: the two
+    // diverge once a value is sanitized away, a dial overrides it, or a role
+    // caps it, and the settings can change afterwards. Silent for the common
+    // case of an untuned model, which sends nothing.
+    const turnParameters = resolveTurnParameters(model, providerOptions)
+    // Always sent now — carries the resolved model (the concrete route actually
+    // run) plus the user's picker selection (`requestedModel`, possibly a
+    // dynamic selector like `auto:…`), so the renderer can stamp both onto the
+    // assistant message.
+    sendChunk({ type: 'turn_parameters', model, parameters: turnParameters, requestedModel })
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
     const subagentUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
@@ -1094,14 +1194,12 @@ export async function runAgent(
     // working brief, both of which reach providers.
     const parentGoal = resolveParentGoal(options?.workingBrief, messages, outboundPrompt)
 
-    // Steering checks are local-only (they decide which prompt blocks to add), so
-    // they run on the raw text — redaction must not change which steering fires.
+    // Steering checks run on raw text for every executor — redaction must not
+    // change which product guidance fires. This local fire site mirrors the ACP
+    // fire in runAcpTurn above (decision 20).
     // M0.2: policy lives in named `turnStart` hooks; this site only fires the
     // event and applies the merged `injectContext` to messages[0].
-    const userTextForSteering =
-      typeof userPrompt === 'string'
-        ? userPrompt
-        : resolveParentGoal(undefined, messages, userPrompt)
+    const userTextForSteering = promptTextForSubmit(userPrompt)
     const priorTodos = options?.priorTodos ?? []
 
     // Fingerprint the toolset offered to the model before any hook can fire, so
@@ -1128,9 +1226,10 @@ export async function runAgent(
       {
         userText: userTextForSteering,
         priorTodos,
+        executor: 'local',
         // The resolved run model + the tool list the model will actually see, so
         // a steering hook can condition on which model is running (the
-        // forced-planning pack thresholds on its measured capability) and never
+        // forced-planning plugin thresholds on its measured capability) and never
         // name a tool this turn filtered out.
         model,
         toolNames: parentLoopTools.map((tool) => tool.name),
@@ -1138,7 +1237,7 @@ export async function runAgent(
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
-        resolvePackSetting,
+        resolvePluginSetting,
         recordHookRun: recordFunctionHookRun,
       },
     )
@@ -1160,6 +1259,13 @@ export async function runAgent(
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed
+    // The turn's history is committed by the host once this function returns, so
+    // a run that never returns — the app quits, the process is killed, the turn
+    // is abandoned — takes the whole turn with it, the user's own prompt
+    // included. Checkpoint from here on: `trimmed` already holds the redacted
+    // prompt, and the loop mutates it in place as steps land, so replaying this
+    // at each LLM call keeps the persisted history within one step of the run.
+    checkpointHistory()
     const { wasTrimmed, conversationBudget } = prepared
     const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
     const sendTrimNotice = (): void => {
@@ -1190,22 +1296,22 @@ export async function runAgent(
 
     resetSubagentUsage()
 
-    // P4: the todos pack owns the plan panel. When the `copse.todos` pack is
-    // enabled we emit a level-2 `panel_update` (the pack-panel data model, P2)
+    // P4: the todos plugin owns the plan panel. When the `copse.todos` plugin is
+    // enabled we emit a level-2 `panel_update` (the plugin-panel data model, P2)
     // alongside the legacy `todo_update` chunk. `todo_update` continues to
     // populate `thread.todos` so historical rendering + `compactAtTodoBoundary`
-    // keep working unchanged; new content additionally hydrates the pack panel
+    // keep working unchanged; new content additionally hydrates the plugin panel
     // slot the renderer mounts from `activePanelContributions()`. Disabling the
-    // pack skips the panel emission (the pack slot leaves the active set in
+    // plugin skips the panel emission (the plugin slot leaves the active set in
     // one atomic flag flip; the renderer stops mounting for new content, and
     // history renders from spine data / `thread.todos` regardless — decision
     // 17). The shared registry is read every emit so a live toggle from
     // Settings takes effect on the next turn's updates.
     const emitTodoPanelUpdate = (todos: TodoItem[]): void => {
-      if (!getDefaultPackRegistry().isEnabled(TODOS_PACK_ID)) return
+      if (!getDefaultPluginRegistry().isEnabled(TODOS_PLUGIN_ID)) return
       sendChunk({
         type: 'panel_update',
-        packId: TODOS_PACK_ID,
+        pluginId: TODOS_PLUGIN_ID,
         contributionId: TODOS_PANEL_CONTRIBUTION_ID,
         data: todosToPanelListData(todos),
       })
@@ -1218,6 +1324,13 @@ export async function runAgent(
         emitTodoPanelUpdate(todos)
       },
     })
+
+    // Briefs later local todo workers with what earlier ones already found (#i2jsed):
+    // each `runTodoWorker` call starts a fresh, isolated context, so without this a
+    // plan like "mirror complexity" (todo 2) has no way to know todo 1 just built it.
+    // Keyed by todo id; deliberately just completed-item outcomes, not the rest of
+    // the plan, so a worker sees background to reuse rather than other work to drift into.
+    const localWorkerSummaries = new Map<string, { content: string; summary: string }>()
 
     setTodoToolPostProcess(async (before, after) => {
       let todos = after
@@ -1242,6 +1355,12 @@ export async function runAgent(
             toolSchemaReserve: subagentRoute.toolSchemaReserve,
             signal: controller.signal,
             onChunk: sendChunk,
+            parentGoal,
+            priorSummaries: localWorkerSummaries,
+          })
+          localWorkerSummaries.set(localItem.id, {
+            content: localItem.content,
+            summary: worker.summary,
           })
           inputTokens += worker.usage.inputTokens
           outputTokens += worker.usage.outputTokens
@@ -1285,7 +1404,11 @@ export async function runAgent(
       }
 
       const completed = findNewlyCompleted(before, todos)
-      if (completed && compactAtTodoBoundary(trimmed, todos)) {
+      // Measured at the boundary, not from the turn's opening snapshot: the run
+      // has been appending to `trimmed` ever since, and it is the size right now
+      // that decides whether there is any headroom to buy.
+      const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+      if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
         notifyTrimmed(sendTrimNotice)
       }
 
@@ -1461,7 +1584,12 @@ export async function runAgent(
           getOpenTodos: () => getAgentRunTodos(),
           continuationBudget,
           recordHookRun: recordFunctionHookRun,
-          onLlmCall: setHookRunStep,
+          onLlmCall: (count) => {
+            setHookRunStep(count)
+            // `messages` above is `trimmed`, mutated in place as turns land, so
+            // this persists everything the previous step produced.
+            checkpointHistory()
+          },
           recordStreamCut: (record) => {
             recordStreamCut(record, model)
           },
@@ -1542,7 +1670,10 @@ export async function runAgent(
         if (isEditTool(name)) turnChangedFiles = true
       },
       recordHookRun: recordFunctionHookRun,
-      onLlmCall: setHookRunStep,
+      onLlmCall: (count: number): void => {
+        setHookRunStep(count)
+        checkpointHistory()
+      },
       recordStreamCut: (record) => {
         recordStreamCut(record, model)
       },
@@ -1574,14 +1705,14 @@ export async function runAgent(
     // A free / local review model runs on the full diff with no prompt. The
     // host-interactive gate resolution stays here; `runPostTurnReviewCycle` owns
     // the review/remediation *sequencing* + the shared C3 budget (decision 5).
-    // P5: the pack toggle in Settings > Packs is the atomic master switch —
+    // P5: the plugin toggle in Settings > Plugins is the atomic master switch —
     // disabling `copse.post-turn-review` drops the review trigger for new turns
-    // in one flag flip (decision 15). The pack registry replaces the standalone
+    // in one flag flip (decision 15). The plugin registry replaces the standalone
     // `postTurnReviewEnabled` setting the trigger used to consult; the
     // fine-grained `postTurnReviewMinChangedLines` threshold stays a top-level
     // setting (orthogonal to enablement) and is read below.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
-    if (turnChangedFiles && getDefaultPackRegistry().isEnabled(POST_TURN_REVIEW_PACK_ID)) {
+    if (turnChangedFiles && getDefaultPluginRegistry().isEnabled(POST_TURN_REVIEW_PLUGIN_ID)) {
       const reviewRoute = await buildReviewRoute()
       const reviewProvider = reviewRoute?.provider ?? provider
       const reviewUsageModel = reviewRoute?.usageModel ?? model
@@ -1589,10 +1720,10 @@ export async function runAgent(
       const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
       // How many review passes this turn may run. A failing verdict buys the
       // parent one remediation turn plus a re-review (the next pass), so this is
-      // the "do we do another post turn after a failed review?" knob — pack-scoped
-      // because it is meaningless with the pack off (decision 15).
+      // the "do we do another post turn after a failed review?" knob — plugin-scoped
+      // because it is meaningless with the plugin off (decision 15).
       const maxReviewCycles = resolveMaxReviewCycles(
-        resolvePackSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
+        resolvePluginSetting(POST_TURN_REVIEW_PLUGIN_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
       )
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
@@ -1667,8 +1798,8 @@ export async function runAgent(
     // Auto model comparison: when this turn changed files and the harness is set
     // to run on review, compare two models on the working diff (gated by a spend
     // approval for billable models). Usage is folded in via the emitted chunks.
-    // P5: gate on the `copse.model-comparison` pack toggle in addition to the
-    // fine-grained `modelComparisonAutoOnReview` sub-setting — the pack toggle
+    // P5: gate on the `copse.model-comparison` plugin toggle in addition to the
+    // fine-grained `modelComparisonAutoOnReview` sub-setting — the plugin toggle
     // is the atomic master switch (`isAutoComparisonEnabled()` already reads
     // both).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
@@ -1718,12 +1849,22 @@ export async function runAgent(
     abortMap.delete(threadId)
   }
 
-  const updatedHistory = trimmed.filter((m) => m.role !== 'system')
-  return { usage: { inputTokens, outputTokens }, messages: updatedHistory }
+  return { usage: { inputTokens, outputTokens }, messages: persistableHistory() }
 }
 
 export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
+}
+
+/**
+ * Thread ids with a live in-process run right now. Lets a renderer that's just
+ * (re)loaded a project's threads tell a genuinely still-running turn apart from
+ * one whose `status: 'running'` was merely the last thing persisted before a
+ * crash (#1406) — trusting the persisted flag alone flips a real run's status
+ * to idle and hides its stop control while it keeps streaming.
+ */
+export function listRunningThreadIds(): string[] {
+  return [...abortMap.keys()]
 }
 
 export interface RetryOptions {

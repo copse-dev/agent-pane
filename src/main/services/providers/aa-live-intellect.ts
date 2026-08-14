@@ -16,14 +16,18 @@ import { optionalRecord } from '@shared/unknown-value.ts'
 /** Env override for e2e / demos — skips network and the stored AA key. */
 const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
 
-// The legacy `/data/llms/models` response does not carry the Intelligence
-// Index cost-per-task field. The current free-shape endpoint does (for every
-// API tier) and paginates at 200 rows, so request every page below.
+// The supported free-tier language feed. It carries the Intelligence Index
+// cost-per-task field (for every API tier) and paginates at 200 rows, so
+// request every page below.
+//
+// This is also the documented replacement for the retired `/api/v2/data/*`
+// family: AA's migration guide maps `/api/v2/data/llms/models` onto exactly
+// this URL, and legacy paths return 410 Gone after 2026-11-04 23:59 UTC. The
+// key is unchanged. Because the replacement IS the endpoint we already call
+// first, the old "fall back to the legacy score feed on a bad payload" path
+// has no successor and is gone — a second attempt would just be the same
+// request. See https://artificialanalysis.ai/data-api/migrate-v2-data.
 const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
-// The richer endpoint has occasionally rejected its own nullable rows while
-// serialising a response. The legacy feed lacks cost-per-task, but still
-// provides the scores and token prices needed for the core value map.
-const AA_LEGACY_MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
 // AA data moves slowly; refetching each panel open would just burn quota.
 const CACHE_TTL_MS = 6 * 60 * 60_000
 // Failures (bad key, network, unparseable payload) are cached only briefly, so
@@ -185,7 +189,6 @@ async function requestAaEndpoint(
   urlString: string,
   key: string,
   fetchImpl: typeof fetch,
-  paginated: boolean,
 ): Promise<AaEndpointResult> {
   const models: AaApiModel[] = []
   let firstPayload: AaApiPayload = {}
@@ -193,7 +196,7 @@ async function requestAaEndpoint(
   let hasMore = true
   while (hasMore) {
     const url = new URL(urlString)
-    if (paginated) url.searchParams.set('page', String(page))
+    url.searchParams.set('page', String(page))
     const res = await fetchImpl(url, {
       headers: { 'x-api-key': key },
       redirect: 'follow',
@@ -207,8 +210,9 @@ async function requestAaEndpoint(
     } catch (err) {
       // Some AA responses currently fail their generated response validator
       // because optional measurements are represented as null. Keep that
-      // implementation detail out of the UI and let the caller use the
-      // score-only endpoint instead.
+      // implementation detail out of the UI — the panel falls back to curated
+      // data, and the short failure TTL means a fixed response recovers on the
+      // next open.
       throw new AaPayloadError(err)
     }
     if (page === 1) firstPayload = payload
@@ -216,24 +220,24 @@ async function requestAaEndpoint(
 
     const pagination = payload.pagination
     hasMore =
-      paginated &&
-      (pagination?.has_more === true ||
-        (typeof pagination?.total_pages === 'number' && page < pagination.total_pages))
+      pagination?.has_more === true ||
+      (typeof pagination?.total_pages === 'number' && page < pagination.total_pages)
     if (hasMore) page += 1
   }
   return { firstPayload, models }
 }
 
-function shouldUseLegacyFeed(err: unknown): boolean {
-  return err instanceof AaPayloadError || (err instanceof AaHttpError && err.status >= 500)
-}
-
 function errorMessage(err: unknown): string {
   if (err instanceof AaHttpError) {
+    // 410 is AA's marker for a retired `/api/v2/data/*` path. We no longer call
+    // one, so seeing it means the supported endpoint itself was retired and the
+    // constant above needs revisiting — say so rather than blaming the key.
     const hint =
       err.status === 401 || err.status === 403
         ? ' — the key was rejected; check the Artificial Analysis key in Settings'
-        : ''
+        : err.status === 410
+          ? ' — this endpoint has been retired; the app needs an update'
+          : ''
     return `Artificial Analysis API: ${err.message}${hint}`
   }
   return err instanceof Error ? err.message : 'Artificial Analysis API fetch failed'
@@ -249,19 +253,16 @@ function errorMessage(err: unknown): string {
  * while the sync script sailed through, which is exactly the "sync works but
  * the live panel doesn't" shape. The URL is a fixed trusted constant, so
  * following its redirects is safe.
+ *
+ * One endpoint, one attempt: the retired legacy feed's documented replacement
+ * is this same URL, so there is nothing left to fall back to.
  */
 export async function requestLiveIntellectModels(
   key: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<LiveIntellectFetch> {
   try {
-    let endpoint: AaEndpointResult
-    try {
-      endpoint = await requestAaEndpoint(AA_MODELS_URL, key, fetchImpl, true)
-    } catch (err) {
-      if (!shouldUseLegacyFeed(err)) throw err
-      endpoint = await requestAaEndpoint(AA_LEGACY_MODELS_URL, key, fetchImpl, false)
-    }
+    const endpoint = await requestAaEndpoint(AA_MODELS_URL, key, fetchImpl)
     const models = endpoint.models.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
     const indexVersion = reportedIndexVersion(endpoint.firstPayload, endpoint.models)
     return { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
@@ -363,6 +364,16 @@ function mockLiveIntellectFetch(): LiveIntellectFetch {
       inputPricePerMTok: 0.15,
       outputPricePerMTok: 0.6,
       costPerTask: 0.12,
+    },
+    // A curated score outside the routable catalog. This intentionally mirrors
+    // the high-price legacy outlier in the AA cohort so renderer e2e proves it
+    // stays in the discovery disclosure instead of stretching the chart axis.
+    {
+      id: 'o1-pro',
+      intellect: 19.1,
+      inputPricePerMTok: 150,
+      outputPricePerMTok: 600,
+      costPerTask: 12,
     },
     {
       id: 'cheap-smart-oss',

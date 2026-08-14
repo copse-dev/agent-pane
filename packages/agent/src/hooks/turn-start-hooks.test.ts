@@ -5,12 +5,12 @@ import {
   TURN_START_HOOKS,
   todoSteeringHook,
   githubLinkSteeringHook,
-  commitSteeringHook,
   todoPinHook,
   forcedPlanningHook,
+  siteBuildingSteeringHook,
 } from './turn-start-hooks.ts'
 import {
-  FORCED_PLANNING_PACK_ID,
+  FORCED_PLANNING_PLUGIN_ID,
   FORCED_TODO_PLAN_PROMPT,
   FORCED_WRITTEN_PLAN_PROMPT,
   CANONICAL_THRESHOLD_SETTING,
@@ -18,13 +18,12 @@ import {
 } from '../forced-planning.ts'
 import { TODO_STEERING_PROMPT, formatTodosForPrompt } from '../todo-steering.ts'
 import { buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
-import { buildCommitSteeringPrompt } from '../commit-steering.ts'
 import type { TodoItem } from '../wire-types.ts'
+import { SITE_BUILDING_STEERING_PROMPT } from '../site-building-steering.ts'
 
 const multiStepPrompt =
   'Refactor the renderer across several files and then run tests to confirm nothing broke'
 const githubPrompt = 'Can you review pull request #201 and summarize open PRs?'
-const commitPrompt = 'Please create a commit for these changes'
 const plainPrompt = 'What does this function do?'
 
 const priorTodos: TodoItem[] = [
@@ -33,15 +32,15 @@ const priorTodos: TodoItem[] = [
 ]
 
 describe('TURN_START_HOOKS registration', () => {
-  it('lists the non-pack turn-start hooks after P4 (todos moved to copse.todos)', () => {
+  it('lists the non-plugin turn-start hooks after P4 (todos moved to copse.todos)', () => {
     // The todos turn-start hooks (`todo-steering`, `todo-pin`) moved into the
-    // `copse.todos` first-party pack (P4). Only the non-todos steering hooks
-    // remain in the static list; the pack folds its two hooks in through
+    // `copse.todos` first-party plugin (P4). Only the non-todos steering hooks
+    // remain in the static list; the plugin folds its two hooks in through
     // `createHookRegistry`, restoring the same registration count when
     // enabled.
     assert.deepEqual(
       TURN_START_HOOKS.map((h) => h.id),
-      ['github-link-steering', 'commit-steering'],
+      ['github-link-steering'],
     )
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
@@ -60,6 +59,39 @@ describe('todo-steering', () => {
     )
     assert.equal(
       await todoSteeringHook.run({ userText: plainPrompt, priorTodos: [] }, {}),
+      undefined,
+    )
+  })
+
+  it('abstains on ACP because update_todos is not a bridged tool', async () => {
+    assert.equal(
+      await todoSteeringHook.run(
+        { userText: multiStepPrompt, priorTodos: [], executor: 'acp', toolNames: [] },
+        {},
+      ),
+      undefined,
+    )
+  })
+})
+
+describe('site-building-steering', () => {
+  it('injects the same quality brief for local and ACP executors', async () => {
+    const userText =
+      'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio.'
+    for (const executor of ['local', 'acp'] as const) {
+      assert.deepEqual(
+        await siteBuildingSteeringHook.run({ userText, priorTodos: [], executor }, {}),
+        { injectContext: SITE_BUILDING_STEERING_PROMPT },
+      )
+    }
+  })
+
+  it('abstains from a site review', async () => {
+    assert.equal(
+      await siteBuildingSteeringHook.run(
+        { userText: 'Review our coming-soon website', priorTodos: [] },
+        {},
+      ),
       undefined,
     )
   })
@@ -101,18 +133,6 @@ describe('github-link-steering', () => {
   it('treats a missing resolver as a null slug', async () => {
     const outcome = await githubLinkSteeringHook.run({ userText: githubPrompt, priorTodos: [] }, {})
     assert.deepEqual(outcome, { injectContext: buildGithubLinkSteeringPrompt(null) })
-  })
-})
-
-describe('commit-steering', () => {
-  it('injects the git_commit preference for commit prompts and abstains otherwise', async () => {
-    assert.deepEqual(await commitSteeringHook.run({ userText: commitPrompt, priorTodos: [] }, {}), {
-      injectContext: buildCommitSteeringPrompt(),
-    })
-    assert.equal(
-      await commitSteeringHook.run({ userText: plainPrompt, priorTodos: [] }, {}),
-      undefined,
-    )
   })
 })
 
@@ -166,13 +186,13 @@ describe('forced-planning', () => {
     })
   })
 
-  it('reads its threshold from the pack-scoped setting via context', async () => {
+  it('reads its threshold from the plugin-scoped setting via context', async () => {
     const reads: string[] = []
     const outcome = await forcedPlanningHook.run(
       { ...weakModelTurn, model: 'claude-sonnet-5' },
       {
-        resolvePackSetting: (packId, key) => {
-          assert.equal(packId, FORCED_PLANNING_PACK_ID)
+        resolvePluginSetting: (pluginId, key) => {
+          assert.equal(pluginId, FORCED_PLANNING_PLUGIN_ID)
           reads.push(key)
           // Sonnet 5 measures ~53; a 60 threshold pulls it under.
           return key === CANONICAL_THRESHOLD_SETTING ? 60 : undefined
@@ -184,20 +204,16 @@ describe('forced-planning', () => {
   })
 })
 
-describe('turnStart emit — enabled todos pack yields the expected assembly order', () => {
-  it('runs the two static steering hooks, then the todos pack hooks (steering + pin)', async () => {
-    // Post-P4 order: static `TURN_START_HOOKS` (`github`, `commit`) fire
-    // first, then the `copse.todos` pack's turn-start hooks (`todo-steering`,
-    // `todo-pin`) — the pack fold appends after the static list in
-    // `createHookRegistry`. This is a deliberate reordering vs the M0.2
-    // inline layout: the todos pack becomes an *additive* layer whose blocks
-    // sit at the end of the injected suffix, which is what allows a
-    // disable of the pack to strip its contribution cleanly.
+describe('turnStart emit — enabled todos plugin yields the expected assembly order', () => {
+  it('runs the static steering hook, then the todos plugin hooks (steering + pin)', async () => {
+    // Post-P4 order: static `TURN_START_HOOKS` (`github`) fire first, then the
+    // `copse.todos` plugin's turn-start hooks (`todo-steering`, `todo-pin`) —
+    // the plugin fold appends after the static list in `createHookRegistry`.
     const registry = createHookRegistry()
     const result = await registry.emit(
       'turnStart',
       {
-        userText: `${multiStepPrompt} Also review pull request #42 and commit the fix.`,
+        userText: `${multiStepPrompt} Also review pull request #42.`,
         priorTodos,
       },
       { resolveGithubRepoSlug: async () => 'org/repo' },
@@ -205,11 +221,10 @@ describe('turnStart emit — enabled todos pack yields the expected assembly ord
     const merged = mergeBlockingOutcomes(result.outcomes)
     assert.deepEqual(
       result.outcomes.map((o) => o.hookId),
-      ['github-link-steering', 'commit-steering', 'todo-steering', 'todo-pin'],
+      ['github-link-steering', 'todo-steering', 'todo-pin'],
     )
     const expectedSuffix = [
       buildGithubLinkSteeringPrompt('org/repo'),
-      buildCommitSteeringPrompt(),
       TODO_STEERING_PROMPT,
       formatTodosForPrompt(priorTodos).replace(/^\n+/, ''),
     ].join('\n\n')

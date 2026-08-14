@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
 import { anthropicMaxOutputTokens, supportsMidConversationSystem } from './model-catalog.ts'
+import { anthropicParameterFields, type ModelParameters } from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { toolResultContentBlocks } from './tool-result-images.ts'
@@ -9,10 +10,13 @@ import { toolResultContentBlocks } from './tool-result-images.ts'
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
   private readonly model: string
+  /** User-tuned generation parameters, already sanitized for this model. */
+  private readonly params: ModelParameters
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
-  constructor(model: string, opts: { apiKey?: string } = {}) {
+  constructor(model: string, opts: { apiKey?: string; params?: ModelParameters } = {}) {
     this.model = model
+    this.params = opts.params ?? {}
     this.client = new Anthropic({
       apiKey: opts.apiKey ?? process.env['ANTHROPIC_API_KEY'],
       defaultHeaders: withAppAttribution(),
@@ -40,6 +44,10 @@ export class AnthropicProvider implements LLMProvider {
     markTrailingCacheBreakpoint(apiMessages)
     apiMessages.push(...toAnthropicMessages(conversation.slice(operatorStart), midSystem))
     const maxTokens = anthropicMaxOutputTokens(model)
+    // Thinking / effort / sampling the user chose for this model. Empty unless
+    // they tuned it, so an untouched model's request body is byte-identical to
+    // what it was before — no accidental cache invalidation (#582).
+    const tuned = anthropicParameterFields(this.params, model, maxTokens)
 
     return yieldStreamWithRetry(
       async function* () {
@@ -47,6 +55,7 @@ export class AnthropicProvider implements LLMProvider {
           {
             model,
             max_tokens: maxTokens,
+            ...tuned,
             ...(systemPrompt !== undefined
               ? {
                   system: [

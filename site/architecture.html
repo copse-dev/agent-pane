@@ -1,5 +1,7 @@
 <!doctype html>
-<html class="marketing-root" lang="en">
+<!-- Pre-launch mode — see the note in index.html and the coming-soon block in
+     styles.css. -->
+<html class="marketing-root" lang="en" data-site-mode="coming-soon">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -21,6 +23,9 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://copse.dev/architecture.html" />
     <link rel="icon" href="brand-mark.svg" />
+    <!-- Markdown twin — see the note in index.html. The diagram data is the
+         page's content, so the twin renders the `views` literal below. -->
+    <link rel="alternate" type="text/markdown" href="architecture.md" />
     <link rel="stylesheet" href="styles.css" />
     <style>
       .architecture-container {
@@ -487,7 +492,7 @@
           <a href="architecture.html" aria-current="page">Architecture</a>
           <a href="privacy.html">Privacy</a>
         </div>
-        <a class="nav-cta" href="index.html#download">Download</a>
+        <a class="nav-cta mode-live-only" href="index.html#download">Download</a>
       </nav>
     </header>
 
@@ -528,7 +533,7 @@
         </a>
         <p>Free &amp; open source · Made for developers who pair with agents every day</p>
         <div>
-          <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
+          <a class="mode-live-only" href="https://github.com/copse-dev/agent-pane">GitHub</a>
           <a href="architecture.html" aria-current="page">Architecture</a>
           <a href="privacy.html">Privacy</a>
         </div>
@@ -2117,7 +2122,7 @@
             lanes: [
               { y: 40, label: 'Execution modes' },
               { y: 234, label: 'Auxiliary model work' },
-              { y: 444, label: 'Hook and feature-pack platform' },
+              { y: 444, label: 'Hook and plugin platform' },
             ],
             nodes: [
               {
@@ -2289,20 +2294,20 @@
                 ],
               },
               {
-                id: 'packs',
+                id: 'plugins',
                 x: 18,
                 y: 478,
                 w: 100,
                 h: 60,
                 kind: 'core',
-                title: 'Pack registry',
+                title: 'Plugin registry',
                 sub: 'atomic lifecycle',
                 summary:
-                  'Feature packs group tools, hooks, prompts, UI panels, settings, and namespaced storage behind one manifest and atomic enable/disable boundary. Historical rendering never depends on live registration.',
+                  'Plugins group tools, hooks, prompts, UI panels, settings, and namespaced storage behind one manifest and atomic enable/disable boundary. Historical rendering never depends on live registration.',
                 files: [
-                  'packages/agent/src/packs/pack-manifest.ts',
-                  'packages/agent/src/packs/pack-registry.ts',
-                  'src/renderer/views/pack-panel.ts',
+                  'packages/agent/src/plugins/plugin-manifest.ts',
+                  'packages/agent/src/plugins/plugin-registry.ts',
+                  'src/renderer/views/plugin-panel.ts',
                 ],
               },
               {
@@ -2403,7 +2408,7 @@
               ['acpserver', 'native', 'hosts'],
               ['native', 'events', 'fires'],
               ['acpclient', 'events', 'lifecycle'],
-              ['packs', 'registry', 'contributes'],
+              ['plugins', 'registry', 'contributes'],
               ['registry', 'events', 'subscribes'],
               ['events', 'executor', 'dispatch'],
               ['executor', 'outcomes', 'normalize'],
@@ -2938,20 +2943,20 @@
                 ],
               },
               {
-                id: 'packs',
+                id: 'plugins',
                 x: 158,
                 y: 244,
                 w: 122,
                 h: 62,
                 kind: 'core',
-                title: 'Feature packs',
+                title: 'Plugins',
                 sub: 'manifest + panels',
                 summary:
-                  'A pack manifest and registry now atomically group tools, hooks, prompts, UI, settings, and storage; level-2 panels carry declarative list/tree updates without arbitrary renderer code.',
+                  'A plugin manifest and registry now atomically group tools, hooks, prompts, UI, settings, and storage; level-2 panels carry declarative list/tree updates without arbitrary renderer code.',
                 files: [
-                  'docs/packs.md',
-                  'packages/agent/src/packs/pack-registry.ts',
-                  'src/renderer/views/pack-panel.ts',
+                  'docs/plugins.md',
+                  'packages/agent/src/plugins/plugin-registry.ts',
+                  'src/renderer/views/plugin-panel.ts',
                 ],
               },
               {
@@ -3076,12 +3081,12 @@
             ],
             edges: [
               ['baseline', 'hooks', 'hooks'],
-              ['baseline', 'packs', 'packs'],
+              ['baseline', 'plugins', 'plugins'],
               ['baseline', 'providers', 'egress'],
               ['baseline', 'terminal', 'context'],
               ['baseline', 'advisor', 'routing'],
               ['hooks', 'ui', 'cards'],
-              ['packs', 'ui', 'panels'],
+              ['plugins', 'ui', 'panels'],
               ['providers', 'ui', 'badges'],
               ['terminal', 'ui', 'mentions'],
               ['advisor', 'knowledge', 'context'],

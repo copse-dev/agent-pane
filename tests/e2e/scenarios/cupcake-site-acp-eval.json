@@ -1,0 +1,27 @@
+{
+  "id": "cupcake-site-acp-eval",
+  "description": "One-turn new-project eval: a natural brand brief reaches Codex ACP through Copse's site-building pack and produces a complete previewable static site.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "copse-cupcake-site-",
+    "initializeGit": true
+  },
+  "prompts": [
+    "Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done."
+  ],
+  "toolUse": {
+    "maxApprovals": 0
+  },
+  "assertWorkspace": {
+    "homePage": {
+      "path": "index.html",
+      "contains": ["Crumb & Bloom", "email", "form"]
+    },
+    "filesContain": [
+      {
+        "glob": "*.css",
+        "contains": ["@media"]
+      }
+    ]
+  }
+}

@@ -10,9 +10,10 @@ import {
   resolveSmallTasksModelId,
 } from './providers/small-tasks-provider.ts'
 import { getSetting } from './storage/settings.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
+import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
@@ -100,9 +101,11 @@ function buildDeterministicFollowUps(
 
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
     // Point the follow-up at the investigate_ci subagent tool only when the
-    // `copse.ci-investigator` pack is enabled (the same gate that registers the
+    // `copse.ci-investigator` plugin is enabled (the same gate that registers the
     // tool); otherwise fall back to the generic "Debug CI Failure" prompt.
-    const ci = buildDebugCiSuggestion(getDefaultPackRegistry().isEnabled(CI_INVESTIGATOR_PACK_ID))
+    const ci = buildDebugCiSuggestion(
+      getDefaultPluginRegistry().isEnabled(CI_INVESTIGATOR_PLUGIN_ID),
+    )
     out.push({ id: ci.id, label: ci.label, prompt: ci.prompt })
   }
 
@@ -132,14 +135,17 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
 }
 
 /** Build follow-up bubbles: deterministic PR/git signals first, then model picks. */
-export async function suggestFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
+export async function suggestFollowUps(
+  context: FollowUpContext,
+  root: string | null = getWorkspaceRoot(),
+): Promise<FollowUpSuggestion[]> {
   if (
     process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] === '1' ||
     getSetting<boolean>('mockFollowUps', false)
   ) {
     return mockFollowUpSuggestions()
   }
-  const workspaceCtx = await getPrWorkspaceContext()
+  const workspaceCtx = await getPrWorkspaceContext(root)
   const deterministic = buildDeterministicFollowUps(workspaceCtx)
   const modelPicks = await pickModelFollowUps(context)
 

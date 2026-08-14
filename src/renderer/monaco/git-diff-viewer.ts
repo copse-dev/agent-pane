@@ -134,12 +134,26 @@ export function createGitChangesDiffEditor(
   })
 }
 
+/**
+ * The view model each editor currently displays.
+ *
+ * `getModel()` hands back the underlying text models, not the view model built
+ * around them, so an editor's own API cannot release the wrapper it was given.
+ * Tracking it here lets a swap dispose the outgoing wrapper alongside its
+ * models — and only once its replacement is already on screen.
+ */
+const attachedViewModels = new WeakMap<GitDiffEditor, GitDiffViewModel>()
+
 export function disposeDiffModels(diffEditor: GitDiffEditor): void {
   const oldModels = diffEditor.getModel()
-  if (!oldModels) return
+  const oldViewModel = attachedViewModels.get(diffEditor)
+  attachedViewModels.delete(diffEditor)
+  attachedDiffIds.delete(diffEditor)
+  if (!oldModels && !oldViewModel) return
   diffEditor.setModel(null)
-  oldModels.original.dispose()
-  oldModels.modified.dispose()
+  oldViewModel?.dispose()
+  oldModels?.original.dispose()
+  oldModels?.modified.dispose()
 }
 
 /**
@@ -153,7 +167,34 @@ export function disposeDiffModels(diffEditor: GitDiffEditor): void {
  * Pass a factory `() => createEditor()` when the editor must not be constructed
  * until the host is visible — creating Monaco at 0×0 (panel still closed) leaves
  * a blank viewer even after later layout().
+ *
+ * The outgoing diff is torn down only once its replacement is attached. Clearing
+ * first left the editor model-less for the whole compute, and any abandoned
+ * attach — superseded selection, thread/project switch mid-compute — returned
+ * with nothing put back, stranding the Changes pane on an empty editor it had
+ * already unhidden: the blank Changes page of #459/#1343.
+ *
+ * Identical before/after content is a no-op: main-window status/fs refresh can
+ * re-enter here continuously while a pop-out Changes window (no fs:changed IPC)
+ * stays put. Rebuilding would only replay the hideUnchangedRegions flash.
  */
+/**
+ * Identity of the diff each editor currently displays. The models themselves
+ * only carry text, so content equality alone cannot tell "the same file,
+ * refreshed" from "a different file that happens to read identically" — and
+ * short-circuiting on the latter would leave the previous file's models, and its
+ * language, on screen under the new selection.
+ */
+const attachedDiffIds = new WeakMap<GitDiffEditor, { path: string; language: string }>()
+
+function isSameAttachedDiff(diffEditor: GitDiffEditor, diff: GitFileDiff): boolean {
+  const attached = diffEditor.getModel()
+  if (!attached) return false
+  const id = attachedDiffIds.get(diffEditor)
+  if (id?.path !== diff.path || id.language !== diff.language) return false
+  return attached.original.getValue() === diff.before && attached.modified.getValue() === diff.after
+}
+
 export async function setGitFileDiffModel(
   diffEditorSource: GitDiffEditorSource,
   monaco: GitDiffMonaco,
@@ -165,7 +206,13 @@ export async function setGitFileDiffModel(
   if (!visible || !isCurrent()) return false
 
   const diffEditor = resolveDiffEditor(diffEditorSource)
-  disposeDiffModels(diffEditor)
+  // Main-window Changes re-enters this path on every fs:changed / status refresh
+  // even when the selected file is unchanged. Rebuilding models then toggles
+  // hideUnchangedRegions off→on (refreshGitChangesDiffCollapse), which is the
+  // expand/collapse flash. Pop-out windows do not receive those IPC events, so
+  // they stay stable — skip the no-op remount here so the docked pane matches.
+  if (isSameAttachedDiff(diffEditor, diff)) return true
+
   const version = diffModelVersion++
   const safePath = diff.path.replace(/[^a-zA-Z0-9._/-]/g, '_')
   const original = monaco.editor.createModel(
@@ -186,7 +233,14 @@ export async function setGitFileDiffModel(
     modified.dispose()
     return false
   }
+  const previousModels = diffEditor.getModel()
+  const previousViewModel = attachedViewModels.get(diffEditor)
   diffEditor.setModel(viewModel)
+  attachedViewModels.set(diffEditor, viewModel)
+  attachedDiffIds.set(diffEditor, { path: diff.path, language: diff.language })
+  previousViewModel?.dispose()
+  previousModels?.original.dispose()
+  previousModels?.modified.dispose()
 
   await refreshGitChangesDiffCollapse(diffEditor)
   diffEditor.layout()

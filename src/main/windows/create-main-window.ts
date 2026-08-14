@@ -4,14 +4,42 @@ import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
+import { MainWindowRegistry, type MainWindowContext } from './main-window-registry.ts'
+import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
+import { registerAppWindow } from './app-window-broadcast.ts'
 
-let mainWin: BrowserWindow | null = null
+const mainWindowRegistry = new MainWindowRegistry<BrowserWindow>()
 
+/** Temporary compatibility accessor for services that still target the primary window. */
 export function getMainWindow(): BrowserWindow | null {
-  return mainWin
+  return mainWindowRegistry.getPrimary()?.window ?? null
+}
+
+export function getFocusedMainWindow(): BrowserWindow | null {
+  return (
+    mainWindowRegistry.getFocused()?.window ??
+    mainWindowRegistry.getMostRecentlyFocused()?.window ??
+    getMainWindow()
+  )
+}
+
+export function getMainWindowContext(
+  webContents: Electron.WebContents,
+): MainWindowContext<BrowserWindow> | undefined {
+  return mainWindowRegistry.fromWebContents(webContents)
+}
+
+export function isPrimaryMainWindow(webContents: Electron.WebContents): boolean {
+  return mainWindowRegistry.isPrimary(webContents)
+}
+
+export function assertPrimaryMainWindow(webContents: Electron.WebContents): void {
+  if (!isPrimaryMainWindow(webContents)) {
+    throw new Error('Agent actions are not available in secondary windows yet')
+  }
 }
 
 interface Bounds {
@@ -71,7 +99,18 @@ export function createMainWindow(): BrowserWindow {
       preload: join(__dirname, '../preload/index.js'),
     },
   })
-  mainWin = win
+  const context = mainWindowRegistry.register(win)
+  const frame = win.webContents.mainFrame
+  registerTrustedAppFrame(frame)
+  const unregisterBroadcast = registerAppWindow(win.webContents)
+  win.on('focus', () => {
+    mainWindowRegistry.markFocused(context.id)
+  })
+  win.on('closed', () => {
+    unregisterTrustedAppFrame(frame)
+    unregisterBroadcast()
+    mainWindowRegistry.unregister(context.id)
+  })
   attachWebContentsLockdown(win.webContents)
   win.once('ready-to-show', () => {
     win.show()
@@ -89,9 +128,10 @@ export function createMainWindow(): BrowserWindow {
 const DEVTOOLS_SHORTCUT = 'Control+Shift+I'
 
 /** Register the Ctrl+Shift+I DevTools shortcut (no-op if already registered). */
-export function registerDevtoolsShortcut(win: BrowserWindow): void {
+export function registerDevtoolsShortcut(): void {
   globalShortcut.register(DEVTOOLS_SHORTCUT, () => {
-    toggleDetachedDevTools(win.webContents)
+    const focused = getFocusedMainWindow()
+    if (focused) toggleDetachedDevTools(focused.webContents)
   })
 }
 
@@ -102,18 +142,18 @@ export function unregisterDevtoolsShortcut(): void {
 
 /**
  * Register or unregister the DevTools shortcut to match the current enablement
- * of the `copse.devtools-shortcut` first-party pack's `devtools-shortcut`
+ * of the `copse.devtools-shortcut` first-party plugin's `devtools-shortcut`
  * capability. Called at boot (via `registerAllHandlers`) and again whenever the
- * pack is toggled from Settings > Packs (see `ipc/register-handlers.ts`
- * `packs:setEnabled`), so the shortcut appears or disappears live — the atomic
- * pack disable unregisters it in the same flag flip that drops the pack's
- * capability from the Settings pack list. Replaces the retired
- * `devtoolsShortcutEnabled` standalone setting: the pack capability is now the
+ * plugin is toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * `plugins:setEnabled`), so the shortcut appears or disappears live — the atomic
+ * plugin disable unregisters it in the same flag flip that drops the plugin's
+ * capability from the Settings plugin list. Replaces the retired
+ * `devtoolsShortcutEnabled` standalone setting: the plugin capability is now the
  * single source of truth.
  */
-export function syncDevtoolsShortcut(win: BrowserWindow): void {
-  if (getDefaultPackRegistry().isCapabilityActive(DEVTOOLS_SHORTCUT_CAPABILITY)) {
-    registerDevtoolsShortcut(win)
+export function syncDevtoolsShortcut(): void {
+  if (getDefaultPluginRegistry().isCapabilityActive(DEVTOOLS_SHORTCUT_CAPABILITY)) {
+    registerDevtoolsShortcut()
   } else {
     unregisterDevtoolsShortcut()
   }

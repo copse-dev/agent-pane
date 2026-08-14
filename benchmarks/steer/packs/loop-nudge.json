@@ -1,0 +1,26 @@
+{
+  "id": "loop-nudge",
+  "description": "LOOP_NUDGE_USER_MESSAGE is injected when the loop guard detects repeated exploration. Both arms start from one deterministic evidence-complete checkpoint, and only post-injection tool calls are scored. The eval therefore measures whether the nudge ends exploration rather than whether independently sampled setup turns happened to inspect different files.",
+  "steer": { "kind": "nudge", "ref": "loopNudge", "afterSteps": 4 },
+  "gate": { "minLift": 0.3, "minWithPassRate": 0.6 },
+  "tasks": [
+    {
+      "id": "shallow-project-invites-re-exploration",
+      "description": "Both arms receive the exact same checkpoint: the README, authoritative overview, and two representative modules have already been read. Further exploration is unnecessary, so checks score only whether the next turn answers instead of calling more tools.",
+      "prompt": "Look through this project and tell me what the modules under src/ have in common.",
+      "fixture": "benchmarks/steer/fixtures/sprawl-project",
+      "seedReadFiles": ["README.md", "docs/overview.md", "src/auth.js", "src/cache.js"],
+      "maxSteps": 6,
+      "timeoutMs": 300000,
+      "checks": [
+        { "id": "wrote-a-real-answer", "kind": "final-min-chars", "min": 80 },
+        { "id": "stopped-calling-tools", "kind": "max-tool-calls", "max": 0 },
+        {
+          "id": "answer-is-about-the-modules",
+          "kind": "final-matches",
+          "pattern": "timeout|enabled|config"
+        }
+      ]
+    }
+  ]
+}

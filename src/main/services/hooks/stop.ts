@@ -26,22 +26,23 @@
 // assert the event fired. See docs/plans/hooks-and-feature-packs.md (C1 row,
 // decisions 3, 13, 16).
 //
-// **Follow-ups via C2, not a bespoke protocol (decision 4).** Cursor's `stop` is
-// notification-only (it carries `status` and returns nothing), so nothing here
-// parses a follow-up into an action. Should a dialect return a `followup_message`,
-// it must route through the pending-message queue (C2) — B3 invents no stop
-// follow-up path. C2 owns queue origin attribution + the held state; until it
-// lands, stop follow-ups are honestly deferred (plan-doc note, B3 row).
+// **Follow-ups via C2, not a bespoke protocol (decision 4).** Both dialects can
+// ask for the run to keep going: Cursor's `stop` returns `followup_message`
+// (upstream auto-submits it as the next user message), Claude's `Stop` returns
+// `decision: "block"` with a reason. A detached dispatch cannot resume a finished
+// turn, and silently auto-starting one is exactly the bespoke protocol decision 4
+// rules out — so both route through the pending-message queue via `onAsyncOutcome`
+// below (C2, which owns origin attribution + the held state), where the user
+// drains them.
 //
-// Cursor declares a `stop` hook (wired here); Claude's `Stop` hook is a Phase-D
-// concern (subagentStop et al.) and not wired by B3, so no Claude hooks
-// participate — matching the vendor audit.
+// Cursor declares a `stop` hook and Claude a `Stop` hook; both are wired here.
 import { HookRegistry } from '@copse/agent/hooks/hook-registry.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorStopHooks } from './cursor-adapter.ts'
+import { claudeStopHooks } from './claude-adapter.ts'
 import { copseStopHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
@@ -51,10 +52,9 @@ import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 /** What the turn-end / abort fire site learns from the stop hooks. */
 export interface StopResult {
   /**
-   * How many `stop` hooks matched and were dispatched. `stop` is
-   * notification-only and detached, so there is no decision to surface — the
-   * count is enough for the fire site to know work was dispatched and for tests
-   * to assert the event fired.
+   * How many `stop` hooks matched and were dispatched. `stop` is detached, so
+   * there is no decision to surface — the count is enough for the fire site to
+   * know work was dispatched and for tests to assert the event fired.
    */
   ran: number
   /**
@@ -110,14 +110,16 @@ export async function runStopHooks(
     ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
-  // Cursor + Copse (F1) declare a run-end hook; Claude's Stop is Phase D.
-  // Discovery is not gated on any abort signal — decision 3 says a `stop`
-  // dispatched at turn end / abort runs to its own completion.
-  const [cursorHooks, copseHooks] = await Promise.all([
+  // All three dialects declare a run-end hook: Cursor's `stop`, Claude's `Stop`,
+  // and Copse's native event (F1). Discovery is not gated on any abort signal —
+  // decision 3 says a `stop` dispatched at turn end / abort runs to its own
+  // completion.
+  const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
     cursorStopHooks(payload, discoverOpts),
+    claudeStopHooks(payload, discoverOpts),
     copseStopHooks(payload, discoverOpts),
   ])
-  const hooks = [...cursorHooks, ...copseHooks]
+  const hooks = [...cursorHooks, ...claudeHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()
@@ -126,8 +128,7 @@ export async function runStopHooks(
   const dispatcher = opts.dispatcher ?? getAsyncHookDispatcher()
 
   // Detached dispatch (decision 3): `emitAsync` schedules each `stop` hook on the
-  // shared dispatcher and returns immediately — it never awaits. `stop` is
-  // notification-only (Cursor), so no async outcome sink is wired; the command
+  // shared dispatcher and returns immediately — it never awaits; the command
   // runner records the spine line and resolves dialect failure internally. The
   // detached run context strips the abort signal, so an in-flight stop hook is
   // never killed (see `detachedHookContext`). Every dispatch carries the
@@ -141,12 +142,10 @@ export async function runStopHooks(
     runCommandHook: createCommandHookRunner(
       opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
     ),
-    // C2: an async *function* hook's `queueMessage` outcome lands in the
-    // renderer's pending queue via this sink (decision 4). Cursor's `stop` is a
-    // notification-only *command* hook, so no outcome flows through it today, but
-    // the seam is live and epoch-tagged for the async function-hook events (and
-    // C3) that produce follow-ups. A stale send-now is downgraded to held on the
-    // renderer side (decision 16).
+    // C2: a `queueMessage` outcome lands in the renderer's pending queue via this
+    // sink (decision 4) — an async function hook's, Cursor's `followup_message`,
+    // or a Claude `Stop` hook's block `reason`. A stale send-now is downgraded to
+    // held on the renderer side (decision 16).
     onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })

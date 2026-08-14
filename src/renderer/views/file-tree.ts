@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { chevronRightIcon, refreshIcon } from '../dom/icons.ts'
+import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import {
   materialFileIconUrl,
@@ -9,10 +10,16 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { WORKSPACE_PATH_MIME } from '../attachments/handle-file-drop.ts'
-import { openWorkspaceFile } from '../controller/files.ts'
+import {
+  canOpenWorkspaceFileInBrowser,
+  openWorkspaceFile,
+  openWorkspaceFileInBrowser,
+} from '../controller/files.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { PanelTab } from '@shared/types/state.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { showErrorToast } from './toast.ts'
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
@@ -21,13 +28,14 @@ function join(parent: string, child: string): string {
 export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const refreshBtn = el(
     'button',
-    { class: 'sidebar-refresh', 'aria-label': 'Refresh' },
+    { class: 'sidebar-refresh', 'aria-label': 'Refresh', 'data-tooltip': 'Refresh the file tree' },
     refreshIcon('ui-icon ui-icon-sm'),
   )
   const header = el(
     'div',
     { class: 'sidebar-header sidebar-header-compact' },
-    panePopoutButton(api, 'explorer', 'explorer'),
+    panePopoutButton(store, api, 'explorer', 'explorer'),
+    paneMaximizeButton(store, 'explorer'),
     refreshBtn,
   )
   const treeEl = el('div', { class: 'file-tree', role: 'tree' })
@@ -145,6 +153,22 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       row.addEventListener('click', () => {
         selectRow(row)
         void openFile(path)
+      })
+      row.addEventListener('contextmenu', (event) => {
+        if (!canOpenWorkspaceFileInBrowser(store)) return
+        event.preventDefault()
+        event.stopPropagation()
+        selectRow(row)
+        showContextMenu(event.clientX, event.clientY, [
+          {
+            label: 'Open in browser',
+            onSelect: (): void => {
+              void openWorkspaceFileInBrowser(store, api, path).catch((err: unknown): void => {
+                showErrorToast(`Failed to open ${path} in the browser`, err)
+              })
+            },
+          },
+        ])
       })
     }
     return container

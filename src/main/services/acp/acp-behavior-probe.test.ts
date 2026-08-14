@@ -7,11 +7,13 @@ import {
   PROTOCOL_VERSION,
   RequestError,
   type PromptRequest,
+  type SessionUpdate,
 } from '@agentclientprotocol/sdk'
 import {
   DEFAULT_BEHAVIOR_PROMPT,
   extractBehaviorSnapshot,
   probeAgentBehavior,
+  wireToolCallKeysOf,
   type AcpBehaviorProbeConfig,
   type AcpBehaviorProbeOptions,
 } from './acp-behavior-probe.ts'
@@ -23,9 +25,26 @@ import { buildBehaviorMatrixJson, renderBehaviorMatrixMarkdown } from './acp-beh
  * write routing, permission payloads, and mid-turn `_meta`.
  */
 
-type BehaviorScript = 'fs-write' | 'shell-execute' | 'permission-meta' | 'both' | 'prompt-error'
+type BehaviorScript =
+  'fs-write' | 'shell-execute' | 'permission-meta' | 'both' | 'prompt-error' | 'generic-mcp-title'
 
 type TransportFactory = NonNullable<AcpBehaviorProbeOptions['createTransport']>
+
+/**
+ * The reported Cursor shape (#1651): a generic display title, the real identity
+ * only in `name`, plus a vendor field ACP does not model — declared with the
+ * extension in its type so the agent can actually put it on the wire.
+ */
+const GENERIC_MCP_TOOL_CALL: SessionUpdate & { vendorExtension: { serverName: string } } = {
+  sessionUpdate: 'tool_call',
+  toolCallId: 'tc-mcp',
+  title: 'MCP: tool',
+  name: 'mcp__linear__create_issue',
+  kind: 'other',
+  status: 'pending',
+  rawInput: { team: 'ENG' },
+  vendorExtension: { serverName: 'linear' },
+}
 
 function fakeBehaviorTransport(script: BehaviorScript): TransportFactory {
   return (_config: AcpBehaviorProbeConfig) => {
@@ -62,6 +81,14 @@ function fakeBehaviorTransport(script: BehaviorScript): TransportFactory {
             ...(script === 'permission-meta' ? { _meta: { 'vendor.com/turn': 'start' } } : {}),
           },
         })
+
+        if (script === 'generic-mcp-title') {
+          await peer.notify(methods.client.session.update, {
+            sessionId,
+            update: GENERIC_MCP_TOOL_CALL,
+          })
+          return { stopReason: 'end_turn' }
+        }
 
         if (script === 'fs-write' || script === 'both') {
           await peer.request(methods.client.fs.writeTextFile, {
@@ -148,7 +175,14 @@ describe('extractBehaviorSnapshot', () => {
         fsWrites: [],
         permissionRequests: [],
         toolCalls: [
-          { toolCallId: 't', title: 'sh', kind: 'execute', status: 'pending', metaKeys: [] },
+          {
+            toolCallId: 't',
+            title: 'sh',
+            name: null,
+            kind: 'execute',
+            status: 'pending',
+            metaKeys: [],
+          },
         ],
         updateKinds: [],
         midTurnMetaKeys: [],
@@ -161,7 +195,14 @@ describe('extractBehaviorSnapshot', () => {
         fsWrites: [{ path: '/a', contentBytes: 1, metaKeys: [] }],
         permissionRequests: [],
         toolCalls: [
-          { toolCallId: 't', title: 'sh', kind: 'execute', status: 'pending', metaKeys: [] },
+          {
+            toolCallId: 't',
+            title: 'sh',
+            name: null,
+            kind: 'execute',
+            status: 'pending',
+            metaKeys: [],
+          },
         ],
         updateKinds: [],
         midTurnMetaKeys: [],
@@ -193,6 +234,67 @@ describe('extractBehaviorSnapshot', () => {
     })
     assert.deepEqual(snapshot.midTurnMetaKeys, ['a:c', 'z:b'])
     assert.deepEqual(snapshot.updateKinds, ['tool_call'])
+    assert.deepEqual(snapshot.wireToolCallKeys, [])
+  })
+})
+
+describe('wireToolCallKeysOf', () => {
+  it('reports tool_call fields the ACP schema does not model', () => {
+    assert.deepEqual(
+      wireToolCallKeysOf({
+        method: 'session/update',
+        params: {
+          sessionId: 's',
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'tc',
+            title: 'MCP: tool',
+            name: 'mcp__linear__create_issue',
+            vendorExtension: 1,
+          },
+        },
+      }),
+      [
+        'tool_call:sessionUpdate',
+        'tool_call:toolCallId',
+        'tool_call:title',
+        'tool_call:name',
+        'tool_call:vendorExtension',
+      ],
+    )
+  })
+
+  it('reports permission request and nested toolCall fields', () => {
+    assert.deepEqual(
+      wireToolCallKeysOf({
+        id: 1,
+        method: 'session/request_permission',
+        params: {
+          sessionId: 's',
+          toolCall: { toolCallId: 'tc', name: 'mcp__x__y' },
+          options: [],
+        },
+      }),
+      [
+        'request_permission:sessionId',
+        'request_permission:toolCall',
+        'request_permission:options',
+        'request_permission.toolCall:toolCallId',
+        'request_permission.toolCall:name',
+      ],
+    )
+  })
+
+  it('ignores messages with no tool identity', () => {
+    assert.deepEqual(
+      wireToolCallKeysOf({
+        method: 'session/update',
+        params: { update: { sessionUpdate: 'agent_message_chunk', content: {} } },
+      }),
+      [],
+    )
+    assert.deepEqual(wireToolCallKeysOf({ id: 1, result: {} }), [])
+    assert.deepEqual(wireToolCallKeysOf(null), [])
   })
 })
 
@@ -285,6 +387,30 @@ describe('behavior matrix rendering', () => {
     assert.equal(json.generatedBy, 'npm run probe:acp:behavior')
     assert.equal(json.reports.length, 1)
     assert.equal(json.reports[0]?.ok, true)
+  })
+
+  it('captures the programmatic name and the pre-parse wire fields (#1651)', async () => {
+    const report = await probeAgentBehavior(CONFIG, {
+      createTransport: fakeBehaviorTransport('generic-mcp-title'),
+      timeoutMs: 5_000,
+    })
+    assert.ok(report.ok)
+    const snapshot = report.snapshot
+    assert.ok(snapshot)
+    const tool = snapshot.toolCalls[0]
+    assert.ok(tool)
+    // The title is the generic label users complain about; the identity that
+    // would fix it rode along in `name` and the probe no longer drops it.
+    assert.equal(tool.title, 'MCP: tool')
+    assert.equal(tool.name, 'mcp__linear__create_issue')
+
+    // And the vendor field the SDK parse strips is still counted, by name.
+    assert.ok(snapshot.wireToolCallKeys.includes('tool_call:vendorExtension'))
+    assert.ok(snapshot.wireToolCallKeys.includes('tool_call:name'))
+
+    const md = renderBehaviorMatrixMarkdown([report])
+    assert.match(md, /name=`mcp__linear__create_issue`/)
+    assert.match(md, /Wire tool fields \(pre-parse\)/)
   })
 
   it('shows — for failed probes', () => {

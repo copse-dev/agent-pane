@@ -3,6 +3,7 @@ import { baseSandboxConfig } from './config.ts'
 import { recordNetworkDenial } from './network-scope.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
+import { reapOrphanedSandboxBridges } from './orphaned-bridges.ts'
 import { isProjectSandboxPlatform, setProjectSandboxInitFailure } from './state.ts'
 
 export {
@@ -34,13 +35,22 @@ export {
  * Linux needs `bubblewrap` on PATH *and* usable unprivileged user namespaces.
  * Where either is missing (a locked-down container, say) `initialize` throws and
  * we degrade to unsandboxed exactly as before — with one consequence worth
- * knowing: executable pack behavior fails closed without a sandbox, so packs
- * stay unavailable rather than running unconfined (see pack-tool-host.ts).
+ * knowing: executable plugin behavior fails closed without a sandbox, so plugins
+ * stay unavailable rather than running unconfined (see plugin-tool-host.ts).
  */
 export async function initProjectSandbox(): Promise<void> {
   if (!isProjectSandboxPlatform()) {
     setProjectSandboxEnabled(false)
     return
+  }
+
+  // Reclaim bridges left by a previous run that never reached `before-quit`.
+  // Startup is the reliable moment for this: whatever killed the last process
+  // could not be counted on to clean up after it, and a machine that hosts many
+  // runs back to back (a CI runner, a dev box) otherwise only ever accumulates.
+  const reaped = reapOrphanedSandboxBridges()
+  if (reaped.length > 0) {
+    console.log(`[project-sandbox] reaped ${String(reaped.length)} orphaned ASRT network bridge(s)`)
   }
 
   try {
@@ -76,5 +86,9 @@ export async function shutdownProjectSandbox(): Promise<void> {
   if (SandboxManager.isSandboxingEnabled()) {
     await SandboxManager.reset()
   }
+  // `reset()` kills the bridge it is holding, but only the one this manager
+  // knows about. Sweep again so a bridge orphaned mid-session (ASRT re-inited,
+  // or reset() bailed before reaching it) does not outlive us either.
+  reapOrphanedSandboxBridges()
   setProjectSandboxEnabled(false)
 }

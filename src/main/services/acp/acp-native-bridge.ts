@@ -11,19 +11,15 @@ import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
-import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import { runWithThreadExecutionOwner } from '../thread-execution-context.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
-/**
- * The MCP server name Copse assigns its native-tool bridge when handing it to
- * the external agent in `session/new` `mcpServers`. The agent prefixes bridged
- * tool calls with it (e.g. Cursor titles a call `copse-gh_pr_list: gh_pr_list`),
- * which is how the client recognises its own tools in a permission request.
- */
-export const BRIDGE_MCP_SERVER_NAME = 'copse'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+
+export { BRIDGE_MCP_SERVER_NAME }
 
 /**
  * Native-tool MCP bridge for ACP client mode (issue #602, tier 2): expose a
@@ -52,7 +48,7 @@ export const BRIDGE_MCP_SERVER_NAME = 'copse'
 /**
  * Core registry tools offered over the bridge, filtered to what is actually
  * registered (e.g. browser tools only exist when enabled in Settings). Enabled
- * first-party packs extend this list explicitly through `tools.acpTools`.
+ * first-party plugins extend this list explicitly through `tools.acpTools`.
  */
 export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Workspace reads, searches, and diff-queued edits. Offering these lets an
@@ -110,13 +106,14 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'staged_diffs',
   'read_staged_diff',
   // The advisor strategy (docs/plans/advisor-strategy.md). Only registered
-  // when the `copse.advisor-strategy` pack is enabled, so it is only offered
+  // when the `copse.advisor-strategy` plugin is enabled, so it is only offered
   // then; the transcript context is turn-scoped by agent-service around the ACP
   // run.
   'advisor',
   // Origin-gated web + in-app browser tools.
   'web_search',
   'fetch_url',
+  'browser_preview',
   'browser_navigate',
   'browser_snapshot',
   'browser_screenshot',
@@ -125,32 +122,51 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
 ]
 
-/** Core tools plus ACP-safe tools declared by currently enabled first-party packs. */
+/** Core tools plus ACP-safe tools declared by currently enabled first-party plugins. */
 export function activeBridgeToolNames(): readonly string[] {
-  return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPackRegistry().activeAcpToolNames()])]
+  return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPluginRegistry().activeAcpToolNames()])]
 }
 
 /**
  * Per-tool matchers over a permission request's title, anchored at the *start*
- * of the (code-unwrapped, trimmed) title: the bridge server name (`copse`), a
- * single separator, then a bridged tool name — e.g. `copse-gh_pr_list`, the one
- * format we have actually observed (Cursor titles the call
- * `copse-gh_pr_list: gh_pr_list`).
+ * of the (code-unwrapped, trimmed) title: an optional `mcp` prefix, the bridge
+ * server name (`copse`), a separator, then a bridged tool name. Both observed
+ * shapes match:
+ *
+ * - `copse-gh_pr_list: gh_pr_list` — Cursor, server name leading.
+ * - `mcp__copse__gh_pr_view` — Claude, server name *infixed* under the
+ *   conventional `mcp__` prefix.
+ *
+ * Claude's shape was missed until a wire trace (#1659) showed it: `^copse`
+ * cannot match a title starting `mcp__`, so every bridged call under Claude fell
+ * through to a duplicate permission prompt — exactly what this gate exists to
+ * remove. The optional prefix is the literal `mcp` rather than "any leading
+ * token" on purpose; see the anchoring note below.
  *
  * Anchoring — rather than searching anywhere in the title — matters because
  * `copse` is a common token in this very repo: a prose title like
- * `Edit copse-gh_pr_list-notes.md` must not be mistaken for a bridged call. The
- * separator is left as any single non-alphanumeric joiner (the inherent shape of
- * `server<sep>tool`) rather than hard-coded to `-`, so a future agent that joins
- * with `/`, `_`, or `.` still matches; a title in some entirely different shape
- * just falls through to the normal prompt.
+ * `Edit copse-gh_pr_list-notes.md` must not be mistaken for a bridged call.
+ * Admitting an arbitrary leading word would reopen exactly that, since
+ * `Run copse gh_pr_list now` would then match. The separator is any run of
+ * non-alphanumeric joiners (the inherent shape of `server<sep>tool`) rather than
+ * hard-coded to `-`, so an agent that joins with `/`, `_`, `.`, or `__` still
+ * matches; a title in some entirely different shape just falls through to the
+ * normal prompt.
+ *
+ * Codex is a third shape this cannot help: it sends no `title` on permission
+ * requests at all (only `kind`, `rawInput`, `status`, `toolCallId`), so its
+ * bridged calls still double-prompt. Fixing that needs a non-title signal and
+ * a trace of a Codex MCP call, which we do not have yet.
  */
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function bridgeTitleMatcher(tool: string): RegExp {
-  return new RegExp(`^${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]${escapeRegex(tool)}(?![a-z0-9_])`, 'i')
+  return new RegExp(
+    `^(?:mcp[^a-z0-9]+)?${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]+${escapeRegex(tool)}(?![a-z0-9_])`,
+    'i',
+  )
 }
 
 /**
@@ -200,6 +216,8 @@ export interface AcpNativeBridge {
    * external agent abandons an MCP call and finishes the prompt on its own.
    */
   setTurnSignal: (signal: AbortSignal | null) => void
+  /** Attribute successful native workspace edits to the current ACP turn's audit. */
+  setWorkspaceWriteObserver: (observer: ((path: string) => void) | null) => void
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
 }
@@ -231,6 +249,29 @@ interface BridgeExecuteContext {
    */
   projectId: string | null
   networkScopeAlreadyApplies: boolean
+  recordWorkspaceWrite: (path: string) => void
+}
+
+/** Paths a successful bridged native edit owns in the post-turn workspace audit. */
+export function bridgedWorkspaceWritePaths(
+  name: string,
+  args: Record<string, unknown> | undefined,
+): string[] {
+  if (!args) return []
+  const stringValue = (key: string): string[] => {
+    const value = args[key]
+    return typeof value === 'string' && value.trim() ? [value] : []
+  }
+  switch (name) {
+    case 'write_file':
+    case 'str_replace':
+    case 'delete_file':
+      return stringValue('path')
+    case 'rename_file':
+      return [...stringValue('from'), ...stringValue('to')]
+    default:
+      return []
+  }
 }
 
 function mergeBridgeExecuteSignal(
@@ -324,6 +365,9 @@ function buildMcpServer(
         name === 'advisor' && advisor
           ? await runWithAdvisorContext(advisor, runExecute)
           : await runExecute()
+      for (const path of bridgedWorkspaceWritePaths(name, request.params.arguments)) {
+        ctx.recordWorkspaceWrite(path)
+      }
       return { content: toMcpContent(result, images) }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
@@ -415,6 +459,7 @@ export async function startAcpNativeBridge(
   // advisor call; simultaneous bridges can never see one another's transcript.
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let turnSignal: AbortSignal | null = null
+  let workspaceWriteObserver: ((path: string) => void) | null = null
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -441,6 +486,7 @@ export async function startAcpNativeBridge(
         threadId: opts.threadId,
         projectId: getActiveProjectId(),
         networkScopeAlreadyApplies,
+        recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
       })
       res.on('close', () => {
         onHttpClose()
@@ -479,6 +525,9 @@ export async function startAcpNativeBridge(
     },
     setTurnSignal: (next): void => {
       turnSignal = next
+    },
+    setWorkspaceWriteObserver: (observer): void => {
+      workspaceWriteObserver = observer
     },
     close: () =>
       new Promise<void>((resolve) => {

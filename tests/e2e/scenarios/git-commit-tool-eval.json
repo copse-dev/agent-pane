@@ -1,0 +1,37 @@
+{
+  "id": "git-commit-tool-eval",
+  "description": "Regression eval for native git_commit routing and Copse-attributed commits without commit-specific prompt steering.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "copse-git-commit-tool-",
+    "seedFiles": [
+      {
+        "path": "CHANGELOG.md",
+        "fixture": "benchmarks/steer/fixtures/changelog-project/CHANGELOG.md"
+      },
+      {
+        "path": "README.md",
+        "fixture": "benchmarks/steer/fixtures/changelog-project/README.md"
+      }
+    ]
+  },
+  "prompts": [
+    "Initialize this workspace as a git repository, add a line to the Unreleased section of CHANGELOG.md saying that uploads now resume after a network drop, then commit that change.",
+    "Run `node -e \"console.log('build ok')\"` to confirm the toolchain works, add a line to the Unreleased section of CHANGELOG.md noting that the build was verified, then commit that change."
+  ],
+  "expect": {
+    "requireTools": ["git_commit"]
+  },
+  "assertWorkspace": {
+    "git": {
+      "minCommits": 2,
+      "allCommitMessagesContain": ["Co-Authored-By: Copse"]
+    },
+    "filesContain": [
+      {
+        "glob": "CHANGELOG.md",
+        "contains": ["resume", "build", "verified"]
+      }
+    ]
+  }
+}
