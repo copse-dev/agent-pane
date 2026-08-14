@@ -145,16 +145,16 @@ describe('fetchModelOptions visibility', () => {
     assert.equal(option.disabled, true)
   })
 
-  it('offers best-value only when includeBestValue is set (Settings chat model)', async () => {
+  it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    assert.equal(options.length, 2)
-    const [bestValue, empty] = options
-    assert.ok(bestValue)
-    assert.equal(bestValue.value, 'auto:best-value')
+    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    const values = options.map((o) => o.value)
+    assert.ok(values.includes('auto:best-value'))
+    assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    const bestValue = options.find((o) => o.value === 'auto:best-value')
+    assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)
-    assert.ok(empty)
-    assert.match(empty.label, /No models available/)
-    assert.equal(empty.disabled, true)
+    assert.ok(options.some((o) => o.disabled && /No models available/.test(o.label)))
     assert.ok(!(await fetchModelOptions(mockApi(), '')).some((o) => o.value === 'auto:best-value'))
   })
 
@@ -624,9 +624,15 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { anthropic: true, openai: true } }),
       '',
     )
+    // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
+    // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
+    const opus5 = options.find((o) => o.value === 'claude-opus-5')
+    assert.ok(opus5)
+    assert.equal(opus5.label, `Claude Opus 5 — ${currentCloudIntellectHint('claude-opus-5')}`)
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
     assert.equal(opus.label, `Claude Opus 4.8 — ${currentCloudIntellectHint('claude-opus-4-8')}`)
+    assert.doesNotMatch(opus.label, /frontier/)
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
     assert.equal(haiku.label, `Claude Haiku 4.5 — ${currentCloudIntellectHint('claude-haiku-4-5')}`)

@@ -3284,7 +3284,8 @@
       "value": 63.1,
       "indexVersion": "v4.1",
       "source": "Artificial Analysis API (index v4.1), model 'claude-opus-5', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "asOf": "2026-08-13",
+      "aliases": ["Opus 5", "anthropic/claude-opus-5", "claude-opus-5-latest"]
     },
     {
       "modelId": "qwen3-omni-30b-a3b-reasoning",
