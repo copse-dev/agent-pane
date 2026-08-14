@@ -1224,7 +1224,8 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
           {
             id: 'msg-user-markdown',
             role: 'user',
-            content: 'line one\nline two\n\n**bold item**',
+            content:
+              'line one\nline two\n\n**bold item**\n\nI typed <placeholder command> and kept it.',
             toolCalls: [],
             createdAt: now,
           },
