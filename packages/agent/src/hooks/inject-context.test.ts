@@ -75,7 +75,7 @@ describe('buildInjectedContextBlock', () => {
   })
 })
 
-describe('appendOperatorInstruction (trailing placement — #1286)', () => {
+describe('appendOperatorInstruction (model-capability placement)', () => {
   const turn = (): LLMMessage[] => [
     { role: 'system', content: 'stable system prompt' },
     { role: 'user', content: 'earlier question' },
@@ -83,53 +83,68 @@ describe('appendOperatorInstruction (trailing placement — #1286)', () => {
     { role: 'user', content: 'this turn' },
   ]
 
-  it('appends one trailing system message after the user turn', () => {
+  it('appends one trailing developer message for GPT models', () => {
     const messages = turn()
-    assert.equal(appendOperatorInstruction(messages, ['steer me']), true)
+    assert.equal(appendOperatorInstruction(messages, ['steer me'], 'trailing-developer'), true)
 
-    // Last entry, following the user turn — the placement rule for
-    // mid-conversation system messages.
+    assert.deepEqual(messages.at(-1), { role: 'developer', content: 'steer me' })
+    assert.equal(messages.at(-2)?.role, 'user')
+  })
+
+  it('appends one trailing system message for models that explicitly support it', () => {
+    const messages = turn()
+    appendOperatorInstruction(messages, ['steer me'], 'trailing-system')
+
     assert.deepEqual(messages.at(-1), { role: 'system', content: 'steer me' })
     assert.equal(messages.at(-2)?.role, 'user')
   })
 
-  it('leaves the leading system prompt byte-identical', () => {
-    // The regression this guards: folding the block into messages[0] moved the
-    // front of the rendered prompt and invalidated the whole cached prefix.
+  it('merges into the first system prompt for conservative models', () => {
     const messages = turn()
-    const before = messages[0]
-    appendOperatorInstruction(messages, ['steer me', 'and this'])
+    appendOperatorInstruction(
+      messages,
+      ['turnStart steering', 'beforeSubmitPrompt context'],
+      'leading-system',
+    )
 
-    assert.deepEqual(messages[0], { role: 'system', content: 'stable system prompt' })
-    assert.equal(messages[0], before, 'messages[0] must not be replaced')
+    assert.deepEqual(messages[0], {
+      role: 'system',
+      content: 'stable system prompt\n\nturnStart steering\n\nbeforeSubmitPrompt context',
+    })
+    assert.equal(messages.length, 4)
+    assert.deepEqual(messages.at(-1), { role: 'user', content: 'this turn' })
   })
 
-  it('joins multiple blocks into a single message, preserving order', () => {
-    const messages = turn()
-    appendOperatorInstruction(messages, ['turnStart steering', 'beforeSubmitPrompt context'])
+  it('creates a leading system prompt when the conservative path has none', () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'this turn' }]
+    appendOperatorInstruction(messages, ['steer me'], 'leading-system')
 
-    assert.deepEqual(messages.at(-1), {
-      role: 'system',
-      content: 'turnStart steering\n\nbeforeSubmitPrompt context',
-    })
-    // One message, not one per block — so a turn adds a single prefix entry.
-    assert.equal(messages.filter((m) => m.role === 'system').length, 2)
+    assert.deepEqual(messages, [
+      { role: 'system', content: 'steer me' },
+      { role: 'user', content: 'this turn' },
+    ])
   })
 
   it('appends nothing when no hook injected anything', () => {
     const messages = turn()
     const original = [...messages]
-    assert.equal(appendOperatorInstruction(messages, [undefined, undefined]), false)
+    assert.equal(
+      appendOperatorInstruction(messages, [undefined, undefined], 'trailing-system'),
+      false,
+    )
     assert.deepEqual(messages, original)
   })
 
   it('drops empty and whitespace-only blocks so a no-op hook cannot dirty the prefix', () => {
     const messages = turn()
-    assert.equal(appendOperatorInstruction(messages, ['', '   \n  ', undefined]), false)
+    assert.equal(
+      appendOperatorInstruction(messages, ['', '   \n  ', undefined], 'trailing-system'),
+      false,
+    )
     assert.equal(messages.length, 4)
 
     // A real block alongside empty ones still lands, without their separators.
-    assert.equal(appendOperatorInstruction(messages, ['', 'real', '  ']), true)
+    assert.equal(appendOperatorInstruction(messages, ['', 'real', '  '], 'trailing-system'), true)
     assert.deepEqual(messages.at(-1), { role: 'system', content: 'real' })
   })
 })
