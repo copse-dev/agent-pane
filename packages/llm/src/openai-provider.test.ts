@@ -6,6 +6,7 @@ import { OpenAIProvider } from './openai-provider.ts'
 
 interface CapturedChatCompletionRequest {
   model: string
+  messages?: unknown
   stream?: boolean
   stream_options?: { include_usage?: boolean }
   provider?: { require_parameters?: boolean }
@@ -179,6 +180,32 @@ describe('OpenAIProvider image detail', () => {
 })
 
 describe('OpenAIProvider request options', () => {
+  it('maps developer messages onto the chat-completions developer role', async () => {
+    const provider = new OpenAIProvider('gpt-5', { apiKey: 'test-openai-key' })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    for await (const _ of provider.stream(
+      [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'question' },
+        { role: 'developer', content: 'steer' },
+      ],
+      [],
+    )) {
+      void _
+    }
+
+    assert.deepEqual(captured.request?.messages, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'question' },
+      { role: 'developer', content: 'steer' },
+    ])
+  })
+
   it('asks OpenAI cloud streams to include usage', async () => {
     const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })
     const captured: { request?: CapturedChatCompletionRequest } = {}
