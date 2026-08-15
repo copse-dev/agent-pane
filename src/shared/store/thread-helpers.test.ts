@@ -261,6 +261,28 @@ describe('blank thread reuse', () => {
     assert.equal(panelChanges, 1)
   })
 
+  it('stays quiet about the panel when a switch has nothing to reset', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    const second = createThread(store)
+    addMessage(store, second, 'user', 'second')
+    let panelChanges = 0
+    let threadChanges = 0
+    store.on('panel_changed', () => panelChanges++)
+    store.on('threads_changed', () => threadChanges++)
+
+    switchThread(store, first)
+
+    assert.equal(store.getState().activeThreadId, first)
+    // No file, diff or staged queue was open, so the reset announces nothing —
+    // and its subscribers (the Changes pane, the context panel) answer that
+    // announcement with real git work on top of what `threads_changed` already
+    // triggers.
+    assert.equal(panelChanges, 0)
+    assert.equal(threadChanges, 1)
+  })
+
   it('openNewThread creates a new blank when the only blank has a draft', () => {
     const store = createStore()
     const usedId = createThread(store)
