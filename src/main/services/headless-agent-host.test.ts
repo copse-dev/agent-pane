@@ -221,7 +221,9 @@ describe('runHeadlessAgent', () => {
         {
           prompt: 'Start the bounded task.',
           threadId: 'headless-background-wake',
-          waitForMachineContinuations: { count: 1, timeoutMs: 5_000 },
+          // CI unit shards can stall child exit/dispatch under load; keep this
+          // well above the product wake path without masking a stuck handler.
+          waitForMachineContinuations: { count: 1, timeoutMs: 20_000 },
         },
         {
           provider,
