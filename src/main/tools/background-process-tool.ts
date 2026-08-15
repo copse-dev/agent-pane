@@ -97,8 +97,7 @@ export const runBackgroundTool = defineTool({
       return 'run_background cannot wake without an active human turn-tree.'
     }
     // Capture before spawn: process `exit` is delivered outside this ALS scope.
-    const armedWakeHandler =
-      turnTreeId === null ? null : resolveBackgroundCompletionWakeHandler()
+    const armedWakeHandler = turnTreeId === null ? null : resolveBackgroundCompletionWakeHandler()
     const info = await startSupervisedBackgroundProcess({
       command,
       allowPortBinding: allow_port_binding === true,

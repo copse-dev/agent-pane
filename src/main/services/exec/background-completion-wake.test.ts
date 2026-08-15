@@ -27,13 +27,16 @@ describe('background completion wake', () => {
     const seen: string[] = []
     let armed = resolveBackgroundCompletionWakeHandler()
 
-    await runWithBackgroundCompletionWakeHandler(async (request) => {
-      seen.push(request.operationId)
-      return 'completed'
-    }, async () => {
-      armed = resolveBackgroundCompletionWakeHandler()
-      assert.ok(armed)
-    })
+    await runWithBackgroundCompletionWakeHandler(
+      async (request) => {
+        seen.push(request.operationId)
+        return 'completed'
+      },
+      async () => {
+        armed = resolveBackgroundCompletionWakeHandler()
+        assert.ok(armed)
+      },
+    )
 
     // Child-process exit callbacks resume outside the ALS scope that armed them.
     assert.equal(resolveBackgroundCompletionWakeHandler(), null)
