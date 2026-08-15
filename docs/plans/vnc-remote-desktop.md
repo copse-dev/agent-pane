@@ -259,7 +259,10 @@ retain their detected ports. Saved SSH hosts refresh live when Settings changes,
 and deduplication matches Bonjour devices by hostname, advertised address, or
 normalized device label. Remote scans use the probed host OS and directly verify
 port 5900 when a process scanner omits macOS's launchd-managed Screen Sharing
-listener. The live `DISPLAY=:1` harness remains.
+listener. Once a session starts, setup and discovery controls collapse into a
+plain-language connected summary, view-only explanation, and Disconnect action;
+protocol names and port numbers remain confined to Advanced settings and error
+diagnostics. The live `DISPLAY=:1` harness remains.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local

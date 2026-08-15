@@ -312,7 +312,8 @@ describe('read-only VNC viewer', function () {
     const authPanel = $('.vnc-auth-panel')
     await authPanel.waitForDisplayed({ timeout: 20_000 })
     assert.equal(await $('.vnc-auth-title').getText(), 'Authentication required')
-    assert.match(await $('.vnc-auth-description').getText(), /VNC password/i)
+    assert.match(await $('.vnc-auth-description').getText(), /Screen Sharing password/i)
+    assert.equal(await $('.vnc-setup-fields').isDisplayed(), false)
     assert.equal(await $('.vnc-status').isDisplayed(), false)
     assert.equal(await $('.vnc-username-field').isDisplayed(), false)
     assert.equal(await $('.vnc-password-field').isDisplayed(), true)
@@ -330,7 +331,7 @@ describe('read-only VNC viewer', function () {
       },
     )
     assert.equal(await authPanel.isDisplayed(), false)
-    assert.match(await $('.vnc-status-detail').getText(), /check the VNC password/i)
+    assert.match(await $('.vnc-status-detail').getText(), /check the Screen Sharing password/i)
     assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
 
@@ -342,7 +343,7 @@ describe('read-only VNC viewer', function () {
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
     assert.equal(
       await discoveredServer.getAttribute('aria-label'),
-      `Display :${String(port - 5900)}, port ${String(port)}`,
+      `Screen sharing, port ${String(port)}`,
     )
     await $('.vnc-connect-btn').click()
 
@@ -354,7 +355,16 @@ describe('read-only VNC viewer', function () {
     await canvas.waitForDisplayed({ timeout: 10_000 })
     assert.equal(await canvas.getAttribute('width'), String(WIDTH))
     assert.equal(await canvas.getAttribute('height'), String(HEIGHT))
-    assert.match(await $('.vnc-view-only-note').getText(), /Keyboard, pointer, and clipboard input/)
+    assert.equal(await $('.vnc-status-title').getText(), 'Connected to this machine')
+    assert.match(
+      await $('.vnc-status-detail').getText(),
+      /View only.*keyboard and mouse control are off/i,
+    )
+    assert.equal(await $('.vnc-setup-fields').isDisplayed(), false)
+    assert.equal(await $('.vnc-connect-btn').isDisplayed(), false)
+    assert.equal(await $('.vnc-view-only-note').isDisplayed(), false)
+    assert.equal(await $('.vnc-disconnect-btn').getText(), 'Disconnect')
+    assert.equal(await $('.vnc-controls-host .git-changes-title').isDisplayed(), true)
 
     const sampled = await browser.execute(() => {
       const painted = document.querySelector<HTMLCanvasElement>('.vnc-screen canvas')
@@ -369,15 +379,6 @@ describe('read-only VNC viewer', function () {
     assert.deepEqual(sampled?.left, [255, 90, 165, 255])
     assert.deepEqual(sampled?.right, [0, 74, 70, 255])
 
-    // Show the nearby-device state in the visual reference. The connection was
-    // made locally above so the fake server still validates the real RFB path.
-    await browser.execute(() => {
-      const machine = document.querySelector<HTMLSelectElement>('.vnc-machine-select')
-      if (machine) {
-        machine.value = 'network:nearby:0'
-        machine.dispatchEvent(new Event('change'))
-      }
-    })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-read-only.png')
     await assertNoErrorToasts('read-only VNC viewer')
   })

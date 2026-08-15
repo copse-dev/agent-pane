@@ -19,6 +19,16 @@
   gap: var(--spacing-md);
 }
 
+.vnc-setup-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.vnc-setup-fields[hidden] {
+  display: none;
+}
+
 .vnc-field-label {
   display: flex;
   flex-direction: column;
@@ -159,7 +169,7 @@
 .vnc-discovered-port {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--spacing-sm);
   width: 100%;
   padding: var(--spacing-sm);
@@ -170,14 +180,6 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-}
-
-.vnc-discovered-port-number {
-  color: var(--text-muted);
-}
-
-.vnc-discovered-port.selected .vnc-discovered-port-number {
-  color: var(--text-secondary);
 }
 
 .vnc-discovered-port:hover:not(:disabled) {
