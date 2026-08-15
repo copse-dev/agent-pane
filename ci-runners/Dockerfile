@@ -77,7 +77,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       bubblewrap socat \
       build-essential python3 python3-setuptools \
       xvfb \
-      fonts-liberation \
+      fonts-liberation fonts-noto-core fonts-noto-cjk \
       libglib2.0-0t64 libdbus-1-3 \
       libnss3 libnspr4 \
       libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 \
@@ -131,8 +131,9 @@ RUN apt-get update \
 COPY --chown=runner:runner entrypoint.sh /opt/runner/entrypoint.sh
 RUN chmod +x /opt/runner/entrypoint.sh && chown -R runner:runner /opt/runner
 
-# 5) Color-emoji font — without it Chromium renders emoji as blank "tofu" boxes
-#    in the e2e reference screenshots.
+# 5) Color-emoji font — the Noto text/symbol/CJK families above mirror macOS's
+#    broad fallback coverage for chat, while this keeps emoji out of blank
+#    "tofu" boxes in the e2e reference screenshots.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*

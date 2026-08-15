@@ -11,6 +11,7 @@ import {
   type SshHostDraft,
 } from './setup/ssh-host-helpers.ts'
 import { fillRemotePathBreadcrumbs, parentRemotePath } from './remote-folder-path.ts'
+import { arrowLeftIcon } from '../dom/icons.ts'
 
 export interface RemoteFolderPick {
   hostId: string
@@ -49,7 +50,8 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
   const upBtn = el(
     'button',
     { type: 'button', class: 'remote-folder-up', 'aria-label': 'Go up one directory' },
-    '← Up',
+    arrowLeftIcon('ui-icon ui-icon-sm'),
+    'Up',
   )
   const openBtn = el('button', { type: 'button', class: 'remote-folder-open primary' }, 'Open')
   const cancelBtn = el('button', { type: 'button', class: 'remote-folder-cancel' }, 'Cancel')

@@ -38,11 +38,13 @@ describe('composer editor value serialization', () => {
     assert.equal(editor.getBlocks().length, 0)
   })
 
-  it('drops the block when its chip is removed via the ✕ button', () => {
+  it('drops the block when its chip is removed via the close button', () => {
     const editor = mountComposerEditor()
     editor.insertPasteChip('to be removed')
     const remove = editor.el.querySelector<HTMLButtonElement>('button.inline-paste-chip-remove')
     assert.ok(remove)
+    assert.ok(remove.querySelector('svg[data-icon="close"]'))
+    assert.equal(remove.textContent, '')
     remove.click()
     assert.equal(editor.value, '')
     assert.equal(editor.getBlocks().length, 0)
@@ -113,12 +115,12 @@ describe('composer editor chip preview', () => {
   })
 
   /**
-   * The affordance rides the label, not the pill: the pill's ✕ is a real button,
+   * The affordance rides the label, not the pill: the pill's close icon is a real button,
    * and the editor treats the whole chip as one atomic character. Opening a
    * preview must not consume the click that removes the chip, nor change how
    * the chip serializes.
    */
-  it('leaves the chip atomic and its ✕ working', () => {
+  it('leaves the chip atomic and its close button working', () => {
     const editor = mountComposerEditor()
     editor.insertPasteChip('block body')
     assert.equal(editor.value, CHIP_CHAR)
