@@ -29,11 +29,7 @@ class FakeContents extends EventEmitter implements RendererCrashTarget {
 describe('planRendererCrashRecovery', () => {
   it('does not reload a clean window close', () => {
     const state = initialRendererReloadState()
-    const decision = planRendererCrashRecovery(
-      { reason: 'clean-exit', exitCode: 0 },
-      state,
-      1_000,
-    )
+    const decision = planRendererCrashRecovery({ reason: 'clean-exit', exitCode: 0 }, state, 1_000)
     assert.equal(decision.reload, false)
     assert.deepEqual(decision.next, state)
   })

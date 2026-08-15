@@ -69,7 +69,11 @@ export function attachRendererCrashRecovery(
   contents: RendererCrashTarget,
   options: { log?: (message: string) => void; now?: () => number } = {},
 ): void {
-  const log = options.log ?? ((message: string) => { console.error(message) })
+  const log =
+    options.log ??
+    ((message: string) => {
+      console.error(message)
+    })
   const now = options.now ?? Date.now
   let state = initialRendererReloadState()
   contents.on('render-process-gone', (_event, details) => {

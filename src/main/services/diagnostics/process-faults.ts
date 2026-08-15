@@ -41,7 +41,11 @@ let installed = false
 export function installProcessFaultHandlers(deps: ProcessFaultHandlerDeps = {}): () => void {
   if (installed) return () => undefined
   installed = true
-  const log = deps.log ?? ((message: string) => { console.error(message) })
+  const log =
+    deps.log ??
+    ((message: string) => {
+      console.error(message)
+    })
   const onRejection = (reason: unknown): void => {
     reportProcessFault('unhandledRejection', reason, { log })
   }
