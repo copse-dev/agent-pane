@@ -8,6 +8,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { VncIpcChannel } from './vnc-channel.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { dedupeNearbyVncServers } from './vnc-machines.ts'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -230,7 +231,9 @@ export function mountVncPane(
   let connectGeneration = 0
   let discoveryGeneration = 0
   let nearbyGeneration = 0
+  let sshHostsGeneration = 0
   let sshHosts: SshWorkspaceHost[] = []
+  let allNearbyServers: VncNearbyServer[] = []
   let nearbyServers: VncNearbyServer[] = []
   let requiredCredentials = new Set<VncCredentialType>()
   let pendingDisconnectStatus: PendingStatus | null = null
@@ -405,6 +408,60 @@ export function mountVncPane(
     }
   }
 
+  function applyNearbyDedupe(): void {
+    nearbyServers = dedupeNearbyVncServers(allNearbyServers, sshHosts)
+  }
+
+  function updateNearbyStatus(): void {
+    const hiddenBySsh = allNearbyServers.length - nearbyServers.length
+    nearbyStatus.dataset['kind'] = nearbyServers.length > 0 ? 'ok' : 'idle'
+    if (allNearbyServers.length === 0) {
+      nearbyStatus.textContent =
+        'No nearby VNC devices advertised. Use Other address if you know its IP.'
+    } else if (nearbyServers.length === 0) {
+      nearbyStatus.textContent = 'Nearby VNC devices are already listed as saved SSH machines.'
+    } else {
+      const nearby = `${String(nearbyServers.length)} nearby ${nearbyServers.length === 1 ? 'device' : 'devices'} found.`
+      nearbyStatus.replaceChildren(el('div', {}, nearby))
+      if (hiddenBySsh > 0) {
+        nearbyStatus.append(el('div', {}, `${String(hiddenBySsh)} matched to saved SSH.`))
+      }
+    }
+  }
+
+  function preferredMachineAfterDedupe(
+    previous: string,
+    previousNearby: VncNearbyServer | null,
+  ): string {
+    if (!previousNearby) return previous
+    const matchingNearbyIndex = nearbyServers.findIndex(
+      (server) => server.host === previousNearby.host && server.port === previousNearby.port,
+    )
+    if (matchingNearbyIndex >= 0) return nearbyMachineValue(matchingNearbyIndex)
+    const matchingSsh = sshHosts.find(
+      (host) => dedupeNearbyVncServers([previousNearby], [host]).length === 0,
+    )
+    return matchingSsh ? sshMachineValue(matchingSsh.id) : LOCAL_MACHINE
+  }
+
+  async function refreshSshHosts(preferred = machineSelect.value): Promise<void> {
+    const generation = ++sshHostsGeneration
+    const previousNearby = selectedNearbyServer()
+    try {
+      const nextHosts = await api.sshWorkspace.listHosts()
+      if (generation !== sshHostsGeneration) return
+      sshHosts = nextHosts
+    } catch {
+      if (generation !== sshHostsGeneration) return
+      sshHosts = []
+    }
+    applyNearbyDedupe()
+    const nextPreferred = preferredMachineAfterDedupe(preferred, previousNearby)
+    rebuildMachineOptions(nextPreferred)
+    updateMachineUi()
+    if (allNearbyServers.length > 0) updateNearbyStatus()
+  }
+
   function updateMachineUi(): void {
     const network = isNetworkMachine(machineSelect.value)
     addressField.hidden = !network
@@ -515,24 +572,12 @@ export function mountVncPane(
     try {
       const servers = await api.vnc.discoverNearby()
       if (generation !== nearbyGeneration) return
-      nearbyServers = servers
-      const matchingNearbyIndex = previousNearby
-        ? servers.findIndex(
-            (server) => server.host === previousNearby.host && server.port === previousNearby.port,
-          )
-        : -1
-      const preferred = previousNearby
-        ? matchingNearbyIndex >= 0
-          ? nearbyMachineValue(matchingNearbyIndex)
-          : LOCAL_MACHINE
-        : previous
+      allNearbyServers = dedupeNearbyVncServers(servers, [])
+      applyNearbyDedupe()
+      const preferred = preferredMachineAfterDedupe(previous, previousNearby)
       rebuildMachineOptions(preferred)
       updateMachineUi()
-      nearbyStatus.dataset['kind'] = servers.length > 0 ? 'ok' : 'idle'
-      nearbyStatus.textContent =
-        servers.length === 0
-          ? 'No nearby VNC devices advertised. Use Other address if you know its IP.'
-          : `${String(servers.length)} nearby ${servers.length === 1 ? 'device' : 'devices'} found.`
+      updateNearbyStatus()
     } catch (error) {
       if (generation !== nearbyGeneration) return
       nearbyStatus.dataset['kind'] = 'error'
@@ -544,19 +589,11 @@ export function mountVncPane(
 
   async function loadMachines(): Promise<void> {
     const previous = machineSelect.value
-    try {
-      const sshEnabled = (await api.settings.get('sshWorkspaceEnabled')) === true
-      sshHosts = sshEnabled ? await api.sshWorkspace.listHosts() : []
-      const activeProject = store
-        .getState()
-        .projects.find((project) => project.id === store.getState().activeProjectId)
-      const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous
-      rebuildMachineOptions(preferred)
-    } catch {
-      sshHosts = []
-      rebuildMachineOptions(LOCAL_MACHINE)
-    }
-    updateMachineUi()
+    const activeProject = store
+      .getState()
+      .projects.find((project) => project.id === store.getState().activeProjectId)
+    const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous
+    await refreshSshHosts(preferred)
     await Promise.all([discoverSelectedMachine(), discoverNearby()])
   }
 
@@ -734,9 +771,20 @@ export function mountVncPane(
   })
   const stopWorkspace = store.on('workspace_changed', () => {
     if (channel) disconnect()
+    const activeProject = store
+      .getState()
+      .projects.find((project) => project.id === store.getState().activeProjectId)
+    void refreshSshHosts(
+      activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : machineSelect.value,
+    )
   })
   const stopMode = store.on('right_panel_mode_changed', () => {
-    if (vncModeActive(store) && rfb) rfb.focus()
+    if (!vncModeActive(store)) return
+    void refreshSshHosts()
+    rfb?.focus()
+  })
+  const stopSettings = store.on('settings_changed', () => {
+    void refreshSshHosts()
   })
 
   setSessionUi(false)
@@ -747,11 +795,13 @@ export function mountVncPane(
     connectGeneration++
     discoveryGeneration++
     nearbyGeneration++
+    sshHostsGeneration++
     rfb?.disconnect()
     channel?.close()
     stopData()
     stopStatus()
     stopWorkspace()
     stopMode()
+    stopSettings()
   }
 }

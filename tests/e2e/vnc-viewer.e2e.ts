@@ -194,7 +194,9 @@ describe('read-only VNC viewer', function () {
     await browser.execute(async (workspaceRoot) => {
       await window.api.settings.set('onboardingCompleted', true)
       await window.api.settings.set('vncEnabled', true)
-      await window.api.settings.set('sshWorkspaceEnabled', true)
+      // Saved SSH machines are reusable VNC targets even when remote-workspace
+      // execution is disabled independently.
+      await window.api.settings.set('sshWorkspaceEnabled', false)
       await window.api.settings.set('sshWorkspaceHosts', [
         {
           id: 'build-box',
@@ -218,6 +220,12 @@ describe('read-only VNC viewer', function () {
           host: 'studio.local',
           port: 5900,
           addresses: ['192.168.1.20'],
+        },
+        {
+          name: 'Build box',
+          host: 'build.example',
+          port: 5900,
+          addresses: ['192.168.1.40'],
         },
       ])
       await e2e.openWorkspace(workspaceRoot)
@@ -271,6 +279,7 @@ describe('read-only VNC viewer', function () {
       'Other address…',
       'Build box · ubuntu@build.example',
     ])
+    assert.match(await $('.vnc-nearby-status').getText(), /1 matched to saved SSH/i)
 
     const machineSelect = $('.vnc-machine-select')
     await machineSelect.selectByAttribute('value', 'network:manual')

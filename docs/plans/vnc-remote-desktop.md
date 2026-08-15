@@ -4,7 +4,9 @@
 read-only viewer, protocol-verified local discovery, and configured-SSH-host
 discovery are implemented. Nearby `_rfb._tcp` services are discovered through
 Bonjour/DNS-SD, and explicit private/link-local addresses are supported behind
-an unencrypted-connection confirmation. The generic browser consumer, reconnect
+an unencrypted-connection confirmation. Saved SSH machines are always reused as
+encrypted VNC routes, independently of whether remote-workspace execution is
+enabled; equivalent Bonjour advertisements are collapsed in favour of SSH. The generic browser consumer, reconnect
 reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
 stored credentials and every agent-facing capability remain V2 or later. V1 now
 handles noVNC's session-only credential requests without persisting secrets. The
@@ -251,7 +253,9 @@ coverage uses real loopback sockets, and the focused WDIO eval paints and pixel-
 checks a two-colour RFB 3.8 framebuffer. The pane explicitly selects this
 machine or a configured SSH host, discovers verified RFB listeners on either,
 discovers nearby Bonjour-advertised devices, and accepts a manually entered LAN
-hostname/IP and port. The live `DISPLAY=:1` harness remains.
+hostname/IP and port. Saved SSH hosts refresh live when Settings changes, and
+deduplication matches Bonjour devices by hostname, advertised address, or
+normalized device label. The live `DISPLAY=:1` harness remains.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local
