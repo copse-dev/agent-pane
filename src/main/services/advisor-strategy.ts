@@ -427,6 +427,7 @@ export function validateAdvisorPair(
 
 const ROLE_LABEL: Record<LLMMessage['role'], string> = {
   system: 'System',
+  developer: 'Developer',
   user: 'User',
   assistant: 'Assistant',
   tool: 'Tool results',
@@ -458,8 +459,8 @@ export function buildAdvisorTranscript(messages: LLMMessage[]): string {
       push(ROLE_LABEL.tool, lines.join('\n'))
     } else if (message.role === 'user') {
       push(ROLE_LABEL.user, userContentToText(message.content))
-    } else if (message.role === 'system') {
-      push(ROLE_LABEL.system, message.content)
+    } else if (message.role === 'system' || message.role === 'developer') {
+      push(ROLE_LABEL[message.role], message.content)
     } else if (Array.isArray(message.content)) {
       const lines = message.content.map((c) => `- ${c.name}(${safeJson(c.args)})`)
       push('Assistant (tool calls)', lines.join('\n'))

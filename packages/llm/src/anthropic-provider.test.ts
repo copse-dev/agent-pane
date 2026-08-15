@@ -261,10 +261,10 @@ describe('AnthropicProvider mid-conversation system messages (#1286)', () => {
     ])
   })
 
-  it('falls back to a user-turn system-reminder on a model that does not', async () => {
-    // claude-sonnet-4-6 is the default cloud model and rejects system turns, so
-    // this is the common path rather than an edge case. The reminder still lands
-    // after the breakpoint, exactly as the system-turn path does.
+  it('does not invent a system-reminder pseudo-role for explicit system input', async () => {
+    // Capability-aware turn assembly keeps this shape away from unsupported
+    // models. The provider mapping itself stays literal rather than silently
+    // weakening an operator instruction into user content.
     const params = await requestFor('claude-sonnet-4-6', [
       { role: 'system', content: 'sys' },
       { role: 'user', content: 'question' },
@@ -273,10 +273,7 @@ describe('AnthropicProvider mid-conversation system messages (#1286)', () => {
 
     assert.deepEqual(params['messages'], [
       cachedQuestion,
-      {
-        role: 'user',
-        content: [{ type: 'text', text: '<system-reminder>\nterse mode\n</system-reminder>' }],
-      },
+      { role: 'system', content: 'terse mode' },
     ])
   })
 

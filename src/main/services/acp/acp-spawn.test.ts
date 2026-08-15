@@ -1,8 +1,10 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolve } from 'node:path'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import type { StreamChunk } from '@shared/types'
-import { runAcpSessionPrompt, type AcpClientHandlers } from './acp-client.ts'
+import { runAcpSessionPrompt, spawnAcpAgentProcess, type AcpClientHandlers } from './acp-client.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
 
 /**
@@ -88,6 +90,26 @@ describe('ACP client against a spawned agent process', () => {
     await assert.rejects(
       runAcpSessionPrompt(entry.open, 'please crash', undefined),
       /mock-acp-agent: exploding on request/,
+    )
+  })
+
+  it('names the missing working directory rather than the agent binary', async () => {
+    // A thread's worktree can be retired while the thread still points at it.
+    // `spawnAcpAgentProcess` reaches `spawn` directly rather than through
+    // `spawnInProjectSandbox`, so it does not inherit that probe — without its
+    // own, libuv reports the failed `chdir` against the *executable* and a
+    // present `node` gets blamed for a directory that is gone.
+    const retired = await mkdtemp(join(tmpdir(), 'copse-acp-retired-'))
+    await rm(retired, { recursive: true, force: true })
+
+    await assert.rejects(
+      spawnAcpAgentProcess({ command: process.execPath, args: [MOCK_AGENT], cwd: retired }),
+      (err: Error) => {
+        assert.match(err.message, /Working directory no longer exists/)
+        assert.match(err.message, new RegExp(retired.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&')))
+        assert.doesNotMatch(err.message, /ENOENT/)
+        return true
+      },
     )
   })
 })
