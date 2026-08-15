@@ -469,7 +469,21 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       permitted: false,
       prompted: true,
     })
+  })
+
+  it('caps write-tier auto-approval when no OS sandbox is active', async () => {
     assert.deepEqual(await runGate('git push origin main', 'remote-write'), {
+      permitted: false,
+      prompted: true,
+    })
+    assert.deepEqual(await runGate('git commit -m "wip"', 'local-write'), {
+      permitted: false,
+      prompted: true,
+    })
+  })
+
+  it('honours write-tier auto-approval when the OS sandbox is active', async () => {
+    assert.deepEqual(await runGate('git push origin main', 'remote-write', { sandboxEnabled: true }), {
       permitted: true,
       prompted: false,
     })

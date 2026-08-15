@@ -773,7 +773,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   and anything containing <code>$(…)</code> always ask. Only applies in a trusted
                   project with the setting above turned on. At the two write levels
                   <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
-                  project's git hooks — the macOS sandbox contains those, Linux and Windows do not.
+                  project's git hooks, so those levels are honoured only while the project sandbox
+                  is active (macOS and Linux). On Windows, or if the sandbox failed to start, write
+                  shapes still ask.
                 </span>
               </label>
               <label class="checkbox-label">
