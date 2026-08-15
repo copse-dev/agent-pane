@@ -105,6 +105,20 @@ export interface PluginPermissionSummary {
 }
 
 /**
+ * One follow-up bubble a plugin suggests above the composer. `action` and
+ * `when` arrive resolved rather than optional so Settings can show exactly
+ * what a click does and when the bubble appears.
+ */
+export interface PluginFollowUpSummary {
+  id: string
+  label: string
+  /** What the click does — `prompt`, or a first-party host action. */
+  action: 'prompt' | 'model-compare'
+  /** The workspace condition required before offering it. */
+  when: 'always' | 'workspace-changes'
+}
+
+/**
  * Everything a plugin contributes, enumerated for the Settings plugin list. Both
  * first-party and user plugins surface here (decision 15). Function hooks and
  * native tool wiring stay on the host side — the renderer only sees ids and
@@ -133,6 +147,8 @@ export interface PluginContributionsSummary {
   commandHooks: readonly { event: string; command: string }[]
   promptBlocks: readonly PluginPromptBlockSummary[]
   ui: readonly PluginUiContributionSummary[]
+  /** Follow-up bubbles the plugin suggests above the composer while enabled. */
+  followUps: readonly PluginFollowUpSummary[]
   /** Named runtime capability flags the plugin owns (pure behaviour, no tool). */
   capabilities: readonly PluginCapabilitySummary[]
   /** Permission / sandbox relaxations the plugin may request while enabled (#1190). */
