@@ -300,11 +300,19 @@ describe('read-only VNC viewer', function () {
     await $('.confirm-dialog-cancel').click()
     await machineSelect.selectByAttribute('value', 'local')
 
-    const discoveredServer = $(`.vnc-discovered-port[data-port="${String(port)}"]`)
-    await discoveredServer.waitForExist({ timeout: 20_000 })
+    await browser.waitUntil(
+      async () => (await $('.vnc-discovery-status').getText()) === 'Screen sharing is available.',
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected local screen sharing discovery to complete',
+      },
+    )
+    assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
+    assert.equal(await $$('.vnc-discovered-port').length, 0)
     authenticationPort = await listenOnVncPort(authenticationServer)
     await advancedSummary.click()
     await portInput.waitForDisplayed()
+    assert.equal(await portInput.getValue(), String(port))
     await portInput.setValue(String(authenticationPort))
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
@@ -341,10 +349,6 @@ describe('read-only VNC viewer', function () {
     assert.equal(await portInput.getValue(), String(port))
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
-    assert.equal(
-      await discoveredServer.getAttribute('aria-label'),
-      `Screen sharing, port ${String(port)}`,
-    )
     await $('.vnc-connect-btn').click()
 
     await browser.waitUntil(async () => (await $('.vnc-status').getText()).includes('Connected'), {

@@ -255,7 +255,8 @@ machine or a configured SSH host, discovers verified RFB listeners on either,
 discovers nearby Bonjour-advertised devices, and accepts a manually entered LAN
 hostname/IP with an optional `:port`. Port 5900 is the quiet default; the explicit
 RFB port override lives under Advanced, while discovery and Bonjour selections
-retain their detected ports. Saved SSH hosts refresh live when Settings changes,
+retain their detected ports. A single discovered desktop is selected silently;
+the chooser appears only when discovery finds multiple desktops. Saved SSH hosts refresh live when Settings changes,
 and deduplication matches Bonjour devices by hostname, advertised address, or
 normalized device label. Remote scans use the probed host OS and directly verify
 port 5900 when a process scanner omits macOS's launchd-managed Screen Sharing

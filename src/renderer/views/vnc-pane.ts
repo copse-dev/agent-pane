@@ -562,24 +562,26 @@ export function mountVncPane(
 
   function renderDiscoveredPorts(ports: readonly number[]): void {
     discoveredPorts.replaceChildren()
-    discoveredPorts.hidden = ports.length === 0
-    ports.forEach((port, optionIndex) => {
-      const label = discoveredDisplayLabel(port, optionIndex)
-      const button = el(
-        'button',
-        {
-          type: 'button',
-          class: 'vnc-discovered-port',
-          'data-port': String(port),
-          'aria-label': `${label}, port ${String(port)}`,
-        },
-        label,
-      )
-      button.addEventListener('click', () => {
-        chooseDiscoveredPort(port)
+    discoveredPorts.hidden = ports.length <= 1
+    if (ports.length > 1) {
+      ports.forEach((port, optionIndex) => {
+        const label = discoveredDisplayLabel(port, optionIndex)
+        const button = el(
+          'button',
+          {
+            type: 'button',
+            class: 'vnc-discovered-port',
+            'data-port': String(port),
+            'aria-label': `${label}, port ${String(port)}`,
+          },
+          label,
+        )
+        button.addEventListener('click', () => {
+          chooseDiscoveredPort(port)
+        })
+        discoveredPorts.append(button)
       })
-      discoveredPorts.append(button)
-    })
+    }
     if (ports[0] !== undefined) chooseDiscoveredPort(ports[0])
   }
 
