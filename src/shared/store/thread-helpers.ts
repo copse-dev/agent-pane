@@ -177,6 +177,14 @@ export function switchThread(store: AppStore, id: string): void {
   const state = store.getState()
   const pruned = state.threads.filter((t) => !isPrunableBlankThread(t) || t.id === id)
   const threads = pruned.length > 0 ? pruned : state.threads
+  // Only announce the panel reset when there was something to reset. Its
+  // subscribers answer it with real work — the Changes pane re-reads git state,
+  // the context panel refetches the working diff — and `threads_changed` (which
+  // they also subscribe to, and which supersedes the reset) fires immediately
+  // after. With no file or diff open, the emit is a pure no-op announcement that
+  // buys a second round of that work on every click.
+  const panelWasPopulated =
+    state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0
   store.setState({
     activeThreadId: id,
     threads,
@@ -184,8 +192,26 @@ export function switchThread(store: AppStore, id: string): void {
     activeDiff: null,
     stagedDiffs: [],
   })
-  store.emit('panel_changed')
+  if (panelWasPopulated) store.emit('panel_changed')
   store.emit('threads_changed')
+}
+
+/** The next thread in the list, wrapping from the last back to the first. */
+export function nextThreadId(store: AppStore): string | null {
+  const { threads, activeThreadId } = store.getState()
+  if (threads.length < 2) return null
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  const target = idx < 0 || idx >= threads.length - 1 ? threads[0] : threads[idx + 1]
+  return target ? target.id : null
+}
+
+/** The previous thread in the list, wrapping from the first back to the last. */
+export function prevThreadId(store: AppStore): string | null {
+  const { threads, activeThreadId } = store.getState()
+  if (threads.length < 2) return null
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1]
+  return target ? target.id : null
 }
 
 export function deleteThread(store: AppStore, id: string): void {
@@ -278,6 +304,7 @@ export function addMessage(
   attachments?: TranscriptAttachment[],
   opts?: {
     model?: string
+    requestedModel?: string
     parameters?: ModelParameters
     startingCommit?: string
     dirty?: boolean
@@ -299,6 +326,9 @@ export function addMessage(
               ...(images?.length ? { images } : {}),
               ...(attachments?.length ? { attachments } : {}),
               ...(opts?.model !== undefined ? { model: opts.model } : {}),
+              ...(opts?.requestedModel !== undefined
+                ? { requestedModel: opts.requestedModel }
+                : {}),
               ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
               ...(opts?.startingCommit !== undefined
                 ? { startingCommit: opts.startingCommit }

@@ -9,6 +9,7 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
+import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
@@ -260,6 +261,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onOpened: subscribe,
     },
     browser: {
+      workspaceFileUrl: (_projectId, _threadId, path) =>
+        resolved(`http://localhost:4173/${encodeURI(path)}`),
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
@@ -710,6 +713,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: emptyArray,
       size: (_projectId: string, path: string) =>
         resolved({ path, bytes: 0, fileCount: 0, truncated: false }),
+      cleanupPackages: (_projectId: string, path: string) =>
+        resolved({
+          status: 'ready',
+          path,
+          directories: [],
+          bytes: 0,
+          truncated: false,
+        }),
+      openTerminal: resolvedVoid,
       remove: unsupported,
     },
     skills: { list: emptyArray },
@@ -804,7 +816,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       enableAutoMerge: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
     },
-    shell: { openExternal: resolvedVoid },
+    shell: { openExternal: resolvedVoid, openWorkspaceFileInBrowser: resolvedVoid },
     editors: {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid,
@@ -846,7 +858,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         for (const button of document.querySelectorAll<HTMLButtonElement>(
           `.pane-popout-btn[data-pane-mode="${mode}"]`,
         )) {
-          button.textContent = expanded ? '⛶' : '↙'
+          button.replaceChildren(
+            expanded ? maximizeIcon('ui-icon ui-icon-sm') : minimizeIcon('ui-icon ui-icon-sm'),
+          )
           button.setAttribute('aria-label', `${expanded ? 'Expand' : 'Restore'} ${mode}`)
           button.title = expanded ? 'Expand pane' : 'Restore app layout'
         }

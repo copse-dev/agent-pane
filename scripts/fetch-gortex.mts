@@ -1,14 +1,31 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { access, chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import {
+  access,
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expectRecord, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 
 const GORTEX_VERSION = 'v0.60.0'
 const REPO = 'zzet/gortex'
-const OUT_DIR = resolve(nonEmptyStringOr(process.env['GORTEX_OUT_DIR'], 'vendor/gortex'))
+/** Explicit override (release lipo / isolated extract). Default: vendor/gortex in cwd. */
+const OUT_DIR_OVERRIDE = process.env['GORTEX_OUT_DIR']?.trim()
+const OUT_DIR = resolve(nonEmptyStringOr(OUT_DIR_OVERRIDE, 'vendor/gortex'))
+/** When unset, install into ~/.copse/cache/gortex and symlink vendor/gortex → cache. */
+const USE_SHARED_CACHE = OUT_DIR_OVERRIDE === undefined || OUT_DIR_OVERRIDE === ''
 const BIN_NAME = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const TARGET_ARCH = nonEmptyStringOr(process.env['GORTEX_TARGET_ARCH'], process.arch)
 
@@ -106,14 +123,22 @@ function assetName(): string | null {
   return null
 }
 
-async function binaryReady(): Promise<boolean> {
-  // A cross-architecture binary may not be executable on this host. Release CI
-  // downloads the second macOS architecture into an isolated output directory
-  // and combines both verified binaries with lipo before packaging.
-  if (TARGET_ARCH !== process.arch) return false
+/** Machine-wide cache dir for this version/platform/arch (shared across worktrees). */
+function sharedGortexDir(): string {
+  const override = process.env['COPSE_GORTEX_CACHE']?.trim()
+  const root = override ?? join(homedir(), '.copse', 'cache', 'gortex')
+  return join(root, `${GORTEX_VERSION}-${process.platform}-${TARGET_ARCH}`)
+}
+
+function sharedBinPath(): string {
+  return join(sharedGortexDir(), BIN_NAME)
+}
+
+async function versionMatches(binPath: string): Promise<boolean> {
   try {
-    const binPath = join(OUT_DIR, BIN_NAME)
     await access(binPath)
+    // Cross-arch binaries may not exec on this host (release lipo path).
+    if (TARGET_ARCH !== process.arch) return true
     // gortex has no `--version` flag; the `version` subcommand exits 0 offline.
     // Require the output to name the pinned version so a GORTEX_VERSION bump
     // actually re-fetches: this used to `return true` for any working gortex,
@@ -124,6 +149,14 @@ async function binaryReady(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+async function binaryReadyAt(binPath: string): Promise<boolean> {
+  // A cross-architecture binary may not be executable on this host. Release CI
+  // downloads the second macOS architecture into an isolated output directory
+  // and combines both verified binaries with lipo before packaging.
+  if (TARGET_ARCH !== process.arch) return false
+  return versionMatches(binPath)
 }
 
 async function download(url: string, dest: string): Promise<void> {
@@ -178,6 +211,99 @@ async function findExtractedBinary(root: string): Promise<string | null> {
   return null
 }
 
+/** Point vendor/gortex/<bin> at the shared cache binary (symlink; copy on Windows fallback). */
+async function linkVendorToShared(sharedBin: string): Promise<void> {
+  await mkdir(OUT_DIR, { recursive: true })
+  const outPath = join(OUT_DIR, BIN_NAME)
+
+  try {
+    const st = await lstat(outPath)
+    if (st.isSymbolicLink()) {
+      try {
+        if ((await realpath(outPath)) === (await realpath(sharedBin))) {
+          console.log(`[fetch-gortex] ${outPath} → ${sharedBin}`)
+          return
+        }
+      } catch {
+        /* broken symlink — replace */
+      }
+      await rm(outPath, { force: true })
+    } else {
+      await rm(outPath, { force: true })
+    }
+  } catch {
+    /* missing */
+  }
+
+  try {
+    await symlink(sharedBin, outPath)
+    console.log(`[fetch-gortex] ${outPath} → ${sharedBin}`)
+  } catch {
+    // Windows without Developer Mode often cannot create file symlinks.
+    await copyFile(sharedBin, outPath)
+    if (process.platform !== 'win32') {
+      await chmod(outPath, 0o755)
+    }
+    console.log(`[fetch-gortex] copied ${sharedBin} → ${outPath} (symlink unavailable)`)
+  }
+}
+
+async function installBinaryFile(source: string, dest: string): Promise<void> {
+  await mkdir(dirname(dest), { recursive: true })
+  const staging = `${dest}.tmp-${String(process.pid)}`
+  await rm(staging, { force: true })
+  await copyFile(source, staging)
+  if (process.platform !== 'win32') {
+    await chmod(staging, 0o755)
+  }
+  if (TARGET_ARCH === process.arch) {
+    execFileSync(staging, ['version'], { stdio: 'inherit' })
+  } else {
+    console.log(`[fetch-gortex] installed verified cross-architecture binary for ${TARGET_ARCH}`)
+  }
+  await rm(dest, { force: true })
+  await rename(staging, dest)
+}
+
+/** Promote a real (non-symlink) local binary into the shared cache if cache is empty. */
+async function promoteLocalToSharedIfNeeded(sharedBin: string): Promise<boolean> {
+  const localPath = join(OUT_DIR, BIN_NAME)
+  try {
+    const st = await lstat(localPath)
+    if (st.isSymbolicLink()) return false
+  } catch {
+    return false
+  }
+  if (!(await versionMatches(localPath))) return false
+  if (await versionMatches(sharedBin)) return true
+
+  await mkdir(dirname(sharedBin), { recursive: true })
+  try {
+    await rename(localPath, sharedBin)
+  } catch {
+    await copyFile(localPath, sharedBin)
+    if (process.platform !== 'win32') {
+      await chmod(sharedBin, 0o755)
+    }
+    await rm(localPath, { force: true })
+  }
+  console.log(`[fetch-gortex] promoted ${localPath} → ${sharedBin}`)
+  return true
+}
+
+async function ensureSharedAndLink(): Promise<'ready' | 'need-fetch'> {
+  const sharedBin = sharedBinPath()
+  if (await versionMatches(sharedBin)) {
+    await linkVendorToShared(sharedBin)
+    return 'ready'
+  }
+  if (await promoteLocalToSharedIfNeeded(sharedBin)) {
+    await linkVendorToShared(sharedBin)
+    return 'ready'
+  }
+  return 'need-fetch'
+}
+
 async function main(): Promise<void> {
   if (process.env['SKIP_GORTEX_FETCH'] === '1') {
     console.log('[fetch-gortex] SKIP_GORTEX_FETCH=1 — skipping')
@@ -192,7 +318,11 @@ async function main(): Promise<void> {
     return
   }
 
-  if (await binaryReady()) {
+  if (USE_SHARED_CACHE) {
+    if ((await ensureSharedAndLink()) === 'ready') {
+      return
+    }
+  } else if (await binaryReadyAt(join(OUT_DIR, BIN_NAME))) {
     console.log(`[fetch-gortex] ${join(OUT_DIR, BIN_NAME)} already present`)
     return
   }
@@ -217,20 +347,23 @@ async function main(): Promise<void> {
     const extracted = await findExtractedBinary(extractDir)
     if (!extracted) throw new Error(`could not find ${BIN_NAME} in ${asset}`)
 
-    await mkdir(OUT_DIR, { recursive: true })
-    const outPath = join(OUT_DIR, BIN_NAME)
-    const { copyFile } = await import('node:fs/promises')
-    await rm(outPath, { force: true })
-    await copyFile(extracted, outPath)
-    if (process.platform !== 'win32') {
-      await chmod(outPath, 0o755)
+    if (USE_SHARED_CACHE) {
+      const sharedBin = sharedBinPath()
+      // Another worktree may have won the race while we downloaded.
+      if (!(await versionMatches(sharedBin))) {
+        await installBinaryFile(extracted, sharedBin)
+        console.log(`[fetch-gortex] cached ${sharedBin}`)
+      } else {
+        console.log(`[fetch-gortex] shared cache already populated at ${sharedBin}`)
+      }
+      await linkVendorToShared(sharedBin)
+      const sizeMb = ((await stat(sharedBin)).size / (1024 * 1024)).toFixed(1)
+      console.log(`[fetch-gortex] installed ${join(OUT_DIR, BIN_NAME)} (${sizeMb} MB, shared)`)
+      return
     }
 
-    if (TARGET_ARCH === process.arch) {
-      execFileSync(outPath, ['version'], { stdio: 'inherit' })
-    } else {
-      console.log(`[fetch-gortex] installed verified cross-architecture binary for ${TARGET_ARCH}`)
-    }
+    const outPath = join(OUT_DIR, BIN_NAME)
+    await installBinaryFile(extracted, outPath)
     const sizeMb = ((await stat(outPath)).size / (1024 * 1024)).toFixed(1)
     console.log(`[fetch-gortex] installed ${outPath} (${sizeMb} MB)`)
   } finally {

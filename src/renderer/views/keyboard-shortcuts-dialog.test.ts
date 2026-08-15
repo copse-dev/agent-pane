@@ -62,6 +62,20 @@ describe('keyboard shortcuts dialog (Cmd/Ctrl+/)', () => {
     assert.ok(labels.includes('Reset interface zoom'))
   })
 
+  it('documents the thread-cycle shortcuts', () => {
+    const keysFor = (label: string): string[] => {
+      const row = [...dialog.querySelectorAll('.keyboard-shortcuts-row')].find(
+        (candidate) => candidate.querySelector('.keyboard-shortcuts-label')?.textContent === label,
+      )
+      assert.ok(row, `expected shortcut row for ${label}`)
+      return [...row.querySelectorAll('kbd.keyboard-shortcuts-key')].map((key) => key.textContent)
+    }
+
+    assert.deepEqual(keysFor('Next thread'), ['Ctrl', 'Tab'])
+    const isMac = /mac/i.test(navigator.platform || navigator.userAgent || '')
+    assert.deepEqual(keysFor('Previous thread'), ['Ctrl', isMac ? '⇧' : 'Shift', 'Tab'])
+  })
+
   it('opens and closes via the exported helpers', () => {
     openKeyboardShortcutsDialog()
     assert.equal(isKeyboardShortcutsDialogOpen(), true)

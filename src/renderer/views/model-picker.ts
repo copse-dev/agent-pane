@@ -31,6 +31,15 @@ export interface ModelPickerOptions {
   loadValueGroups?: (current: string) => Promise<PickerValueGroup[]>
   /** Applies a selection from {@link ModelPickerOptions.loadValueGroups}. */
   onSelectGroupValue?: (groupId: string, value: string) => void
+  /**
+   * Returns the label to show on the trigger for the current value. When it
+   * returns a string, that wins over the option/catalog label; returning
+   * `undefined` falls back to the matched option label (or `modelDisplayLabel`).
+   * A caller can use this to show a resolved route (the actual model a dynamic
+   * selector ran on) while `current` (the stored picker selection) stays a
+   * selector like `auto:…`.
+   */
+  formatCurrentLabel?: (current: string) => string | undefined
 }
 
 /**
@@ -441,7 +450,11 @@ export function mountModelPicker(
   function updateTrigger(options: readonly ModelOption[]): void {
     const current = getCurrent()
     const match = options.find((opt) => opt.value === current)
-    labelEl.textContent = match?.label ?? (current ? modelDisplayLabel(current) : 'Select model')
+    const label =
+      (current ? pickerOpts.formatCurrentLabel?.(current) : undefined) ??
+      match?.label ??
+      (current ? modelDisplayLabel(current) : 'Select model')
+    labelEl.textContent = label
     labelEl.title = current
   }
 

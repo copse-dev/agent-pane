@@ -47,10 +47,6 @@
   opacity: 0.9;
 }
 
-.projects-open-remote-btn {
-  margin-left: 4px;
-}
-
 .welcome-open-remote-btn {
   margin-top: 8px;
 }
@@ -105,6 +101,9 @@
 }
 .remote-folder-up {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);

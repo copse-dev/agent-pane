@@ -73,12 +73,21 @@ runs:
     # and redundant on the miss path.
     - uses: actions/setup-node@v7
       with: { node-version-file: '.nvmrc' }
+    # Activate packageManager-pinned pnpm (Corepack). setup-node does not install
+    # pnpm by itself when packageManager is set — only enables npm cache heuristics.
+    - run: |
+        corepack enable
+        corepack prepare --activate
+        pnpm --version
+      shell: bash
     # ripgrep backs the app's code-search services at runtime; the unit suite
     # and the e2e app both exercise them. GitHub-hosted runners have passwordless
     # sudo + apt, so install it there. Self-hosted runners typically have neither
     # (sudo prompts for a password, apt may be unavailable), so provision ripgrep
     # — and the Electron e2e system libs — on the host once instead (see PR #371).
-    - run: sudo apt-get update && sudo apt-get install -y ripgrep
+    - run: >-
+        sudo apt-get update && sudo apt-get install -y ripgrep
+        fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji
       if: runner.environment == 'github-hosted' && runner.os == 'Linux'
       shell: bash
     # Self-hosted macOS runner: provision ripgrep + coreutils via Homebrew (no
@@ -141,7 +150,7 @@ runs:
           fi
         }
 
-        lockhash="$(sha256sum package-lock.json 2>/dev/null | awk '{ print $1 }' || echo unknown)"
+        lockhash="$(sha256sum pnpm-lock.yaml 2>/dev/null | awk '{ print $1 }' || echo unknown)"
         seeded=false
         source=none
 
@@ -175,11 +184,11 @@ runs:
               touch "${entry}" 2>/dev/null || true
               echo "Seeded node_modules + vendor/gortex from ${entry} (host-local store hit)"
             else
-              echo "Host-local store seed failed — cleaning up and falling back to cache / npm ci"
+              echo "Host-local store seed failed — cleaning up and falling back to cache / pnpm install"
               rm -rf node_modules
             fi
           else
-            echo "Host-local store miss for ${lockhash} — using cache / npm ci, then publishing"
+            echo "Host-local store miss for ${lockhash} — using cache / pnpm install, then publishing"
           fi
         fi
 
@@ -213,26 +222,26 @@ runs:
         # ignore-scripts saved a node_modules with no native builds (no esbuild
         # binary, no electron-rebuilt node-pty) under the lockfile-hash key. Since
         # the lockfile is unchanged that poisoned entry would keep restoring and
-        # skip the fixed npm ci; bumping the token forces one clean reinstall.
-        key: ${{ runner.os }}-${{ runner.arch }}-deps-v2-${{ hashFiles('package-lock.json') }}
+        # skip the fixed pnpm install; bumping the token forces one clean reinstall.
+        key: ${{ runner.os }}-${{ runner.arch }}-deps-v3-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
     # Force install scripts to run for THIS install only. A self-hosted runner may
     # set `ignore-scripts=true` globally (a sensible host-wide hardening), but that
     # skips the native setup this app's e2e needs: esbuild's platform binary (used
     # to load the wdio TS config — without it wdio dies instantly with
     # "@esbuild/<os>-<arch> could not be found"), Electron's binary download, and
-    # the root postinstall that electron-rebuilds node-pty. Scoping the override to
-    # this step via step env keeps the box's global setting intact for everything
-    # else; running our own first-party repo's scripts here is safe (the fork guard
-    # keeps untrusted PR code off the self-hosted runner). --include=optional
+    # the root postinstall that electron-rebuilds node-pty. Project `.npmrc` also
+    # sets ignore-scripts=false; the env override here is belt-and-braces for a
+    # host that injects npm_config_ignore_scripts after Corepack. --include=optional
     # additionally overrides any host `omit=optional`, which would otherwise drop
     # esbuild's @esbuild/<os>-<arch> optional package.
-    - run: npm ci --include=optional
+    - run: pnpm install --frozen-lockfile
       if: steps.baked.outputs.seeded != 'true' && steps.deps.outputs.cache-hit != 'true'
       shell: bash
       env:
         npm_config_ignore_scripts: 'false'
+        CI: 'true'
     # Self-heal a poisoned dependency tree on the cache-HIT / baked-seed path
-    # (where the npm ci above is skipped). `--version` alone is not enough: a
+    # (where the pnpm install above is skipped). `--version` alone is not enough: a
     # half-broken @esbuild/<platform> binary can answer --version and still die
     # mid-build with "The service was stopped" (seen on main check after a baked
     # seed under fleet load). Probe the same JS-API service path that
@@ -246,8 +255,8 @@ runs:
           esbuild_ok=false
         fi
         if [ "$esbuild_ok" != true ]; then
-          echo "::warning::esbuild unhealthy after dep restore — running npm rebuild esbuild"
-          npm rebuild esbuild
+          echo "::warning::esbuild unhealthy after dep restore — running pnpm rebuild esbuild"
+          pnpm rebuild esbuild
           node_modules/.bin/esbuild --version
           node -e "require('esbuild').transformSync('export default 1',{loader:'ts'})"
         fi

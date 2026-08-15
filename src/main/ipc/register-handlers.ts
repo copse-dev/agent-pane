@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
@@ -13,6 +14,10 @@ import {
   captureBrowserPageText,
   captureBrowserScreenshot,
 } from '../services/browser/browser-share.ts'
+import {
+  getStaticPreviewServer,
+  staticPreviewUrl,
+} from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
@@ -98,6 +103,12 @@ import {
 } from '../services/thread-store.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
+  getElectronAppVersion,
+  getElectronBuildCommit,
+  getElectronBuildDirty,
+  isElectronAppPackaged,
+} from '../services/electron-app-runtime.ts'
+import {
   describeWorkspaceArchive,
   storeArchiveAttachment,
 } from '../services/archive/archive-attachment-store.ts'
@@ -117,8 +128,10 @@ import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
 import {
   listWorktreeInventory,
+  cleanupWorktreePackages,
   measureWorktreeSize,
   removeWorktree,
+  resolveRegisteredWorktreePath,
 } from '../services/worktree-inventory.ts'
 import {
   requestAcpPackageInstallApproval,
@@ -1477,10 +1490,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // The whole thread directory, zipped — the archive counterpart to the
   // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
   // download and saves it, exactly as it does for the `.jsonl`.
-  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:exportArchive', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return buildThreadArchive(pid, tid)
+    return {
+      bytes: await buildThreadArchive(pid, tid),
+      build: {
+        version: getElectronAppVersion(),
+        buildCommit: getElectronBuildCommit(),
+        buildDirty: getElectronBuildDirty(),
+        packaged: isElectronAppPackaged(),
+        platform: process.platform,
+        capturedAt: new Date().toISOString(),
+      },
+    }
   })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
@@ -1596,6 +1619,38 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!target) throw new IpcValidationError('That project is no longer available')
     return measureWorktreeSize({ ...target, path })
   })
+
+  ipcMain.handle(
+    'worktrees:cleanupPackages',
+    async (event, rawProjectId: unknown, rawPath: unknown, rawRemove: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path, remove] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
+        rawProjectId,
+        rawPath,
+        rawRemove,
+      ])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      return cleanupWorktreePackages({
+        ...target,
+        path,
+        remove,
+        runningThreadIds: new Set(listRunningThreadIds()),
+      })
+    },
+  )
+
+  ipcMain.handle(
+    'worktrees:openTerminal',
+    async (event, rawProjectId: unknown, rawPath: unknown) => {
+      assertMainFrameSender(event, win)
+      const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
+      const target = worktreeInput(rawProjectId)
+      if (!target) throw new IpcValidationError('That project is no longer available')
+      const root = await resolveRegisteredWorktreePath({ ...target, path })
+      return openWorkspaceInExternalEditor('terminal', root)
+    },
+  )
 
   ipcMain.handle(
     'worktrees:remove',
@@ -2081,6 +2136,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('URL must be http or https')
     }
     return shell.openExternal(href)
+  })
+  ipcMain.handle('shell:openWorkspaceFileInBrowser', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
+    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
+      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
+    }
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return shell.openExternal(pathToFileURL(abs).href)
+  })
+  ipcMain.handle('browser:workspaceFileUrl', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
+    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
+      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
+    }
+    const abs = await resolvePathWithinRoot(relPath, root)
+    const preview = await getStaticPreviewServer(root)
+    const previewPath = relative(preview.root, abs).split(sep).map(encodeURIComponent).join('/')
+    return staticPreviewUrl(preview.url, previewPath)
   })
 
   ipcMain.handle('editors:list', (event) => {

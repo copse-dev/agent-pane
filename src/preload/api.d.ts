@@ -53,6 +53,7 @@ import type {
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
   WorktreeInventoryEntry,
+  WorktreePackageCleanupResult,
   WorktreeRemovalResult,
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
@@ -96,6 +97,7 @@ export interface ApiClient {
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
+    workspaceFileUrl: (projectId: string, threadId: string, path: string) => Promise<string>
     onOpenTab: (handler: (url: string) => void) => () => void
     onShowTab?: (handler: (url: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
@@ -340,7 +342,10 @@ export interface ApiClient {
      * subagents) for download. The JSONL export stays the portable single-file
      * transcript; this is the full-fidelity copy of the store directory.
      */
-    exportArchive: (projectId: string, threadId: string) => Promise<Uint8Array<ArrayBuffer>>
+    exportArchive: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/debug-trace-prompt.ts').DebugTraceArchiveExport>
     /**
      * Seed a fork's provider-format history from the thread it branched off.
      * Omit `throughMessageId` (or pass the source's last message id) to copy the
@@ -751,6 +756,14 @@ export interface ApiClient {
     list: (projectId: string) => Promise<WorktreeInventoryEntry[]>
     /** Walk one checkout for its on-disk size — separate from `list`, which stays fast. */
     size: (projectId: string, path: string) => Promise<WorktreeSizeResult>
+    /** Preview or remove ignored dependency directories inside one registered checkout. */
+    cleanupPackages: (
+      projectId: string,
+      path: string,
+      remove: boolean,
+    ) => Promise<WorktreePackageCleanupResult>
+    /** Open the system terminal at one registered checkout. */
+    openTerminal: (projectId: string, path: string) => Promise<void>
     /**
      * Delete one checkout. Without `force` a checkout holding uncommitted,
      * untracked, or ignored files is reported back rather than removed, so the
@@ -879,6 +892,7 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
+    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) => Promise<void>
   }
   editors: {
     /** Installed external editors plus the sticky last-used default. */

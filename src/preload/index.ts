@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   browser: {
+    workspaceFileUrl: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('browser:workspaceFileUrl', projectId, threadId, path),
     sharePageText: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
@@ -910,6 +912,10 @@ contextBridge.exposeInMainWorld('api', {
     list: (projectId: string) => ipcRenderer.invoke('worktrees:list', projectId),
     size: (projectId: string, path: string) =>
       ipcRenderer.invoke('worktrees:size', projectId, path),
+    cleanupPackages: (projectId: string, path: string, remove: boolean) =>
+      ipcRenderer.invoke('worktrees:cleanupPackages', projectId, path, remove),
+    openTerminal: (projectId: string, path: string) =>
+      ipcRenderer.invoke('worktrees:openTerminal', projectId, path),
     remove: (projectId: string, path: string, force: boolean) =>
       ipcRenderer.invoke('worktrees:remove', projectId, path, force),
   },
@@ -1054,6 +1060,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('shell:openWorkspaceFileInBrowser', projectId, threadId, path),
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),

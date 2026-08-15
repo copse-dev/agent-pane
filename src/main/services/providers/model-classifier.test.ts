@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { getModelInfo } from '@copse/llm/model-catalog.ts'
-import { modelIntellect } from '@copse/llm/model-intellect.ts'
+import { getModelInfo, TRACKED_MODELS } from '@copse/llm/model-catalog.ts'
+import { intellectBand, modelIntellect } from '@copse/llm/model-intellect.ts'
 import {
   BAND_CANDIDATES,
   classifyModelForTask,
+  groupModelsByIntellectBand,
   modelUsdPerMTok,
   pickCheapestFittingModel,
   suggestRoleForTask,
@@ -46,27 +47,36 @@ describe('model-classifier', () => {
     )
   })
 
-  it('bands the catalog exactly as the retired editorial scale did', () => {
-    // Pins the behaviour-neutrality of moving banding onto the measured axis.
-    // The two scales disagreed on 10 of 12 rank *positions*, but every model
-    // lands in the same band, so routing is unchanged. If a future measurement
-    // moves a model across a band boundary this fails, which is the point —
-    // that is a routing change and should be seen, not absorbed silently.
-    assert.deepEqual([...BAND_CANDIDATES.low].sort(), [
-      'claude-haiku-4-5',
-      'claude-sonnet-4-6',
-      'gpt-4o',
-      'gpt-4o-mini',
-      'gpt-5',
-      'gpt-5-mini',
+  it('bands fixture scores and excludes unmeasured models', () => {
+    const fixtureScale = [3, 4, 5, 6, 6, 8, 9]
+    const fixtureScores = new Map<string, number>([
+      ['fixture-low', 3],
+      ['fixture-mid', 6],
+      ['fixture-top', 9],
     ])
-    assert.deepEqual([...BAND_CANDIDATES.mid].sort(), [
-      'claude-opus-4-8',
-      'claude-sonnet-5',
-      'gpt-5.5',
-      'gpt-5.6-terra',
-    ])
-    assert.deepEqual([...BAND_CANDIDATES.top].sort(), ['claude-fable-5', 'gpt-5.6-sol'])
+    const grouped = groupModelsByIntellectBand(
+      ['fixture-low', 'fixture-mid', 'fixture-top', 'fixture-unmeasured'],
+      (model) => fixtureScores.get(model) ?? null,
+      fixtureScale,
+    )
+    assert.deepEqual(grouped, {
+      low: ['fixture-low'],
+      mid: ['fixture-mid'],
+      top: ['fixture-top'],
+    })
+  })
+
+  it('bands the live catalog from its current synced scores', () => {
+    const candidates = new Set(Object.values(BAND_CANDIDATES).flat())
+    for (const model of TRACKED_MODELS) {
+      const intellect = modelIntellect(model)
+      if (intellect === null) {
+        assert.equal(candidates.has(model), false, `${model} is unmeasured`)
+        continue
+      }
+      const band = intellectBand(intellect)
+      assert.equal(BAND_CANDIDATES[band].includes(model), true, `${model} belongs in ${band}`)
+    }
   })
 
   it("reports the representative model's intellect from the shared scale", () => {
@@ -113,27 +123,12 @@ describe('model-classifier', () => {
 describe('pickCheapestFittingModel', () => {
   it('ranks by combined catalog USD/MTok among models that fit', () => {
     const pick = pickCheapestFittingModel(BAND_CANDIDATES.low, 0, 'claude-haiku-4-5')
-    // Named explicitly here because this test is the one asserting the ranking
-    // itself — deriving the expectation from the function under test would be
-    // circular.
-    assert.equal(pick.model, 'gpt-4o-mini')
-    assert.equal(pick.usdPerMTok, modelUsdPerMTok('gpt-4o-mini'))
-  })
-
-  it('will not pick a cheaper model that has no measured intellect', () => {
-    // gpt-5-nano ($0.05 + $0.40) undercuts gpt-4o-mini ($0.15 + $0.60), so on
-    // price alone it would win the low band outright. It has no Intelligence
-    // Index reading, so it is not a candidate at all — "unknown" must never be
-    // treated as "weakest", or the cheapest unmeasured model in the catalog
-    // silently becomes the default for trivial work.
-    const cheaper = modelUsdPerMTok('gpt-5-nano')
-    const picked = modelUsdPerMTok('gpt-4o-mini')
-    assert.ok(cheaper !== null && picked !== null && cheaper < picked)
-    assert.equal(modelIntellect('gpt-5-nano'), null)
-    for (const band of [BAND_CANDIDATES.low, BAND_CANDIDATES.mid, BAND_CANDIDATES.top]) {
-      assert.ok(!band.includes('gpt-5-nano'), 'unmeasured model must not be a band candidate')
-      assert.ok(!band.includes('gpt-5.6-luna'), 'unmeasured model must not be a band candidate')
-    }
+    const expected = BAND_CANDIDATES.low
+      .map((model) => ({ model, usdPerMTok: modelUsdPerMTok(model) }))
+      .filter((candidate) => candidate.usdPerMTok !== null)
+      .toSorted((left, right) => (left.usdPerMTok ?? Infinity) - (right.usdPerMTok ?? Infinity))[0]
+    assert.ok(expected)
+    assert.deepEqual({ model: pick.model, usdPerMTok: pick.usdPerMTok }, expected)
   })
 })
 

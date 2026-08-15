@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
+import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
+import { getIntellectScore } from '@copse/llm/model-intellect.ts'
 import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
@@ -32,6 +34,17 @@ const ALL_UNCONFIGURED = {
   gemini: false,
   deepseek: false,
   huggingface: false,
+}
+
+function intellectSuffix(modelId: string): string {
+  const score = getIntellectScore(modelId)
+  return score ? ` — intellect ${score.estimated ? '~' : ''}${String(score.value)}` : ''
+}
+
+function currentCloudIntellectHint(modelId: string): string {
+  const hint = cloudModelIntellectHint(modelId)
+  assert.ok(hint, `expected an intellect hint for ${modelId}`)
+  return hint
 }
 
 // Minimal ApiClient stub exposing only what fetchModelOptions touches.
@@ -132,16 +145,16 @@ describe('fetchModelOptions visibility', () => {
     assert.equal(option.disabled, true)
   })
 
-  it('offers best-value only when includeBestValue is set (Settings chat model)', async () => {
+  it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    assert.equal(options.length, 2)
-    const [bestValue, empty] = options
-    assert.ok(bestValue)
-    assert.equal(bestValue.value, 'auto:best-value')
+    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    const values = options.map((o) => o.value)
+    assert.ok(values.includes('auto:best-value'))
+    assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    const bestValue = options.find((o) => o.value === 'auto:best-value')
+    assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)
-    assert.ok(empty)
-    assert.match(empty.label, /No models available/)
-    assert.equal(empty.disabled, true)
+    assert.ok(options.some((o) => o.disabled && /No models available/.test(o.label)))
     assert.ok(!(await fetchModelOptions(mockApi(), '')).some((o) => o.value === 'auto:best-value'))
   })
 
@@ -340,11 +353,46 @@ describe('fetchModelOptions visibility', () => {
         // The agent's "Opus 4.8" label aliases to the sourced measurement, so
         // the row earns an intellect-only hint (ACP has no token pricing), and
         // is spelled the way every other group spells the same model.
-        { value: 'acp:cursor#opus[]', label: 'Claude Opus 4.8 — intellect 55.7' },
+        {
+          value: 'acp:cursor#opus[]',
+          label: `Claude Opus 4.8${intellectSuffix('claude-opus-4-8')}`,
+        },
       ],
     )
     // The bare "acp:cursor" (agent default) entry is intentionally omitted.
     assert.ok(!acp.some((o) => o.value === 'acp:cursor'))
+  })
+
+  it('normalises raw GPT model ids advertised by an ACP agent', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'codex-acp',
+            title: 'Codex',
+            command: 'codex-acp',
+            enabled: true,
+            availableModels: [
+              { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
+              { value: 'gpt-5.1', label: 'gpt-5.1' },
+              { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+              { value: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+
+    assert.deepEqual(
+      options.filter((option) => option.group === 'Codex on this device').map((o) => o.label),
+      [
+        'GPT-5.4 nano',
+        'GPT-5.1',
+        `GPT-5 mini${intellectSuffix('gpt-5-mini')}`,
+        `GPT-5.6 Sol${intellectSuffix('gpt-5.6-sol')}`,
+      ],
+    )
   })
 
   it('shows the version an agent keeps in the model description, and scores it', async () => {
@@ -384,9 +432,9 @@ describe('fetchModelOptions visibility', () => {
         // Claude Code labels its models bare, so the picker folds the version
         // from the description back in — and resolves the hint through it (the
         // agent's own `sonnet` value aliases to nothing).
-        'Default (recommended) — Claude Opus 5',
-        'Claude Opus 5 (1M context)',
-        'Claude Sonnet 5 — intellect 53.4',
+        `Default (recommended) — Claude Opus 5${intellectSuffix('claude-opus-5')}`,
+        `Claude Opus 5 (1M context)${intellectSuffix('claude-opus-5')}`,
+        `Claude Sonnet 5${intellectSuffix('claude-sonnet-5')}`,
       ],
     )
   })
@@ -457,7 +505,7 @@ describe('fetchModelOptions visibility', () => {
     )
     const row = options.find((o) => o.group === 'Cursor Cloud Agent' && /Opus 4\.8/.test(o.label))
     assert.ok(row)
-    assert.match(row.label, /Opus 4\.8 — intellect 55\.7/)
+    assert.equal(row.label, `Claude Opus 4.8${intellectSuffix('claude-opus-4-8')}`)
   })
 
   it("spells Cursor's Claude models the way every other group spells them", async () => {
@@ -477,7 +525,12 @@ describe('fetchModelOptions visibility', () => {
     )
     assert.deepEqual(
       options.filter((o) => o.group === 'Cursor Cloud Agent').map((o) => o.label),
-      ['Default', 'Claude Opus 5', 'Claude Sonnet 4.6 (Thinking)', 'Composer 2'],
+      [
+        'Default',
+        `Claude Opus 5${intellectSuffix('claude-opus-5')}`,
+        'Claude Sonnet 4.6 (Thinking)',
+        'Composer 2',
+      ],
     )
   })
 
@@ -571,20 +624,21 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { anthropic: true, openai: true } }),
       '',
     )
+    // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
+    // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
+    const opus5 = options.find((o) => o.value === 'claude-opus-5')
+    assert.ok(opus5)
+    assert.equal(opus5.label, `Claude Opus 5 — ${currentCloudIntellectHint('claude-opus-5')}`)
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
-    assert.equal(opus.label, 'Claude Opus 4.8 — intellect 55.7 · $9/MTok · frontier')
+    assert.equal(opus.label, `Claude Opus 4.8 — ${currentCloudIntellectHint('claude-opus-4-8')}`)
+    assert.doesNotMatch(opus.label, /frontier/)
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
-    // Haiku is dominated on the re-baselined frontier (a cheaper model reaches
-    // its intellect), so it shows intellect and price without the frontier tag.
-    assert.equal(haiku.label, 'Claude Haiku 4.5 — intellect 24 · $1.80/MTok')
-    // gpt-4o is scored (11.2) but dominated, so it shows intellect and price
-    // without the frontier tag.
+    assert.equal(haiku.label, `Claude Haiku 4.5 — ${currentCloudIntellectHint('claude-haiku-4-5')}`)
     const gpt4o = options.find((o) => o.value === 'gpt-4o')
     assert.ok(gpt4o)
-    assert.match(gpt4o.label, /^GPT-4o — intellect 11\.2 · \$[\d.]+\/MTok$/)
-    assert.doesNotMatch(gpt4o.label, /frontier/)
+    assert.equal(gpt4o.label, `GPT-4o — ${currentCloudIntellectHint('gpt-4o')}`)
   })
 
   it('keeps the current selection selectable even with no key', async () => {
