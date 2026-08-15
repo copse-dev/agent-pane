@@ -6,6 +6,7 @@ import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
 import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
 import {
   isPlausibleVncListener,
+  resolveVncSshHostAddresses,
   resolveVncNetworkHost,
   VNC_DATA_CHANNEL,
   VNC_STATUS_CHANNEL,
@@ -141,6 +142,41 @@ describe('VNC discovery candidates', () => {
         ]),
       /resolve only to private or link-local/,
     )
+  })
+
+  it('resolves configured SSH hostnames for nearby-device identity matching', async () => {
+    let lookedUp = ''
+    assert.deepEqual(
+      await resolveVncSshHostAddresses('jonathan@kingston-mac-mini.local', async (hostname) => {
+        lookedUp = hostname
+        return [
+          { address: '192.168.0.21', family: 4 },
+          { address: '192.168.0.21', family: 4 },
+          { address: 'fe80::21%en0', family: 6 },
+        ]
+      }),
+      ['192.168.0.21', 'fe80::21'],
+    )
+    assert.equal(lookedUp, 'kingston-mac-mini.local')
+  })
+
+  it('uses literal SSH addresses and tolerates names that do not resolve', async () => {
+    let lookupCalls = 0
+    const lookupHost = async (): Promise<Array<{ address: string; family: number }>> => {
+      lookupCalls++
+      throw new Error('not found')
+    }
+
+    assert.deepEqual(await resolveVncSshHostAddresses('192.168.0.21', lookupHost), ['192.168.0.21'])
+    assert.deepEqual(await resolveVncSshHostAddresses('missing-host', lookupHost), [])
+    assert.equal(lookupCalls, 1)
+  })
+
+  it('bounds slow SSH hostname resolution so the machine chooser can still load', async () => {
+    const neverResolves = (): Promise<Array<{ address: string; family: number }>> =>
+      new Promise(() => {})
+
+    assert.deepEqual(await resolveVncSshHostAddresses('sleepy-host', neverResolves, 1), [])
   })
 })
 

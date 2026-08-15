@@ -6,8 +6,9 @@ discovery are implemented. Nearby `_rfb._tcp` services are discovered through
 Bonjour/DNS-SD, and explicit private/link-local addresses are supported behind
 an unencrypted-connection confirmation. Saved SSH machines are always reused as
 encrypted VNC routes, independently of whether remote-workspace execution is
-enabled; equivalent Bonjour advertisements are collapsed in favour of SSH. The generic browser consumer, reconnect
-reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
+enabled; equivalent Bonjour advertisements are collapsed in favour of SSH,
+including when differently named hosts resolve to the same address. The generic
+browser consumer, reconnect reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
 stored passwords and every agent-facing capability remain V2 or later. V1 now
 handles noVNC's session-only credential requests without persisting secrets. The
 tunnel work is tracked by [#771](https://github.com/copse-dev/agent-pane/issues/771).
@@ -258,8 +259,8 @@ hostname/IP with an optional `:port`. Port 5900 is the quiet default; the explic
 RFB port override lives under Advanced, while discovery and Bonjour selections
 retain their detected ports. A single discovered desktop is selected silently;
 the chooser appears only when discovery finds multiple desktops. Saved SSH hosts refresh live when Settings changes,
-and deduplication matches Bonjour devices by hostname, advertised address, or
-normalized device label. Remote scans use the probed host OS and directly verify
+and deduplication matches Bonjour devices by hostname, normalized device label,
+or the current addresses resolved for the SSH host. Remote scans use the probed host OS and directly verify
 port 5900 when a process scanner omits macOS's launchd-managed Screen Sharing
 listener. Once a session starts, setup and discovery controls collapse into a
 plain-language connected summary, view-only explanation, and Disconnect action;

@@ -44,6 +44,7 @@ const RFB_BANNER_BYTES = 12
 const RFB_PROBE_TIMEOUT_MS = 2_000
 const REMOTE_SCAN_TIMEOUT_MS = 5_000
 const NEARBY_DISCOVERY_MS = 1_500
+const SSH_HOST_RESOLUTION_TIMEOUT_MS = 1_500
 const DEFAULT_RFB_PORT = 5900
 const LOOPBACK_REACHABLE_ADDRESSES = new Set([
   '0.0.0.0',
@@ -125,6 +126,39 @@ type LookupHost = (
   hostname: string,
   options: { all: true; verbatim: true },
 ) => Promise<Array<{ address: string; family: number }>>
+
+function hostnameFromSshTarget(rawHost: string): string {
+  const withoutUser = rawHost.trim().split('@').at(-1) ?? ''
+  return normalizeHostname(withoutUser.replace(/^\[|\]$/g, ''))
+}
+
+/** Resolve a configured SSH target for identity matching, never for connection routing. */
+export async function resolveVncSshHostAddresses(
+  rawHost: string,
+  lookupHost: LookupHost = lookup,
+  timeoutMs = SSH_HOST_RESOLUTION_TIMEOUT_MS,
+): Promise<string[]> {
+  const host = hostnameFromSshTarget(rawHost)
+  if (!host) return []
+  if (isIP(host) !== 0) return [addressForPolicy(host)]
+
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    const resolved = await Promise.race([
+      lookupHost(host, { all: true, verbatim: true }),
+      new Promise<Array<{ address: string; family: number }>>((resolve) => {
+        timeout = setTimeout(() => {
+          resolve([])
+        }, timeoutMs)
+      }),
+    ])
+    return [...new Set(resolved.map((entry) => addressForPolicy(entry.address)).filter(Boolean))]
+  } catch {
+    return []
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
+  }
+}
 
 /** Resolve once and pin the socket to a LAN address, avoiding a second DNS lookup. */
 export async function resolveVncNetworkHost(

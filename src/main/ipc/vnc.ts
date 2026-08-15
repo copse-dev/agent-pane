@@ -1,7 +1,12 @@
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { getSetting } from '../services/storage/settings.ts'
-import { getVncService, type VncConnectionOwner } from '../services/vnc/vnc-service.ts'
+import { listConfiguredSshHosts } from '../services/ssh-workspace/hosts.ts'
+import {
+  getVncService,
+  resolveVncSshHostAddresses,
+  type VncConnectionOwner,
+} from '../services/vnc/vnc-service.ts'
 import { getVncUsername, rememberVncUsername } from '../services/vnc/vnc-username-store.ts'
 import {
   assertMainFrameSender,
@@ -80,6 +85,19 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     return service.discoverNearby()
   })
 
+  ipcMain.handle('vnc:resolve-ssh-hosts', async (event) => {
+    assertMainFrameSender(event, win)
+    if (!getSetting<boolean>('vncEnabled', false)) {
+      throw new Error('VNC viewer is disabled in Settings')
+    }
+    return Promise.all(
+      listConfiguredSshHosts().map(async (host) => ({
+        hostId: host.id,
+        addresses: await resolveVncSshHostAddresses(host.host),
+      })),
+    )
+  })
+
   ipcMain.handle('vnc:get-username', (event, rawTarget: unknown) => {
     assertMainFrameSender(event, win)
     if (!getSetting<boolean>('vncEnabled', false)) {
@@ -128,6 +146,7 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     ipcMain.removeHandler('vnc:list')
     ipcMain.removeHandler('vnc:discover')
     ipcMain.removeHandler('vnc:discover-nearby')
+    ipcMain.removeHandler('vnc:resolve-ssh-hosts')
     ipcMain.removeHandler('vnc:get-username')
     ipcMain.removeHandler('vnc:remember-username')
     ipcMain.removeHandler('vnc:close')

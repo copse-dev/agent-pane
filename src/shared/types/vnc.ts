@@ -14,6 +14,12 @@ export interface VncNearbyServer {
   addresses: string[]
 }
 
+/** Network addresses currently resolved for a configured SSH machine. */
+export interface VncSshHostResolution {
+  hostId: string
+  addresses: string[]
+}
+
 export type VncConnectionStatus = 'connecting' | 'connected' | 'closed' | 'error'
 
 export interface VncConnection {

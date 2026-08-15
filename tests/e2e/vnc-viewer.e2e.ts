@@ -3,7 +3,11 @@ import { mkdirSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
 import { $, browser } from '@wdio/globals'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
 const WIDTH = 320
 const HEIGHT = 180
@@ -231,10 +235,10 @@ describe('read-only VNC viewer', function () {
       await window.api.settings.set('sshWorkspaceEnabled', false)
       await window.api.settings.set('sshWorkspaceHosts', [
         {
-          id: 'build-box',
-          label: 'Build box',
-          host: 'build.example',
-          user: 'ubuntu',
+          id: 'kingston-mac-mini',
+          label: 'kingston-mac-mini',
+          host: 'localhost',
+          user: 'jonathankingston',
         },
       ])
       const e2e = (
@@ -254,10 +258,10 @@ describe('read-only VNC viewer', function () {
           addresses: ['192.168.1.20'],
         },
         {
-          name: 'Build box',
-          host: 'build.example',
+          name: 'Jonathan’s Mac mini',
+          host: 'test-mac-box.local',
           port: 5900,
-          addresses: ['192.168.1.40'],
+          addresses: ['127.0.0.1'],
         },
       ])
       await e2e.openWorkspace(workspaceRoot)
@@ -313,11 +317,28 @@ describe('read-only VNC viewer', function () {
       'This machine',
       'Studio Mac · studio.local:5900',
       'Other address…',
-      'Build box · ubuntu@build.example',
+      'kingston-mac-mini · jonathankingston@localhost',
     ])
+    assert.doesNotMatch(machineOptions.join('\n'), /test-mac-box/)
     assert.match(await $('.vnc-nearby-status').getText(), /1 matched to saved SSH/i)
 
     const machineSelect = $('.vnc-machine-select')
+    const previousFilesWidth = await browser.execute(() => {
+      const body = document.getElementById('body')
+      const previous = body?.style.getPropertyValue('--files-width') ?? ''
+      body?.style.setProperty('--files-width', '700px')
+      document.querySelector<HTMLSelectElement>('.vnc-machine-select')?.setAttribute('size', '6')
+      window.dispatchEvent(new Event('resize'))
+      return previous
+    })
+    await saveAppScreenshot('vnc-viewer-deduped-machines.png')
+    await browser.execute((filesWidth) => {
+      const body = document.getElementById('body')
+      if (filesWidth) body?.style.setProperty('--files-width', filesWidth)
+      else body?.style.removeProperty('--files-width')
+      document.querySelector<HTMLSelectElement>('.vnc-machine-select')?.removeAttribute('size')
+      window.dispatchEvent(new Event('resize'))
+    }, previousFilesWidth)
     await machineSelect.selectByAttribute('value', 'network:manual')
     const addressInput = $('.vnc-address-input')
     await addressInput.waitForDisplayed()

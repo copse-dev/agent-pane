@@ -1,5 +1,5 @@
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
-import type { VncNearbyServer, VncTarget } from '@shared/types/vnc.ts'
+import type { VncNearbyServer, VncSshHostResolution, VncTarget } from '@shared/types/vnc.ts'
 
 interface VncEndpoint {
   host: string
@@ -47,8 +47,15 @@ function nameIdentity(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
-function sshHostIdentities(host: SshWorkspaceHost): Set<string> {
-  return new Set([`endpoint:${endpointIdentity(host.host)}`, `name:${nameIdentity(host.label)}`])
+function sshHostIdentities(
+  host: SshWorkspaceHost,
+  resolvedAddresses: readonly string[],
+): Set<string> {
+  return new Set([
+    `endpoint:${endpointIdentity(host.host)}`,
+    ...resolvedAddresses.map((address) => `endpoint:${endpointIdentity(address)}`),
+    `name:${nameIdentity(host.label)}`,
+  ])
 }
 
 function nearbyIdentities(server: VncNearbyServer): Set<string> {
@@ -70,8 +77,14 @@ function setsOverlap(left: ReadonlySet<string>, right: ReadonlySet<string>): boo
 export function dedupeNearbyVncServers(
   servers: readonly VncNearbyServer[],
   sshHosts: readonly SshWorkspaceHost[],
+  sshResolutions: readonly VncSshHostResolution[] = [],
 ): VncNearbyServer[] {
-  const sshIdentities = sshHosts.map(sshHostIdentities)
+  const resolvedByHostId = new Map(
+    sshResolutions.map((resolution) => [resolution.hostId, resolution.addresses]),
+  )
+  const sshIdentities = sshHosts.map((host) =>
+    sshHostIdentities(host, resolvedByHostId.get(host.id) ?? []),
+  )
   const seenEndpoints = new Set<string>()
   const result: VncNearbyServer[] = []
 

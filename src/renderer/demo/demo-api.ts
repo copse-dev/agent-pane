@@ -675,6 +675,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: emptyArray,
       discover: emptyArray,
       discoverNearby: emptyArray,
+      resolveSshHosts: emptyArray,
       getUsername: () => resolved(null),
       rememberUsername: () => resolved(false),
       start: () => {},

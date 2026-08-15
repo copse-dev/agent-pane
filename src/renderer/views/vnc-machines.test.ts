@@ -32,6 +32,31 @@ describe('dedupeNearbyVncServers', () => {
     assert.deepEqual(dedupeNearbyVncServers([studio], hosts), [])
   })
 
+  it('prefers a saved SSH machine whose hostname resolves to the advertised address', () => {
+    const hosts: SshWorkspaceHost[] = [
+      { id: 'mini', label: 'kingston-mac-mini', host: 'kingston-mac-mini' },
+    ]
+
+    assert.deepEqual(
+      dedupeNearbyVncServers([studio], hosts, [{ hostId: 'mini', addresses: ['192.168.0.21'] }]),
+      [],
+    )
+  })
+
+  it('does not apply one SSH machine resolution to another saved machine', () => {
+    const hosts: SshWorkspaceHost[] = [
+      { id: 'mini', label: 'Mini', host: 'mini.local' },
+      { id: 'laptop', label: 'Laptop', host: 'laptop.local' },
+    ]
+
+    assert.deepEqual(
+      dedupeNearbyVncServers([studio], hosts, [
+        { hostId: 'unrelated', addresses: ['192.168.0.21'] },
+      ]),
+      [studio],
+    )
+  })
+
   it('collapses duplicate Bonjour advertisements that share an endpoint and port', () => {
     const duplicate = {
       ...studio,

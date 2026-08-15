@@ -22,6 +22,7 @@ function apiHarness(): {
         list: (): Promise<never[]> => Promise.resolve([]),
         discover: (): Promise<never[]> => Promise.resolve([]),
         discoverNearby: (): Promise<never[]> => Promise.resolve([]),
+        resolveSshHosts: (): Promise<never[]> => Promise.resolve([]),
         getUsername: (): Promise<null> => Promise.resolve(null),
         rememberUsername: (): Promise<boolean> => Promise.resolve(false),
         start: (id): void => {

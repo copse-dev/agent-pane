@@ -64,6 +64,7 @@ import type {
   VncConnection,
   VncDiscoveryHost,
   VncNearbyServer,
+  VncSshHostResolution,
   VncStatusEvent,
   VncTarget,
 } from '@shared/types/vnc.ts'
@@ -669,6 +670,7 @@ export interface ApiClient {
     list: () => Promise<VncConnection[]>
     discover: (host: VncDiscoveryHost) => Promise<number[]>
     discoverNearby: () => Promise<VncNearbyServer[]>
+    resolveSshHosts: () => Promise<VncSshHostResolution[]>
     getUsername: (target: VncTarget) => Promise<string | null>
     rememberUsername: (target: VncTarget, username: string) => Promise<boolean>
     start: (connectionId: string) => void

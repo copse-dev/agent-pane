@@ -2,7 +2,12 @@ import RFB from '@novnc/novnc'
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { VncDiscoveryHost, VncNearbyServer, VncTarget } from '@shared/types/vnc.ts'
+import type {
+  VncDiscoveryHost,
+  VncNearbyServer,
+  VncSshHostResolution,
+  VncTarget,
+} from '@shared/types/vnc.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
@@ -256,6 +261,7 @@ export function mountVncPane(
   let nearbyGeneration = 0
   let sshHostsGeneration = 0
   let sshHosts: SshWorkspaceHost[] = []
+  let sshHostResolutions: VncSshHostResolution[] = []
   let allNearbyServers: VncNearbyServer[] = []
   let nearbyServers: VncNearbyServer[] = []
   let displayedMachine = machineSelect.value
@@ -464,7 +470,7 @@ export function mountVncPane(
   }
 
   function applyNearbyDedupe(): void {
-    nearbyServers = dedupeNearbyVncServers(allNearbyServers, sshHosts)
+    nearbyServers = dedupeNearbyVncServers(allNearbyServers, sshHosts, sshHostResolutions)
   }
 
   function updateNearbyStatus(): void {
@@ -493,7 +499,12 @@ export function mountVncPane(
     )
     if (matchingNearbyIndex >= 0) return nearbyMachineValue(matchingNearbyIndex)
     const matchingSsh = sshHosts.find(
-      (host) => dedupeNearbyVncServers([previousNearby], [host]).length === 0,
+      (host) =>
+        dedupeNearbyVncServers(
+          [previousNearby],
+          [host],
+          sshHostResolutions.filter((resolution) => resolution.hostId === host.id),
+        ).length === 0,
     )
     return matchingSsh ? sshMachineValue(matchingSsh.id) : LOCAL_MACHINE
   }
@@ -502,12 +513,17 @@ export function mountVncPane(
     const generation = ++sshHostsGeneration
     const previousNearby = selectedNearbyServer()
     try {
-      const nextHosts = await api.sshWorkspace.listHosts()
+      const [nextHosts, nextResolutions] = await Promise.all([
+        api.sshWorkspace.listHosts(),
+        api.vnc.resolveSshHosts().catch(() => []),
+      ])
       if (generation !== sshHostsGeneration) return
       sshHosts = nextHosts
+      sshHostResolutions = nextResolutions
     } catch {
       if (generation !== sshHostsGeneration) return
       sshHosts = []
+      sshHostResolutions = []
     }
     applyNearbyDedupe()
     const nextPreferred = preferredMachineAfterDedupe(preferred, previousNearby)
