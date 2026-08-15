@@ -2,6 +2,7 @@ import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { getSetting } from '../services/storage/settings.ts'
 import { getVncService, type VncConnectionOwner } from '../services/vnc/vnc-service.ts'
+import { getVncUsername, rememberVncUsername } from '../services/vnc/vnc-username-store.ts'
 import {
   assertMainFrameSender,
   parseIpcArgs,
@@ -10,6 +11,7 @@ import {
 } from './ipc-guards.ts'
 
 const vncConnectionIdSchema = z.uuid()
+const vncUsernameSchema = z.string().trim().min(1).max(256)
 const MAX_VNC_CLIENT_MESSAGE_BYTES = 1024 * 1024
 
 function ownerFor(contents: WebContents): VncConnectionOwner {
@@ -78,6 +80,30 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     return service.discoverNearby()
   })
 
+  ipcMain.handle('vnc:get-username', (event, rawTarget: unknown) => {
+    assertMainFrameSender(event, win)
+    if (!getSetting<boolean>('vncEnabled', false)) {
+      throw new Error('VNC viewer is disabled in Settings')
+    }
+    const target = parseIpcArgs(vncTargetSchema, [rawTarget])
+    return getVncUsername(target)
+  })
+
+  ipcMain.handle(
+    'vnc:remember-username',
+    async (event, rawTarget: unknown, rawUsername: unknown) => {
+      assertMainFrameSender(event, win)
+      if (!getSetting<boolean>('vncEnabled', false)) {
+        throw new Error('VNC viewer is disabled in Settings')
+      }
+      const [target, username] = parseIpcArgs(z.tuple([vncTargetSchema, vncUsernameSchema]), [
+        rawTarget,
+        rawUsername,
+      ])
+      return rememberVncUsername(target, username)
+    },
+  )
+
   ipcMain.handle('vnc:close', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(vncConnectionIdSchema, [rawId])
@@ -102,6 +128,8 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     ipcMain.removeHandler('vnc:list')
     ipcMain.removeHandler('vnc:discover')
     ipcMain.removeHandler('vnc:discover-nearby')
+    ipcMain.removeHandler('vnc:get-username')
+    ipcMain.removeHandler('vnc:remember-username')
     ipcMain.removeHandler('vnc:close')
     ipcMain.off('vnc:start', onStart)
     ipcMain.off('vnc:send', onSend)

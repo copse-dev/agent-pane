@@ -395,14 +395,18 @@ export function isRendererWritableSettingKey(key: string): key is RendererWritab
 
 /**
  * Setting keys holding secret material that must never be read back through the
- * renderer-facing `settings:get` IPC. API keys are persisted under `apiKey.<provider>`
- * in the same store as ordinary settings; without this guard a renderer (or any
- * compromised frame) could read the stored key record — which is base64 plaintext
- * when the OS keyring is unavailable. The renderer only ever needs the boolean
- * `settings:getKey` (hasApiKey), never the record itself.
+ * generic renderer-facing `settings:get` IPC. API keys use `apiKey.<provider>`;
+ * remembered desktop usernames use `vncUsername.<target hash>` and have a
+ * dedicated decrypting IPC method. Neither raw stored record belongs in the
+ * generic settings API.
  */
 export function isSecretSettingKey(key: string): boolean {
-  return key === 'apiKey' || key.startsWith('apiKey.')
+  return (
+    key === 'apiKey' ||
+    key.startsWith('apiKey.') ||
+    key === 'vncUsername' ||
+    key.startsWith('vncUsername.')
+  )
 }
 
 export function parseRendererWritableSetting(

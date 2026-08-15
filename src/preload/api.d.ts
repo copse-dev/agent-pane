@@ -669,6 +669,8 @@ export interface ApiClient {
     list: () => Promise<VncConnection[]>
     discover: (host: VncDiscoveryHost) => Promise<number[]>
     discoverNearby: () => Promise<VncNearbyServer[]>
+    getUsername: (target: VncTarget) => Promise<string | null>
+    rememberUsername: (target: VncTarget, username: string) => Promise<boolean>
     start: (connectionId: string) => void
     send: (connectionId: string, bytes: Uint8Array) => void
     close: (connectionId: string) => Promise<void>

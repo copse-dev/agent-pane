@@ -8,7 +8,7 @@ an unencrypted-connection confirmation. Saved SSH machines are always reused as
 encrypted VNC routes, independently of whether remote-workspace execution is
 enabled; equivalent Bonjour advertisements are collapsed in favour of SSH. The generic browser consumer, reconnect
 reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
-stored credentials and every agent-facing capability remain V2 or later. V1 now
+stored passwords and every agent-facing capability remain V2 or later. V1 now
 handles noVNC's session-only credential requests without persisting secrets. The
 tunnel work is tracked by [#771](https://github.com/copse-dev/agent-pane/issues/771).
 
@@ -161,9 +161,10 @@ cancel` to tear it down. No second handshake, no new auth surface, no askpass
 
    Authentication is not input authority. When the RFB handshake requests a
    password, username, or target, V1 asks for it in the viewer and passes it to
-   noVNC for that connection only. It never writes credentials to settings or
-   the secret store, and clears the visible password field immediately after
-   submission. A rejected credential, an unsupported authentication request,
+   noVNC. Passwords and targets remain connection-only and the visible password
+   is cleared immediately after submission. After a successful login, the
+   username alone is remembered per machine using OS-backed encrypted storage;
+   saved SSH targets initially offer their configured SSH username. A rejected credential, an unsupported authentication request,
    an unavailable Screen Sharing service, and a dropped session remain distinct
    error states after noVNC emits its final disconnect event.
 

@@ -8,7 +8,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { VncIpcChannel } from './vnc-channel.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { dedupeNearbyVncServers, parseVncEndpoint } from './vnc-machines.ts'
+import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -263,6 +263,8 @@ export function mountVncPane(
   let pendingDisconnectStatus: PendingStatus | null = null
   let connectedAtLeastOnce = false
   let activeTarget: VncTarget | null = null
+  let authenticationUsername = ''
+  let submittedUsername: string | null = null
 
   function setSessionUi(active: boolean, connected = false): void {
     controlsRoot.scrollTop = 0
@@ -312,13 +314,17 @@ export function mountVncPane(
   function hideAuthentication(): void {
     authPanel.hidden = true
     requiredCredentials = new Set()
+    usernameInput.value = ''
     passwordInput.value = ''
+    targetInput.value = ''
   }
 
   function clearViewer(title: string, kind: 'idle' | 'error' = 'idle', detail = ''): void {
     rfb = null
     channel = null
     activeTarget = null
+    authenticationUsername = ''
+    submittedUsername = null
     connectedAtLeastOnce = false
     pendingDisconnectStatus = null
     hideAuthentication()
@@ -344,6 +350,7 @@ export function mountVncPane(
     }
 
     requiredCredentials = new Set(types.filter(isVncCredentialType))
+    usernameInput.value = requiredCredentials.has('username') ? authenticationUsername : ''
     usernameField.hidden = !requiredCredentials.has('username')
     passwordField.hidden = !requiredCredentials.has('password')
     targetField.hidden = !requiredCredentials.has('target')
@@ -360,11 +367,12 @@ export function mountVncPane(
         : 'Enter the separate password configured in Screen Sharing settings.',
     )
     status.hidden = true
-    const firstInput = requiredCredentials.has('username')
-      ? usernameInput
-      : requiredCredentials.has('password')
-        ? passwordInput
-        : targetInput
+    const firstInput =
+      requiredCredentials.has('username') && !usernameInput.value
+        ? usernameInput
+        : requiredCredentials.has('password')
+          ? passwordInput
+          : targetInput
     queueMicrotask(() => {
       firstInput.focus({ preventScroll: true })
     })
@@ -382,6 +390,8 @@ export function mountVncPane(
         return
       }
       credentials.username = username
+      authenticationUsername = username
+      submittedUsername = username
     }
     if (requiredCredentials.has('password')) {
       if (!passwordInput.value) {
@@ -684,6 +694,14 @@ export function mountVncPane(
       'working',
     )
     try {
+      let rememberedUsername: string | null = null
+      try {
+        rememberedUsername = await api.vnc.getUsername(target)
+      } catch {
+        // A locked/unavailable keychain should not prevent a one-off connection.
+      }
+      authenticationUsername = preferredVncUsername(target, sshHosts, rememberedUsername)
+      submittedUsername = null
       const connection = await api.vnc.open(target)
       if (generation !== connectGeneration) {
         await api.vnc.close(connection.id)
@@ -714,6 +732,27 @@ export function mountVncPane(
           'ok',
           'View only — keyboard and mouse control are off.',
         )
+        const username = submittedUsername
+        if (username) {
+          void api.vnc
+            .rememberUsername(target, username)
+            .then((saved) => {
+              if (saved || rfb !== nextRfb) return
+              setStatus(
+                `Connected to ${machineName}`,
+                'ok',
+                'View only — keyboard and mouse control are off. The username was not saved because secure storage is unavailable.',
+              )
+            })
+            .catch(() => {
+              if (rfb !== nextRfb) return
+              setStatus(
+                `Connected to ${machineName}`,
+                'ok',
+                'View only — keyboard and mouse control are off. The username could not be saved securely.',
+              )
+            })
+        }
       })
       nextRfb.addEventListener('disconnect', (event) => {
         if (rfb !== nextRfb) return

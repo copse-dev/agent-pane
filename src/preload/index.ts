@@ -833,6 +833,10 @@ contextBridge.exposeInMainWorld('api', {
     discover: (host: import('@shared/types/vnc.ts').VncDiscoveryHost) =>
       ipcRenderer.invoke('vnc:discover', host),
     discoverNearby: () => ipcRenderer.invoke('vnc:discover-nearby'),
+    getUsername: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:get-username', target),
+    rememberUsername: (target: import('@shared/types/vnc.ts').VncTarget, username: string) =>
+      ipcRenderer.invoke('vnc:remember-username', target, username),
     start: (connectionId: string): void => {
       ipcRenderer.send('vnc:start', connectionId)
     },

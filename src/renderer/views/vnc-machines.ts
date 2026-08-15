@@ -1,5 +1,5 @@
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
-import type { VncNearbyServer } from '@shared/types/vnc.ts'
+import type { VncNearbyServer, VncTarget } from '@shared/types/vnc.ts'
 
 interface VncEndpoint {
   host: string
@@ -91,4 +91,16 @@ export function dedupeNearbyVncServers(
   }
 
   return result
+}
+
+/** Prefer a previously successful desktop login, then the SSH account name. */
+export function preferredVncUsername(
+  target: VncTarget,
+  sshHosts: readonly SshWorkspaceHost[],
+  remembered: string | null,
+): string {
+  const saved = remembered?.trim()
+  if (saved) return saved
+  if (target.kind !== 'ssh') return ''
+  return sshHosts.find((host) => host.id === target.hostId)?.user?.trim() ?? ''
 }

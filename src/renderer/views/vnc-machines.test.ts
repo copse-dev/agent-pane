@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import type { VncNearbyServer } from '@shared/types/vnc.ts'
-import { dedupeNearbyVncServers, parseVncEndpoint } from './vnc-machines.ts'
+import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
 
 const studio: VncNearbyServer = {
   name: 'Jonathan’s Mac mini',
@@ -93,5 +93,33 @@ describe('parseVncEndpoint', () => {
     assert.equal(parseVncEndpoint('studio.local:vnc', 5900), null)
     assert.equal(parseVncEndpoint('studio.local:70000', 5900), null)
     assert.equal(parseVncEndpoint('[fd00::21]:', 5900), null)
+  })
+})
+
+describe('preferredVncUsername', () => {
+  const hosts: SshWorkspaceHost[] = [
+    { id: 'studio', label: 'Studio', host: 'studio.local', user: 'ssh-user' },
+  ]
+
+  it('prefills a saved SSH target from its SSH account', () => {
+    assert.equal(
+      preferredVncUsername({ kind: 'ssh', hostId: 'studio', remotePort: 5900 }, hosts, null),
+      'ssh-user',
+    )
+  })
+
+  it('prefers a previously successful screen-sharing username', () => {
+    assert.equal(
+      preferredVncUsername(
+        { kind: 'ssh', hostId: 'studio', remotePort: 5900 },
+        hosts,
+        'screen-user',
+      ),
+      'screen-user',
+    )
+  })
+
+  it('does not borrow an SSH username for another kind of target', () => {
+    assert.equal(preferredVncUsername({ kind: 'loopback', port: 5900 }, hosts, null), '')
   })
 })

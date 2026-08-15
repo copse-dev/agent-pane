@@ -100,8 +100,13 @@ function attachRfb38(socket: Socket): void {
   })
 }
 
-function attachRfb38AuthenticationFailure(socket: Socket): void {
-  let state: 'version' | 'security' | 'response' | 'done' = 'version'
+function attachRfb38AuthenticationFailure(
+  socket: Socket,
+  onUsername: (username: string) => void,
+): void {
+  let state:
+    'version' | 'security' | 'vencrypt-version' | 'vencrypt-subtype' | 'credentials' | 'done' =
+    'version'
   let buffered = Buffer.alloc(0)
   socket.write('RFB 003.008\n')
   socket.on('data', (chunk: Buffer) => {
@@ -110,21 +115,45 @@ function attachRfb38AuthenticationFailure(socket: Socket): void {
       if (state === 'version') {
         if (buffered.length < 12) return
         buffered = buffered.subarray(12)
-        socket.write(Buffer.from([1, 2]))
+        socket.write(Buffer.from([1, 19]))
         state = 'security'
         continue
       }
       if (state === 'security') {
         if (buffered.length < 1) return
-        assert.equal(buffered[0], 2)
+        assert.equal(buffered[0], 19)
         buffered = buffered.subarray(1)
-        socket.write(Buffer.alloc(16, 7))
-        state = 'response'
+        socket.write(Buffer.from([0, 2]))
+        state = 'vencrypt-version'
         continue
       }
-      if (state === 'response') {
-        if (buffered.length < 16) return
-        buffered = buffered.subarray(16)
+      if (state === 'vencrypt-version') {
+        if (buffered.length < 2) return
+        assert.deepEqual([...buffered.subarray(0, 2)], [0, 2])
+        buffered = buffered.subarray(2)
+        const subtype = Buffer.alloc(6)
+        subtype[0] = 0
+        subtype[1] = 1
+        subtype.writeUInt32BE(256, 2)
+        socket.write(subtype)
+        state = 'vencrypt-subtype'
+        continue
+      }
+      if (state === 'vencrypt-subtype') {
+        if (buffered.length < 4) return
+        assert.equal(buffered.readUInt32BE(0), 256)
+        buffered = buffered.subarray(4)
+        state = 'credentials'
+        continue
+      }
+      if (state === 'credentials') {
+        if (buffered.length < 8) return
+        const usernameLength = buffered.readUInt32BE(0)
+        const passwordLength = buffered.readUInt32BE(4)
+        const messageLength = 8 + usernameLength + passwordLength
+        if (buffered.length < messageLength) return
+        onUsername(buffered.subarray(8, 8 + usernameLength).toString('utf8'))
+        buffered = buffered.subarray(messageLength)
         const reason = Buffer.from('The VNC password was rejected', 'utf8')
         const failure = Buffer.alloc(8)
         failure.writeUInt32BE(1, 0)
@@ -174,6 +203,7 @@ describe('read-only VNC viewer', function () {
   let authenticationServer: Server
   let port = 0
   let authenticationPort = 0
+  let authenticationUsername = ''
 
   before(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
@@ -189,7 +219,9 @@ describe('read-only VNC viewer', function () {
     authenticationServer = createServer((socket) => {
       sockets.add(socket)
       socket.once('close', () => sockets.delete(socket))
-      attachRfb38AuthenticationFailure(socket)
+      attachRfb38AuthenticationFailure(socket, (username) => {
+        authenticationUsername = username
+      })
     })
     await browser.execute(async (workspaceRoot) => {
       await window.api.settings.set('onboardingCompleted', true)
@@ -310,6 +342,17 @@ describe('read-only VNC viewer', function () {
     assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
     assert.equal(await $$('.vnc-discovered-port').length, 0)
     authenticationPort = await listenOnVncPort(authenticationServer)
+    assert.equal(
+      await browser.execute(
+        (targetPort) =>
+          window.api.vnc.rememberUsername(
+            { kind: 'loopback', port: targetPort },
+            'remembered-user',
+          ),
+        authenticationPort,
+      ),
+      true,
+    )
     await advancedSummary.click()
     await portInput.waitForDisplayed()
     assert.equal(await portInput.getValue(), String(port))
@@ -320,10 +363,11 @@ describe('read-only VNC viewer', function () {
     const authPanel = $('.vnc-auth-panel')
     await authPanel.waitForDisplayed({ timeout: 20_000 })
     assert.equal(await $('.vnc-auth-title').getText(), 'Authentication required')
-    assert.match(await $('.vnc-auth-description').getText(), /Screen Sharing password/i)
+    assert.match(await $('.vnc-auth-description').getText(), /allowed account/i)
     assert.equal(await $('.vnc-setup-fields').isDisplayed(), false)
     assert.equal(await $('.vnc-status').isDisplayed(), false)
-    assert.equal(await $('.vnc-username-field').isDisplayed(), false)
+    assert.equal(await $('.vnc-username-field').isDisplayed(), true)
+    assert.equal(await $('.vnc-username-input').getValue(), 'remembered-user')
     assert.equal(await $('.vnc-password-field').isDisplayed(), true)
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Cancel')
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-required.png')
@@ -339,6 +383,7 @@ describe('read-only VNC viewer', function () {
       },
     )
     assert.equal(await authPanel.isDisplayed(), false)
+    assert.equal(authenticationUsername, 'remembered-user')
     assert.match(await $('.vnc-status-detail').getText(), /check the Screen Sharing password/i)
     assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
