@@ -41,9 +41,10 @@ export const VNC_DATA_CHANNEL = 'vnc:data'
 export const VNC_STATUS_CHANNEL = 'vnc:status'
 
 const RFB_BANNER_BYTES = 12
-const RFB_PROBE_TIMEOUT_MS = 600
+const RFB_PROBE_TIMEOUT_MS = 2_000
 const REMOTE_SCAN_TIMEOUT_MS = 5_000
 const NEARBY_DISCOVERY_MS = 1_500
+const DEFAULT_RFB_PORT = 5900
 const LOOPBACK_REACHABLE_ADDRESSES = new Set([
   '0.0.0.0',
   '127.0.0.1',
@@ -187,7 +188,13 @@ async function scanRemotePorts(
 ): Promise<ListeningPort[]> {
   // Try the superset used across Linux/macOS/Windows SSH hosts. A missing tool
   // returns 127 and falls through; the first usable scanner wins.
-  for (const plan of scanCandidates('linux')) {
+  const remoteOs = connection.capabilities?.os.toLowerCase() ?? ''
+  const platform: NodeJS.Platform = remoteOs.includes('darwin')
+    ? 'darwin'
+    : remoteOs.includes('windows')
+      ? 'win32'
+      : 'linux'
+  for (const plan of scanCandidates(platform)) {
     try {
       const result = await connection.execArgv([plan.file, ...plan.args], {
         timeoutMs: REMOTE_SCAN_TIMEOUT_MS,
@@ -200,6 +207,18 @@ async function scanRemotePorts(
     }
   }
   return []
+}
+
+function withDefaultRfbFallback(listeners: readonly ListeningPort[]): ListeningPort[] {
+  const hasReachableCandidate = listeners.some(
+    (listener) =>
+      LOOPBACK_REACHABLE_ADDRESSES.has(listener.address) && isPlausibleVncListener(listener),
+  )
+  if (hasReachableCandidate) return [...listeners]
+  return [
+    ...listeners,
+    { port: DEFAULT_RFB_PORT, pid: null, command: 'Screen Sharing', address: '127.0.0.1' },
+  ]
 }
 
 function targetPort(target: VncTarget): number {
@@ -258,11 +277,13 @@ export class VncService {
   async discover(host: VncDiscoveryHost): Promise<number[]> {
     if (host.kind === 'local') {
       const scan = await this.scanLocal()
-      return this.probeCandidates(scan.ports, async (port) => probeRfbPort(port))
+      return this.probeCandidates(withDefaultRfbFallback(scan.ports), async (port) =>
+        probeRfbPort(port),
+      )
     }
 
     const connection = await this.sshManager.connect(host.hostId)
-    const ports = await scanRemotePorts(connection)
+    const ports = withDefaultRfbFallback(await scanRemotePorts(connection))
     return this.probeCandidates(ports, async (remotePort) => {
       let localPort: number | null = null
       try {

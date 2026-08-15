@@ -55,14 +55,16 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 class ForwardingFakeTransport extends FakeSshTransport {
   closeCalls: number[] = []
   private readonly forwardedPort: number
+  private readonly expectedRemotePort: number
 
-  constructor(forwardedPort: number) {
+  constructor(forwardedPort: number, expectedRemotePort = 5901) {
     super()
     this.forwardedPort = forwardedPort
+    this.expectedRemotePort = expectedRemotePort
   }
 
   override async openForward(remotePort: number): Promise<{ localPort: number }> {
-    assert.equal(remotePort, 5901)
+    assert.equal(remotePort, this.expectedRemotePort)
     return Promise.resolve({ localPort: this.forwardedPort })
   }
 
@@ -82,6 +84,17 @@ class DiscoveringForwardingFakeTransport extends ForwardingFakeTransport {
       })
     }
     return super.execArgv(argv)
+  }
+}
+
+class DarwinDiscoveringForwardingFakeTransport extends ForwardingFakeTransport {
+  override async execArgv(argv: string[]): Promise<SshExecResult> {
+    assert.equal(argv[0], 'lsof')
+    return Promise.resolve({
+      stdout: 'p42\ncscreensharingd\nn127.0.0.1:5901\n',
+      stderr: '',
+      code: 0,
+    })
   }
 }
 
@@ -269,6 +282,68 @@ describe('VncService', () => {
     const service = new VncService(manager)
 
     assert.deepEqual(await service.discover({ kind: 'ssh', hostId: host.id }), [5901])
+    assert.deepEqual(transport.closeCalls, [port])
+  })
+
+  it('uses the remote Darwin scanner instead of assuming Linux', async () => {
+    const server = createServer((socket) => {
+      socket.write('RFB 003.008\n')
+    })
+    servers.push(server)
+    const port = await listen(server)
+    const transport = new DarwinDiscoveringForwardingFakeTransport(port)
+    await transport.connect()
+    const host: SshWorkspaceHost = {
+      id: 'studio-mac',
+      label: 'Studio Mac',
+      host: 'studio.local',
+    }
+    const manager = {
+      connect: async (): Promise<SshConnection> => ({
+        host,
+        transport,
+        capabilities: {
+          os: 'Darwin',
+          arch: 'arm64',
+          shell: '/bin/zsh',
+          git: true,
+          rg: true,
+          inotifywait: false,
+          warnings: [],
+        },
+        execArgv: (argv) => transport.execArgv(argv),
+        execShell: (command, options) => transport.execShell(command, options),
+      }),
+    }
+
+    const service = new VncService(manager)
+    assert.deepEqual(await service.discover({ kind: 'ssh', hostId: host.id }), [5901])
+  })
+
+  it('probes port 5900 when a remote scanner omits Screen Sharing', async () => {
+    const server = createServer((socket) => {
+      socket.write('RFB 003.008\n')
+    })
+    servers.push(server)
+    const port = await listen(server)
+    const transport = new ForwardingFakeTransport(port, 5900)
+    await transport.connect()
+    const host: SshWorkspaceHost = {
+      id: 'studio-mac',
+      label: 'Studio Mac',
+      host: 'studio.local',
+    }
+    const manager = {
+      connect: async (): Promise<SshConnection> => ({
+        host,
+        transport,
+        execArgv: (argv, options) => transport.execArgv(argv, options),
+        execShell: (command, options) => transport.execShell(command, options),
+      }),
+    }
+
+    const service = new VncService(manager)
+    assert.deepEqual(await service.discover({ kind: 'ssh', hostId: host.id }), [5900])
     assert.deepEqual(transport.closeCalls, [port])
   })
 
