@@ -262,7 +262,9 @@ the chooser appears only when discovery finds multiple desktops. Saved SSH hosts
 and deduplication matches Bonjour devices by hostname, normalized device label,
 or the current addresses resolved for the SSH host. Remote scans use the probed host OS and directly verify
 port 5900 when a process scanner omits macOS's launchd-managed Screen Sharing
-listener. Once a session starts, setup and discovery controls collapse into a
+listener. A connected framebuffer can be right-clicked to attach the current
+screen as a PNG to the active composer; the user still decides whether to send
+it to the model. Once a session starts, setup and discovery controls collapse into a
 plain-language connected summary, view-only explanation, and Disconnect action;
 protocol names and port numbers remain confined to Advanced settings and error
 diagnostics. The live `DISPLAY=:1` harness remains.

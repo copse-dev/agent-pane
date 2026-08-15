@@ -448,8 +448,27 @@ describe('read-only VNC viewer', function () {
     })
     assert.deepEqual(sampled?.left, [255, 90, 165, 255])
     assert.deepEqual(sampled?.right, [0, 74, 70, 255])
-
     await saveElementScreenshot('#pane-files', 'vnc-viewer-read-only.png')
+
+    await canvas.click({ button: 'right' })
+    const shareMenu = $('.context-menu')
+    await shareMenu.waitForDisplayed({ timeout: 5_000 })
+    assert.equal(await $('.context-menu-item').getText(), 'Share screen with model')
+    await saveElementScreenshot('.context-menu', 'vnc-viewer-share-screen-menu.png')
+    await $('.context-menu-item').click()
+    await expect(shareMenu).not.toBeExisting()
+    const sharedScreen = $('.attachment-chips .image-chip img')
+    await sharedScreen.waitForDisplayed({ timeout: 5_000 })
+    assert.match(await sharedScreen.getAttribute('src'), /^data:image\/png;base64,/)
+    assert.deepEqual(
+      await browser.execute(() => {
+        const image = document.querySelector<HTMLImageElement>('.attachment-chips .image-chip img')
+        return image ? { width: image.naturalWidth, height: image.naturalHeight } : null
+      }),
+      { width: WIDTH, height: HEIGHT },
+    )
+    await saveAppScreenshot('vnc-viewer-shared-screen.png')
+
     await assertNoErrorToasts('read-only VNC viewer')
   })
 })

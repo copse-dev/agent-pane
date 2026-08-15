@@ -1,4 +1,6 @@
 import RFB from '@novnc/novnc'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -14,6 +16,7 @@ import { panePopoutButton } from './pane-popout-button.ts'
 import { VncIpcChannel } from './vnc-channel.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
+import { showToast } from './toast.ts'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -839,6 +842,35 @@ export function mountVncPane(
     else channel?.close()
   }
 
+  function shareCurrentScreen(): void {
+    const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
+    if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) {
+      showToast('Connect to a desktop before sharing its screen.', { variant: 'error' })
+      return
+    }
+    const handlers = getPromptAttachmentHandlers()
+    if (!handlers) {
+      showToast('Open a thread before sharing this screen.', { variant: 'error' })
+      return
+    }
+    try {
+      handlers.attachImage(canvas.toDataURL('image/png'), 'image/png')
+      handlers.focusComposer?.()
+      showToast('Added the desktop screenshot to the thread.', { durationMs: 2_000 })
+    } catch {
+      showToast('Could not capture the desktop screenshot.', { variant: 'error' })
+    }
+  }
+
+  const onScreenContextMenu = (event: MouseEvent): void => {
+    if (!connectedAtLeastOnce || !screen.querySelector('canvas')) return
+    event.preventDefault()
+    event.stopPropagation()
+    showContextMenu(event.clientX, event.clientY, [
+      { label: 'Share screen with model', onSelect: shareCurrentScreen },
+    ])
+  }
+
   connectButton.addEventListener('click', () => {
     void connect()
   })
@@ -850,6 +882,7 @@ export function mountVncPane(
   nearbyButton.addEventListener('click', () => {
     void discoverNearby()
   })
+  screen.addEventListener('contextmenu', onScreenContextMenu, true)
   machineSelect.addEventListener('change', () => {
     updateMachineUi()
     void discoverSelectedMachine()
@@ -915,6 +948,7 @@ export function mountVncPane(
     sshHostsGeneration++
     rfb?.disconnect()
     channel?.close()
+    screen.removeEventListener('contextmenu', onScreenContextMenu, true)
     stopData()
     stopStatus()
     stopWorkspace()
