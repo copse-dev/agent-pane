@@ -37,6 +37,17 @@ export const vncTargetSchema: z.ZodType<VncTarget> = z.discriminatedUnion('kind'
     remotePort: zPortNumber,
     display: z.string().max(128).optional(),
   }),
+  z.object({
+    kind: z.literal('network'),
+    host: z
+      .string()
+      .trim()
+      .min(1)
+      .max(253)
+      .regex(/^[\w.:%-]+$/),
+    port: zPortNumber,
+    confirmedUnencrypted: z.literal(true),
+  }),
 ])
 
 export const vncDiscoveryHostSchema: z.ZodType<VncDiscoveryHost> = z.discriminatedUnion('kind', [

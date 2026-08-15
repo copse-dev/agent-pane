@@ -832,6 +832,7 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('vnc:list'),
     discover: (host: import('@shared/types/vnc.ts').VncDiscoveryHost) =>
       ipcRenderer.invoke('vnc:discover', host),
+    discoverNearby: () => ipcRenderer.invoke('vnc:discover-nearby'),
     start: (connectionId: string): void => {
       ipcRenderer.send('vnc:start', connectionId)
     },
@@ -1164,6 +1165,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     setPortRows(rows: unknown) {
       return ipcRenderer.invoke('test:setPortRows', rows)
+    },
+    setVncNearbyServers(servers: unknown) {
+      return ipcRenderer.invoke('test:setVncNearbyServers', servers)
     },
   })
 }

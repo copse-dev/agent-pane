@@ -1,9 +1,18 @@
 export type VncTarget =
   | { kind: 'loopback'; port: number }
   | { kind: 'ssh'; hostId: string; remotePort: number; display?: string | undefined }
+  | { kind: 'network'; host: string; port: number; confirmedUnencrypted: true }
 
 /** Machine whose listening ports should be checked for RFB servers. */
 export type VncDiscoveryHost = { kind: 'local' } | { kind: 'ssh'; hostId: string }
+
+/** RFB service advertised on the local network through DNS-SD/Bonjour. */
+export interface VncNearbyServer {
+  name: string
+  host: string
+  port: number
+  addresses: string[]
+}
 
 export type VncConnectionStatus = 'connecting' | 'connected' | 'closed' | 'error'
 

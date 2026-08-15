@@ -70,6 +70,14 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     return service.discover(host)
   })
 
+  ipcMain.handle('vnc:discover-nearby', async (event) => {
+    assertMainFrameSender(event, win)
+    if (!getSetting<boolean>('vncEnabled', false)) {
+      throw new Error('VNC viewer is disabled in Settings')
+    }
+    return service.discoverNearby()
+  })
+
   ipcMain.handle('vnc:close', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(vncConnectionIdSchema, [rawId])
@@ -93,6 +101,7 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     ipcMain.removeHandler('vnc:open')
     ipcMain.removeHandler('vnc:list')
     ipcMain.removeHandler('vnc:discover')
+    ipcMain.removeHandler('vnc:discover-nearby')
     ipcMain.removeHandler('vnc:close')
     ipcMain.off('vnc:start', onStart)
     ipcMain.off('vnc:send', onSend)

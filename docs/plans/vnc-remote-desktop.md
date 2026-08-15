@@ -2,7 +2,9 @@
 
 **Status: Active (V0/V1 first release).** The SSH-forwarding primitive, opt-in
 read-only viewer, protocol-verified local discovery, and configured-SSH-host
-discovery are implemented. The generic browser consumer, reconnect
+discovery are implemented. Nearby `_rfb._tcp` services are discovered through
+Bonjour/DNS-SD, and explicit private/link-local addresses are supported behind
+an unencrypted-connection confirmation. The generic browser consumer, reconnect
 reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
 credentials, and every agent-facing capability remain V2 or later. The tunnel work is tracked by
 [#771](https://github.com/copse-dev/agent-pane/issues/771).
@@ -128,13 +130,15 @@ beside them. Candidate listeners are reported only after a loopback connection
    `Thread.videos`: state the renderer owns that a main-process tool needs, so the
    tool silently does nothing on the path where no window exists.
 
-4. **Never a direct connection to a non-loopback VNC port. Tunnel or nothing.**
+4. **Direct VNC is LAN-only, explicit, and visibly unencrypted.**
    RFB's own authentication is a DES challenge with an effective 8-character key,
    and RFB 3.8 has no transport encryption; every keystroke, including whatever
    is typed into a terminal on that desktop, crosses the wire in the clear. So a
-   target is either loopback on this machine, or a configured SSH host reached
-   through a local forward. There is no third kind, and no host field the user
-   can type an internet address into.
+   target is normally loopback on this machine or a configured SSH host reached
+   through a local forward. A user may also choose a Bonjour-advertised service
+   or type a private/link-local address. That path shows an unencrypted warning
+   and requires confirmation for each connection. Public addresses and
+   hostnames resolving outside private/link-local ranges are rejected.
 
    That makes **#771 a hard dependency, and a cheap one**: `ssh -O forward -L
 127.0.0.1:<local>:127.0.0.1:<remote>` runs against the ControlMaster socket
@@ -142,9 +146,9 @@ beside them. Candidate listeners are reported only after a loopback connection
 cancel` to tear it down. No second handshake, no new auth surface, no askpass
    lease beyond the one `leaseSshAskpassEnv` already brokers.
 
-   **Rejected: a `vncAllowedHosts` allowlist for direct connections**, mirroring
-   `browserAllowedOrigins`. An allowlist authorises a destination; it says nothing
-   about the wire, and the wire is the problem here.
+   **Rejected: silently treating LAN as secure.** A private address authorises a
+   destination; it says nothing about the wire. The UI therefore keeps the
+   warning attached to the direct target and prefers SSH whenever it is configured.
 
 5. **The viewer ships before any input, and the agent's input ships last.**
    Not caution for its own sake — see the security section, which argues that an
@@ -164,15 +168,17 @@ cancel` to tear it down. No second handshake, no new auth surface, no askpass
    Enumerating `:5900`/`:5901` on an SSH host is `scanCandidates()`'s command list
    run through `execShell` instead of `runCommand`, feeding the same parsers. If
    the Ports panel lands first, a VNC target becomes one row type in it rather
-   than a parallel list.
+   than a parallel list. Other machines on the local link are found separately
+   through DNS-SD `_rfb._tcp` advertisements; Copse never sweeps the subnet.
 
 ## Interface
 
 ```typescript
-/** Where a desktop lives. There is no free-form host field. */
+/** Where a desktop lives. Direct network targets are LAN-only and confirmed. */
 type VncTarget =
   | { kind: 'loopback'; port: number }
   | { kind: 'ssh'; hostId: string; remotePort: number; display?: string }
+  | { kind: 'network'; host: string; port: number; confirmedUnencrypted: true }
 
 interface VncConnection {
   id: string
@@ -194,6 +200,8 @@ interface VncService {
   list(): VncConnection[]
   /** Enumerate plausible VNC ports on a target host. */
   discover(host: { kind: 'local' } | { kind: 'ssh'; hostId: string }): Promise<number[]>
+  /** Browse `_rfb._tcp.local` services without scanning the subnet. */
+  discoverNearby(): Promise<VncNearbyServer[]>
 }
 ```
 
@@ -228,12 +236,13 @@ after disconnect. This is #771's tunnel half and lands under that issue.
 ### V1 — The viewer, read-only (~1 week)
 
 **Implementation:** shipped behind `vncEnabled`, default off. Main owns the raw
-RFB socket (direct loopback or SSH-forwarded), preload exposes a binary
+RFB socket (loopback, LAN-direct, or SSH-forwarded), preload exposes a binary
 WebSocket-shaped IPC channel, and noVNC 1.5.0 paints the view-only pane. Unit
 coverage uses real loopback sockets, and the focused WDIO eval paints and pixel-
 checks a two-colour RFB 3.8 framebuffer. The pane explicitly selects this
 machine or a configured SSH host, discovers verified RFB listeners on either,
-and still accepts a manually entered port. The live `DISPLAY=:1` harness remains.
+discovers nearby Bonjour-advertised devices, and accepts a manually entered LAN
+hostname/IP and port. The live `DISPLAY=:1` harness remains.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local

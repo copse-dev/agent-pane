@@ -140,6 +140,7 @@ import {
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
+import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -2380,6 +2381,23 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [raw],
       )
       setSeededPortRows({ rows, tool: 'seeded' })
+    })
+    ipcMain.handle('test:setVncNearbyServers', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const servers = parseIpcArgs(
+        z
+          .array(
+            z.object({
+              name: z.string().min(1).max(256),
+              host: z.string().min(1).max(253),
+              port: z.number().int().min(1).max(65535),
+              addresses: z.array(z.string().min(1).max(64)).max(16),
+            }),
+          )
+          .max(64),
+        [raw],
+      )
+      setSeededVncNearbyServersForTests(servers)
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

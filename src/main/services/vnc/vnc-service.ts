@@ -1,8 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { createConnection, type Socket } from 'node:net'
+import { lookup } from 'node:dns/promises'
+import { isIP, createConnection, type Socket } from 'node:net'
+import { networkInterfaces } from 'node:os'
+import Bonjour, { type Service } from 'bonjour-service'
+import {
+  isLoopbackHostname,
+  isPrivateOrLinkLocalHost,
+  normalizeHostname,
+} from '@copse/llm/credential-url.ts'
 import type {
   VncConnection,
   VncDiscoveryHost,
+  VncNearbyServer,
   VncStatusEvent,
   VncTarget,
 } from '@shared/types/vnc.ts'
@@ -34,6 +43,7 @@ export const VNC_STATUS_CHANNEL = 'vnc:status'
 const RFB_BANNER_BYTES = 12
 const RFB_PROBE_TIMEOUT_MS = 600
 const REMOTE_SCAN_TIMEOUT_MS = 5_000
+const NEARBY_DISCOVERY_MS = 1_500
 const LOOPBACK_REACHABLE_ADDRESSES = new Set([
   '0.0.0.0',
   '127.0.0.1',
@@ -50,6 +60,90 @@ export function isPlausibleVncListener(listener: ListeningPort): boolean {
     (listener.port >= 5900 && listener.port <= 5999) ||
     /(?:vnc|screen\s*sharing|screensharing|vino)/i.test(listener.command)
   )
+}
+
+function addressForPolicy(address: string): string {
+  return normalizeHostname(address).split('%')[0] ?? ''
+}
+
+function isLanAddress(address: string): boolean {
+  const normalized = addressForPolicy(address)
+  return !isLoopbackHostname(normalized) && isPrivateOrLinkLocalHost(normalized)
+}
+
+function localInterfaceAddresses(): Set<string> {
+  const addresses = new Set<string>()
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) addresses.add(addressForPolicy(entry.address))
+  }
+  return addresses
+}
+
+function nearbyServer(
+  service: Service,
+  localAddresses: ReadonlySet<string>,
+): VncNearbyServer | null {
+  const addresses = [...new Set((service.addresses ?? []).filter(isLanAddress))]
+  if (
+    addresses.length > 0 &&
+    addresses.every((address) => localAddresses.has(addressForPolicy(address)))
+  ) {
+    return null
+  }
+  const host = normalizeHostname(service.host)
+  if (addresses.length === 0 && (!host || !host.endsWith('.local'))) return null
+  return { name: service.name, host, port: service.port, addresses }
+}
+
+/** Browse for `_rfb._tcp.local` advertisements without sweeping the subnet. */
+export async function discoverNearbyVncServers(): Promise<VncNearbyServer[]> {
+  return new Promise<VncNearbyServer[]>((resolve, reject) => {
+    const discovered = new Map<string, VncNearbyServer>()
+    const localAddresses = localInterfaceAddresses()
+    let discoveryError: Error | null = null
+    const bonjour = new Bonjour(undefined, (error: unknown) => {
+      discoveryError = error instanceof Error ? error : new Error(String(error))
+    })
+    const browser = bonjour.find({ type: 'rfb', protocol: 'tcp' }, (service) => {
+      const server = nearbyServer(service, localAddresses)
+      if (server) discovered.set(`${server.host}:${String(server.port)}`, server)
+    })
+    setTimeout(() => {
+      browser.stop()
+      bonjour.destroy()
+      const servers = [...discovered.values()].sort((left, right) =>
+        left.name.localeCompare(right.name),
+      )
+      if (servers.length === 0 && discoveryError) reject(discoveryError)
+      else resolve(servers)
+    }, NEARBY_DISCOVERY_MS)
+  })
+}
+
+type LookupHost = (
+  hostname: string,
+  options: { all: true; verbatim: true },
+) => Promise<Array<{ address: string; family: number }>>
+
+/** Resolve once and pin the socket to a LAN address, avoiding a second DNS lookup. */
+export async function resolveVncNetworkHost(
+  rawHost: string,
+  lookupHost: LookupHost = lookup,
+): Promise<string> {
+  const host = normalizeHostname(rawHost)
+  if (!host) throw new Error('Enter a hostname or IP address')
+  if (isIP(host) !== 0) {
+    if (!isLanAddress(host)) {
+      throw new Error('Direct VNC is limited to private or link-local network addresses')
+    }
+    return host
+  }
+
+  const resolved = await lookupHost(host, { all: true, verbatim: true })
+  if (resolved.length === 0 || resolved.some((entry) => !isLanAddress(entry.address))) {
+    throw new Error('The hostname must resolve only to private or link-local network addresses')
+  }
+  return resolved.find((entry) => entry.family === 4)?.address ?? resolved[0]?.address ?? host
 }
 
 function rfbBanner(bytes: Buffer): boolean {
@@ -109,7 +203,8 @@ async function scanRemotePorts(
 }
 
 function targetPort(target: VncTarget): number {
-  return target.kind === 'loopback' ? target.port : target.remotePort
+  if (target.kind === 'loopback' || target.kind === 'network') return target.port
+  return target.remotePort
 }
 
 function connectionFailure(target: VncTarget, error: Error): Error {
@@ -117,7 +212,9 @@ function connectionFailure(target: VncTarget, error: Error): Error {
   const prefix =
     target.kind === 'ssh'
       ? `The SSH tunnel opened, but no VNC server answered on remote port ${String(port)}`
-      : `No VNC server answered on 127.0.0.1:${String(port)}`
+      : target.kind === 'network'
+        ? `No VNC server answered on ${target.host}:${String(port)}`
+        : `No VNC server answered on 127.0.0.1:${String(port)}`
   return new Error(`${prefix}: ${error.message}`)
 }
 
@@ -129,13 +226,19 @@ export class VncService {
   private readonly connections = new Map<string, ManagedVncConnection>()
   private readonly sshManager: Pick<SshConnectionManager, 'connect'>
   private readonly scanLocal: () => Promise<PortScan>
+  private readonly discoverNearbyImpl: () => Promise<VncNearbyServer[]>
+  private readonly resolveNetworkHost: (host: string) => Promise<string>
 
   constructor(
     sshManager: Pick<SshConnectionManager, 'connect'> = getSshConnectionManager(),
     scanLocal: () => Promise<PortScan> = scanListeningPorts,
+    discoverNearby: () => Promise<VncNearbyServer[]> = discoverNearbyVncServers,
+    resolveNetworkHost: (host: string) => Promise<string> = resolveVncNetworkHost,
   ) {
     this.sshManager = sshManager
     this.scanLocal = scanLocal
+    this.discoverNearbyImpl = discoverNearby
+    this.resolveNetworkHost = resolveNetworkHost
   }
 
   async discover(host: VncDiscoveryHost): Promise<number[]> {
@@ -162,8 +265,14 @@ export class VncService {
     })
   }
 
+  async discoverNearby(): Promise<VncNearbyServer[]> {
+    if (seededNearbyServers !== null) return seededNearbyServers.map((server) => ({ ...server }))
+    return this.discoverNearbyImpl()
+  }
+
   async open(target: VncTarget, owner: VncConnectionOwner): Promise<VncConnection> {
     let localPort = targetPort(target)
+    let socketHost = '127.0.0.1'
     let forward: ManagedVncConnection['forward']
 
     if (target.kind === 'ssh') {
@@ -177,9 +286,11 @@ export class VncService {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`Could not open the SSH tunnel: ${message}`, { cause: error })
       }
+    } else if (target.kind === 'network') {
+      socketHost = await this.resolveNetworkHost(target.host)
     }
 
-    const socket = createConnection({ host: '127.0.0.1', port: localPort })
+    const socket = createConnection({ host: socketHost, port: localPort })
     // A VNC server normally sends its version banner immediately. Pause before
     // awaiting connect so no bytes can outrun the renderer's IPC subscriptions.
     socket.pause()
@@ -325,6 +436,7 @@ export class VncService {
 }
 
 let service: VncService | null = null
+let seededNearbyServers: VncNearbyServer[] | null = null
 
 export function getVncService(): VncService {
   service ??= new VncService()
@@ -333,4 +445,9 @@ export function getVncService(): VncService {
 
 export function resetVncServiceForTests(): void {
   service = null
+  seededNearbyServers = null
+}
+
+export function setSeededVncNearbyServersForTests(servers: VncNearbyServer[]): void {
+  seededNearbyServers = servers.map((server) => ({ ...server, addresses: [...server.addresses] }))
 }

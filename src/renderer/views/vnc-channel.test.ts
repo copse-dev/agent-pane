@@ -21,6 +21,7 @@ function apiHarness(): {
         open: (): Promise<never> => Promise.reject(new Error('unused')),
         list: (): Promise<never[]> => Promise.resolve([]),
         discover: (): Promise<never[]> => Promise.resolve([]),
+        discoverNearby: (): Promise<never[]> => Promise.resolve([]),
         start: (id): void => {
           starts.push(id)
         },

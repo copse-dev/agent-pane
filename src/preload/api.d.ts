@@ -63,6 +63,7 @@ import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-
 import type {
   VncConnection,
   VncDiscoveryHost,
+  VncNearbyServer,
   VncStatusEvent,
   VncTarget,
 } from '@shared/types/vnc.ts'
@@ -667,6 +668,7 @@ export interface ApiClient {
     open: (target: VncTarget) => Promise<VncConnection>
     list: () => Promise<VncConnection[]>
     discover: (host: VncDiscoveryHost) => Promise<number[]>
+    discoverNearby: () => Promise<VncNearbyServer[]>
     start: (connectionId: string) => void
     send: (connectionId: string, bytes: Uint8Array) => void
     close: (connectionId: string) => Promise<void>

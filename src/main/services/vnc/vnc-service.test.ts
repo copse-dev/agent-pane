@@ -6,6 +6,7 @@ import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
 import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
 import {
   isPlausibleVncListener,
+  resolveVncNetworkHost,
   VNC_DATA_CHANNEL,
   VNC_STATUS_CHANNEL,
   VncService,
@@ -102,6 +103,30 @@ describe('VNC discovery candidates', () => {
     assert.equal(
       isPlausibleVncListener({ port: 3000, pid: 1, command: 'node', address: '127.0.0.1' }),
       false,
+    )
+  })
+
+  it('accepts LAN addresses and pins LAN-only hostname resolution', async () => {
+    assert.equal(await resolveVncNetworkHost('192.168.1.20'), '192.168.1.20')
+    assert.equal(
+      await resolveVncNetworkHost('studio.local', async () => [
+        { address: 'fd00::20', family: 6 },
+        { address: '192.168.1.20', family: 4 },
+      ]),
+      '192.168.1.20',
+    )
+  })
+
+  it('rejects loopback, public, and mixed hostname resolution', async () => {
+    await assert.rejects(() => resolveVncNetworkHost('127.0.0.1'), /private or link-local/)
+    await assert.rejects(() => resolveVncNetworkHost('8.8.8.8'), /private or link-local/)
+    await assert.rejects(
+      () =>
+        resolveVncNetworkHost('mixed.example', async () => [
+          { address: '192.168.1.20', family: 4 },
+          { address: '203.0.113.20', family: 4 },
+        ]),
+      /resolve only to private or link-local/,
     )
   })
 })
@@ -245,6 +270,37 @@ describe('VncService', () => {
 
     assert.deepEqual(await service.discover({ kind: 'ssh', hostId: host.id }), [5901])
     assert.deepEqual(transport.closeCalls, [port])
+  })
+
+  it('returns nearby DNS-SD services from the discovery provider', async () => {
+    const nearby = {
+      name: 'Studio Mac',
+      host: 'studio.local',
+      port: 5900,
+      addresses: ['192.168.1.20'],
+    }
+    const service = new VncService(undefined, undefined, async () => [nearby])
+
+    assert.deepEqual(await service.discoverNearby(), [nearby])
+  })
+
+  it('opens an explicitly confirmed direct-network target at its pinned address', async () => {
+    const server = createServer()
+    servers.push(server)
+    const port = await listen(server)
+    const service = new VncService(undefined, undefined, undefined, async (host) => {
+      assert.equal(host, 'studio.local')
+      return '127.0.0.1'
+    })
+    const firstOwner = owner()
+
+    const connection = await service.open(
+      { kind: 'network', host: 'studio.local', port, confirmedUnencrypted: true },
+      firstOwner,
+    )
+
+    assert.equal(connection.target.kind, 'network')
+    await service.close(connection.id, firstOwner.id)
   })
 
   it('reports a refused server distinctly from tunnel setup', async () => {

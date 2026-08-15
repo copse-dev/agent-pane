@@ -161,10 +161,21 @@ describe('read-only VNC viewer', function () {
       ])
       const e2e = (
         window as unknown as {
-          __copseE2e?: { openWorkspace: (root: string) => Promise<string> }
+          __copseE2e?: {
+            openWorkspace: (root: string) => Promise<string>
+            setVncNearbyServers: (servers: unknown) => Promise<void>
+          }
         }
       ).__copseE2e
       if (!e2e) throw new Error('__copseE2e unavailable')
+      await e2e.setVncNearbyServers([
+        {
+          name: 'Studio Mac',
+          host: 'studio.local',
+          port: 5900,
+          addresses: ['192.168.1.20'],
+        },
+      ])
       await e2e.openWorkspace(workspaceRoot)
     }, process.cwd())
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -191,12 +202,33 @@ describe('read-only VNC viewer', function () {
     await desktopButton.click()
     const portInput = $('.vnc-port-input')
     await portInput.waitForExist({ timeout: 20_000 })
+    await $('.vnc-machine-select option[value="network:nearby:0"]').waitForExist({
+      timeout: 20_000,
+    })
     const machineOptions = await browser.execute(() =>
       [...document.querySelectorAll<HTMLOptionElement>('.vnc-machine-select option')].map(
         (option) => option.textContent,
       ),
     )
-    assert.deepEqual(machineOptions, ['This machine', 'Build box · ubuntu@build.example'])
+    assert.deepEqual(machineOptions, [
+      'This machine',
+      'Studio Mac · studio.local:5900',
+      'Other address…',
+      'Build box · ubuntu@build.example',
+    ])
+
+    const machineSelect = $('.vnc-machine-select')
+    await machineSelect.selectByAttribute('value', 'network:manual')
+    const addressInput = $('.vnc-address-input')
+    await addressInput.waitForDisplayed()
+    await addressInput.setValue('192.168.1.20')
+    assert.match(await $('.vnc-network-warning').getText(), /unencrypted/i)
+    await $('.vnc-connect-btn').click()
+    const confirmDialog = $('#confirm-dialog')
+    await confirmDialog.waitForDisplayed()
+    assert.match(await $('.confirm-dialog-detail').getText(), /does not encrypt/i)
+    await $('.confirm-dialog-cancel').click()
+    await machineSelect.selectByAttribute('value', 'local')
 
     const discoveredServer = $(`.vnc-discovered-port[data-port="${String(port)}"]`)
     await discoveredServer.waitForExist({ timeout: 20_000 })
@@ -230,31 +262,13 @@ describe('read-only VNC viewer', function () {
     assert.deepEqual(sampled?.left, [255, 90, 165, 255])
     assert.deepEqual(sampled?.right, [0, 74, 70, 255])
 
-    // The fake server uses any free conventional VNC port. Normalize the
-    // dynamic discovery result before capture so the reference PNG is stable.
+    // Show the nearby-device state in the visual reference. The connection was
+    // made locally above so the fake server still validates the real RFB path.
     await browser.execute(() => {
-      const input = document.querySelector<HTMLInputElement>('.vnc-port-input')
-      if (input) input.value = '5901'
       const machine = document.querySelector<HTMLSelectElement>('.vnc-machine-select')
-      if (machine) machine.value = 'ssh:build-box'
-      const status = document.querySelector<HTMLElement>('.vnc-discovery-status')
-      if (status) status.textContent = '1 VNC server found.'
-      const ports = document.querySelector<HTMLElement>('.vnc-discovered-ports')
-      if (ports) {
-        ports.replaceChildren()
-        const button = document.createElement('button')
-        button.type = 'button'
-        button.className = 'vnc-discovered-port selected'
-        button.dataset['port'] = '5901'
-        button.setAttribute('aria-label', 'Display :1, port 5901')
-        button.disabled = true
-        const label = document.createElement('span')
-        label.textContent = 'Display :1'
-        const number = document.createElement('span')
-        number.className = 'vnc-discovered-port-number'
-        number.textContent = '5901'
-        button.append(label, number)
-        ports.append(button)
+      if (machine) {
+        machine.value = 'network:nearby:0'
+        machine.dispatchEvent(new Event('change'))
       }
     })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-read-only.png')

@@ -32,6 +32,15 @@ describe('ipc-guards VNC targets', () => {
       vncTargetSchema.safeParse({ kind: 'ssh', hostId: 'build-box', remotePort: 5901 }).success,
       true,
     )
+    assert.equal(
+      vncTargetSchema.safeParse({
+        kind: 'network',
+        host: '192.168.1.20',
+        port: 5900,
+        confirmedUnencrypted: true,
+      }).success,
+      true,
+    )
     assert.equal(vncDiscoveryHostSchema.safeParse({ kind: 'local' }).success, true)
     assert.equal(
       vncDiscoveryHostSchema.safeParse({ kind: 'ssh', hostId: 'build-box' }).success,
@@ -39,9 +48,18 @@ describe('ipc-guards VNC targets', () => {
     )
   })
 
-  it('rejects free-form network hosts and unsafe SSH host ids', () => {
+  it('rejects unconfirmed network targets and unsafe SSH host ids', () => {
     assert.equal(
       vncTargetSchema.safeParse({ kind: 'direct', host: 'example.com', port: 5901 }).success,
+      false,
+    )
+    assert.equal(
+      vncTargetSchema.safeParse({
+        kind: 'network',
+        host: '192.168.1.20',
+        port: 5900,
+        confirmedUnencrypted: false,
+      }).success,
       false,
     )
     assert.equal(

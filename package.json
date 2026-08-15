@@ -140,6 +140,12 @@
       ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Copse discovers nearby computers that advertise VNC screen sharing.",
+        "NSBonjourServices": [
+          "_rfb._tcp"
+        ]
+      },
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
     }
@@ -154,6 +160,7 @@
     "@novnc/novnc": "1.5.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "bonjour-service": "^1.4.4",
     "ddg-search": "^2026.2.16",
     "dompurify": "^3.4.13",
     "electron-store": "^11.0.2",

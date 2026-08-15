@@ -674,6 +674,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       open: unsupported,
       list: emptyArray,
       discover: emptyArray,
+      discoverNearby: emptyArray,
       start: () => {},
       send: () => {},
       close: resolvedVoid,
