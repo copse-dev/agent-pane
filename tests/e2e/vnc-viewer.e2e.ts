@@ -100,6 +100,43 @@ function attachRfb38(socket: Socket): void {
   })
 }
 
+function attachRfb38AuthenticationFailure(socket: Socket): void {
+  let state: 'version' | 'security' | 'response' | 'done' = 'version'
+  let buffered = Buffer.alloc(0)
+  socket.write('RFB 003.008\n')
+  socket.on('data', (chunk: Buffer) => {
+    buffered = Buffer.concat([buffered, chunk])
+    for (;;) {
+      if (state === 'version') {
+        if (buffered.length < 12) return
+        buffered = buffered.subarray(12)
+        socket.write(Buffer.from([1, 2]))
+        state = 'security'
+        continue
+      }
+      if (state === 'security') {
+        if (buffered.length < 1) return
+        assert.equal(buffered[0], 2)
+        buffered = buffered.subarray(1)
+        socket.write(Buffer.alloc(16, 7))
+        state = 'response'
+        continue
+      }
+      if (state === 'response') {
+        if (buffered.length < 16) return
+        buffered = buffered.subarray(16)
+        const reason = Buffer.from('The VNC password was rejected', 'utf8')
+        const failure = Buffer.alloc(8)
+        failure.writeUInt32BE(1, 0)
+        failure.writeUInt32BE(reason.length, 4)
+        socket.write(Buffer.concat([failure, reason]))
+        state = 'done'
+      }
+      return
+    }
+  })
+}
+
 async function listenOn(server: Server, port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error): void => {
@@ -134,7 +171,9 @@ describe('read-only VNC viewer', function () {
   this.timeout(120_000)
   const sockets = new Set<Socket>()
   let server: Server
+  let authenticationServer: Server
   let port = 0
+  let authenticationPort = 0
 
   before(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
@@ -147,6 +186,11 @@ describe('read-only VNC viewer', function () {
       attachRfb38(socket)
     })
     port = await listenOnVncPort(server)
+    authenticationServer = createServer((socket) => {
+      sockets.add(socket)
+      socket.once('close', () => sockets.delete(socket))
+      attachRfb38AuthenticationFailure(socket)
+    })
     await browser.execute(async (workspaceRoot) => {
       await window.api.settings.set('onboardingCompleted', true)
       await window.api.settings.set('vncEnabled', true)
@@ -193,7 +237,18 @@ describe('read-only VNC viewer', function () {
 
   after(async () => {
     for (const socket of sockets) socket.destroy()
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await Promise.all(
+      [server, authenticationServer].map(
+        (runningServer) =>
+          new Promise<void>((resolve) => {
+            if (!runningServer.listening) {
+              resolve()
+              return
+            }
+            runningServer.close(() => resolve())
+          }),
+      ),
+    )
   })
 
   it('paints a fake RFB framebuffer without exposing input controls', async () => {
@@ -232,6 +287,35 @@ describe('read-only VNC viewer', function () {
 
     const discoveredServer = $(`.vnc-discovered-port[data-port="${String(port)}"]`)
     await discoveredServer.waitForExist({ timeout: 20_000 })
+    authenticationPort = await listenOnVncPort(authenticationServer)
+    await portInput.setValue(String(authenticationPort))
+    await $('.vnc-connect-btn').click()
+    const authPanel = $('.vnc-auth-panel')
+    await authPanel.waitForDisplayed({ timeout: 20_000 })
+    assert.equal(await $('.vnc-auth-title').getText(), 'Authentication required')
+    assert.match(await $('.vnc-auth-description').getText(), /VNC password/i)
+    assert.equal(await $('.vnc-status').isDisplayed(), false)
+    assert.equal(await $('.vnc-username-field').isDisplayed(), false)
+    assert.equal(await $('.vnc-password-field').isDisplayed(), true)
+    assert.equal(await $('.vnc-disconnect-btn').getText(), 'Cancel')
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-required.png')
+
+    await $('.vnc-password-input').setValue('incorrect-password')
+    await $('.vnc-authenticate-btn').click()
+    assert.equal(await $('.vnc-password-input').getValue(), '')
+    await browser.waitUntil(
+      async () => (await $('.vnc-status-title').getText()) === 'Authentication failed',
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected the rejected VNC password to remain visible after disconnect',
+      },
+    )
+    assert.equal(await authPanel.isDisplayed(), false)
+    assert.match(await $('.vnc-status-detail').getText(), /check the VNC password/i)
+    assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
+
+    await portInput.setValue(String(port))
     assert.equal(await portInput.getValue(), String(port))
     assert.equal(
       await discoveredServer.getAttribute('aria-label'),

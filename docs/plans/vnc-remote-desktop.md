@@ -6,8 +6,9 @@ discovery are implemented. Nearby `_rfb._tcp` services are discovered through
 Bonjour/DNS-SD, and explicit private/link-local addresses are supported behind
 an unencrypted-connection confirmation. The generic browser consumer, reconnect
 reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
-credentials, and every agent-facing capability remain V2 or later. The tunnel work is tracked by
-[#771](https://github.com/copse-dev/agent-pane/issues/771).
+stored credentials and every agent-facing capability remain V2 or later. V1 now
+handles noVNC's session-only credential requests without persisting secrets. The
+tunnel work is tracked by [#771](https://github.com/copse-dev/agent-pane/issues/771).
 
 ## Three readings of "VNC support", and which two this plan covers
 
@@ -156,6 +157,14 @@ cancel` to tear it down. No second handshake, no new auth surface, no askpass
    permission gate entirely. V1 connects with `view-only` set and no input path
    compiled into the pane at all.
 
+   Authentication is not input authority. When the RFB handshake requests a
+   password, username, or target, V1 asks for it in the viewer and passes it to
+   noVNC for that connection only. It never writes credentials to settings or
+   the secret store, and clears the visible password field immediately after
+   submission. A rejected credential, an unsupported authentication request,
+   an unavailable Screen Sharing service, and a dropped session remain distinct
+   error states after noVNC emits its final disconnect event.
+
 6. **Clipboard sync is off, separately consented, and never implicit.**
    RFB carries clipboard in both directions. On by default it means anything the
    agent copies on the remote host lands in the user's local clipboard, and
@@ -258,10 +267,11 @@ hostname/IP and port. The live `DISPLAY=:1` harness remains.
 **Acceptance:** with an SSH workspace pointed at the e2e host, the pane shows
 `DISPLAY=:1` and an `npm run test:e2e` run is watchable from inside Copse.
 
-### V2 — Human input and credentials (~3–4 days)
+### V2 — Human input and saved credentials (~3–4 days)
 
 1. Pointer and key events from the pane, with the keysym mapping noVNC provides.
-2. Optional per-host password through `secret-cipher.ts`, never in settings JSON.
+2. Optional per-host saved password through `secret-cipher.ts`, never in settings
+   JSON. Session-only credential prompts already exist in V1.
 3. Clipboard toggle, off by default, per connection.
 4. The idle-blanker problem is real and documented (`AGENTS.md:42`): synthetic
    warps do not reset X's screensaver, only real input does. Surface it as a

@@ -209,6 +209,20 @@ function targetPort(target: VncTarget): number {
 
 function connectionFailure(target: VncTarget, error: Error): Error {
   const port = targetPort(target)
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : null
+  if (target.kind === 'network' && code === 'ECONNREFUSED') {
+    return new Error(
+      `Screen Sharing is not accepting connections on ${target.host}:${String(port)}. Turn on General → Sharing → Screen Sharing on the remote Mac and allow VNC viewers.`,
+    )
+  }
+  if (
+    target.kind === 'network' &&
+    (code === 'ETIMEDOUT' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH')
+  ) {
+    return new Error(
+      `Could not reach ${target.host}:${String(port)}. Check that the Mac is awake, on this network, and has Screen Sharing enabled.`,
+    )
+  }
   const prefix =
     target.kind === 'ssh'
       ? `The SSH tunnel opened, but no VNC server answered on remote port ${String(port)}`

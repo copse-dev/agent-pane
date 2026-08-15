@@ -44,6 +44,19 @@ function discoveredDisplayLabel(port: number): string {
   return port >= 5900 && port <= 5999 ? `Display :${String(port - 5900)}` : 'VNC server'
 }
 
+type VncStatusKind = 'idle' | 'working' | 'ok' | 'error'
+type VncCredentialType = 'username' | 'password' | 'target'
+
+interface PendingStatus {
+  title: string
+  detail: string
+  kind: VncStatusKind
+}
+
+function isVncCredentialType(type: string): type is VncCredentialType {
+  return type === 'username' || type === 'password' || type === 'target'
+}
+
 export function mountVncPane(
   controlsRoot: HTMLElement,
   viewerRoot: HTMLElement,
@@ -124,7 +137,63 @@ export function mountVncPane(
     { class: 'vnc-network-warning', role: 'note', hidden: true },
     'Direct VNC is unencrypted. Only connect on a network you trust.',
   )
-  const status = el('div', { class: 'vnc-status', role: 'status' }, 'Not connected')
+  const usernameInput = el('input', {
+    type: 'text',
+    class: 'vnc-auth-input vnc-username-input',
+    autocomplete: 'username',
+    spellcheck: 'false',
+    'aria-label': 'VNC username',
+  })
+  const usernameField = el(
+    'label',
+    { class: 'vnc-field-label vnc-username-field', hidden: true },
+    'Username',
+    usernameInput,
+  )
+  const passwordInput = el('input', {
+    type: 'password',
+    class: 'vnc-auth-input vnc-password-input',
+    autocomplete: 'current-password',
+    'aria-label': 'VNC password',
+  })
+  const passwordField = el(
+    'label',
+    { class: 'vnc-field-label vnc-password-field', hidden: true },
+    'Password',
+    passwordInput,
+  )
+  const targetInput = el('input', {
+    type: 'text',
+    class: 'vnc-auth-input vnc-target-input',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    'aria-label': 'VNC authentication target',
+  })
+  const targetField = el(
+    'label',
+    { class: 'vnc-field-label vnc-target-field', hidden: true },
+    'Target',
+    targetInput,
+  )
+  const authenticateButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-primary vnc-authenticate-btn' },
+    'Authenticate',
+  )
+  const authDescription = el('div', { class: 'vnc-auth-description' })
+  const authPanel = el(
+    'div',
+    { class: 'vnc-auth-panel', 'aria-label': 'VNC authentication', hidden: true },
+    el('div', { class: 'vnc-auth-title' }, 'Authentication required'),
+    authDescription,
+    usernameField,
+    passwordField,
+    targetField,
+    authenticateButton,
+  )
+  const statusTitle = el('div', { class: 'vnc-status-title' }, 'Not connected')
+  const statusDetail = el('div', { class: 'vnc-status-detail', hidden: true })
+  const status = el('div', { class: 'vnc-status', role: 'status' }, statusTitle, statusDetail)
   const form = el(
     'div',
     { class: 'vnc-connect-form' },
@@ -137,6 +206,7 @@ export function mountVncPane(
     discoveryStatus,
     discoveredPorts,
     networkWarning,
+    authPanel,
     connectButton,
     disconnectButton,
   )
@@ -162,33 +232,131 @@ export function mountVncPane(
   let nearbyGeneration = 0
   let sshHosts: SshWorkspaceHost[] = []
   let nearbyServers: VncNearbyServer[] = []
+  let requiredCredentials = new Set<VncCredentialType>()
+  let pendingDisconnectStatus: PendingStatus | null = null
+  let connectedAtLeastOnce = false
+  let activeTarget: VncTarget | null = null
 
-  function setConnectedUi(connected: boolean): void {
-    connectButton.hidden = connected
-    disconnectButton.hidden = !connected
-    portInput.disabled = connected
-    addressInput.disabled = connected
-    machineSelect.disabled = connected
-    discoverButton.disabled = connected
-    nearbyButton.disabled = connected
+  function setSessionUi(active: boolean, connected = false): void {
+    connectButton.hidden = active
+    disconnectButton.hidden = !active
+    disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
+    portInput.disabled = active
+    addressInput.disabled = active
+    machineSelect.disabled = active
+    discoverButton.disabled = active
+    nearbyButton.disabled = active
     for (const button of discoveredPorts.querySelectorAll<HTMLButtonElement>('button')) {
-      button.disabled = connected
+      button.disabled = active
     }
     empty.hidden = connected
     screen.hidden = !connected
   }
 
-  function setStatus(message: string, kind: 'idle' | 'working' | 'ok' | 'error'): void {
-    status.textContent = message
+  function setStatus(title: string, kind: VncStatusKind, detail = ''): void {
+    status.hidden = false
+    statusTitle.textContent = title
+    statusDetail.textContent = detail
+    statusDetail.hidden = detail.length === 0
     status.dataset['kind'] = kind
   }
 
-  function clearViewer(message: string, kind: 'idle' | 'error' = 'idle'): void {
+  function hideAuthentication(): void {
+    authPanel.hidden = true
+    requiredCredentials = new Set()
+    passwordInput.value = ''
+  }
+
+  function clearViewer(title: string, kind: 'idle' | 'error' = 'idle', detail = ''): void {
     rfb = null
     channel = null
+    activeTarget = null
+    connectedAtLeastOnce = false
+    pendingDisconnectStatus = null
+    hideAuthentication()
     screen.replaceChildren()
-    setConnectedUi(false)
-    setStatus(message, kind)
+    empty.textContent =
+      'Choose this machine, a nearby device, another address, or a saved SSH machine.'
+    setSessionUi(false)
+    setStatus(title, kind, detail)
+  }
+
+  function showAuthentication(types: readonly string[]): boolean {
+    const unsupported = types.filter((type) => !isVncCredentialType(type))
+    if (types.length === 0 || unsupported.length > 0) {
+      pendingDisconnectStatus = {
+        title: 'Unsupported authentication',
+        detail:
+          unsupported.length > 0
+            ? `This VNC server requested unsupported credentials: ${unsupported.join(', ')}.`
+            : 'This VNC server requested credentials without identifying a supported type.',
+        kind: 'error',
+      }
+      return false
+    }
+
+    requiredCredentials = new Set(types.filter(isVncCredentialType))
+    usernameField.hidden = !requiredCredentials.has('username')
+    passwordField.hidden = !requiredCredentials.has('password')
+    targetField.hidden = !requiredCredentials.has('target')
+    authDescription.textContent = requiredCredentials.has('username')
+      ? 'Enter an allowed account from the remote Mac or VNC server.'
+      : 'Enter the VNC password configured on the remote machine.'
+    authPanel.hidden = false
+    empty.textContent = 'Enter the requested credentials to continue the VNC handshake.'
+    setStatus(
+      'Authentication required',
+      'working',
+      requiredCredentials.has('username')
+        ? 'Enter the requested account credentials to continue.'
+        : 'Enter the separate VNC password configured in Screen Sharing settings.',
+    )
+    status.hidden = true
+    const firstInput = requiredCredentials.has('username')
+      ? usernameInput
+      : requiredCredentials.has('password')
+        ? passwordInput
+        : targetInput
+    queueMicrotask(() => {
+      firstInput.focus()
+    })
+    return true
+  }
+
+  function submitCredentials(): void {
+    if (!rfb || authPanel.hidden) return
+    const credentials: { username?: string; password?: string; target?: string } = {}
+    if (requiredCredentials.has('username')) {
+      const username = usernameInput.value.trim()
+      if (!username) {
+        authDescription.textContent = 'Enter an account allowed to share this screen.'
+        usernameInput.focus()
+        return
+      }
+      credentials.username = username
+    }
+    if (requiredCredentials.has('password')) {
+      if (!passwordInput.value) {
+        authDescription.textContent = 'Enter the VNC or account password.'
+        passwordInput.focus()
+        return
+      }
+      credentials.password = passwordInput.value
+    }
+    if (requiredCredentials.has('target')) {
+      const target = targetInput.value.trim()
+      if (!target) {
+        authDescription.textContent = 'Enter the requested VNC target or session.'
+        targetInput.focus()
+        return
+      }
+      credentials.target = target
+    }
+    authPanel.hidden = true
+    rfb.sendCredentials(credentials)
+    passwordInput.value = ''
+    empty.textContent = 'Authenticating with the VNC server…'
+    setStatus('Authenticating…', 'working', 'Waiting for the VNC server to verify credentials.')
   }
 
   function nearbyMachineValue(index: number): string {
@@ -431,28 +599,74 @@ export function mountVncPane(
       channel = nextChannel
       const nextRfb = new RFB(screen, nextChannel, { shared: true })
       rfb = nextRfb
+      activeTarget = target
+      connectedAtLeastOnce = false
+      pendingDisconnectStatus = null
+      empty.textContent = 'Completing the VNC handshake…'
+      setSessionUi(true)
       nextRfb.viewOnly = true
       nextRfb.scaleViewport = true
       nextRfb.clipViewport = false
       nextRfb.resizeSession = false
       nextRfb.background = 'var(--bg-base)'
       nextRfb.addEventListener('connect', () => {
-        setConnectedUi(true)
+        if (rfb !== nextRfb) return
+        connectedAtLeastOnce = true
+        hideAuthentication()
+        setSessionUi(true, true)
         setStatus('Connected · view only', 'ok')
       })
       nextRfb.addEventListener('disconnect', (event) => {
-        const message = event.detail.clean ? 'Disconnected' : 'Desktop connection lost'
-        clearViewer(message, event.detail.clean ? 'idle' : 'error')
-      })
-      nextRfb.addEventListener('credentialsrequired', () => {
-        setStatus(
-          'This server requires credentials; password support is not available yet.',
+        if (rfb !== nextRfb) return
+        const pending = pendingDisconnectStatus
+        if (pending) {
+          clearViewer(pending.title, pending.kind === 'error' ? 'error' : 'idle', pending.detail)
+          return
+        }
+        if (event.detail.clean) {
+          clearViewer('Disconnected')
+          return
+        }
+        if (!connectedAtLeastOnce) {
+          const targetDescription =
+            activeTarget?.kind === 'network'
+              ? `${activeTarget.host}:${String(activeTarget.port)}`
+              : 'the selected VNC server'
+          clearViewer(
+            'VNC handshake failed',
+            'error',
+            `The device at ${targetDescription} answered, but did not complete the VNC handshake. Check that Screen Sharing is enabled and permits VNC viewers.`,
+          )
+          return
+        }
+        clearViewer(
+          'Desktop connection lost',
           'error',
+          'The VNC server closed the session unexpectedly. You can reconnect when it is available.',
         )
-        nextRfb.disconnect()
       })
-      nextRfb.addEventListener('securityfailure', () => {
-        setStatus('The server refused VNC security negotiation.', 'error')
+      nextRfb.addEventListener('credentialsrequired', (event) => {
+        if (rfb !== nextRfb) return
+        if (!showAuthentication(event.detail.types)) nextRfb.disconnect()
+      })
+      nextRfb.addEventListener('securityfailure', (event) => {
+        if (rfb !== nextRfb) return
+        hideAuthentication()
+        const reason = event.detail.reason?.trim()
+        pendingDisconnectStatus = {
+          title: /too many/i.test(reason ?? '')
+            ? 'Too many authentication attempts'
+            : 'Authentication failed',
+          detail: reason
+            ? `Check the VNC password or allowed macOS account. Server response: ${reason}`
+            : 'Check the VNC password or allowed macOS account, then try again.',
+          kind: 'error',
+        }
+        setStatus(
+          pendingDisconnectStatus.title,
+          pendingDisconnectStatus.kind,
+          pendingDisconnectStatus.detail,
+        )
       })
       queueMicrotask(() => {
         nextChannel.open()
@@ -475,6 +689,7 @@ export function mountVncPane(
     void connect()
   })
   disconnectButton.addEventListener('click', disconnect)
+  authenticateButton.addEventListener('click', submitCredentials)
   discoverButton.addEventListener('click', () => {
     void discoverSelectedMachine()
   })
@@ -494,11 +709,27 @@ export function mountVncPane(
   addressInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') void connect()
   })
+  for (const input of [usernameInput, passwordInput, targetInput]) {
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') submitCredentials()
+    })
+  }
 
   const stopData = api.vnc.onData((connectionId, bytes) => {
     if (channel?.connectionId === connectionId) channel.receive(bytes)
   })
   const stopStatus = api.vnc.onStatus((event) => {
+    if (
+      channel?.connectionId === event.id &&
+      event.status === 'error' &&
+      pendingDisconnectStatus === null
+    ) {
+      pendingDisconnectStatus = {
+        title: connectedAtLeastOnce ? 'Desktop connection lost' : 'VNC connection failed',
+        detail: event.lastError ?? 'The VNC transport closed unexpectedly.',
+        kind: 'error',
+      }
+    }
     channel?.handleStatus(event)
   })
   const stopWorkspace = store.on('workspace_changed', () => {
@@ -508,7 +739,7 @@ export function mountVncPane(
     if (vncModeActive(store) && rfb) rfb.focus()
   })
 
-  setConnectedUi(false)
+  setSessionUi(false)
   qsRequired<HTMLInputElement>(form, '.vnc-port-input').value = '5901'
   void loadMachines()
 

@@ -317,4 +317,29 @@ describe('VncService', () => {
       /No VNC server answered on 127\.0\.0\.1/,
     )
   })
+
+  it('explains how to enable Screen Sharing when a LAN Mac refuses VNC', async () => {
+    const probe = createServer()
+    const unusedPort = await listen(probe)
+    await new Promise<void>((resolve) => {
+      probe.close(() => {
+        resolve()
+      })
+    })
+    const service = new VncService(undefined, undefined, undefined, async () => '127.0.0.1')
+
+    await assert.rejects(
+      () =>
+        service.open(
+          {
+            kind: 'network',
+            host: 'studio.local',
+            port: unusedPort,
+            confirmedUnencrypted: true,
+          },
+          owner(),
+        ),
+      /Turn on General → Sharing → Screen Sharing.*allow VNC viewers/,
+    )
+  })
 })
