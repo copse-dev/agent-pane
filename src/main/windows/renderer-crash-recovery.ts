@@ -71,7 +71,7 @@ export function attachRendererCrashRecovery(
 ): void {
   const log =
     options.log ??
-    ((message: string) => {
+    ((message: string): void => {
       console.error(message)
     })
   const now = options.now ?? Date.now

@@ -43,7 +43,7 @@ export function installProcessFaultHandlers(deps: ProcessFaultHandlerDeps = {}):
   installed = true
   const log =
     deps.log ??
-    ((message: string) => {
+    ((message: string): void => {
       console.error(message)
     })
   const onRejection = (reason: unknown): void => {
