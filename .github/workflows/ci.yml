@@ -891,6 +891,27 @@ jobs:
       # ("Error from intermediary") as non-retryable, and with fail-fast:true a
       # single shard's download flake cancels the whole e2e matrix (see
       # actions/download-artifact#464 and main run 29591165512).
+      # Nightly `schedule` (and the E2E_RUNNER=ubuntu-latest break-glass) run on
+      # GitHub-hosted images that do not ship ASRT's Linux backend. Executable
+      # plugins fail closed without bubblewrap+socat (selected-plugin-browser
+      # on tip 528f92ce / runs 31781384161 and 31870672634). Self-hosted
+      # runners already bake both into the image (ci-runners/Dockerfile).
+      - name: Install Linux sandbox dependencies
+        if: runner.environment == 'github-hosted'
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          # Ubuntu 24.04's AppArmor userns restriction lets bwrap create a
+          # namespace but strips loopback setup (Failed RTM_NEWADDR). The
+          # self-hosted host bootstrap clears the same sysctl; do that here
+          # when the hosted runner permits it so ASRT can actually start.
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          command -v bwrap
+          command -v socat
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
       - uses: ./.github/actions/download-artifact-retry
         with:
           name: dist-tar
