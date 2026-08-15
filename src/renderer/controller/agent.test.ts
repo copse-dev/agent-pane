@@ -8,6 +8,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread, StreamChunk } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { markQuietRun } from './quiet-runs.ts'
 
 function at<T>(arr: readonly T[], i: number): T {
   const value = arr[i]
@@ -543,6 +544,23 @@ test('done does not alert between queued turns', () => {
 
   assert.equal(requireThread(store, 't1').status, 'running')
   assert.deepEqual(finishedAlerts, [])
+})
+
+test('done does not alert for a run the user launched and is watching', () => {
+  const { send, store, finishedAlerts } = setup()
+
+  // The comparison the "Compare models" bubble starts is marked quiet: the
+  // click was a second ago and its card renders in front of the user, so the
+  // completion chime would be noise, not a summons.
+  markQuietRun('t1')
+  send({ type: 'done' })
+  assert.equal(requireThread(store, 't1').status, 'idle')
+  assert.deepEqual(finishedAlerts, [])
+
+  // The mark is consumed by that run's `done`, so the next turn alerts again.
+  send({ type: 'text', text: 'answer' })
+  send({ type: 'done' })
+  assert.deepEqual(finishedAlerts, [{ threadId: 't1', title: 't1' }])
 })
 
 test('first assistant text kicks off naming without waiting for done', async () => {

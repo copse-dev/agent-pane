@@ -33,6 +33,16 @@ export const MODEL_COMPARISON_PLUGIN_ID = 'copse.model-comparison'
 export const MODEL_COMPARISON_TOOL_NAME = 'compare_models'
 
 /**
+ * Id of the follow-up bubble the plugin suggests above the composer. A comparison
+ * is expensive and entirely optional, which makes a modal the wrong shape for
+ * offering it: the prompt arrives unbidden, interrupts, and rings the alert
+ * channels. The bubble inverts that — it sits quietly next to "Changes" until
+ * someone wants it, and the picker it opens *is* the spend decision, so the run
+ * behind it needs no second approval (see `model-comparison-runner.ts`).
+ */
+export const MODEL_COMPARISON_FOLLOW_UP_ID = 'compare-models'
+
+/**
  * Plugin-scoped setting ids for the three comparison models. These match the
  * retired top-level store keys (`comparisonModelA` / `comparisonModelB` /
  * `comparisonJudgeModel`) so the migration in `plugin-service.ts` and the
@@ -82,6 +92,17 @@ export const modelComparisonPlugin: RegisteredPlugin = definePlugin(
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [MODEL_COMPARISON_TOOL_NAME] },
+    // Offered only when the working tree has uncommitted changes: the two
+    // reviewers read the working diff, so with nothing to review the bubble
+    // would open a picker onto an empty comparison.
+    followUps: [
+      {
+        id: MODEL_COMPARISON_FOLLOW_UP_ID,
+        label: 'Compare models',
+        action: 'model-compare',
+        when: 'workspace-changes',
+      },
+    ],
     settings: {
       [COMPARISON_MODEL_A_SETTING_ID]: {
         kind: 'model',
@@ -108,5 +129,13 @@ export const modelComparisonPlugin: RegisteredPlugin = definePlugin(
   },
   {
     toolNames: [MODEL_COMPARISON_TOOL_NAME],
+    followUps: [
+      {
+        id: MODEL_COMPARISON_FOLLOW_UP_ID,
+        label: 'Compare models',
+        action: 'model-compare',
+        when: 'workspace-changes',
+      },
+    ],
   },
 )

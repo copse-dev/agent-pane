@@ -104,6 +104,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
                       commandHooks: [],
                       promptBlocks: [],
                       ui: [],
+                      followUps: [],
                       capabilities: [],
                       permissions: [],
                     },

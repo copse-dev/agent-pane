@@ -68,6 +68,10 @@ export interface IpcInvokeMap {
   }
   'agent:clearHistory': { args: [projectId: string, threadId: string]; result: undefined }
   'agent:refreshModelContext': { args: []; result: undefined }
+  'agent:comparisonModels': {
+    args: [payload: string]
+    result: { a: string; b: string; judge: string }
+  }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {

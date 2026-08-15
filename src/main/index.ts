@@ -72,6 +72,8 @@ import {
   listLmStudioModelInfo,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import type { RetryOptions } from './services/agent-service.ts'
+import { resolveComparisonModelChoices } from './services/agent-service.ts'
 import {
   listFreeOpenRouterModels,
   invalidateOpenRouterModelsCache,
@@ -576,7 +578,7 @@ app
     // retry action on a failed card. Both read the current working diff, so a
     // fixable failure (a mis-loaded local model, a transient provider error)
     // recovers without re-running the whole editing turn.
-    const parseRetryPayload = (payloadJson: unknown): { workingBrief?: string; model?: string } => {
+    const parseRetryPayload = (payloadJson: unknown): RetryOptions => {
       if (typeof payloadJson !== 'string') return {}
       let raw: unknown
       try {
@@ -593,6 +595,9 @@ app
           ? { workingBrief: parsed.data.workingBrief }
           : {}),
         ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
+        ...(parsed.data.comparisonModels !== undefined
+          ? { comparisonModels: parsed.data.comparisonModels }
+          : {}),
       }
     }
     const hydrateHistory = (projectId: string, threadId: string): Promise<LLMMessage[]> =>
@@ -633,6 +638,14 @@ app
         )
       },
     )
+
+    // Defaults for the "Compare models" bubble's picker. Read-only: it resolves
+    // the pack's own settings and starts nothing, so unlike the run below it
+    // needs no execution context.
+    ipcMain.handle('agent:comparisonModels', async (event, payload: unknown) => {
+      assertMainFrameSender(event, win)
+      return resolveComparisonModelChoices(parseRetryPayload(payload))
+    })
 
     ipcMain.handle('agent:suggestTitle', (event, text: string) => {
       assertMainFrameSender(event, win)

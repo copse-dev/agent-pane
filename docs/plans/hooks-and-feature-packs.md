@@ -245,7 +245,28 @@ revisiting this document, not silently diverging in an implementation PR.
     list). A hook must not name a tool absent from that list. Disabling a pack removes
     its guidance from both executors on the next turn and leaves prior history intact
     (decision 17).
-21. **Current-turn operator placement is model-capability gated.** For the built-in
+21. **A plugin offers; it does not interrupt.** A plugin that wants the user to do
+    something optional and expensive contributes a **follow-up bubble**
+    (`manifest.followUps`), not an approval modal. A modal arrives unbidden, blocks the
+    turn, and rings the user's alert channels for a question nobody asked; a bubble sits
+    above the composer until it is wanted. Clicking one may open a host surface rather
+    than only stuffing the composer (`action`), and the host decides when the bubble is
+    even offered from a bounded condition vocabulary (`when`), so the manifest stays
+    plain JSON with no plugin code running per turn.
+    Two consequences are mechanical rather than conventional. **A host action is a
+    first-party privilege**: it drives app UI (and, for `model-compare`, spends money)
+    outside the agent, so `pluginManifestFromPluginJson` forces a discovered manifest's
+    action back to `prompt` and the registry refuses to register a non-first-party plugin
+    that contributes one — the same tiering decision 15 gives `trusted` prompt blocks.
+    **The picker a host action opens is the consent**: re-asking in an approval modal
+    afterwards would restore the exact interruption the bubble replaced, so the run it
+    starts skips the spend prompt, and its completion skips the "thread finished" alert
+    (the user is watching the card they just asked for). Runs the user did _not_
+    initiate — the auto-on-review trigger, the agent's own `compare_models` call — keep
+    their approval unchanged. Bubbles follow decision 17 like every other contribution:
+    they are consulted for new work only, and disabling the plugin drops them in the same
+    atomic flag flip as its tools.
+22. **Current-turn operator placement is model-capability gated.** For the built-in
     loop, routed GPT models receive merged `turnStart` / `beforeSubmitPrompt` context
     as one trailing `developer` message. Only the explicit
     `supportsMidConversationSystem` allowlist receives a trailing `system` message.
