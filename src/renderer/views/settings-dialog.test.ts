@@ -75,6 +75,8 @@ describe('settings dialog (native <dialog>)', () => {
   it('mounts as a native dialog element, initially closed', () => {
     assert.equal(dialog.tagName, 'DIALOG')
     assert.equal(isSettingsDialogOpen(), false)
+    assert.ok(dialog.querySelector('#settings-close svg[data-icon="close"]'))
+    assert.equal(dialog.querySelector('#settings-close')?.textContent, '')
   })
 
   it('opens via showModal() and closes via close()', () => {

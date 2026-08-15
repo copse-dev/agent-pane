@@ -9,6 +9,7 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
+import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
@@ -859,7 +860,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         for (const button of document.querySelectorAll<HTMLButtonElement>(
           `.pane-popout-btn[data-pane-mode="${mode}"]`,
         )) {
-          button.textContent = expanded ? '⛶' : '↙'
+          button.replaceChildren(
+            expanded ? maximizeIcon('ui-icon ui-icon-sm') : minimizeIcon('ui-icon ui-icon-sm'),
+          )
           button.setAttribute('aria-label', `${expanded ? 'Expand' : 'Restore'} ${mode}`)
           button.title = expanded ? 'Expand pane' : 'Restore app layout'
         }

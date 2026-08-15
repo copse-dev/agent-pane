@@ -331,7 +331,7 @@ async function boot(): Promise<void> {
   })
 
   // File ▸ New Thread (Cmd/Ctrl+N) opens a fresh composer, mirroring the
-  // sidebar's "+" button. No-op until a workspace is open.
+  // sidebar's New project button. No-op until a workspace is open.
   api.menu.onNewThread(() => {
     if (!store.getState().workspaceRoot) return
     ensureLayout()
