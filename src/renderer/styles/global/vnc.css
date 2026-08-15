@@ -59,6 +59,22 @@
   width: 100%;
 }
 
+.vnc-advanced summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.vnc-advanced[open] summary {
+  margin-bottom: var(--spacing-sm);
+}
+
+.vnc-field-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
 .vnc-auth-panel {
   display: flex;
   flex-direction: column;

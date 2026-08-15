@@ -265,6 +265,10 @@ describe('read-only VNC viewer', function () {
     await desktopButton.click()
     const portInput = $('.vnc-port-input')
     await portInput.waitForExist({ timeout: 20_000 })
+    const advanced = $('.vnc-advanced')
+    const advancedSummary = $('.vnc-advanced summary')
+    assert.equal(await advanced.getAttribute('open'), null)
+    assert.equal(await portInput.isDisplayed(), false)
     await $('.vnc-machine-select option[value="network:nearby:0"]').waitForExist({
       timeout: 20_000,
     })
@@ -285,11 +289,13 @@ describe('read-only VNC viewer', function () {
     await machineSelect.selectByAttribute('value', 'network:manual')
     const addressInput = $('.vnc-address-input')
     await addressInput.waitForDisplayed()
-    await addressInput.setValue('192.168.1.20')
+    assert.equal(await portInput.getValue(), '5900')
+    await addressInput.setValue('192.168.1.20:5901')
     assert.match(await $('.vnc-network-warning').getText(), /unencrypted/i)
     await $('.vnc-connect-btn').click()
     const confirmDialog = $('#confirm-dialog')
     await confirmDialog.waitForDisplayed()
+    assert.match(await $('.confirm-dialog-message').getText(), /192\.168\.1\.20:5901/)
     assert.match(await $('.confirm-dialog-detail').getText(), /does not encrypt/i)
     await $('.confirm-dialog-cancel').click()
     await machineSelect.selectByAttribute('value', 'local')
@@ -297,7 +303,11 @@ describe('read-only VNC viewer', function () {
     const discoveredServer = $(`.vnc-discovered-port[data-port="${String(port)}"]`)
     await discoveredServer.waitForExist({ timeout: 20_000 })
     authenticationPort = await listenOnVncPort(authenticationServer)
+    await advancedSummary.click()
+    await portInput.waitForDisplayed()
     await portInput.setValue(String(authenticationPort))
+    await advancedSummary.click()
+    await browser.waitUntil(async () => !(await portInput.isDisplayed()))
     await $('.vnc-connect-btn').click()
     const authPanel = $('.vnc-auth-panel')
     await authPanel.waitForDisplayed({ timeout: 20_000 })
@@ -324,8 +334,12 @@ describe('read-only VNC viewer', function () {
     assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
 
+    await advancedSummary.click()
+    await portInput.waitForDisplayed()
     await portInput.setValue(String(port))
     assert.equal(await portInput.getValue(), String(port))
+    await advancedSummary.click()
+    await browser.waitUntil(async () => !(await portInput.isDisplayed()))
     assert.equal(
       await discoveredServer.getAttribute('aria-label'),
       `Display :${String(port - 5900)}, port ${String(port)}`,

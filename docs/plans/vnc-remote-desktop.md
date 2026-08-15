@@ -253,8 +253,10 @@ coverage uses real loopback sockets, and the focused WDIO eval paints and pixel-
 checks a two-colour RFB 3.8 framebuffer. The pane explicitly selects this
 machine or a configured SSH host, discovers verified RFB listeners on either,
 discovers nearby Bonjour-advertised devices, and accepts a manually entered LAN
-hostname/IP and port. Saved SSH hosts refresh live when Settings changes, and
-deduplication matches Bonjour devices by hostname, advertised address, or
+hostname/IP with an optional `:port`. Port 5900 is the quiet default; the explicit
+RFB port override lives under Advanced, while discovery and Bonjour selections
+retain their detected ports. Saved SSH hosts refresh live when Settings changes,
+and deduplication matches Bonjour devices by hostname, advertised address, or
 normalized device label. The live `DISPLAY=:1` harness remains.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.

@@ -1,6 +1,40 @@
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import type { VncNearbyServer } from '@shared/types/vnc.ts'
 
+interface VncEndpoint {
+  host: string
+  port: number
+}
+
+function validPort(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null
+  const port = Number.parseInt(value, 10)
+  return port >= 1 && port <= 65_535 ? port : null
+}
+
+/** Resolve an optional `:port` suffix while leaving bare IPv6 addresses intact. */
+export function parseVncEndpoint(value: string, defaultPort: number): VncEndpoint | null {
+  const input = value.trim()
+  if (!input) return { host: '', port: defaultPort }
+
+  if (input.startsWith('[')) {
+    const match = /^\[([^\]]+)\](?::([^:]+))?$/.exec(input)
+    if (!match?.[1]) return null
+    if (match[2] === undefined) return { host: match[1], port: defaultPort }
+    const port = validPort(match[2])
+    return port === null ? null : { host: match[1], port }
+  }
+
+  const firstColon = input.indexOf(':')
+  if (firstColon < 0 || firstColon !== input.lastIndexOf(':')) {
+    return { host: input, port: defaultPort }
+  }
+
+  const host = input.slice(0, firstColon).trim()
+  const port = validPort(input.slice(firstColon + 1).trim())
+  return host && port !== null ? { host, port } : null
+}
+
 function endpointIdentity(value: string): string {
   const withoutUser = value.trim().toLowerCase().split('@').at(-1) ?? ''
   return withoutUser

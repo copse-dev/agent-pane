@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import type { VncNearbyServer } from '@shared/types/vnc.ts'
-import { dedupeNearbyVncServers } from './vnc-machines.ts'
+import { dedupeNearbyVncServers, parseVncEndpoint } from './vnc-machines.ts'
 
 const studio: VncNearbyServer = {
   name: 'Jonathan’s Mac mini',
@@ -56,5 +56,42 @@ describe('dedupeNearbyVncServers', () => {
       secondPort,
       laptop,
     ])
+  })
+})
+
+describe('parseVncEndpoint', () => {
+  it('uses the default port for a hostname or bare IP address', () => {
+    assert.deepEqual(parseVncEndpoint('studio.local', 5900), {
+      host: 'studio.local',
+      port: 5900,
+    })
+    assert.deepEqual(parseVncEndpoint('192.168.0.21', 5900), {
+      host: '192.168.0.21',
+      port: 5900,
+    })
+  })
+
+  it('accepts a custom port in a hostname or bracketed IPv6 address', () => {
+    assert.deepEqual(parseVncEndpoint('studio.local:5901', 5900), {
+      host: 'studio.local',
+      port: 5901,
+    })
+    assert.deepEqual(parseVncEndpoint('[fd00::21]:5902', 5900), {
+      host: 'fd00::21',
+      port: 5902,
+    })
+  })
+
+  it('leaves a bare IPv6 address on the default port', () => {
+    assert.deepEqual(parseVncEndpoint('fd00::21', 5900), {
+      host: 'fd00::21',
+      port: 5900,
+    })
+  })
+
+  it('rejects malformed or out-of-range port overrides', () => {
+    assert.equal(parseVncEndpoint('studio.local:vnc', 5900), null)
+    assert.equal(parseVncEndpoint('studio.local:70000', 5900), null)
+    assert.equal(parseVncEndpoint('[fd00::21]:', 5900), null)
   })
 })

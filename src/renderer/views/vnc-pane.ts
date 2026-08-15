@@ -8,7 +8,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { VncIpcChannel } from './vnc-channel.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { dedupeNearbyVncServers } from './vnc-machines.ts'
+import { dedupeNearbyVncServers, parseVncEndpoint } from './vnc-machines.ts'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -89,7 +89,7 @@ export function mountVncPane(
   const addressInput = el('input', {
     type: 'text',
     class: 'vnc-address-input',
-    placeholder: '192.168.1.20 or studio.local',
+    placeholder: 'studio.local or studio.local:5901',
     autocomplete: 'off',
     spellcheck: 'false',
     'aria-label': 'VNC hostname or IP address',
@@ -105,9 +105,25 @@ export function mountVncPane(
     class: 'vnc-port-input',
     min: '1',
     max: '65535',
-    value: '5901',
+    value: '5900',
     'aria-label': 'VNC port',
   })
+  const advancedSettings = el(
+    'details',
+    { class: 'vnc-advanced' },
+    el('summary', {}, 'Advanced'),
+    el(
+      'label',
+      { class: 'vnc-field-label' },
+      'RFB port',
+      portInput,
+      el(
+        'span',
+        { class: 'vnc-field-hint' },
+        'Defaults to 5900. An address ending in :port overrides this value.',
+      ),
+    ),
+  )
   const connectButton = el(
     'button',
     { type: 'button', class: 'ui-btn ui-btn-primary vnc-connect-btn' },
@@ -202,10 +218,10 @@ export function mountVncPane(
     nearbyButton,
     nearbyStatus,
     addressField,
-    el('label', { class: 'vnc-field-label' }, 'RFB port', portInput),
     discoverButton,
     discoveryStatus,
     discoveredPorts,
+    advancedSettings,
     networkWarning,
     authPanel,
     connectButton,
@@ -235,6 +251,7 @@ export function mountVncPane(
   let sshHosts: SshWorkspaceHost[] = []
   let allNearbyServers: VncNearbyServer[] = []
   let nearbyServers: VncNearbyServer[] = []
+  let displayedMachine = machineSelect.value
   let requiredCredentials = new Set<VncCredentialType>()
   let pendingDisconnectStatus: PendingStatus | null = null
   let connectedAtLeastOnce = false
@@ -463,7 +480,10 @@ export function mountVncPane(
   }
 
   function updateMachineUi(): void {
-    const network = isNetworkMachine(machineSelect.value)
+    const machine = machineSelect.value
+    const machineChanged = machine !== displayedMachine
+    displayedMachine = machine
+    const network = isNetworkMachine(machine)
     addressField.hidden = !network
     networkWarning.hidden = !network
     discoverButton.hidden = network
@@ -476,12 +496,12 @@ export function mountVncPane(
     if (nearby) {
       addressInput.value = preferredNearbyAddress(nearby)
       portInput.value = String(nearby.port)
-    } else if (machineSelect.value === MANUAL_MACHINE && !addressInput.value) {
+    } else if (machineChanged) {
       portInput.value = '5900'
     }
   }
 
-  function selectedTarget(port: number): VncTarget {
+  function selectedTarget(port: number): VncTarget | null {
     if (machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) {
       return {
         kind: 'ssh',
@@ -490,10 +510,12 @@ export function mountVncPane(
       }
     }
     if (isNetworkMachine(machineSelect.value)) {
+      const endpoint = parseVncEndpoint(addressInput.value, port)
+      if (!endpoint) return null
       return {
         kind: 'network',
-        host: addressInput.value.trim(),
-        port,
+        host: endpoint.host,
+        port: endpoint.port,
         confirmedUnencrypted: true,
       }
     }
@@ -551,7 +573,7 @@ export function mountVncPane(
       discoveryStatus.dataset['kind'] = ports.length > 0 ? 'ok' : 'idle'
       discoveryStatus.textContent =
         ports.length === 0
-          ? 'No VNC servers found. You can still enter a port manually.'
+          ? 'No VNC servers found. Use Advanced to enter a port manually.'
           : `${String(ports.length)} VNC ${ports.length === 1 ? 'server' : 'servers'} found.`
     } catch (error) {
       if (generation !== discoveryGeneration) return
@@ -604,6 +626,10 @@ export function mountVncPane(
       return
     }
     const target = selectedTarget(port)
+    if (!target) {
+      setStatus('Enter an address with a valid port from 1 to 65535.', 'error')
+      return
+    }
     if (target.kind === 'network') {
       if (!target.host) {
         setStatus('Enter a hostname or IP address.', 'error')
