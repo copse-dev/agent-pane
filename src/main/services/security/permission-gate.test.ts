@@ -483,10 +483,13 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
   })
 
   it('honours write-tier auto-approval when the OS sandbox is active', async () => {
-    assert.deepEqual(await runGate('git push origin main', 'remote-write', { sandboxEnabled: true }), {
-      permitted: true,
-      prompted: false,
-    })
+    assert.deepEqual(
+      await runGate('git push origin main', 'remote-write', { sandboxEnabled: true }),
+      {
+        permitted: true,
+        prompted: false,
+      },
+    )
   })
 
   it('still prompts for an unrecognised shape at the highest level', async () => {

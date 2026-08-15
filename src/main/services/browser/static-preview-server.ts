@@ -164,7 +164,10 @@ export async function workspacePreviewFileUrl(root: string, absolutePath: string
   if (!isInsideRoot(preview.root, absolutePath)) {
     throw new Error('Preview path must stay inside the workspace preview root.')
   }
-  const previewPath = relative(preview.root, absolutePath).split(sep).map(encodeURIComponent).join('/')
+  const previewPath = relative(preview.root, absolutePath)
+    .split(sep)
+    .map(encodeURIComponent)
+    .join('/')
   return staticPreviewUrl(preview.url, previewPath)
 }
 
