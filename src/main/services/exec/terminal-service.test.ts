@@ -8,37 +8,35 @@ import {
   __testInjectTerminalSession,
   destroyAllTerminalSessions,
   destroyTerminalSessionsForThread,
+  destroyTerminalSessionsForOwner,
   destroyTerminalSession,
   listTerminalSessions,
   resizeTerminalSession,
   writeTerminalSession,
-  type TerminalWindow,
+  type TerminalOwner,
 } from './terminal-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 const OWNER = 1
 const OTHER_OWNER = 2
 
-function mockWindow(): TerminalWindow & {
+function mockWindow(id: number = OWNER): TerminalOwner & {
   sent: Array<[string, ...unknown[]]>
   markDestroyed: () => void
 } {
   let destroyed = false
   const sent: Array<[string, ...unknown[]]> = []
-  const win = {
+  return {
+    id,
     isDestroyed: (): boolean => destroyed,
-    webContents: {
-      isDestroyed: (): boolean => destroyed,
-      send(channel: string, ...args: unknown[]): void {
-        sent.push([channel, ...args])
-      },
+    send(channel: string, ...args: unknown[]): void {
+      sent.push([channel, ...args])
     },
     markDestroyed(): void {
       destroyed = true
     },
     sent,
   }
-  return win
 }
 
 /**
@@ -74,7 +72,7 @@ async function waitForTerminalOutput(
 async function ptySpawnAvailable(): Promise<boolean> {
   try {
     const win = mockWindow()
-    const sessionId = await createTerminalSession(win, OWNER)
+    const sessionId = await createTerminalSession(win)
     destroyTerminalSession(sessionId, OWNER)
     return true
   } catch {
@@ -96,7 +94,7 @@ describe('terminal-service', () => {
     const win = mockWindow()
     let sessionId = ''
     try {
-      sessionId = await createTerminalSession(win, OWNER)
+      sessionId = await createTerminalSession(win)
       assert.ok(sessionId)
       writeTerminalSession(sessionId, OWNER, 'echo hello\n')
       // Same race as the thread-root test below: `hello` appears twice, once as
@@ -126,14 +124,7 @@ describe('terminal-service', () => {
     const win = mockWindow()
     let sessionId = ''
     try {
-      sessionId = await createTerminalSession(
-        win,
-        OWNER,
-        80,
-        24,
-        { threadId: 'thread-1' },
-        threadRoot,
-      )
+      sessionId = await createTerminalSession(win, 80, 24, { threadId: 'thread-1' }, threadRoot)
       writeTerminalSession(sessionId, OWNER, 'printf \'__COPSE_CWD__:%s\\n\' "$PWD"\n')
       // Wait for the marker followed by a path, which only the *output* has —
       // the echoed command still carries the literal `%s`. So a shell that
@@ -159,7 +150,7 @@ describe('terminal-service', () => {
     const win = mockWindow()
     let sessionId = ''
     try {
-      sessionId = await createTerminalSession(win, OWNER)
+      sessionId = await createTerminalSession(win)
       destroyTerminalSession(sessionId, OWNER)
       assert.throws(() => {
         writeTerminalSession(sessionId, OWNER, 'x')
@@ -178,7 +169,7 @@ describe('terminal-service', () => {
     const win = mockWindow()
     let sessionId = ''
     try {
-      sessionId = await createTerminalSession(win, OWNER)
+      sessionId = await createTerminalSession(win)
       writeTerminalSession(sessionId, OWNER, 'echo hello\n')
       await new Promise((r) => setTimeout(r, 300))
       const beforeDestroy = win.sent.filter(([ch]) => ch === 'terminal:output').length
@@ -204,7 +195,7 @@ describe('terminal-service', () => {
     const win = mockWindow()
     let sessionId = ''
     try {
-      sessionId = await createTerminalSession(win, OWNER)
+      sessionId = await createTerminalSession(win)
       assert.throws(() => {
         writeTerminalSession(sessionId, OTHER_OWNER, 'x')
       }, /not owned by the caller/)
@@ -249,5 +240,58 @@ describe('terminal-service', () => {
       [second],
     )
     assert.equal(listTerminalSessions(null).length, 1)
+  })
+
+  it('sends output only to the renderer that opened the session', async (t) => {
+    // #1705: every terminal op was keyed on the calling renderer, but output
+    // went to the single window captured at `initTerminal`. A pane pop-out
+    // could open a shell and type into it while its output was posted to the
+    // main window, which had no tab for that session and dropped it.
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
+    const restore = setWorkspaceRootForTest('/tmp')
+    const popout = mockWindow(OWNER)
+    const mainWindow = mockWindow(OTHER_OWNER)
+    let sessionId = ''
+    try {
+      sessionId = await createTerminalSession(popout)
+      writeTerminalSession(sessionId, OWNER, 'echo popout-only\n')
+      const combined = await waitForTerminalOutput(popout, /popout-only/)
+
+      assert.match(combined, /popout-only/, 'the opening window receives its shell output')
+      assert.equal(
+        mainWindow.sent.length,
+        0,
+        'a shell must not replay into a window that did not open it',
+      )
+    } finally {
+      if (sessionId) destroyTerminalSession(sessionId, OWNER)
+      restore()
+    }
+  })
+
+  it('kills a renderer’s sessions when that renderer goes away', () => {
+    // A pop-out is a real window that closes on its own; only the main window's
+    // `close` was wired to teardown, so its shells leaked as orphaned ptys.
+    const popoutSession = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Pop-out shell',
+      threadId: 'thread-a',
+      outputText: '',
+    })
+    const mainSession = __testInjectTerminalSession({
+      ownerId: OTHER_OWNER,
+      label: 'Main shell',
+      threadId: 'thread-a',
+      outputText: '',
+    })
+
+    destroyTerminalSessionsForOwner(OWNER)
+
+    const remaining = listTerminalSessions('thread-a').map((session) => session.id)
+    assert.deepEqual(remaining, [mainSession], 'only the closed renderer loses its shells')
+    assert.ok(!remaining.includes(popoutSession))
   })
 })
