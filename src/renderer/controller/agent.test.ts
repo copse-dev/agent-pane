@@ -524,6 +524,7 @@ test('done finalizes the message, alerts once, sets the thread idle, and resets 
   send({ type: 'done' })
 
   assert.equal(requireThread(store, 't1').status, 'idle')
+  assert.equal(requireThread(store, 't1').unreadAt, undefined)
   assert.deepEqual(messageDone, [firstId])
   assert.deepEqual(finishedAlerts, [{ threadId: 't1', title: 't1' }])
 
@@ -531,6 +532,15 @@ test('done finalizes the message, alerts once, sets the thread idle, and resets 
   send({ type: 'text', text: 'next turn' })
   assert.equal(messages().length, 2)
   assert.equal(at(messages(), 1).content, 'next turn')
+})
+
+test('done marks a background thread unread', () => {
+  const { send, store } = setup([thread('t1'), thread('t2')], 't2')
+
+  send({ type: 'done' }, 't1')
+
+  assert.equal(typeof requireThread(store, 't1').unreadAt, 'number')
+  assert.equal(requireThread(store, 't2').unreadAt, undefined)
 })
 
 test('done does not alert between queued turns', () => {

@@ -185,6 +185,8 @@ export interface Thread {
   queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
   draftPrompt?: string
+  /** Latest agent completion that happened while this thread was not selected. */
+  unreadAt?: number
   /** Per-thread model override; absent means "use the global default". */
   model?: string
   /**
