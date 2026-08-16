@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  branchStatusLookupKey,
   parseDiffNumstat,
   porcelainHasMergeConflicts,
   ghPrHasCiFailures,
@@ -16,6 +17,18 @@ import {
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { definePlugin, type RegisteredPlugin } from '@copse/agent/plugins/plugin-manifest.ts'
 import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+
+describe('branchStatusLookupKey', () => {
+  it('does not coalesce identical paths and branches across projects', () => {
+    // Local and SSH projects can legitimately use the same path string. The
+    // coalescer is process-global, so root + branch alone could make a newly
+    // active project join the previous project's in-flight GitHub result.
+    assert.notEqual(
+      branchStatusLookupKey('local-project', '/workspace/repo', 'main'),
+      branchStatusLookupKey('ssh-project', '/workspace/repo', 'main'),
+    )
+  })
+})
 
 describe('parseDiffNumstat', () => {
   it('sums additions and deletions', () => {

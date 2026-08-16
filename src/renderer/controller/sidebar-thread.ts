@@ -19,6 +19,7 @@ export interface SidebarThread {
   id: string
   title: string
   status: Thread['status']
+  unreadAt?: number
   archivedAt?: number
   automation?: Thread['automation']
   remoteAgentLink?: Thread['remoteAgentLink']
@@ -51,6 +52,7 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     id: thread.id,
     title: thread.title,
     status: thread.status,
+    ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
