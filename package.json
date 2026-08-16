@@ -185,7 +185,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@resvg/resvg-js": "^2.6.2",
-    "@types/jsdom": "^28.0.3",
+    "@types/jsdom": "^30.0.0",
     "@types/micromatch": "^4.0.9",
     "@types/node": "^26.1.2",
     "@types/pngjs": "^6.0.5",
