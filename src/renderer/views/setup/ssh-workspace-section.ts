@@ -75,6 +75,7 @@ export function createSshWorkspaceSection(
   async function persistHosts(next: SshWorkspaceHost[]): Promise<void> {
     await api.settings.set('sshWorkspaceHosts', next)
     await renderHosts()
+    opts.onChanged?.()
   }
 
   function clearDraft(): void {

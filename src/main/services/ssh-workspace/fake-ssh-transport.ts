@@ -16,6 +16,8 @@ interface FakeSshTransportHooks {
 /** In-memory SSH transport for unit tests. */
 export class FakeSshTransport implements SshTransport {
   private connected = false
+  private nextForwardPort = 45_000
+  readonly forwards = new Map<number, number>()
   readonly calls: { kind: 'argv' | 'shell'; command: string; options?: SshExecOptions }[] = []
   private readonly scripts: FakeExecScript[]
   private readonly hooks: FakeSshTransportHooks
@@ -36,8 +38,21 @@ export class FakeSshTransport implements SshTransport {
   }
 
   async disconnect(): Promise<void> {
+    this.forwards.clear()
     this.connected = false
     this.hooks.onDisconnect?.()
+    await Promise.resolve()
+  }
+
+  async openForward(remotePort: number): Promise<{ localPort: number }> {
+    if (!this.connected) throw new Error('SSH transport is not connected')
+    const localPort = this.nextForwardPort++
+    this.forwards.set(localPort, remotePort)
+    return Promise.resolve({ localPort })
+  }
+
+  async closeForward(localPort: number): Promise<void> {
+    this.forwards.delete(localPort)
     await Promise.resolve()
   }
 

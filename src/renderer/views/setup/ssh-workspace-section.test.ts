@@ -74,4 +74,35 @@ describe('createSshWorkspaceSection', () => {
     assert.deepEqual(sets.at(-1), { key: 'sshWorkspaceEnabled', value: true })
     assert.equal(changed, 1)
   })
+
+  it('notifies live consumers when a saved host changes', async () => {
+    const { api, sets } = mockApi({ hosts: [] })
+    let changed = 0
+    const section = createSshWorkspaceSection(api, {
+      onChanged: () => {
+        changed += 1
+      },
+    })
+    document.body.append(section.root)
+    await section.refresh()
+
+    const label = section.root.querySelector<HTMLInputElement>('input[name="sshHostLabel"]')
+    const host = section.root.querySelector<HTMLInputElement>('input[name="sshHostHost"]')
+    const save = section.root.querySelector<HTMLButtonElement>('.ssh-host-save')
+    assert.ok(label)
+    assert.ok(host)
+    assert.ok(save)
+    label.value = 'Studio Mac'
+    label.dispatchEvent(new Event('input'))
+    host.value = 'studio.local'
+    host.dispatchEvent(new Event('input'))
+    save.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(changed, 1)
+    assert.deepEqual(sets.at(-1), {
+      key: 'sshWorkspaceHosts',
+      value: [{ id: 'studio-mac', label: 'Studio Mac', host: 'studio.local' }],
+    })
+  })
 })

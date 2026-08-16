@@ -54,6 +54,7 @@ import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import { reapOversizedGortexDaemon, stopGortexDaemon } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
+import { initVnc } from './ipc/vnc.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
@@ -362,6 +363,7 @@ app
     initDiffQueue(win, ipcMain)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
+    const disposeVncHandlers = initVnc(win)
     recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
     getAutomationService().start((event) => {
@@ -753,12 +755,14 @@ app
         }
       })
     disposeTerminal = disposeTerminalHandlers
+    disposeVnc = disposeVncHandlers
   })
   .catch(console.error)
 
 let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
+let disposeVnc: (() => Promise<void>) | undefined
 let disposeLongTaskWake: (() => void) | undefined
 let disposeCiWatchConsumer: (() => void) | undefined
 let disposeBackgroundProcessSupervisor: (() => void) | undefined
@@ -785,6 +789,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopAllBackgroundProcesses()
   disposeTerminal?.()
   disposeTerminal = undefined
+  await disposeVnc?.()
+  disposeVnc = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()

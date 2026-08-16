@@ -125,15 +125,15 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 
 ## Execution surfaces and guarantees
 
-| Surface                                  | Current guarantee                                                                                   | Important limitation                                                                                                                                        |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local shell/background work on macOS     | Workspace-scoped ASRT filesystem policy and deny-all network for contained auto-run work            | Approved external work may run with full host authority                                                                                                     |
-| Local shell/background work without ASRT | Conservative approval; the classifier cannot authorize execution                                    | An approved command runs with the user's authority                                                                                                          |
-| Local ACP agent                          | macOS workspace profile with configured agent destinations; native tools re-enter Copse's gate      | Network allow-list implementation is process-global; enforcement is absent off macOS                                                                        |
-| SSH workspace                            | Local approval policy and thread ownership; remote filesystem/process routing over SSH              | The remote account and host enforce filesystem, process, and network security                                                                               |
-| Managed remote agent                     | Local handoff, PII-redaction option, durable provider-session link, and local transcript projection | Runtime isolation, network, credentials, retention, and teardown are provider-owned; the current Anthropic environment request uses unrestricted networking |
-| Remote e2e                               | Fresh one-shot container per run, explicit snapshot transfer, bounded dev-host TTL                  | Developer/CI tooling, not a product agent runtime or multi-tenant security claim                                                                            |
-| Copse-provisioned cloud workspace        | Proposed only                                                                                       | Must satisfy the gates in the execution-runtime-security and cloud-workspace plans before release                                                           |
+| Surface                                    | Current guarantee                                                                                    | Important limitation                                                                                                                                        |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local shell/background work on macOS/Linux | Workspace-scoped ASRT filesystem policy and deny-all network for contained auto-run work             | Approved external work may run with full host authority                                                                                                     |
+| Local shell/background work without ASRT   | Conservative approval; the safety-model classifier cannot authorize execution                        | An approved command runs with the user's authority. Read-tier auto-approval may still skip the prompt.                                                      |
+| Local ACP agent                            | macOS/Linux workspace profile with configured agent destinations; native tools re-enter Copse's gate | Network allow-list implementation is process-global; enforcement is absent on Windows                                                                       |
+| SSH workspace                              | Local approval policy and thread ownership; remote filesystem/process routing over SSH               | The remote account and host enforce filesystem, process, and network security                                                                               |
+| Managed remote agent                       | Local handoff, PII-redaction option, durable provider-session link, and local transcript projection  | Runtime isolation, network, credentials, retention, and teardown are provider-owned; the current Anthropic environment request uses unrestricted networking |
+| Remote e2e                                 | Fresh one-shot container per run, explicit snapshot transfer, bounded dev-host TTL                   | Developer/CI tooling, not a product agent runtime or multi-tenant security claim                                                                            |
+| Copse-provisioned cloud workspace          | Proposed only                                                                                        | Must satisfy the gates in the execution-runtime-security and cloud-workspace plans before release                                                           |
 
 ## Current controls
 
@@ -146,9 +146,10 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
   or soften a `deny`. It fails closed on any unrecognised segment, flag, or
   argument, refuses substitution/redirection/interpreters, excludes destructive
   git and `gh` forms by name, and is honoured only in a trusted workspace with
-  auto-run on. No model verdict participates. Every grant is recorded to the
-  decision log. See [`plans/auto-approval-classifier.md`](plans/auto-approval-classifier.md);
-  note the git-hook caveat recorded there.
+  auto-run on. Write tiers additionally require an active OS sandbox, because
+  they run repository git hooks. No model verdict participates. Every grant is
+  recorded to the decision log. See
+  [`plans/auto-approval-classifier.md`](plans/auto-approval-classifier.md).
 - **Approval and mutation gates.** Risky/external shell commands ask for explicit
   approval; custom tools prompt or use their documented remembered-grant path. File
   mutations flow through workspace guards, the diff queue, hooks, and recoverability
@@ -167,8 +168,9 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
   a direct target. The grant is in-memory, but it is not unaccountable: the
   answered prompt and every command the grant later covers are written to the
   durable decision log, naming the paths and whether the answer was made sticky.
-- **OS sandbox (macOS).** Sandbox-contained commands auto-run inside a seatbelt
-  profile; external commands prompt and run outside only when approved.
+- **OS sandbox (macOS and Linux).** Sandbox-contained commands auto-run inside
+  the ASRT profile (seatbelt on macOS, bubblewrap on Linux); external commands
+  prompt and run outside only when approved.
 - **Global network-scope guard.** When a sandboxed ACP agent or a loopback
   background task temporarily widens ASRT's process-global network allowlist,
   all shell commands, background starts, and newly opened integrated terminals
@@ -197,16 +199,16 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 These are the places where the posture above is aspirational rather than
 enforced, ordered by how much they widen the blast radius:
 
-- **No OS sandbox on Linux/Windows.** The seatbelt boundary is `darwin`-only. On
-  other platforms, every agent-proposed shell command requires explicit approval
-  unless the user has explicitly allow-listed its binary as trusted, or it matches
-  a shape on the deterministic auto-approval allow-list; the optional local
-  **safety-model** classifier can only make strict-mode blocks, never authorize
-  host execution. Approved commands run with the user's full privilege. The
-  auto-approval shapes are chosen to be bounded and recoverable, but off macOS
-  nothing contains them — in particular the `local-write` and `remote-write` tiers
-  run this repository's git hooks, which are code, with no containment. On those
-  platforms treat any level above `read` as a trust decision about the repository.
+- **No OS sandbox on Windows (or after ASRT init failure).** The project sandbox
+  runs on macOS (seatbelt) and Linux (bubblewrap). On Windows, and after a sandbox
+  init failure on any platform, every agent-proposed shell command requires
+  explicit approval unless the user has explicitly allow-listed its binary as
+  trusted, or it matches a **read**-tier shape on the deterministic auto-approval
+  allow-list. Write-tier auto-approval (`local-write` / `remote-write`) is capped
+  at `read` unless a sandbox is actually active, because those shapes run
+  repository git hooks. The optional local **safety-model** classifier can only
+  make strict-mode blocks, never authorize host execution. Approved commands run
+  with the user's full privilege.
 - **Approved external commands lose containment.** The contained macOS profile denies
   network and out-of-workspace access, but an approved external command or retry runs
   fully outside that profile. The intended fix is scoped egress/operation grants,
