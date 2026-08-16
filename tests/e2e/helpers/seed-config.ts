@@ -3611,6 +3611,7 @@ export function seedThreadRunningStatusFixture(workspaceRoot: string): {
         id: 'e2e-idle-thread',
         title: idleThreadTitle,
         status: 'idle',
+        unreadAt: now - 500,
         messages: [
           {
             id: 'msg-user-idle',

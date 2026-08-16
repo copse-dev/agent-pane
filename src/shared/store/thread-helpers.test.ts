@@ -202,6 +202,26 @@ describe('blank thread reuse', () => {
     assert.equal(store.getState().threads.length, 1)
   })
 
+  it('clears the unread completion marker when a thread is opened', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    const second = createThread(store)
+    addMessage(store, second, 'user', 'second')
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((thread) => (thread.id === first ? { ...thread, unreadAt: 123 } : thread)),
+    })
+
+    switchThread(store, first)
+
+    assert.equal(
+      store.getState().threads.find((thread) => thread.id === first)?.unreadAt,
+      undefined,
+    )
+  })
+
   it('preserves a draft saved by the composer flush during a switch', () => {
     const store = createStore()
     const usedId = createThread(store)

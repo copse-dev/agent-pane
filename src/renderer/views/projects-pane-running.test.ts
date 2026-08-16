@@ -108,4 +108,30 @@ describe('projects pane running status (component)', () => {
     assert.equal(document.querySelectorAll('.chat-running-status').length, 0)
     assert.equal(rowByTitle('One')?.classList.contains('is-running'), false)
   })
+
+  it('shows an unread dot on a background completion and clears it when opened', () => {
+    const unread = { ...thread('unread', 'Finished'), unreadAt: 123 }
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
+      threads: [thread('active', 'Active'), unread],
+      activeThreadId: 'active',
+    })
+    mount(store)
+
+    const finished = rowByTitle('Finished')
+    assert.ok(finished?.classList.contains('is-unread'))
+    assert.equal(
+      finished?.querySelector('.chat-unread-dot')?.getAttribute('aria-label'),
+      'Unread agent completion',
+    )
+
+    finished.click()
+
+    assert.equal(store.getState().activeThreadId, 'unread')
+    assert.equal(store.getState().threads.find((item) => item.id === 'unread')?.unreadAt, undefined)
+    assert.equal(rowByTitle('Finished')?.querySelector('.chat-unread-dot'), null)
+  })
 })
