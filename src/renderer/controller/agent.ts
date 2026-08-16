@@ -19,6 +19,7 @@ import {
   setThreadComparison,
   addHookCard,
   getThreadById,
+  markThreadUnread,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
@@ -452,10 +453,15 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // for a run the user launched from the foreground and is watching.
         const finishedThread = getThreadById(store, threadId)
         const quiet = takeQuietRun(threadId)
-        if (finishedThread?.status === 'idle' && !quiet) {
-          void api.alerts.threadFinished(threadId, finishedThread.title).catch((error: unknown) => {
-            console.error('[alerts] failed to signal thread completion:', error)
-          })
+        if (finishedThread?.status === 'idle') {
+          markThreadUnread(store, threadId)
+          if (!quiet) {
+            void api.alerts
+              .threadFinished(threadId, finishedThread.title)
+              .catch((error: unknown) => {
+                console.error('[alerts] failed to signal thread completion:', error)
+              })
+          }
         }
         break
       }

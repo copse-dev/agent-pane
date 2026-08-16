@@ -5,8 +5,10 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { buildIndex, getIndex, invalidateIndex } from './file-index.ts'
 import {
+  emitWorkspaceIndexWatcherErrorForTest,
   flushScheduledIndexRebuild,
   handleWorkspaceWatchEvent,
+  isRootWatched,
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
   stopWorkspaceIndexWatcher,
@@ -71,6 +73,15 @@ describe('workspace-index-watcher', () => {
       invalidateIndex(otherRoot)
       await rm(otherRoot, { recursive: true, force: true })
     }
+  })
+
+  it('drops the watcher on error instead of leaving an uncaught exception', () => {
+    assert.equal(isRootWatched(tempRoot), true)
+    assert.equal(
+      emitWorkspaceIndexWatcherErrorForTest(tempRoot, new Error('ENOENT: watch root gone')),
+      true,
+    )
+    assert.equal(isRootWatched(tempRoot), false)
   })
 
   it('stopping one root leaves the other watched', async () => {

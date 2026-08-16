@@ -729,6 +729,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (thread.status === 'running') {
           chatRow.classList.add('is-running')
           chatRow.insertBefore(runningStatus('Agent is working'), title)
+        } else if (thread.unreadAt !== undefined && thread.id !== activeId) {
+          chatRow.classList.add('is-unread')
+          chatRow.insertBefore(
+            el('span', {
+              class: 'chat-unread-dot',
+              role: 'img',
+              'aria-label': 'Unread agent completion',
+            }),
+            title,
+          )
         }
 
         if (isThreadAwaitingAttention(thread.id)) {

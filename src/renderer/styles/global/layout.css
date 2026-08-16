@@ -428,6 +428,17 @@
   color: var(--accent);
   pointer-events: none;
 }
+.chat-unread-dot {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
 .chat-running-status path {
   animation: chat-running-dot 1.2s ease-in-out infinite;
 }
