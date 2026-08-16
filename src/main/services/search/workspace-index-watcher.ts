@@ -92,11 +92,12 @@ function armWatcher(
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
       handleWorkspaceWatchEvent(key, filename)
     })
-    // An unhandled recursive-watch error is an uncaught exception in the main
-    // process. Dropping the watcher matches `execution-root-watcher`.
+    // Same contract as execution-root-watcher: an `error` with no listener is an
+    // uncaught exception that kills the main process. A deleted, renamed, or
+    // unmounted workspace root must drop the watcher, not take the app down.
     watcher.on('error', (err: unknown) => {
       console.warn('[copse-panel] workspace index watcher failed for', key, err)
-      stopOne(key)
+      if (states.get(key)?.watcher === watcher) stopOne(key)
     })
     state.watcher = watcher
   } catch (err) {
@@ -153,6 +154,14 @@ export function isRootWatched(root: string): boolean {
 /** Whether any recursive watcher (git-only or index-rebuild) is armed for `root`. */
 export function isWorkingTreeWatched(root: string): boolean {
   return states.get(resolve(root))?.watcher != null
+}
+
+/** Test hook — fire the watcher's `error` path without deleting the directory. */
+export function emitWorkspaceIndexWatcherErrorForTest(root: string, err: Error): boolean {
+  const watcher = states.get(resolve(root))?.watcher
+  if (!watcher) return false
+  watcher.emit('error', err)
+  return true
 }
 
 /** Stop watching one root, or every watched root when called with none (app quit / workspace switch). */

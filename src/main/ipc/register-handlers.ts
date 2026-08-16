@@ -1983,7 +1983,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ]),
       rawArgs,
     )
-    return getGitBranchStatus(branch, await resolveWatchedGitRoot(projectId, threadId))
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getGitBranchStatus(projectId, branch, root)
   })
   ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
