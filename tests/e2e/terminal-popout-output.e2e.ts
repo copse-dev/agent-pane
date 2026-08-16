@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { $, browser, expect } from '@wdio/globals'
+import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -16,20 +16,36 @@ async function approvalDialogOpen(): Promise<boolean> {
   })
 }
 
+async function tryApproveUnsandboxedTerminal(): Promise<boolean> {
+  // Pop-out windows hide `#pane-chat`, which hosts the dialog. `showModal()`
+  // still puts it on the top layer, but WebDriver `getText` / `click` treat a
+  // `display: none` ancestor as not displayed and return empty. Drive the
+  // native click instead.
+  return browser.execute(() => {
+    const dialog = document.getElementById('approval-dialog')
+    if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return false
+    const heading = dialog.querySelector('.approval-heading')
+    if (heading?.textContent?.trim() !== 'Open unsandboxed terminal?') return false
+    const button = dialog.querySelector('.approval-approve')
+    if (!(button instanceof HTMLButtonElement)) return false
+    button.click()
+    return true
+  })
+}
+
 async function approveUnsandboxedTerminalIfPrompted(timeoutMs = 5_000): Promise<boolean> {
-  const approval = await $('#approval-dialog')
-  const unsandboxed =
-    timeoutMs <= 0
-      ? await approvalDialogOpen()
-      : await approval
-          .waitForDisplayed({ timeout: timeoutMs })
-          .then(() => true)
-          .catch(() => false)
-  if (!unsandboxed) return false
-  await expect(approval.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
-  await approval.$('.approval-approve').click()
-  await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })
-  return true
+  const deadline = Date.now() + Math.max(timeoutMs, 0)
+  for (;;) {
+    if (await tryApproveUnsandboxedTerminal()) {
+      await browser.waitUntil(async () => !(await approvalDialogOpen()), {
+        timeout: 10_000,
+        timeoutMsg: 'approval dialog stayed open after approve',
+      })
+      return true
+    }
+    if (Date.now() >= deadline) return false
+    await browser.pause(100)
+  }
 }
 
 /**
