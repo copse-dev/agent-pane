@@ -19,35 +19,21 @@ export interface GitHubListWatchSnapshot {
   timerArmed: boolean
 }
 
-export interface GitHubListWatchDeps {
-  readonly setInterval: (handler: () => void, ms: number) => unknown
-  readonly clearInterval: (handle: unknown) => void
-  readonly broadcast: () => void
-}
-
-const defaultDeps: GitHubListWatchDeps = {
-  setInterval: (handler, ms) => setInterval(handler, ms),
-  clearInterval: (handle) => {
-    clearInterval(handle as ReturnType<typeof setInterval>)
-  },
-  broadcast: () => {
-    // Wired by `setGitHubListWatchBroadcast` from register-handlers.
-  },
-}
-
 const watchers = new Map<number, { includeMyPrs: boolean }>()
-let timer: unknown = null
-let deps: GitHubListWatchDeps = defaultDeps
+let timer: ReturnType<typeof setInterval> | null = null
+let broadcast: () => void = (): void => {
+  // Wired by `setGitHubListWatchBroadcast` from register-handlers.
+}
 
 function syncTimer(): void {
   if (watchers.size === 0) {
     if (timer === null) return
-    deps.clearInterval(timer)
+    clearInterval(timer)
     timer = null
     return
   }
   if (timer !== null) return
-  timer = deps.setInterval(() => {
+  timer = setInterval(() => {
     notifyGitHubListWatchers()
   }, GITHUB_LIST_WATCH_INTERVAL_MS)
 }
@@ -72,7 +58,12 @@ export function setGitHubListWatch(
 /** Wake every watching pane so they re-read through the shared cache. */
 export function notifyGitHubListWatchers(): void {
   if (watchers.size === 0) return
-  deps.broadcast()
+  broadcast()
+}
+
+/** Production wiring — fan ticks to every app window. */
+export function setGitHubListWatchBroadcast(next: () => void): void {
+  broadcast = next
 }
 
 /** @internal test helper */
@@ -88,22 +79,12 @@ export function gitHubListWatchSnapshotForTest(): GitHubListWatchSnapshot {
   }
 }
 
-/** Production wiring — fan ticks to every app window. */
-export function setGitHubListWatchBroadcast(broadcast: () => void): void {
-  deps = { ...deps, broadcast }
-}
-
-/** @internal test helper */
-export function setGitHubListWatchDepsForTest(next: GitHubListWatchDeps | null): void {
-  deps = next ?? defaultDeps
-}
-
 /** @internal test helper */
 export function resetGitHubListWatchForTest(): void {
   watchers.clear()
   if (timer !== null) {
-    deps.clearInterval(timer)
+    clearInterval(timer)
     timer = null
   }
-  deps = defaultDeps
+  broadcast = (): void => undefined
 }

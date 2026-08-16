@@ -1,4 +1,4 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   GITHUB_LIST_WATCH_INTERVAL_MS,
@@ -7,7 +7,6 @@ import {
   resetGitHubListWatchForTest,
   setGitHubListWatch,
   setGitHubListWatchBroadcast,
-  setGitHubListWatchDepsForTest,
 } from './github-list-watch.ts'
 import {
   broadcastToAppWindows,
@@ -26,30 +25,14 @@ function fakeWindow(): FakeWindow {
     send(channel: string, ...args: unknown[]): void {
       this.sent.push({ channel, args })
     },
-    isDestroyed: () => false,
+    isDestroyed: (): boolean => false,
   }
 }
 
-function installFakeTimer(): { ticks: number; fire: () => void } {
-  let handler: (() => void) | null = null
-  const state = {
-    ticks: 0,
-    fire(): void {
-      if (!handler) throw new Error('timer is not armed')
-      handler()
-    },
-  }
-  setGitHubListWatchDepsForTest({
-    setInterval: (next: () => void): number => {
-      handler = next
-      return 1
-    },
-    clearInterval: (): void => {
-      handler = null
-    },
-    broadcast: (): void => {
-      state.ticks++
-    },
+function countBroadcasts(): { ticks: number } {
+  const state = { ticks: 0 }
+  setGitHubListWatchBroadcast((): void => {
+    state.ticks++
   })
   return state
 }
@@ -57,11 +40,13 @@ function installFakeTimer(): { ticks: number; fire: () => void } {
 afterEach((): void => {
   resetGitHubListWatchForTest()
   resetAppWindowsForTest()
+  mock.timers.reset()
 })
 
 describe('github list watch', () => {
-  it('arms one timer for two watchers and broadcasts once per tick', () => {
-    const timer = installFakeTimer()
+  it('arms one timer for two watchers and broadcasts once per tick', (): void => {
+    mock.timers.enable({ apis: ['setInterval'] })
+    const ticks = countBroadcasts()
     setGitHubListWatch(1, true, false)
     setGitHubListWatch(2, true, true)
     assert.deepEqual(gitHubListWatchSnapshotForTest(), {
@@ -69,13 +54,14 @@ describe('github list watch', () => {
       includeMyPrs: true,
       timerArmed: true,
     })
-    timer.fire()
-    timer.fire()
-    assert.equal(timer.ticks, 2)
+    mock.timers.tick(GITHUB_LIST_WATCH_INTERVAL_MS)
+    mock.timers.tick(GITHUB_LIST_WATCH_INTERVAL_MS)
+    assert.equal(ticks.ticks, 2)
   })
 
-  it('stops the timer when the last watcher unwatches', () => {
-    const timer = installFakeTimer()
+  it('stops the timer when the last watcher unwatches', (): void => {
+    mock.timers.enable({ apis: ['setInterval'] })
+    const ticks = countBroadcasts()
     setGitHubListWatch(1, true, false)
     setGitHubListWatch(2, true, false)
     setGitHubListWatch(1, false, false)
@@ -86,22 +72,22 @@ describe('github list watch', () => {
       includeMyPrs: false,
       timerArmed: false,
     })
-    assert.throws(() => {
-      timer.fire()
-    }, /timer is not armed/)
+    mock.timers.tick(GITHUB_LIST_WATCH_INTERVAL_MS * 2)
+    assert.equal(ticks.ticks, 0)
   })
 
-  it('does not reset the cadence when a second window starts watching', () => {
-    const timer = installFakeTimer()
+  it('does not reset the cadence when a second window starts watching', (): void => {
+    mock.timers.enable({ apis: ['setInterval'] })
+    const ticks = countBroadcasts()
     setGitHubListWatch(1, true, false)
-    timer.fire()
+    mock.timers.tick(GITHUB_LIST_WATCH_INTERVAL_MS)
     setGitHubListWatch(2, true, false)
     assert.equal(gitHubListWatchSnapshotForTest().timerArmed, true)
-    assert.equal(timer.ticks, 1, 'joining a watcher must not fire an extra tick')
+    assert.equal(ticks.ticks, 1, 'joining a watcher must not fire an extra tick')
   })
 
-  it('unions includeMyPrs across watchers and drops it when that pane unwatches', () => {
-    installFakeTimer()
+  it('unions includeMyPrs across watchers and drops it when that pane unwatches', (): void => {
+    mock.timers.enable({ apis: ['setInterval'] })
     setGitHubListWatch(1, true, false)
     setGitHubListWatch(2, true, true)
     assert.equal(gitHubListWatchSnapshotForTest().includeMyPrs, true)
@@ -109,19 +95,15 @@ describe('github list watch', () => {
     assert.equal(gitHubListWatchSnapshotForTest().includeMyPrs, false)
   })
 
-  it('skips broadcast when nobody is watching', () => {
-    const timer = installFakeTimer()
+  it('skips broadcast when nobody is watching', (): void => {
+    const ticks = countBroadcasts()
     notifyGitHubListWatchers()
-    assert.equal(timer.ticks, 0)
+    assert.equal(ticks.ticks, 0)
   })
 
-  it('fans a tick to every app window on the default broadcast path', () => {
-    setGitHubListWatchDepsForTest({
-      setInterval: (): number => 1,
-      clearInterval: (): void => undefined,
-      broadcast: (): void => undefined,
-    })
-    setGitHubListWatchBroadcast(() => {
+  it('fans a tick to every app window on the default broadcast path', (): void => {
+    mock.timers.enable({ apis: ['setInterval'] })
+    setGitHubListWatchBroadcast((): void => {
       broadcastToAppWindows('gh:lists_tick')
     })
     const main = fakeWindow()
@@ -135,7 +117,7 @@ describe('github list watch', () => {
     }
   })
 
-  it('uses the shared 30s interval', () => {
+  it('uses the shared 30s interval', (): void => {
     assert.equal(GITHUB_LIST_WATCH_INTERVAL_MS, 30_000)
   })
 })
