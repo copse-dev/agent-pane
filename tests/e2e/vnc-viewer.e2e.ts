@@ -301,6 +301,9 @@ describe('read-only VNC viewer', function () {
     await desktopButton.click()
     const portInput = $('.vnc-port-input')
     await portInput.waitForExist({ timeout: 20_000 })
+    assert.equal(await $$('.vnc-tab').length, 1)
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'Desktop 1')
+    assert.equal(await $('.vnc-tabs-new-btn').getAttribute('aria-label'), 'New desktop tab')
     const advanced = $('.vnc-advanced')
     const advancedSummary = $('.vnc-advanced summary')
     assert.equal(await advanced.getAttribute('open'), null)
@@ -435,6 +438,7 @@ describe('read-only VNC viewer', function () {
     assert.equal(await $('.vnc-view-only-note').isDisplayed(), false)
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Disconnect')
     assert.equal(await $('.vnc-controls-host .git-changes-title').isDisplayed(), true)
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
 
     const sampled = await browser.execute(() => {
       const painted = document.querySelector<HTMLCanvasElement>('.vnc-screen canvas')
@@ -468,6 +472,56 @@ describe('read-only VNC viewer', function () {
       { width: WIDTH, height: HEIGHT },
     )
     await saveAppScreenshot('vnc-viewer-shared-screen.png')
+    await $('.toast').waitForExist({ reverse: true, timeout: 5_000 })
+
+    await $('.vnc-tabs-new-btn').click()
+    assert.equal(await $$('.vnc-tab').length, 2)
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'Desktop 2')
+    assert.equal(await $$('.vnc-viewer-panel .vnc-screen canvas').length, 1)
+    assert.equal(await $('.vnc-viewer-panel:not([hidden]) .vnc-screen canvas').isExisting(), false)
+
+    const secondControls = '.vnc-controls-panel:not([hidden])'
+    const secondPortInput = $(`${secondControls} .vnc-port-input`)
+    const secondAdvancedSummary = $(`${secondControls} .vnc-advanced summary`)
+    await secondPortInput.waitForExist({ timeout: 20_000 })
+    await secondAdvancedSummary.click()
+    await secondPortInput.waitForDisplayed()
+    await secondPortInput.setValue(String(port))
+    await secondAdvancedSummary.click()
+    await $(`${secondControls} .vnc-connect-btn`).click()
+    await browser.waitUntil(
+      async () => (await $(`${secondControls} .vnc-status-title`).getText()).includes('Connected'),
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected the second VNC tab to connect independently',
+      },
+    )
+
+    assert.deepEqual(await $$('.vnc-tab-label').map((label) => label.getText()), [
+      'This machine 1',
+      'This machine 2',
+    ])
+    assert.equal(await $$('.vnc-viewer-panel .vnc-screen canvas').length, 2)
+    assert.equal(await $('.vnc-viewer-panel:not([hidden]) .vnc-screen canvas').isDisplayed(), true)
+    assert.equal(await $('.vnc-viewer-panel[hidden] .vnc-screen canvas').isDisplayed(), false)
+    await browser.execute(() => window.scrollTo(0, 0))
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-tabs.png')
+
+    await $$('.vnc-tab')[0].click()
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine 1')
+    assert.equal(
+      await $('.vnc-controls-panel:not([hidden]) .vnc-status-title').getText(),
+      'Connected to this machine',
+    )
+    await $$('.vnc-tab')[1].click()
+    await $('.vnc-tab.is-active .vnc-tab-close').click()
+    assert.equal(await $$('.vnc-tab').length, 1)
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
+    assert.equal(await $$('.vnc-viewer-panel .vnc-screen canvas').length, 1)
+    assert.equal(
+      await $('.vnc-controls-panel:not([hidden]) .vnc-status-title').getText(),
+      'Connected to this machine',
+    )
 
     await assertNoErrorToasts('read-only VNC viewer')
   })

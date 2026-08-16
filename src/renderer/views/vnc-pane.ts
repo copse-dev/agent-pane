@@ -2,6 +2,7 @@ import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
+import { closeIcon, plusIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -63,23 +64,38 @@ interface PendingStatus {
   kind: VncStatusKind
 }
 
+interface VncSessionController {
+  cleanup(): void
+  focus(): void
+}
+
+interface VncSessionOptions {
+  isActive(): boolean
+  onLabelChange(label: string): void
+}
+
+interface VncTab {
+  id: string
+  baseLabel: string
+  tabButton: HTMLButtonElement
+  tabLabel: HTMLElement
+  closeButton: HTMLElement
+  controlsPanel: HTMLElement
+  viewerPanel: HTMLElement
+  session: VncSessionController
+}
+
 function isVncCredentialType(type: string): type is VncCredentialType {
   return type === 'username' || type === 'password' || type === 'target'
 }
 
-export function mountVncPane(
+function mountVncSession(
   controlsRoot: HTMLElement,
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
-): () => void {
-  const header = el(
-    'div',
-    { class: 'git-changes-header' },
-    el('span', { class: 'git-changes-title' }, 'Desktop'),
-    panePopoutButton(store, api, 'vnc', 'desktop'),
-    paneMaximizeButton(store, 'desktop'),
-  )
+  options: VncSessionOptions,
+): VncSessionController {
   const machineSelect = el('select', {
     class: 'vnc-machine-select',
     'aria-label': 'Desktop machine',
@@ -247,7 +263,7 @@ export function mountVncPane(
     disconnectButton,
     note,
   )
-  controlsRoot.append(header, controlsBody)
+  controlsRoot.append(controlsBody)
 
   const screen = el('div', { class: 'vnc-screen', 'aria-label': 'Remote desktop' })
   const empty = el(
@@ -734,6 +750,7 @@ export function mountVncPane(
       connectedAtLeastOnce = false
       pendingDisconnectStatus = null
       const machineName = selectedMachineName()
+      options.onLabelChange(machineName === 'this machine' ? 'This machine' : machineName)
       empty.textContent = 'Connecting to the remote desktop…'
       setSessionUi(true)
       nextRfb.viewOnly = true
@@ -931,7 +948,7 @@ export function mountVncPane(
   const stopMode = store.on('right_panel_mode_changed', () => {
     if (!vncModeActive(store)) return
     void refreshSshHosts()
-    rfb?.focus()
+    if (options.isActive()) rfb?.focus()
   })
   const stopSettings = store.on('settings_changed', () => {
     void refreshSshHosts()
@@ -941,18 +958,210 @@ export function mountVncPane(
   qsRequired<HTMLInputElement>(form, '.vnc-port-input').value = '5901'
   void loadMachines()
 
+  return {
+    focus: (): void => {
+      rfb?.focus()
+    },
+    cleanup: (): void => {
+      connectGeneration++
+      discoveryGeneration++
+      nearbyGeneration++
+      sshHostsGeneration++
+      rfb?.disconnect()
+      channel?.close()
+      screen.removeEventListener('contextmenu', onScreenContextMenu, true)
+      stopData()
+      stopStatus()
+      stopWorkspace()
+      stopMode()
+      stopSettings()
+    },
+  }
+}
+
+export function mountVncPane(
+  controlsRoot: HTMLElement,
+  viewerRoot: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+): () => void {
+  const newButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'vnc-tabs-new-btn',
+      'aria-label': 'New desktop tab',
+      'data-tooltip': 'New desktop tab',
+    },
+    plusIcon('ui-icon ui-icon-sm'),
+  )
+  const header = el(
+    'div',
+    { class: 'git-changes-header' },
+    el('span', { class: 'git-changes-title' }, 'Desktop'),
+    el(
+      'div',
+      { class: 'vnc-header-actions' },
+      panePopoutButton(store, api, 'vnc', 'desktop'),
+      paneMaximizeButton(store, 'desktop'),
+      newButton,
+    ),
+  )
+  const tabsList = el('div', {
+    class: 'vnc-tabs-list',
+    role: 'tablist',
+    'aria-label': 'Open desktops',
+  })
+  const controlsPanels = el('div', { class: 'vnc-controls-panels' })
+  controlsRoot.append(header, tabsList, controlsPanels)
+
+  const tabs = new Map<string, VncTab>()
+  let activeTabId: string | null = null
+  let tabCounter = 0
+
+  function syncTabLabels(): void {
+    const groups = new Map<string, VncTab[]>()
+    for (const tab of tabs.values()) {
+      const group = groups.get(tab.baseLabel) ?? []
+      group.push(tab)
+      groups.set(tab.baseLabel, group)
+    }
+    for (const group of groups.values()) {
+      group.forEach((tab, index) => {
+        const label = group.length > 1 ? `${tab.baseLabel} ${String(index + 1)}` : tab.baseLabel
+        tab.tabLabel.textContent = label
+        tab.closeButton.setAttribute('aria-label', `Close ${label}`)
+        tab.tabButton.title = label
+      })
+    }
+  }
+
+  function updateTabLabel(tabId: string, label: string): void {
+    const tab = tabs.get(tabId)
+    if (!tab) return
+    tab.baseLabel = label
+    syncTabLabels()
+  }
+
+  function setActiveTab(tabId: string): void {
+    const selected = tabs.get(tabId)
+    if (!selected) return
+    activeTabId = tabId
+    for (const tab of tabs.values()) {
+      const active = tab.id === tabId
+      tab.tabButton.classList.toggle('is-active', active)
+      tab.tabButton.setAttribute('aria-selected', String(active))
+      tab.tabButton.tabIndex = active ? 0 : -1
+      tab.controlsPanel.hidden = !active
+      tab.viewerPanel.hidden = !active
+    }
+    if (vncModeActive(store)) selected.session.focus()
+  }
+
+  function addTab(): string {
+    const id = crypto.randomUUID()
+    const number = ++tabCounter
+    const baseLabel = `Desktop ${String(number)}`
+    const tabLabel = el('span', { class: 'vnc-tab-label' }, baseLabel)
+    const closeButton = el(
+      'span',
+      {
+        class: 'vnc-tab-close',
+        role: 'button',
+        'aria-label': `Close ${baseLabel}`,
+        'data-tooltip': `Close ${baseLabel}`,
+      },
+      closeIcon('ui-icon ui-icon-sm'),
+    )
+    const tabButton = el(
+      'button',
+      {
+        type: 'button',
+        class: 'vnc-tab',
+        id: `vnc-tab-${id}`,
+        role: 'tab',
+        'aria-selected': 'false',
+        'data-tab-id': id,
+      },
+      tabLabel,
+      closeButton,
+    )
+    const controlsPanel = el('div', {
+      class: 'vnc-controls-panel',
+      role: 'tabpanel',
+      'aria-labelledby': tabButton.id,
+      'data-tab-id': id,
+      hidden: true,
+    })
+    const viewerPanel = el('div', {
+      class: 'vnc-viewer-panel',
+      role: 'tabpanel',
+      'aria-labelledby': tabButton.id,
+      'data-tab-id': id,
+      hidden: true,
+    })
+    tabsList.append(tabButton)
+    controlsPanels.append(controlsPanel)
+    viewerRoot.append(viewerPanel)
+
+    const session = mountVncSession(controlsPanel, viewerPanel, store, api, {
+      isActive: () => activeTabId === id,
+      onLabelChange: (label) => {
+        updateTabLabel(id, label)
+      },
+    })
+    const tab: VncTab = {
+      id,
+      baseLabel,
+      tabButton,
+      tabLabel,
+      closeButton,
+      controlsPanel,
+      viewerPanel,
+      session,
+    }
+    tabs.set(id, tab)
+
+    tabButton.addEventListener('click', (event) => {
+      if (event.target instanceof Element && event.target.closest('.vnc-tab-close')) return
+      setActiveTab(id)
+    })
+    closeButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      removeTab(id)
+    })
+
+    syncTabLabels()
+    setActiveTab(id)
+    return id
+  }
+
+  function removeTab(tabId: string): void {
+    const tab = tabs.get(tabId)
+    if (!tab) return
+    const ordered = [...tabs.keys()]
+    const removedIndex = ordered.indexOf(tabId)
+    const wasActive = activeTabId === tabId
+    tab.session.cleanup()
+    tab.tabButton.remove()
+    tab.controlsPanel.remove()
+    tab.viewerPanel.remove()
+    tabs.delete(tabId)
+    syncTabLabels()
+
+    if (!wasActive) return
+    activeTabId = null
+    const remaining = [...tabs.keys()]
+    const replacement = remaining[Math.min(removedIndex, remaining.length - 1)]
+    if (replacement) setActiveTab(replacement)
+    else addTab()
+  }
+
+  newButton.addEventListener('click', addTab)
+  addTab()
+
   return () => {
-    connectGeneration++
-    discoveryGeneration++
-    nearbyGeneration++
-    sshHostsGeneration++
-    rfb?.disconnect()
-    channel?.close()
-    screen.removeEventListener('contextmenu', onScreenContextMenu, true)
-    stopData()
-    stopStatus()
-    stopWorkspace()
-    stopMode()
-    stopSettings()
+    for (const tab of tabs.values()) tab.session.cleanup()
+    tabs.clear()
   }
 }

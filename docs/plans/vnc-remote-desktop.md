@@ -264,10 +264,13 @@ or the current addresses resolved for the SSH host. Remote scans use the probed 
 port 5900 when a process scanner omits macOS's launchd-managed Screen Sharing
 listener. A connected framebuffer can be right-clicked to attach the current
 screen as a PNG to the active composer; the user still decides whether to send
-it to the model. Once a session starts, setup and discovery controls collapse into a
-plain-language connected summary, view-only explanation, and Disconnect action;
-protocol names and port numbers remain confined to Advanced settings and error
-diagnostics. The live `DISPLAY=:1` harness remains.
+it to the model. The Desktop pane supports multiple tabs, each with its own live
+connection; switching tabs keeps the other sessions connected, while closing a
+tab disconnects only that desktop. Once a session starts, setup and discovery
+controls collapse into a plain-language connected summary, view-only
+explanation, and Disconnect action; protocol names and port numbers remain
+confined to Advanced settings and error diagnostics. The live `DISPLAY=:1`
+harness remains.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local
