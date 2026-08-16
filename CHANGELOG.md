@@ -16,7 +16,9 @@ every published entry.
   started with. A shell's output now goes to the window that opened it, and to
   no other: unlike the diff queue, which is shared workspace state, terminal
   output stays private to its own window. Closing a pop-out also shuts down the
-  shells it opened, rather than leaving them running with nothing attached.
+  shells it opened, rather than leaving them running with nothing attached. The
+  unsandboxed-terminal permission prompt follows the same window, so it no
+  longer appears on the (possibly hidden) main window while the pop-out waits.
 - Changes popped out into its own window now shows the same thing the docked
   pane does. The **Proposed** section was missing entirely from the pop-out: the
   main process pushed the proposed-diff queue to the main window only, and a

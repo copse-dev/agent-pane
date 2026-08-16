@@ -1,4 +1,5 @@
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
+import { runWithApprovalPromptTarget } from '../services/approval.ts'
 import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { getProjectRoot } from '../services/workspace.ts'
@@ -82,7 +83,9 @@ export function initTerminal(win: BrowserWindow): () => void {
   ipcMain.handle('terminal:create', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [cols, rows, meta] = parseIpcArgs(terminalCreateSchema, rawArgs)
-    const permitted = await ensureTerminalPermitted()
+    const permitted = await runWithApprovalPromptTarget(event.sender, () =>
+      ensureTerminalPermitted(),
+    )
     if (!permitted) throw new Error('Terminal access was not approved')
     const execution = await resolveTerminalRoot(meta)
     // Route to the renderer that asked, not to the window captured at init.
