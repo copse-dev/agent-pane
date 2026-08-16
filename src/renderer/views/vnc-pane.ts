@@ -928,8 +928,9 @@ function mountVncSession(
   }
 
   const onScreenContextMenu = (event: MouseEvent): void => {
-    if (!connectedAtLeastOnce || !screen.querySelector('canvas')) return
-    if (controlEnabled) return
+    const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
+    if (!connectedAtLeastOnce || !canvas) return
+    if (controlEnabled && event.composedPath().includes(canvas)) return
     event.preventDefault()
     event.stopPropagation()
     showContextMenu(event.clientX, event.clientY, [

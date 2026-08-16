@@ -520,13 +520,22 @@ describe('VNC viewer', function () {
     await browser.execute(() => window.scrollTo(0, 0))
     await saveElementScreenshot('#pane-files', 'vnc-viewer-control-enabled.png')
 
-    await controlButton.click()
-    assert.equal(await controlButton.getText(), 'Control desktop')
-    assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
-    assert.match(await $('.vnc-status-detail').getText(), /view only/i)
-    assert.equal(await $('.vnc-screen').getAttribute('class'), 'vnc-screen')
-
-    await canvas.click({ button: 'right' })
+    await browser.execute(() => {
+      const remoteScreen = document.querySelector<HTMLElement>('.vnc-screen')
+      if (!remoteScreen) throw new Error('Remote screen container is missing')
+      const bounds = remoteScreen.getBoundingClientRect()
+      remoteScreen.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          button: 2,
+          buttons: 2,
+          clientX: bounds.left + 4,
+          clientY: bounds.top + 4,
+        }),
+      )
+    })
     const shareMenu = $('.context-menu')
     await shareMenu.waitForDisplayed({ timeout: 5_000 })
     assert.equal(await $('.context-menu-item').getText(), 'Share screen with model')
@@ -545,6 +554,17 @@ describe('VNC viewer', function () {
     )
     await saveAppScreenshot('vnc-viewer-shared-screen.png')
     await $('.toast').waitForExist({ reverse: true, timeout: 5_000 })
+
+    await controlButton.click()
+    assert.equal(await controlButton.getText(), 'Control desktop')
+    assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
+    assert.match(await $('.vnc-status-detail').getText(), /view only/i)
+    assert.equal(await $('.vnc-screen').getAttribute('class'), 'vnc-screen')
+    await canvas.click({ button: 'right' })
+    await shareMenu.waitForDisplayed({ timeout: 5_000 })
+    assert.equal(await $('.context-menu-item').getText(), 'Share screen with model')
+    await browser.keys('Escape')
+    await expect(shareMenu).not.toBeExisting()
 
     await $('.vnc-tabs-new-btn').click()
     assert.equal(await $$('.vnc-tab').length, 2)
