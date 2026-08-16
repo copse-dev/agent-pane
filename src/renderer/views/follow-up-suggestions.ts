@@ -285,6 +285,9 @@ export function mountFollowUpSuggestions(
     api.fs.onChanged(() => {
       scheduleChangesRefresh()
     }),
+    api.git.onWorkingTreeChanged(() => {
+      scheduleChangesRefresh()
+    }),
   ]
 
   return {
