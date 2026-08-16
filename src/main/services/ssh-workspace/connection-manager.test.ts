@@ -83,6 +83,10 @@ describe('SshConnectionManager', () => {
           disconnectCalls += 1
           await Promise.resolve()
         },
+        openForward: async (): Promise<{ localPort: number }> => ({ localPort: 45_000 }),
+        closeForward: async (): Promise<void> => {
+          await Promise.resolve()
+        },
         execArgv: async (): Promise<{ stdout: string; stderr: string; code: number }> => ({
           stdout: '',
           stderr: '',
