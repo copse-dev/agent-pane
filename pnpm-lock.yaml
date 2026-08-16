@@ -30,11 +30,11 @@ importers:
         specifier: ^1.3.0
         version: 1.3.0(zod@4.4.3)
       '@anthropic-ai/sandbox-runtime':
-        specifier: ^0.0.70
-        version: 0.0.70
+        specifier: ^0.0.71
+        version: 0.0.71
       '@anthropic-ai/sdk':
-        specifier: ^0.115.0
-        version: 0.115.0(zod@4.4.3)
+        specifier: ^0.116.0
+        version: 0.116.0(zod@4.4.3)
       '@copse/streaming-markdown':
         specifier: ^1.0.3
         version: 1.0.5(dompurify@3.4.13)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.16.1)
@@ -216,13 +216,13 @@ packages:
   '@antfu/install-pkg@1.1.0':
     resolution: {integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==}
 
-  '@anthropic-ai/sandbox-runtime@0.0.70':
-    resolution: {integrity: sha512-Pr0d3J3UyJISxvFxTOldchW3a8P/nAZiIV+nU9wIHoW5Ym1PM0XDPzWX8mMJsXWpnURzI+u3OdULiaucYZ9e2g==}
+  '@anthropic-ai/sandbox-runtime@0.0.71':
+    resolution: {integrity: sha512-/ZMCavpMElD0ku2BlA95vezKUsVN0DD/wVd3WIEAfFjkTF2nsmzQA+MhejIWhuSUS9HpxMtTj57eFL+kdbKZ/A==}
     engines: {node: '>=20.11.0'}
     hasBin: true
 
-  '@anthropic-ai/sdk@0.115.0':
-    resolution: {integrity: sha512-BJrFIVyjNuU8lfDyIJTvlRYzgQg+zEl78BxE7fq8esULsGz9IRQvGtW5spq3tydmtjQb/GFdooKGdGsetpx+lQ==}
+  '@anthropic-ai/sdk@0.116.0':
+    resolution: {integrity: sha512-4UEapYQ+epLEMsAuLZDvW8ExVSOtHD8a7zTyLzhw0H9RXJ1eilPgmqhjwgcdg22diwx13spw6fJ4rONZ+bS7Ww==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -4770,14 +4770,14 @@ snapshots:
       package-manager-detector: 1.8.0
       tinyexec: 1.3.0
 
-  '@anthropic-ai/sandbox-runtime@0.0.70':
+  '@anthropic-ai/sandbox-runtime@0.0.71':
     dependencies:
       '@pondwader/socks5-server': 1.0.10
       commander: 12.1.0
       node-forge: 1.4.0
       zod: 3.25.76
 
-  '@anthropic-ai/sdk@0.115.0(zod@4.4.3)':
+  '@anthropic-ai/sdk@0.116.0(zod@4.4.3)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
