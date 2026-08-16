@@ -444,6 +444,8 @@ export function seedEmptyProject(
      */
     roadmapPlansEnabled?: boolean
     developerMode?: boolean
+    /** Opt into the read-only Remote Desktop pane. */
+    vncEnabled?: boolean
     /**
      * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
      * on). Seed `false` when a spec needs a shell approval dialog to appear
@@ -562,6 +564,9 @@ export function seedEmptyProject(
   }
   if (options?.developerMode !== undefined) {
     settings.developerMode = options.developerMode
+  }
+  if (options?.vncEnabled !== undefined) {
+    settings.vncEnabled = options.vncEnabled
   }
   if (options?.autoRunSandboxCommands !== undefined) {
     settings.autoRunSandboxCommands = options.autoRunSandboxCommands

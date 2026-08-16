@@ -19,6 +19,7 @@ const TITLES: Record<PopoutMode, string> = {
   memories: 'Memories — Copse',
   roadmap: 'Roadmap — Copse',
   browser: 'Browser — Copse',
+  vnc: 'Desktop — Copse',
 }
 
 /** Landscape default — pop-outs are auxiliary workspaces, not tall portrait strips. */

@@ -60,6 +60,14 @@ import type {
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
+import type {
+  VncConnection,
+  VncDiscoveryHost,
+  VncNearbyServer,
+  VncSshHostResolution,
+  VncStatusEvent,
+  VncTarget,
+} from '@shared/types/vnc.ts'
 
 export type { DetectedAcpAgent }
 
@@ -656,6 +664,20 @@ export interface ApiClient {
     list: () => Promise<import('../main/services/ports/ports-registry.ts').PortScanResult>
     /** Refuses ports Copse did not start; `reason` says why when `killed` is false. */
     kill: (port: number) => Promise<{ killed: boolean; reason?: string }>
+  }
+  vnc: {
+    open: (target: VncTarget) => Promise<VncConnection>
+    list: () => Promise<VncConnection[]>
+    discover: (host: VncDiscoveryHost) => Promise<number[]>
+    discoverNearby: () => Promise<VncNearbyServer[]>
+    resolveSshHosts: () => Promise<VncSshHostResolution[]>
+    getUsername: (target: VncTarget) => Promise<string | null>
+    rememberUsername: (target: VncTarget, username: string) => Promise<boolean>
+    start: (connectionId: string) => void
+    send: (connectionId: string, bytes: Uint8Array) => void
+    close: (connectionId: string) => Promise<void>
+    onData: (handler: (connectionId: string, bytes: Uint8Array) => void) => () => void
+    onStatus: (handler: (event: VncStatusEvent) => void) => () => void
   }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>

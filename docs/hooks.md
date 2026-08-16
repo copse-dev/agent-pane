@@ -253,15 +253,16 @@ content-addressed **toolset fingerprints** referenced by hash from assistant lin
 `hook_run` records. The spine format is documented in
 [`docs/thread-store-format.md`](./thread-store-format.md).
 
-## Sandbox ([Copse-dialect phase](./plans/hooks-and-feature-packs.md#phase-f--copse-dialect-native-events-sandbox), macOS-only)
+## Sandbox ([Copse-dialect phase](./plans/hooks-and-feature-packs.md#phase-f--copse-dialect-native-events-sandbox))
 
 Hooks are trusted by declaration (the user/workspace-trust gate is the consent) but
 **sandboxed by default anyway** (the [sandboxed-by-default hooks decision](./plans/hooks-and-feature-packs.md#decisions-log)). `spawnHookProcess` routes a sandboxed hook
-through the same macOS-seatbelt wrapper `run_shell` uses. The only escape is the Copse
+through the same project-sandbox wrapper `run_shell` uses (macOS seatbelt, Linux
+bubblewrap). The only escape is the Copse
 dialect's `sandbox: false`, which Sources badges **"outside sandbox"**; Cursor and Claude
 hooks cannot express the escape and are always sandboxed-by-default.
 
-**Enforcement is macOS-only.** `isProjectSandboxEnabled()` is hard-false on Linux / Windows
+**Enforcement is macOS and Linux.** `isProjectSandboxEnabled()` is hard-false on Windows
 (and when ASRT init fails), so a "sandboxed" hook still spawns with full user authority
 there — treat "sandboxed" as a _default, not a guarantee_. A **sandbox-blocked** hook is
 never a silent fail-open: `applySandboxBlock` escalates to a `failed` interpretation keyed

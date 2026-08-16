@@ -32,6 +32,7 @@ import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountPortsSection } from './views/ports-section.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
+import { mountVncPane } from './views/vnc-pane.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -166,6 +167,7 @@ const POPOUT_MODES = new Set<RightPanelMode>([
   'browser',
   'memories',
   'roadmap',
+  'vnc',
 ])
 function isPopoutMode(value: string | null): value is RightPanelMode {
   return value !== null && [...POPOUT_MODES].some((mode) => mode === value)
@@ -502,6 +504,7 @@ function mountFullLayout(): void {
     store,
     api,
   )
+  mountVncPane(requireElement('vnc-controls-host'), requireElement('vnc-viewer-host'), store, api)
   mountMemoriesPane(
     requireElement('memories-host'),
     requireElement('memories-viewer-host'),
