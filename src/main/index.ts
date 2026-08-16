@@ -118,6 +118,7 @@ import {
   startEventLoopWatchdog,
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
+import { installProcessFaultHandlers } from './services/diagnostics/process-faults.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
@@ -163,6 +164,16 @@ setSecretCipher({
 })
 const taskSupervisor = getTaskSupervisor()
 
+// Record escaped faults and quit through the normal cleanup path so an
+// uncaught watcher/`error` event drains the write queue instead of dying
+// mid-write. Watcher sites also bind their own listeners; this is the backstop.
+installProcessFaultHandlers({
+  onUncaughtException: () => {
+    approveClose()
+    app.quit()
+  },
+})
+
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
   getAgentSession: () => getAgentBrowserSession(),
@@ -193,6 +204,12 @@ setContextEstimateRefreshSink(() => {
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
+app.on('child-process-gone', (_event, details) => {
+  console.error(
+    `[process] child gone type=${details.type} reason=${details.reason} exitCode=${String(details.exitCode)}`,
+  )
+})
+
 app.on('web-contents-created', (_event, contents) => {
   if (isBrowserWebContents(contents)) {
     attachBrowserGuestWindowOpen(contents)
