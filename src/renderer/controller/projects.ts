@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
 import {
   createThread,
+  markThreadRead,
   normalizeBlankThreads,
   setThreadDraftPrompt,
   switchThread,
@@ -486,6 +487,7 @@ async function finishActivate(
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })
+  if (activeThreadId) markThreadRead(store, activeThreadId)
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
 
@@ -713,6 +715,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
     // Opening succeeded — lift any prior quarantine on this project (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })
+  if (loaded[0]) markThreadRead(store, loaded[0].id)
   await saveProjects(api, store.getState().projects, id)
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
