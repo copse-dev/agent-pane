@@ -376,16 +376,24 @@ describe('VNC viewer', function () {
     await $('.confirm-dialog-cancel').click()
     await machineSelect.selectByAttribute('value', 'local')
 
+    // macOS Screen Sharing often yields exactly one local RFB; Linux CI has none.
+    // Wait for discovery to leave the in-flight copy, then only pin the one-port
+    // chrome when that is what this host actually found.
     await browser.waitUntil(
-      async () => (await $('.vnc-discovery-status').getText()) === 'Screen sharing is available.',
+      async () => {
+        const text = await $('.vnc-discovery-status').getText()
+        return text.length > 0 && !text.startsWith('Checking this machine')
+      },
       {
         timeout: 20_000,
         timeoutMsg: 'expected local screen sharing discovery to complete',
       },
     )
-    assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
-    assert.equal(await $$('.vnc-discovered-port').length, 0)
-    assert.equal(await $('.vnc-discover-btn').isDisplayed(), false)
+    if ((await $('.vnc-discovery-status').getText()) === 'Screen sharing is available.') {
+      assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
+      assert.equal(await $$('.vnc-discovered-port').length, 0)
+      assert.equal(await $('.vnc-discover-btn').isDisplayed(), false)
+    }
     authenticationPort = await listenOnVncPort(authenticationServer)
     assert.equal(
       await browser.execute(
