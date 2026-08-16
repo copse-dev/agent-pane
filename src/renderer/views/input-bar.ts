@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
+import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
@@ -524,11 +525,11 @@ export function mountInputBar(
     if (projectId === null || !threadHasExportableContent(thread)) return
     // Zip before switching away: a failed export should leave the user on the
     // thread they were reading, not on an empty one with nothing attached.
-    const bytes = await api.threads.exportArchive(projectId, thread.id)
+    const { bytes, build } = await api.threads.exportArchive(projectId, thread.id)
     const name = `${threadExportBaseName(thread)}.zip`
     // Persist whatever is in the composer to its own thread before switching.
     store.emit('composer_draft_flush')
-    const debugThreadId = createThread(store, buildDebugTracePrompt(thread, name))
+    const debugThreadId = createThread(store, buildDebugTracePrompt(thread, name, build))
     // A title now, rather than one auto-suggested from the first message later:
     // the sidebar should say which thread this is about before it is ever sent.
     setThreadTitle(store, debugThreadId, debugTraceThreadTitle(thread))
@@ -1613,12 +1614,12 @@ export function mountInputBar(
     name.className = 'attachment-chip-label'
     const label = file.path.split('/').pop() ?? file.path
     name.textContent = label
-    // The label, not the pill: the pill already holds the ✕ button, and a
+    // The label, not the pill: the pill already holds the close button, and a
     // button inside a role="button" is neither valid nor clickable-apart.
     attachTextExpand(name, file.content, label)
     chip.append(name)
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedFiles = attachedFiles.filter((f) => f.path !== file.path)
       chip.remove()
@@ -1639,7 +1640,7 @@ export function mountInputBar(
     title.textContent = ref.title || 'Untitled thread'
     chip.append(threadIcon('thread-chip-icon'), title)
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedThreads = attachedThreads.filter((t) => t.threadId !== ref.threadId)
       chip.remove()
@@ -1661,7 +1662,7 @@ export function mountInputBar(
     attachTextExpand(title, ref.content, ref.label)
     chip.append(shellIcon('shell-chip-icon'), title)
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedShells = attachedShells.filter((s) => s.tabId !== ref.tabId)
       chip.remove()
@@ -1710,7 +1711,7 @@ export function mountInputBar(
     chip.title = `${ref.name} — read as stills by the agent, not sent as video`
     chip.append(attachmentIcon('video', 'video-chip-icon'), label, meta)
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedVideos = attachedVideos.filter((v) => v.path !== ref.path)
       chip.remove()
@@ -1753,7 +1754,7 @@ export function mountInputBar(
     chip.title = `${ref.name} — unpacked and read as files by the agent, not sent as an archive`
     chip.append(attachmentIcon('archive', 'archive-chip-icon'), label, meta)
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedArchives = attachedArchives.filter((a) => a.path !== ref.path)
       chip.remove()
@@ -1774,7 +1775,7 @@ export function mountInputBar(
     thumb.width = 40
     thumb.height = 40
     const remove = document.createElement('button')
-    remove.textContent = '✕'
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
       attachedImages = attachedImages.filter((i) => i !== entry)
       chip.remove()

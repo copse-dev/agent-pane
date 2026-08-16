@@ -47,13 +47,21 @@ export function startWorkspaceIndexWatcher(
   states.set(key, state)
 
   try {
-    state.watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
+    const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
       // Ignore churn under build output / deps / .git / agent worktrees — none of
       // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
       // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
       if (filename !== null && isIgnoredWorkspacePath(filename)) return
       scheduleIndexRebuild(key)
     })
+    // Same contract as execution-root-watcher: an `error` with no listener is an
+    // uncaught exception that kills the main process. A deleted, renamed, or
+    // unmounted workspace root must drop the watcher, not take the app down.
+    watcher.on('error', (err: unknown) => {
+      console.warn('[copse-panel] workspace index watcher failed for', key, err)
+      if (states.get(key)?.watcher === watcher) stopOne(key)
+    })
+    state.watcher = watcher
   } catch (err) {
     console.warn('[copse-panel] workspace index watcher unavailable:', err)
   }
@@ -69,6 +77,14 @@ export function startWorkspaceIndexWatcher(
  */
 export function isRootWatched(root: string): boolean {
   return states.get(resolve(root))?.watcher != null
+}
+
+/** Test hook — fire the watcher's `error` path without deleting the directory. */
+export function emitWorkspaceIndexWatcherErrorForTest(root: string, err: Error): boolean {
+  const watcher = states.get(resolve(root))?.watcher
+  if (!watcher) return false
+  watcher.emit('error', err)
+  return true
 }
 
 /** Stop watching one root, or every watched root when called with none (app quit / workspace switch). */

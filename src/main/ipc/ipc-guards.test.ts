@@ -9,6 +9,8 @@ import {
   lmStudioDownloadSchema,
   lmStudioTestSchema,
   parsePortKillArgs,
+  vncDiscoveryHostSchema,
+  vncTargetSchema,
   zHttpUrl,
   zModelId,
   zProjectId,
@@ -20,6 +22,50 @@ describe('ipc-guards ports:kill arguments', () => {
     assert.equal(parsePortKillArgs([43177]), 43177)
     assert.throws(() => parsePortKillArgs([[43177]]))
     assert.throws(() => parsePortKillArgs([43177, 43178]))
+  })
+})
+
+describe('ipc-guards VNC targets', () => {
+  it('accepts loopback and configured SSH-host shapes', () => {
+    assert.equal(vncTargetSchema.safeParse({ kind: 'loopback', port: 5901 }).success, true)
+    assert.equal(
+      vncTargetSchema.safeParse({ kind: 'ssh', hostId: 'build-box', remotePort: 5901 }).success,
+      true,
+    )
+    assert.equal(
+      vncTargetSchema.safeParse({
+        kind: 'network',
+        host: '192.168.1.20',
+        port: 5900,
+        confirmedUnencrypted: true,
+      }).success,
+      true,
+    )
+    assert.equal(vncDiscoveryHostSchema.safeParse({ kind: 'local' }).success, true)
+    assert.equal(
+      vncDiscoveryHostSchema.safeParse({ kind: 'ssh', hostId: 'build-box' }).success,
+      true,
+    )
+  })
+
+  it('rejects unconfirmed network targets and unsafe SSH host ids', () => {
+    assert.equal(
+      vncTargetSchema.safeParse({ kind: 'direct', host: 'example.com', port: 5901 }).success,
+      false,
+    )
+    assert.equal(
+      vncTargetSchema.safeParse({
+        kind: 'network',
+        host: '192.168.1.20',
+        port: 5900,
+        confirmedUnencrypted: false,
+      }).success,
+      false,
+    )
+    assert.equal(
+      vncDiscoveryHostSchema.safeParse({ kind: 'ssh', hostId: '../host' }).success,
+      false,
+    )
   })
 })
 

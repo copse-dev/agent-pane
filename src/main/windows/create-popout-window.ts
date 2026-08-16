@@ -7,6 +7,7 @@ import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
 import { registerAppWindow } from './app-window-broadcast.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
+import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
 
 /** Any right-panel pane can be detached into its own window. */
 export type PopoutMode = RightPanelMode
@@ -19,6 +20,7 @@ const TITLES: Record<PopoutMode, string> = {
   memories: 'Memories — Copse',
   roadmap: 'Roadmap — Copse',
   browser: 'Browser — Copse',
+  vnc: 'Desktop — Copse',
 }
 
 /** Landscape default — pop-outs are auxiliary workspaces, not tall portrait strips. */
@@ -76,6 +78,10 @@ export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): Browse
   })
   popoutWindow = win
   attachWebContentsLockdown(win.webContents)
+  attachRendererCrashRecovery(win.webContents)
+  win.on('unresponsive', () => {
+    console.warn('[renderer] pop-out window became unresponsive')
+  })
 
   // Trust this window's main frame for IPC *before* the renderer boots so its
   // first API calls (settings/gh lookups) are not rejected by the frame guard.

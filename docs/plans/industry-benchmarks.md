@@ -161,6 +161,21 @@ instead of hand-written scenarios only. The existing scenario analyzer
 expectations) already scores runs this way — benchmarks give it scale and
 tasks we didn't author ourselves.
 
+### Scope: engineering-shaped tasks, on purpose
+
+Every pool named in this plan is engineering-shaped — SWE-bench, Terminal-Bench, BFCL,
+τ-bench, RULER — and SkillsBench is the only one carrying tasks that are not (`3d-scan-calc`,
+`ada-bathroom-plan-repair`). People do run other work through the same composer: summarising a
+log, drafting a memo, reviewing a document. None of it is regressed, and the harness would not
+notice if it got worse.
+
+Recording that as a **scope decision rather than a gap**: the hypotheses above are about
+plumbing, and plumbing is exercised hardest by tasks with executable ground truth. A drafting
+corpus would need a grader we do not have and would measure the model more than the harness.
+If that is ever revisited, the trigger is a plumbing feature whose effect only shows on
+non-executable work, not a wish for domain breadth on its own. Evidence:
+[`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-08.
+
 ## What each benchmark family buys us
 
 | Benchmark family                           | Plumbing it exercises                                             | How it runs                             |

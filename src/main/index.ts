@@ -54,6 +54,7 @@ import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import { reapOversizedGortexDaemon, stopGortexDaemon } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
+import { initVnc } from './ipc/vnc.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
@@ -72,6 +73,8 @@ import {
   listLmStudioModelInfo,
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
+import type { RetryOptions } from './services/agent-service.ts'
+import { resolveComparisonModelChoices } from './services/agent-service.ts'
 import {
   listFreeOpenRouterModels,
   invalidateOpenRouterModelsCache,
@@ -115,6 +118,7 @@ import {
   startEventLoopWatchdog,
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
+import { installProcessFaultHandlers } from './services/diagnostics/process-faults.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
@@ -160,6 +164,16 @@ setSecretCipher({
 })
 const taskSupervisor = getTaskSupervisor()
 
+// Record escaped faults and quit through the normal cleanup path so an
+// uncaught watcher/`error` event drains the write queue instead of dying
+// mid-write. Watcher sites also bind their own listeners; this is the backstop.
+installProcessFaultHandlers({
+  onUncaughtException: () => {
+    approveClose()
+    app.quit()
+  },
+})
+
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
   getAgentSession: () => getAgentBrowserSession(),
@@ -190,6 +204,12 @@ setContextEstimateRefreshSink(() => {
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
+app.on('child-process-gone', (_event, details) => {
+  console.error(
+    `[process] child gone type=${details.type} reason=${details.reason} exitCode=${String(details.exitCode)}`,
+  )
+})
+
 app.on('web-contents-created', (_event, contents) => {
   if (isBrowserWebContents(contents)) {
     attachBrowserGuestWindowOpen(contents)
@@ -343,6 +363,7 @@ app
     initDiffQueue(win, ipcMain)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
+    const disposeVncHandlers = initVnc(win)
     recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
     getAutomationService().start((event) => {
@@ -576,7 +597,7 @@ app
     // retry action on a failed card. Both read the current working diff, so a
     // fixable failure (a mis-loaded local model, a transient provider error)
     // recovers without re-running the whole editing turn.
-    const parseRetryPayload = (payloadJson: unknown): { workingBrief?: string; model?: string } => {
+    const parseRetryPayload = (payloadJson: unknown): RetryOptions => {
       if (typeof payloadJson !== 'string') return {}
       let raw: unknown
       try {
@@ -593,6 +614,9 @@ app
           ? { workingBrief: parsed.data.workingBrief }
           : {}),
         ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
+        ...(parsed.data.comparisonModels !== undefined
+          ? { comparisonModels: parsed.data.comparisonModels }
+          : {}),
       }
     }
     const hydrateHistory = (projectId: string, threadId: string): Promise<LLMMessage[]> =>
@@ -633,6 +657,14 @@ app
         )
       },
     )
+
+    // Defaults for the "Compare models" bubble's picker. Read-only: it resolves
+    // the pack's own settings and starts nothing, so unlike the run below it
+    // needs no execution context.
+    ipcMain.handle('agent:comparisonModels', async (event, payload: unknown) => {
+      assertMainFrameSender(event, win)
+      return resolveComparisonModelChoices(parseRetryPayload(payload))
+    })
 
     ipcMain.handle('agent:suggestTitle', (event, text: string) => {
       assertMainFrameSender(event, win)
@@ -723,12 +755,14 @@ app
         }
       })
     disposeTerminal = disposeTerminalHandlers
+    disposeVnc = disposeVncHandlers
   })
   .catch(console.error)
 
 let quitCleanupStarted = false
 let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
+let disposeVnc: (() => Promise<void>) | undefined
 let disposeLongTaskWake: (() => void) | undefined
 let disposeCiWatchConsumer: (() => void) | undefined
 let disposeBackgroundProcessSupervisor: (() => void) | undefined
@@ -755,6 +789,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopAllBackgroundProcesses()
   disposeTerminal?.()
   disposeTerminal = undefined
+  await disposeVnc?.()
+  disposeVnc = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()

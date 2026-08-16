@@ -68,6 +68,10 @@ export interface IpcInvokeMap {
   }
   'agent:clearHistory': { args: [projectId: string, threadId: string]; result: undefined }
   'agent:refreshModelContext': { args: []; result: undefined }
+  'agent:comparisonModels': {
+    args: [payload: string]
+    result: { a: string; b: string; judge: string }
+  }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
   'agent:suggestFollowUps': {
@@ -378,6 +382,14 @@ export interface IpcInvokeMap {
 
   // Shell
   'shell:openExternal': { args: [url: string]; result: undefined }
+  'shell:openWorkspaceFileInBrowser': {
+    args: [projectId: string, threadId: string, path: string]
+    result: undefined
+  }
+  'browser:workspaceFileUrl': {
+    args: [projectId: string, threadId: string, path: string]
+    result: string
+  }
 
   // External editors ("Open in …" titlebar dropdown)
   'editors:list': { args: []; result: import('./editors.ts').ExternalEditorList }

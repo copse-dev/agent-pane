@@ -60,6 +60,14 @@ import type {
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
+import type {
+  VncConnection,
+  VncDiscoveryHost,
+  VncNearbyServer,
+  VncSshHostResolution,
+  VncStatusEvent,
+  VncTarget,
+} from '@shared/types/vnc.ts'
 
 export type { DetectedAcpAgent }
 
@@ -97,6 +105,7 @@ export interface ApiClient {
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
+    workspaceFileUrl: (projectId: string, threadId: string, path: string) => Promise<string>
     onOpenTab: (handler: (url: string) => void) => () => void
     onShowTab?: (handler: (url: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
@@ -160,6 +169,8 @@ export interface ApiClient {
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
+    /** Defaults for the "Compare models" bubble's picker (settings + defaults, resolved). */
+    comparisonModels: (payload: string) => Promise<{ a: string; b: string; judge: string }>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
@@ -341,7 +352,10 @@ export interface ApiClient {
      * subagents) for download. The JSONL export stays the portable single-file
      * transcript; this is the full-fidelity copy of the store directory.
      */
-    exportArchive: (projectId: string, threadId: string) => Promise<Uint8Array<ArrayBuffer>>
+    exportArchive: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/debug-trace-prompt.ts').DebugTraceArchiveExport>
     /**
      * Seed a fork's provider-format history from the thread it branched off.
      * Omit `throughMessageId` (or pass the source's last message id) to copy the
@@ -651,6 +665,20 @@ export interface ApiClient {
     /** Refuses ports Copse did not start; `reason` says why when `killed` is false. */
     kill: (port: number) => Promise<{ killed: boolean; reason?: string }>
   }
+  vnc: {
+    open: (target: VncTarget) => Promise<VncConnection>
+    list: () => Promise<VncConnection[]>
+    discover: (host: VncDiscoveryHost) => Promise<number[]>
+    discoverNearby: () => Promise<VncNearbyServer[]>
+    resolveSshHosts: () => Promise<VncSshHostResolution[]>
+    getUsername: (target: VncTarget) => Promise<string | null>
+    rememberUsername: (target: VncTarget, username: string) => Promise<boolean>
+    start: (connectionId: string) => void
+    send: (connectionId: string, bytes: Uint8Array) => void
+    close: (connectionId: string) => Promise<void>
+    onData: (handler: (connectionId: string, bytes: Uint8Array) => void) => () => void
+    onStatus: (handler: (event: VncStatusEvent) => void) => () => void
+  }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
     create: (
@@ -888,6 +916,7 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
+    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) => Promise<void>
   }
   editors: {
     /** Installed external editors plus the sticky last-used default. */

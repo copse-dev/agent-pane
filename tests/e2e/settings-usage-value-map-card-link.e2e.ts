@@ -27,13 +27,20 @@ describe('settings usage value map model card link', function () {
     const fieldset = $('.frontier-fieldset')
     await expect(fieldset).toBeDisplayed()
 
-    // Claude models carry a curated card entry; hover the point for one. Under
-    // COPSE_MODEL_CARD_PROBE_MOCK the resolver answers without a vendor request.
-    const modelPoint = fieldset.$('circle.frontier-hit[data-model-id="claude-opus-4-8"]')
+    // The empty profile has no routable cloud provider, so expose the catalog
+    // overlay before choosing a curated Claude model. Under
+    // COPSE_MODEL_CARD_PROBE_MOCK the card resolver answers without a vendor request.
+    const discover = fieldset.$('button.frontier-discover')
+    await discover.waitForClickable({ timeout: 20_000 })
+    await discover.click()
+    await expect(discover).toHaveAttribute('aria-pressed', 'true')
+    const modelPointSelector = 'circle.frontier-hit[data-model-id^="claude-"]'
+    const modelPoint = fieldset.$(modelPointSelector)
     await modelPoint.waitForExist({
       timeout: 20_000,
       timeoutMsg: 'the mocked Claude model never appeared in the value map',
     })
+    const modelId = await modelPoint.getAttribute('data-model-id')
 
     // Existing is not enough to hover. The chart sits far enough down the usage
     // section that the point can be outside the viewport, and a pointer move to
@@ -41,11 +48,9 @@ describe('settings usage value map model card link', function () {
     // out of bounds"), not a move that quietly misses. Scroll it into the middle
     // of the viewport first, via the element's own `scrollIntoView` so the
     // settings dialog's scroll container is the one that moves.
-    await browser.execute(() => {
-      document
-        .querySelector('circle.frontier-hit[data-model-id="claude-opus-4-8"]')
-        ?.scrollIntoView({ block: 'center', inline: 'center' })
-    })
+    await browser.execute((selector) => {
+      document.querySelector(selector)?.scrollIntoView({ block: 'center', inline: 'center' })
+    }, modelPointSelector)
 
     // Re-hover until the card opens, re-resolving the point each time.
     //
@@ -75,7 +80,7 @@ describe('settings usage value map model card link', function () {
       await browser.waitUntil(
         async () => {
           try {
-            await fieldset.$('circle.frontier-hit[data-model-id="claude-opus-4-8"]').moveTo()
+            await fieldset.$(modelPointSelector).moveTo()
           } catch (err) {
             lastMoveError = err instanceof Error ? err.message : String(err)
             return false
@@ -87,7 +92,7 @@ describe('settings usage value map model card link', function () {
       )
     } catch {
       throw new Error(
-        'hovering the claude-opus-4-8 point never opened the value-map card — ' +
+        `hovering the ${modelId ?? 'Claude'} point never opened the value-map card — ` +
           (lastMoveError
             ? `the last pointer move failed: ${lastMoveError}`
             : 'every pointer move landed but the card stayed hidden'),

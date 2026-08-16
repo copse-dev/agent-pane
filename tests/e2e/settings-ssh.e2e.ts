@@ -45,6 +45,9 @@ describe('SSH settings section', () => {
     const sshSection = settingsSection('ssh')
     await expect(sshSection).toBeDisplayed()
     await expect(sshSection.$('legend=SSH workspaces')).toBeDisplayed()
+    const closeButton = $('#settings-close')
+    await expect(closeButton.$('svg[data-icon="close"]')).toExist()
+    assert.equal(await closeButton.getText(), '')
 
     const enabledToggle = await sshSection.$('input[name="sshWorkspaceEnabled"]')
     await expect(enabledToggle).toBeExisting()

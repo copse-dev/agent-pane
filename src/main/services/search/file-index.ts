@@ -14,6 +14,7 @@ import * as fs from 'node:fs/promises'
 interface FileIndex {
   paths: string[]
   lastBuilt: number
+  memoryBytes: number
 }
 
 /**
@@ -30,6 +31,16 @@ const LIST_CMD_OPTS = {
   stdoutMaxBytes: FILE_INDEX_LIST_MAX_BYTES,
   lowPriority: true,
 } as const
+
+// A conservative retained-heap estimate: JavaScript strings are commonly two
+// bytes per code unit, and each array/string entry carries object metadata.
+// Exact VM accounting is neither portable nor needed for enforcing a bounded
+// dormant-project cache; consistently overestimating is the safer policy.
+function estimateIndexMemoryBytes(paths: string[]): number {
+  const collectionOverhead = 64
+  const entryOverhead = 48
+  return paths.reduce((total, path) => total + entryOverhead + path.length * 2, collectionOverhead)
+}
 
 function isIndexableRelativePath(rel: string): boolean {
   if (!rel || rel.startsWith('..')) return false
@@ -80,7 +91,11 @@ async function runBuild(key: string, workspaceRoot: string): Promise<void> {
       paths = await walkPaths(workspaceRoot, workspaceRoot)
       paths.sort((a, b) => a.localeCompare(b))
     }
-    indexes.set(key, { paths, lastBuilt: Date.now() })
+    indexes.set(key, {
+      paths,
+      lastBuilt: Date.now(),
+      memoryBytes: estimateIndexMemoryBytes(paths),
+    })
     indexBuildFinished('fileIndex', true)
   } catch (err) {
     indexBuildFinished('fileIndex', false)
@@ -140,6 +155,11 @@ export function getIndexAgeMs(root: string): number | null {
   return entry ? Date.now() - entry.lastBuilt : null
 }
 
+/** Conservative retained-heap size for one coherent file-list snapshot. */
+export function getIndexMemoryBytes(root: string): number | null {
+  return indexes.get(resolve(root))?.memoryBytes ?? null
+}
+
 /** Drop the cached index for one root, or every root when called with none. */
 export function invalidateIndex(root?: string): void {
   if (root === undefined) {
@@ -165,7 +185,12 @@ export function getIndexStats(
 export function setIndexForTest(paths: string[] | null, root: string): void {
   const key = resolve(root)
   if (paths === null) indexes.delete(key)
-  else indexes.set(key, { paths, lastBuilt: Date.now() })
+  else
+    indexes.set(key, {
+      paths,
+      lastBuilt: Date.now(),
+      memoryBytes: estimateIndexMemoryBytes(paths),
+    })
 }
 
 async function walkPaths(root: string, dir: string): Promise<string[]> {

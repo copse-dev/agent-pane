@@ -78,7 +78,10 @@ describe('settings usage model value map ZDR filter', () => {
 
     const zdrBtn = fieldset.$('button.frontier-zdr-toggle')
     await expect(zdrBtn).toBeDisplayed()
-    assert.equal(await zdrBtn.getAttribute('aria-pressed'), 'false')
+    await browser.waitUntil(async () => (await zdrBtn.getAttribute('aria-pressed')) === 'false', {
+      timeout: 20_000,
+      timeoutMsg: 'ZDR toggle never initialized',
+    })
 
     const chart = fieldset.$('.frontier-chart svg')
     await expect(chart).toBeDisplayed()

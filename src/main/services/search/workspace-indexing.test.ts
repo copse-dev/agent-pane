@@ -13,6 +13,7 @@ import {
 } from './workspace-index-gate.ts'
 import {
   resetWorkspaceIndexingForTest,
+  selectDormantIndexEvictions,
   setWorkspaceIndexPolicyOverrideForTest,
   startExecutionRootIndexing,
   startWorkspaceIndexing,
@@ -81,6 +82,44 @@ describe('workspace-indexing scale gate (#795)', () => {
     )
     assert.equal(semanticIndexAllowed(root), false)
     assert.equal(watchIndexAllowed(root), false)
+  })
+
+  it('retains a warm project listing across A → B → A switches (#1728)', async () => {
+    const rootA = await prepWorkspace()
+    const rootB = await mkdtemp(join(tmpdir(), 'copse-panel-ws-index-b-'))
+    try {
+      // Snapshot retention is independent of recursive watching. Keep this
+      // regression deterministic even on hosts that have exhausted their
+      // macOS watcher allocation; #1698's watcher tests cover watched roots.
+      setWorkspaceIndexPolicyOverrideForTest('never')
+      await writeFile(join(rootB, 'other.ts'), 'export {}\n', 'utf-8')
+      startWorkspaceIndexing(rootA)
+      await waitFor(() => getIndex(rootA) !== null)
+      const listingA = getIndex(rootA)
+      assert.ok(listingA)
+
+      startWorkspaceIndexing(rootB)
+      await waitFor(() => getIndex(rootB) !== null)
+      assert.equal(isRootWatched(rootA), false)
+      assert.equal(getIndex(rootA), listingA)
+
+      startWorkspaceIndexing(rootA)
+      assert.equal(getIndex(rootA), listingA)
+    } finally {
+      await rm(rootB, { recursive: true, force: true })
+    }
+  })
+
+  it('evicts dormant snapshots from least to most recently used to fit a byte budget', () => {
+    const snapshots = [
+      { root: '/oldest', bytes: 4 },
+      { root: '/middle', bytes: 5 },
+      { root: '/newest', bytes: 6 },
+    ]
+
+    assert.deepEqual(selectDormantIndexEvictions(snapshots, 11), ['/oldest'])
+    assert.deepEqual(selectDormantIndexEvictions(snapshots, 6), ['/oldest', '/middle'])
+    assert.deepEqual(selectDormantIndexEvictions(snapshots, 0), ['/oldest', '/middle', '/newest'])
   })
 })
 

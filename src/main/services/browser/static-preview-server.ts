@@ -5,6 +5,24 @@ import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const LOOPBACK_HOST = '127.0.0.1'
 
+/**
+ * Workspace HTML/JS is untrusted (the agent can write it). Allow local preview
+ * scripts and styles, but block remote fetch/form posts so a planted page cannot
+ * exfiltrate other workspace files the same-origin server would otherwise serve.
+ */
+const PREVIEW_CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "object-src 'none'",
+].join('; ')
+
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
@@ -83,8 +101,11 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
         }
         response.writeHead(200, {
           'Cache-Control': 'no-store',
+          'Content-Security-Policy': PREVIEW_CONTENT_SECURITY_POLICY,
           'Content-Type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
+          'Referrer-Policy': 'no-referrer',
           'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
         })
         if (request.method === 'HEAD') {
           response.end()
@@ -135,6 +156,19 @@ export async function getStaticPreviewServer(root: string): Promise<StaticPrevie
   const created = await createPreviewServer(canonicalRoot)
   servers.set(canonicalRoot, created)
   return { root: created.root, url: created.url }
+}
+
+/** Loopback http(s) URL for a file already resolved inside `root`. Never `file://`. */
+export async function workspacePreviewFileUrl(root: string, absolutePath: string): Promise<string> {
+  const preview = await getStaticPreviewServer(root)
+  if (!isInsideRoot(preview.root, absolutePath)) {
+    throw new Error('Preview path must stay inside the workspace preview root.')
+  }
+  const previewPath = relative(preview.root, absolutePath)
+    .split(sep)
+    .map(encodeURIComponent)
+    .join('/')
+  return staticPreviewUrl(preview.url, previewPath)
 }
 
 export function staticPreviewUrl(baseUrl: string, entryPath = '/'): string {

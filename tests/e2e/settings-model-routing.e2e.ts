@@ -104,6 +104,22 @@ describe('settings model routing placement', function () {
     )
 
     await chatModelPicker.$('.model-picker-trigger').click()
+    for (const value of [
+      'auto:best-value',
+      'auto:best-intellect',
+      'auto:cheapest',
+      'auto:balanced',
+    ]) {
+      await expect(chatModelPicker.$(`.model-picker-option[data-value="${value}"]`)).toBeDisplayed()
+    }
+    await expect(chatModelPicker.$('.model-picker-option[data-value="auto:balanced"]')).toHaveText(
+      expect.stringContaining('Balanced'),
+    )
+    await saveElementScreenshot(
+      '#settings-models-section',
+      'settings-chat-model-automatic-rules.png',
+    )
+
     const modelFilter = chatModelPicker.$('.model-picker-filter')
     await expect(modelFilter).toBeFocused()
     await modelFilter.setValue('qwen3.6')
