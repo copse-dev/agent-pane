@@ -30,10 +30,8 @@ describe('shell security settings', () => {
     await expect(dialog.$('input[name="safetyClassifierEnabled"]')).toBeExisting()
     assert.equal(await dialog.$('input[name="safetySandboxAllowThreshold"]').isExisting(), false)
     assert.doesNotMatch(await dialog.getText(), /Sandbox auto-allow confidence/)
-    assert.match(
-      await dialog.getText(),
-      /write shapes still ask|honoured only while the project sandbox is active/,
-    )
+    assert.match(await dialog.getText(), /only while the project sandbox is running/)
+    assert.doesNotMatch(await dialog.getText(), /write shapes still ask/)
 
     await saveElementScreenshot(
       'fieldset:has(input[name="safetyClassifierEnabled"])',
