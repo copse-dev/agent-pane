@@ -528,6 +528,8 @@ export interface IpcEventMap {
   ]
   'diff:conflict': [projectId: string, threadId: string, paths: string[]]
   'fs:changed': [projectId: string, threadId: string, path: string, content: string | null]
+  /** A recursive local execution-root watcher observed a possible git change. */
+  'git:working_tree_changed': [root: string]
   'menu:settings': []
   'menu:newThread': []
   'menu:togglePanel': []

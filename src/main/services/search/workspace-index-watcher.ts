@@ -4,6 +4,7 @@ import { buildIndex } from './file-index.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import { updateSemanticIndex } from './semantic-index.ts'
+import { notifyWorkspaceChanged } from './workspace-change-notify.ts'
 
 const REBUILD_DEBOUNCE_MS = 500
 
@@ -48,15 +49,24 @@ export function startWorkspaceIndexWatcher(
 
   try {
     state.watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
-      // Ignore churn under build output / deps / .git / agent worktrees — none of
-      // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
-      // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
-      if (filename !== null && isIgnoredWorkspacePath(filename)) return
-      scheduleIndexRebuild(key)
+      handleWorkspaceWatchEvent(key, filename)
     })
   } catch (err) {
     console.warn('[copse-panel] workspace index watcher unavailable:', err)
   }
+}
+
+/** Route one recursive watcher event to git consumers and the narrower index rebuild path. */
+export function handleWorkspaceWatchEvent(root: string, filename: string | null): void {
+  // The Changes pane needs the complete recursive signal, including paths
+  // excluded from search indexing. A tracked generated/dependency file can
+  // still be a real git change even though it does not belong in search.
+  notifyWorkspaceChanged(root)
+  // Ignore churn under build output / deps / .git / agent worktrees — none of
+  // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
+  // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
+  if (filename !== null && isIgnoredWorkspacePath(filename)) return
+  scheduleIndexRebuild(root)
 }
 
 /**

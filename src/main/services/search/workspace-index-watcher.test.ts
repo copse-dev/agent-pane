@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os'
 import { buildIndex, getIndex, invalidateIndex } from './file-index.ts'
 import {
   flushScheduledIndexRebuild,
+  handleWorkspaceWatchEvent,
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
   stopWorkspaceIndexWatcher,
 } from './workspace-index-watcher.ts'
+import { setWorkspaceChangeSink } from './workspace-change-notify.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('workspace-index-watcher', () => {
@@ -20,8 +22,20 @@ describe('workspace-index-watcher', () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-index-watch-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     invalidateIndex()
+    setWorkspaceChangeSink(null)
     await buildIndex(tempRoot)
     startWorkspaceIndexWatcher(tempRoot)
+  })
+
+  it('publishes every recursive change while keeping index exclusions narrow', async () => {
+    const changedRoots: string[] = []
+    setWorkspaceChangeSink((root) => changedRoots.push(root))
+
+    handleWorkspaceWatchEvent(tempRoot, 'node_modules/tracked-generated.js')
+    handleWorkspaceWatchEvent(tempRoot, 'src/app.ts')
+    await flushScheduledIndexRebuild(tempRoot)
+
+    assert.deepEqual(changedRoots, [tempRoot, tempRoot])
   })
 
   afterEach(async () => {

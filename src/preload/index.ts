@@ -1037,6 +1037,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:sessionBackup', projectId, threadId),
     restoreBackup: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:restoreBackup', projectId, threadId),
+    onWorkingTreeChanged: (handler: (root: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, root: string): void => {
+        handler(root)
+      }
+      ipcRenderer.on('git:working_tree_changed', listener)
+      return (): void => {
+        ipcRenderer.off('git:working_tree_changed', listener)
+      }
+    },
   },
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),
