@@ -29,3 +29,17 @@ third-party components whose licenses require attribution. Those are listed here
 CC BY 4.0 is a permissive, attribution-only license. It is not copyleft and does
 not change Copse's own Apache-2.0 license; it only obliges us to credit the
 author, link the license, and note any changes — which this notice does.
+
+## noVNC (@novnc/novnc)
+
+- **Project:** noVNC — an HTML5 Remote Framebuffer (VNC) client.
+- **Authors:** the noVNC authors.
+- **Source:** https://github.com/novnc/noVNC
+- **License:** Mozilla Public License 2.0 (MPL-2.0) —
+  https://www.mozilla.org/MPL/2.0/
+- **Used by:** the opt-in, read-only Remote Desktop pane. Copse supplies an
+  IPC-backed channel; noVNC decodes and paints the RFB stream in the renderer.
+- **Modifications:** none. Version 1.5.0 is bundled as published.
+
+The MPL applies at file level to noVNC's own files and does not change Copse's
+Apache-2.0 license. The package's complete license text ships with the package.

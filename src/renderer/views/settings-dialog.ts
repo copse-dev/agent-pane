@@ -268,6 +268,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'vncEnabled', kind: 'checkbox', default: false, save: true },
   // On by default: agent may read open Shells tabs via read_terminal / @shell.
   { name: 'readTerminalEnabled', kind: 'checkbox', default: true, save: true },
   // On by default: clicked links open in the in-app browser pane. Off routes
@@ -773,7 +774,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   and anything containing <code>$(…)</code> always ask. Only applies in a trusted
                   project with the setting above turned on. At the two write levels
                   <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
-                  project's git hooks — the macOS sandbox contains those, Linux and Windows do not.
+                  project's git hooks, so those levels are honoured only while the project sandbox
+                  is active (macOS and Linux). On Windows, or if the sandbox failed to start, write
+                  shapes still ask.
                 </span>
               </label>
               <label class="checkbox-label">
@@ -1297,6 +1300,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Early, opt-in features that are still being explored. They may change or be removed,
               and are off by default.
             </p>
+
+            <fieldset>
+              <legend>Remote desktop viewer</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="vncEnabled" />
+                Show the read-only Desktop pane
+              </label>
+              <p class="field-hint">
+                View a VNC server on this machine or through the active SSH workspace's encrypted
+                tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+              </p>
+            </fieldset>
 
             <fieldset>
               <legend>Model classifier</legend>
