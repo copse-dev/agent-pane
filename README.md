@@ -67,9 +67,14 @@ API keys entered in Copse are encrypted with the operating system's secure stora
 | Extensions | Skills, Cursor-compatible hooks and plugin sources, MCP, and JavaScript custom tools |
 | Control    | Edit review, permission prompts, macOS project sandboxing, and per-tool approvals    |
 
+## User guide
+
+Install, first run, approvals, and the project sandbox:
+**[docs/user/](docs/user/README.md)**.
+
 ## Contributing
 
-No model key is required to explore the development build: when no provider is configured, Copse uses a small built-in mock agent.
+See [CONTRIBUTING.md](CONTRIBUTING.md). No model key is required to explore the development build: when no provider is configured, Copse uses a small built-in mock agent.
 
 Before submitting a change, run:
 
@@ -115,8 +120,10 @@ Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-
 
 ## Learn more
 
+- [User guide](docs/user/README.md)
 - [Support and known issues](SUPPORT.md)
 - [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 - [Privacy and data flow](docs/privacy-data-flow.md)
 - [Provider retention and training policies](docs/provider-data-policies.md)
 - [Profiles, multiple profiles, and API-key portability](docs/profiles.md)

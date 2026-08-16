@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in Copse does not work as documented or as the UI claims.
+title: '[bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. **Do not** put API keys, tokens, private
+        source, or a suspected vulnerability here — use
+        [SECURITY.md](https://github.com/copse-dev/agent-pane/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Copse version
+      description: Help → About, or the GitHub Release tag. For source builds, the commit SHA.
+      placeholder: 0.1.0-beta.1 / abcdef12
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS 26+ Apple Silicon (arm64)
+        - macOS 26+ Intel (x64)
+        - macOS older than 26 (unsupported)
+        - Linux (source / unsupported GA target)
+        - Windows (source / unsupported GA target)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. Redact secrets and private paths.
+      placeholder: |
+        1. Open a trusted project
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: Exact error text after removing secrets.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: This report contains no secrets, private source, or vulnerability details
+          required: true

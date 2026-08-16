@@ -227,10 +227,13 @@ did not exist when the two options above were weighed.
 
 - **P1 — Prove the shape.** Generator decision plus five pages: Overview, Install, Quickstart,
   Connect a model, Troubleshooting hub. Wire `_site/docs/` into `pages.yml` and add a docs
-  link to the site nav. Nothing moves out of `docs/`.
+  link to the site nav. Nothing moves out of `docs/`. **Drafts of Install, Quickstart, Connect
+  a model, and Troubleshooting now live in [`docs/user/`](../user/README.md)**; the remaining
+  P1 work is the generator and the Pages mount, not the prose.
 - **P2 — Close the control gap.** The whole _Staying in control_ section. This is the highest
   value per page in the plan: it is the product's differentiator and it is currently
-  undocumented for users.
+  undocumented for users. **Approvals, auto-approval, and the project sandbox are drafted in
+  `docs/user/`**; Isolated worktrees, reviewing edits, and the privacy/provider rewrites remain.
 - **P3 — The workspace and the agent.** Panes, editor, terminal, git, threads, attachments.
   Mostly new writing, mostly screenshot-led — `site/screenshots/` already has 16 usable
   captures.

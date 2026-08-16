@@ -41,7 +41,7 @@
             Your workspace stays yours. Here’s exactly where Copse keeps data and when it leaves
             your machine.
           </p>
-          <p class="date">Last updated: July 2026</p>
+          <p class="date">Last updated: 16 August 2026</p>
         </header>
 
         <article class="privacy-content content-surface">
@@ -90,6 +90,15 @@
             Provider-key validation and model-list refreshes also contact the provider. The
             provider's privacy, retention, logging, and training policies apply after it receives
             the data.
+          </p>
+          <p>
+            By default Copse asks each provider for the most protective request-level handling it
+            offers: OpenRouter traffic is restricted to zero-data-retention, non-training upstreams,
+            and direct OpenAI requests send <code>store: false</code>. Every request also carries
+            the same app-attribution headers (<code>HTTP-Referer: https://copse.dev/</code> and
+            <code>X-Title: Copse</code>). Those name the application, not you. Optional on-device
+            PII redaction can redact the text you typed before it leaves the machine; it is off by
+            default and does not cover repository files or tool output.
           </p>
 
           <h3>Remote agents</h3>
@@ -143,16 +152,18 @@
 
           <h2>Credentials and Environment Scanning</h2>
           <p>
-            Keys entered in Settings are written to <code>settings.json</code>. Electron secure
-            storage encrypts them with the OS account's key store when available. If it is
-            unavailable, Copse refuses to persist the key until you explicitly approve base64
-            plaintext storage. Base64 is recoverable by anyone who can read the file.
+            Keys entered in Settings are written to
+            <code>~/.copse/user-data/settings.json</code> (or the profile
+            <code>COPSE_DIR</code> selects). Electron secure storage encrypts them with the OS
+            account's key store when available. If it is unavailable, Copse refuses to persist the
+            key until you explicitly approve base64 plaintext storage. Base64 is recoverable by
+            anyone who can read the file.
           </p>
           <p>
-            Environment-only keys are not written to <code>settings.json</code>. The environment-key
-            scan runs only when you choose it. It reads <code>process.env</code> and a fixed
-            allow-list of shell startup files in the main process and shows the renderer only masked
-            previews. Importing a detected key turns it into a stored key.
+            Environment-only keys are not written to settings. The environment-key scan runs only
+            when you choose it. It reads <code>process.env</code> and a fixed allow-list of shell
+            startup files in the main process and shows the renderer only masked previews. Importing
+            a detected key turns it into a stored key.
           </p>
 
           <h2>Local Storage</h2>

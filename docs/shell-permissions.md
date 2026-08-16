@@ -5,12 +5,13 @@ scope analysis, the project sandbox, escalation, or approval UI. Historical desi
 remain in `docs/plans/`; this is the durable cross-platform contract.
 
 Shell command auto-run is gated by the pure `decideShellPermission` function in
-`src/main/services/permission-policy.ts`, called from `permission-gate.ts`. The OS sandbox runs
-on macOS (ASRT seatbelt) and Linux (ASRT bubblewrap). Windows has no sandbox we enable. The
+`src/main/services/security/permission-policy.ts`, called from `permission-gate.ts`. The OS sandbox
+runs on macOS (ASRT seatbelt) and Linux (bubblewrap). Windows has no sandbox we enable. The
 optional safety-model classifier is never an authorization boundary — it can only make
 strict-mode blocks. A separate deterministic auto-approval classifier can turn a `prompt` into
 an allow for recognised command shapes; write tiers of that classifier require an active
-sandbox.
+sandbox. Read-tier auto-approval without a sandbox is the remaining N1 gap;
+[#1763](https://github.com/copse-dev/agent-pane/pull/1763) gates every tier on an active sandbox.
 
 ## Platform matrix
 

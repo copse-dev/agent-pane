@@ -14,7 +14,7 @@ Privacy by architecture
 
 Your workspace stays yours. Here’s exactly where Copse keeps data and when it leaves your machine.
 
-Last updated: July 2026
+Last updated: 16 August 2026
 
 **Copse has no hosted backend and sends no product telemetry.** Data stays on your machine until you configure or use a feature that talks directly to another service, such as a cloud model, remote agent, MCP server, website, or the GitHub update feed.
 
@@ -32,6 +32,8 @@ Last updated: July 2026
 A cloud model request can include your prompt and images, earlier conversation, system instructions, tool definitions, tool calls and results, and source or file content included in context. Requests go directly from the app's main process to the configured provider. Local providers remain local only when their configured endpoint is local.
 
 Provider-key validation and model-list refreshes also contact the provider. The provider's privacy, retention, logging, and training policies apply after it receives the data.
+
+By default Copse asks each provider for the most protective request-level handling it offers: OpenRouter traffic is restricted to zero-data-retention, non-training upstreams, and direct OpenAI requests send `store: false`. Every request also carries the same app-attribution headers (`HTTP-Referer: https://copse.dev/` and `X-Title: Copse`). Those name the application, not you. Optional on-device PII redaction can redact the text you typed before it leaves the machine; it is off by default and does not cover repository files or tool output.
 
 ### Remote agents
 
@@ -57,9 +59,9 @@ The packaged macOS app checks its GitHub Releases update feed on launch. Copse a
 
 ## Credentials and Environment Scanning
 
-Keys entered in Settings are written to `settings.json`. Electron secure storage encrypts them with the OS account's key store when available. If it is unavailable, Copse refuses to persist the key until you explicitly approve base64 plaintext storage. Base64 is recoverable by anyone who can read the file.
+Keys entered in Settings are written to `~/.copse/user-data/settings.json` (or the profile `COPSE_DIR` selects). Electron secure storage encrypts them with the OS account's key store when available. If it is unavailable, Copse refuses to persist the key until you explicitly approve base64 plaintext storage. Base64 is recoverable by anyone who can read the file.
 
-Environment-only keys are not written to `settings.json`. The environment-key scan runs only when you choose it. It reads `process.env` and a fixed allow-list of shell startup files in the main process and shows the renderer only masked previews. Importing a detected key turns it into a stored key.
+Environment-only keys are not written to settings. The environment-key scan runs only when you choose it. It reads `process.env` and a fixed allow-list of shell startup files in the main process and shows the renderer only masked previews. Importing a detected key turns it into a stored key.
 
 ## Local Storage
 
