@@ -357,6 +357,8 @@ export interface IpcInvokeMap {
 
   // GitHub CLI / pull requests
   'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
+  'gh:invalidateReadCache': { args: []; result: undefined }
+  'gh:setListWatch': { args: [watching: boolean, includeMyPrs: boolean]; result: undefined }
   'gh:listMyOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
   'gh:listWorkspaceOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] }
   'gh:prChecks': {
@@ -545,4 +547,9 @@ export interface IpcEventMap {
   'terminal:exit': [sessionId: string, code: number]
   /** Open a fresh shell in the Shells pane already running this command. */
   'terminal:run_command': [command: string]
+  /**
+   * Shared PR-list poll tick. One main-process timer for every window showing
+   * the pane; renderers no-op unless that window is actually on PRs.
+   */
+  'gh:lists_tick': []
 }
