@@ -1085,6 +1085,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),
+    invalidateReadCache: () => ipcRenderer.invoke('gh:invalidateReadCache'),
     listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),
     listWorkspaceOpenPrs: () => ipcRenderer.invoke('gh:listWorkspaceOpenPrs'),
     prChecks: (owner: string, repo: string, number: number) =>

@@ -357,6 +357,7 @@ export interface IpcInvokeMap {
 
   // GitHub CLI / pull requests
   'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
+  'gh:invalidateReadCache': { args: []; result: undefined }
   'gh:listMyOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
   'gh:listWorkspaceOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] }
   'gh:prChecks': {

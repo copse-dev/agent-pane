@@ -153,11 +153,13 @@ export function mountPrPane(
 
   // Per-PR CI rollup. Workspace summaries arrive with `checks` already set;
   // chat-linked / cross-repo rows are filled in lazily and cached by PR key.
-  // `ciGen` invalidates in-flight fetches across refreshes / workspace switches.
+  // `ciGen` invalidates in-flight fetches across workspace switches / manual refresh.
   const checksCache = new Map<string, GhPrChecksState>()
   const checksInFlight = new Set<string>()
   let ciEls = new Map<string, HTMLElement>()
   let ciGen = 0
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+  const PR_PANE_POLL_MS = 30_000
 
   const CI_LABEL: Record<GhPrChecksState | 'loading', string> = {
     loading: 'Checking CI…',
@@ -797,14 +799,38 @@ export function mountPrPane(
     checksInFlight.clear()
   }
 
-  async function refresh(): Promise<void> {
+  function syncPoller(): void {
+    const active = prsModeActive(store)
+    if (active && pollTimer === null) {
+      pollTimer = setInterval(() => {
+        void refresh({ reason: 'poll' })
+      }, PR_PANE_POLL_MS)
+    } else if (!active && pollTimer !== null) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  async function refresh(opts: { reason?: 'manual' | 'poll' | 'event' } = {}): Promise<void> {
+    const reason = opts.reason ?? 'event'
+    if (reason === 'manual') {
+      await api.gh.invalidateReadCache()
+      ciGen++
+      checksCache.clear()
+      checksInFlight.clear()
+    } else if (reason === 'poll') {
+      for (const [key, state] of checksCache) {
+        if (state === 'pending') checksCache.delete(key)
+      }
+    }
+
     const gen = ++agentLinksGen
     ghStatus = await api.gh.status()
     // Agent ownership is local (no gh needed), so load it regardless of gh auth.
     const entries = await api.gh.agentPrLinks().catch(() => [] as RemoteAgentPrIndexEntry[])
-    if (gen === agentLinksGen) agentLinks = indexAgentLinksByPrKey(entries)
+    if (gen !== agentLinksGen) return
+    agentLinks = indexAgentLinksByPrKey(entries)
     linkedRefs = collectLinkedPrs(store)
-    resetOther()
     if (!ghStatus.installed || !ghStatus.authenticated) {
       workspacePrs = []
       prList = linkedRefs.map((ref) => ({
@@ -818,10 +844,36 @@ export function mountPrPane(
     }
 
     // Only the workspace repo's open PRs (plus chat-linked ones) are fetched up
-    // front; the cross-repo "your PRs" list is loaded lazily when expanded.
+    // front; the cross-repo "your PRs" list is loaded lazily when expanded, and
+    // re-fetched here once it has been opened so a poll doesn't collapse it.
     workspacePrs = await api.gh.listWorkspaceOpenPrs().catch(() => [] as GhPrSummary[])
-    prList = mergePrLists(linkedRefs, [workspacePrs])
+    if (gen !== agentLinksGen) return
+    if (otherLoaded) {
+      try {
+        myPrs = (await api.gh.listMyOpenPrs()) ?? []
+      } catch {
+        myPrs = []
+      }
+      if (gen !== agentLinksGen) return
+    }
+    prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
     renderList()
+
+    if (reason === 'poll') {
+      if (selectedPr) {
+        const current = selectedPr
+        const stillExists = prList.some(
+          (pr) =>
+            pr.owner === current.owner && pr.repo === current.repo && pr.number === current.number,
+        )
+        if (!stillExists) {
+          selectedPr = null
+          prDetails = null
+          clearDiff()
+        }
+      }
+      return
+    }
 
     const openTarget = pendingOpen
     pendingOpen = null
@@ -850,7 +902,7 @@ export function mountPrPane(
     else clearDiff()
   }
 
-  refreshBtn.addEventListener('click', () => void refresh())
+  refreshBtn.addEventListener('click', () => void refresh({ reason: 'manual' }))
 
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store, api)
@@ -858,9 +910,11 @@ export function mountPrPane(
 
   const unsubs = [
     store.on('right_panel_mode_changed', () => {
+      syncPoller()
       if (prsModeActive(store)) void refresh()
     }),
     store.on('files_pane_changed', () => {
+      syncPoller()
       if (prsModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
@@ -907,14 +961,12 @@ export function mountPrPane(
   clearDiff()
   // If PRs are already the active pane when we mount (a pop-out window, or a
   // restored layout), load immediately — the `*_changed` events that normally
-  // trigger the first refresh may have fired before this pane existed.
-  if (prsModeActive(store)) void refresh()
-
-  // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
-  // right panel is already in "prs" mode by the time we mount, no
-  // right_panel_mode_changed event will arrive to trigger the first refresh — so
-  // catch up to the current state here. See #459.
-  if (prsModeActive(store)) void refresh()
+  // trigger the first refresh may have fired before this pane existed. See #459.
+  // One call only: a second overlapping refresh used to double every GitHub read.
+  if (prsModeActive(store)) {
+    syncPoller()
+    void refresh()
+  }
 
   const unregisterPopoutSeed = registerPopoutSeedHandlers('prs', {
     capture: () => ({ selectedPr, selectedFile }),
@@ -930,6 +982,10 @@ export function mountPrPane(
   })
 
   return () => {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
     unregisterPopoutSeed()
     stopObservingLayout()
     unbindWorkspaceLinks()

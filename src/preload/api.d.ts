@@ -892,6 +892,8 @@ export interface ApiClient {
   }
   gh: {
     status: () => Promise<GhCliStatus>
+    /** Drop TTL'd GitHub reads so the next list/details fetch hits GitHub (or a 304). */
+    invalidateReadCache: () => Promise<void>
     listMyOpenPrs: () => Promise<GhPrSummary[] | null>
     listWorkspaceOpenPrs: () => Promise<GhPrSummary[]>
     prChecks: (owner: string, repo: string, number: number) => Promise<GhPrChecksState>

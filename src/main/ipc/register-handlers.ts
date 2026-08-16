@@ -249,6 +249,7 @@ import {
   getGhPrChecksState,
   getGhPrDetails,
   getGhPrFileDiff,
+  invalidateGithubReadCache,
   listMyOpenPrs,
   listWorkspaceOpenPrs,
   resolveGithubPrRef,
@@ -2016,6 +2017,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
+  ipcMain.handle('gh:invalidateReadCache', () => {
+    invalidateGithubReadCache()
+  })
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
   ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())
   ipcMain.handle('gh:prChecks', (event, owner: unknown, repo: unknown, number: unknown) => {
