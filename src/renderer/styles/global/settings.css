@@ -45,10 +45,10 @@ dialog.settings-overlay::backdrop {
 }
 .settings-header h2 {
   font-size: var(--font-size-sm);
-  font-weight: 600;
-  /* The window's one title shouldn't sit in the secondary tier — it reads
-     as disabled against the elevated titlebar. */
-  color: var(--text-primary);
+  /* Match the regular panel title rather than introducing a heavier heading
+     treatment when Settings takes over the same titlebar position. */
+  font-weight: 400;
+  color: var(--text-secondary);
   line-height: var(--titlebar-height);
 }
 .settings-close-btn {
