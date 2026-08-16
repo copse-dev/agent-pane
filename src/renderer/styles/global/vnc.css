@@ -38,7 +38,7 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  gap: var(--spacing-xs);
   justify-content: space-between;
   width: 100%;
   min-width: 0;
@@ -58,6 +58,16 @@
   color: var(--text-primary);
   background: var(--bg-selected);
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.vnc-tab.is-controlling::before {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  background: var(--warning);
+  border-radius: 50%;
+  content: '';
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 18%, transparent);
 }
 
 .vnc-tab-label {
@@ -154,11 +164,18 @@
 }
 
 .vnc-connect-btn,
+.vnc-control-btn,
 .vnc-disconnect-btn,
 .vnc-discover-btn,
 .vnc-nearby-btn {
   justify-content: center;
   width: 100%;
+}
+
+.vnc-control-btn.is-active {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
 }
 
 .vnc-advanced summary {
@@ -363,6 +380,12 @@
   max-width: 100%;
   max-height: 100%;
   box-shadow: 0 0 0 1px var(--border);
+}
+
+.vnc-screen.is-controlling canvas {
+  box-shadow:
+    0 0 0 1px var(--warning),
+    0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent);
 }
 
 .vnc-empty {

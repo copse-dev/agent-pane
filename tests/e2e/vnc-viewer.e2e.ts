@@ -12,6 +12,10 @@ import {
 const WIDTH = 320
 const HEIGHT = 180
 
+type RfbInputEvent =
+  | { kind: 'key'; down: boolean; keysym: number }
+  | { kind: 'pointer'; buttons: number; x: number; y: number }
+
 function serverInit(): Buffer {
   const name = Buffer.from('Copse fake desktop', 'utf8')
   const message = Buffer.alloc(24 + name.length)
@@ -55,7 +59,7 @@ function framebufferUpdate(): Buffer {
   return Buffer.concat([header, pixels])
 }
 
-function attachRfb38(socket: Socket): void {
+function attachRfb38(socket: Socket, onInput: (event: RfbInputEvent) => void): void {
   let state: 'version' | 'security' | 'client-init' | 'messages' = 'version'
   let buffered = Buffer.alloc(0)
   let painted = false
@@ -92,13 +96,25 @@ function attachRfb38(socket: Socket): void {
         if (buffered.length < 4) return
         length = 4 + buffered.readUInt16BE(2) * 4
       } else if (messageType === 3) length = 10
+      else if (messageType === 4) length = 8
+      else if (messageType === 5) length = 6
       else if (messageType === 150) length = 10
       else return
       if (buffered.length < length) return
+      const message = buffered.subarray(0, length)
       buffered = buffered.subarray(length)
       if (messageType === 3 && !painted) {
         painted = true
         socket.write(framebufferUpdate())
+      } else if (messageType === 4) {
+        onInput({ kind: 'key', down: message[1] !== 0, keysym: message.readUInt32BE(4) })
+      } else if (messageType === 5) {
+        onInput({
+          kind: 'pointer',
+          buttons: message[1] ?? 0,
+          x: message.readUInt16BE(2),
+          y: message.readUInt16BE(4),
+        })
       }
     }
   })
@@ -200,9 +216,10 @@ async function listenOnVncPort(server: Server): Promise<number> {
   throw new Error('No conventional VNC port was available for the fake server')
 }
 
-describe('read-only VNC viewer', function () {
+describe('VNC viewer', function () {
   this.timeout(120_000)
   const sockets = new Set<Socket>()
+  const inputEvents: RfbInputEvent[] = []
   let server: Server
   let authenticationServer: Server
   let port = 0
@@ -217,7 +234,9 @@ describe('read-only VNC viewer', function () {
     server = createServer((socket) => {
       sockets.add(socket)
       socket.once('close', () => sockets.delete(socket))
-      attachRfb38(socket)
+      attachRfb38(socket, (event) => {
+        inputEvents.push(event)
+      })
     })
     port = await listenOnVncPort(server)
     authenticationServer = createServer((socket) => {
@@ -295,7 +314,7 @@ describe('read-only VNC viewer', function () {
     )
   })
 
-  it('paints a fake RFB framebuffer without exposing input controls', async () => {
+  it('paints, controls, shares, and tabs fake RFB desktops', async () => {
     const desktopButton = $('.titlebar-btn[aria-label="Open remote desktop"]')
     await desktopButton.waitForDisplayed({ timeout: 20_000 })
     await desktopButton.click()
@@ -437,6 +456,10 @@ describe('read-only VNC viewer', function () {
     assert.equal(await $('.vnc-connect-btn').isDisplayed(), false)
     assert.equal(await $('.vnc-view-only-note').isDisplayed(), false)
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Disconnect')
+    const controlButton = $('.vnc-control-btn')
+    assert.equal(await controlButton.isDisplayed(), true)
+    assert.equal(await controlButton.getText(), 'Control desktop')
+    assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
     assert.equal(await $('.vnc-controls-host .git-changes-title').isDisplayed(), true)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
 
@@ -452,7 +475,48 @@ describe('read-only VNC viewer', function () {
     })
     assert.deepEqual(sampled?.left, [255, 90, 165, 255])
     assert.deepEqual(sampled?.right, [0, 74, 70, 255])
+    await browser.execute(() => window.scrollTo(0, 0))
     await saveElementScreenshot('#pane-files', 'vnc-viewer-read-only.png')
+
+    await controlButton.click()
+    assert.equal(await controlButton.getText(), 'Stop controlling')
+    assert.equal(await controlButton.getAttribute('aria-pressed'), 'true')
+    assert.match(await $('.vnc-status-detail').getText(), /mouse and keyboard control are on/i)
+    assert.equal(
+      await $('.vnc-tab.is-active').getAttribute('aria-label'),
+      'This machine, mouse and keyboard control on',
+    )
+    assert.equal(await $('.vnc-screen').getAttribute('class'), 'vnc-screen is-controlling')
+    await canvas.click()
+    await browser.keys('a')
+    await browser.waitUntil(
+      () =>
+        inputEvents.some((event) => event.kind === 'pointer' && event.buttons === 1) &&
+        inputEvents.some((event) => event.kind === 'pointer' && event.buttons === 0) &&
+        inputEvents.some((event) => event.kind === 'key' && event.down && event.keysym === 97) &&
+        inputEvents.some((event) => event.kind === 'key' && !event.down && event.keysym === 97),
+      {
+        timeout: 5_000,
+        timeoutMsg: 'expected noVNC to forward pointer and keyboard input while control is on',
+      },
+    )
+    await canvas.click({ button: 'right' })
+    await browser.waitUntil(
+      () => inputEvents.some((event) => event.kind === 'pointer' && event.buttons === 4),
+      {
+        timeout: 5_000,
+        timeoutMsg: 'expected right-click to reach the remote desktop while control is on',
+      },
+    )
+    assert.equal(await $('.context-menu').isExisting(), false)
+    await browser.execute(() => window.scrollTo(0, 0))
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-control-enabled.png')
+
+    await controlButton.click()
+    assert.equal(await controlButton.getText(), 'Control desktop')
+    assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
+    assert.match(await $('.vnc-status-detail').getText(), /view only/i)
+    assert.equal(await $('.vnc-screen').getAttribute('class'), 'vnc-screen')
 
     await canvas.click({ button: 'right' })
     const shareMenu = $('.context-menu')
@@ -523,6 +587,6 @@ describe('read-only VNC viewer', function () {
       'Connected to this machine',
     )
 
-    await assertNoErrorToasts('read-only VNC viewer')
+    await assertNoErrorToasts('VNC viewer')
   })
 })

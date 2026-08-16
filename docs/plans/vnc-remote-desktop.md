@@ -1,17 +1,19 @@
 # Seeing the other machine's screen: VNC support
 
 **Status: Active (V0/V1 first release).** The SSH-forwarding primitive, opt-in
-read-only viewer, protocol-verified local discovery, and configured-SSH-host
+viewer, protocol-verified local discovery, and configured-SSH-host
 discovery are implemented. Nearby `_rfb._tcp` services are discovered through
 Bonjour/DNS-SD, and explicit private/link-local addresses are supported behind
 an unencrypted-connection confirmation. Saved SSH machines are always reused as
 encrypted VNC routes, independently of whether remote-workspace execution is
 enabled; equivalent Bonjour advertisements are collapsed in favour of SSH,
 including when differently named hosts resolve to the same address. The generic
-browser consumer, reconnect reconciliation, and live-host validation remain V0/V1 follow-ups; human input,
-stored passwords and every agent-facing capability remain V2 or later. V1 now
-handles noVNC's session-only credential requests without persisting secrets. The
-tunnel work is tracked by [#771](https://github.com/copse-dev/agent-pane/issues/771).
+browser consumer, reconnect reconciliation, and live-host validation remain
+V0/V1 follow-ups; stored passwords and every agent-facing capability remain V2
+or later. V1 now handles noVNC's session-only credential requests without
+persisting secrets and lets the user explicitly enable mouse and keyboard
+control per connection. The tunnel work is tracked by
+[#771](https://github.com/copse-dev/agent-pane/issues/771).
 
 ## Three readings of "VNC support", and which two this plan covers
 
@@ -154,11 +156,13 @@ cancel` to tear it down. No second handshake, no new auth surface, no askpass
    destination; it says nothing about the wire. The UI therefore keeps the
    warning attached to the direct target and prefers SSH whenever it is configured.
 
-5. **The viewer ships before any input, and the agent's input ships last.**
+5. **Human input is explicit per connection, and the agent's input ships last.**
    Not caution for its own sake — see the security section, which argues that an
    agent with pointer and keyboard on a desktop routes around the shell
-   permission gate entirely. V1 connects with `view-only` set and no input path
-   compiled into the pane at all.
+   permission gate entirely. V1 connects with `view-only` set. The user can then
+   turn on noVNC's existing pointer and keyboard path from a visible pane action;
+   the tab and framebuffer remain visibly marked while control is enabled. This
+   does not expose input to the agent or add an agent tool.
 
    Authentication is not input authority. When the RFB handshake requests a
    password, username, or target, V1 asks for it in the viewer and passes it to
@@ -246,11 +250,11 @@ forward` / `-O cancel` on the existing control socket; allocate the local port
 `http://127.0.0.1:<local>` in the existing browser pane, and the forward is gone
 after disconnect. This is #771's tunnel half and lands under that issue.
 
-### V1 — The viewer, read-only (~1 week)
+### V1 — The viewer and basic user control (~1 week)
 
 **Implementation:** shipped behind `vncEnabled`, default off. Main owns the raw
 RFB socket (loopback, LAN-direct, or SSH-forwarded), preload exposes a binary
-WebSocket-shaped IPC channel, and noVNC 1.5.0 paints the view-only pane. Unit
+WebSocket-shaped IPC channel, and noVNC 1.5.0 paints the pane. Unit
 coverage uses real loopback sockets, and the focused WDIO eval paints and pixel-
 checks a two-colour RFB 3.8 framebuffer. The pane explicitly selects this
 machine or a configured SSH host, discovers verified RFB listeners on either,
@@ -270,7 +274,11 @@ tab disconnects only that desktop. Once a session starts, setup and discovery
 controls collapse into a plain-language connected summary, view-only
 explanation, and Disconnect action; protocol names and port numbers remain
 confined to Advanced settings and error diagnostics. The live `DISPLAY=:1`
-harness remains.
+harness remains. Each connection starts view-only and exposes a clear **Control
+desktop** action. Enabling it forwards the user's pointer and keyboard through
+noVNC; **Stop controlling** returns that tab to view-only. Right-click continues
+to open the local share action in view-only mode and reaches the remote desktop
+while control is enabled.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local
@@ -278,7 +286,7 @@ harness remains.
    `ownerId`-style check `terminal-service.ts` uses.
 3. Preload shim implementing the channel object noVNC attaches to.
 4. A pane: `rightPanelMode: 'vnc'` (or a browser-pane tab type — open question),
-   `view-only`, scaling to fit, a status line that distinguishes "no server
+   view-only by default, scaling to fit, a status line that distinguishes "no server
    there" from "tunnel down" from "server refused the encoding".
 5. Settings: `vncEnabled`, default off, wired the six places
    `browserToolsEnabled` is wired.
@@ -286,9 +294,10 @@ harness remains.
 **Acceptance:** with an SSH workspace pointed at the e2e host, the pane shows
 `DISPLAY=:1` and an `npm run test:e2e` run is watchable from inside Copse.
 
-### V2 — Human input and saved credentials (~3–4 days)
+### V2 — Input polish and saved credentials (~2–3 days)
 
-1. Pointer and key events from the pane, with the keysym mapping noVNC provides.
+1. Clipboard, special-key helpers, and multi-monitor input polish. Basic pointer
+   and key events already use noVNC's mapping in V1.
 2. Optional per-host saved password through `secret-cipher.ts`, never in settings
    JSON. Session-only credential prompts already exist in V1.
 3. Clipboard toggle, off by default, per connection.

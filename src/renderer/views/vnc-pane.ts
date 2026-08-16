@@ -71,12 +71,14 @@ interface VncSessionController {
 
 interface VncSessionOptions {
   isActive(): boolean
+  onControlChange(enabled: boolean): void
   onLabelChange(label: string): void
 }
 
 interface VncTab {
   id: string
   baseLabel: string
+  controlling: boolean
   tabButton: HTMLButtonElement
   tabLabel: HTMLElement
   closeButton: HTMLElement
@@ -158,6 +160,16 @@ function mountVncSession(
     'button',
     { type: 'button', class: 'ui-btn vnc-disconnect-btn', hidden: true },
     'Disconnect',
+  )
+  const controlButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-primary vnc-control-btn',
+      'aria-pressed': 'false',
+      hidden: true,
+    },
+    'Control desktop',
   )
   const discoverButton = el(
     'button',
@@ -253,13 +265,14 @@ function mountVncSession(
   const note = el(
     'p',
     { class: 'vnc-view-only-note' },
-    'Desktop connections are view only. Keyboard and mouse control are off.',
+    'Desktop connections start in view-only mode. Turn on control after connecting.',
   )
   const controlsBody = el(
     'div',
     { class: 'vnc-controls-body' },
     form,
     status,
+    controlButton,
     disconnectButton,
     note,
   )
@@ -290,6 +303,9 @@ function mountVncSession(
   let activeTarget: VncTarget | null = null
   let authenticationUsername = ''
   let submittedUsername: string | null = null
+  let connectedMachineName: string | null = null
+  let controlEnabled = false
+  let usernameSaveDetail = ''
 
   function setSessionUi(active: boolean, connected = false): void {
     controlsRoot.scrollTop = 0
@@ -297,6 +313,7 @@ function mountVncSession(
     setupFields.hidden = active
     connectButton.hidden = active
     disconnectButton.hidden = !active
+    controlButton.hidden = !connected
     note.hidden = active
     disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
     portInput.disabled = active
@@ -336,6 +353,42 @@ function mountVncSession(
     status.dataset['kind'] = kind
   }
 
+  function connectedStatusDetail(): string {
+    const inputDetail = controlEnabled
+      ? 'Mouse and keyboard control are on.'
+      : 'View only — keyboard and mouse control are off.'
+    return usernameSaveDetail ? `${inputDetail} ${usernameSaveDetail}` : inputDetail
+  }
+
+  function renderConnectedStatus(): void {
+    if (!connectedMachineName) return
+    setStatus(`Connected to ${connectedMachineName}`, 'ok', connectedStatusDetail())
+  }
+
+  function updateControlUi(): void {
+    controlButton.textContent = controlEnabled ? 'Stop controlling' : 'Control desktop'
+    controlButton.setAttribute('aria-pressed', String(controlEnabled))
+    controlButton.classList.toggle('is-active', controlEnabled)
+    screen.classList.toggle('is-controlling', controlEnabled)
+    options.onControlChange(controlEnabled)
+  }
+
+  function setControlEnabled(enabled: boolean): void {
+    if (!rfb || !connectedAtLeastOnce) return
+    controlEnabled = enabled
+    rfb.viewOnly = !enabled
+    updateControlUi()
+    renderConnectedStatus()
+    if (enabled) queueMicrotask(() => rfb?.focus())
+  }
+
+  function resetControlState(): void {
+    connectedMachineName = null
+    controlEnabled = false
+    usernameSaveDetail = ''
+    updateControlUi()
+  }
+
   function hideAuthentication(): void {
     authPanel.hidden = true
     requiredCredentials = new Set()
@@ -353,6 +406,7 @@ function mountVncSession(
     connectedAtLeastOnce = false
     pendingDisconnectStatus = null
     hideAuthentication()
+    resetControlState()
     screen.replaceChildren()
     empty.textContent =
       'Choose this machine, a nearby device, another address, or a saved SSH machine.'
@@ -749,6 +803,7 @@ function mountVncSession(
       activeTarget = target
       connectedAtLeastOnce = false
       pendingDisconnectStatus = null
+      resetControlState()
       const machineName = selectedMachineName()
       options.onLabelChange(machineName === 'this machine' ? 'This machine' : machineName)
       empty.textContent = 'Connecting to the remote desktop…'
@@ -761,32 +816,24 @@ function mountVncSession(
       nextRfb.addEventListener('connect', () => {
         if (rfb !== nextRfb) return
         connectedAtLeastOnce = true
+        connectedMachineName = machineName
         hideAuthentication()
         setSessionUi(true, true)
-        setStatus(
-          `Connected to ${machineName}`,
-          'ok',
-          'View only — keyboard and mouse control are off.',
-        )
+        renderConnectedStatus()
         const username = submittedUsername
         if (username) {
           void api.vnc
             .rememberUsername(target, username)
             .then((saved) => {
               if (saved || rfb !== nextRfb) return
-              setStatus(
-                `Connected to ${machineName}`,
-                'ok',
-                'View only — keyboard and mouse control are off. The username was not saved because secure storage is unavailable.',
-              )
+              usernameSaveDetail =
+                'The username was not saved because secure storage is unavailable.'
+              renderConnectedStatus()
             })
             .catch(() => {
               if (rfb !== nextRfb) return
-              setStatus(
-                `Connected to ${machineName}`,
-                'ok',
-                'View only — keyboard and mouse control are off. The username could not be saved securely.',
-              )
+              usernameSaveDetail = 'The username could not be saved securely.'
+              renderConnectedStatus()
             })
         }
       })
@@ -881,6 +928,7 @@ function mountVncSession(
 
   const onScreenContextMenu = (event: MouseEvent): void => {
     if (!connectedAtLeastOnce || !screen.querySelector('canvas')) return
+    if (controlEnabled) return
     event.preventDefault()
     event.stopPropagation()
     showContextMenu(event.clientX, event.clientY, [
@@ -892,6 +940,9 @@ function mountVncSession(
     void connect()
   })
   disconnectButton.addEventListener('click', disconnect)
+  controlButton.addEventListener('click', () => {
+    setControlEnabled(!controlEnabled)
+  })
   authenticateButton.addEventListener('click', submitCredentials)
   discoverButton.addEventListener('click', () => {
     void discoverSelectedMachine()
@@ -1032,6 +1083,10 @@ export function mountVncPane(
         tab.tabLabel.textContent = label
         tab.closeButton.setAttribute('aria-label', `Close ${label}`)
         tab.tabButton.title = label
+        tab.tabButton.setAttribute(
+          'aria-label',
+          tab.controlling ? `${label}, mouse and keyboard control on` : label,
+        )
       })
     }
   }
@@ -1040,6 +1095,14 @@ export function mountVncPane(
     const tab = tabs.get(tabId)
     if (!tab) return
     tab.baseLabel = label
+    syncTabLabels()
+  }
+
+  function updateTabControlState(tabId: string, enabled: boolean): void {
+    const tab = tabs.get(tabId)
+    if (!tab) return
+    tab.controlling = enabled
+    tab.tabButton.classList.toggle('is-controlling', enabled)
     syncTabLabels()
   }
 
@@ -1106,6 +1169,9 @@ export function mountVncPane(
 
     const session = mountVncSession(controlsPanel, viewerPanel, store, api, {
       isActive: () => activeTabId === id,
+      onControlChange: (enabled) => {
+        updateTabControlState(id, enabled)
+      },
       onLabelChange: (label) => {
         updateTabLabel(id, label)
       },
@@ -1113,6 +1179,7 @@ export function mountVncPane(
     const tab: VncTab = {
       id,
       baseLabel,
+      controlling: false,
       tabButton,
       tabLabel,
       closeButton,
