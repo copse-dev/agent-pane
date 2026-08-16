@@ -9,7 +9,12 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  nextThreadId,
+  openNewThread,
+  prevThreadId,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -27,6 +32,7 @@ import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountPortsSection } from './views/ports-section.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
+import { mountVncPane } from './views/vnc-pane.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -161,6 +167,7 @@ const POPOUT_MODES = new Set<RightPanelMode>([
   'browser',
   'memories',
   'roadmap',
+  'vnc',
 ])
 function isPopoutMode(value: string | null): value is RightPanelMode {
   return value !== null && [...POPOUT_MODES].some((mode) => mode === value)
@@ -326,7 +333,7 @@ async function boot(): Promise<void> {
   })
 
   // File ▸ New Thread (Cmd/Ctrl+N) opens a fresh composer, mirroring the
-  // sidebar's "+" button. No-op until a workspace is open.
+  // sidebar's New project button. No-op until a workspace is open.
   api.menu.onNewThread(() => {
     if (!store.getState().workspaceRoot) return
     ensureLayout()
@@ -497,6 +504,7 @@ function mountFullLayout(): void {
     store,
     api,
   )
+  mountVncPane(requireElement('vnc-controls-host'), requireElement('vnc-viewer-host'), store, api)
   mountMemoriesPane(
     requireElement('memories-host'),
     requireElement('memories-viewer-host'),
@@ -625,8 +633,14 @@ function registerKeyboardShortcuts(): void {
     if (e.key === 'Enter' && handleStopShortcut?.('Enter')) {
       e.preventDefault()
     }
-    if (e.altKey && e.key === 'ArrowLeft') switchToPrevThread()
-    if (e.altKey && e.key === 'ArrowRight') switchToNextThread()
+    // Ctrl+Tab / Ctrl+Shift+Tab cycle threads, matching browser and other
+    // agent apps. Ctrl specifically (not Cmd), so it composes with macOS's
+    // Cmd+Tab app switcher.
+    if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'Tab') {
+      e.preventDefault()
+      if (e.shiftKey) switchToPrevThread()
+      else switchToNextThread()
+    }
   })
 }
 
@@ -658,17 +672,13 @@ async function confirmDeleteThread(): Promise<void> {
 }
 
 function switchToPrevThread(): void {
-  const { threads, activeThreadId } = store.getState()
-  const idx = threads.findIndex((t) => t.id === activeThreadId)
-  const prev = idx > 0 ? threads[idx - 1] : undefined
-  if (prev) switchThread(store, prev.id)
+  const prev = prevThreadId(store)
+  if (prev) switchThread(store, prev)
 }
 
 function switchToNextThread(): void {
-  const { threads, activeThreadId } = store.getState()
-  const idx = threads.findIndex((t) => t.id === activeThreadId)
-  const next = idx >= 0 && idx < threads.length - 1 ? threads[idx + 1] : undefined
-  if (next) switchThread(store, next.id)
+  const next = nextThreadId(store)
+  if (next) switchThread(store, next)
 }
 
 void boot()

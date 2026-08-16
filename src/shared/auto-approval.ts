@@ -78,3 +78,17 @@ export function sanitizeAutoApprovalLevel(value: unknown): AutoApprovalLevel {
 export function autoApprovalLevelAllows(level: AutoApprovalLevel, tier: AutoApprovalTier): boolean {
   return AUTO_APPROVAL_RANK[level] >= AUTO_APPROVAL_RANK[tier]
 }
+
+/**
+ * Write tiers run repo-controlled git hooks. Without an OS sandbox those execute
+ * with the user's full host privilege (GA ledger N1). Cap at `read` so a
+ * Windows session — or a macOS/Linux session after ASRT init failed — cannot
+ * honour `local-write` / `remote-write` uncontained. `off` stays `off`.
+ */
+export function effectiveAutoApprovalLevel(
+  configured: AutoApprovalLevel,
+  sandboxEnabled: boolean,
+): AutoApprovalLevel {
+  if (sandboxEnabled || configured === 'off' || configured === 'read') return configured
+  return 'read'
+}

@@ -5,6 +5,7 @@ import {
   chevronRightIcon,
   closeIcon,
   gitPullRequestIcon,
+  plusIcon,
   runningStatusIcon,
   searchIcon,
   warningIcon,
@@ -193,7 +194,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       'aria-label': 'Add project',
       'data-tooltip': 'New project or open a folder',
     },
-    '+',
+    plusIcon('ui-icon ui-icon-sm'),
   )
   const header = el('div', { class: 'pane-projects-header' }, title, searchToggle, addBtn)
 
@@ -861,7 +862,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             'aria-label': 'New thread',
             'data-tooltip': 'New thread',
           },
-          '+',
+          plusIcon('ui-icon ui-icon-sm'),
         )
         newThreadBtn.addEventListener('click', (e) => {
           e.stopPropagation()
@@ -1056,6 +1057,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (thread.status === 'running') {
           chatRow.classList.add('is-running')
           chatRow.insertBefore(runningStatus('Agent is working'), title)
+        } else if (thread.unreadAt !== undefined && thread.id !== activeId) {
+          chatRow.classList.add('is-unread')
+          chatRow.insertBefore(
+            el('span', {
+              class: 'chat-unread-dot',
+              role: 'img',
+              'aria-label': 'Unread agent completion',
+            }),
+            title,
+          )
         }
 
         if (isThreadAwaitingAttention(thread.id)) {

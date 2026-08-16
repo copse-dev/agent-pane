@@ -444,6 +444,8 @@ export function seedEmptyProject(
      */
     roadmapPlansEnabled?: boolean
     developerMode?: boolean
+    /** Opt into the read-only Remote Desktop pane. */
+    vncEnabled?: boolean
     /**
      * Auto-run for sandbox-contained commands (`autoRunSandboxCommands`, default
      * on). Seed `false` when a spec needs a shell approval dialog to appear
@@ -562,6 +564,9 @@ export function seedEmptyProject(
   }
   if (options?.developerMode !== undefined) {
     settings.developerMode = options.developerMode
+  }
+  if (options?.vncEnabled !== undefined) {
+    settings.vncEnabled = options.vncEnabled
   }
   if (options?.autoRunSandboxCommands !== undefined) {
     settings.autoRunSandboxCommands = options.autoRunSandboxCommands
@@ -1258,7 +1263,8 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
           {
             id: 'msg-user-markdown',
             role: 'user',
-            content: 'line one\nline two\n\n**bold item**',
+            content:
+              'line one\nline two\n\n**bold item**\n\nI typed <placeholder command> and kept it.',
             toolCalls: [],
             createdAt: now,
           },
@@ -2497,6 +2503,42 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
   })
 }
 
+export function seedUnicodeChatFixture(workspaceRoot: string): { content: string } {
+  const projectId = 'e2e-unicode-chat-project'
+  const content = [
+    'Symbols: ✓ ∑ → ∞',
+    'CJK: 你好世界 · 日本語 · 한국어',
+    'Arabic: مرحبا بالعالم',
+    'Devanagari: नमस्ते दुनिया',
+    'Emoji: 👩🏽‍💻 🌲',
+  ].join('\n\n')
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-unicode-chat-thread',
+        title: 'Unicode fallback coverage',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-unicode-assistant',
+            role: 'assistant',
+            content,
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+  return { content }
+}
+
 export function seedTodoPlanFixtures(workspaceRoot: string): {
   planThreadTitle: string
   noPlanThreadTitle: string
@@ -3603,6 +3645,7 @@ export function seedThreadRunningStatusFixture(workspaceRoot: string): {
         id: 'e2e-idle-thread',
         title: idleThreadTitle,
         status: 'idle',
+        unreadAt: now - 500,
         messages: [
           {
             id: 'msg-user-idle',

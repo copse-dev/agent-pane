@@ -259,12 +259,19 @@ export function pickBestValueFrontierModel(points: readonly FrontierPoint[]): Fr
   )
   const pool = free.length > 0 ? free : frontier
 
+  const plan = (p: FrontierPoint): boolean =>
+    (p.plan !== undefined || p.costPerMTok <= 0 || p.local === true) &&
+    (p.planDetail !== undefined || p.local === true)
   const ranked = [...pool].sort((a, b) => {
     if (free.length === 0) {
       const valueA = a.intellect / Math.max(a.costPerMTok, Number.EPSILON)
       const valueB = b.intellect / Math.max(b.costPerMTok, Number.EPSILON)
       if (valueB !== valueA) return valueB - valueA
     }
+    // Among equal-intellect free/plan candidates, prefer a plan-covered route
+    // (ACP / subscription) over a paid OpenRouter route for the same model.
+    const planDiff = Number(plan(b)) - Number(plan(a))
+    if (planDiff !== 0) return planDiff
     return b.intellect - a.intellect || a.costPerMTok - b.costPerMTok || a.id.localeCompare(b.id)
   })
   return ranked[0] ?? null

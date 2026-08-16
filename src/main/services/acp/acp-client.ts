@@ -54,6 +54,7 @@ import {
   withSandboxShellPath,
 } from '../../project-sandbox/sandbox-argv.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
@@ -406,6 +407,15 @@ export async function spawnAcpAgentProcess(
 ): Promise<ChildProcess> {
   const env = buildAcpAgentEnv(config, options.baseEnv)
   const stdio: 'pipe'[] = ['pipe', 'pipe', 'pipe']
+  // Both branches below reach `spawn` directly rather than through
+  // `spawnInProjectSandbox`, so they miss its working-directory probe. A thread
+  // whose worktree was retired under it would otherwise fail as `spawn <agent>
+  // ENOENT` — naming an agent binary that is present — and the sandboxed branch
+  // would build (and attach to the error) the seatbelt argv first. Remote agents
+  // route through `spawnRemoteAcpTransport` before here, so this cwd is local.
+  if (!(await isSpawnableWorkingDirectory(config.cwd))) {
+    throw new Error(`Working directory no longer exists: ${config.cwd}`)
+  }
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),

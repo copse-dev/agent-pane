@@ -161,6 +161,19 @@ describe('user transcript attachment chips', () => {
     assert.match(textEl.textContent, /line one\s*line two/)
   })
 
+  it('keeps angle-bracketed examples as literal text (not stripped HTML tags)', () => {
+    mountWithUserMessage(
+      'I typed <placeholder command> and it got dropped\n\nAlso `<inline>` and **bold**.',
+      undefined,
+    )
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.match(textEl.textContent, /<placeholder command>/)
+    assert.match(textEl.textContent, /<inline>/)
+    assert.ok(textEl.querySelector('strong'), 'markdown emphasis still renders')
+    assert.equal(textEl.querySelector('placeholder'), null)
+  })
+
   it('shows a text-only resend recovery for an image prompt rejected by its model', () => {
     const store = createStore()
     const threadId = createThread(store)

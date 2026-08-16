@@ -13,6 +13,7 @@ import {
   captureBrowserPageText,
   captureBrowserScreenshot,
 } from '../services/browser/browser-share.ts'
+import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
@@ -98,6 +99,12 @@ import {
 } from '../services/thread-store.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
+  getElectronAppVersion,
+  getElectronBuildCommit,
+  getElectronBuildDirty,
+  isElectronAppPackaged,
+} from '../services/electron-app-runtime.ts'
+import {
   describeWorkspaceArchive,
   storeArchiveAttachment,
 } from '../services/archive/archive-attachment-store.ts'
@@ -129,6 +136,7 @@ import {
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
+import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -1479,10 +1487,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // The whole thread directory, zipped — the archive counterpart to the
   // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
   // download and saves it, exactly as it does for the `.jsonl`.
-  ipcMain.handle('threads:exportArchive', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:exportArchive', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return buildThreadArchive(pid, tid)
+    return {
+      bytes: await buildThreadArchive(pid, tid),
+      build: {
+        version: getElectronAppVersion(),
+        buildCommit: getElectronBuildCommit(),
+        buildDirty: getElectronBuildDirty(),
+        packaged: isElectronAppPackaged(),
+        platform: process.platform,
+        capturedAt: new Date().toISOString(),
+      },
+    }
   })
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
@@ -1955,7 +1973,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       rawArgs,
     )
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    return getGitBranchStatus(branch, root)
+    return getGitBranchStatus(projectId, branch, root)
   })
   ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2116,6 +2134,26 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return shell.openExternal(href)
   })
+  ipcMain.handle('shell:openWorkspaceFileInBrowser', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
+    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
+      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
+    }
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return shell.openExternal(await workspacePreviewFileUrl(root, abs))
+  })
+  ipcMain.handle('browser:workspaceFileUrl', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
+    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
+      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
+    }
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return workspacePreviewFileUrl(root, abs)
+  })
 
   ipcMain.handle('editors:list', (event) => {
     assertMainFrameSender(event, win)
@@ -2134,7 +2172,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -2143,7 +2181,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -2282,6 +2320,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       createMainWindow()
     })
+    // Local macOS WebDriver sessions cannot always relaunch Electron after a
+    // fixture rewrite. Let focused specs drive the same workspace-open event as
+    // the native folder picker while keeping this seam entirely e2e-only.
+    ipcMain.handle('test:openWorkspace', async (event, rawRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const parsedRoot = parseIpcArgs(zPathString, [rawRoot])
+      const root = await registerAllowedWorkspaceRoot(parsedRoot)
+      win.webContents.send('workspace:opened', root)
+      return root
+    })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
@@ -2327,6 +2375,23 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [raw],
       )
       setSeededPortRows({ rows, tool: 'seeded' })
+    })
+    ipcMain.handle('test:setVncNearbyServers', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const servers = parseIpcArgs(
+        z
+          .array(
+            z.object({
+              name: z.string().min(1).max(256),
+              host: z.string().min(1).max(253),
+              port: z.number().int().min(1).max(65535),
+              addresses: z.array(z.string().min(1).max(64)).max(16),
+            }),
+          )
+          .max(64),
+        [raw],
+      )
+      setSeededVncNearbyServersForTests(servers)
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)
