@@ -221,9 +221,14 @@ describe('runHeadlessAgent', () => {
         {
           prompt: 'Start the bounded task.',
           threadId: 'headless-background-wake',
-          // CI unit shards can stall child exit/dispatch under load; keep this
-          // well above the product wake path without masking a stuck handler.
-          waitForMachineContinuations: { count: 1, timeoutMs: 20_000 },
+          // A safety net against a hang, not a performance bound — nothing here
+          // asserts how *fast* the continuation arrives, only that it does and
+          // carries the completion. 5s was too tight to be that: this spawns a
+          // real `node` subprocess and waits on a real completion wake, while
+          // `node --test` runs every other test file in parallel on the same
+          // box. It timed out on the self-hosted runner during a period when
+          // the fleet was also carrying e2e shards, and merged red as a result.
+          waitForMachineContinuations: { count: 1, timeoutMs: 30_000 },
         },
         {
           provider,

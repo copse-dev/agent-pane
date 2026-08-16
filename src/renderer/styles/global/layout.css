@@ -428,6 +428,17 @@
   color: var(--accent);
   pointer-events: none;
 }
+.chat-unread-dot {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
 .chat-running-status path {
   animation: chat-running-dot 1.2s ease-in-out infinite;
 }
@@ -824,6 +835,8 @@
 }
 .terminals-tab-close {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   opacity: 0;
   color: var(--text-muted);
   font-size: 11px;
@@ -833,6 +846,9 @@
   opacity: 1;
 }
 .terminals-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
   line-height: 1;
   color: var(--text-muted);
@@ -915,6 +931,9 @@
    right regardless of how many items the header has. */
 .pane-popout-btn {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
   line-height: 1;
   padding: 2px 6px;
@@ -1501,6 +1520,9 @@
   flex-shrink: 0;
   width: 24px;
   height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   color: var(--text-muted);
   background: transparent;
@@ -1606,6 +1628,8 @@
 }
 .browser-tabs-tab-close {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   opacity: 0;
   color: var(--text-muted);
   font-size: 11px;
@@ -1615,6 +1639,9 @@
   opacity: 1;
 }
 .browser-tabs-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
   line-height: 1;
   color: var(--text-muted);

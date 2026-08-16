@@ -29,7 +29,7 @@ import {
   ADVISOR_STRATEGY_PLUGIN_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
-import { chevronDownIcon } from '../dom/icons.ts'
+import { chevronDownIcon, closeIcon, warningIcon } from '../dom/icons.ts'
 import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
@@ -268,6 +268,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'vncEnabled', kind: 'checkbox', default: false, save: true },
   // On by default: agent may read open Shells tabs via read_terminal / @shell.
   { name: 'readTerminalEnabled', kind: 'checkbox', default: true, save: true },
   // On by default: clicked links open in the in-app browser pane. Off routes
@@ -486,7 +487,7 @@ export function isSettingsDialogOpen(): boolean {
 }
 
 /**
- * Subscribe to the settings dialog closing (Save, Cancel, the ✕ button, or Esc —
+ * Subscribe to the settings dialog closing (Save, Cancel, the close button, or Esc —
  * all funnel through the native dialog `close` event). Used by other top-layer
  * UI (e.g. the approval dialog) that must stay behind settings: it defers itself
  * while settings is open and flushes when this fires. Returns an unsubscribe fn.
@@ -508,7 +509,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     <div class="settings-shell">
       <header class="settings-header">
         <h2>Settings</h2>
-        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings">✕</button>
+        <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
       <div class="settings-body">
@@ -773,7 +774,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   and anything containing <code>$(…)</code> always ask. Only applies in a trusted
                   project with the setting above turned on. At the two write levels
                   <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
-                  project's git hooks — the macOS sandbox contains those, Linux and Windows do not.
+                  project's git hooks, so those levels are honoured only while the project sandbox
+                  is active (macOS and Linux). On Windows, or if the sandbox failed to start, write
+                  shapes still ask.
                 </span>
               </label>
               <label class="checkbox-label">
@@ -1299,6 +1302,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </p>
 
             <fieldset>
+              <legend>Remote desktop viewer</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="vncEnabled" />
+                Show the read-only Desktop pane
+              </label>
+              <p class="field-hint">
+                View a VNC server on this machine or through the active SSH workspace's encrypted
+                tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -1380,6 +1395,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   `
   document.body.append(overlay)
   overlayEl = overlay
+  qsRequired(overlay, '#settings-close').append(closeIcon('ui-icon'))
 
   // Every `qsRequired(overlay, …)` below targets an element baked into the static
   // template above; a miss throws a loud error (template/code drift) rather than a
@@ -2750,6 +2766,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           .join(', '),
       })
     }
+    if (contributions.followUps.length > 0) {
+      chips.push({
+        label: 'Follow-ups',
+        count: contributions.followUps.length,
+        title: contributions.followUps.map((f) => `${f.label} (${f.action}, ${f.when})`).join(', '),
+      })
+    }
     if (contributions.capabilities.length > 0) {
       chips.push({
         label: 'Capabilities',
@@ -3330,7 +3353,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           const label = document.createElement('span')
           const plural = unsandboxed.length === 1 ? 'hook' : 'hooks'
           label.textContent =
-            `⚠ This workspace declares ${String(unsandboxed.length)} ${plural} with ` +
+            `This workspace declares ${String(unsandboxed.length)} ${plural} with ` +
             `"sandbox": false in .copse/hooks.json. Trusting this workspace allows ` +
             `${unsandboxed.length === 1 ? 'it' : 'them'} to run OUTSIDE the project sandbox:`
           const list = document.createElement('ul')
@@ -3339,7 +3362,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             li.textContent = `${h.event}: ${h.command}`
             list.append(li)
           }
-          warn.append(label, list)
+          const content = document.createElement('div')
+          content.append(label, list)
+          warn.append(warningIcon('ui-icon ui-icon-sm'), content)
           banner.after(warn)
         })
         .catch(() => {

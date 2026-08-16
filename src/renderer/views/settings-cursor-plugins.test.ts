@@ -36,6 +36,7 @@ function registryPlugin(id: string, enabled: boolean): PluginSummary {
       commandHooks: [],
       promptBlocks: [],
       ui: [],
+      followUps: [],
       capabilities: [],
       permissions: [],
     },

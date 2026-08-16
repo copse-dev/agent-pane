@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   buildIndex,
   getIndex,
+  getIndexMemoryBytes,
   invalidateIndex,
   setIndexForTest,
   whenFileIndexReady,
@@ -39,6 +40,7 @@ describe('file-index', () => {
     assert.ok(idx.paths.includes('src/main.ts'))
     assert.ok(idx.paths.includes('package.json'))
     assert.ok(idx.lastBuilt > 0)
+    assert.ok((getIndexMemoryBytes(tempRoot) ?? 0) > 0)
   })
 
   it('reports building while a build is in flight, then ready', async () => {

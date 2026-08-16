@@ -1,25 +1,29 @@
 # Shell and tool permission contract
 
 This document describes current shipped behavior. Read it before changing permission policy, shell
-scope analysis, the macOS project sandbox, escalation, or approval UI. Historical design decisions
+scope analysis, the project sandbox, escalation, or approval UI. Historical design decisions
 remain in `docs/plans/`; this is the durable cross-platform contract.
 
 Shell command auto-run is gated by the pure `decideShellPermission` function in
-`src/main/services/permission-policy.ts`, called from `permission-gate.ts`. The OS sandbox is
-macOS-only. Other platforms rely on static analysis plus an optional classifier, but the classifier
-is never an authorization boundary.
+`src/main/services/permission-policy.ts`, called from `permission-gate.ts`. The OS sandbox runs
+on macOS (ASRT seatbelt) and Linux (ASRT bubblewrap). Windows has no sandbox we enable. The
+optional safety-model classifier is never an authorization boundary — it can only make
+strict-mode blocks. A separate deterministic auto-approval classifier can turn a `prompt` into
+an allow for recognised command shapes; write tiers of that classifier require an active
+sandbox.
 
 ## Platform matrix
 
-| Situation                                   | Sandbox-contained command                                               | Hard-external command (network download, `git push`, install, `~/...`) | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                           |
-| ------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS, ASRT active**                      | Auto-runs inside the seatbelt sandbox. The classifier is not consulted. | Prompts first, then runs outside the sandbox.                          | Auto-runs inside seatbelt. A verified block offers retry outside. `expects_sandbox_block: true` can move that prompt before the first attempt. |
-| **macOS sandbox failure / Linux / Windows** | Prompts because no OS sandbox can contain it.                           | Prompts, unless strict-mode hard-deny applies.                         | Prompts and is treated as external.                                                                                                            |
-| **Auto-run disabled**                       | Prompts.                                                                | Prompts.                                                               | Prompts.                                                                                                                                       |
+| Situation                       | Sandbox-contained command                                                                                                                     | Hard-external command (network download, `git push`, install, `~/...`)                                                | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS / Linux, ASRT active**  | Auto-runs inside the project sandbox. The safety-model classifier is not consulted.                                                           | Prompts first, then runs outside the sandbox, unless a recognised auto-approval shape is within the configured level. | Auto-runs inside the sandbox. A verified block offers retry outside. `expects_sandbox_block: true` can move that prompt before the first attempt. |
+| **Windows / ASRT init failure** | Prompts because no OS sandbox can contain it. Recognised **read**-tier shapes may auto-approve. Write-tier auto-approval is capped at `read`. | Prompts, unless strict-mode hard-deny applies or a recognised **read**-tier shape matches.                            | Prompts and is treated as external, unless a recognised **read**-tier shape matches.                                                              |
+| **Auto-run disabled**           | Prompts.                                                                                                                                      | Prompts.                                                                                                              | Prompts.                                                                                                                                          |
 
 The ambiguous tier exists because short command names also appear harmlessly as paths or arguments.
-On macOS, seatbelt—not a fuzzy match—decides whether they escape. Without a sandbox there is no
-containment boundary, so ambiguity must prompt.
+Where a sandbox is active, the sandbox—not a fuzzy match—decides whether they escape. Without a
+sandbox there is no containment boundary, so ambiguity must prompt unless a recognised read-tier
+shape matches.
 
 ## Strict mode and expected blocks
 
@@ -54,8 +58,8 @@ flag, redirect, environment variable, or privilege wrapper falls back to the ord
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
 paths as broad as `~` or `/` are never eligible.
 
-This applies on every platform. Off macOS there is no seatbelt to leave, but the access is still
-outside the project and requires the same narrowly reasoned permission.
+This applies on every platform. Off macOS/Linux there is no seatbelt/bubblewrap to leave, but the
+access is still outside the project and requires the same narrowly reasoned permission.
 
 The in-memory grant disappears on restart. The decision record does not: an answer appends a
 `decisions.jsonl` event at `scope: external-read`, including the paths and whether the grant was
@@ -68,7 +72,10 @@ remembered. Each later allowed command records a verdict sourced to `read-outsid
 - `shell-scope.ts`: static `sandbox` / `ambiguous` / `external` analysis and human-readable reasons.
 - `read-outside-project.ts` and `read-outside-grant.ts`: read-shape proof, refusals, and thread grant.
 - `safety-classifier.ts`: optional LM Studio classifier used only when the OS sandbox is unavailable.
-- `project-sandbox/`: macOS ASRT integration. `isProjectSandboxEnabled()` is always false off Darwin.
+- `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; write tiers are
+  capped at `read` unless `isProjectSandboxEnabled()` is true.
+- `project-sandbox/`: ASRT integration on macOS (seatbelt) and Linux (bubblewrap).
+  `isProjectSandboxEnabled()` is false on Windows and after ASRT init failure.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` pins gate wiring
 and MCP decisions. Update this document and those tests with any intentional contract change.

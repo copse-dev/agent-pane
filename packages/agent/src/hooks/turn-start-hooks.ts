@@ -1,10 +1,9 @@
 // Named `turnStart` hooks — Milestone 0.2 of the hooks platform.
 //
 // These lift the inline intent-steering / prior-todos pin out of `runAgent`.
-// Each hook returns `injectContext` (or abstains); the harness still owns the
-// `messages[0]` string surgery that appends the merged context (M0.2 scope).
-// Registration order matches the previous inline order so the assembled system
-// prompt stays byte-identical.
+// Each hook returns `injectContext` (or abstains); the harness still owns model-
+// capability placement of the merged context (M0.2 scope). Registration order
+// matches the previous inline order so the merged instruction stays byte-identical.
 //
 // **P4 note.** The two *todos* hooks — `todoSteeringHook` and `todoPinHook` —
 // have moved into the `copse.todos` first-party plugin

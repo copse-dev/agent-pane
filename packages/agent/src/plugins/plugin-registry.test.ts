@@ -4,6 +4,7 @@ import {
   PluginRegistry,
   DuplicatePluginError,
   InvalidAcpToolsError,
+  InvalidFollowUpContributionError,
   UnknownPluginError,
 } from './plugin-registry.ts'
 import {
@@ -198,6 +199,67 @@ describe('PluginRegistry grouping', () => {
   })
 })
 
+describe('PluginRegistry follow-up bubbles', () => {
+  it('offers an enabled plugin’s bubbles and drops them with the plugin', () => {
+    const registry = new PluginRegistry()
+    registry.register(
+      definePlugin(
+        { name: 'offers', trust: 'first-party', stability: 'experimental' },
+        {
+          followUps: [
+            { id: 'compare', label: 'Compare models', action: 'model-compare' },
+            { id: 'tidy', label: 'Tidy up', prompt: 'Tidy the diff.' },
+          ],
+        },
+      ),
+    )
+    assert.deepEqual(
+      registry.activeFollowUps().map((f) => `${f.pluginId}:${f.followUp.id}`),
+      ['offers:compare', 'offers:tidy'],
+    )
+
+    // Same atomic flag flip as tools/hooks: a disabled plugin cannot keep
+    // advertising an action it no longer contributes.
+    registry.disable('offers')
+    assert.deepEqual(registry.activeFollowUps(), [])
+    registry.enable('offers')
+    assert.equal(registry.activeFollowUps().length, 2)
+  })
+
+  it('rejects a host action from a user plugin — only first-party may bind one', () => {
+    const registry = new PluginRegistry()
+    assert.throws(() => {
+      registry.register(
+        definePlugin(
+          { name: 'personal.sneaky', trust: 'user', stability: 'experimental' },
+          { followUps: [{ id: 'spend', label: 'Compare models', action: 'model-compare' }] },
+        ),
+      )
+    }, InvalidFollowUpContributionError)
+
+    // The same plugin may still suggest a prompt.
+    registry.register(
+      definePlugin(
+        { name: 'personal.polite', trust: 'user', stability: 'experimental' },
+        { followUps: [{ id: 'ask', label: 'Ask again', prompt: 'Try that again.' }] },
+      ),
+    )
+    assert.equal(registry.activeFollowUps().length, 1)
+  })
+
+  it('rejects a prompt bubble with nothing to send', () => {
+    const registry = new PluginRegistry()
+    assert.throws(() => {
+      registry.register(
+        definePlugin(
+          { name: 'dead-click', trust: 'first-party', stability: 'experimental' },
+          { followUps: [{ id: 'nothing', label: 'Do a thing', prompt: '   ' }] },
+        ),
+      )
+    }, InvalidFollowUpContributionError)
+  })
+})
+
 describe('PluginRegistry storage', () => {
   it('reads back written values within a namespace', () => {
     const registry = new PluginRegistry()
@@ -239,6 +301,23 @@ describe('pluginManifestFromPluginJson — user-plugin trust hardening (P1 revie
     assert.deepEqual(
       manifest.prompt?.map((b) => b.trust),
       ['untrusted', 'untrusted'],
+    )
+  })
+
+  it('forces every declared follow-up action back to prompt', () => {
+    const manifest = pluginManifestFromPluginJson({
+      name: 'sneaky',
+      followUps: [
+        { id: 'spend', label: 'Compare models', action: 'model-compare' },
+        { id: 'ask', label: 'Ask again', prompt: 'Try that again.' },
+      ],
+    })
+    // A host action spends money / drives app UI outside the agent, so a
+    // repo-supplied plugin.json must not be able to self-grant one by writing a
+    // word into its manifest — it may only ever put words in the composer.
+    assert.deepEqual(
+      manifest.followUps?.map((f) => f.action),
+      ['prompt', 'prompt'],
     )
   })
 

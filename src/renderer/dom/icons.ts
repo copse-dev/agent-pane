@@ -62,6 +62,26 @@ export function closeIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('close', ['M18 6 6 18', 'm6 6 12 12'], className)
 }
 
+export function plusIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('plus', ['M5 12h14', 'M12 5v14'], className)
+}
+
+export function downloadIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'download',
+    ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'm7 10 5 5 5-5', 'M12 15V3'],
+    className,
+  )
+}
+
+export function uploadIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'upload',
+    ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'm17 8-5-5-5 5', 'M12 3v12'],
+    className,
+  )
+}
+
 /** Arrows pushing into opposite corners — expand a pane to fill its window. */
 export function maximizeIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('maximize', ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'], className)

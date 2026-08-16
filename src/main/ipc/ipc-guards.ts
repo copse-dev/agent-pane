@@ -1,6 +1,7 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
+import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
 
 export class IpcValidationError extends Error {
   constructor(message: string) {
@@ -27,6 +28,32 @@ export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z
 }
 
 const zPortNumber = z.number().int().min(1).max(65535)
+
+export const vncTargetSchema: z.ZodType<VncTarget> = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('loopback'), port: zPortNumber }),
+  z.object({
+    kind: z.literal('ssh'),
+    hostId: z.string().regex(/^[\w.-]{1,128}$/),
+    remotePort: zPortNumber,
+    display: z.string().max(128).optional(),
+  }),
+  z.object({
+    kind: z.literal('network'),
+    host: z
+      .string()
+      .trim()
+      .min(1)
+      .max(253)
+      .regex(/^[\w.:%-]+$/),
+    port: zPortNumber,
+    confirmedUnencrypted: z.literal(true),
+  }),
+])
+
+export const vncDiscoveryHostSchema: z.ZodType<VncDiscoveryHost> = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local') }),
+  z.object({ kind: z.literal('ssh'), hostId: z.string().regex(/^[\w.-]{1,128}$/) }),
+])
 
 /** Decode the single positional argument accepted by `ports:kill`. */
 export function parsePortKillArgs(args: unknown[]): number {
@@ -77,9 +104,22 @@ export const estimateContextPayloadSchema = z.object({
   model: z.string().optional(),
 })
 
+export const comparisonModelSelectionSchema = z.object({
+  a: z.string().min(1).max(500),
+  b: z.string().min(1).max(500),
+  judge: z.string().min(1).max(500),
+})
+
 export const retryReviewPayloadSchema = z.object({
   workingBrief: z.string().max(8192).optional(),
   model: z.string().max(256).optional(),
+  /**
+   * Reviewer/judge models chosen in the "Compare models" bubble's picker. Read
+   * only by the comparison path, where their presence also means the picker
+   * already served as the spend decision — so the shape is pinned here rather
+   * than trusted, keeping the models a renderer can name to well-formed ids.
+   */
+  comparisonModels: comparisonModelSelectionSchema.optional(),
 })
 
 export const followUpContextSchema = z.object({
@@ -147,12 +187,6 @@ export function assertStorageKey(key: string): void {
     throw new IpcValidationError('Storage key not allowed')
   }
 }
-
-export const comparisonModelSelectionSchema = z.object({
-  a: z.string().min(1).max(500),
-  b: z.string().min(1).max(500),
-  judge: z.string().min(1).max(500),
-})
 
 export const approvalRespondSchema = z.tuple([
   z.uuid(),

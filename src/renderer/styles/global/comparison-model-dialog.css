@@ -1,0 +1,25 @@
+#comparison-model-dialog {
+  max-width: 480px;
+}
+.comparison-model-dialog h3 {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+/* The picker body is the approval prompt's, reused verbatim (see
+   approval-comparison-pickers.ts); only the surface around it differs. */
+.comparison-model-dialog .approval-comparison-intro {
+  margin-bottom: var(--spacing-xs);
+}
+.comparison-model-dialog-cost {
+  margin: var(--spacing-md) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+.comparison-model-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}

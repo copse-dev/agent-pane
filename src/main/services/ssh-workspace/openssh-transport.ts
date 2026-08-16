@@ -12,6 +12,7 @@ import {
   COMMAND_RUNNER_DEFAULT_TIMEOUT_MS,
 } from '../exec/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { allocateLoopbackPort, sshForwardControlArgs, type SshForwardSpec } from './ssh-forward.ts'
 
 // The multiplexed master is what stops every command re-authenticating. At 10
 // minutes any pause between agent turns (a review, a coffee) expired it and the
@@ -180,6 +181,7 @@ export class OpenSshTransport implements SshTransport {
   private connected = false
   private readonly host: SshWorkspaceHost
   private readonly controlPath: string
+  private readonly forwards = new Map<number, SshForwardSpec>()
 
   constructor(host: SshWorkspaceHost, controlPath = controlSocketPath(host.id)) {
     this.host = host
@@ -249,12 +251,58 @@ export class OpenSshTransport implements SshTransport {
     const target = resolveTarget(this.host)
     const askpass = leaseSshAskpassEnv(process.env)
     try {
+      for (const spec of [...this.forwards.values()]) {
+        this.runForwardControl('cancel', spec, askpass.env)
+      }
+      this.forwards.clear()
       spawnSync('ssh', ['-O', 'exit', '-S', this.controlPath, target], { env: askpass.env })
     } finally {
       askpass.release()
       this.connected = false
     }
     await Promise.resolve()
+  }
+
+  async openForward(remotePort: number): Promise<{ localPort: number }> {
+    if (!supportsControlMaster()) {
+      throw new Error('SSH port forwarding requires ControlMaster support on this platform')
+    }
+    if (!this.connected) throw new Error('SSH transport is not connected')
+    const localPort = await allocateLoopbackPort()
+    const spec = { localPort, remotePort }
+    const askpass = leaseSshAskpassEnv(process.env)
+    try {
+      this.runForwardControl('forward', spec, askpass.env)
+      this.forwards.set(localPort, spec)
+      return { localPort }
+    } finally {
+      askpass.release()
+    }
+  }
+
+  async closeForward(localPort: number): Promise<void> {
+    const spec = this.forwards.get(localPort)
+    if (!spec) return
+    const askpass = leaseSshAskpassEnv(process.env)
+    try {
+      this.runForwardControl('cancel', spec, askpass.env)
+    } finally {
+      askpass.release()
+      this.forwards.delete(localPort)
+    }
+    await Promise.resolve()
+  }
+
+  private runForwardControl(
+    action: 'forward' | 'cancel',
+    spec: SshForwardSpec,
+    env: NodeJS.ProcessEnv,
+  ): void {
+    const args = sshForwardControlArgs(this.controlPath, resolveTarget(this.host), action, spec)
+    const result = spawnSync('ssh', args, { env, encoding: 'utf8' })
+    if (result.status !== 0 && action === 'forward') {
+      throw new Error(result.stderr.trim() || result.stdout.trim() || 'SSH port forwarding failed')
+    }
   }
 
   async execArgv(argv: string[], options: SshExecOptions = {}): Promise<SshExecResult> {

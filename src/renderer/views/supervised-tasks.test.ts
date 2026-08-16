@@ -56,6 +56,8 @@ describe('supervised tasks', () => {
 
     const cancel = root.querySelector('.supervised-task-cancel')
     assert.ok(cancel)
+    assert.ok(cancel.querySelector('svg[data-icon="close"]'))
+    assert.equal(cancel.textContent, '')
     cancel.dispatchEvent(new Event('click'))
     await flush()
 
