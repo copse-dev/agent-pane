@@ -24,7 +24,10 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 
 const emptyStatus: GitStatusResult = { staged: [], unstaged: [] }
 
-function makeApi(calls: { isAvailable: number; status: number }): ApiClient {
+function makeApi(
+  calls: { isAvailable: number; status: number },
+  workingTreeListener?: { current: ((root: string) => void) | null },
+): ApiClient {
   const noopUnsub = (): (() => void) => () => {}
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -42,6 +45,12 @@ function makeApi(calls: { isAvailable: number; status: number }): ApiClient {
         },
         fileDiff: async () => null,
         sessionBackup: async () => null,
+        onWorkingTreeChanged: (handler: (root: string) => void): (() => void) => {
+          if (workingTreeListener) workingTreeListener.current = handler
+          return () => {
+            if (workingTreeListener?.current === handler) workingTreeListener.current = null
+          }
+        },
       },
       diff: {
         ...base['diff'],
@@ -128,5 +137,42 @@ describe('git changes pane catches up on async mount (#459)', () => {
 
     assert.equal(calls.isAvailable, 0, 'should not probe git when changes mode is inactive')
     assert.equal(calls.status, 0, 'should not fetch status when changes mode is inactive')
+  })
+
+  it('refreshes from recursive working-tree events outside the file-viewer watch (#1753)', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    const calls = { isAvailable: 0, status: 0 }
+    const listener: { current: ((root: string) => void) | null } = { current: null }
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    document.body.append(listRoot, viewerRoot)
+    const dispose = mountGitChangesPane(listRoot, viewerRoot, store, makeApi(calls, listener), null)
+
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(calls.status, 1, 'mount should perform the immediate status read')
+
+    assert.ok(listener.current, 'should subscribe to recursive working-tree changes')
+    listener.current('/workspace/project-1')
+    // The recursive event follows the same debounce path as explicit file
+    // watches, so coalesced write bursts produce one git status read.
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(calls.status, 2, 'the recursive change should re-read git status')
+
+    store.setState({ rightPanelMode: 'explorer' })
+    store.emit('right_panel_mode_changed')
+    listener.current('/workspace/project-1')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    assert.equal(calls.status, 2, 'events should not refresh while Changes is closed')
+
+    dispose()
+    assert.equal(listener.current, null, 'disposing the pane should unsubscribe')
   })
 })

@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -81,6 +81,23 @@ describe('git changes viewer', function () {
 
     const untrackedBadge = await $('.git-change-status-untracked')
     await expect(untrackedBadge).toHaveText('?')
+
+    // A shell command or external editor does not register the file-viewer
+    // fs.watch used by the renderer. Keep the panel open and create such a
+    // file; the recursive execution-root subscription must discover it without
+    // Refresh (#1753).
+    writeFileSync(join(repoRoot, 'external-change.ts'), 'export const externallyChanged = true\n')
+    await browser.waitUntil(
+      async () =>
+        (await $$('.git-change-path').map((element) => element.getText())).includes(
+          'external-change.ts',
+        ),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected an unwatched external change to appear automatically',
+      },
+    )
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-external-refresh.png'))
 
     // Opening the panel auto-selects the first changed file (staged.ts).
     const stagedRow = await rows.find(

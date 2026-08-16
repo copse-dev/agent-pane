@@ -771,6 +771,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
       changeStats: () => resolved(null),
+      onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
       // These take (projectId, threadId, …) — dropping the leading two made

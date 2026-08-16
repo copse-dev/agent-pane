@@ -149,6 +149,8 @@ import { installDarkFactorySensor } from './services/supervisor/dark-factory-sen
 import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
+import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
+import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 
 // Settings encrypts API keys through whichever cipher is installed rather than
 // importing `safeStorage` itself, which is what keeps `createRegistry()` and
@@ -188,6 +190,10 @@ setContextEstimateRefreshSink(() => {
   const win = getMainWindow()
   if (!win || win.isDestroyed()) return
   win.webContents.send('agent:refresh_context_estimate')
+})
+
+setWorkspaceChangeSink((root) => {
+  broadcastToAppWindows('git:working_tree_changed', root)
 })
 
 // Prevent multiple instances stacking invisible windows at the same position.
