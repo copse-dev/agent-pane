@@ -1094,6 +1094,18 @@ contextBridge.exposeInMainWorld('api', {
   },
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),
+    invalidateReadCache: () => ipcRenderer.invoke('gh:invalidateReadCache'),
+    setListWatch: (watching: boolean, includeMyPrs: boolean) =>
+      ipcRenderer.invoke('gh:setListWatch', watching, includeMyPrs),
+    onListsTick: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('gh:lists_tick', listener)
+      return (): void => {
+        ipcRenderer.off('gh:lists_tick', listener)
+      }
+    },
     listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),
     listWorkspaceOpenPrs: () => ipcRenderer.invoke('gh:listWorkspaceOpenPrs'),
     prChecks: (owner: string, repo: string, number: number) =>

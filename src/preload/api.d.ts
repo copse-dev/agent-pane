@@ -894,6 +894,15 @@ export interface ApiClient {
   }
   gh: {
     status: () => Promise<GhCliStatus>
+    /** Drop TTL'd GitHub reads so the next list/details fetch hits GitHub (or a 304). */
+    invalidateReadCache: () => Promise<void>
+    /**
+     * Join or leave the process-wide PR-list poller. `includeMyPrs` is true once
+     * this window has expanded "your other PRs" so ticks keep that list warm.
+     */
+    setListWatch: (watching: boolean, includeMyPrs: boolean) => Promise<void>
+    /** Shared 30s list cadence from main — no-op unless this window is on PRs. */
+    onListsTick: (handler: () => void) => () => void
     listMyOpenPrs: () => Promise<GhPrSummary[] | null>
     listWorkspaceOpenPrs: () => Promise<GhPrSummary[]>
     prChecks: (owner: string, repo: string, number: number) => Promise<GhPrChecksState>
