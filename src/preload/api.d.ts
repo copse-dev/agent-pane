@@ -889,6 +889,8 @@ export interface ApiClient {
     sessionBackup: (projectId: string, threadId: string) => Promise<SessionBackup | null>
     /** Revert the session backup's captured paths to their pre-session content. */
     restoreBackup: (projectId: string, threadId: string) => Promise<boolean>
+    /** Recursive execution-root change signal; consumers should debounce expensive reads. */
+    onWorkingTreeChanged: (handler: (root: string) => void) => () => void
   }
   gh: {
     status: () => Promise<GhCliStatus>
