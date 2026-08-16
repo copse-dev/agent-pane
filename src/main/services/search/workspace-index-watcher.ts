@@ -4,8 +4,21 @@ import { buildIndex } from './file-index.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import { updateSemanticIndex } from './semantic-index.ts'
+import {
+  notifyWorkspaceChanged,
+  shouldPublishWorkingTreeChange,
+} from './workspace-change-notify.ts'
 
 const REBUILD_DEBOUNCE_MS = 500
+
+/**
+ * Ceiling on watch-only (no index rebuild) roots. Git IPC arms these when the
+ * Changes pane or branch UI reads a thread checkout that search indexing has
+ * not registered — isolated worktrees before the first agent turn, or a
+ * workspace whose scale policy skipped the index watcher. Index-rebuild
+ * watchers are owned by workspace/worktree lifecycle and are not pruned here.
+ */
+const MAX_WATCH_ONLY_ROOTS = 8
 
 interface RootWatchState {
   watcher: fs.FSWatcher | null
@@ -18,41 +31,66 @@ interface RootWatchState {
    * they reuse that shared semantic snapshot with a local delta overlay.
    */
   withSemantic: boolean
+  /**
+   * Whether disk events also rebuild the file index. False for the git-only
+   * arm: renderer Git IPCs must not start a checkout listing (#1728).
+   */
+  withIndexRebuild: boolean
 }
 
 /** One watcher + rebuild-coalescing state per execution root (workspace or worktree, #1400). */
 const states = new Map<string, RootWatchState>()
 
-export function startWorkspaceIndexWatcher(
-  root: string,
-  opts: { withSemantic?: boolean } = {},
-): void {
-  const key = resolve(root)
-  const withSemantic = opts.withSemantic ?? true
-  const existing = states.get(key)
-  if (existing?.watcher) return // already watching this root
-
-  // fs.watch observes only local files. Remote indexing is refreshed when
-  // Copse writes, and external remote edits require a future SSH watcher.
-  if (isActiveSshWorkspace()) return
-
-  const state: RootWatchState = existing ?? {
+function emptyState(opts: { withSemantic: boolean; withIndexRebuild: boolean }): RootWatchState {
+  return {
     watcher: null,
     debounceTimer: null,
     rebuildInFlight: null,
     rebuildQueued: false,
-    withSemantic,
+    withSemantic: opts.withSemantic,
+    withIndexRebuild: opts.withIndexRebuild,
   }
-  state.withSemantic = withSemantic
+}
+
+function pruneWatchOnlyRoots(keepKey: string): void {
+  const watchOnly = [...states.entries()].filter(
+    ([key, state]) => key !== keepKey && state.watcher != null && !state.withIndexRebuild,
+  )
+  const overflow = watchOnly.length + 1 - MAX_WATCH_ONLY_ROOTS
+  if (overflow <= 0) return
+  for (const [key] of watchOnly.slice(0, overflow)) stopOne(key)
+}
+
+function armWatcher(
+  root: string,
+  opts: { withSemantic: boolean; withIndexRebuild: boolean },
+): void {
+  const key = resolve(root)
+  // fs.watch observes only local files. Remote indexing is refreshed when
+  // Copse writes, and external remote edits require a future SSH watcher.
+  if (isActiveSshWorkspace()) return
+
+  const existing = states.get(key)
+  if (existing?.watcher) {
+    const upgradedToIndex = !existing.withIndexRebuild && opts.withIndexRebuild
+    if (opts.withSemantic) existing.withSemantic = true
+    if (opts.withIndexRebuild) existing.withIndexRebuild = true
+    // Events during the git-only window did not rebuild the listing. Catch up
+    // the moment search indexing claims this watcher.
+    if (upgradedToIndex) scheduleIndexRebuild(key)
+    return
+  }
+
+  if (!opts.withIndexRebuild) pruneWatchOnlyRoots(key)
+
+  const state = existing ?? emptyState(opts)
+  if (opts.withSemantic) state.withSemantic = true
+  if (opts.withIndexRebuild) state.withIndexRebuild = true
   states.set(key, state)
 
   try {
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
-      // Ignore churn under build output / deps / .git / agent worktrees — none of
-      // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
-      // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
-      if (filename !== null && isIgnoredWorkspacePath(filename)) return
-      scheduleIndexRebuild(key)
+      handleWorkspaceWatchEvent(key, filename)
     })
     // Same contract as execution-root-watcher: an `error` with no listener is an
     // uncaught exception that kills the main process. A deleted, renamed, or
@@ -68,14 +106,53 @@ export function startWorkspaceIndexWatcher(
 }
 
 /**
+ * Arm a recursive watcher for git UI without listing the checkout.
+ *
+ * Isolated threads live outside the project root, and `startExecutionRootIndexing`
+ * only runs at the start of an agent turn. Renderer Git IPCs (Changes, branch
+ * status, follow-up +/-) must still see external edits, but must not pay for a
+ * full `rg --files` as a side effect of selecting a thread (#1728).
+ */
+export function ensureWorkingTreeWatched(root: string): void {
+  armWatcher(root, { withSemantic: false, withIndexRebuild: false })
+}
+
+export function startWorkspaceIndexWatcher(
+  root: string,
+  opts: { withSemantic?: boolean } = {},
+): void {
+  armWatcher(root, { withSemantic: opts.withSemantic ?? true, withIndexRebuild: true })
+}
+
+/** Route one recursive watcher event to git consumers and the narrower index rebuild path. */
+export function handleWorkspaceWatchEvent(root: string, filename: string | null): void {
+  if (shouldPublishWorkingTreeChange(filename)) notifyWorkspaceChanged(root)
+  const state = states.get(resolve(root))
+  if (!state?.withIndexRebuild) return
+  // Ignore churn under build output / deps / .git / agent worktrees — none of
+  // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
+  // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
+  if (filename !== null && isIgnoredWorkspacePath(filename)) return
+  scheduleIndexRebuild(root)
+}
+
+/**
  * Whether a live recursive watcher is re-listing this root on disk changes.
  *
- * A watched root's index is current by construction, so re-registering it never
- * needs a fresh listing (#1694). False when `fs.watch` never armed — an SSH
- * workspace, or a platform that refused the recursive watch — and those roots
- * fall back to an age check instead.
+ * A watched-for-index root's listing is current by construction, so
+ * re-registering it never needs a fresh listing (#1694). Git-only watches do
+ * not count: they publish working-tree events without rebuilding the file
+ * index. False when `fs.watch` never armed — an SSH workspace, or a platform
+ * that refused the recursive watch — and those roots fall back to an age check
+ * instead.
  */
 export function isRootWatched(root: string): boolean {
+  const state = states.get(resolve(root))
+  return state?.watcher != null && state.withIndexRebuild
+}
+
+/** Whether any recursive watcher (git-only or index-rebuild) is armed for `root`. */
+export function isWorkingTreeWatched(root: string): boolean {
   return states.get(resolve(root))?.watcher != null
 }
 
@@ -142,13 +219,7 @@ export function scheduleIndexRebuild(root: string): void {
   const key = resolve(root)
   let state = states.get(key)
   if (!state) {
-    state = {
-      watcher: null,
-      debounceTimer: null,
-      rebuildInFlight: null,
-      rebuildQueued: false,
-      withSemantic: true,
-    }
+    state = emptyState({ withSemantic: true, withIndexRebuild: true })
     states.set(key, state)
   }
 

@@ -487,9 +487,11 @@ jobs:
       # emit one fails safe.
       - name: Unit tests
         env:
-          # c8 retains V8 coverage until the suite exits; the default ~2 GB heap
-          # can OOM while finalizing a fully green run on the 6 GB check fleet.
-          NODE_OPTIONS: --max-old-space-size=3072
+          # c8 retains V8 coverage until the suite exits, then remaps every
+          # standalone test bundle. 3072 MB OOMs on a fully green run once a PR
+          # adds another large renderer entry point. Workers have already exited
+          # before that merge, so the parent can use 4 GB of the 6 GB cgroup.
+          NODE_OPTIONS: --max-old-space-size=4096
           UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
           UNIT_SPECS: ${{ needs.precheck.outputs.unit_specs }}
           # True only for a PR stacked on another PR's branch. `push`, tags and
