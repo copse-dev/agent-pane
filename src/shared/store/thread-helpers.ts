@@ -166,7 +166,10 @@ export function openNewThread(store: AppStore): string {
 }
 
 export function switchThread(store: AppStore, id: string): void {
-  if (id === store.getState().activeThreadId) return
+  if (id === store.getState().activeThreadId) {
+    markThreadRead(store, id)
+    return
+  }
   store.emit('composer_draft_flush')
 
   // Fold blank-thread pruning into the switch mutation. `threads_changed` has
@@ -176,7 +179,11 @@ export function switchThread(store: AppStore, id: string): void {
   // thread before this combined mutation writes the thread list back.
   const state = store.getState()
   const pruned = state.threads.filter((t) => !isPrunableBlankThread(t) || t.id === id)
-  const threads = pruned.length > 0 ? pruned : state.threads
+  const threads = (pruned.length > 0 ? pruned : state.threads).map((thread) => {
+    if (thread.id !== id || thread.unreadAt === undefined) return thread
+    const { unreadAt: _read, ...readThread } = thread
+    return readThread
+  })
   // Only announce the panel reset when there was something to reset. Its
   // subscribers answer it with real work — the Changes pane re-reads git state,
   // the context panel refetches the working diff — and `threads_changed` (which
@@ -212,6 +219,32 @@ export function prevThreadId(store: AppStore): string | null {
   const idx = threads.findIndex((t) => t.id === activeThreadId)
   const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1]
   return target ? target.id : null
+}
+
+/** Mark a background agent completion unread. The selected thread is already being viewed. */
+export function markThreadUnread(store: AppStore, threadId: string, at = Date.now()): void {
+  const { activeThreadId, threads } = store.getState()
+  if (threadId === activeThreadId || !threads.some((thread) => thread.id === threadId)) return
+  store.setState({
+    threads: threads.map((thread) =>
+      thread.id === threadId ? { ...thread, unreadAt: at } : thread,
+    ),
+  })
+  store.emit('threads_changed')
+}
+
+/** Clear a thread's unread completion marker when it is selected. */
+export function markThreadRead(store: AppStore, threadId: string): void {
+  const { threads } = store.getState()
+  if (!threads.some((thread) => thread.id === threadId && thread.unreadAt !== undefined)) return
+  store.setState({
+    threads: threads.map((thread) => {
+      if (thread.id !== threadId || thread.unreadAt === undefined) return thread
+      const { unreadAt: _read, ...readThread } = thread
+      return readThread
+    }),
+  })
+  store.emit('threads_changed')
 }
 
 export function deleteThread(store: AppStore, id: string): void {
