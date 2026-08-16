@@ -19,8 +19,10 @@ import {
   startWorkspaceIndexing,
 } from './workspace-indexing.ts'
 import {
+  ensureWorkingTreeWatched,
   flushScheduledIndexRebuild,
   isRootWatched,
+  isWorkingTreeWatched,
   scheduleIndexRebuild,
   stopWorkspaceIndexWatcher,
 } from './workspace-index-watcher.ts'
@@ -82,6 +84,10 @@ describe('workspace-indexing scale gate (#795)', () => {
     )
     assert.equal(semanticIndexAllowed(root), false)
     assert.equal(watchIndexAllowed(root), false)
+    assert.equal(isRootWatched(root), false)
+    ensureWorkingTreeWatched(root)
+    assert.equal(isWorkingTreeWatched(root), true)
+    assert.equal(isRootWatched(root), false)
   })
 
   it('retains a warm project listing across A → B → A switches (#1728)', async () => {
