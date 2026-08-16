@@ -59,7 +59,10 @@ import {
   setSemanticIndexScaleGuarded,
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
-import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
+import {
+  ensureWorkingTreeWatched,
+  scheduleIndexRebuild,
+} from '../services/search/workspace-index-watcher.ts'
 import {
   getSetting,
   setSetting,
@@ -1925,21 +1928,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   const threadOwnerArgs = z.tuple([zProjectId, zThreadId])
 
+  async function resolveWatchedGitRoot(projectId: string, threadId: string): Promise<string> {
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    // Watch-only: isolated worktrees are otherwise unwatched until an agent
+    // turn starts indexing, and large workspaces may skip the index watcher.
+    ensureWorkingTreeWatched(root)
+    return root
+  }
+
   ipcMain.handle('git:isAvailable', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     return (await isGitAvailableForTarget()) && (await isInsideGitWorkTree(root))
   })
   ipcMain.handle('git:status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitStatus((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:changeStats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitChangeStats((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:fileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -1947,13 +1958,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       z.tuple([zProjectId, zThreadId, zPathString, z.boolean()]),
       rawArgs,
     )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitFileDiff(filePath, isStaged, root)
   })
   ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitWorkingFileDiff(filePath, root)
   })
   ipcMain.handle('git:branchStatus', async (event, ...rawArgs) => {
@@ -1972,13 +1983,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ]),
       rawArgs,
     )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    return getGitBranchStatus(branch, root)
+    return getGitBranchStatus(branch, await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitPromptState((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getGitPromptState(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -1986,18 +1996,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
       rawArgs,
     )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     await checkoutGitBranch(targetBranch, root)
   })
   ipcMain.handle('git:listBranches', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getBranches((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getBranches(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:getDefaultBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getDefaultBranch((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getDefaultBranch(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:sessionBackup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)

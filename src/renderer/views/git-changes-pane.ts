@@ -786,7 +786,7 @@ export function mountGitChangesPane(
       scheduleRefresh()
     }),
     // Unlike fs.onChanged (an explicitly opened-file watch), this signal comes
-    // from the recursive execution-root watcher and therefore catches shell,
+    // from the recursive working-tree watcher and therefore catches shell,
     // hook, and external-editor writes anywhere in the checkout (#1753).
     api.git.onWorkingTreeChanged(() => {
       scheduleRefresh()
