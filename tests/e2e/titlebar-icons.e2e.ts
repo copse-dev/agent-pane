@@ -66,16 +66,16 @@ describe('titlebar panel icons', () => {
       await expect(styles.strokeLinecap).toBe('round')
       await expect(styles.strokeLinejoin).toBe('round')
     }
-    // Eight outline-icon buttons: the five checked above, the experimental
+    // Nine outline-icon buttons: the five checked above, the experimental
     // Memories and Roadmap buttons (rendered up front but hidden until their
-    // flags are on), and the "Open in editor" primary button (hidden until an
-    // editor is detected). All are still in the DOM here, so their SVGs count.
-    // The Open-in-editor caret uses a ui-icon chevron, not titlebar-btn-icon,
-    // so it is excluded from this set. Portrait-bar duplicates are excluded by
-    // the #titlebar scope.
+    // flags are on), Desktop (hidden until vncEnabled), and the "Open in
+    // editor" primary button (hidden until an editor is detected). All are
+    // still in the DOM here, so their SVGs count. The Open-in-editor caret
+    // uses a ui-icon chevron, not titlebar-btn-icon, so it is excluded from
+    // this set. Portrait-bar duplicates are excluded by the #titlebar scope.
     await expect(
       await $$('#titlebar .titlebar-text-btn svg.titlebar-btn-icon'),
-    ).toBeElementsArrayOfSize(8)
+    ).toBeElementsArrayOfSize(9)
     await browser.execute(() => {
       const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
       if (!dragRegion) throw new Error('Missing titlebar drag region')
