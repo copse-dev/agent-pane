@@ -9,7 +9,9 @@ import {
   cancelApprovalsForAcpToolCall,
   pendingApprovalCountForThread,
   requestApproval,
+  resolveApprovalPromptTarget,
   runWithApprovalHandler,
+  runWithApprovalPromptTarget,
   setApprovalHandler,
   trackAcpPermissionToolCall,
   type ApprovalRequest,
@@ -331,6 +333,53 @@ describe('requestApproval pluggable transport', () => {
     release({ approved: true, remember: false })
     await pending
     assert.equal(pendingApprovalCountForThread('count-thread'), 0)
+  })
+})
+
+describe('approval prompt target', () => {
+  function mockTarget(id: string): {
+    id: string
+    sent: Array<[string, ...unknown[]]>
+    markDestroyed: () => void
+    isDestroyed(): boolean
+    send(channel: string, ...args: unknown[]): void
+  } {
+    let destroyed = false
+    const sent: Array<[string, ...unknown[]]> = []
+    return {
+      id,
+      sent,
+      markDestroyed(): void {
+        destroyed = true
+      },
+      isDestroyed: (): boolean => destroyed,
+      send(channel: string, ...args: unknown[]): void {
+        sent.push([channel, ...args])
+      },
+    }
+  }
+
+  it('defaults to the main-window fallback', () => {
+    const main = mockTarget('main')
+    assert.equal(resolveApprovalPromptTarget(main), main)
+  })
+
+  it('routes to the renderer that opened the prompt', () => {
+    const main = mockTarget('main')
+    const popout = mockTarget('popout')
+    runWithApprovalPromptTarget(popout, () => {
+      assert.equal(resolveApprovalPromptTarget(main), popout)
+    })
+    assert.equal(resolveApprovalPromptTarget(main), main)
+  })
+
+  it('falls back when the requesting renderer is already gone', () => {
+    const main = mockTarget('main')
+    const popout = mockTarget('popout')
+    popout.markDestroyed()
+    runWithApprovalPromptTarget(popout, () => {
+      assert.equal(resolveApprovalPromptTarget(main), main)
+    })
   })
 })
 
