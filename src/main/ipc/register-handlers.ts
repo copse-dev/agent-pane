@@ -140,6 +140,7 @@ import {
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
+import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -2177,7 +2178,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -2186,7 +2187,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -2325,6 +2326,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       createMainWindow()
     })
+    // Local macOS WebDriver sessions cannot always relaunch Electron after a
+    // fixture rewrite. Let focused specs drive the same workspace-open event as
+    // the native folder picker while keeping this seam entirely e2e-only.
+    ipcMain.handle('test:openWorkspace', async (event, rawRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const parsedRoot = parseIpcArgs(zPathString, [rawRoot])
+      const root = await registerAllowedWorkspaceRoot(parsedRoot)
+      win.webContents.send('workspace:opened', root)
+      return root
+    })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
@@ -2370,6 +2381,23 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [raw],
       )
       setSeededPortRows({ rows, tool: 'seeded' })
+    })
+    ipcMain.handle('test:setVncNearbyServers', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const servers = parseIpcArgs(
+        z
+          .array(
+            z.object({
+              name: z.string().min(1).max(256),
+              host: z.string().min(1).max(253),
+              port: z.number().int().min(1).max(65535),
+              addresses: z.array(z.string().min(1).max(64)).max(16),
+            }),
+          )
+          .max(64),
+        [raw],
+      )
+      setSeededVncNearbyServersForTests(servers)
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)
