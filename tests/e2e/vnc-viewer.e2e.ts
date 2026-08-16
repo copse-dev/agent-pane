@@ -487,6 +487,14 @@ describe('VNC viewer', function () {
       'This machine, mouse and keyboard control on',
     )
     assert.equal(await $('.vnc-screen').getAttribute('class'), 'vnc-screen is-controlling')
+    assert.match(
+      await browser.execute(() => {
+        const painted = document.querySelector<HTMLCanvasElement>('.vnc-screen canvas')
+        return painted?.style.cursor ?? ''
+      }),
+      /^url\(/,
+      'expected noVNC to show its fallback cursor when the server sends no cursor image',
+    )
     await canvas.click()
     await browser.keys('a')
     await browser.waitUntil(

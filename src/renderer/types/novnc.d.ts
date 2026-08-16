@@ -22,6 +22,7 @@ declare module '@novnc/novnc' {
     scaleViewport: boolean
     clipViewport: boolean
     resizeSession: boolean
+    showDotCursor: boolean
     background: string
     disconnect(): void
     focus(options?: FocusOptions): void

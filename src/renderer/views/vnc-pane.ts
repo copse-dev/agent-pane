@@ -812,6 +812,7 @@ function mountVncSession(
       nextRfb.scaleViewport = true
       nextRfb.clipViewport = false
       nextRfb.resizeSession = false
+      nextRfb.showDotCursor = true
       nextRfb.background = 'var(--bg-base)'
       nextRfb.addEventListener('connect', () => {
         if (rfb !== nextRfb) return
