@@ -56,10 +56,10 @@ describe('terminal pop-out output (#1705)', () => {
     await popoutBtn.waitForClickable({ timeout: 10_000 })
     const before = await browser.getWindowHandles()
     await popoutBtn.click()
-    await browser.waitUntil(
-      async () => (await browser.getWindowHandles()).length > before.length,
-      { timeout: 15_000, timeoutMsg: 'expected a Terminal pop-out window' },
-    )
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
+      timeout: 15_000,
+      timeoutMsg: 'expected a Terminal pop-out window',
+    })
     const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
     if (!popoutHandle) throw new Error('expected a Terminal pop-out window handle')
 
