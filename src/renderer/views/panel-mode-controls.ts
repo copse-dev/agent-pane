@@ -11,7 +11,7 @@ import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plug
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
 export type PanelControlId =
-  'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser'
+  'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser' | 'vnc'
 
 interface PanelControlDef {
   id: PanelControlId
@@ -21,11 +21,13 @@ interface PanelControlDef {
   icon: () => SVGSVGElement
   /** Hide the button until this first-party plugin is enabled (read via `plugins:list`). */
   experimentalPlugin?: string
+  /** Hide the button until this boolean setting is enabled. */
+  enabledSetting?: string
 }
 
 /** True for a control whose visibility is gated behind an experimental plugin. */
 function isGated(def: PanelControlDef): boolean {
-  return !!def.experimentalPlugin
+  return !!def.experimentalPlugin || !!def.enabledSetting
 }
 
 function panelIcon(): SVGSVGElement {
@@ -63,6 +65,10 @@ function browserIcon(): SVGSVGElement {
     ],
     'titlebar-btn-icon',
   )
+}
+
+function desktopIcon(): SVGSVGElement {
+  return outlineIcon('desktop', ['M2 3h20v14H2V3Z', 'M8 21h8', 'M12 17v4'], 'titlebar-btn-icon')
 }
 
 function prsIcon(): SVGSVGElement {
@@ -148,6 +154,14 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Open browser',
     label: 'Browser',
     icon: browserIcon,
+  },
+  {
+    id: 'vnc',
+    mode: 'vnc',
+    ariaLabel: 'Open remote desktop',
+    label: 'Desktop',
+    icon: desktopIcon,
+    enabledSetting: 'vncEnabled',
   },
 ]
 
@@ -412,6 +426,17 @@ export function mountPanelModeControls(
                 btn,
                 res.plugins.some((p) => p.id === pluginId && p.enabled),
               )
+            })
+            .catch(() => {
+              applyGate(btn, false)
+            }),
+        )
+      } else if (def.enabledSetting) {
+        pending.push(
+          api.settings
+            .get(def.enabledSetting)
+            .then((enabled) => {
+              applyGate(btn, enabled === true)
             })
             .catch(() => {
               applyGate(btn, false)

@@ -1,0 +1,40 @@
+export type VncTarget =
+  | { kind: 'loopback'; port: number }
+  | { kind: 'ssh'; hostId: string; remotePort: number; display?: string | undefined }
+  | { kind: 'network'; host: string; port: number; confirmedUnencrypted: true }
+
+/** Machine whose listening ports should be checked for RFB servers. */
+export type VncDiscoveryHost = { kind: 'local' } | { kind: 'ssh'; hostId: string }
+
+/** RFB service advertised on the local network through DNS-SD/Bonjour. */
+export interface VncNearbyServer {
+  name: string
+  host: string
+  port: number
+  addresses: string[]
+}
+
+/** Network addresses currently resolved for a configured SSH machine. */
+export interface VncSshHostResolution {
+  hostId: string
+  addresses: string[]
+}
+
+export type VncConnectionStatus = 'connecting' | 'connected' | 'closed' | 'error'
+
+export interface VncConnection {
+  id: string
+  target: VncTarget
+  /** Local end of the SSH tunnel, or the loopback port itself. */
+  localPort: number
+  status: VncConnectionStatus
+  /** V1 is deliberately view-only. Later phases may make this true. */
+  writable: boolean
+  lastError?: string
+}
+
+export interface VncStatusEvent {
+  id: string
+  status: VncConnectionStatus
+  lastError?: string
+}
