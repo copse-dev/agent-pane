@@ -14,6 +14,7 @@ import {
 import {
   createTerminalSession,
   destroyAllTerminalSessions,
+  destroyTerminalSessionsForOwner,
   destroyTerminalSession,
   resizeTerminalSession,
   setActiveTerminalSession,
@@ -63,6 +64,21 @@ async function resolveTerminalRoot(meta: {
   return { root: projectRoot, checkoutMode: 'shared' }
 }
 
+/**
+ * Kill a renderer's shells when it goes away. Only the main window's `close` was
+ * wired to teardown, so closing a pane pop-out left its ptys running with no UI
+ * attached. Hooked once per owner, on its first session.
+ */
+const teardownHooked = new WeakSet<Electron.WebContents>()
+
+function trackOwnerTeardown(sender: Electron.WebContents): void {
+  if (teardownHooked.has(sender)) return
+  teardownHooked.add(sender)
+  sender.once('destroyed', () => {
+    destroyTerminalSessionsForOwner(sender.id)
+  })
+}
+
 export function initTerminal(win: BrowserWindow): () => void {
   ipcMain.handle('terminal:create', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -70,9 +86,13 @@ export function initTerminal(win: BrowserWindow): () => void {
     const permitted = await ensureTerminalPermitted()
     if (!permitted) throw new Error('Terminal access was not approved')
     const execution = await resolveTerminalRoot(meta)
+    // Route to the renderer that asked, not to the window captured at init.
+    // Every other terminal op is already keyed on `event.sender.id`; only the
+    // output target was not, so a pane pop-out's shell wrote to the main window
+    // — which had no tab for that session and dropped it (#1704 follow-up).
+    trackOwnerTeardown(event.sender)
     const sessionId = await createTerminalSession(
-      win,
-      event.sender.id,
+      event.sender,
       cols,
       rows,
       normalizeMeta(meta),

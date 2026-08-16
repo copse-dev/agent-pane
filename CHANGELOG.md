@@ -8,6 +8,15 @@ every published entry.
 
 ## Unreleased
 
+- A shell in a popped-out Terminal now shows its output. Typing worked and the
+  command really ran, but every byte it produced was delivered to the main
+  window, which had no tab for that session and dropped it — so the pop-out sat
+  there looking dead. Terminal sessions were always tracked per window; only the
+  destination for their output was not, and it went to whichever window the app
+  started with. A shell's output now goes to the window that opened it, and to
+  no other: unlike the diff queue, which is shared workspace state, terminal
+  output stays private to its own window. Closing a pop-out also shuts down the
+  shells it opened, rather than leaving them running with nothing attached.
 - Changes popped out into its own window now shows the same thing the docked
   pane does. The **Proposed** section was missing entirely from the pop-out: the
   main process pushed the proposed-diff queue to the main window only, and a
