@@ -1,8 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, relative, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
@@ -14,10 +13,7 @@ import {
   captureBrowserPageText,
   captureBrowserScreenshot,
 } from '../services/browser/browser-share.ts'
-import {
-  getStaticPreviewServer,
-  staticPreviewUrl,
-} from '../services/browser/static-preview-server.ts'
+import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
@@ -2146,7 +2142,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
     }
     const abs = await resolvePathWithinRoot(relPath, root)
-    return shell.openExternal(pathToFileURL(abs).href)
+    return shell.openExternal(await workspacePreviewFileUrl(root, abs))
   })
   ipcMain.handle('browser:workspaceFileUrl', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2156,9 +2152,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
     }
     const abs = await resolvePathWithinRoot(relPath, root)
-    const preview = await getStaticPreviewServer(root)
-    const previewPath = relative(preview.root, abs).split(sep).map(encodeURIComponent).join('/')
-    return staticPreviewUrl(preview.url, previewPath)
+    return workspacePreviewFileUrl(root, abs)
   })
 
   ipcMain.handle('editors:list', (event) => {
