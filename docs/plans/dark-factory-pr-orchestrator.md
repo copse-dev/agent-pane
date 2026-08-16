@@ -52,14 +52,14 @@ What exists to build on, and what is net-new:
 | Per-PR CI rollup                     | `getPrChecksState` → `pending/success/failure/no_checks`; `github-ci-service.ts` (`getCiStatus`, `getCiFailureLogs`) | ✅ point-in-time only; per-check granularity available via `statusCheckRollup` / check-runs API        |
 | CI investigator subagent             | `ci-investigator-service.ts` + `investigate-ci-tool.ts` (read-only tool set, local-model routed)                     | ✅ but **on-demand only**, callable only inside a live chat turn (`activeContext` seam)                |
 | Follow-up suggestions on PR signals  | `pr-context-service.ts` → `follow-up-service.ts` ("Debug CI" chip)                                                   | ✅ turn-triggered, passive                                                                             |
-| PR pane                              | `src/renderer/views/pr-pane.ts`                                                                                      | ✅ event-driven refresh, **no polling**; per-row CI dot from an in-memory session cache                |
+| PR pane                              | `src/renderer/views/pr-pane.ts` + `github-list-watch.ts`                                                             | ✅ event-driven + one shared 30s list tick in main (all windows); per-row CI dot from a session cache  |
 | Explicit per-turn CI waits           | `wait_for_ci_checks` → supervised `ci_watch` task                                                                    | ✅ durable across restart; resumes the owning turn once, but does not discover or correlate a fleet    |
 | Knowledge store (typed OKF notes)    | `src/main/services/storage/knowledge-store.ts`                                                                       | ✅ new note types need no store change                                                                 |
 | Fleet scheduler / background poller  | `src/main/services/supervisor/dark-factory-sensor.ts`                                                                | ⚠️ adaptive, feature-gated event source exists; no fleet/GitHub observation consumer yet               |
 | Machine continuation                 | `AgentDispatcher.dispatchMachine`                                                                                    | ✅ bounded/deduplicated turn continuation; CI investigator subagent still needs a live turn context    |
 | Check-run history / cross-PR memory  | —                                                                                                                    | ❌ all CI reads are stateless                                                                          |
 | Flake/outage detection               | —                                                                                                                    | ❌ nothing correlates failures across PRs or over time                                                 |
-| GitHub rate-limit / backoff handling | —                                                                                                                    | ❌ neither backend inspects rate-limit headers or uses conditional requests                            |
+| GitHub rate-limit / backoff handling | `github-http-cache.ts`, `github-read-cache.ts`                                                                       | ⚠️ REST ETag/304, in-flight coalesce, 429 backoff, and method TTL exist; fleet poller still to come    |
 | OS/toast notifications               | —                                                                                                                    | ❌ nearest analogue is the projects-pane attention indicator                                           |
 | Durable background supervisor        | `src/main/services/supervisor/`, `schemas/copse-supervisor-task.schema.json`                                         | ✅ persisted tasks, restart reconciliation, wake/event/cron triggers, cancellation, and task UI        |
 | Project cron automations             | `src/main/services/automations/`, `copse.automations` pack                                                           | ✅ app-open prototype; not headless and not the orchestrator scheduler                                 |
@@ -125,12 +125,11 @@ history is retained for the correlation window.
 - Cadence per PR by state: checks `pending` → ~60s; open+red → ~5 min; open+green idle →
   ~15 min; and an hourly discovery sweep (`listMyOpenPrs` + workspace PRs) to catch PRs
   created outside the app. Jittered; paused when the app knows it is offline.
-- **Rate-limit discipline is a blocker, not a nice-to-have** (audit: neither backend has
-  any). The API backend gains ETag/conditional requests and `X-RateLimit-*` /
-  `Retry-After` inspection with global backoff; the CLI backend gets a coarse
-  min-interval. Backend interface grows `listCheckRuns(ref | headSha)` returning
-  per-check `{name, conclusion, startedAt, completedAt, runId, headSha}` — the rollup
-  alone cannot support flake detection.
+- **Rate-limit discipline is a blocker, not a nice-to-have.** REST reads now send
+  ETags and back off on `X-RateLimit-*` / `Retry-After`; both backends share a
+  method TTL cache. The fleet poller still needs `listCheckRuns(ref | headSha)`
+  returning per-check `{name, conclusion, startedAt, completedAt, runId, headSha}`
+  — the rollup alone cannot support flake detection.
 
 **Check-run history store.** Append-only JSONL under
 `~/.copse/ci-history/<workspace>/observations.jsonl`: one line per observed check-run
@@ -329,9 +328,11 @@ earlier ones.
   populates per-tool-call runner contexts (`activeContext`) that subagent runners
   require. The `runHeadlessTurn` extraction (O4) must preserve hook dispatch, PII
   redaction, and the auto-continuation budget — do not clone a parallel loop.
-- **No rate-limit handling exists anywhere** (audit §10). Shipping O1's poller without
-  backoff will get users throttled; `gh` CLI hides limits until it fails. Treat the
-  backend hardening as part of O1, not a fast-follow.
+- **Rate-limit handling is now a shared read cache, not a poller.** REST GETs send
+  `If-None-Match` and skip the primary quota on 304; both backends sit behind a TTL
+  wrapper (`github-read-cache.ts`). Shipping O1's fleet poller still needs the
+  error-vs-`no_checks` channel and `listCheckRuns` granularity; do not treat the
+  cache as that sensor.
 - **`getPrChecksState` degrades to `no_checks` on API errors** (api backend) — the
   poller must distinguish "no checks" from "fetch failed" or outages will read as green
   fleets. Sensor reads need an explicit error channel.
