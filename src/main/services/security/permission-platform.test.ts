@@ -3,11 +3,15 @@
  * ("Shell / tool permissions across platforms"). These tests encode the
  * INTENDED behavior for each platform so it can't silently drift:
  *
- * - macOS + ASRT sandbox active  → sandbox-contained commands auto-run,
- *   network and outside-filesystem commands prompt before running outside the sandbox.
- * - Any platform, sandbox unavailable (Linux/Windows, or macOS init failure)
+ * - macOS + ASRT sandbox active, or Linux + bubblewrap sandbox active
+ *   → sandbox-contained commands auto-run; network and outside-filesystem
+ *   commands prompt before running outside the sandbox. The deterministic
+ *   auto-approval classifier may skip that prompt for recognised shapes.
+ * - Sandbox unavailable (Windows, or macOS/Linux init failure)
  *   → every shell command prompts. The optional LM Studio classifier can only
- *   support a strict-mode denial; it can never authorize host execution.
+ *   support a strict-mode denial; it can never authorize host execution. The
+ *   deterministic auto-approval classifier is also refused: recognised shapes
+ *   still prompt when there is no containment.
  * - Auto-run disabled in Settings → always prompt, on every platform.
  */
 import { describe, it } from 'node:test'
@@ -78,7 +82,26 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
   })
 })
 
-for (const platform of ['Linux', 'Windows'] as const) {
+describe('shell permissions: Linux with bubblewrap sandbox active', () => {
+  const opts = {
+    workspaceRoot: root,
+    sandboxEnabled: true,
+    autoRun: true,
+  }
+
+  it('uses the same contained/external matrix as macOS once the sandbox is up', () => {
+    assert.equal(
+      decideShellPermission(SANDBOXED, { ...opts, classification: null }).action,
+      'allow',
+    )
+    assert.equal(
+      decideShellPermission(EXTERNAL, { ...opts, classification: null }).action,
+      'prompt',
+    )
+  })
+})
+
+for (const platform of ['Windows', 'sandbox init failure'] as const) {
   describe(`shell permissions: ${platform} (no OS sandbox)`, () => {
     const opts = {
       workspaceRoot: root,

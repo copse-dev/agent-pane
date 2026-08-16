@@ -94,6 +94,14 @@ describe('settings dialog (native <dialog>)', () => {
     assert.equal(spy.showModalCalls, 1)
     assert.equal(isSettingsDialogOpen(), true)
   })
+
+  it('tells the user auto-approval only applies while the project sandbox is running', () => {
+    const hint = qsRequired(dialog, 'select[name="shellAutoApprovalLevel"] ~ .field-hint')
+    const text = hint.textContent.replace(/\s+/g, ' ')
+    assert.match(text, /only while the project sandbox is running/i)
+    assert.match(text, /Without a sandbox/i)
+    assert.doesNotMatch(text, /write shapes still ask/)
+  })
 })
 
 describe('accent colour', () => {
