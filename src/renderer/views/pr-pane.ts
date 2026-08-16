@@ -158,8 +158,7 @@ export function mountPrPane(
   const checksInFlight = new Set<string>()
   let ciEls = new Map<string, HTMLElement>()
   let ciGen = 0
-  let pollTimer: ReturnType<typeof setInterval> | null = null
-  const PR_PANE_POLL_MS = 30_000
+  let refreshInFlight = false
 
   const CI_LABEL: Record<GhPrChecksState | 'loading', string> = {
     loading: 'Checking CI…',
@@ -381,6 +380,7 @@ export function mountPrPane(
       otherLoaded = true
       otherLoading = false
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
+      syncWatch()
     }
     renderList()
   }
@@ -799,20 +799,24 @@ export function mountPrPane(
     checksInFlight.clear()
   }
 
-  function syncPoller(): void {
-    const active = prsModeActive(store)
-    if (active && pollTimer === null) {
-      pollTimer = setInterval(() => {
-        void refresh({ reason: 'poll' })
-      }, PR_PANE_POLL_MS)
-    } else if (!active && pollTimer !== null) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
+  function syncWatch(): void {
+    // Cadence lives in main (`github-list-watch.ts`) so a pop-out and the main
+    // window share one timer, plus the process-wide HTTP/TTL caches.
+    void api.gh.setListWatch(prsModeActive(store), otherLoaded)
   }
 
   async function refresh(opts: { reason?: 'manual' | 'poll' | 'event' } = {}): Promise<void> {
     const reason = opts.reason ?? 'event'
+    if (refreshInFlight && reason === 'poll') return
+    refreshInFlight = true
+    try {
+      await refreshBody(reason)
+    } finally {
+      refreshInFlight = false
+    }
+  }
+
+  async function refreshBody(reason: 'manual' | 'poll' | 'event'): Promise<void> {
     if (reason === 'manual') {
       await api.gh.invalidateReadCache()
       ciGen++
@@ -910,11 +914,11 @@ export function mountPrPane(
 
   const unsubs = [
     store.on('right_panel_mode_changed', () => {
-      syncPoller()
+      syncWatch()
       if (prsModeActive(store)) void refresh()
     }),
     store.on('files_pane_changed', () => {
-      syncPoller()
+      syncWatch()
       if (prsModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
@@ -927,6 +931,7 @@ export function mountPrPane(
       agentLinks = new Map()
       agentLinksGen++
       resetOther()
+      syncWatch()
       if (prsModeActive(store)) void refresh()
       else renderList()
     }),
@@ -955,6 +960,9 @@ export function mountPrPane(
     store.on('theme_changed', (theme) => {
       monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
+    api.gh.onListsTick(() => {
+      if (prsModeActive(store)) void refresh({ reason: 'poll' })
+    }),
   ]
 
   renderList()
@@ -964,7 +972,7 @@ export function mountPrPane(
   // trigger the first refresh may have fired before this pane existed. See #459.
   // One call only: a second overlapping refresh used to double every GitHub read.
   if (prsModeActive(store)) {
-    syncPoller()
+    syncWatch()
     void refresh()
   }
 
@@ -982,10 +990,7 @@ export function mountPrPane(
   })
 
   return () => {
-    if (pollTimer !== null) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
+    void api.gh.setListWatch(false, false)
     unregisterPopoutSeed()
     stopObservingLayout()
     unbindWorkspaceLinks()

@@ -8,6 +8,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
 import {
   captureBrowserPageText,
@@ -255,6 +256,11 @@ import {
   resolveGithubPrRef,
 } from '../services/github/gh-pr-service.ts'
 import {
+  notifyGitHubListWatchers,
+  setGitHubListWatch,
+  setGitHubListWatchBroadcast,
+} from '../services/github/backend/github-list-watch.ts'
+import {
   approvePr,
   enablePrAutoMerge,
   markPrReady,
@@ -374,6 +380,9 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  setGitHubListWatchBroadcast(() => {
+    broadcastToAppWindows('gh:lists_tick')
+  })
   const alertUser = createElectronUserAlertSender(win, app.dock)
   const pluginService = getPluginService()
   setPluginBrowserService(createPluginBrowserPanelService(win))
@@ -2019,6 +2028,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('gh:status', () => getGhCliStatus())
   ipcMain.handle('gh:invalidateReadCache', () => {
     invalidateGithubReadCache()
+    // Other windows re-read through the now-empty TTL cache instead of waiting
+    // up to 30s for the next shared tick.
+    notifyGitHubListWatchers()
+  })
+  const listWatchTeardown = new WeakSet<WebContents>()
+  ipcMain.handle('gh:setListWatch', (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [watching, includeMyPrs] = parseIpcArgs(z.tuple([z.boolean(), z.boolean()]), rawArgs)
+    if (!listWatchTeardown.has(event.sender)) {
+      listWatchTeardown.add(event.sender)
+      const watcherId = event.sender.id
+      event.sender.once('destroyed', () => {
+        setGitHubListWatch(watcherId, false, false)
+      })
+    }
+    setGitHubListWatch(event.sender.id, watching, includeMyPrs)
   })
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
   ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())

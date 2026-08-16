@@ -2,8 +2,9 @@
  * Method-level TTL cache in front of a {@link GitHubBackend}.
  *
  * HTTP ETags (API backend) make revalidation cheap; this layer skips GitHub
- * entirely for a few seconds so the PR pane can poll on a ~30s cadence without
- * spending REST or GraphQL budget. Manual refresh clears the slots first.
+ * entirely for a few seconds so every window can share one ~30s list cadence
+ * without spending REST or GraphQL budget. Manual refresh clears the slots
+ * first. The timer itself lives in `github-list-watch.ts`, not per renderer.
  *
  * `gh` CLI calls share the same user quotas as the API backend — there is no
  * extra CLI allowance — so the wrapper sits in front of both.

@@ -819,6 +819,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           message: 'Unavailable in browser demo',
         }),
       invalidateReadCache: resolvedVoid,
+      setListWatch: resolvedVoid,
+      onListsTick: subscribe,
       listMyOpenPrs: () => resolved([]),
       listWorkspaceOpenPrs: emptyArray,
       prChecks: () => resolved<'no_checks'>('no_checks'),
