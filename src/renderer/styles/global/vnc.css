@@ -165,11 +165,17 @@
 
 .vnc-connect-btn,
 .vnc-control-btn,
-.vnc-disconnect-btn,
-.vnc-discover-btn,
-.vnc-nearby-btn {
+.vnc-disconnect-btn {
   justify-content: center;
   width: 100%;
+}
+
+.vnc-discovery-retry {
+  align-self: flex-start;
+  margin-top: calc(var(--spacing-sm) * -1);
+  padding: 2px var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
 }
 
 .vnc-control-btn.is-active {

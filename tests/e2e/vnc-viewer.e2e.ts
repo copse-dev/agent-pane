@@ -343,6 +343,7 @@ describe('VNC viewer', function () {
     ])
     assert.doesNotMatch(machineOptions.join('\n'), /test-mac-box/)
     assert.match(await $('.vnc-nearby-status').getText(), /1 matched to saved SSH/i)
+    assert.equal(await $('.vnc-nearby-btn').isDisplayed(), false)
 
     const machineSelect = $('.vnc-machine-select')
     const previousFilesWidth = await browser.execute(() => {
@@ -384,6 +385,7 @@ describe('VNC viewer', function () {
     )
     assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
     assert.equal(await $$('.vnc-discovered-port').length, 0)
+    assert.equal(await $('.vnc-discover-btn').isDisplayed(), false)
     authenticationPort = await listenOnVncPort(authenticationServer)
     assert.equal(
       await browser.execute(
@@ -613,6 +615,48 @@ describe('VNC viewer', function () {
     assert.equal(
       await $('.vnc-controls-panel:not([hidden]) .vnc-status-title').getText(),
       'Connected to this machine',
+    )
+
+    await browser.execute(async () => {
+      await window.__copseE2e.setVncNearbyServers([])
+    })
+    await $('.vnc-tabs-new-btn').click()
+    const retryControls = '.vnc-controls-panel:not([hidden])'
+    await browser.waitUntil(
+      async () =>
+        (await $(`${retryControls} .vnc-nearby-status`).getText()).includes(
+          'No nearby desktops found',
+        ),
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected automatic nearby discovery to report an empty result',
+      },
+    )
+    const nearbyRetry = $(`${retryControls} .vnc-nearby-btn`)
+    assert.equal(await nearbyRetry.isDisplayed(), true)
+    assert.equal(await nearbyRetry.getText(), 'Try again')
+    assert.equal(await nearbyRetry.getAttribute('aria-label'), 'Look for nearby devices again')
+    await browser.waitUntil(
+      async () =>
+        (await $(`${retryControls} .vnc-discovery-status`).getAttribute('data-kind')) === 'ok',
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected automatic screen sharing discovery to complete in the retry state',
+      },
+    )
+    assert.equal(await $(`${retryControls} .vnc-discover-btn`).isDisplayed(), false)
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-discovery-retry.png')
+    await nearbyRetry.click()
+    await browser.waitUntil(
+      async () =>
+        (await nearbyRetry.isDisplayed()) &&
+        (await $(`${retryControls} .vnc-nearby-status`).getText()).includes(
+          'No nearby desktops found',
+        ),
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected the nearby discovery retry to finish with an empty result',
+      },
     )
 
     await assertNoErrorToasts('VNC viewer')

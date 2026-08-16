@@ -105,8 +105,13 @@ function mountVncSession(
   machineSelect.append(el('option', { value: LOCAL_MACHINE }, 'This machine'))
   const nearbyButton = el(
     'button',
-    { type: 'button', class: 'ui-btn ui-btn-secondary vnc-nearby-btn' },
-    'Find nearby devices',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost vnc-discovery-retry vnc-nearby-btn',
+      'aria-label': 'Look for nearby devices again',
+      hidden: true,
+    },
+    'Try again',
   )
   const nearbyStatus = el(
     'div',
@@ -173,8 +178,13 @@ function mountVncSession(
   )
   const discoverButton = el(
     'button',
-    { type: 'button', class: 'ui-btn ui-btn-secondary vnc-discover-btn' },
-    'Find screen sharing',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost vnc-discovery-retry vnc-discover-btn',
+      'aria-label': 'Check for screen sharing again',
+      hidden: true,
+    },
+    'Try again',
   )
   const discoveryStatus = el(
     'div',
@@ -252,11 +262,11 @@ function mountVncSession(
     'div',
     { class: 'vnc-setup-fields' },
     el('label', { class: 'vnc-field-label' }, 'Machine', machineSelect),
-    nearbyButton,
     nearbyStatus,
+    nearbyButton,
     addressField,
-    discoverButton,
     discoveryStatus,
+    discoverButton,
     discoveredPorts,
     advancedSettings,
     networkWarning,
@@ -612,7 +622,7 @@ function mountVncSession(
     const network = isNetworkMachine(machine)
     addressField.hidden = !network
     networkWarning.hidden = !network
-    discoverButton.hidden = network
+    discoverButton.hidden = true
     discoveryStatus.hidden = network
     if (network) {
       discoveryGeneration++
@@ -687,6 +697,7 @@ function mountVncSession(
   async function discoverSelectedMachine(): Promise<void> {
     if (isNetworkMachine(machineSelect.value)) return
     const generation = ++discoveryGeneration
+    discoverButton.hidden = true
     discoverButton.disabled = true
     discoveryStatus.dataset['kind'] = 'working'
     discoveryStatus.textContent =
@@ -705,10 +716,12 @@ function mountVncSession(
           : ports.length === 1
             ? 'Screen sharing is available.'
             : `${String(ports.length)} shared desktops found.`
+      discoverButton.hidden = ports.length > 0
     } catch (error) {
       if (generation !== discoveryGeneration) return
       discoveryStatus.dataset['kind'] = 'error'
       discoveryStatus.textContent = error instanceof Error ? error.message : String(error)
+      discoverButton.hidden = false
     } finally {
       if (generation === discoveryGeneration) discoverButton.disabled = channel !== null
     }
@@ -718,6 +731,7 @@ function mountVncSession(
     const generation = ++nearbyGeneration
     const previous = machineSelect.value
     const previousNearby = selectedNearbyServer()
+    nearbyButton.hidden = true
     nearbyButton.disabled = true
     nearbyStatus.dataset['kind'] = 'working'
     nearbyStatus.textContent = 'Looking for nearby desktops…'
@@ -730,10 +744,12 @@ function mountVncSession(
       rebuildMachineOptions(preferred)
       updateMachineUi()
       updateNearbyStatus()
+      nearbyButton.hidden = allNearbyServers.length > 0
     } catch (error) {
       if (generation !== nearbyGeneration) return
       nearbyStatus.dataset['kind'] = 'error'
       nearbyStatus.textContent = error instanceof Error ? error.message : String(error)
+      nearbyButton.hidden = false
     } finally {
       if (generation === nearbyGeneration) nearbyButton.disabled = channel !== null
     }
