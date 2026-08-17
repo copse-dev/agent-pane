@@ -32,11 +32,19 @@ describe('settings styling', function () {
       const desc = section?.querySelector<HTMLElement>('.settings-section-desc')
       const navBtn = document.querySelector<HTMLElement>('.settings-nav-btn.active')
       const search = document.querySelector<HTMLElement>('.settings-search-input')
-      if (!heading || !legend || !desc || !navBtn || !search) return null
+      const settingsTitle = document.querySelector<HTMLElement>('.settings-header h2')
+      const panelTitle = document.querySelector<HTMLElement>('.workspace-name')
+      if (!heading || !legend || !desc || !navBtn || !search || !settingsTitle || !panelTitle) {
+        return null
+      }
       const size = (el: HTMLElement): number => Number.parseFloat(getComputedStyle(el).fontSize)
       const display = getComputedStyle(document.documentElement)
         .getPropertyValue('--font-display')
         .trim()
+      const settingsTitleStyle = getComputedStyle(settingsTitle)
+      const panelTitleStyle = getComputedStyle(panelTitle)
+      const settingsTitleRect = settingsTitle.getBoundingClientRect()
+      const panelTitleRect = panelTitle.getBoundingClientRect()
       return {
         displayFamily: display.split(',')[0]?.replace(/['"]/g, '').trim() ?? '',
         headingFamily: getComputedStyle(heading).fontFamily,
@@ -47,6 +55,22 @@ describe('settings styling', function () {
         descSize: size(desc),
         navHeight: navBtn.getBoundingClientRect().height,
         searchHeight: search.getBoundingClientRect().height,
+        settingsTitle: {
+          color: settingsTitleStyle.color,
+          fontFamily: settingsTitleStyle.fontFamily,
+          fontSize: settingsTitleStyle.fontSize,
+          fontWeight: settingsTitleStyle.fontWeight,
+          left: settingsTitleRect.left,
+          centerY: settingsTitleRect.top + settingsTitleRect.height / 2,
+        },
+        panelTitle: {
+          color: panelTitleStyle.color,
+          fontFamily: panelTitleStyle.fontFamily,
+          fontSize: panelTitleStyle.fontSize,
+          fontWeight: panelTitleStyle.fontWeight,
+          left: panelTitleRect.left,
+          centerY: panelTitleRect.top + panelTitleRect.height / 2,
+        },
       }
     })
 
@@ -76,6 +100,11 @@ describe('settings styling', function () {
     assert.ok(
       type.searchHeight >= 34,
       `search box height ${String(type.searchHeight)} must be >= 34`,
+    )
+    assert.deepEqual(
+      type.settingsTitle,
+      type.panelTitle,
+      'Settings title typography and alignment must match the regular panel title',
     )
 
     await saveElementScreenshot('#settings-dialog', 'settings-styling-general.png')
