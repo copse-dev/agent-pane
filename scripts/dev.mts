@@ -171,6 +171,9 @@ const rendererCtx = await esbuild.context({
   outfile: 'dist/renderer/app.js',
   bundle: true,
   platform: 'browser',
+  // Keep development aligned with the production renderer bundle: noVNC 1.7
+  // uses top-level await for its WebCodecs capability probe.
+  format: 'esm',
   sourcemap: true,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' },
   alias: sharedAlias,

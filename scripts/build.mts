@@ -200,6 +200,10 @@ const rendererEntry = isDemo ? 'src/renderer/demo/main.ts' : 'src/renderer/main.
 await esbuild.build({
   ...browserOpts,
   entryPoints: [rendererEntry],
+  // noVNC 1.7 performs an asynchronous WebCodecs capability probe at module
+  // initialization. Preserve its top-level await instead of forcing the app
+  // bundle into esbuild's default IIFE format.
+  format: 'esm',
   outfile: `${rendererOutDir}/app.js`,
 })
 // Monaco is bundled on its own and injected lazily by monaco/setup.ts, keeping

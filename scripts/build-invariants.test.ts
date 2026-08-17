@@ -18,6 +18,8 @@ import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
  */
 describe('build.mts bundle invariants', () => {
   const build = readFileSync(resolve('scripts/build.mts'), 'utf8')
+  const dev = readFileSync(resolve('scripts/dev.mts'), 'utf8')
+  const rendererHtml = readFileSync(resolve('src/renderer/index.html'), 'utf8')
 
   /** The `for (…of STANDALONE_MAIN_BUNDLES)` body — everything the emit sees. */
   const standaloneLoop = build.match(
@@ -73,6 +75,20 @@ describe('build.mts bundle invariants', () => {
       build,
       /cpSync\('src\/shared\/demo-sites', `\$\{rendererOutDir\}\/sites`, \{ recursive: true \}\)/,
     )
+  })
+
+  it('emits and loads the initial renderer as an ES module', () => {
+    // noVNC 1.7 uses top-level await for its WebCodecs capability probe. An
+    // IIFE bundle cannot represent that initialization contract.
+    assert.match(
+      build,
+      /entryPoints: \[rendererEntry\],[\s\S]*?format: 'esm',[\s\S]*?outfile: `\$\{rendererOutDir\}\/app\.js`/,
+    )
+    assert.match(
+      dev,
+      /entryPoints: \['src\/renderer\/main\.ts'\],[\s\S]*?format: 'esm',[\s\S]*?sourcemap: true/,
+    )
+    assert.match(rendererHtml, /<script type="module" src="\.\/app\.js"><\/script>/)
   })
 })
 
