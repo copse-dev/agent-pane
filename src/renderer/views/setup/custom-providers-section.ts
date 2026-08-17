@@ -1026,11 +1026,7 @@ export function createCustomProvidersSection(
   // refusal returns `plaintext-consent-required`, so prompt for explicit
   // consent and retry with `allowPlaintext` before giving up. Without this the
   // key would be dropped silently and "forgotten" next launch.
-  async function persistProviderKey(
-    slug: string,
-    key: string,
-    label: string,
-  ): Promise<boolean> {
+  async function persistProviderKey(slug: string, key: string, label: string): Promise<boolean> {
     const trimmed = key.trim()
     if (!trimmed) return true
     let result = await api.settings.setKey(slug, trimmed)
