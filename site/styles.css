@@ -1818,13 +1818,11 @@ footer a:hover {
     font-size: 1.06rem;
   }
 
+  /* The desktop-sized walkthrough is deliberately absent on mobile: this hides
+     both the inline frame and its fullscreen pop-out link. hero-demo.js also
+     leaves the iframe unloaded at this breakpoint. */
   .marketing-site .hero-visual {
-    width: calc(100% - 40px);
-    margin-top: 40px;
-  }
-
-  .marketing-site .hero-demo-popout {
-    font-size: 0.88rem;
+    display: none;
   }
 
   .marketing-site .manifesto {
