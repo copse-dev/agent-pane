@@ -866,7 +866,7 @@ export function createCustomProvidersSection(
           // because the dialog-level save flushes only `pendingKeys`, and a
           // fresh add never put the value there.
           if (key) {
-            const saved = await persistProviderKey(slug, key, label || savedRecord?.label || slug)
+            const saved = await persistProviderKey(slug, key, label ?? savedRecord?.label ?? slug)
             if (!saved) {
               setInlineStatus(status, 'error', 'Provider saved, but the key was not stored')
               status.className = 'key-status err'
