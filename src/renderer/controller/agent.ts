@@ -16,6 +16,7 @@ import {
   updateContextSnapshot,
   setThreadTodos,
   setMessageReview,
+  setMessageTurnOutcome,
   setThreadComparison,
   addHookCard,
   getThreadById,
@@ -430,6 +431,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // run spent in-process so the next queue drain respects the shared cap.
         // Arrives just before `done`, which triggers the drain.
         foldBackContinuationUsed(store, threadId, chunk.turnTreeId, chunk.used)
+        break
+      }
+      case 'turn_outcome': {
+        // Terminal diagnostics belong to the assistant bubble that concluded
+        // the turn. A provider can fail before its first token, so create an
+        // otherwise-empty bubble rather than dropping the only durable record.
+        st.msgId ??= addAssistantMessage(store, threadId)
+        setMessageTurnOutcome(store, threadId, st.msgId, chunk.outcome)
         break
       }
       case 'done': {

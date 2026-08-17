@@ -6,6 +6,7 @@ import {
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
+  turnErrorDetail,
 } from './agent-errors.ts'
 import { AcpTurnFailure } from './acp/acp-agent-service.ts'
 import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
@@ -164,6 +165,33 @@ describe('classifyAgentError', () => {
       classifyAgentError(new Error('something else')),
       'An error occurred: something else',
     )
+  })
+})
+
+describe('turnErrorDetail', () => {
+  it('keeps the raw ACP code, message, and nested provider detail', () => {
+    const provider = new Error('Internal error during token generation')
+    const rpc = new RequestError(-32603, 'Internal error', {
+      code: 'generation_failed',
+      detail: provider.message,
+    })
+    const wrapped = new AcpTurnFailure(rpc, {
+      assistantText: '',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    })
+
+    const detail = turnErrorDetail(wrapped)
+    assert.equal(detail.name, 'AcpTurnFailure')
+    assert.equal(detail.code, -32603)
+    assert.match(detail.message, /Internal error/)
+    assert.match(detail.details ?? '', /generation_failed/)
+    assert.match(detail.details ?? '', /token generation/)
+  })
+
+  it('bounds opaque provider diagnostics', () => {
+    const detail = turnErrorDetail(new Error('x'.repeat(5_000)))
+    assert.equal(detail.message.length, 4_001)
+    assert.match(detail.message, /…$/)
   })
 })
 

@@ -6,6 +6,7 @@ import type { HookCard } from '../hooks/hook-card.ts'
 import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree.ts'
 import type { VideoAttachmentRef } from '../video/video-media.ts'
 import type { ArchiveAttachmentRef } from '../archive/archive-media.ts'
+import type { TurnOutcome } from './turn-outcome.ts'
 export type { HookCard } from '../hooks/hook-card.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
@@ -177,8 +178,9 @@ export interface Thread {
    * (`DEFAULT_CONTINUATION_BUDGET`), `drainMessageQueue` flips a further
    * machine-originated message to **held** instead of auto-submitting. Reset to 0
    * when a human action (typed prompt / release) starts a fresh turn tree. The
-   * run seeds the main-process ledger with this so its in-run tighteners
-   * (closeout / pre-review / remediation) share one counter per turn tree.
+   * run seeds the main-process ledger with this so its in-run tighteners (ACP
+   * unfinished-turn recovery / closeout / pre-review / remediation) share one
+   * counter per turn tree.
    */
   continuationUsed?: number
   /** True while a queued message is being edited; suspends FIFO draining. */
@@ -346,6 +348,8 @@ export interface Message {
    * sent no parameters at all, which is the common case.
    */
   parameters?: ModelParameters
+  /** Structured terminal state for diagnostics and portable thread exports. */
+  turnOutcome?: TurnOutcome
   /**
    * Post-turn review verdict for the editing turn this message concluded. Set on
    * the turn's final assistant message so the review joins the transcript inline

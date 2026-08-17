@@ -12,6 +12,7 @@ import type {
   ContextTrimRecord,
   ContextSnapshot,
   TranscriptAttachment,
+  TurnOutcome,
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { HookCard, ModelComparison, Thread, ThreadReview } from '@shared/types'
@@ -670,6 +671,27 @@ export function setMessageReview(
   })
   store.setState({ threads })
   store.emit('review_changed', threadId, messageId)
+}
+
+/** Attach the durable terminal record to the assistant message that ended a turn. */
+export function setMessageTurnOutcome(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+  turnOutcome: TurnOutcome,
+): void {
+  const threads = store.getState().threads.map((thread) => {
+    if (thread.id !== threadId) return thread
+    return {
+      ...thread,
+      messages: thread.messages.map((message) =>
+        message.id === messageId ? { ...message, turnOutcome } : message,
+      ),
+      updatedAt: Date.now(),
+    }
+  })
+  store.setState({ threads })
+  store.emit('threads_changed')
 }
 
 /** Store the two-model comparison for a thread (clears with `null`). */

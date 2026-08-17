@@ -120,6 +120,36 @@ test('round-trips a message-anchored post-turn review', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips structured terminal diagnostics', () => {
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: 'An error occurred.',
+      toolCalls: [],
+      turnOutcome: {
+        status: 'failed',
+        stopReason: 'error',
+        rawStopReason: 'INTERNAL_ERROR',
+        source: 'provider',
+        executor: 'acp',
+        provider: 'claude-agent-acp',
+        model: 'acp:claude-agent-acp#opus[1m]',
+        lastEvent: 'tool',
+        error: {
+          name: 'RequestError',
+          code: -32603,
+          message: 'Internal error',
+          details: 'Internal error during token generation',
+        },
+        endedAt: 9,
+      },
+      createdAt: 7,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 test('round-trips tool calls with inline args and a spilled result', () => {
   const messages: Message[] = [
     {

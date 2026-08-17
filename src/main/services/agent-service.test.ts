@@ -232,4 +232,55 @@ describe('runAgent AgentHost decoupling', () => {
     }
     assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
   })
+
+  it('emits a structured terminal record with raw provider failure details', async () => {
+    const received: StreamChunk[] = []
+    const host: AgentHost<StreamChunk> = {
+      emit: (_threadId, chunk) => received.push(chunk),
+    }
+    const provider: LLMProvider = {
+      stream: async function* () {
+        yield await Promise.reject(
+          new Error(
+            '400 {"type":"error","error":{"type":"invalid_request_error","code":"generation_failed","message":"Internal error during token generation"}}',
+          ),
+        )
+      },
+    }
+
+    await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-provider-error',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-provider-error', () =>
+          agentService.runAgent(
+            'thread-provider-error',
+            'trigger failure',
+            [],
+            host,
+            new ToolRegistry(),
+            {
+              model: 'claude-sonnet-4-6',
+              provider,
+              contextWindow: 100_000,
+            },
+          ),
+        ),
+    )
+
+    const terminal = received.find((chunk) => chunk.type === 'turn_outcome')
+    assert.ok(terminal?.type === 'turn_outcome')
+    assert.equal(terminal.outcome.status, 'failed')
+    assert.equal(terminal.outcome.executor, 'local')
+    assert.equal(terminal.outcome.provider, 'anthropic')
+    assert.equal(terminal.outcome.error?.code, 'generation_failed')
+    assert.match(terminal.outcome.error.message, /Internal error during token generation/)
+    assert.ok(received.at(-1)?.type === 'done')
+  })
 })

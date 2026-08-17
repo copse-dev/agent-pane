@@ -1963,6 +1963,79 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
   })
 }
 
+/** ACP turn that exhausted its one recovery attempt without producing final prose. */
+export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-unfinished-project'
+  const threadId = 'e2e-acp-unfinished-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP unfinished turn recovery',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-unfinished',
+            role: 'user',
+            content: 'Update the Selenium ADR with the spec findings.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-tools',
+            role: 'assistant',
+            content:
+              'Confirmed the key spec facts. Let me check the upstream issue before I write.',
+            toolCalls: [
+              {
+                id: 'tc-acp-upstream-search',
+                name: 'run_shell',
+                args: { command: 'rg "WebDriver BiDi" docs/' },
+                status: 'done',
+                result: 'docs/adr/selenium.md:WebDriver BiDi migration notes',
+                kind: 'search',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-acp-fallback',
+            role: 'assistant',
+            content:
+              'The external agent stopped after using its tools without providing a final result. Send “continue” to resume.',
+            turnOutcome: {
+              status: 'failed',
+              stopReason: 'error',
+              rawStopReason: 'end_turn',
+              source: 'host',
+              executor: 'acp',
+              provider: 'claude-agent-acp',
+              model: 'acp:claude-agent-acp#opus[1m]',
+              lastEvent: 'text',
+              recovery: {
+                reason: 'ended_after_tools',
+                attempted: true,
+                recovered: false,
+              },
+              endedAt: now + 2,
+            },
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+        ],
+        usage: { inputTokens: 800, outputTokens: 120 },
+        createdAt: now,
+        updatedAt: now + 2,
+      },
+    ],
+  })
+}
+
 export function seedPortraitRightPanelFixture(
   workspaceRoot: string,
   autoPortraitRightPanel: boolean,

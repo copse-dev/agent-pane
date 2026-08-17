@@ -7,6 +7,7 @@ import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 // owned by the agent module. The app's StreamChunk is that loop contract plus
 // the app-level orchestration events below.
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
+import type { TurnOutcome } from './turn-outcome.ts'
 
 // `AgentStreamChunk` (what the agent loop emits), `ProviderStreamChunk` (the
 // narrow provider contract), and `ToolCallChunk` live in their owning packages;
@@ -66,13 +67,16 @@ export type StreamChunk =
   /**
    * Auto-continuation budget fold-back (C3 run→drain direction, decision 5).
    * Emitted once just before the terminal `done`: `used` is the machine turns
-   * this run spent in-process (todo closeout / pre-review gate / remediation
-   * cycles) for `turnTreeId`, so the renderer folds it onto the turn tree's
-   * counter and its next queue drain respects the shared cap. Non-visual — the
-   * renderer updates state only (no DOM), and it is dropped when the turn tree's
-   * epoch has moved on (a human action reset the budget, decision 16).
+   * this run spent in-process (ACP unfinished-turn recovery / todo closeout /
+   * pre-review gate / remediation cycles) for `turnTreeId`, so the renderer
+   * folds it onto the turn tree's counter and its next queue drain respects the
+   * shared cap. Non-visual — the renderer updates state only (no DOM), and it is
+   * dropped when the turn tree's epoch has moved on (a human action reset the
+   * budget, decision 16).
    */
   | { type: 'continuation_budget'; used: number; turnTreeId: string }
+  /** Durable terminal metadata; emitted immediately before the terminal `done`. */
+  | { type: 'turn_outcome'; outcome: TurnOutcome }
   /**
    * A hook execution / decision / halt fired during the run (decision 10). The
    * card is derived from the same always-on spine `hook_run` record (decision 6)

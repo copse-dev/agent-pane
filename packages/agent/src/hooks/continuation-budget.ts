@@ -2,8 +2,9 @@
 //
 // A single counter per **turn tree** (everything descending from one
 // human-originated submission). The ledger counts **machine-initiated new model
-// turns** only: hook send-now, `stop`/`subagentStop` follow-ups, post-turn
-// remediation cycles, pre-review todo attempts, and todo-closeout turns.
+// turns** only: hook send-now, `stop`/`subagentStop` follow-ups, ACP
+// unfinished-turn recovery, post-turn remediation cycles, pre-review todo
+// attempts, and todo-closeout turns.
 // **In-loop nudges do not count** (truncation-continue, finalize, loop, and
 // reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
 // invocation, already bounded by `maxSteps` / `DEFAULT_MAX_LLM_CALLS` and the run

@@ -1,6 +1,7 @@
 export * from './todo.ts'
 export * from './thread.ts'
 export * from './stream.ts'
+export * from './turn-outcome.ts'
 export * from './llm.ts'
 export * from './layout.ts'
 export * from './state.ts'

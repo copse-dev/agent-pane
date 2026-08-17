@@ -4,6 +4,7 @@ import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
+  isAgentRunTimeoutAbort,
 } from '@copse/agent/agent-loop-limits.ts'
 import {
   PRODUCT_REASONING_CHECKPOINT_POLICY,
@@ -16,6 +17,7 @@ import {
   type LLMTool,
   type StreamChunk,
   type ToolExecuteResult,
+  type TurnOutcome,
   type UserContent,
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
@@ -28,7 +30,9 @@ import {
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
+  turnErrorDetail,
 } from './agent-errors.ts'
+import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
@@ -178,6 +182,14 @@ import {
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
+import {
+  ACP_UNFINISHED_TURN_FALLBACK,
+  ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
+  acpTurnHasFinalResponse,
+  nextAcpMeaningfulEvent,
+  shouldRecoverAcpTurn,
+  type AcpLastMeaningfulEvent,
+} from './acp/acp-turn-recovery.ts'
 import { offerAcpReauth } from './acp/acp-reauth.ts'
 import { assembleAcpTurnStart } from './acp/acp-turn-start.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
@@ -433,17 +445,30 @@ function withHookHaltStopReason(
 
 /**
  * The C3 run→drain budget fold-back chunk (E3, decision 5). Carries how many
- * machine-initiated new turns this run spent in-process (todo closeout, the
- * pre-review gate, remediation cycles) plus the turn-tree epoch it belongs to,
- * so the renderer can fold the count onto its per-turn-tree counter — but only
- * when the epoch still matches (a human action since minted a new turn tree with
- * a reset budget, decision 16). Non-visual: the renderer updates state only.
+ * machine-initiated new turns this run spent in-process (ACP unfinished-turn
+ * recovery, todo closeout, the pre-review gate, remediation cycles) plus the
+ * turn-tree epoch it belongs to, so the renderer can fold the count onto its
+ * per-turn-tree counter — but only when the epoch still matches (a human action
+ * since minted a new turn tree with a reset budget, decision 16). Non-visual:
+ * the renderer updates state only.
  */
 function continuationBudgetChunk(
   used: number,
   turnTreeId: TurnTreeId,
 ): Extract<StreamChunk, { type: 'continuation_budget' }> {
   return { type: 'continuation_budget', used, turnTreeId }
+}
+
+function providerIdForModel(model: string): string {
+  if (model.startsWith('claude')) return 'anthropic'
+  if (model.startsWith('gpt')) return 'openai'
+  const colon = model.indexOf(':')
+  return colon > 0 ? model.slice(0, colon) : model
+}
+
+function terminalStatus(stopReason: TurnOutcome['stopReason']): TurnOutcome['status'] {
+  if (stopReason === 'cancelled') return 'cancelled'
+  return stopReason === 'end_turn' ? 'completed' : 'failed'
 }
 
 /**
@@ -651,7 +676,66 @@ export async function runAgent(
   const acpAgentId = acpSelection?.id ?? null
   const pluginModel = parsePluginModelSelection(model)
 
-  const sendChunk = createAgentChunkSink(threadId, host)
+  const emitChunk = createAgentChunkSink(threadId, host)
+  let terminalContext: Pick<TurnOutcome, 'executor' | 'provider' | 'model'> = pluginModel
+    ? { executor: 'plugin', provider: pluginModel.pluginId, model }
+    : acpSelection
+      ? { executor: 'acp', provider: acpSelection.id, model }
+      : remoteSelection
+        ? { executor: 'remote', provider: remoteSelection.provider, model }
+        : { executor: 'local', provider: providerIdForModel(model), model }
+  let lastTurnEvent: TurnOutcome['lastEvent']
+  let pendingTurnOutcome: Omit<TurnOutcome, 'endedAt' | 'lastEvent'> | null = null
+  let terminalOutcomeSent = false
+
+  const sendChunk = (chunk: StreamChunk): void => {
+    if (chunk.type === 'text' && chunk.text.trim()) lastTurnEvent = 'text'
+    else if (chunk.type === 'reasoning' && chunk.text.trim()) lastTurnEvent = 'reasoning'
+    else if (
+      chunk.type === 'tool_call' ||
+      chunk.type === 'tool_result' ||
+      chunk.type === 'tool_call_update'
+    )
+      lastTurnEvent = 'tool'
+
+    if (chunk.type === 'done' && !terminalOutcomeSent) {
+      const normalized = normalizeStopReason(chunk.stopReason?.toLowerCase())
+      const outcome: TurnOutcome = pendingTurnOutcome
+        ? {
+            ...pendingTurnOutcome,
+            ...(lastTurnEvent !== undefined ? { lastEvent: lastTurnEvent } : {}),
+            endedAt: Date.now(),
+          }
+        : {
+            ...terminalContext,
+            status: terminalStatus(normalized),
+            stopReason: normalized,
+            ...(chunk.stopReason !== undefined ? { rawStopReason: chunk.stopReason } : {}),
+            source:
+              normalized === 'cancelled' ? 'user' : normalized === 'timeout' ? 'host' : 'provider',
+            ...(lastTurnEvent !== undefined ? { lastEvent: lastTurnEvent } : {}),
+            endedAt: Date.now(),
+          }
+      emitChunk({ type: 'turn_outcome', outcome })
+      terminalOutcomeSent = true
+    }
+    emitChunk(chunk)
+  }
+
+  const recordTurnFailure = (
+    err: unknown,
+    overrides?: Partial<Pick<TurnOutcome, 'source' | 'stopReason' | 'rawStopReason'>>,
+  ): void => {
+    const stopReason = overrides?.stopReason ?? 'error'
+    pendingTurnOutcome = {
+      ...terminalContext,
+      status: stopReason === 'cancelled' ? 'cancelled' : 'failed',
+      stopReason,
+      ...(overrides?.rawStopReason !== undefined ? { rawStopReason: overrides.rawStopReason } : {}),
+      source: overrides?.source ?? 'provider',
+      error: turnErrorDetail(err),
+    }
+  }
 
   // The turn-tree epoch this run belongs to (decision 16 / C3): the renderer
   // mints it for a human submission / release and threads it on the payload, so
@@ -674,6 +758,12 @@ export async function runAgent(
   const submit = await runBeforeSubmitPrompt(threadId, userPrompt)
   if (submit.blocked) {
     sendChunk({ type: 'text', text: submit.blocked })
+    pendingTurnOutcome = {
+      ...terminalContext,
+      status: 'failed',
+      stopReason: 'tool_denied',
+      source: 'hook',
+    }
     sendChunk({ type: 'done' })
     return { usage: { inputTokens: 0, outputTokens: 0 }, messages: priorMessages }
   }
@@ -766,6 +856,10 @@ export async function runAgent(
       }
     } catch (err) {
       sendChunk({ type: 'text', text: errorMessage(err) })
+      recordTurnFailure(err, {
+        source: controller.signal.aborted ? 'user' : 'provider',
+        ...(controller.signal.aborted ? { stopReason: 'cancelled' } : {}),
+      })
       sendChunk({ type: 'done' })
       return {
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -789,6 +883,7 @@ export async function runAgent(
     acpRunModel: string | undefined,
     executorModel: string,
   ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> => {
+    terminalContext = { executor: 'acp', provider: acpRunAgentId, model: executorModel }
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
@@ -817,12 +912,16 @@ export async function runAgent(
     // view: prior thread history, this turn's user prompt, and whatever the
     // agent has streamed so far.
     let acpAssistantText = ''
+    const acpProgress: { lastEvent: AcpLastMeaningfulEvent } = { lastEvent: null }
     const acpChunkSink = (chunk: StreamChunk): void => {
       runAbort.deadline.recordActivity()
       runAbort.schedule()
       if (chunk.type === 'text') acpAssistantText += chunk.text
+      acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, chunk)
       sendChunk(chunk)
     }
+    const budgetLedger = getContinuationLedger()
+    budgetLedger.seed(turnTreeId, options?.continuationBudgetUsed ?? 0)
     const advisorContext = registry.has('advisor')
       ? {
           advisorModel: resolveAdvisorModelId(),
@@ -852,7 +951,7 @@ export async function runAgent(
         resolvePluginSetting,
         recordHookRun: recordFunctionHookRun,
       })
-      const result = await runAcpAgentFromSettings({
+      let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
         userPrompt: outboundPrompt,
@@ -866,15 +965,72 @@ export async function runAgent(
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpRunModel ? { model: acpRunModel } : {}),
       })
-      sendChunk({ type: 'done', stopReason: result.stopReason })
-      return {
-        usage: result.usage,
-        messages: [
-          ...priorMessages,
-          { role: 'user' as const, content: outboundPrompt },
-          ...result.messages,
-        ],
+      let usage = result.usage
+      let messages: LLMMessage[] = [
+        ...priorMessages,
+        { role: 'user' as const, content: outboundPrompt },
+        ...result.messages,
+      ]
+      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.lastEvent)
+      let recoveryAttempted = false
+      let recoverySucceeded = false
+
+      if (endedAfterTools && budgetLedger.tryGrant(turnTreeId)) {
+        recoveryAttempted = true
+        acpProgress.lastEvent = null
+        const recoveryResult = await runAcpAgentFromSettings({
+          threadId,
+          agentId: acpRunAgentId,
+          userPrompt: ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
+          priorMessages: messages,
+          signal: controller.signal,
+          bridgeTurnSignal: bridgeTurn.signal,
+          onChunk: acpChunkSink,
+          registry,
+          ...(advisorContext ? { advisorContext } : {}),
+          ...(acpRunModel ? { model: acpRunModel } : {}),
+        })
+        result = recoveryResult
+        usage = {
+          inputTokens: usage.inputTokens + recoveryResult.usage.inputTokens,
+          outputTokens: usage.outputTokens + recoveryResult.usage.outputTokens,
+        }
+        messages = [
+          ...messages,
+          { role: 'user' as const, content: ACP_UNFINISHED_TURN_RECOVERY_PROMPT },
+          ...recoveryResult.messages,
+        ]
+        recoverySucceeded = acpTurnHasFinalResponse(
+          recoveryResult.stopReason,
+          acpProgress.lastEvent,
+        )
       }
+
+      if (endedAfterTools && !recoverySucceeded) {
+        sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
+        messages.push({ role: 'assistant', content: ACP_UNFINISHED_TURN_FALLBACK })
+      }
+
+      const normalized = normalizeStopReason(result.stopReason.toLowerCase())
+      pendingTurnOutcome = {
+        ...terminalContext,
+        status: endedAfterTools && !recoverySucceeded ? 'failed' : terminalStatus(normalized),
+        stopReason: endedAfterTools && !recoverySucceeded ? 'error' : normalized,
+        rawStopReason: result.stopReason,
+        source: endedAfterTools && !recoverySucceeded ? 'host' : 'provider',
+        ...(endedAfterTools
+          ? {
+              recovery: {
+                reason: 'ended_after_tools' as const,
+                attempted: recoveryAttempted,
+                recovered: recoverySucceeded,
+              },
+            }
+          : {}),
+      }
+      sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
+      sendChunk({ type: 'done', stopReason: result.stopReason })
+      return { usage, messages }
     } catch (err) {
       // Keep what the failed turn streamed: the partial assistant text stays in
       // history (so the next turn's preamble knows what already happened) and
@@ -911,6 +1067,12 @@ export async function runAgent(
           })
         }
       }
+      const timedOut = isAgentRunTimeoutAbort(controller.signal)
+      recordTurnFailure(err, {
+        source: timedOut ? 'host' : aborted ? 'user' : 'provider',
+        ...(timedOut ? { stopReason: 'timeout' } : aborted ? { stopReason: 'cancelled' } : {}),
+      })
+      sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
       sendChunk({ type: 'done' })
       // The diagnosis is persisted, not just streamed: a bubble the user can
       // still see and a history entry that has forgotten why the turn died
@@ -943,6 +1105,7 @@ export async function runAgent(
       endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
+      budgetLedger.forget(turnTreeId)
     }
   }
 
@@ -983,7 +1146,12 @@ export async function runAgent(
     // below either re-routes or prints it.
     const outcome = await (async (): Promise<
       | { kind: 'done'; result: typeof emptyTurn }
-      | { kind: 'blocked'; reason: CloudAgentBlockReason; message: string }
+      | {
+          kind: 'blocked'
+          reason: CloudAgentBlockReason
+          message: string
+          error: NonNullable<TurnOutcome['error']>
+        }
     > => {
       const controller = new AbortController()
       abortMap.set(threadId, controller)
@@ -1016,13 +1184,20 @@ export async function runAgent(
         // emits CANCELLED `done` when it handles the signal; if an abort still
         // escapes here, don't paint it as a provider error in the transcript.
         if (controller.signal.aborted) {
+          const timedOut = isAgentRunTimeoutAbort(controller.signal)
+          recordTurnFailure(controller.signal.reason, {
+            source: timedOut ? 'host' : 'user',
+            stopReason: timedOut ? 'timeout' : 'cancelled',
+          })
           sendChunk({ type: 'done', stopReason: 'CANCELLED' })
           return { kind: 'done', result: emptyTurn }
         }
         const msg = classifyAgentError(err)
         const access = classifyProviderAccessFailure(err)
-        if (access) return { kind: 'blocked', reason: access, message: msg }
+        if (access)
+          return { kind: 'blocked', reason: access, message: msg, error: turnErrorDetail(err) }
         sendChunk({ type: 'text', text: msg })
+        recordTurnFailure(err)
         sendChunk({ type: 'done' })
         return { kind: 'done', result: emptyTurn }
       } finally {
@@ -1043,6 +1218,13 @@ export async function runAgent(
     })
     if (!choice) {
       sendChunk({ type: 'text', text: outcome.message })
+      pendingTurnOutcome = {
+        ...terminalContext,
+        status: 'failed',
+        stopReason: 'error',
+        source: 'provider',
+        error: outcome.error,
+      }
       sendChunk({ type: 'done' })
       return emptyTurn
     }
@@ -1828,6 +2010,22 @@ export async function runAgent(
     sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
     // H3: a hook `haltRun` aborts the run through the catch path; surface its
     // reason as the terminal `done`'s `stopReason` so the stop is attributable.
+    const timedOut = isAgentRunTimeoutAbort(controller.signal)
+    recordTurnFailure(err, {
+      source: hookHaltStopReason
+        ? 'hook'
+        : timedOut
+          ? 'host'
+          : controller.signal.aborted
+            ? 'user'
+            : 'provider',
+      ...(timedOut
+        ? { stopReason: 'timeout' }
+        : controller.signal.aborted
+          ? { stopReason: 'cancelled' }
+          : {}),
+      ...(hookHaltStopReason ? { rawStopReason: hookHaltStopReason } : {}),
+    })
     sendChunk(withHookHaltStopReason({ type: 'done' }, hookHaltStopReason))
   } finally {
     // B3: agent work has stopped (turn end, error, or abort) — fire `stop`
