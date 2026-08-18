@@ -7,17 +7,10 @@ import {
   modelIntellectHint,
 } from '@copse/llm/intellect-hints.ts'
 import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
+import { isOpenRouterModel, openRouterModelId, toOpenRouterModel } from '@copse/llm/openrouter.ts'
 import {
-  isOpenRouterModel,
-  openRouterDisplayLabel,
-  openRouterModelId,
-  toOpenRouterModel,
-} from '@copse/llm/openrouter.ts'
-import {
-  extraProviderDisplayLabel,
   extraProviderModelId,
   extraProviderSlugFromModel,
-  isExtraProviderModel,
   toExtraProviderModel,
   type ExtraProvider,
 } from '@copse/llm/extra-providers.ts'
@@ -43,7 +36,6 @@ import {
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModelSelection,
-  remoteAgentDisplayLabel,
   remoteAgentGroupLabel,
   remoteAgentModelValue,
 } from '@shared/remote-agent.ts'
@@ -56,7 +48,6 @@ import {
   enabledClaudeAcpAgent,
   parseAcpAgentConfigs,
   parseAcpModel,
-  parseAcpModelSelection,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
@@ -69,12 +60,9 @@ import {
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
-import {
-  AUTO_MODEL_PREFIX,
-  dynamicModelChoices,
-  dynamicModelLabel,
-} from '@copse/llm/dynamic-model.ts'
+import { AUTO_MODEL_PREFIX, dynamicModelChoices } from '@copse/llm/dynamic-model.ts'
 import { canonicalModelLabel, claudeModelIdFromLabel } from '@copse/llm/model-label.ts'
+import { displayModelLabel } from '@shared/model-display.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -98,21 +86,7 @@ export interface ModelOption {
 }
 
 export function modelDisplayLabel(model: string): string {
-  if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
-  const dynamic = dynamicModelLabel(model)
-  if (dynamic) return dynamic
-  if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
-  const pluginModel = parsePluginModelSelection(model)
-  if (pluginModel) return pluginModel.routeId
-  if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
-  if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
-  if (parseRemoteAgentModelSelection(model)) {
-    return remoteAgentDisplayLabel(model)
-  }
-  // Without the configured-agents list to resolve a title, fall back to the id.
-  const acpId = parseAcpModel(model)
-  if (acpId) return acpId
-  return cloudModelDisplayLabel(model)
+  return displayModelLabel(model)
 }
 
 /**
@@ -590,17 +564,16 @@ export async function fetchModelOptions(
         group: selection ? remoteAgentGroupLabel(selection.provider) : 'Remote agents',
       })
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
-      const selection = parseAcpModelSelection(current)
-      const configuredAgent = selection
-        ? acpAgents.find((agent) => agent.id === selection.id)
-        : undefined
+      const selection = parseAcpModel(current)
+      const agentId = selection ?? current.slice(ACP_MODEL_PREFIX.length)
+      const configuredAgent = acpAgents.find((agent) => agent.id === agentId)
       const configuredButUnlisted = configuredAgent?.enabled === true
       const stale: ModelOption = {
         value: current,
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`
           : configuredButUnlisted
-            ? `${configuredAgent.title} — ${selection?.model ?? 'agent default'} (not currently advertised)`
+            ? `${configuredAgent.title} — ${current.slice(current.indexOf('#') + 1) || 'agent default'} (not currently advertised)`
             : configuredAgent
               ? `${configuredAgent.title} (disabled)`
               : `${modelDisplayLabel(current)} (not configured)`,

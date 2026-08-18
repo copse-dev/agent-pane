@@ -40,10 +40,25 @@ describe('canonicalModelLabel', () => {
       'Claude Fable 5',
       'GPT-5.6 Sol',
       'GPT-5 mini',
+      'Gemini 2.5 Pro',
+      'DeepSeek Chat V3.1',
+      'Mistral Small Latest',
+      'GLM-4.6',
+      'GLM-4.5 Air',
     ]) {
       assert.equal(canonicalModelLabel(label), label)
       assert.equal(canonicalModelLabel(canonicalModelLabel(label)), label)
     }
+  })
+
+  it('spells the other named vendors in the same house style', () => {
+    assert.equal(canonicalModelLabel('gemini-2.5-pro'), 'Gemini 2.5 Pro')
+    assert.equal(canonicalModelLabel('gemini-2.5-flash-lite'), 'Gemini 2.5 Flash Lite')
+    assert.equal(canonicalModelLabel('deepseek-chat-v3.1'), 'DeepSeek Chat V3.1')
+    assert.equal(canonicalModelLabel('mistral-small-latest'), 'Mistral Small Latest')
+    // GLM keeps the GPT-style hyphen before the version.
+    assert.equal(canonicalModelLabel('glm-4.6'), 'GLM-4.6')
+    assert.equal(canonicalModelLabel('glm-4.5-air'), 'GLM-4.5 Air')
   })
 
   it('leaves alone every name it does not recognise', () => {

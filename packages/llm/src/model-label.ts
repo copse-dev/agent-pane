@@ -1,18 +1,20 @@
 // Canonical *display* naming for models the app did not name itself.
 //
-// Every provider spells the same Claude or GPT model differently: Cursor's catalog
-// returns "Opus 5" and "Claude 4.6 Sonnet (Thinking)", ACP agents return bare
-// family names, and some surfaces only have the raw id ("claude-opus-4-7").
-// Dropped straight into the picker those sit next to the app's own "Claude Opus
-// 4.8" and read as different vendors' models, and under a group heading that
-// names an *agent* ("Cursor Cloud Agent") a bare "Opus 5" does not say whose
-// Opus it is.
+// Every provider spells the same model differently: Cursor's catalog returns
+// "Opus 5" and "Claude 4.6 Sonnet (Thinking)", ACP agents return bare family
+// names, and some surfaces only have the raw id ("claude-opus-4-7",
+// "gemini-2.5-pro"). Dropped straight into the picker those sit next to the
+// app's own "Claude Opus 4.8" and read as different vendors' models, and under
+// a group heading that names an *agent* ("Cursor Cloud Agent") a bare "Opus 5"
+// does not say whose Opus it is.
 //
 // This module rewrites those forms into one house style — `Claude <Family>
-// <version>` or `GPT-<version> <variant>`, qualifiers preserved — and nothing else. It is display-only and
-// deliberately structural: it reorders and re-spells what a name already says
-// and never infers a model from a name it does not recognise, so an unknown
-// label is returned untouched rather than guessed at.
+// <version>`, `GPT-<version> <variant>`, or `Gemini <version> <variant>` (and
+// the same for the other named vendors below), qualifiers preserved — and
+// nothing else. It is display-only and deliberately structural: it reorders
+// and re-spells what a name already says and never infers a model from a name
+// it does not recognise, so an unknown label — "Composer 2", a local weight id —
+// is returned untouched rather than guessed at.
 
 /** Anthropic model families, spelled as they appear in a display label. */
 const CLAUDE_FAMILIES = ['opus', 'sonnet', 'haiku', 'fable'] as const
@@ -65,6 +67,72 @@ function canonicalGptLabel(labelOrId: string): string | null {
   return `GPT-${version.toLowerCase()} ${displayVariant}`
 }
 
+// The other named vendors the picker surfaces, each in its own id shape:
+//
+// - Gemini is `gemini-<version>[-<variant>…]` → `Gemini 2.5 Pro`,
+//   `Gemini 2.5 Flash Lite`.
+// - GLM keeps the GPT-style hyphen before the version → `GLM-4.6`, `GLM-4.5 Air`.
+// - DeepSeek is `deepseek-<name>[-v<version>]` → `DeepSeek Chat`,
+//   `DeepSeek Chat V3.1` — the name leads, the version trails.
+// - Mistral is `mistral-<tier>[-<qualifier>]` → `Mistral Small Latest`.
+//
+// Each recognises only its own prefix; an unknown name is left alone, so a
+// local weight id (`qwen3.6-35b-a3b`) or another vendor's model ("Composer 2",
+// "Grok 4.5") passes through untouched — the same contract the Claude/GPT
+// branches keep.
+
+/** Title-case a hyphen- or space-separated segment, preserving `mini`/`nano`. */
+function titleCaseSegment(segment: string): string {
+  return segment
+    .split('-')
+    .filter((part) => part.length > 0)
+    .map((part) => {
+      const lower = part.toLowerCase()
+      if (lower === 'mini' || lower === 'nano') return lower
+      return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
+    })
+    .join(' ')
+}
+
+const GEMINI_NAME = /^gemini-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/
+const GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/
+const DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/
+const MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/
+
+function canonicalVendorLabel(labelOrId: string): string | null {
+  const trimmed = labelOrId.trim()
+
+  const gemini = GEMINI_NAME.exec(trimmed)
+  if (gemini) {
+    const version = gemini[1] ?? ''
+    const variant = gemini[2] ?? ''
+    return variant ? `Gemini ${version} ${titleCaseSegment(variant)}` : `Gemini ${version}`
+  }
+
+  const glm = GLM_NAME.exec(trimmed)
+  if (glm) {
+    const version = glm[1] ?? ''
+    const variant = glm[2] ?? ''
+    return variant ? `GLM-${version} ${titleCaseSegment(variant)}` : `GLM-${version}`
+  }
+
+  const deepseek = DEEPSEEK_NAME.exec(trimmed)
+  if (deepseek) {
+    const name = titleCaseSegment(deepseek[1] ?? '')
+    const version = deepseek[2]
+    return version ? `DeepSeek ${name} V${version}` : `DeepSeek ${name}`
+  }
+
+  const mistral = MISTRAL_NAME.exec(trimmed)
+  if (mistral) {
+    const tier = titleCaseSegment(mistral[1] ?? '')
+    const qualifier = mistral[2] ? ` ${titleCaseSegment(mistral[2])}` : ''
+    return `Mistral ${tier}${qualifier}`
+  }
+
+  return null
+}
+
 function claudeName(family: string, version: string, rest: string): ClaudeName | null {
   // Only a qualifier the label already separated ("Claude 4.6 Sonnet
   // (Thinking)") is carried over. Anything glued to the version is part of an
@@ -94,8 +162,8 @@ function parseClaudeName(value: string): ClaudeName | null {
 /**
  * A vendor's model name (or a raw id) in the app's house style: "Opus 5" →
  * "Claude Opus 5", "Claude 4.6 Sonnet (Thinking)" → "Claude Sonnet 4.6
- * (Thinking)", "claude-opus-4-7" → "Claude Opus 4.7", and "gpt-5.4-nano" →
- * "GPT-5.4 nano". Names the app already
+ * (Thinking)", "claude-opus-4-7" → "Claude Opus 4.7", "gpt-5.4-nano" →
+ * "GPT-5.4 nano", and "gemini-2.5-pro" → "Gemini 2.5 Pro". Names the app already
  * spells this way pass through unchanged (the rewrite is idempotent), and a
  * name it does not recognise — "Composer 2", a local weight id —
  * is returned exactly as given.
@@ -106,7 +174,7 @@ export function canonicalModelLabel(labelOrId: string): string {
     const family = `${parsed.family.charAt(0).toUpperCase()}${parsed.family.slice(1)}`
     return `Claude ${family} ${parsed.version}${parsed.rest}`
   }
-  return canonicalGptLabel(labelOrId) ?? labelOrId
+  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId
 }
 
 /**

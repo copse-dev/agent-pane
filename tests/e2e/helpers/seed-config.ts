@@ -3789,3 +3789,71 @@ export function seedForkResendFixture(workspaceRoot: string): {
   writeSettings({ model: 'claude-sonnet-4-6' })
   return { projectId, threadId, title }
 }
+
+/**
+ * Visual eval for the unified model-name display: a thread whose subagent ran
+ * on a cloud model, with a best-value footer selection, so the subagent badge
+ * and the footer picker both render through the one shared labeler.
+ *
+ * The subagent badge is the most visible of the four surfaces (it used to write
+ * `session.model` verbatim for cloud); the footer exercises the picker's
+ * best-value sentinel. A screenshot is saved for review (AGENTS.md requires a
+ * visual eval for any UI-visible change, and the badge + footer are both
+ * visible).
+ */
+export function seedSubagentBadgeFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-subagent-badge-project'
+  const threadId = 'e2e-subagent-badge-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Subagent model badge',
+        status: 'idle',
+        model: 'auto:best-value',
+        messages: [
+          {
+            id: 'msg-user-badge',
+            role: 'user',
+            content: 'Explore the renderer views.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-badge',
+            role: 'assistant',
+            content: 'Done — the renderer views are mapped below.',
+            toolCalls: [
+              {
+                id: 'tool-explore-badge',
+                name: 'explore',
+                args: { prompt: 'Map the renderer views' },
+                status: 'done',
+                result: 'Mapped the renderer views.',
+                subagent: {
+                  id: 'subagent-badge',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Map the renderer views',
+                  summary: 'Mapped the renderer views.',
+                  messages: [],
+                  model: 'claude-haiku-4-5',
+                },
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+  writeSettings({ model: 'auto:best-value' })
+}
