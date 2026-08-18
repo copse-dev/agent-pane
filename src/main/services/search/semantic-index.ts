@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { getBundledGortexPath } from './bundled-semantic.ts'
@@ -588,10 +588,86 @@ export function parseTrackedRepos(configYaml: string): string[] {
   return paths
 }
 
-/** Which tracked repos to untrack so the daemon is scoped to just `activeRoot`. */
-export function reposToUntrackForActive(tracked: string[], activeRoot: string): string[] {
-  const active = resolve(activeRoot)
-  return tracked.filter((p) => resolve(p) !== active)
+/**
+ * How many repos may stay tracked in the shared daemon at once.
+ *
+ * Scoping to exactly one (the original design) is what drove the store leak:
+ * `untrack` does not delete the repo's nodes/edges/files — it only drops the
+ * config entry and the `repo_index_state` row — so every untrack strands a whole
+ * graph on disk. With one slot, *every* workspace switch stranded one, and two
+ * windows open on different workspaces untracked each other on every
+ * file-change burst (each `runSemanticIndexUpdate` re-enters
+ * {@link scopeGortexToActiveRepo}), stranding a graph per burst and forcing a
+ * cold re-index each time.
+ *
+ * A small MRU keeps the common cases (one workspace, or a couple of windows)
+ * entirely free of untracking, so nothing is stranded and switching stays warm.
+ * Daemon memory is still bounded — by `GOMEMLIMIT` and by this ceiling.
+ */
+const DEFAULT_MAX_TRACKED_REPOS = 3
+
+export function gortexMaxTrackedRepos(): number {
+  const raw = Number.parseInt(process.env['COPSE_GORTEX_MAX_TRACKED_REPOS'] ?? '', 10)
+  return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_MAX_TRACKED_REPOS
+}
+
+/** Most-recently-used workspace roots, so recency survives an app restart. */
+const REPO_MRU_FILE = '.copse-repo-mru.json'
+
+/** Pure MRU step: `root` to the front, deduped, truncated to `max`. */
+export function nextRepoMru(current: readonly string[], root: string, max: number): string[] {
+  const active = resolve(root)
+  return [active, ...current.filter((p) => resolve(p) !== active)].slice(0, Math.max(1, max))
+}
+
+async function readRepoMru(): Promise<string[]> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(join(gortexHomeDir(), REPO_MRU_FILE), 'utf8'))
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((p): p is string => typeof p === 'string')
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Record this root as most-recently-used and return the trimmed MRU.
+ *
+ * Skips the write when the order is unchanged — the steady state, since
+ * `runSemanticIndexUpdate` re-enters here on every debounced file-change burst
+ * and the active root is already at the front.
+ */
+async function recordRepoUse(root: string): Promise<string[]> {
+  const current = await readRepoMru()
+  const next = nextRepoMru(current, root, gortexMaxTrackedRepos())
+  if (current.length === next.length && current.every((p, i) => p === next[i])) return next
+  try {
+    await mkdir(gortexHomeDir(), { recursive: true })
+    await writeFile(join(gortexHomeDir(), REPO_MRU_FILE), JSON.stringify(next))
+  } catch {
+    // Recency is an optimisation — a failed write just means less warm reuse.
+  }
+  return next
+}
+
+/**
+ * Which tracked repos to untrack so the daemon keeps only the active root plus
+ * the most recent {@link gortexMaxTrackedRepos} - 1 others. Anything outside
+ * that window is evicted; with an empty `recentRoots` this is the original
+ * scope-to-one behaviour.
+ */
+export function reposToUntrackForActive(
+  tracked: string[],
+  activeRoot: string,
+  recentRoots: readonly string[] = [],
+  maxTracked: number = gortexMaxTrackedRepos(),
+): string[] {
+  const keep = new Set<string>([resolve(activeRoot)])
+  for (const root of recentRoots) {
+    if (keep.size >= maxTracked) break
+    keep.add(resolve(root))
+  }
+  return tracked.filter((p) => !keep.has(resolve(p)))
 }
 
 async function listTrackedGortexRepos(): Promise<string[]> {
@@ -604,14 +680,19 @@ async function listTrackedGortexRepos(): Promise<string[]> {
 }
 
 /**
- * Scope the shared daemon to the active workspace: untrack every other repo so a
+ * Scope the shared daemon to a small MRU window: untrack repos outside it so a
  * large, non-active checkout (a 100k-file monorepo you opened once) can't keep
  * its graph warm and bloat the daemon across sessions. gortex has no per-repo
  * priority knob, so untrack + reload is the lever; the active repo is re-tracked
  * by the caller, and switching workspaces re-indexes the newly-active one.
+ *
+ * Untracking is deliberately rare (see {@link gortexMaxTrackedRepos}) because
+ * each one strands the repo's graph in gortex's store forever —
+ * {@link reclaimBloatedGortexStore} is the backstop for what does get stranded.
  */
 async function scopeGortexToActiveRepo(activeRoot: string): Promise<void> {
-  const others = reposToUntrackForActive(await listTrackedGortexRepos(), activeRoot)
+  const recent = await recordRepoUse(activeRoot)
+  const others = reposToUntrackForActive(await listTrackedGortexRepos(), activeRoot, recent)
   if (others.length === 0) return
   for (const path of others) {
     await runCommand(
@@ -643,6 +724,17 @@ const GORTEX_ORPHAN_REAP_RSS_MB = 4096
 /** Whether a boot-time process (by RSS + command) is an oversized gortex daemon worth reaping. */
 export function isOversizedGortexDaemon(rssMb: number, command: string): boolean {
   return /gortex/i.test(command) && rssMb >= GORTEX_ORPHAN_REAP_RSS_MB
+}
+
+/** The detached daemon's pid, from the pidfile it writes under {@link gortexHomeDir}. */
+async function readGortexDaemonPid(): Promise<number | null> {
+  try {
+    const raw = await readFile(join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid'), 'utf8')
+    const pid = Number.parseInt(raw.trim(), 10)
+    return Number.isInteger(pid) && pid > 1 ? pid : null
+  } catch {
+    return null // no pidfile → nothing running from a prior session
+  }
 }
 
 function pidIsAlive(pid: number): boolean {
@@ -681,14 +773,8 @@ export async function reapOversizedGortexDaemon(): Promise<void> {
   // (missing pidfile, app not ready, ps unavailable) must leave the daemon and
   // never throw into `whenReady`.
   try {
-    const pidFile = join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid')
-    let pid: number
-    try {
-      pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10)
-    } catch {
-      return // no pidfile → nothing running from a prior session
-    }
-    if (!Number.isInteger(pid) || pid <= 1 || !pidIsAlive(pid)) return
+    const pid = await readGortexDaemonPid()
+    if (pid === null || !pidIsAlive(pid)) return
     const info = await pidRssAndCommand(pid)
     // The `gortex` command check also guards against pid reuse (the pidfile can
     // outlive the process it named).
@@ -722,13 +808,81 @@ export async function stopGortexDaemon(): Promise<void> {
   // lock). SIGTERM is immediate; the daemon flushes what it can on its way
   // down, and the index is derived data — rebuilt on next open if needed.
   try {
-    const pidFile = join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid')
-    const pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10)
-    if (Number.isInteger(pid) && pid > 1) process.kill(pid, 'SIGTERM')
+    const pid = await readGortexDaemonPid()
+    if (pid !== null) process.kill(pid, 'SIGTERM')
   } catch {
     // No pidfile / daemon already gone / not signal-able — nothing to reap.
   }
   gortexDaemonReady = null
+}
+
+/**
+ * Disk ceiling for gortex's shared sqlite store, above which we drop it and let
+ * the daemon rebuild. Overridable via `COPSE_GORTEX_STORE_MAX_MB`.
+ *
+ * A working store is far smaller than this: a 2.9k-file checkout indexes to
+ * ~68k nodes, and every repo we realistically track fits inside a few hundred
+ * MB. Crossing 2 GiB therefore means stranded graphs, not legitimate content.
+ */
+const DEFAULT_STORE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+
+export function gortexStoreMaxBytes(): number {
+  const raw = Number.parseInt(process.env['COPSE_GORTEX_STORE_MAX_MB'] ?? '', 10)
+  return Number.isInteger(raw) && raw > 0 ? raw * 1024 * 1024 : DEFAULT_STORE_MAX_BYTES
+}
+
+/** Whether a store of `bytes` has crossed the reclaim ceiling. */
+export function gortexStoreNeedsReclaim(bytes: number, cap = gortexStoreMaxBytes()): boolean {
+  return bytes >= cap
+}
+
+/**
+ * Drop gortex's store when it has bloated past {@link gortexStoreMaxBytes}.
+ *
+ * gortex's `untrack` drops the config entry and the `repo_index_state` row but
+ * never deletes the repo's nodes/edges/files, and its `files` rows for a
+ * single-tracked-repo (prefix `''`) accumulate across every repo ever indexed
+ * that way. Neither is reachable from our side, and sqlite never returns freed
+ * pages to the filesystem without a VACUUM — so a long-lived install grows
+ * without bound (observed: 11.9 GB, of which 6.5 GB was free pages and 82% of
+ * the remaining rows belonged to a repo untracked weeks earlier).
+ *
+ * The index is derived data, so the safe lever is to delete the store rather
+ * than reach into a third-party schema we'd have to re-verify on every gortex
+ * bump. Runs at boot, before the daemon starts: the daemon holds `store.sqlite`
+ * open, and unlinking underneath it leaves it writing to an unlinked inode, so
+ * the space would not actually come back until it exited.
+ *
+ * Best-effort — any failure leaves the store alone and boot continues.
+ */
+export async function reclaimBloatedGortexStore(): Promise<boolean> {
+  try {
+    const storeDir = join(gortexHomeDir(), '.gortex', 'store')
+    let bytes: number
+    try {
+      bytes = (await stat(join(storeDir, 'store.sqlite'))).size
+    } catch {
+      return false // no store yet — nothing to reclaim
+    }
+    if (!gortexStoreNeedsReclaim(bytes)) return false
+
+    const pid = await readGortexDaemonPid()
+    if (pid !== null && pidIsAlive(pid)) {
+      process.kill(pid, 'SIGTERM')
+      for (let i = 0; i < 30 && pidIsAlive(pid); i++) await delay(100)
+      if (pidIsAlive(pid)) process.kill(pid, 'SIGKILL')
+    }
+    await rm(storeDir, { recursive: true, force: true })
+    // A rebuilt store re-tracks from config, so the MRU stays meaningful.
+    gortexDaemonReady = null
+    console.info(
+      `[copse-panel] reclaimed bloated gortex store (${String(Math.round(bytes / 1024 / 1024))} MB); it will rebuild on next index`,
+    )
+    return true
+  } catch {
+    // Best-effort — a bloated store is preferable to a failed boot.
+    return false
+  }
 }
 
 async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
