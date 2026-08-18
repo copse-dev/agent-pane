@@ -82,6 +82,9 @@ export async function buildSystemPrompt(opts: {
   return (
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
+      // Must be the agent execution root, not the renderer workspace root: the
+      // sandbox read grant and run_shell's cwd are the worktree root, so naming
+      // the main repo here makes the agent `cd` outside the grant and hit EPERM.
       .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)') +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +

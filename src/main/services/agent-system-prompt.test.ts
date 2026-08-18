@@ -7,6 +7,7 @@ import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { OPUS_5_RESPONSE_LENGTH_BLOCK, OPUS_5_TONE_REMINDER } from './agent-prompt.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { runWithThreadExecutionContext, type ThreadExecutionContext } from './thread-execution-context.ts'
 
 const CONCISENESS = 'Keep responses focused, brief, and concise'
 
@@ -83,6 +84,64 @@ describe('buildSystemPrompt Opus 5 conciseness steering', () => {
   it('names no model in the steering text — it reads as house rules', () => {
     for (const block of [OPUS_5_RESPONSE_LENGTH_BLOCK, OPUS_5_TONE_REMINDER]) {
       assert.doesNotMatch(block, /Claude|Opus|GPT|Gemini/i)
+    }
+  })
+})
+
+describe('buildSystemPrompt working directory', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    setSetting('skillsEnabled', false)
+    setSetting('skillPluginPaths', [])
+    setSetting('customInstructions', '')
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  const build = (model?: string): Promise<string> =>
+    buildSystemPrompt({
+      subagentsEnabled: false,
+      invokedSkills: [],
+      ...(model === undefined ? {} : { model }),
+    })
+
+  it('names the renderer workspace root when no thread context is active', async () => {
+    const prompt = await build()
+    assert.ok(
+      prompt.includes(`Working directory: ${tempRoot}`),
+      'fallback path should use the renderer-selected workspace root',
+    )
+  })
+
+  it('names the thread execution root when a worktree context is active', async () => {
+    const worktreeRoot = await mkdtemp(join(tmpdir(), 'copse-worktree-prompt-'))
+    const context: ThreadExecutionContext = Object.freeze({
+      projectId: 'test-project',
+      threadId: 'test-thread',
+      projectRoot: tempRoot,
+      root: worktreeRoot,
+      checkoutMode: 'worktree',
+      branch: 'copse/test',
+    })
+    try {
+      const prompt = await runWithThreadExecutionContext(context, () => build())
+      assert.ok(
+        prompt.includes(`Working directory: ${worktreeRoot}`),
+        'thread path should use the worktree execution root, not the main workspace root',
+      )
+      assert.ok(
+        !prompt.includes(`Working directory: ${tempRoot}`),
+        'thread path must not leak the renderer workspace root into the prompt',
+      )
+    } finally {
+      await rm(worktreeRoot, { recursive: true, force: true })
     }
   })
 })
