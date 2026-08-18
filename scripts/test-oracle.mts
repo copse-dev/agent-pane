@@ -286,25 +286,9 @@ const UNIT_SPECS_MAX_CHARS = 16_000
  */
 const DOCS_ONLY_PATTERNS: RegExp[] = [/^docs\//, /\.md$/, /^LICENSE$/, /^\.github\/[A-Z_]+\.md$/]
 
-/**
- * Markdown that a unit test CAN observe, and so is never docs-only. `site/*.md`
- * is generated from `site/*.html` and compared byte-for-byte by
- * `scripts/sync-site-markdown.test.ts` — a hand-edit to a published twin is the
- * one change that whole gate exists to catch, and skipping the unit tier for it
- * would let it through.
- */
-const DOCS_ONLY_EXCEPTIONS: RegExp[] = [/^site\//]
-
 /** True when every changed file is documentation the unit suite cannot observe. */
 export function isDocsOnlyChange(changed: string[]): boolean {
-  return (
-    changed.length > 0 &&
-    changed.every(
-      (f) =>
-        DOCS_ONLY_PATTERNS.some((re) => re.test(f)) &&
-        !DOCS_ONLY_EXCEPTIONS.some((re) => re.test(f)),
-    )
-  )
+  return changed.length > 0 && changed.every((f) => DOCS_ONLY_PATTERNS.some((re) => re.test(f)))
 }
 
 /**
