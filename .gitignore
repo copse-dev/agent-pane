@@ -55,3 +55,12 @@ docs/acp-support-matrix.md
 docs/acp-support-matrix.json
 docs/acp-behavior-matrix.md
 docs/acp-behavior-matrix.json
+
+# The site's Markdown twins, generated from site/*.html by
+# scripts/sync-site-markdown.mts. pages.yml regenerates them into the deployed
+# tree, so the published copy is always what the published HTML says. Committing
+# them would put a second copy of every page in the repo whose only job is to be
+# kept in step with the first. `pnpm run site:md` writes them here for local
+# preview; the deploy never reads what it finds.
+/site/*.md
+/site/llms.txt
