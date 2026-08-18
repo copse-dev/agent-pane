@@ -1,6 +1,6 @@
 import { loadAgentRequestedRulesCatalog, loadProjectInstructions } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getAgentExecutionRoot } from './execution-root.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
@@ -82,7 +82,7 @@ export async function buildSystemPrompt(opts: {
   return (
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
-      .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
+      .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)') +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
