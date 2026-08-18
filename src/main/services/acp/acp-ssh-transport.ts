@@ -17,11 +17,7 @@ import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
 import { registerRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import type { AcpTransport } from './acp-client.ts'
-import {
-  detectAcpResourceFault,
-  formatAcpResourceFault,
-  type AcpResourceFault,
-} from './acp-resource-fault.ts'
+import { watchAgentStderr, REMOTE_OPEN_FILE_LIMIT_LABEL } from './acp-resource-fault.ts'
 import { posixQuote } from '../security/safe-install.ts'
 
 /**
@@ -168,16 +164,15 @@ export async function spawnRemoteAcpTransport(
 
   const stdout = new PassThrough()
   attachRemotePgid(child, target.hostId, stdout)
-  // A remote agent runs under the login's own descriptor limit, which is often
-  // lower than a desktop's — so the same exhaustion the local transport watches
-  // for is if anything likelier here (see acp-resource-fault.ts).
-  let fault: AcpResourceFault | null = null
-  child.stderr.on('data', (chunk: Buffer) => {
-    const text = chunk.toString().trimEnd()
-    if (text) console.warn(`[acp-ssh:${input.command}] ${text}`)
-    if (fault) return
-    fault = detectAcpResourceFault(text)
-    if (fault) console.warn(formatAcpResourceFault(input.command, fault))
+  // A remote agent runs under the remote login's descriptor limit, which is
+  // often lower than a desktop's — so the same exhaustion the local transport
+  // watches for is if anything likelier here (see acp-resource-fault.ts). That
+  // limit is the remote host's and Copse has not measured it, so the fault is
+  // reported without a number rather than with this machine's.
+  const faults = watchAgentStderr(child.stderr, {
+    prefix: `acp-ssh:${input.command}`,
+    command: input.command,
+    limitLabel: REMOTE_OPEN_FILE_LIMIT_LABEL,
   })
 
   // Writable.toWeb is assignable to the DOM WritableStream brand; Readable.toWeb
@@ -196,6 +191,6 @@ export async function spawnRemoteAcpTransport(
     dispose: (): void => {
       terminateProcessTree(child)
     },
-    resourceFault: () => fault,
+    resourceFault: faults.current,
   }
 }

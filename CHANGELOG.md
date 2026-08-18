@@ -531,12 +531,14 @@ every published entry.
   boundary and replaced, resuming the same agent session where the agent
   supports it, so the descriptors come back without the thread losing the
   agent's memory of it. The same applies to an agent running over SSH, whose
-  remote login often has the tighter limit of the two. An agent that runs out
-  within a minute of starting is left alone instead: it cannot have leaked its
-  way there, so its replacement would fare no better — the limit Copse itself
-  was launched under is too low (macOS gives an app 256 by default), and the
-  log now says so, and reports that limit, rather than quietly respawning the
-  agent on every turn.
+  remote login often has the tighter limit of the two. A known-exhausted process
+  is never simply handed the next prompt — the first fault always buys a fresh
+  one. Only when that replacement runs out just as fast does Copse stop
+  respawning: nothing it can spawn will clear a limit that low, and the
+  alternative to reusing the process is refusing to run at all. That case is an
+  error in `/checkup`, naming the limit the agent was launched under (macOS
+  gives an app 256 by default) and how to raise it, so it can be found by
+  someone who never sees the console.
 
 ## Release-note process
 

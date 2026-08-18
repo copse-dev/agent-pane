@@ -43,9 +43,9 @@ import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 import {
-  detectAcpResourceFault,
-  formatAcpResourceFault,
-  type AcpResourceFault,
+  localOpenFileLimitLabel,
+  watchAgentStderr,
+  type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
@@ -377,8 +377,8 @@ export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined):
 
 const ACP_STDERR_TAIL_LIMIT = 8_000
 
-function appendStderrTail(current: string, chunk: Buffer): string {
-  const next = current + chunk.toString()
+function appendStderrTail(current: string, text: string): string {
+  const next = current + text
   return next.length <= ACP_STDERR_TAIL_LIMIT ? next : next.slice(-ACP_STDERR_TAIL_LIMIT)
 }
 
@@ -650,7 +650,7 @@ export interface OpenAcpSession {
    * — not the connection — decides when to replace it. Always null for a
    * transport that captures no stderr (the in-process test transports).
    */
-  resourceFault: () => AcpResourceFault | null
+  resourceFault: () => AcpAgentResourceFault | null
   dispose: () => void
 }
 
@@ -659,7 +659,7 @@ export interface AcpTransport {
   stream: Stream
   dispose: () => void
   /** Descriptor exhaustion seen on the agent's stderr; absent when none is captured. */
-  resourceFault?: () => AcpResourceFault | null
+  resourceFault?: () => AcpAgentResourceFault | null
 }
 
 /** Transport injection point so tests can wire an in-process agent. */
@@ -735,21 +735,19 @@ function acpChildStdoutStream(
 function captureAcpChildStderr(
   child: ChildProcess,
   command: string,
-): { tail: () => string; resourceFault: () => AcpResourceFault | null } {
+): { tail: () => string; resourceFault: () => AcpAgentResourceFault | null } {
   let tail = ''
-  let fault: AcpResourceFault | null = null
-  child.stderr?.on('data', (chunk: Buffer) => {
-    tail = appendStderrTail(tail, chunk)
-    const text = chunk.toString().trimEnd()
-    if (text) console.warn(`[acp:${command}] ${text}`)
-    // Scan the tail rather than this chunk: stderr arrives in arbitrary slices,
-    // and the phrase this looks for routinely lands across two of them. Only
-    // the first fault is kept — the tail still holds it on later chunks.
-    if (fault) return
-    fault = detectAcpResourceFault(tail)
-    if (fault) console.warn(formatAcpResourceFault(command, fault))
+  // A locally spawned agent starts from this process's descriptor limits, so
+  // they are the ones worth naming when it runs out.
+  const faults = watchAgentStderr(child.stderr, {
+    prefix: `acp:${command}`,
+    command,
+    limitLabel: localOpenFileLimitLabel(),
+    onText: (text) => {
+      tail = appendStderrTail(tail, text)
+    },
   })
-  return { tail: () => tail, resourceFault: () => fault }
+  return { tail: () => tail, resourceFault: faults.current }
 }
 
 async function spawnTransport(config: AcpAgentSpawnConfig): Promise<AcpTransport> {

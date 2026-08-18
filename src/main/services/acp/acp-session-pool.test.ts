@@ -4,7 +4,11 @@ import { ndJsonStream } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import { runAcpSessionPrompt, type AcpClientHandlers, type AcpTransport } from './acp-client.ts'
-import type { AcpResourceFault } from './acp-resource-fault.ts'
+import {
+  clearUnrepairableOpenFileFault,
+  unrepairableOpenFileFault,
+  type AcpAgentResourceFault,
+} from './acp-resource-fault.ts'
 import {
   acquireAcpSession,
   acpSessionPoolSize,
@@ -59,7 +63,7 @@ function makeTransportFactory(log: AgentLog): () => Promise<{
  */
 function makeResumableTransportFactory(
   log: AgentLog,
-  faultForSpawn: (spawn: number) => AcpResourceFault | null = () => null,
+  faultForSpawn: (spawn: number) => AcpAgentResourceFault | null = () => null,
 ): () => Promise<AcpTransport> {
   const runner: AcpTurnRunner = async (ctx) => {
     log.promptSessions.push(ctx.sessionId)
@@ -242,9 +246,10 @@ describe('acp-session-pool', () => {
 
   it('replaces an agent process that ran out of file descriptors, resuming its session', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
-    const fault: AcpResourceFault = {
+    const fault: AcpAgentResourceFault = {
       code: 'EMFILE',
       detail: 'Settings watcher error: EMFILE: too many open files, watch',
+      limitLabel: 'inherited open-file limit 10240 soft / 10240 hard',
     }
     // Only the first process is out of descriptors; its replacement is healthy.
     const createTransport = makeResumableTransportFactory(log, (spawn) =>
@@ -280,26 +285,57 @@ describe('acp-session-pool', () => {
     assert.deepEqual(log.promptSessions, [originalSessionId, originalSessionId])
   })
 
-  it('keeps a just-started agent that faults, rather than respawning it every turn', async () => {
+  it('gives a just-started faulted agent one fresh process, then stops respawning', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     // Every process this factory hands out is out of descriptors from the
-    // start — the inherited-ceiling case, where a replacement is no better off.
+    // start — the inherited-ceiling case, where no replacement is any better.
     const createTransport = makeResumableTransportFactory(log, () => ({
       code: 'EMFILE',
       detail: 'EMFILE: too many open files, watch',
+      limitLabel: 'inherited open-file limit 256 soft / 256 hard',
     }))
 
+    // A known-faulted process is never simply handed the next turn: the first
+    // fault always buys a fresh process, even this early in its life.
     const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     const second = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
-    assert.equal(second.entry, first.entry, 'a fresh faulted process must not be swapped out')
-    assert.equal(log.spawns, 1)
-
-    // Once it has been running a while, exhaustion reads as accumulation again
-    // and the process is replaced as usual.
-    first.entry.openedAt = Date.now() - 10 * 60_000
-    const third = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
-    assert.notEqual(third.entry, first.entry)
+    assert.notEqual(second.entry, first.entry)
     assert.equal(log.spawns, 2)
+
+    // That replacement ran out just as fast, so respawning is established as
+    // useless here and the pool stops churning through processes.
+    const third = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.equal(third.entry, second.entry)
+    assert.equal(log.spawns, 2)
+
+    // …until one survives long enough that exhaustion reads as accumulation
+    // again, which a replacement really can clear.
+    second.entry.openedAt = Date.now() - 10 * 60_000
+    const fourth = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.notEqual(fourth.entry, second.entry)
+    assert.equal(log.spawns, 3)
+  })
+
+  it('records an unrepairable fault for /checkup', async () => {
+    clearUnrepairableOpenFileFault()
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeResumableTransportFactory(log, () => ({
+      code: 'EMFILE',
+      detail: 'EMFILE: too many open files, watch',
+      limitLabel: 'inherited open-file limit 256 soft / 256 hard',
+    }))
+    await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    // Nothing is recorded while replacing the process is still worth trying.
+    assert.equal(unrepairableOpenFileFault(), null)
+
+    await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    const stuck = unrepairableOpenFileFault()
+    assert.ok(stuck)
+    assert.equal(stuck.command, CONFIG.command)
+    assert.equal(stuck.fault.code, 'EMFILE')
+    assert.equal(stuck.fault.limitLabel, 'inherited open-file limit 256 soft / 256 hard')
+    clearUnrepairableOpenFileFault()
   })
 
   it('a disposed session reports closed so acquire never reuses it', async () => {

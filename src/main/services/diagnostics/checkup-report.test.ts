@@ -33,6 +33,7 @@ function baseSnapshot(overrides: Partial<CheckupSnapshot> = {}): CheckupSnapshot
     semantic: { available: true, backend: 'gortex', bundled: true },
     permissions: { autoRun: true, mcpAutoAllowReadOnly: false, trustedCommandCount: 2 },
     spawnHelperExecutable: true,
+    agentOpenFiles: null,
     ...overrides,
   }
 }
@@ -227,6 +228,27 @@ describe('buildCheckupReport', () => {
   it('omits the terminal check when the helper state is indeterminate', () => {
     const report = buildCheckupReport(baseSnapshot({ spawnHelperExecutable: null }))
     assert.equal(hasCheck(report, 'terminal'), false)
+  })
+
+  it('reports an agent stuck against the open-file ceiling, with how to raise it', () => {
+    const report = buildCheckupReport(
+      baseSnapshot({
+        agentOpenFiles: {
+          command: 'claude-agent-acp',
+          code: 'EMFILE',
+          limit: 'inherited open-file limit 256 soft / 256 hard',
+        },
+      }),
+    )
+    const check = getCheck(report, 'agent-open-files')
+    assert.equal(check.status, 'error')
+    assert.ok(check.detail.includes('claude-agent-acp'))
+    assert.ok(check.detail.includes('256 soft'))
+    assert.match(check.fix ?? '', /launchctl limit maxfiles/)
+  })
+
+  it('says nothing about file descriptors when no agent has hit the ceiling', () => {
+    assert.equal(hasCheck(buildCheckupReport(baseSnapshot()), 'agent-open-files'), false)
   })
 
   it('warns when no folder is open', () => {

@@ -25,6 +25,17 @@ export interface AcpResourceFault {
   detail: string
 }
 
+/**
+ * A fault as reported by a live agent, carrying the ceiling that agent was
+ * running under. Only the transport knows which machine that is — a local agent
+ * inherits this process's limits, one over SSH runs under the remote login's —
+ * so the description is attached where the fault is captured rather than
+ * guessed at by whoever reads it later.
+ */
+export interface AcpAgentResourceFault extends AcpResourceFault {
+  limitLabel: string
+}
+
 const DETAIL_LIMIT = 200
 
 /**
@@ -45,6 +56,80 @@ export function detectAcpResourceFault(stderr: string): AcpResourceFault | null 
     }
   }
   return null
+}
+
+/**
+ * How much recent stderr a watcher keeps. Chunks arrive on arbitrary boundaries,
+ * so the phrase that names the fault routinely lands across two of them; a
+ * window this size spans any realistic split while staying trivial to rescan.
+ */
+const STDERR_WINDOW = 4096
+
+export interface StderrFaultWatcher {
+  /** Feed one stderr chunk. Returns the fault only on the chunk that reveals it. */
+  push: (chunk: string) => AcpAgentResourceFault | null
+  /** The fault this agent has reported, if any. */
+  current: () => AcpAgentResourceFault | null
+}
+
+/**
+ * Watch an agent's stderr for descriptor exhaustion across chunk boundaries.
+ * Shared by every transport that captures stderr — local, sandboxed and SSH —
+ * so remote agents are diagnosed as precisely as local ones.
+ */
+export function createStderrFaultWatcher(limitLabel: string): StderrFaultWatcher {
+  let window = ''
+  let fault: AcpAgentResourceFault | null = null
+  return {
+    push: (chunk: string): AcpAgentResourceFault | null => {
+      if (fault) return null
+      window = (window + chunk).slice(-STDERR_WINDOW)
+      const found = detectAcpResourceFault(window)
+      if (!found) return null
+      fault = { ...found, limitLabel }
+      // The window has served its purpose; the first fault is the one reported.
+      window = ''
+      return fault
+    },
+    current: () => fault,
+  }
+}
+
+/** The slice of a stderr stream this module needs; `child.stderr` satisfies it. */
+export interface AgentStderrSource {
+  on: (event: 'data', listener: (chunk: Buffer) => void) => unknown
+}
+
+export interface AgentStderrWatchOptions {
+  /** Log prefix identifying the agent and how it was reached, e.g. `acp-ssh:codex`. */
+  prefix: string
+  command: string
+  /** The ceiling this agent runs under — see {@link AcpAgentResourceFault}. */
+  limitLabel: string
+  /** Called with every raw chunk, for a caller that keeps its own stderr tail. */
+  onText?: (text: string) => void
+}
+
+/**
+ * Relay an agent's stderr to the log and watch it for descriptor exhaustion.
+ * Every transport that captures stderr goes through here, so a remote agent is
+ * diagnosed exactly as precisely as a local one — including a fault phrase
+ * split across two chunks, which is why the watcher keeps a window.
+ */
+export function watchAgentStderr(
+  stderr: AgentStderrSource | null | undefined,
+  options: AgentStderrWatchOptions,
+): StderrFaultWatcher {
+  const watcher = createStderrFaultWatcher(options.limitLabel)
+  stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString()
+    options.onText?.(text)
+    const line = text.trimEnd()
+    if (line) console.warn(`[${options.prefix}] ${line}`)
+    const fault = watcher.push(text)
+    if (fault) console.warn(formatAcpResourceFault(options.command, fault))
+  })
+  return watcher
 }
 
 /**
@@ -108,29 +193,65 @@ function describeLimit(limit: OpenFileLimit): string {
   return `inherited open-file limit ${soft} soft / ${hard} hard`
 }
 
-/** One log line explaining what Copse saw and what it is about to do about it. */
-export function formatAcpResourceFault(command: string, fault: AcpResourceFault): string {
+/** One log line explaining what Copse saw, under the limit the agent ran with. */
+export function formatAcpResourceFault(command: string, fault: AcpAgentResourceFault): string {
   const scope =
     fault.code === 'ENFILE'
       ? 'the machine is out of file descriptors'
       : 'the agent process hit its open-file limit'
   return (
-    `[acp:${command}] ${scope} (${fault.code}, ${describeLimit(inheritedOpenFileLimit())}) — ` +
+    `[acp:${command}] ${scope} (${fault.code}, ${fault.limitLabel}) — ` +
     `the process can no longer open files: ${fault.detail}`
   )
 }
 
+/** How a locally spawned agent's ceiling reads in a log: this process's own. */
+export function localOpenFileLimitLabel(): string {
+  return describeLimit(inheritedOpenFileLimit())
+}
+
 /**
- * What to say when replacing the process cannot help: it faulted so soon after
- * starting that it cannot have leaked its way there, so the ceiling it inherited
+ * How a remote agent's ceiling reads. Copse has not measured the remote login's
+ * limit, and reporting this machine's in its place would name the wrong number
+ * on the wrong host, so the label says whose limit it is and stops there.
+ */
+export const REMOTE_OPEN_FILE_LIMIT_LABEL = "the remote login's own open-file limit"
+
+/**
+ * What to say when replacing the process cannot help: a freshly spawned agent
+ * was out of descriptors just as fast, so the ceiling both of them started from
  * is the whole problem. Raising it is a machine-level change, outside anything
  * Copse can do to its own children.
  */
 export function formatOpenFileCeilingWarning(command: string): string {
   return (
-    `[acp:${command}] a freshly started agent is already out of file descriptors ` +
-    `(${describeLimit(inheritedOpenFileLimit())}), so its replacement would be too — ` +
+    `[acp:${command}] a replacement agent ran out of file descriptors just as fast ` +
+    `(${describeLimit(inheritedOpenFileLimit())}), so respawning cannot fix this — ` +
     `raise the limit for the desktop session instead (macOS: launchctl limit maxfiles; ` +
     `Linux: the login's nofile limit), then restart Copse`
   )
+}
+
+/**
+ * The last fault Copse could not repair by replacing the process, kept for
+ * `/checkup`. A log line is where this is noticed by whoever is watching the
+ * console; the checkup is where a user who only sees a misbehaving agent can
+ * find out why, so the condition has to outlive the moment it was detected.
+ */
+let unrepairableFault: { command: string; fault: AcpAgentResourceFault } | null = null
+
+export function noteUnrepairableOpenFileFault(command: string, fault: AcpAgentResourceFault): void {
+  unrepairableFault = { command, fault }
+}
+
+export function unrepairableOpenFileFault(): {
+  command: string
+  fault: AcpAgentResourceFault
+} | null {
+  return unrepairableFault
+}
+
+/** Test seam: the record is process-wide, so a test that sets it must clear it. */
+export function clearUnrepairableOpenFileFault(): void {
+  unrepairableFault = null
 }
