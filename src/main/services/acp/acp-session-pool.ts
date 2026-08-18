@@ -136,7 +136,19 @@ export async function acquireAcpSession(
 
   const existing = pool.get(opts.threadId)
   if (existing) {
-    if (existing.fingerprint === fingerprint && !existing.open.isClosed()) {
+    // A process that ran out of file descriptors keeps answering, so nothing
+    // else here would evict it — but everything it needs to open from now on
+    // fails (see acp-resource-fault.ts). Replace it at this turn boundary; the
+    // resume path below hands the same agent session to the fresh process, so
+    // the descriptors come back without the thread losing the agent's memory.
+    const fault = existing.open.resourceFault()
+    if (fault) {
+      console.warn(
+        `[acp-pool] replacing thread ${opts.threadId}'s agent process: it reported ${fault.code} ` +
+          `(${fault.detail})`,
+      )
+    }
+    if (!fault && existing.fingerprint === fingerprint && !existing.open.isClosed()) {
       existing.lastUsedAt = Date.now()
       // Config options (reasoning level, …) are excluded from the fingerprint so
       // changing one reuses the session instead of respawning it; hand the fresh

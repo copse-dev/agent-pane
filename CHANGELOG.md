@@ -520,6 +520,18 @@ every published entry.
   open too: their chip was being rebuilt from its label alone, dropping the
   snapshot the message already carried, so the most common text attachment was
   the one kind that stayed stubbornly shut.
+- An external agent that runs out of file descriptors is now replaced instead
+  of being handed more turns. Copse keeps one agent process per thread alive
+  across turns, so an adapter that leaks handles eventually hits its
+  open-file limit — Claude Code's `EMFILE: too many open files` settings-watcher
+  errors are the usual first sign. The process does not exit when this happens:
+  it keeps answering while quietly failing to open anything else, so settings
+  reloads, file reads and MCP servers stop working with nothing to show for it
+  but a line in the log. Such a process is now torn down at the next turn
+  boundary and replaced, resuming the same agent session where the agent
+  supports it, so the descriptors come back without the thread losing the
+  agent's memory of it. The same applies to an agent running over SSH, whose
+  remote login often has the tighter limit of the two.
 
 ## Release-note process
 

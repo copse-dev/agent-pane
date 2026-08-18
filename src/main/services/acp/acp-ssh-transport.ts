@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { PassThrough, Readable, Writable } from 'node:stream'
-import { ndJsonStream, type Stream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
@@ -16,6 +16,12 @@ import { remoteEnvAllowList, REMOTE_PGID_PREFIX } from '../ssh-workspace/remote-
 import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
 import { registerRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import type { AcpTransport } from './acp-client.ts'
+import {
+  detectAcpResourceFault,
+  formatAcpResourceFault,
+  type AcpResourceFault,
+} from './acp-resource-fault.ts'
 import { posixQuote } from '../security/safe-install.ts'
 
 /**
@@ -138,7 +144,7 @@ export function buildRemoteAcpCommand(input: RemoteAcpSpawnInput, remoteRoot: st
 export async function spawnRemoteAcpTransport(
   input: RemoteAcpSpawnInput,
   target: AcpSshTarget,
-): Promise<{ stream: Stream; dispose: () => void }> {
+): Promise<AcpTransport> {
   const host = findConfiguredSshHost(target.hostId)
   if (!host) throw new Error(`SSH host "${target.hostId}" is not configured.`)
 
@@ -162,9 +168,16 @@ export async function spawnRemoteAcpTransport(
 
   const stdout = new PassThrough()
   attachRemotePgid(child, target.hostId, stdout)
+  // A remote agent runs under the login's own descriptor limit, which is often
+  // lower than a desktop's — so the same exhaustion the local transport watches
+  // for is if anything likelier here (see acp-resource-fault.ts).
+  let fault: AcpResourceFault | null = null
   child.stderr.on('data', (chunk: Buffer) => {
     const text = chunk.toString().trimEnd()
     if (text) console.warn(`[acp-ssh:${input.command}] ${text}`)
+    if (fault) return
+    fault = detectAcpResourceFault(text)
+    if (fault) console.warn(formatAcpResourceFault(input.command, fault))
   })
 
   // Writable.toWeb is assignable to the DOM WritableStream brand; Readable.toWeb
@@ -183,5 +196,6 @@ export async function spawnRemoteAcpTransport(
     dispose: (): void => {
       terminateProcessTree(child)
     },
+    resourceFault: () => fault,
   }
 }
