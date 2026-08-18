@@ -201,8 +201,8 @@
       "modelId": "mistralai/mistral-small-24b",
       "value": 6.7,
       "indexVersion": "v4.1",
-      "source": "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-13",
-      "asOf": "2026-08-13",
+      "source": "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-18",
+      "asOf": "2026-08-18",
       "aliases": ["mistral-small-3", "mistral-small-24b", "mistral-small-3-1", "Mistral Small 24B"]
     },
     {
@@ -1166,10 +1166,10 @@
     },
     {
       "modelId": "nex-n2-pro",
-      "value": 42.1,
+      "value": 41.7,
       "indexVersion": "v4.1",
-      "source": "Artificial Analysis API (index v4.1), model 'nex-n2-pro', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "source": "Artificial Analysis API (index v4.1), model 'nex-n2-pro', fetched 2026-08-18",
+      "asOf": "2026-08-18"
     },
     {
       "modelId": "gpt-4-1",
@@ -1748,10 +1748,10 @@
     },
     {
       "modelId": "longcat-2-0",
-      "value": 34.3,
+      "value": 34,
       "indexVersion": "v4.1",
-      "source": "Artificial Analysis API (index v4.1), model 'longcat-2-0', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "source": "Artificial Analysis API (index v4.1), model 'longcat-2-0', fetched 2026-08-18",
+      "asOf": "2026-08-18"
     },
     {
       "modelId": "nova-lite",
@@ -3260,10 +3260,10 @@
     },
     {
       "modelId": "trinity-large-thinking",
-      "value": 18.4,
+      "value": 18.7,
       "indexVersion": "v4.1",
-      "source": "Artificial Analysis API (index v4.1), model 'trinity-large-thinking', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "source": "Artificial Analysis API (index v4.1), model 'trinity-large-thinking', fetched 2026-08-18",
+      "asOf": "2026-08-18"
     },
     {
       "modelId": "deephermes-3-llama-3-1-8b-preview",
@@ -3990,10 +3990,10 @@
     },
     {
       "modelId": "ring-2-6-1t",
-      "value": 31.3,
+      "value": 31.7,
       "indexVersion": "v4.1",
-      "source": "Artificial Analysis API (index v4.1), model 'ring-2-6-1t', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "source": "Artificial Analysis API (index v4.1), model 'ring-2-6-1t', fetched 2026-08-18",
+      "asOf": "2026-08-18"
     },
     {
       "modelId": "solar-pro-2-reasoning",
@@ -4179,10 +4179,10 @@
     },
     {
       "modelId": "kat-coder-pro-v2",
-      "value": 34.5,
+      "value": 33.7,
       "indexVersion": "v4.1",
-      "source": "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v2', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "source": "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v2', fetched 2026-08-18",
+      "asOf": "2026-08-18"
     },
     {
       "modelId": "qwen3-coder-next",
@@ -4253,6 +4253,13 @@
       "indexVersion": "v4.1",
       "source": "Artificial Analysis API (index v4.1), model 'llama-2-chat-7b', fetched 2026-08-13",
       "asOf": "2026-08-13"
+    },
+    {
+      "modelId": "qwen3-8-2-4t-a95b",
+      "value": 57.7,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'qwen3-8-2-4t-a95b', fetched 2026-08-18",
+      "asOf": "2026-08-18"
     }
   ],
   "wanted": [
