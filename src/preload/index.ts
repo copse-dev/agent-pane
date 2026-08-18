@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
+import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
+
+// DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
+// captures it, so every channel the renderer calls is timed. No-op otherwise.
+installPreloadPerfTracing()
+exposePerfBridge()
 
 contextBridge.exposeInMainWorld('api', {
   workspace: {

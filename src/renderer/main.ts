@@ -97,6 +97,7 @@ import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import { begin as perfBegin, mark as perfMark } from './perf.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
@@ -210,6 +211,11 @@ let unmountPopoutPanelBar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
+  // DEBUG BRANCH: the outermost span a user would call "opening the app" —
+  // everything from the renderer script running to the restored project being
+  // on screen and interactive.
+  const endBoot = perfBegin('renderer:boot')
+  perfMark('renderer:boot-start')
   // Sanitizer and highlighter backends must be in place before any markdown sink
   // renders. The sanitizer resolves instantly on the native path (only awaits a
   // load if DOMPurify had to be lazily pulled in); the highlighter awaits its
@@ -234,7 +240,9 @@ async function boot(): Promise<void> {
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
+  perfMark('renderer:dialogs-mounted')
   const startupSettings = await loadStartupSettings(api.settings)
+  perfMark('renderer:settings-loaded')
   const rawSavedModel = startupSettings.model
   const savedModel = typeof rawSavedModel === 'string' ? rawSavedModel : null
   const savedLayout = startupSettings.layout
@@ -400,7 +408,9 @@ async function boot(): Promise<void> {
     void addProjectFromPath(store, api, root).then(ensureLayout)
   })
 
+  const endLoadProjects = perfBegin('renderer:load-projects')
   const { projects, activeProjectId } = await loadProjects(api)
+  endLoadProjects({ projects: projects.length })
   store.setState({ projects, activeProjectId })
 
   const [firstProject] = projects
@@ -411,8 +421,13 @@ async function boot(): Promise<void> {
     // while, and every mounted pane already renders its own empty/loading state
     // and updates reactively once workspace_changed/threads_changed fire below.
     ensureLayout()
+    perfMark('renderer:layout-mounted')
+    const endRestore = perfBegin('renderer:restore-project')
     await restoreProject(store, api, active.id)
+    endRestore()
+    endBoot({ projects: projects.length })
   } else {
+    endBoot({ projects: 0 })
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
     const unsubWelcome = store.on('workspace_changed', () => {
       unsubWelcome()

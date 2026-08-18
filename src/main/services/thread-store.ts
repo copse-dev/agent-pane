@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { perfCount, perfSpan } from './diagnostics/perf-trace.ts'
 import {
   appendFileSync,
   existsSync,
@@ -436,7 +437,19 @@ async function readThread(
   const raw = eventsRaw ?? ''
   const entries = parseSpineEntries(raw)
   const spine = parseSpine(raw)
+  // DEBUG BRANCH: `prefetchThreadFiles` is where the bytes are — one read per
+  // referenced message/blob file. Counted rather than spanned: at hundreds of
+  // threads a span each would swamp the trace, while the totals (calls, ms,
+  // bytes) are what actually identify the cost.
+  const prefetchStart = process.hrtime.bigint()
   const contents = await prefetchThreadFiles(dir, raw)
+  let prefetchedBytes = 0
+  for (const body of contents.values()) prefetchedBytes += body.length
+  perfCount(
+    'store:thread-prefetch',
+    Number(process.hrtime.bigint() - prefetchStart) / 1e6,
+    prefetchedBytes + raw.length,
+  )
   const resolve: RefResolver = (ref) => {
     const body = contents.get(ref)
     if (body === undefined) throw new Error(`Missing thread file: ${ref}`)
@@ -474,10 +487,28 @@ async function readProjectThreads(
   projectId: string,
   options: ThreadLoadOptions = {},
 ): Promise<Thread[]> {
-  const loaded = await mapConcurrent(listThreadIds(projectId), (threadId) =>
-    readThread(projectId, threadId, options),
+  // DEBUG BRANCH: this is the whole-project read that `threads:loadProject`
+  // performs on every open and every switch back. It reads and folds each
+  // non-archived thread in full — meta, spine, and every referenced message and
+  // blob file — so its cost is a function of the project's entire chat history,
+  // not of what the sidebar will actually display. Recording the directory count
+  // alongside the surviving thread count separates "many threads" from "few but
+  // enormous threads", which need different fixes.
+  const threadIds = listThreadIds(projectId)
+  return perfSpan(
+    'store:read-project-threads',
+    async () => {
+      const loaded = await mapConcurrent(threadIds, (threadId) =>
+        readThread(projectId, threadId, options),
+      )
+      return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
+    },
+    (threads) => ({
+      dirs: threadIds.length,
+      returned: threads?.length ?? 0,
+      includeArchived: options.includeArchived !== false,
+    }),
   )
-  return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
 }
 
 /** Store dir ids directly under the workspace root (each is a project's thread store). */
